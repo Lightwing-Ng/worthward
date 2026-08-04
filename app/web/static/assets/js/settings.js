@@ -1,8 +1,14 @@
-/* Code version: v0.14.2 */
+/* Code version: v0.16.0 */
+
+import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
+
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
     let localStorePaginationRequest = null;
+    let localStorePaginationRequestGeneration = 0;
+    let localStorePaginationReadyListener = null;
+    let pendingLocalStorePaginationAnimation = null;
     let didBindSettingsSectionNavigation = false;
     let didBindLocalStorePagination = false;
     let didBindStyleTokenControlDismiss = false;
@@ -649,6 +655,29 @@
         });
     };
 
+    const attachTextInputClearHandlers = () => {
+        const shell = getStyleTokenShell();
+        if (!(shell instanceof HTMLElement)) return;
+        shell.querySelectorAll(".text-input-clear").forEach((button) => {
+            if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
+            const input = button.parentElement?.querySelector("input.text-input-control");
+            if (!(input instanceof HTMLInputElement)) return;
+            button.dataset.bound = "1";
+            const syncVisibility = () => {
+                button.classList.toggle("is-visible", Boolean(input.value.trim()));
+            };
+            syncVisibility();
+            button.addEventListener("mousedown", (event) => {
+                event.preventDefault();
+            });
+            button.addEventListener("click", () => {
+                input.value = "";
+                syncVisibility();
+                input.focus();
+            });
+        });
+    };
+
     const attachStyleTokenReferences = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
@@ -821,15 +850,13 @@
             if (pageButton && !pageButton.classList.contains("local-store-page-nav") && !pageButton.classList.contains("local-store-page-placeholder")) {
                 const container = pageButton.closest(".local-store-pagination");
                 if (container instanceof HTMLElement) {
+                    const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
                     const buttons = Array.from(container.querySelectorAll(".local-store-page-button:not(.local-store-page-nav):not(.local-store-page-placeholder)"));
                     const index = buttons.indexOf(pageButton);
                     if (index !== -1) {
                         buttons.forEach((button) => button.classList.remove("is-active"));
                         pageButton.classList.add("is-active");
-                        const indicator = container.querySelector(".local-store-pagination-indicator");
-                        if (indicator instanceof HTMLElement) {
-                            indicator.style.transform = `translate3d(calc(var(--local-store-pagination-slot-size) * ${index + 1}), 0, 0)`;
-                        }
+                        paginationApi?.positionLocalStorePaginationIndicator(container, pageButton);
                     }
                 }
             }
@@ -990,6 +1017,13 @@
         return element;
     };
 
+    const appendNumericDisplayParts = (element, value) => {
+        getNumericDisplayParts(value).forEach((part) => {
+            element.append(createStyleTokenDemoElement("span", part.className, part.text));
+        });
+        return element;
+    };
+
     const createStyleTokenShareDemoSection = (className = "") => createStyleTokenDemoElement(
         "section",
         ["investment-community-share-section", className].filter(Boolean).join(" "),
@@ -1040,9 +1074,10 @@
 
     const createStyleTokenShareDemoMetricCard = (label, value) => {
         const card = createStyleTokenDemoElement("div", "trade-metric-card trade-metric-card--value-align-end");
+        const valueElement = createStyleTokenDemoElement("span", "trade-metric-value");
         card.append(
             createStyleTokenDemoElement("span", "trade-metric-label", label),
-            createStyleTokenDemoElement("span", "trade-metric-value", value),
+            appendNumericDisplayParts(valueElement, value),
         );
         return card;
     };
@@ -1073,23 +1108,6 @@
         return section;
     };
 
-    const getShareHoldingsMetricValueParts = (value) => {
-        const rawValue = String(value ?? "").trim() || "--";
-        const numericMatch = rawValue.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(?:\.(\d+))(%?)$/);
-        if (!numericMatch) {
-            return [{className: "workspace-metric-value-major", text: rawValue}];
-        }
-        const [, prefix, integerPart, decimalPart = "", suffix = ""] = numericMatch;
-        if (!decimalPart) {
-            return [{className: "workspace-metric-value-major", text: `${prefix}${integerPart}${suffix}`}];
-        }
-        return [
-            {className: "workspace-metric-value-major", text: `${prefix}${integerPart}`},
-            {className: "workspace-metric-value-minor", text: `.${decimalPart}`},
-            ...(suffix ? [{className: "workspace-metric-value-suffix", text: suffix}] : []),
-        ];
-    };
-
     const createShareHoldingsMetricValueCell = (value) => {
         const displayText = String(value || "").trim() || "-";
         let toneClass = "";
@@ -1100,9 +1118,7 @@
             "span",
             `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${toneClass}`.trim(),
         );
-        getShareHoldingsMetricValueParts(displayText).forEach((part) => {
-            metric.append(createStyleTokenDemoElement("span", part.className, part.text));
-        });
+        appendNumericDisplayParts(metric, displayText);
         cell.append(metric);
         return cell;
     };
@@ -1185,17 +1201,7 @@
 
     const createStyleTokenShareDemoCompareSummarySection = () => {
         const appendComparePercentValue = (node, value) => {
-            const match = String(value || "—").match(/^(.+)(\.)(\d{2})(%)$/);
-            if (!match) {
-                node.append(createStyleTokenDemoElement("span", "compare-percent-empty", value || "—"));
-                return;
-            }
-            [
-                ["compare-percent-major", match[1]],
-                ["compare-percent-dot", match[2]],
-                ["compare-percent-minor", match[3]],
-                ["compare-percent-suffix", match[4]],
-            ].forEach(([className, text]) => node.append(createStyleTokenDemoElement("span", className, text)));
+            appendNumericDisplayParts(node, value || "—");
         };
         const section = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
         const card = createStyleTokenDemoElement("article", "report-card workspace-content-card compare-summary-content-card compare-share-summary-card");
@@ -1262,9 +1268,10 @@
         const card = createStyleTokenDemoElement("article", "report-card workspace-content-card portfolio-summary-content-card portfolio-share-summary-card");
         const summary = createStyleTokenDemoElement("div", "portfolio-summary");
         const main = createStyleTokenDemoElement("div", "portfolio-summary-main");
+        const totalValue = createStyleTokenDemoElement("p", "portfolio-total-value");
         main.append(
             createStyleTokenDemoElement("p", "portfolio-total-label", translateUi("Total return")),
-            createStyleTokenDemoElement("p", "portfolio-total-value", "36.42%"),
+            appendNumericDisplayParts(totalValue, "36.42%"),
         );
         summary.append(main);
         card.append(summary);
@@ -1667,6 +1674,10 @@
         const currentTableShell = currentShell.querySelector("[data-local-store-region]");
         const nextTableShell = nextShell.querySelector("[data-local-store-region]");
         if (!(currentTableShell instanceof HTMLElement) || !(nextTableShell instanceof HTMLElement)) return;
+        currentTableShell.classList.toggle(
+            "has-floating-pagination",
+            nextTableShell.classList.contains("has-floating-pagination"),
+        );
         const currentPagination = currentTableShell.querySelector("[data-local-store-pagination]");
         const nextPagination = nextTableShell.querySelector("[data-local-store-pagination]");
         if (!(currentPagination instanceof HTMLElement) && !(nextPagination instanceof HTMLElement)) return;
@@ -1680,11 +1691,24 @@
         }
         if (!(currentPagination instanceof HTMLElement) || !(nextPagination instanceof HTMLElement)) return;
         currentPagination.setAttribute("aria-label", nextPagination.getAttribute("aria-label") || translateUi("Local market store pages"));
+        [
+            "aria-controls",
+            "data-pagination-scroll-target",
+            "data-pagination-page-count",
+            "data-pagination-current-page",
+            "data-pagination-compact",
+            "style",
+        ].forEach((attributeName) => {
+            const nextValue = nextPagination.getAttribute(attributeName);
+            if (nextValue === null) currentPagination.removeAttribute(attributeName);
+            else currentPagination.setAttribute(attributeName, nextValue);
+        });
         const indicator = currentPagination.querySelector(".local-store-pagination-indicator");
         Array.from(currentPagination.childNodes).forEach((node) => {
             if (node !== indicator) node.remove();
         });
         Array.from(nextPagination.childNodes).forEach((node) => {
+            if (node instanceof HTMLElement && node.classList.contains("local-store-pagination-indicator")) return;
             currentPagination.append(node.cloneNode(true));
         });
     };
@@ -1763,7 +1787,7 @@
 				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_pending_button || translateUi("Maintaining")}</span>
 			</section>
 			<p class="settings-summary">${labels.local_store_summary || ""}</p>
-			<div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
+				<div class="scrollable-data-table-shell local-store-pagination-host local-store-table-shell" id="local_store_region" data-local-store-region>
 				<table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
 					<colgroup>
 						<col class="local-store-col-index">
@@ -1784,7 +1808,7 @@
 						</tr>
 					</thead>
 				</table>
-				<div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
+					<div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll" id="local_store_table_scroll">
 					<table class="settings-table local-store-table scrollable-data-table">
 						<colgroup>
 							<col class="local-store-col-index">
@@ -1794,7 +1818,7 @@
 							<col class="local-store-col-1m">
 							<col class="local-store-col-delete">
 						</colgroup>
-						<tbody>
+							<tbody id="local_store_table_body">
 						${Array.from({length: 6}, (_, index) => `
 							<tr data-local-store-ticker="pending-${index + 1}">
 								<td class="local-store-index-cell is-pending-value" data-workspace-mask="metric-value">${startIndex + index + 1}</td>
@@ -1966,80 +1990,62 @@
         });
     };
 
-    const ensureLocalStorePaginationIndicator = (pagination) => {
-        if (!(pagination instanceof HTMLElement)) return null;
-        let indicator = pagination.querySelector(".local-store-pagination-indicator");
-        if (!(indicator instanceof HTMLElement)) {
-            indicator = document.createElement("span");
-            indicator.className = "local-store-pagination-indicator";
-            indicator.setAttribute("aria-hidden", "true");
-            pagination.prepend(indicator);
-        }
-        return indicator;
+    const buildLocalStorePageHref = (pageValue) => {
+        const pageUrl = new URL(window.location.href);
+        pageUrl.searchParams.set("page", String(pageValue));
+        return `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`;
     };
 
-    const positionLocalStorePaginationIndicator = (pagination, target, {immediate = false} = {}) => {
-        if (!(pagination instanceof HTMLElement) || !(target instanceof HTMLElement)) return;
-        const indicator = ensureLocalStorePaginationIndicator(pagination);
-        if (!(indicator instanceof HTMLElement)) return;
-        const navRect = pagination.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const x = targetRect.left - navRect.left;
-        const y = targetRect.top - navRect.top;
-        if (immediate) indicator.style.transition = "none";
-        indicator.style.width = `${targetRect.width}px`;
-        indicator.style.height = `${targetRect.height}px`;
-        indicator.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-        pagination.classList.add("is-animated");
-        if (immediate) {
-            void indicator.offsetWidth;
-            indicator.style.removeProperty("transition");
-        }
+    const supersedeLocalStorePaginationRequest = () => {
+        localStorePaginationRequestGeneration += 1;
+        localStorePaginationRequest = null;
     };
 
-    const initLocalStorePaginationPhysics = () => {
+    const initLocalStorePaginationPhysics = ({animationState = null} = {}) => {
         const pagination = document.querySelector("[data-local-store-pagination]");
         if (!(pagination instanceof HTMLElement)) return;
-        const active = pagination.querySelector(".local-store-page-button.is-active");
-        if (!(active instanceof HTMLElement)) return;
-        pagination.classList.remove("is-animating");
-        pagination.classList.add("is-animated");
-        positionLocalStorePaginationIndicator(pagination, active, {immediate: true});
-        pagination.querySelectorAll(".local-store-page-button[data-pagination-target]").forEach((button) => {
-            if (button instanceof HTMLElement) {
-                button.dataset.paginationCurrent = button.classList.contains("is-active") ? "1" : "0";
-            }
-        });
-    };
-
-    const syncLocalStorePaginationActivePage = (pageValue) => {
-        const pagination = document.querySelector("[data-local-store-pagination]");
-        if (!(pagination instanceof HTMLElement)) return;
-        const page = String(pageValue || "1");
-        const buttons = Array.from(pagination.querySelectorAll(".local-store-page-button"));
-        const target = buttons.find((button) => {
-            if (!(button instanceof HTMLElement)) return false;
-            if (button.classList.contains("local-store-page-nav") || button.classList.contains("local-store-page-placeholder")) return false;
-            return button.textContent?.trim() === page;
-        });
-        if (!(target instanceof HTMLElement)) {
-            window.requestAnimationFrame(() => initLocalStorePaginationPhysics());
+        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+        if (!paginationApi) {
+            pendingLocalStorePaginationAnimation = animationState || pendingLocalStorePaginationAnimation;
+            if (localStorePaginationReadyListener) return;
+            localStorePaginationReadyListener = () => {
+                const pendingAnimation = pendingLocalStorePaginationAnimation;
+                localStorePaginationReadyListener = null;
+                pendingLocalStorePaginationAnimation = null;
+                initLocalStorePaginationPhysics({animationState: pendingAnimation});
+            };
+            window.addEventListener(
+                "antigravity:local-store-pagination-ready",
+                localStorePaginationReadyListener,
+                {once: true},
+            );
             return;
         }
-        buttons.forEach((button) => {
-            if (!(button instanceof HTMLElement)) return;
-            const isTarget = button === target;
-            button.classList.toggle("is-active", isTarget);
-            button.dataset.paginationCurrent = isTarget ? "1" : "0";
+
+        const active = pagination.querySelector(".local-store-page-button.is-active");
+        const currentPage = Number.parseInt(
+            pagination.dataset.paginationCurrentPage
+            || active?.getAttribute("data-pagination-target")
+            || active?.textContent?.trim()
+            || "1",
+            10,
+        ) || 1;
+        const totalPages = Number.parseInt(pagination.dataset.paginationPageCount || "1", 10) || 1;
+        const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+        paginationApi.renderLocalStorePagination(pagination, paginationState, {
+            hrefForPage: buildLocalStorePageHref,
         });
-        pagination.classList.remove("is-animating");
-        pagination.classList.add("is-animated");
-        window.requestAnimationFrame(() => {
-            positionLocalStorePaginationIndicator(pagination, target, {immediate: true});
-        });
+        pagination.dataset.paginationCurrentPage = String(paginationState.currentPage);
+        if (animationState) {
+            paginationApi.animateLocalStorePaginationIndicator(pagination, animationState);
+        }
     };
 
-    const fetchLocalStorePage = async (url, {pushHistory = true} = {}) => {
+    const fetchLocalStorePage = async (url, {
+        pushHistory = true,
+        animationState = null,
+        requestGeneration = localStorePaginationRequestGeneration,
+    } = {}) => {
         const response = await fetch(url, {
             headers: {
                 "X-Requested-With": "fetch",
@@ -2048,64 +2054,42 @@
             cache: "no-store",
         });
         if (!response.ok) throw new Error(`Local store page fetch failed: ${response.status}`);
+        if (requestGeneration !== localStorePaginationRequestGeneration) return false;
         const html = await response.text();
+        if (requestGeneration !== localStorePaginationRequestGeneration) return false;
         const parser = new DOMParser();
         const nextDocument = parser.parseFromString(html, "text/html");
         const nextShell = nextDocument.querySelector("#settings_workspace_shell");
         if (!nextShell) throw new Error("Settings workspace shell missing from response.");
+        const requestedUrl = new URL(url, window.location.origin);
+        const nextPagination = nextShell.querySelector("[data-local-store-pagination]");
+        const nextPageInput = nextShell.querySelector('.local-store-maintain-card input[name="page"]');
+        const actualPage = nextPagination?.getAttribute("data-pagination-current-page")
+            || nextPageInput?.value
+            || requestedUrl.searchParams.get("page")
+            || "1";
+        requestedUrl.searchParams.set("page", actualPage);
+        const actualUrl = `${requestedUrl.pathname}${requestedUrl.search}${requestedUrl.hash}`;
+        if (requestGeneration !== localStorePaginationRequestGeneration) return false;
         replaceLocalStoreRegion(nextShell);
-        if (pushHistory) window.history.pushState({localStore: true}, "", url);
-        rememberCurrentViewUrl(url);
+        if (pushHistory) window.history.pushState({localStore: true}, "", actualUrl);
+        else if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== actualUrl) {
+            window.history.replaceState({localStore: true}, "", actualUrl);
+        }
+        rememberCurrentViewUrl(actualUrl);
         void hydrateLocalStoreRanges();
-        const targetPage = new URL(url, window.location.origin).searchParams.get("page") || "1";
-        syncLocalStorePaginationActivePage(targetPage);
+        initLocalStorePaginationPhysics({animationState});
+        return true;
     };
 
-    const animateLocalStorePaginationTo = (link, targetUrl) => new Promise((resolve) => {
+    const captureLocalStorePaginationTransition = (link, targetUrl) => {
+        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
         const pagination = link.closest("[data-local-store-pagination]");
-        if (!(pagination instanceof HTMLElement)) {
-            resolve();
-            return;
-        }
+        if (!paginationApi || !(pagination instanceof HTMLElement)) return null;
 
         const targetPage = new URL(targetUrl, window.location.origin).searchParams.get("page") || "1";
-        const buttons = Array.from(pagination.querySelectorAll(".local-store-page-button"));
-        const target = buttons.find((button) => {
-            if (!(button instanceof HTMLElement)) return false;
-            if (button.classList.contains("local-store-page-nav") || button.classList.contains("local-store-page-placeholder")) return false;
-            return button.textContent?.trim() === targetPage;
-        });
-
-        if (!(target instanceof HTMLElement)) {
-            resolve();
-            return;
-        }
-
-        const current = pagination.querySelector(".local-store-page-button.is-active") || pagination.querySelector(".local-store-page-button[data-pagination-current='1']");
-        if (!(current instanceof HTMLElement)) {
-            positionLocalStorePaginationIndicator(pagination, target, {immediate: true});
-            resolve();
-            return;
-        }
-        pagination.classList.add("is-animated", "is-animating");
-
-        // Optimistically update classes so the text color and background toggle immediately
-        current.classList.remove("is-active");
-        target.classList.add("is-active");
-
-        current.dataset.paginationCurrent = "0";
-        target.dataset.paginationCurrent = "1";
-        positionLocalStorePaginationIndicator(pagination, current, {immediate: true});
-        window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => {
-                positionLocalStorePaginationIndicator(pagination, target);
-            });
-        });
-        window.setTimeout(() => {
-            pagination.classList.remove("is-animating");
-            resolve();
-        }, 430);
-    });
+        return paginationApi.captureLocalStorePaginationAnimation(pagination, targetPage);
+    };
 
     const attachLocalStorePagination = () => {
         initLocalStorePaginationPhysics();
@@ -2115,13 +2099,24 @@
             const link = event.target.closest(".local-store-pagination a");
             if (!(link instanceof HTMLAnchorElement)) return;
             if (!window.location.pathname.startsWith("/settings/local-market-store")) return;
+            if (
+                event.defaultPrevented
+                || event.button !== 0
+                || event.metaKey
+                || event.ctrlKey
+                || event.shiftKey
+                || event.altKey
+            ) return;
+            if (link.getAttribute("aria-current") === "page") return;
             const targetUrl = link.href;
             if (!targetUrl) return;
             event.preventDefault();
             if (localStorePaginationRequest) return;
+            const requestGeneration = ++localStorePaginationRequestGeneration;
             localStorePaginationRequest = (async () => {
                 try {
                     const targetPage = new URL(targetUrl, window.location.origin).searchParams.get("page") || "1";
+                    const animationState = captureLocalStorePaginationTransition(link, targetUrl);
                     const pendingRegion = buildLocalStorePendingRegion(targetPage);
                     const currentRegion = document.getElementById("local_store_region");
                     if (currentRegion && pendingRegion) {
@@ -2131,19 +2126,33 @@
                             currentTableWrap.replaceWith(nextTableWrap);
                         }
                     }
-                    const animationPromise = animateLocalStorePaginationTo(link, targetUrl);
-                    await Promise.all([animationPromise, fetchLocalStorePage(targetUrl)]);
+                    await fetchLocalStorePage(targetUrl, {animationState, requestGeneration});
                 } catch (_error) {
-                    window.location.assign(targetUrl);
+                    if (requestGeneration === localStorePaginationRequestGeneration) {
+                        window.location.assign(targetUrl);
+                    }
                 } finally {
-                    localStorePaginationRequest = null;
+                    if (requestGeneration === localStorePaginationRequestGeneration) {
+                        localStorePaginationRequest = null;
+                    }
                 }
             })();
         });
 
         window.addEventListener("popstate", () => {
             if (!window.location.pathname.startsWith("/settings/local-market-store")) return;
-            fetchLocalStorePage(window.location.pathname + window.location.search, {pushHistory: false}).catch(() => {
+            if (!(document.querySelector("[data-local-store-region]") instanceof HTMLElement)) return;
+            const requestGeneration = ++localStorePaginationRequestGeneration;
+            localStorePaginationRequest = null;
+            fetchLocalStorePage(window.location.pathname + window.location.search, {
+                pushHistory: false,
+                requestGeneration,
+            }).catch(() => {
+                if (requestGeneration === localStorePaginationRequestGeneration) {
+                    window.location.assign(
+                        window.location.pathname + window.location.search + window.location.hash,
+                    );
+                }
             });
         });
     };
@@ -2166,6 +2175,7 @@
                 && parsed.hash === window.location.hash
             ) return;
             event.preventDefault();
+            supersedeLocalStorePaginationRequest();
             setActiveSettingsNav(targetSection);
             renderOptimisticNavigationSkeleton({view: "settings", section: targetSection});
             try {
@@ -2211,6 +2221,9 @@
             const state = getState();
             if (state?.currentView !== "settings") return;
             const section = window.location.pathname.split("/")[2] || "about";
+            const hasLocalStoreRegion = document.querySelector("[data-local-store-region]") instanceof HTMLElement;
+            if (section === "local-market-store" && hasLocalStoreRegion) return;
+            supersedeLocalStorePaginationRequest();
             setActiveSettingsNav(section);
             state.settingsSection = section;
             renderOptimisticNavigationSkeleton({view: "settings", section});
@@ -2218,7 +2231,7 @@
                 const responseText = await fetch(window.location.pathname + window.location.search, {
                     credentials: "same-origin",
                     headers: {"X-Requested-With": "settings-popstate"},
-                    cache: "force-cache",
+                    cache: section === "local-market-store" ? "no-store" : "force-cache",
                 }).then(async (response) => {
                     if (!response.ok) throw new Error(`Settings popstate failed: ${response.status}`);
                     return response.text();
@@ -2394,6 +2407,13 @@
 
         const renderPagination = (pagination, body, page) => {
             if (!(pagination instanceof HTMLElement) || !(body instanceof HTMLElement)) return;
+            const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+            if (!paginationApi) {
+                window.addEventListener('antigravity:local-store-pagination-ready', () => {
+                    renderPagination(pagination, body, page);
+                }, {once: true});
+                return;
+            }
             const rows = Array.from(body.querySelectorAll("[data-language-row]"))
                 .filter((row) => row instanceof HTMLTableRowElement);
             const pageSize = Math.max(Number.parseInt(body.dataset.languagePageSize || "10", 10) || 10, 1);
@@ -2403,50 +2423,17 @@
                 const rowPage = Math.floor(index / pageSize) + 1;
                 row.hidden = rowPage !== currentPage;
             });
-            if (totalPages <= 1) {
-                pagination.innerHTML = "";
-                pagination.style.removeProperty("--local-store-pagination-slots");
-                return;
-            }
-            const groupStart = (Math.floor((currentPage - 1) / 5) * 5) + 1;
-            const pageCount = Math.min(5, totalPages - groupStart + 1);
-            const pageSlots = Array.from({length: pageCount}, (_, index) => {
-                const pageNumber = groupStart + index;
-                return {label: String(pageNumber), page: pageNumber};
+            const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+            paginationApi.renderLocalStorePagination(pagination, paginationState, {
+                additionalPageTargetAttribute: "data-language-page",
             });
-            const slots = totalPages > 5
-                ? [
-                    {label: "‹", page: groupStart > 1 ? groupStart - 5 : null},
-                    ...pageSlots,
-                    {label: "›", page: groupStart + 5 <= totalPages ? groupStart + 5 : null},
-                ]
-                : pageSlots;
-            pagination.style.setProperty("--local-store-pagination-slots", String(slots.length));
-            pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${
-                slots.map((slot) => {
-                    if (!slot.page) {
-                        return `<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>`;
-                    }
-                    const active = slot.page === currentPage;
-                    return `<button type="button" class="local-store-page-button${active ? " is-active" : ""}" data-language-page="${slot.page}" data-pagination-current="${active ? "1" : "0"}"${active ? " aria-current=\"page\"" : ""}>${slot.label}</button>`;
-                }).join("")
-            }`;
-            pagination.querySelectorAll("[data-language-page]").forEach((button) => {
-                button.addEventListener("click", () => {
-                    const nextPage = Number.parseInt(button.dataset.languagePage || "1", 10) || 1;
+            paginationApi.bindLocalStorePagination(
+                pagination,
+                (nextPage, {animationState}) => {
                     renderPagination(pagination, body, nextPage);
-                });
-            });
-            const activeButton = pagination.querySelector(".local-store-page-button.is-active");
-            if (activeButton instanceof HTMLElement) {
-                pagination.classList.add("is-animated");
-                const indicator = pagination.querySelector(".local-store-pagination-indicator");
-                if (indicator instanceof HTMLElement) {
-                    const buttonRect = activeButton.getBoundingClientRect();
-                    const paginationRect = pagination.getBoundingClientRect();
-                    indicator.style.transform = `translate3d(${buttonRect.left - paginationRect.left}px, ${buttonRect.top - paginationRect.top}px, 0)`;
-                }
-            }
+                    paginationApi.animateLocalStorePaginationIndicator(pagination, animationState);
+                },
+            );
         };
 
         form.querySelectorAll("[data-language-pagination]").forEach((pagination) => {
@@ -2474,6 +2461,7 @@
         attachStyleTokenResizer();
         attachStyleTokenDemoResponsiveness();
         attachStyleTokenControls();
+        attachTextInputClearHandlers();
         attachStyleTokenReferences();
         attachStyleTokenCopyButtons();
         attachStyleTokenModeSwitches();
@@ -2590,7 +2578,7 @@
                             <span class="ticker-logo-placeholder"></span>
                             <img class="ticker-input-logo" alt="" hidden>
                         </span>
-                        <input class="settings-form-control" data-ticker-input placeholder="e.g. BOXX" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" style="padding-left:44px;">
+                        <input class="text-input-control" data-ticker-input placeholder="e.g. BOXX" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
                         <button type="button" class="ticker-clear" aria-label="${translateUi("Clear")}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                     </div>
                 </div>

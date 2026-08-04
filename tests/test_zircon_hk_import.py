@@ -1,6 +1,6 @@
 """Tests for the generic typed manual-workbook import.
 
-Code version: v0.10.1
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -259,39 +259,40 @@ class ZirconHkImportTests(unittest.TestCase):
             transaction(2, "sell", ticker="AAPL", quantity_raw="1", price_raw="120"),
             transaction(3, "deposit", net_amount_raw="1000"),
             transaction(4, "withdrawal", net_amount_raw="-50"),
-            transaction(5, "dividend", ticker="AAPL", net_amount_raw="5"),
+            transaction(5, "virtual_balance_reset", currency="CNY", net_amount_raw="-21511.9"),
+            transaction(6, "dividend", ticker="AAPL", net_amount_raw="5"),
             transaction(
-                6,
+                7,
                 "dividend_reinvestment",
                 ticker="AAPL",
                 quantity_raw="1",
                 price_raw="5",
             ),
-            transaction(7, "fee", net_amount_raw="-2"),
-            transaction(8, "credit_interest", net_amount_raw="1"),
-            transaction(9, "debit_interest", net_amount_raw="-1"),
+            transaction(8, "fee", net_amount_raw="-2"),
+            transaction(9, "credit_interest", net_amount_raw="1"),
+            transaction(10, "debit_interest", net_amount_raw="-1"),
             transaction(
-                10,
+                11,
                 "foreign_tax_withholding",
                 ticker="AAPL",
                 net_amount_raw="-0.5",
             ),
-            transaction(11, "payment_in_lieu", ticker="AAPL", net_amount_raw="0.5"),
-            transaction(12, "adjustment", net_amount_raw="2"),
-            transaction(13, "grant", ticker="AAPL", quantity_raw="3", price_raw="0"),
-            transaction(14, "kol_reward", net_amount_raw="10"),
-            transaction(15, "fx_translation_pnl", net_amount_raw="-3"),
-            transaction(16, "transfer_in", ticker="AAPL", quantity_raw="4", price_raw="100"),
-            transaction(17, "transfer_out", ticker="AAPL", quantity_raw="2", price_raw="100"),
+            transaction(12, "payment_in_lieu", ticker="AAPL", net_amount_raw="0.5"),
+            transaction(13, "adjustment", net_amount_raw="2"),
+            transaction(14, "grant", ticker="AAPL", quantity_raw="3", price_raw="0"),
+            transaction(15, "kol_reward", net_amount_raw="10"),
+            transaction(16, "fx_translation_pnl", net_amount_raw="-3"),
+            transaction(17, "transfer_in", ticker="AAPL", quantity_raw="4", price_raw="100"),
+            transaction(18, "transfer_out", ticker="AAPL", quantity_raw="2", price_raw="100"),
             transaction(
-                18,
+                19,
                 "forex_trade_component",
                 currency="HKD",
                 net_amount_raw="-100",
                 source={"reference_id": "xlsx-health-fx"},
             ),
             transaction(
-                19,
+                20,
                 "forex_trade_component",
                 currency="USD",
                 net_amount_raw="12",

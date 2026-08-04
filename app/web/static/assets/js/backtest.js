@@ -1,4 +1,4 @@
-/* Code version: v0.3.11 */
+/* Code version: v0.3.12 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -897,7 +897,12 @@
 			const table = document.getElementById("tradeTransactionsTable");
 			const nav = document.getElementById("tradeTransactionsPagination");
 			const tbody = table?.querySelector("tbody");
+			const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
 			if (!table || !nav || !tbody) return;
+			if (!paginationApi) {
+				window.addEventListener("antigravity:local-store-pagination-ready", initTransactionsPagination, {once: true});
+				return;
+			}
 
 			const indexByDate = new Map();
 			rawDates.forEach((value, index) => {
@@ -913,63 +918,22 @@
 				return;
 			}
 
-			const PAGE_SIZE = Math.max(displayTrades.length, 1);
-			const totalPages = 1;
-			
-			nav.style.display = "none";
-
+			const PAGE_SIZE = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
+			const totalPages = Math.max(1, Math.ceil(displayTrades.length / PAGE_SIZE));
 			let currentPage = 1;
-
-			const renderButtons = () => {
-				nav.innerHTML = "";
-				if (totalPages <= 1) return;
-				
-				const prevBtn = document.createElement("button");
-				prevBtn.type = "button";
-				prevBtn.className = "local-store-page-button local-store-page-nav";
-				prevBtn.disabled = currentPage === 1;
-				prevBtn.innerHTML = '<span class="icon icon-page-prev"></span>';
-				prevBtn.onclick = () => { if(currentPage > 1) goToPage(currentPage - 1); };
-				nav.appendChild(prevBtn);
-
-				let start = Math.max(1, currentPage - 2);
-				let end = Math.min(totalPages, start + 4);
-				if (end === totalPages) start = Math.max(1, end - 4);
-
-				for (let i = start; i <= end; i++) {
-					const btn = document.createElement("button");
-					btn.type = "button";
-					btn.className = `local-store-page-button${i === currentPage ? " is-active" : ""}`;
-					btn.textContent = i;
-					btn.onclick = () => goToPage(i);
-					nav.appendChild(btn);
-				}
-
-				const nextBtn = document.createElement("button");
-				nextBtn.type = "button";
-				nextBtn.className = "local-store-page-button local-store-page-nav";
-				nextBtn.disabled = currentPage === totalPages;
-				nextBtn.innerHTML = '<span class="icon icon-page-next"></span>';
-				nextBtn.onclick = () => { if(currentPage < totalPages) goToPage(currentPage + 1); };
-				nav.appendChild(nextBtn);
-			};
 
 			const formatNumber = (num) => Number(num || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 			const formatShares = (num) => Math.round(Number(num || 0)).toLocaleString();
 
-			const goToPage = (p) => {
-				currentPage = p;
-				const start = (p - 1) * PAGE_SIZE;
+			const goToPage = (p, {animationState = null} = {}) => {
+				currentPage = Math.min(totalPages, Math.max(1, Number(p) || 1));
+				const start = (currentPage - 1) * PAGE_SIZE;
 				const end = Math.min(start + PAGE_SIZE, displayTrades.length);
 				
 				tbody.innerHTML = "";
-				let displayIndex = 1;
+				let displayIndex = start + 1;
 				for (let i = start; i < end; i++) {
 					const trade = displayTrades[i];
-					// Skip virtual closing trades that are only used for win rate calculation
-					if (trade._virtual_close) {
-						continue;
-					}
 					const tr = document.createElement("tr");
 					const chartIndex = indexByDate.has(String(trade.date || "")) ? indexByDate.get(String(trade.date || "")) : "";
 					tr.dataset.chartIndex = chartIndex;
@@ -985,9 +949,18 @@
 					`;
 					tbody.appendChild(tr);
 				}
-				renderButtons();
+				const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+				nav.hidden = !paginationState.shouldRender;
+				paginationApi.renderLocalStorePagination(nav, paginationState);
+				if (animationState) {
+					paginationApi.animateLocalStorePaginationIndicator(nav, animationState);
+				}
 			};
 
+			paginationApi.bindLocalStorePagination(nav, (targetPage, {animationState}) => {
+				if (targetPage === currentPage) return;
+				goToPage(targetPage, {animationState});
+			});
 			goToPage(1);
 		};
 

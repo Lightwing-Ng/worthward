@@ -28,6 +28,7 @@ from app.infrastructure.broker_market_data import (
     classify_one_minute_store_status,
 )
 from app.infrastructure.connectivity import has_remote_market_access
+from app.infrastructure.storage import list_historical_tickers
 from app.services.date_constraints import nyse_market_session_state
 from app.services.market_data import (
     YfinanceDownloadError,
@@ -55,6 +56,35 @@ from app.services.market_data import (
     yfinance_lookup_symbol,
 )
 from tests.factories.market import close_frame_for_ticker, market_frame, ohlc_frame_for_dates, quote_profile_stub
+
+
+class LocalMarketStoreListingTests(unittest.TestCase):
+    def test_list_historical_tickers_ignores_intraday_variants_and_temp_files(self) -> None:
+        with TemporaryDirectory() as tempdir:
+            historical_dir = Path(tempdir) / "historical"
+            historical_dir.mkdir()
+            retained_files = (
+                "000660.KS.parquet",
+                "7709.HK.parquet",
+            )
+            ignored_files = (
+                "000660.KS_1m.parquet",
+                "000660.KS_1m.b7a37152d3194833a9c492990a0974ec.tmp.parquet",
+                "7709.HK_1M-2.parquet",
+                "7709.HK_1M.c9e35aec1fb945d693184b53aacfa15c.tmp.parquet",
+                "7709.HK_1m.parquet.lock",
+                "AAPL.1234567890.TMP.parquet",
+            )
+            for filename in (*retained_files, *ignored_files):
+                (historical_dir / filename).write_bytes(b"1")
+
+            with (
+                patch("app.infrastructure.storage.HISTORICAL_STORE_DIR", historical_dir),
+                patch("app.infrastructure.storage.ensure_market_store_dir"),
+            ):
+                tickers = list_historical_tickers()
+
+        self.assertEqual(tickers, ["000660.KS", "7709.HK"])
 
 
 class TickerSymbolBoundaryTests(unittest.TestCase):

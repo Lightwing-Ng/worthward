@@ -1,4 +1,4 @@
-{# Code version: v0.15.2 #}
+{# Code version: v0.15.11 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -125,7 +125,7 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.9') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.24') }}">
 </head>
 <body>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
@@ -257,6 +257,8 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
+<script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.0.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.1.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.1') }}"></script>
@@ -270,7 +272,7 @@
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.27.3') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.27.4') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
 {% endif %}

@@ -1,4 +1,4 @@
-/* Code version: v0.13.4 */
+/* Code version: v0.13.6 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -112,6 +112,16 @@
 	--settings-form-shell-max-width: 780px;
 	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: 384px;
+	--text-input-control-radius: 999px;
+	--text-input-control-pad-block: 0px;
+	--text-input-control-pad-inline: 10px;
+	--text-input-control-background: transparent;
+	--text-input-control-border: var(--control-liquid-border);
+	--text-input-control-color: var(--text);
+	--text-input-control-font-size: var(--font-form-label);
+	--text-input-control-shadow: none;
+	--text-input-control-shadow-hover: var(--control-liquid-shadow-focus);
+	--text-input-control-clear-reserve: 32px;
 	--settings-text-input-pad-block: 5px;
 	--settings-text-input-pad-inline: 10px;
 	--settings-text-input-background: var(--panel-strong);

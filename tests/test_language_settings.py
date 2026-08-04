@@ -123,9 +123,9 @@ class LanguageSettingsTests(unittest.TestCase):
         }
 
         style_row = next(
-            row for row in localized["style"] if row["name"] == "设置表单输入框"
+            row for row in localized["style"] if row["name"] == "文本输入控件"
         )
-        self.assertEqual(style_row["name"], "设置表单输入框")
+        self.assertEqual(style_row["name"], "文本输入控件")
         font_row = next(row for row in localized["font"] if row["name"] == "原始尺度")
         self.assertEqual(font_row["description"], "设计系统定义的基础像素大小；语义文字角色会继承这些源令牌。")
         self.assertEqual(localized["material"][0]["name"], "磨砂玻璃")

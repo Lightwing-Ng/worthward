@@ -1,4 +1,4 @@
-/* Code version: v0.1.11 */
+/* Code version: v0.1.12 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -500,31 +500,54 @@
             const table = document.getElementById("tradeTransactionsTable");
             const tbody = table?.querySelector("tbody");
             const nav = document.getElementById("tradeTransactionsPagination");
-            if (!tbody) return;
-            tbody.innerHTML = "";
-            trades.forEach((trade, index) => {
-                const rawTradeDate = String(trade.raw_date || "");
-                const chartIndex = indexByDate.get(rawTradeDate)
-                    ?? indexByDate.get(rawTradeDate.replace(/-/g, "/"))
-                    ?? indexByDate.get(String(trade.date || ""))
-                    ?? "";
-                const row = document.createElement("tr");
-                row.dataset.chartIndex = String(chartIndex);
-                row.innerHTML = `
-                    <td class="trade-transactions-index">${index + 1}</td>
-                    <td class="trade-transactions-date">${trade.date || ""}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.price || 0), 2)}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.shares || 0), 4)}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.cumulative_shares || 0), 4)}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.invested || 0))}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.equity || 0))}</td>
-                `;
-                tbody.appendChild(row);
-            });
-            if (nav) {
-                nav.hidden = true;
-                nav.style.display = "none";
+            const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+            if (!tbody || !nav) return;
+            if (!paginationApi) {
+                window.addEventListener("antigravity:local-store-pagination-ready", renderContributionTable, {once: true});
+                return;
             }
+            const pageSize = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
+            const totalPages = Math.max(1, Math.ceil(trades.length / pageSize));
+            let currentPage = 1;
+
+            const renderPage = (page, {animationState = null} = {}) => {
+                currentPage = Math.min(totalPages, Math.max(1, Number(page) || 1));
+                const start = (currentPage - 1) * pageSize;
+                const end = Math.min(start + pageSize, trades.length);
+                tbody.innerHTML = "";
+                for (let index = start; index < end; index += 1) {
+                    const trade = trades[index];
+                    const rawTradeDate = String(trade.raw_date || "");
+                    const chartIndex = indexByDate.get(rawTradeDate)
+                        ?? indexByDate.get(rawTradeDate.replace(/-/g, "/"))
+                        ?? indexByDate.get(String(trade.date || ""))
+                        ?? "";
+                    const row = document.createElement("tr");
+                    row.dataset.chartIndex = String(chartIndex);
+                    row.innerHTML = `
+                        <td class="trade-transactions-index">${index + 1}</td>
+                        <td class="trade-transactions-date">${trade.date || ""}</td>
+                        <td class="trade-transactions-number">${formatMoney(Number(trade.price || 0), 2)}</td>
+                        <td class="trade-transactions-number">${formatMoney(Number(trade.shares || 0), 4)}</td>
+                        <td class="trade-transactions-number">${formatMoney(Number(trade.cumulative_shares || 0), 4)}</td>
+                        <td class="trade-transactions-number">${formatMoney(Number(trade.invested || 0))}</td>
+                        <td class="trade-transactions-number">${formatMoney(Number(trade.equity || 0))}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+                const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+                nav.hidden = !paginationState.shouldRender;
+                paginationApi.renderLocalStorePagination(nav, paginationState);
+                if (animationState) {
+                    paginationApi.animateLocalStorePaginationIndicator(nav, animationState);
+                }
+            }
+
+            paginationApi.bindLocalStorePagination(nav, (targetPage, {animationState}) => {
+                if (targetPage === currentPage) return;
+                renderPage(targetPage, {animationState});
+            });
+            renderPage(1);
         };
 
         attachHover(priceCanvas, priceChart);

@@ -1,4 +1,4 @@
-{# Code version: v1.38.5 #}
+{# Code version: v1.49.10 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -515,16 +515,17 @@
                             </div>
 
                             {% for statement_broker in [
+                                {"code": "boc_hk", "label": "BOCHK", "help": "monthly consolidated statement"},
                                 {"code": "tigertrade", "label": "Tiger Trade", "help": "activity statement"},
                                 {"code": "usmart_hk", "label": "uSMART (HK)", "help": "monthly statement"}
                             ] %}
-                            <div class="investment-import-field-group" id="investment_import_{{ statement_broker.code }}_fields" hidden>
+                            <div class="investment-import-field-group{% if statement_broker.code == 'boc_hk' %} investment-import-boc-hk-field-group{% endif %}" id="investment_import_{{ statement_broker.code }}_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field" data-import-field="{{ statement_broker.code }}-statements">
                                     <label class="trade-strategy-param-label" for="{{ statement_broker.code }}_statement_pdfs">
                                         <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
                                               tabindex="0">
                                             <span class="investment-import-label-step" aria-hidden="true">➊</span>
-                                            <span class="investment-import-label-text">{{ statement_broker.label }} statement PDFs</span>
+                                            <span class="investment-import-label-text">{% if statement_broker.code == 'boc_hk' %}Upload BOCHK statement PDFs{% else %}{{ statement_broker.label }} statement PDFs{% endif %}</span>
                                             <span class="investment-import-status-icon" id="{{ statement_broker.code }}_statement_pdfs_status"
                                                   aria-hidden="true"></span>
                                             <span class="field-tooltip trade-strategy-param-help investment-import-help"
@@ -541,7 +542,11 @@
                                                type="file"
                                                accept=".pdf,application/pdf"
                                                multiple
+                                               {% if statement_broker.code == 'boc_hk' %}aria-label="Upload one or more BOCHK Consolidated Statement PDFs" title="Choose one or more BOCHK Consolidated Statement PDFs"{% endif %}
                                                class="settings-form-control investment-import-file-input">
+                                        {% if statement_broker.code == 'boc_hk' %}
+                                        <p class="investment-import-file-hint" id="boc_hk_statement_pdfs_hint">Select one or more PDFs together; each statement is parsed and merged while its HKD, CNY, and USD subaccounts remain separate.</p>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
@@ -615,15 +620,15 @@
                                         <span class="investment-import-label-trigger"
                                               tabindex="0">
                                             <span class="investment-import-label-step" aria-hidden="true">➊</span>
-                                            <span class="investment-import-label-text">USD Savings plain text</span>
+                                            <span class="investment-import-label-text">HSBC cash-account plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_cash_account_text_status" aria-hidden="true"></span>
                                             <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
-                                                <span class="investment-import-help-title">Copy the HSBC USD Savings page</span>
+                                                <span class="investment-import-help-title">Copy HSBC cash-account pages</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
-                                                <span class="investment-import-help-step">2. Open the USD Foreign Currency Savings account.</span>
-                                                <span class="investment-import-help-step">3. Copy the full page text, including account number, available balance, transactions, and dates.</span>
-                                                <span class="investment-import-help-step">4. Refresh and copy all three HSBC pages in one short session, then paste it here. You may paste supplementary captures; duplicate chunks are ignored.</span>
+                                                <span class="investment-import-help-step">2. Open the USD Savings, HKD Savings or Current, and offshore RMB cash accounts as needed.</span>
+                                                <span class="investment-import-help-step">3. Copy each full page, including account number, available balance, transactions, and dates.</span>
+                                                <span class="investment-import-help-step">4. Paste each page here in one short session. HSBC may label offshore RMB CNY; it is stored as CNH. HKD/CNH cash-only pages can sync on their own, while USD Savings also requires Portfolio and Order Status below.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -634,11 +639,18 @@
                                                    type="text"
                                                    value=""
                                                    readonly>
+                                            <button type="button"
+                                                    class="ticker-clear investment-import-paste-clear"
+                                                    id="hsbc_cash_account_clear_button"
+                                                    aria-label="Clear pasted HSBC cash-account text"
+                                                    title="Clear pasted text">
+                                                <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                                            </button>
                                         </div>
                                         <button type="button"
                                                 class="settings-round-icon-button investment-import-paste-button"
                                                 id="hsbc_cash_account_paste_button"
-                                                aria-label="Paste HSBC USD Savings page text from clipboard"
+                                                aria-label="Paste HSBC cash-account page text from clipboard"
                                                 title="Paste from clipboard">
                                             <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
                                         </button>
@@ -661,7 +673,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Portfolio.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page text, including holdings, quantities, market value, and currency.</span>
-                                                <span class="investment-import-help-step">4. Copy it in the same short session as USD Savings and Order Status. This page is used as the current HSBC holding snapshot.</span>
+                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Copy it in the same short session as the HSBC cash-account and Order Status pages; it is the current HSBC holding snapshot.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -672,6 +684,13 @@
                                                    type="text"
                                                    value=""
                                                    readonly>
+                                            <button type="button"
+                                                    class="ticker-clear investment-import-paste-clear"
+                                                    id="hsbc_portfolio_text_clear_button"
+                                                    aria-label="Clear pasted HSBC Portfolio text"
+                                                    title="Clear pasted text">
+                                                <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                                            </button>
                                         </div>
                                         <button type="button"
                                                 class="settings-round-icon-button investment-import-paste-button"
@@ -699,7 +718,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Order Status.</span>
                                                 <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import.</span>
-                                                <span class="investment-import-help-step">4. Use the same end date as the latest USD Savings posting, then copy it in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
+                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Use the same end date as the latest cash-account posting, then copy it in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -710,6 +729,13 @@
                                                    type="text"
                                                    value=""
                                                    readonly>
+                                            <button type="button"
+                                                    class="ticker-clear investment-import-paste-clear"
+                                                    id="hsbc_order_status_text_clear_button"
+                                                    aria-label="Clear pasted HSBC Order Status text"
+                                                    title="Clear pasted text">
+                                                <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                                            </button>
                                         </div>
                                         <button type="button"
                                                 class="settings-round-icon-button investment-import-paste-button"
@@ -767,7 +793,7 @@
 
             <div id="investment_stock_details_table_host" class="investment-stock-details-table-host" hidden></div>
 
-            <div class="scrollable-data-table-shell investment-history-table-shell" id="history_table_wrap">
+            <div class="scrollable-data-table-shell local-store-pagination-host investment-history-table-shell" id="history_table_wrap">
                 <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-ledger-table"
                        data-table-header data-table-interactive-header aria-label="Transaction history columns and filters">
                     <colgroup>
@@ -821,7 +847,7 @@
                         </tbody>
                     </table>
                 </div>
-                <nav class="settings-pagination local-store-pagination investment-history-pagination"
+                <nav class="settings-pagination local-store-pagination local-store-pagination--floating investment-history-pagination"
                      id="investment_history_pagination"
                      aria-label="Transaction history pages"
                      aria-controls="investment_history"
@@ -834,5 +860,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.37.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.58.5') }}"></script>
 {% endblock %}

@@ -1,7 +1,17 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.62.0
+ * Code version: v1.70.1
+ * - Changed: Matched security-transfer receipts carry reconstructed FIFO basis into Holdings and P&L even when Schwab's snapshot omits cost basis, with the method preserved for display.
+ * - Fixed: Authoritative Schwab position snapshots preserve unknown or partial cost basis as unavailable P&L instead of coercing blank values to zero, and use the reported close price when a last price is absent.
+ * - Changed: KOL reward descriptions use the canonical `KOL Rewards` prefix while retaining imported details.
+ * - Changed: eDDA and Longbridge US dividend descriptions use the standard display casing and spacing.
+ * Changed: Transaction descriptions now use a canonical middle-dot separator for spaced clause delimiters.
+ * Fixed: Cash descriptions retain imported source text and only use the legacy equivalent marker when currency evidence is absent.
+ * Changed: Forex direction prose uses sentence case while preserving its complete currency-pair information.
+ * - Added: Virtual balance reset rows preserve a marked cash zeroing without creating portfolio P&L.
+ * - Added: Backend historical USD FX payloads now convert CNY/CNH and HKD using the same date-aware path.
+ * - Added: HSBC cash-ledger snapshots now preserve HKD and CNH balances alongside USD.
  * - Added: Explicit account-scope history attestations can verify otherwise partial tax-lot sources only when their broker, account, ticker, currency, date, trade counts, and quantities all match.
  * - Fixed: Tax-lot replay uses broker execution chronology instead of cash-safety ordering when statement rows share one normalized timestamp.
  * - Fixed: Realized P&L is calculated inside broker-account security scopes before ticker display aggregation, and broker-reported closed-lot P&L bypasses local fee and basis reconstruction.
@@ -11,7 +21,7 @@
  * - Added: US overnight quote sessions require Longbridge provenance and use the Investment realtime clock contract.
  * - Added: Extended-hours Investment pulse eligibility now requires the per-ticker Longbridge quote source while preserving regular-session fallback behavior.
  * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
- * - Added: HSBC statement-bundle readiness validates complete even PDF pairs for the smart multi-file selector.
+ * - Changed: HSBC statement-bundle readiness accepts one full monthly PDF while retaining paired-statement uploads.
  * - Changed: Ledger-price valuation fallbacks remain diagnostic metadata but no longer surface a user warning banner.
  * - Fixed: Daily equity chart points now preserve pending-settlement display cash so same-day HSBC pasted imports keep cash and equity aligned.
  * - Added: Longbridge HK cash-equivalent MMF income is summarized as Holdings rows even after the funds are fully redeemed.
@@ -50,8 +60,7 @@ export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
             return filename.endsWith('.pdf') || mimeType === 'application/pdf';
         };
     return (
-        normalizedFiles.length >= 2
-        && normalizedFiles.length % 2 === 0
+        normalizedFiles.length >= 1
         && normalizedFiles.every((file) => pdfPredicate(file))
     );
 }
@@ -99,6 +108,24 @@ export function classifyInvestmentUsRealtimeSession({weekday, hour, minute} = {}
     if (totalMinutes >= 4 * 60 && totalMinutes < (9 * 60) + 30) return 'pre';
     if (totalMinutes >= 16 * 60 && totalMinutes < 20 * 60) return 'post';
     return 'off';
+}
+
+export function filterAggregateOnlyOverlayTransactions(
+    transactions,
+    excludedReceiptKeys,
+    getTransactionKey = (transaction) => transaction?.manual_internal_transfer_key,
+) {
+    const excludedKeys = new Set(
+        Array.from(excludedReceiptKeys || [])
+            .map((key) => String(key || '').trim())
+            .filter(Boolean),
+    );
+    if (!Array.isArray(transactions) || excludedKeys.size === 0) {
+        return Array.isArray(transactions) ? [...transactions] : [];
+    }
+    return transactions.filter((transaction) => !excludedKeys.has(
+        String(getTransactionKey(transaction) || '').trim(),
+    ));
 }
 
 export function createInvestmentDataUtils({
@@ -280,7 +307,7 @@ export function createInvestmentDataUtils({
         if (['deposit', 'kol_reward', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)) return 0;
         if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) return 1;
         if (cashAmount < -1e-9) return 2;
-        if (['withdrawal', 'foreign_tax_withholding', 'debit_interest'].includes(normalizedType)) return 2;
+        if (['withdrawal', 'virtual_balance_reset', 'foreign_tax_withholding', 'debit_interest'].includes(normalizedType)) return 2;
         return 1;
     }
 
@@ -293,6 +320,15 @@ export function createInvestmentDataUtils({
         return Number.isFinite(numericValue) ? numericValue : 0;
     }
 
+    function getInvestmentStartingCashBalances() {
+        const rawBalances = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash_by_currency;
+        if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            if (Object.keys(normalizedBalances).length) return normalizedBalances;
+        }
+        return createCashLedger(getInvestmentStartingCash(), getInvestmentBaseCurrency());
+    }
+
     function getInvestmentEndingCash() {
         const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash;
         if (rawValue === undefined || rawValue === null || rawValue === '') {
@@ -300,6 +336,27 @@ export function createInvestmentDataUtils({
         }
         const numericValue = Number(rawValue);
         return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function getInvestmentEndingCashBalances() {
+        const rawBalances = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash_by_currency;
+        if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            if (Object.keys(normalizedBalances).length) return normalizedBalances;
+        }
+        const endingCash = getInvestmentEndingCash();
+        return endingCash === null
+            ? null
+            : createCashLedger(endingCash, getInvestmentBaseCurrency());
+    }
+
+    function getInvestmentEndingCashInBaseCurrency() {
+        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash_base_currency;
+        if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+            const numericValue = Number(rawValue);
+            if (Number.isFinite(numericValue)) return numericValue;
+        }
+        return getInvestmentEndingCash();
     }
 
     function getInvestmentBrokerEndingCash(brokerCode) {
@@ -315,6 +372,37 @@ export function createInvestmentDataUtils({
         }
         const numericValue = Number(rawValue);
         return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function getInvestmentBrokerEndingCashBalances(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return null;
+        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        if (!summaries || typeof summaries !== 'object') return null;
+        const summary = summaries[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return null;
+        const rawBalances = summary.ending_cash_by_currency;
+        if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            if (Object.keys(normalizedBalances).length) return normalizedBalances;
+        }
+        const endingCash = getInvestmentBrokerEndingCash(normalizedBroker);
+        return endingCash === null
+            ? null
+            : createCashLedger(endingCash, getInvestmentBaseCurrency());
+    }
+
+    function getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return null;
+        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summary = summaries?.[normalizedBroker];
+        const rawValue = summary?.ending_cash_base_currency;
+        if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+            const numericValue = Number(rawValue);
+            if (Number.isFinite(numericValue)) return numericValue;
+        }
+        return getInvestmentBrokerEndingCash(normalizedBroker);
     }
 
     function normalizeCurrencyCode(value) {
@@ -386,6 +474,20 @@ export function createInvestmentDataUtils({
             balances[normalizedBaseCurrency] = numericStartingCash;
         }
         return balances;
+    }
+
+    function createCashLedgerFromBalances(
+        balances,
+        fallbackCash = null,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        if (balances && typeof balances === 'object' && !Array.isArray(balances)) {
+            const normalizedBalances = cloneCashLedgerBalances(balances);
+            if (Object.keys(normalizedBalances).length) return normalizedBalances;
+        }
+        return fallbackCash === null || fallbackCash === undefined
+            ? {}
+            : createCashLedger(fallbackCash, baseCurrency);
     }
 
     function cloneCashLedgerBalances(balances) {
@@ -494,6 +596,23 @@ export function createInvestmentDataUtils({
         });
 
         const dateRates = {};
+        const externalHistory = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.fx_rate_history_by_currency;
+        if (externalHistory && typeof externalHistory === 'object') {
+            Object.entries(externalHistory).forEach(([currency, entry]) => {
+                const normalizedCurrency = normalizeCurrencyCode(currency);
+                if (!normalizedCurrency || normalizedCurrency === normalizedBaseCurrency) return;
+                const values = entry?.values && typeof entry.values === 'object' ? entry.values : {};
+                const dates = Array.isArray(entry?.dates) ? entry.dates : Object.keys(values);
+                dates.forEach((date) => {
+                    recordFxRateForDate(
+                        dateRates,
+                        normalizedCurrency,
+                        date,
+                        values[date],
+                    );
+                });
+            });
+        }
         groupedRows.forEach((entries) => {
             const baseEntries = entries.filter((entry) => (
                 entry.currency === normalizedBaseCurrency
@@ -516,6 +635,14 @@ export function createInvestmentDataUtils({
             });
         });
         recordForexTradeFxRates(transactions, dateRates, normalizedBaseCurrency);
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const currency = normalizeCurrencyCode(formatTransactionCurrency(txn));
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            const statementRate = Number(txn?.source?.statement_currency_to_base_rate_raw);
+            if (currency && currency !== normalizedBaseCurrency && ledgerDate && Number.isFinite(statementRate) && statementRate > 0) {
+                recordFxRateForDate(dateRates, currency, ledgerDate, statementRate);
+            }
+        });
 
         const timeline = {
             baseCurrency: normalizedBaseCurrency,
@@ -752,7 +879,7 @@ export function createInvestmentDataUtils({
         const rate = getTransactionPrice(txn);
 
         if (!baseCurrency || !quoteCurrency || !Number.isFinite(quantity) || !Number.isFinite(rate)) {
-            return txn.description || '--';
+            return normalizeTransactionDescriptionPresentation(txn.description || '--');
         }
 
         const acquiredQuantity = quantity * rate;
@@ -767,11 +894,77 @@ export function createInvestmentDataUtils({
         return String(value || '').replace(/\s+/g, ' ').trim();
     }
 
+    function normalizeKolRewardDescription(value) {
+        const source = normalizeTransactionDescriptionWhitespace(value);
+        const details = source
+            .replace(/\bKOL\s+Rewards?\b/gi, '')
+            .replace(/^\s*(?:·|•|\||:|–|—|-)+\s*|\s*(?:·|•|\||:|–|—|-)+\s*$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return details ? `KOL Rewards · ${details}` : 'KOL Rewards';
+    }
+
+    function normalizeLongbridgeUsDividendDescription(value) {
+        let description = String(value || '');
+        description = description.replace(
+            /^([A-Za-z][A-Za-z0-9]*)\.US(?=\s+Cash\s+dividend\b)/i,
+            '$1',
+        );
+        description = description.replace(/\s+,/g, ',');
+        return description.replace(/,\s*Held\s*:\s*/i, ', Held: ');
+    }
+
+    function normalizeTransactionDescriptionPresentation(value) {
+        let description = normalizeTransactionDescriptionWhitespace(value);
+        description = description.replace(/\s*[·•]\s*/g, ' · ');
+        description = description.replace(/\s+(?:-|–|—|\|)\s+/g, ' · ');
+        description = description.replace(/\bEDDA\b/gi, 'eDDA');
+        description = description.replace(
+            /\b([A-Za-z][A-Za-z0-9._-]{0,15})\s*\(\s*([A-Za-z]{2}[A-Za-z0-9]{8,})\s*\)/g,
+            (_match, ticker, identifier) => `${String(ticker).toUpperCase()} (${String(identifier).toUpperCase()})`,
+        );
+        [
+            [/\bCash\s+Dividend\b/gi, 'Cash dividend'],
+            [/\bDividend\s+Tax\b/gi, 'Dividend tax'],
+            [/\bOrdinary\s+Dividend\b/gi, 'Ordinary dividend'],
+            [/\bPer\s+Share\b/gi, 'per share'],
+            [/\bUS\s+Tax\b/gi, 'US tax'],
+        ].forEach(([pattern, replacement]) => {
+            description = description.replace(pattern, replacement);
+        });
+        description = normalizeLongbridgeUsDividendDescription(description);
+        return description.replace(
+            /\bFX\s+FROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/gi,
+            (_match, soldCurrency, acquiredCurrency) => (
+                `FX from ${String(soldCurrency).toUpperCase()} to ${String(acquiredCurrency).toUpperCase()}`
+            ),
+        );
+    }
+
     function getTransactionDescriptionText(txn, fallback = '--', { normalizeWhitespace = false } = {}) {
         const rawDescription = normalizeWhitespace
             ? normalizeTransactionDescriptionWhitespace(txn?.description)
             : String(txn?.description || '').trim();
         return rawDescription || fallback;
+    }
+
+    function hasExplicitTransactionCurrency(txn) {
+        return /^[A-Z]{3}$/.test(String(txn?.currency || '').trim().toUpperCase());
+    }
+
+    function getCashTransactionDescription(txn, normalizedType) {
+        const rawDescription = getTransactionDescriptionText(txn, '', { normalizeWhitespace: true });
+        if (rawDescription && !/^\*\s*Equivalent$/i.test(rawDescription)) {
+            return normalizeTransactionDescriptionPresentation(rawDescription);
+        }
+
+        const currency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+        if (hasExplicitTransactionCurrency(txn) && currency) {
+            const action = normalizedType === 'withdrawal' ? 'Withdrawal' : 'Deposit';
+            return `${action} · ${currency}`;
+        }
+
+        return normalizedType === 'deposit' ? '* Equivalent' : '--';
     }
 
     function escapeInvestmentDescriptionRegExp(value) {
@@ -965,7 +1158,7 @@ export function createInvestmentDataUtils({
     function getHsbcSortCategory(txn) {
         const fileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
         const normalizedType = getNormalizedTransactionType(txn);
-        if (fileKind === 'hsbc_usd_account_text') {
+        if (['hsbc_usd_account_text', 'hsbc_multi_currency_cash_account_text', 'hsbc_statement_cash'].includes(fileKind)) {
             if (['deposit', 'credit_interest'].includes(normalizedType)) return 0;
             if (['withdrawal', 'debit_interest'].includes(normalizedType)) return 2;
             return 3;
@@ -978,9 +1171,11 @@ export function createInvestmentDataUtils({
 
     function formatTransactionDescription(txn) {
         let description;
-        let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
         const price = txn.normalized?.unit_price ?? txn.price;
         const normalizedTypeDesc = getNormalizedTransactionType(txn);
+        let qty = normalizedTypeDesc === 'adjustment'
+            ? (txn.quantity_raw ?? txn.normalized?.position_quantity ?? txn.quantity_abs)
+            : (txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity);
         const brokerCode = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
 
         if (normalizedTypeDesc === 'forex_trade_component') {
@@ -990,22 +1185,14 @@ export function createInvestmentDataUtils({
         if (txn.ticker && qty) {
             const displayTicker = getInvestmentCanonicalTicker(txn.ticker) || txn.ticker;
             const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty, 10)) : qty;
-            if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
+            if (price && ['buy', 'sell'].includes(normalizedTypeDesc)) {
                 const cleanPrice = Number(price).toFixed(2);
                 description = `${displayTicker} @ ${cleanPrice} × ${cleanQty}`;
             } else {
                 description = `${displayTicker} × ${cleanQty}`;
             }
-        } else if (brokerCode === 'hsbc' && ['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
-            description = getTransactionDescriptionText(
-                txn,
-                normalizedTypeDesc === 'deposit' ? '* Equivalent' : '--',
-                { normalizeWhitespace: true }
-            );
-        } else if (normalizedTypeDesc === 'deposit') {
-            description = '* Equivalent';
-        } else if (normalizedTypeDesc === 'withdrawal') {
-            description = '';
+        } else if (['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
+            description = getCashTransactionDescription(txn, normalizedTypeDesc);
         } else {
             description = getTransactionDescriptionText(txn);
         }
@@ -1019,14 +1206,18 @@ export function createInvestmentDataUtils({
             );
         }
 
+        if (isKolRewardTransaction(txn)) {
+            description = normalizeKolRewardDescription(description);
+        }
+
         if (brokerCode === 'hsbc' && ['buy', 'sell'].includes(normalizedTypeDesc)) {
             const referenceSummary = getHsbcReferenceCodeSummary(txn);
             if (referenceSummary) {
-                return `${description} · ${referenceSummary}`;
+                return normalizeTransactionDescriptionPresentation(`${description} · ${referenceSummary}`);
             }
         }
 
-        return description;
+        return normalizeTransactionDescriptionPresentation(description);
     }
 
     function formatHoldingsMoney(value, { dashWhenZero = false } = {}) {
@@ -1114,6 +1305,8 @@ export function createInvestmentDataUtils({
             brokerRealizedSellCount: 0,
             realizedPnlStatus: 'complete',
             hasPartialTaxLotHistory: false,
+            costBasisStatus: 'known',
+            costBasisMethod: null,
             lotScope: null,
         };
     }
@@ -1281,6 +1474,38 @@ export function createInvestmentDataUtils({
         return leftIndex - rightIndex;
     }
 
+    function getAuthoritativeSnapshotFiniteNumber(value) {
+        if (typeof value !== 'number' && typeof value !== 'string') return null;
+        const normalizedValue = typeof value === 'string' ? value.trim() : value;
+        if (normalizedValue === '') return null;
+        const numericValue = Number(normalizedValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function normalizeAuthoritativeCostBasis(snapshot) {
+        const reportedStatus = String(snapshot?.cost_basis_status || '').trim().toLowerCase();
+        const costPrice = getAuthoritativeSnapshotFiniteNumber(snapshot?.cost_price);
+        if (reportedStatus === 'partial' || reportedStatus === 'unknown') {
+            return { costBasisStatus: reportedStatus, costPrice: null };
+        }
+        if (costPrice === null) {
+            return { costBasisStatus: 'unknown', costPrice: null };
+        }
+        return { costBasisStatus: 'known', costPrice };
+    }
+
+    function combineAuthoritativeCostBasisStatus(leftStatus, rightStatus) {
+        const left = leftStatus === 'known' || leftStatus === 'partial'
+            ? leftStatus
+            : 'unknown';
+        const right = rightStatus === 'known' || rightStatus === 'partial'
+            ? rightStatus
+            : 'unknown';
+        if (left === 'known' && right === 'known') return 'known';
+        if (left === 'unknown' && right === 'unknown') return 'unknown';
+        return 'partial';
+    }
+
     function getAuthoritativePositionSnapshot() {
         if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
             return null;
@@ -1293,15 +1518,22 @@ export function createInvestmentDataUtils({
         Object.entries(rawSnapshot).forEach(([ticker, snapshot]) => {
             const normalizedTicker = normalizeInvestmentTicker(ticker);
             if (!normalizedTicker || !snapshot || typeof snapshot !== 'object') return;
-            const quantity = Number(snapshot.quantity);
-            const costPrice = Number(snapshot.cost_price);
-            const marketValue = Number(snapshot.market_value);
-            const lastPrice = Number(snapshot.last_price);
+            const quantity = getAuthoritativeSnapshotFiniteNumber(snapshot.quantity);
+            const { costBasisStatus, costPrice } = normalizeAuthoritativeCostBasis(snapshot);
+            const marketValue = (
+                getAuthoritativeSnapshotFiniteNumber(snapshot.market_value)
+                ?? getAuthoritativeSnapshotFiniteNumber(snapshot.value)
+            );
+            const lastPrice = (
+                getAuthoritativeSnapshotFiniteNumber(snapshot.last_price)
+                ?? getAuthoritativeSnapshotFiniteNumber(snapshot.close_price)
+            );
             normalizedSnapshot[normalizedTicker] = {
-                quantity: Number.isFinite(quantity) ? quantity : 0,
-                costPrice: Number.isFinite(costPrice) ? costPrice : null,
-                marketValue: Number.isFinite(marketValue) ? marketValue : null,
-                lastPrice: Number.isFinite(lastPrice) ? lastPrice : null,
+                quantity: quantity ?? 0,
+                costBasisStatus,
+                costPrice,
+                marketValue,
+                lastPrice,
             };
         });
         return normalizedSnapshot;
@@ -1448,6 +1680,39 @@ export function createInvestmentDataUtils({
         }
         const price = getTransactionPrice(txn);
         return Number.isFinite(price) ? price : 0;
+    }
+
+    function getTransactionDerivedCostBasis(txn, prefix = 'carried') {
+        const basisPrefix = prefix === 'transfer_out'
+            ? 'transfer_out_cost_basis'
+            : 'carried_cost_basis';
+        const status = String(txn?.[`${basisPrefix}_status`] || '').trim().toLowerCase();
+        if (status !== 'known') return null;
+        const rawBasis = txn?.[`${basisPrefix}_raw`];
+        if (rawBasis === undefined || rawBasis === null || String(rawBasis).trim() === '') return null;
+        const numericBasis = Number(rawBasis);
+        return Number.isFinite(numericBasis) && numericBasis >= 0 ? numericBasis : null;
+    }
+
+    function getTransactionDerivedCostBasisMethod(txn, prefix = 'carried') {
+        const basisPrefix = prefix === 'transfer_out'
+            ? 'transfer_out_cost_basis'
+            : 'carried_cost_basis';
+        return String(
+            txn?.[`${basisPrefix}_method_label`]
+            || txn?.[`${basisPrefix}_method`]
+            || '',
+        ).trim();
+    }
+
+    function markReconstructedCostBasis(state, txn, prefix, status) {
+        const method = getTransactionDerivedCostBasisMethod(txn, prefix);
+        if (method) state.costBasisMethod = method === 'fifo_reconstructed' ? 'FIFO reconstructed' : method;
+        const normalizedStatus = String(status || '').trim().toLowerCase();
+        if (normalizedStatus === 'known') return;
+        if (normalizedStatus === 'partial' || normalizedStatus === 'unknown') {
+            state.costBasisStatus = normalizedStatus;
+        }
     }
 
     function getTransactionTradePriceAndCommissionUnitPrice(txn, quantityOverride = null) {
@@ -2205,7 +2470,7 @@ export function createInvestmentDataUtils({
                 entry.cashInAmountBase += transactionAmountBase;
                 entry.netTransferAmount += transactionAmount;
                 entry.netTransferAmountsInBase += transactionAmountBase;
-            } else if (normalizedType === 'withdrawal') {
+            } else if (['withdrawal', 'virtual_balance_reset'].includes(normalizedType)) {
                 entry.cashOutAmountBase += transactionAmountBase;
                 entry.netTransferAmount -= transactionAmount;
                 entry.netTransferAmountsInBase -= transactionAmountBase;
@@ -2337,26 +2602,50 @@ export function createInvestmentDataUtils({
             Object.entries(authoritativePositionSnapshot).forEach(([ticker, snapshot]) => {
                 const canonicalTicker = getInvestmentCanonicalTicker(ticker);
                 if (!canonicalTicker) return;
-                const quantity = Number(snapshot?.quantity) || 0;
-                const costPrice = Number(snapshot?.costPrice);
-                const marketValue = Number(snapshot?.marketValue);
-                const lastPrice = Number(snapshot?.lastPrice);
+                const quantity = getAuthoritativeSnapshotFiniteNumber(snapshot?.quantity) ?? 0;
+                const costBasisStatus = snapshot?.costBasisStatus === 'known'
+                    || snapshot?.costBasisStatus === 'partial'
+                    ? snapshot.costBasisStatus
+                    : 'unknown';
+                const costPrice = costBasisStatus === 'known'
+                    ? getAuthoritativeSnapshotFiniteNumber(snapshot?.costPrice)
+                    : null;
+                const marketValue = getAuthoritativeSnapshotFiniteNumber(snapshot?.marketValue);
+                const lastPrice = getAuthoritativeSnapshotFiniteNumber(snapshot?.lastPrice);
                 const previous = canonicalAuthoritativePositionSnapshot[canonicalTicker];
                 if (!previous) {
                     canonicalAuthoritativePositionSnapshot[canonicalTicker] = {
                         ...snapshot,
                         quantity,
+                        costBasisStatus,
+                        costPrice,
                     };
                     return;
                 }
                 const previousQuantity = Number(previous.quantity) || 0;
                 const nextQuantity = previousQuantity + quantity;
-                const previousCostTotal = Math.abs(previousQuantity) * (Number(previous.costPrice) || 0);
-                const nextCostTotal = Math.abs(quantity) * (Number.isFinite(costPrice) ? costPrice : 0);
+                const nextCostBasisStatus = combineAuthoritativeCostBasisStatus(
+                    previous.costBasisStatus,
+                    costBasisStatus,
+                );
                 previous.quantity = nextQuantity;
-                previous.costPrice = Math.abs(nextQuantity) > 1e-9
-                    ? (previousCostTotal + nextCostTotal) / Math.abs(nextQuantity)
-                    : (Number.isFinite(costPrice) ? costPrice : previous.costPrice);
+                if (
+                    nextCostBasisStatus === 'known'
+                    && Number.isFinite(previous.costPrice)
+                    && Number.isFinite(costPrice)
+                ) {
+                    const previousCostTotal = Math.abs(previousQuantity) * previous.costPrice;
+                    const nextCostTotal = Math.abs(quantity) * costPrice;
+                    previous.costBasisStatus = 'known';
+                    previous.costPrice = Math.abs(nextQuantity) > 1e-9
+                        ? (previousCostTotal + nextCostTotal) / Math.abs(nextQuantity)
+                        : costPrice;
+                } else {
+                    previous.costBasisStatus = nextCostBasisStatus === 'known'
+                        ? 'unknown'
+                        : nextCostBasisStatus;
+                    previous.costPrice = null;
+                }
                 if (Number.isFinite(marketValue)) {
                     previous.marketValue = (Number(previous.marketValue) || 0) + marketValue;
                 }
@@ -2426,12 +2715,52 @@ export function createInvestmentDataUtils({
                 return;
             }
             if (normalizedType === 'transfer_in' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
+                const carriedCostBasis = getTransactionDerivedCostBasis(txn, 'carried');
+                if (carriedCostBasis !== null) {
+                    summary.shares += quantity;
+                    summary.totalCost += carriedCostBasis;
+                    markReconstructedCostBasis(
+                        summary,
+                        txn,
+                        'carried',
+                        txn?.carried_cost_basis_status,
+                    );
+                } else {
+                    summary.shares += quantity;
+                    markReconstructedCostBasis(
+                        summary,
+                        txn,
+                        'carried',
+                        txn?.carried_cost_basis_status || 'unknown',
+                    );
+                }
                 if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
                 return;
             }
             if (normalizedType === 'transfer_out' && quantity !== null && !Number.isNaN(quantity)) {
+                const transferredCostBasis = getTransactionDerivedCostBasis(txn, 'transfer_out');
+                const sharesBeforeTransfer = Number(summary.shares) || 0;
                 summary.shares -= quantity;
+                if (transferredCostBasis !== null) {
+                    summary.totalCost = Math.max(0, Number(summary.totalCost) - transferredCostBasis);
+                    markReconstructedCostBasis(
+                        summary,
+                        txn,
+                        'transfer_out',
+                        txn?.transfer_out_cost_basis_status,
+                    );
+                } else if (sharesBeforeTransfer > 1e-9) {
+                    summary.totalCost = Math.max(
+                        0,
+                        Number(summary.totalCost) * Math.max(0, (sharesBeforeTransfer - quantity) / sharesBeforeTransfer),
+                    );
+                    markReconstructedCostBasis(
+                        summary,
+                        txn,
+                        'transfer_out',
+                        txn?.transfer_out_cost_basis_status || 'unknown',
+                    );
+                }
                 if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
                 return;
             }
@@ -2644,14 +2973,34 @@ export function createInvestmentDataUtils({
             const shares = useAuthoritativePositionSnapshot
                 ? Number(snapshotEntry?.quantity) || 0
                 : summary.shares;
+            const hasReconstructedCostBasis = (
+                summary.costBasisMethod === 'FIFO reconstructed'
+                && summary.costBasisStatus === 'known'
+                && Number.isFinite(Number(summary.totalCost))
+            );
+            const costBasisStatus = snapshotEntry?.costBasisStatus === 'known'
+                || snapshotEntry?.costBasisStatus === 'partial'
+                ? snapshotEntry.costBasisStatus
+                : (snapshotEntry ? (hasReconstructedCostBasis ? 'known' : 'unknown') : summary.costBasisStatus);
+            const snapshotCostPrice = costBasisStatus === 'known'
+                ? getAuthoritativeSnapshotFiniteNumber(snapshotEntry?.costPrice)
+                : null;
+            const pnlUnavailable = Boolean(snapshotEntry) && costBasisStatus !== 'known';
+            const pnlUnavailableReason = !pnlUnavailable
+                ? null
+                : (costBasisStatus === 'partial'
+                    ? 'authoritative_position_snapshot_cost_basis_partial'
+                    : 'authoritative_position_snapshot_cost_basis_unknown');
             const totalCost = useAuthoritativePositionSnapshot && snapshotEntry
-                ? Math.abs(shares) * (Number(snapshotEntry.costPrice) || 0)
+                ? (snapshotCostPrice === null
+                    ? (hasReconstructedCostBasis ? Number(summary.totalCost) : null)
+                    : Math.abs(shares) * snapshotCostPrice)
                 : summary.totalCost;
             const hasOpenPosition = !isFlatPosition(shares);
             const averagePrice = hasOpenPosition
-                ? (snapshotEntry && Number.isFinite(snapshotEntry.costPrice)
-                    ? snapshotEntry.costPrice
-                    : (totalCost / Math.abs(shares)))
+                ? (snapshotEntry && snapshotCostPrice !== null
+                    ? snapshotCostPrice
+                    : (totalCost === null ? null : (totalCost / Math.abs(shares))))
                 : null;
             const marketValueFromSnapshot = snapshotEntry && Number.isFinite(snapshotEntry.marketValue)
                 ? snapshotEntry.marketValue
@@ -2751,24 +3100,48 @@ export function createInvestmentDataUtils({
                     });
                     return dailyTotals;
                 }, {});
-            const realizedPnlByDateLocal = Object.fromEntries(
-                Object.entries(scopedRealizedPnlByDateLocal).map(([ledgerDate, value]) => ([
-                    ledgerDate,
-                    Number(Number(value).toFixed(12)),
-                ])),
-            );
-            const realizedPnlByDate = Object.fromEntries(
-                Object.entries(realizedPnlByDateLocal).map(([ledgerDate, dailyRealizedPnlLocal]) => ([
-                    ledgerDate,
-                    convertAmountToBaseCurrency(
-                        dailyRealizedPnlLocal,
-                        quoteCurrency,
+            const realizedPnlByDateLocal = pnlUnavailable
+                ? {}
+                : Object.fromEntries(
+                    Object.entries(scopedRealizedPnlByDateLocal).map(([ledgerDate, value]) => ([
                         ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    ),
-                ])),
-            );
+                        Number(Number(value).toFixed(12)),
+                    ])),
+                );
+            const realizedPnlByDate = pnlUnavailable
+                ? {}
+                : Object.fromEntries(
+                    Object.entries(realizedPnlByDateLocal).map(([ledgerDate, dailyRealizedPnlLocal]) => ([
+                        ledgerDate,
+                        convertAmountToBaseCurrency(
+                            dailyRealizedPnlLocal,
+                            quoteCurrency,
+                            ledgerDate,
+                            fxTimeline,
+                            baseCurrency,
+                        ),
+                    ])),
+                );
+            const safeRealizedPnl = pnlUnavailable ? null : realizedPnl;
+            const safeRealizedPnlLocal = pnlUnavailable ? null : realizedPnlLocal;
+            const safeUnrealizedPnl = pnlUnavailable ? null : unrealizedPnl;
+            const safeUnrealizedPnlLocal = pnlUnavailable ? null : unrealizedPnlLocal;
+            const safeRealizedPnlAccounts = pnlUnavailable
+                ? realizedPnlAccounts.map((accountResult) => ({
+                    ...accountResult,
+                    realizedPnl: null,
+                    realizedPnlLocal: null,
+                    realizedPnlByDateLocal: {},
+                    status: 'unavailable',
+                    source: 'unavailable',
+                }))
+                : realizedPnlAccounts;
+            const totalPnl = pnlUnavailable || safeRealizedPnl === null
+                ? null
+                : Number((safeRealizedPnl + (safeUnrealizedPnl ?? 0)).toFixed(12));
+            const totalPnlLocal = pnlUnavailable || safeRealizedPnlLocal === null
+                ? null
+                : Number((safeRealizedPnlLocal + (safeUnrealizedPnlLocal ?? 0)).toFixed(12));
             const positionWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > 1e-9 && hasOpenPosition
                 ? (marketValue / totalEquity) * 100
                 : 0;
@@ -2778,18 +3151,30 @@ export function createInvestmentDataUtils({
                 shares,
                 totalCost,
                 averagePrice,
+                costBasisStatus,
+                costBasisMethod: summary.costBasisMethod,
                 lastPrice,
                 marketValue,
-                realizedPnl,
-                realizedPnlLocal,
-                realizedPnlAccounts,
-                realizedPnlStatus: realizedPnlAccounts.some((result) => result.status !== 'complete')
-                    ? 'partial'
-                    : 'complete',
+                realizedPnl: safeRealizedPnl,
+                realizedPnlLocal: safeRealizedPnlLocal,
+                realizedPnlAccounts: safeRealizedPnlAccounts,
+                realizedPnlStatus: pnlUnavailable
+                    ? 'unavailable'
+                    : (realizedPnlAccounts.some((result) => result.status !== 'complete')
+                        ? 'partial'
+                        : 'complete'),
                 realizedPnlByDate,
                 realizedPnlByDateLocal,
                 quoteCurrency,
-                unrealizedPnl,
+                unrealizedPnl: safeUnrealizedPnl,
+                unrealizedPnlLocal: safeUnrealizedPnlLocal,
+                unrealizedPnlStatus: pnlUnavailable
+                    ? 'unavailable'
+                    : (safeUnrealizedPnl === null ? 'unavailable' : 'complete'),
+                totalPnl,
+                totalPnlLocal,
+                pnlUnavailable,
+                pnlUnavailableReason,
                 positionWeight,
                 hasOpenPosition,
             };
@@ -2835,6 +3220,7 @@ export function createInvestmentDataUtils({
         convertAmountToBaseCurrency,
         convertAmountToBaseCurrencyAtLatestRate,
         createCashLedger,
+        createCashLedgerFromBalances,
         compareInvestmentTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
@@ -2854,10 +3240,15 @@ export function createInvestmentDataUtils({
         getIndexedClosePriceOnOrBefore,
         getInvestmentEquityRangeLabels,
         getInvestmentBrokerEndingCash,
+        getInvestmentBrokerEndingCashBalances,
+        getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentEndingCash,
+        getInvestmentEndingCashBalances,
+        getInvestmentEndingCashInBaseCurrency,
         getAuthoritativePerformanceSnapshot,
         getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
+        getInvestmentStartingCashBalances,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         getAuthoritativePositionSnapshot,
@@ -2901,4 +3292,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.62.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.70.1';

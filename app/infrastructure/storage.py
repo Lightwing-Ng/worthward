@@ -1,7 +1,8 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.16.0
+Code version: v0.18.2
+- Fixed: A malformed or empty legacy investment JSON ledger now fails closed instead of being replaced by a new Parquet ledger.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 from contextlib import contextmanager
@@ -59,7 +61,11 @@ _PROFILE_COLUMNS = [
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
 _INVESTMENT_STORE_COLUMNS = ["section", "row_index", "value_json", "updated_at"]
 _SHARE_CLASS_TICKER_PATTERN = re.compile(r"^([A-Z0-9]{1,4})[.\-\s]+([ABC])$")
-_INTRADAY_STORE_SUFFIX_PATTERN = re.compile(r"_[0-9]+[a-z]+$")
+_INTRADAY_STORE_SUFFIX_PATTERN = re.compile(
+    r"_[0-9]+[a-z]+(?:[-.].*)?$",
+    re.IGNORECASE,
+)
+_TEMP_STORE_SUFFIX_PATTERN = re.compile(r"\.tmp$", re.IGNORECASE)
 
 _MIGRATION_COMPLETED = False
 _MIGRATION_RUNNING = False
@@ -73,6 +79,8 @@ _MARKET_STORE_LOCK_DEPTHS = threading.local()
 # consume the device-local store indefinitely.
 MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES = 256 * 1024 * 1024
+INVESTMENT_EVIDENCE_DIRECTORY_MODE = 0o700
+INVESTMENT_EVIDENCE_FILE_MODE = 0o600
 
 
 def ensure_market_store_dir() -> None:
@@ -571,14 +579,25 @@ def _empty_frame(columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame({column: pd.Series(dtype="object") for column in columns})
 
 
-def _read_parquet_table(path: Path, columns: list[str]) -> pd.DataFrame:
+def _read_parquet_table(
+    path: Path,
+    columns: list[str],
+    *,
+    strict: bool = False,
+) -> pd.DataFrame:
     ensure_market_store_dir()
-    if not path.exists() or path.stat().st_size == 0:
+    if not path.exists():
+        return _empty_frame(columns)
+    if path.stat().st_size == 0:
+        if strict:
+            raise RuntimeError("The investment ledger exists but is empty and cannot be read safely.")
         return _empty_frame(columns)
 
     try:
         table = pd.read_parquet(path)
-    except Exception:
+    except Exception as exc:
+        if strict:
+            raise RuntimeError("The investment ledger could not be read safely.") from exc
         return _empty_frame(columns)
 
     if table.empty:
@@ -725,19 +744,31 @@ def load_investment_store_payload(path: Path = INVESTMENT_STORE_PATH) -> dict[st
     parquet_path = _investment_parquet_path_for(path)
     legacy_path = _investment_legacy_json_path_for(path)
     with market_store_file_lock(parquet_path):
-        if parquet_path.exists() and parquet_path.stat().st_size > 0:
-            return _investment_table_to_payload(_read_parquet_table(parquet_path, _INVESTMENT_STORE_COLUMNS))
-    if not legacy_path.exists() or legacy_path.stat().st_size == 0:
+        if parquet_path.exists():
+            return _investment_table_to_payload(
+                _read_parquet_table(
+                    parquet_path,
+                    _INVESTMENT_STORE_COLUMNS,
+                    strict=True,
+                )
+            )
+    if not legacy_path.exists():
         return {}
     with market_store_file_lock(legacy_path):
-        if not legacy_path.exists() or legacy_path.stat().st_size == 0:
+        if not legacy_path.exists():
             return {}
+        if legacy_path.stat().st_size == 0:
+            raise RuntimeError(
+                "The legacy investment ledger exists but is empty and cannot be read safely."
+            )
         try:
             payload = json.loads(legacy_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError, TypeError):
-            return {}
+        except (json.JSONDecodeError, OSError, TypeError) as exc:
+            raise RuntimeError(
+                "The legacy investment ledger could not be read safely."
+            ) from exc
         if not isinstance(payload, dict):
-            return {}
+            raise RuntimeError("The legacy investment ledger could not be read safely.")
     save_investment_store_payload(payload, path)
     return payload
 
@@ -756,16 +787,28 @@ def update_investment_store_payload(
     parquet_path = _investment_parquet_path_for(path)
     legacy_path = _investment_legacy_json_path_for(path)
     with market_store_file_lock(parquet_path):
-        if parquet_path.exists() and parquet_path.stat().st_size > 0:
+        if parquet_path.exists():
             current_payload = _investment_table_to_payload(
-                _read_parquet_table(parquet_path, _INVESTMENT_STORE_COLUMNS)
+                _read_parquet_table(
+                    parquet_path,
+                    _INVESTMENT_STORE_COLUMNS,
+                    strict=True,
+                )
             )
-        elif legacy_path.exists() and legacy_path.stat().st_size > 0:
+        elif legacy_path.exists():
+            if legacy_path.stat().st_size == 0:
+                raise RuntimeError(
+                    "The legacy investment ledger exists but is empty and cannot be read safely."
+                )
             try:
                 legacy_payload = json.loads(legacy_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError, TypeError):
-                legacy_payload = {}
-            current_payload = legacy_payload if isinstance(legacy_payload, dict) else {}
+            except (json.JSONDecodeError, OSError, TypeError) as exc:
+                raise RuntimeError(
+                    "The legacy investment ledger could not be read safely."
+                ) from exc
+            if not isinstance(legacy_payload, dict):
+                raise RuntimeError("The legacy investment ledger could not be read safely.")
+            current_payload = legacy_payload
         else:
             current_payload = {}
 
@@ -778,6 +821,37 @@ def investment_evidence_dir_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
     """Return the isolated immutable-evidence directory for one investment ledger."""
     parquet_path = _investment_parquet_path_for(path)
     return parquet_path.parent / f"{parquet_path.stem}_evidence"
+
+
+def _set_owner_only_investment_evidence_mode(path: Path, mode: int) -> None:
+    """Restrict source evidence to the ledger owner's POSIX account."""
+    if os.name != "posix":
+        return
+    try:
+        path.chmod(mode)
+    except OSError as exc:
+        raise RuntimeError("Investment source evidence permissions could not be secured.") from exc
+
+
+def _ensure_private_investment_evidence_directory(evidence_dir: Path) -> None:
+    if evidence_dir.is_symlink():
+        raise RuntimeError("Investment source evidence directory must not be a symbolic link.")
+    try:
+        evidence_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+            mode=INVESTMENT_EVIDENCE_DIRECTORY_MODE,
+        )
+    except OSError as exc:
+        raise RuntimeError("Investment source evidence directory could not be created safely.") from exc
+    if evidence_dir.is_symlink():
+        raise RuntimeError("Investment source evidence directory must not be a symbolic link.")
+    if not evidence_dir.is_dir():
+        raise RuntimeError("Investment source evidence path is not a directory.")
+    _set_owner_only_investment_evidence_mode(
+        evidence_dir,
+        INVESTMENT_EVIDENCE_DIRECTORY_MODE,
+    )
 
 
 def _parse_investment_evidence_byte_count(value: object) -> int:
@@ -841,9 +915,7 @@ def _write_immutable_evidence_bytes(
     *,
     expected_sha256: str,
 ) -> None:
-    if target.parent.is_symlink():
-        raise RuntimeError("Investment source evidence directory must not be a symbolic link.")
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_private_investment_evidence_directory(target.parent)
     with market_store_file_lock(target):
         if target.is_symlink():
             raise RuntimeError("Investment source evidence file must not be a symbolic link.")
@@ -852,15 +924,26 @@ def _write_immutable_evidence_bytes(
                 raise RuntimeError(
                     f"Immutable investment evidence hash mismatch for {target.name}."
                 )
+            _set_owner_only_investment_evidence_mode(
+                target,
+                INVESTMENT_EVIDENCE_FILE_MODE,
+            )
             return
         temporary = target.with_name(f"{target.stem}.{uuid4().hex}.tmp{target.suffix}")
+        temporary_created = False
         try:
+            temporary.touch(mode=INVESTMENT_EVIDENCE_FILE_MODE, exist_ok=False)
+            temporary_created = True
             temporary.write_bytes(payload)
             if _sha256_file(temporary) != expected_sha256:
                 raise RuntimeError("Investment evidence write did not preserve the source bytes.")
             temporary.replace(target)
+            _set_owner_only_investment_evidence_mode(
+                target,
+                INVESTMENT_EVIDENCE_FILE_MODE,
+            )
         finally:
-            if temporary.exists():
+            if temporary_created and temporary.exists():
                 temporary.unlink()
 
 
@@ -938,6 +1021,8 @@ def materialize_investment_source_artifacts(
                 additional_bytes += len(source_bytes)
             pending_writes.append((target, source_bytes, expected_sha256))
 
+        if evidence_dir.exists() or pending_writes:
+            _ensure_private_investment_evidence_directory(evidence_dir)
         _assert_investment_evidence_capacity(evidence_dir, additional_bytes)
         for target, source_bytes, expected_sha256 in pending_writes:
             _write_immutable_evidence_bytes(
@@ -1409,6 +1494,7 @@ def list_historical_tickers() -> list[str]:
         if path.is_file()
         and path.stat().st_size > 0
         and _INTRADAY_STORE_SUFFIX_PATTERN.search(path.stem) is None
+        and _TEMP_STORE_SUFFIX_PATTERN.search(path.stem) is None
     )
 
 

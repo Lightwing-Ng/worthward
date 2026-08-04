@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -208,7 +208,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Winner", "優勝者", "优胜者"),
         ("Settings sections", "設定分區", "设置分区"),
         ("What this service does", "此服務的功能", "此服务的功能"),
-        ("Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.", "使用本機快取的每日市場資料比較股票、計算加權投資組合，並回測交易策略；另提供由券商支援、以最近六個交易月儲存的 1 分鐘歷史資料。", "使用本地缓存的每日市场数据比较股票、计算加权投资组合，并回测交易策略；另提供由券商支持、按最近六个交易月存储的 1 分钟历史数据。"),
+        ("antigravity is a local-first workspace for comparing supported-market stocks and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running strategy and grid-trading backtests, and reviewing locally imported investment records. It uses locally cached daily and recent 1-minute market data; optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.", "antigravity 是一個本地優先的工作區，用於比較受支援市場的股票及歷史市值、建立加權投資組合、模擬定期投資、執行策略及網格交易回測，並檢視本機匯入的投資記錄。應用程式使用本機快取的每日及近期 1 分鐘市場資料；設定 Longbridge 後可支援受保護的實盤交易工作流程，而 IBKR 仍僅支援檔案匯入。", "antigravity 是一个本地优先的工作区，用于比较受支持市场的股票及历史市值、构建加权投资组合、模拟定投、运行策略及网格交易回测，并查看本地导入的投资记录。应用使用本地缓存的每日及近期 1 分钟市场数据；配置 Longbridge 后可支持受保护的实盘交易工作流，而 IBKR 仍仅支持文件导入。"),
         ("System information", "系統資訊", "系统信息"),
         ("Source code", "原始碼", "源代码"),
         ("Disclaimer", "免責聲明", "免责声明"),
@@ -263,6 +263,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Resize style token demos", "調整樣式權杖示範區大小", "调整样式令牌示范区大小"),
         ("Style token range mode", "樣式權杖範圍模式", "样式令牌范围模式"),
         ("Live marker", "即時標記", "实时标记"),
+        ("Clear input", "清除輸入內容", "清除输入内容"),
         ("Clear ticker", "清除股票代號", "清除股票代码"),
         ("Remove ticker", "移除股票代號", "移除股票代码"),
         ("Reusable style", "可重用樣式", "可复用样式"),
@@ -451,7 +452,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Modal dialog banner message", "模態對話框橫幅訊息", "模态对话框横幅消息"),
         ("Portfolio donut orbit", "投資組合圓環軌道", "投资组合环形图轨道"),
         ("Settings execution option", "設定執行選項", "设置执行选项"),
-        ("Settings form input", "設定表單輸入框", "设置表单输入框"),
+        ("Text input control", "文字輸入控制項", "文本输入控件"),
         ("Ticker identity row", "股票代號識別列", "股票代码标识行"),
         ("Ticker input control", "股票代號輸入控制項", "股票代码输入控件"),
         ("Trade strategy stepper", "交易策略步進器", "交易策略步进器"),

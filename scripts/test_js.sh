@@ -26,6 +26,7 @@ node --experimental-test-coverage --test \
 	--test-coverage-functions="$FUNCTIONS_MINIMUM" \
 	--test-coverage-include='app/web/static/assets/js/chart-axis-utils.js' \
 	--test-coverage-include='app/web/static/assets/js/investment-filter-utils.js' \
+	--test-coverage-include='app/web/static/assets/js/numeric-display.js' \
 	--test-coverage-include='app/web/static/assets/js/table-controller.js' \
 	--test-coverage-include='app/web/static/assets/js/investment/*.js' \
 	tests/test_chart_axis_utils.mjs \
@@ -38,4 +39,5 @@ node --experimental-test-coverage --test \
 	tests/test_investment_stock_details.mjs \
 	tests/test_investment_transaction_filters.mjs \
 	tests/test_investment_transaction_table.mjs \
+	tests/test_numeric_display.mjs \
 	tests/test_table_filter_contracts.mjs

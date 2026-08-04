@@ -1,10 +1,160 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.14`
+Documentation version: `v1.11.42`
+
+- Fixed: Date-only HSBC order-status trades no longer disappear from the 1W
+  intraday chart when the importer uses `20:00:00` solely as an ordering
+  convention. Their buy or sell marker now anchors to that trading day's
+  regular-session close.
+
+- Changed: An exact same-day Schwab security-transfer binding now carries
+  source-account FIFO basis into Holdings when IBKR does not provide a lot ID.
+  The derived method is visibly labelled `FIFO reconstructed`; acquisition net
+  cash includes source commissions and incomplete source inventory remains
+  unavailable.
+- Changed: A confirmed Schwab in-kind receipt is rendered as a passive
+  destination record. Transaction History no longer offers a source-confirmation
+  removal action or the aggregate-only carried-basis warning on that receipt;
+  source-side manual binding remains the active reconciliation operation.
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
+
+- Fixed: Unresolved Schwab security receipts are now scoped to the affected
+  receipt and ticker. All brokers keeps unaffected holdings, equity, chart, and
+  metrics visible, while only transferred positions with unverified carried
+  basis show `Unavailable` P&L.
+
+- Fixed: After a user binds an in-kind security transfer, replay now orders the
+  source broker's transfer-out before the destination broker's transfer-in. This
+  remains deterministic when same-day imported source row numbers place the receipt
+  first.
+
+- Fixed: Bound cash transfers now replay the withdrawal/outflow leg before the
+  receiving deposit. The same deterministic rule applies when bindings are restored
+  from storage or created manually.
+
+- Fixed: Holdings values with a leading non-USD marker now split integer and
+  decimal digits using the same typography as ordinary values. Transaction
+  History's Amount, Commission, Market value, Cash, and Equity columns reuse
+  that split-number presentation.
+
+- Added: Broker-scoped Metrics now exposes negative buy/sell spread as `Cut losses`
+  in USD, including the Zircon (HK) closed-lot path. Transaction History's binding
+  action dot and Description filter follow the currently visible filters, and the
+  dot opens a body-level frosted tooltip only when an actionable row exists.
+
+- Changed: Investment history, Settings language mappings, Backtest transactions,
+  and DCA contributions now reuse the shared Local store pagination builder,
+  renderer, tokenized styles, and active-indicator motion. Backtest and DCA use
+  the shared ten-row page size.
+
+- Changed: Unresolved transfer binding controls now use a transparent 10px-radius
+  magenta border. Description wording standardizes `eDDA`, `KOL Rewards · ...`,
+  and Longbridge SG's TQQQ cash-dividend spacing while retaining imported details.
+
+- Added: Binding an internal transfer now uses the shared workspace Modal dialog
+  with a rotating loading indicator and a notice that the rebuild may take up to
+  10 seconds
+  while the affected history, holdings, and Metrics are rebuilt.
+
+- Fixed: Same-shaped internal-transfer rows now receive row-level disambiguation
+  keys when their business fields collide. The binding endpoint rejects missing,
+  ambiguous, cross-broker, cross-currency, out-of-window, and over-tolerance pairs;
+  failed saves restore the prior local binding state, and transfer-fee attribution
+  follows the outflow leg.
+
+- Fixed: Longbridge HK cash-transfer candidates now use a two-day date window,
+  so same-amount HSBC activity several days later cannot appear as a binding
+  counterpart.
+
+- Fixed: Cash-transfer candidates now require the outflow leg to occur on or
+  before the deposit leg. Bank descriptions with an explicit earlier event date
+  such as `01MAR` remain eligible when the statement posting date is later.
+
+- Fixed: Cash-transfer outflows without an explicit event date may use a
+  one-calendar-day posting lag. Explicitly later event dates and undated outflows
+  two or more days after the deposit remain ineligible.
+
+- Added: HSBC Copy/paste now performs a silent, read-only preflight after each
+  clipboard change. Valid HKD Current, HKD Savings, and CNH cash-only pages can
+  sync from ❶ alone, including mixed clips; USD Savings still requires the
+  matching ❶❷❸ composite. Each pasted field has the shared blue pending spinner,
+  green passed check, and ticker-style clear control. Only rejected content
+  displays an error banner.
+
+- Added: Bank of China (Hong Kong) now has a multi-file Consolidated Statement PDF
+  input. The import help explains that HKD, CNY, and USD subaccounts remain
+  separate, while the server accepts incremental batches and exact re-uploads
+  idempotently. Non-zero securities cash activity is rejected by the cash-only
+  adapter.
+
+- Changed: Transaction history descriptions now canonicalize spaced hyphen, en dash,
+  em dash, vertical-bar, and bullet clause separators to ` · `. Identifiers such as
+  `P-484843` and ticker hyphens remain unchanged. New imports apply the same rule
+  during payload normalization.
+
+- Fixed: Re-uploading the exact same manual XLSX cannot duplicate a transaction
+  merely because a user-confirmed description or virtual-balance-reset category
+  was enriched after the first import. The immutable SHA-256, sheet, and source
+  row now form a conservative duplicate anchor; meaningful existing descriptions
+  and the explicit virtual-reset marker remain intact.
+
+- Verified: China Merchants Bank's seven Longbridge KOL reward records remain
+  CNY source income totaling `21,511.90 CNY`, plus one separately marked virtual
+  balance reset. Metrics and Holdings value the rewards through the same dated
+  CNY-to-USD conversion path used for other non-USD currencies; they are never
+  relabeled as HKD or an equal USD amount.
+
+- Fixed: Funding Metrics now preserve a deposit's actual USD, HKD, CNH, or CNY
+  currency and pair each supported non-USD FX source leg with its matching USD
+  receipt before deriving base-currency funding. A HKD deposit can no longer be
+  presented as an identically numbered USD deposit.
+
+- Added: The Metrics Realized P&L disclosure classifies base-currency results as
+  trading spread gains, dividends net of withholding, cash rewards, interest
+  credited or charged, cut losses, and commissions / fees. A transparent
+  broker-reported reconciliation is retained whenever authoritative broker P&L
+  cannot be allocated exactly to source rows. Holdings now uses the same total.
+
+- Added: Transaction History exposes a Description filter only while one or more
+  actionable internal-transfer rows remain unbound. Its only choices are All and
+  the magenta, 10px-radius Unbound alert state.
+
+- Changed: Transaction descriptions retain source evidence while presenting FX
+  direction in sentence case and using ticker × quantity for grants and in-kind
+  transfers. Currency-backed descriptions no longer receive the legacy
+  `* Equivalent` fallback.
+
+- Added: HSBC full monthly statements recognize an FX component only when the
+  transaction description states an explicit foreign-exchange or currency-
+  conversion event. A shared bank reference is retained for safe two-leg pairing;
+  balance changes and `GOLD/EXCHANGE` text are never inferred as currency FX.
+
+- Fixed: HSBC statement dates retain the Hong Kong calendar date printed by the
+  bank. Because the source omits a time, the ledger's New York convention time is
+  only a stable sort value and never shifts the source date.
+
+- Fixed: Selecting one broker in the Metrics Brokers selector now displays that
+  broker's existing logo in the trigger. All intentionally remains text-only.
+
+- Changed: Metrics no longer renders the duplicate Total gain card. Coupon rebates and
+  cash rewards now share one `Coupon rebates / Cash rewards` card, aggregated in the
+  workspace base currency. Its disclosure lists each category and original currency; a
+  leading `*` identifies a card containing one or more non-USD source amounts.
+
+- Fixed: Expandable investment metrics now reserve their disclosure control as an overlay,
+  so the summary amount and every detail row retain the same full-width, right-aligned
+  numeric column.
+
+- Fixed: Transaction history broker-and-currency filtering now uses canonical currency
+  codes. Selecting HSBC and HKD therefore keeps HKD Savings and HKD Current rows in one
+  result set; the account-type metadata is not treated as a separate filter dimension.
+
+- Added: HSBC cash-ledger snapshots now retain USD, HKD, and CNH balances, including the
+  per-currency ending map and its USD base-currency scalar. Full monthly HSBC PDFs can be
+  uploaded individually while legacy paired statements remain available.
 
 - Changed: Transaction history now renders configured money-market fund descriptions with
   their canonical ISIN and standard full name while preserving subscription, redemption,

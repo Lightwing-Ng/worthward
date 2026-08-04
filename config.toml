@@ -2,7 +2,7 @@
 name = "antigravity"
 version = "v2.59.0"
 debug = false
-updated_on = "1 Aug 2026"
+updated_on = "3 Aug 2026"
 
 [server]
 host = "0.0.0.0"

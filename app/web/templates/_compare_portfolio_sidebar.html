@@ -32,7 +32,7 @@
                             <span class="ticker-logo-placeholder"{% if ticker_logo_url %} hidden{% endif %}>{{ ticker_value[:2] if ticker_value and not ticker_logo_url else '' }}</span>
                             <img class="ticker-input-logo" alt="{{ ticker_value }} logo"{% if ticker_logo_url %} src="{{ ticker_logo_url }}"{% else %} hidden{% endif %} data-loaded="{{ '1' if ticker_logo_url else '0' }}">
                         </span>
-                        <input id="ticker_{{ index }}" name="ticker" data-ticker-input value="{{ ticker_value }}" data-symbol="{{ ticker_value if ticker_value else '' }}" data-logo-url="{{ ticker_logo_url }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                        <input id="ticker_{{ index }}" name="ticker" data-ticker-input class="text-input-control" value="{{ ticker_value }}" data-symbol="{{ ticker_value if ticker_value else '' }}" data-logo-url="{{ ticker_logo_url }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
                         <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                     </div>
                     <div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>

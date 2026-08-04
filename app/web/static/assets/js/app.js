@@ -1,4 +1,4 @@
-/* Code version: v0.27.3 */
+/* Code version: v0.27.4 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4217,7 +4217,7 @@
 							<span class="ticker-logo-placeholder"></span>
 							<img class="ticker-input-logo" alt="" hidden>
 						</span>
-						<input id="ticker_${index}" name="ticker" data-ticker-input value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
+						<input id="ticker_${index}" name="ticker" data-ticker-input class="text-input-control" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
 						<button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 					</div>
 					<div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>

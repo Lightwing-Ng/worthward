@@ -1,4 +1,4 @@
-/* Code version: v1.15.3 */
+/* Code version: v1.15.4 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
@@ -785,7 +785,7 @@
 .compare-percent-value {
     grid-column: 1;
     display: inline-grid;
-    grid-template-columns: minmax(0, 1fr) max-content 2ch max-content;
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
     align-items: baseline;
     justify-self: stretch;
     width: 100%;
@@ -798,14 +798,17 @@
     color: var(--muted);
 }
 
-.compare-percent-major {
+.compare-percent-major,
+.compare-percent-value > .workspace-metric-value-major {
     justify-self: end;
     min-width: 0;
 }
 
 .compare-percent-dot,
 .compare-percent-minor,
-.compare-percent-suffix {
+.compare-percent-suffix,
+.compare-percent-value > .workspace-metric-value-minor,
+.compare-percent-value > .workspace-metric-value-suffix {
     justify-self: start;
 }
 

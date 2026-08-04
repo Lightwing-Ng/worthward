@@ -1,4 +1,4 @@
-/* Code version: v0.9.1 */
+/* Code version: v0.11.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -176,6 +176,39 @@
 .trade-capital-slider::-moz-range-track { height: 4px; border-radius: var(--radius-pill); background: var(--accent-border-soft); }
 .trade-capital-slider::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--color-white-adaptive); border: 0; box-shadow: 0 5px 12px var(--theme-shadow-ambient), 0 1px 0 var(--theme-glass-highlight) inset, 0 0 0 0.5px var(--theme-glass-border); }
 .trade-capital-slider::-moz-range-progress { height: 4px; border-radius: var(--radius-pill); background: var(--accent-border-strong); }
+.text-input-control {
+	width: 100%;
+	display: block;
+	min-width: 0;
+	min-height: var(--trade-control-input-height, var(--sidebar-form-control-min-height));
+	box-sizing: border-box;
+	padding: var(--text-input-control-pad-block) var(--text-input-control-clear-reserve) var(--text-input-control-pad-block) var(--text-input-control-pad-inline);
+	border: var(--text-input-control-border);
+	border-radius: var(--text-input-control-radius);
+	background: var(--text-input-control-background);
+	color: var(--text-input-control-color);
+	font-size: var(--text-input-control-font-size);
+	line-height: 1;
+	box-shadow: var(--text-input-control-shadow);
+	backdrop-filter: var(--control-liquid-blur);
+	-webkit-backdrop-filter: var(--control-liquid-blur);
+	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard), border-color 220ms var(--motion-standard), transform 320ms var(--motion-emphasized), opacity 220ms var(--motion-standard);
+}
+.text-input-control:hover,
+.text-input-control:focus,
+.text-input-control:focus-visible {
+	background: var(--control-liquid-background-hover);
+	box-shadow: var(--text-input-control-shadow-hover);
+	outline: none;
+}
+.text-input-control::placeholder {
+	font-size: var(--font-tooltip);
+	color: color-mix(in srgb, var(--theme-text) 68%, transparent);
+	opacity: 1;
+}
+.text-input-control-shell {
+	position: relative;
+}
 .ticker-input-main > label { display: block; height: auto; margin: 0 0 var(--sidebar-form-field-label-gap); font-size: var(--font-form-label); line-height: 1.2; font-weight: var(--font-weight-bold); color: var(--text); opacity: 1; pointer-events: none; transition: opacity 140ms var(--motion-standard); }
 .ticker-input-row:has(.portfolio-weight-field) .suggestions { right: auto; width: calc(100% + 64px); }
 .ticker-input-control { position: relative; }
@@ -193,7 +226,6 @@
 	box-shadow: none;
 }
 .ticker-input-logo[hidden] { display: none; }
-.ticker-input-control input,
 .trade-strategy-select,
 .form-select,
 .trade-capital-input,
@@ -209,12 +241,8 @@
 	-webkit-backdrop-filter: var(--control-liquid-blur);
 	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard), border-color 220ms var(--motion-standard), transform 320ms var(--motion-emphasized), opacity 220ms var(--motion-standard);
 }
-.ticker-input-control { 
-	--ticker-input-glass-background: transparent;
-	--ticker-input-control-radius: var(--radius-pill);
-	position: relative;
-}
-.ticker-input-control input { width: 100%; display: block; padding-left: 44px; padding-right: var(--trade-control-input-height); font-size: var(--font-form-label); line-height: 1; min-height: 29px; font-variant-numeric: tabular-nums; background: var(--ticker-input-glass-background); box-shadow: none; border-radius: var(--ticker-input-control-radius); }
+.ticker-input-control { position: relative; }
+.ticker-input-control input { padding-left: 44px; padding-right: var(--trade-control-input-height); font-variant-numeric: tabular-nums; }
 .ticker-input-control input::placeholder { font-size: var(--font-tooltip); color: color-mix(in srgb, var(--theme-text) 68%, transparent); }
 .ticker-input-control input:hover,
 .ticker-input-control input:focus,
@@ -858,21 +886,13 @@
 .backtest-shared-select-dropdown {
 	position: absolute;
 	color: var(--text);
-	background: var(--frosted-glass-opaque-background);
+	background: var(--frosted-glass-background);
 	border: var(--frosted-glass-border);
-	box-shadow: var(--frosted-glass-shadow-hover);
+	box-shadow: var(--frosted-glass-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
-}
-.backtest-shared-select-dropdown::before {
-	content: "";
-	position: absolute;
-	inset: 0;
-	border-radius: inherit;
-	background: linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 14%, transparent) 0%, transparent 100%);
-	pointer-events: none;
 }
 .backtest-shared-select-dropdown > * {
 	position: relative;
@@ -1367,14 +1387,18 @@
 	flex: 0 0 40px;
 	justify-self: auto;
 }
-.ticker-clear, .ticker-remove { padding: 0; border: 0; background: var(--theme-glass-border); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms var(--motion-standard), background 160ms var(--motion-standard), transform 160ms var(--motion-press); }
+.text-input-clear, .ticker-clear, .ticker-remove { padding: 0; border: 0; background: var(--theme-glass-border); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms var(--motion-standard), background 160ms var(--motion-standard), transform 160ms var(--motion-press); }
+.text-input-clear { --text-input-clear-inset: 4px; position: absolute; top: 50%; right: var(--text-input-clear-inset); width: calc(var(--text-input-control-height, var(--sidebar-form-control-min-height)) - (2 * var(--text-input-clear-inset))); height: calc(var(--text-input-control-height, var(--sidebar-form-control-min-height)) - (2 * var(--text-input-clear-inset))); min-width: 0; min-height: 0; border-radius: 50%; transform: translateY(-50%); z-index: var(--layer-control-affordance); opacity: 0; pointer-events: none; }
 .ticker-clear { --ticker-clear-inset: 4px; position: absolute; top: 50%; right: var(--ticker-clear-inset); width: calc(var(--trade-control-input-height) - (2 * var(--ticker-clear-inset))); height: calc(var(--trade-control-input-height) - (2 * var(--ticker-clear-inset))); min-width: 0; min-height: 0; border-radius: 50%; transform: translateY(-50%); z-index: var(--layer-control-affordance); opacity: 0; pointer-events: none; }
-.ticker-input-control:has(input:focus) .ticker-clear.is-visible { opacity: 1; pointer-events: auto; }
+.text-input-control-shell:hover .text-input-clear.is-visible,
+.text-input-control-shell:focus-within .text-input-clear.is-visible,
+.ticker-input-control:hover .ticker-clear.is-visible,
+.ticker-input-control:focus-within .ticker-clear.is-visible { opacity: 1; pointer-events: auto; }
 .ticker-remove { width: 24px; flex: 0 0 24px; height: 24px; min-height: 24px; min-width: 24px; border-radius: 50%; margin-top: 21px; opacity: 0; }
 .ticker-remove.is-placeholder { opacity: 0 !important; pointer-events: none; }
 .ticker-input-row:has(.ticker-remove:hover) .ticker-remove,
 .ticker-input-row:has(.ticker-remove:focus-visible) .ticker-remove { opacity: 1; }
-.ticker-clear:hover, .ticker-clear:focus-visible { transform: translateY(-50%); box-shadow: none; background: var(--theme-muted-translucent); }
+.text-input-clear:hover, .text-input-clear:focus-visible, .ticker-clear:hover, .ticker-clear:focus-visible { transform: translateY(-50%); box-shadow: none; background: var(--theme-muted-translucent); }
 .ticker-remove:hover, .ticker-remove:focus-visible { transform: none; box-shadow: none; background: var(--theme-muted-translucent); }
 @media (max-width: 600px) {
 	.ticker-remove {

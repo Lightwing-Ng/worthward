@@ -186,6 +186,47 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
         self.assertEqual(material_rows[0]["name"], "Frosted glass")
 
+    def test_numeric_fraction_scale_has_one_font_owner_and_shared_markup_inputs(self) -> None:
+        labels = {
+            "local_store_maintain_button": "Maintain local data",
+            "local_store_maintain_title": "Local data maintenance",
+            "local_store_maintain_note": "Keep local price data current.",
+            "portfolio_total_return": "Portfolio return",
+            "hero_title": "Control center",
+            "portfolio_title": "Portfolio workspace",
+            "backtest_ticker": "Ticker",
+            "period": "Period",
+            "backtest_strategy": "Strategy",
+        }
+        style_rows = build_style_token_rows(labels)
+        font_rows = build_font_token_rows(labels)
+        style_token_names = {
+            token["name"]
+            for row in style_rows
+            for token in row.get("tokens", [])
+        }
+        font_token_names = {
+            token["name"]
+            for row in font_rows
+            for token in row.get("tokens", [])
+        }
+        workspace_metric = next(row for row in style_rows if row["name"] == "Workspace metric value")
+        workspace_metric_tokens = {token["name"]: token["value"] for token in workspace_metric["tokens"]}
+        font_metric_samples = [
+            sample
+            for row in font_rows
+            for sample in row["samples"]
+            if sample.get("sample_kind") == "numeric-fraction"
+        ]
+
+        self.assertNotIn("--font-numeric-fraction-scale", style_token_names)
+        self.assertIn("--font-numeric-fraction-scale", font_token_names)
+        self.assertEqual(
+            workspace_metric_tokens["--workspace-metric-decimal-scale"],
+            "var(--font-numeric-fraction-scale)",
+        )
+        self.assertGreaterEqual(len(font_metric_samples), 6)
+
     def test_export_image_defaults_share_the_settings_and_capture_contract(self) -> None:
         export_row = build_export_image_rows("example.test/design-preview")[0]
         export_tokens = {token["name"]: token["value"] for token in export_row["tokens"]}

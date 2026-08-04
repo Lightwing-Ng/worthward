@@ -1,11 +1,13 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
  * - Added: Realtime quote scheduling, cancellation, and active/idle cadence are encapsulated behind a tested poller.
  */
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.0';
+import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.0.0';
+
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.1';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -100,21 +102,20 @@ export function resolveInvestmentLiveNumberDirection(previousValue, nextValue, e
 export function parseInvestmentLiveDisplaySegments(display) {
     const raw = String(display ?? '').trim();
     if (!raw || raw === '-') return null;
-    const match = raw.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(\.)(\d*)(%?)$/);
-    if (!match) {
+    const parsed = parseNumericDisplayValue(raw);
+    if (!parsed.isNumeric || !parsed.decimalPart) {
         return {
             isStructured: false,
             chars: Array.from(raw),
         };
     }
-    const [, prefix, integerPart, dot, fractionalPart, suffix] = match;
     return {
         isStructured: true,
-        prefix: Array.from(prefix),
-        integer: Array.from(integerPart),
-        dot: [dot],
-        fraction: Array.from(fractionalPart),
-        suffix: Array.from(suffix),
+        prefix: Array.from(parsed.prefix),
+        integer: Array.from(parsed.integerPart),
+        dot: ['.'],
+        fraction: Array.from(parsed.decimalPart),
+        suffix: Array.from(parsed.suffix),
     };
 }
 

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.65.1`
+Documentation version: `v2.67.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -21,6 +21,7 @@ Documentation version: `v2.65.1`
 - Import broker files, including the validated Zircon HK manual XLSX template, into a local investment ledger used by `Trade -> Investment`
 - Protect browser investment writes with a same-origin check and a session-bound CSRF token
 - Review imported holdings, equity history, and transaction history from `Trade -> Investment`
+- Filter Transaction history by HSBC and HKD as one result set; HKD Savings and HKD Current are temporarily combined
 - Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
 
@@ -297,18 +298,28 @@ profile name.
 - IBKR Realized Summary `Transfers` rows record FOP security transfers as
   non-cash `transfer_out` or `transfer_in` ledger events. Charles Schwab imports
   require the paired Transactions and Positions CSV exports; the Positions file
-  provides the authoritative broker snapshot. A same-day, cross-broker in-kind
-  transfer is linked automatically only when ticker and quantity match exactly;
-  every ambiguous candidate remains available for manual binding in Transaction
-  history.
+  provides the authoritative broker snapshot. Same-ticker lots are aggregated,
+  and the reported `Positions Total` must reconcile to securities plus cash or
+  the import fails closed. A same-day, cross-broker in-kind transfer is never
+  linked merely from matching date, broker, ticker, quantity, or currency. The
+  user must explicitly select an imported source broker and account. One unique,
+  exact source `transfer_out` then becomes evidence-backed; without that source
+  leg, a confirmed source account can create only a net-neutral aggregate overlay
+  after its prior inventory is verified. Until every Schwab receipt is confirmed,
+  All brokers Holdings, Equity, P&L, and stock details fail closed. Neither path
+  creates a source-broker transfer-out or assumes a carried cost basis.
 
 `config.toml` contains an `investment.money_market_funds` rule family for cash-like instruments whose valuation should not depend on normal daily mark-to-market history.
 
 ## HSBC import convention (snapshot confirmed at 1 Jul 2026, 21:30 America/New_York)
 
-This record keeps only the operational convention that remains compatible with the current HSBC paste-import path and does not change HSBC parsing or settlement logic. The app continues to run the current pending-cash replay flow, and small differences from the HSBC web "unsettled transferable cash" display can still appear in rare edge cases.
+This record keeps the operational convention for the current HSBC paste-import and statement-import paths. The app continues to run the current pending-cash replay flow for U.S. equity activity, and small differences from the HSBC web "unsettled transferable cash" display can still appear in rare edge cases.
 
-- The three pasted pages are one snapshot bundle, not three independent imports. The server records a SHA-256 bundle fingerprint and observable date boundaries, rejects explicit boundary contradictions before changing the store, and marks missing boundaries for review instead of silently treating them as one exact moment.
+- The pasted cash-account field accepts the same HSBC account's USD Savings, HKD Savings or Current, and offshore-RMB Savings pages. HSBC may label offshore RMB as `CNY`; the canonical ledger currency is `CNH`, while the raw statement label remains in source metadata. Supplementary pages can be pasted as additional chunks, and duplicate chunks are deduplicated. HKD Current and HKD Savings are retained as separate balance components before their visible HKD total is calculated.
+
+- Every HSBC clipboard update receives a read-only server preflight before Sync is enabled. A valid HKD and/or CNH cash-only capture in ❶ can sync with ❷ Portfolio and ❸ Order Status blank; any invalid supplementary clip blocks Sync. If USD Savings appears in ❶, the matching ❷ and ❸ pages remain mandatory and are checked as one composite snapshot. The green status icon represents a passed preflight, and the blue spinner represents the short pending state.
+
+- When USD Savings is present, the three pasted pages are one snapshot bundle, not three independent imports. The server records a SHA-256 bundle fingerprint and observable date boundaries, rejects explicit boundary contradictions before changing the store, and marks missing boundaries for review instead of silently treating them as one exact moment. A cash-only HKD/CNH sync has no position snapshot and merges only its account-kind cash components, so it cannot replace the current USD Portfolio or available-cash snapshot.
 
 - Snapshot convention:
   - Treat `1.txt`, `2.txt`, and `3.txt` as a single pasted batch.
@@ -331,13 +342,25 @@ This record keeps only the operational convention that remains compatible with t
 
   - Total unsettled replay amount: `10,273.470` USD
 
-### HSBC paired monthly statement import
+### HSBC statement import
 
-- Statement mode uses one multi-file selector. It identifies HSBC One composite statements and Investment services composite statements from their contents, then requires one of each for every statement end date.
-- Batch uploads may contain many months. Each end date must have exactly one statement of each type; missing, duplicate, cross-account, cross-holder, or mismatched-period files are rejected before the store is changed.
-- The investment statement is authoritative for settled trades, closing holdings, transaction charges, and ticker-linked income such as cash dividends. The HSBC One composite statement is authoritative for USD cash postings and closing cash.
-- Every trade, charge, and dividend must reconcile to a same-date and same-amount USD cash posting in its paired composite statement. The statement import fails closed when reconciliation is incomplete.
+- Statement mode accepts one or more HSBC full monthly PDFs. It also retains the legacy unordered composite-plus-Investment-services pair path for older statement formats.
+- Full monthly cash histories may contain HKD Savings or Current, USD Savings, and Foreign Currency Savings or offshore-RMB pages. Cash rows are stored as USD, HKD, or CNH; the latest per-currency balance map is retained, and the base-currency scalar is calculated from the statement's quoted rates.
+- A bank statement's `CNY` label means offshore RMB in this account. It is normalized to `CNH`; `CNY` remains available only as raw source provenance and is never emitted as the HSBC ledger currency.
+- The legacy paired path keeps the investment statement authoritative for settled trades, closing holdings, transaction charges, and ticker-linked income such as cash dividends. Its HSBC One composite statement remains authoritative for the reconciled USD cash postings and closing cash.
+- Every trade, charge, and dividend in the legacy paired path must reconcile to a same-date and same-amount USD cash posting. The statement import fails closed when reconciliation is incomplete.
 - Historical statement snapshots do not replace a newer copy/paste Portfolio or available-cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
+- When a historical HSBC statement overlaps an existing cash-account import, the same-account event is deduplicated by date, type, currency, signed amount, and occurrence count. Existing USD cash rows remain the current snapshot, while statement-only HKD and CNH rows are added to the ledger.
+- The read-only validator can independently audit the four official account CSVs with `--official-csv-dir`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.parquet`.
+
+### BOCHK statement import
+
+- BOCHK mode accepts one or more `Consolidated Statement` PDFs in a single batch. Later batches are merged incrementally, and re-uploading the same PDF is idempotent.
+- The customer number is retained as the parent account, while each full deposit-account number, short subaccount number, account type, source currency, and statement balance remain attached to the imported rows. In particular, subaccount `0079` keeps its `CNY` and `USD` sections separate; HKD subaccounts such as `0066` are never collapsed into an unrelated account at parse time.
+- BOCHK statement currencies remain source currencies: `HKD`, `CNY`, and `USD` are not converted or relabeled. No securities positions or trades are created.
+- The securities cash-balance section is accepted only when it contains no non-zero activity. A non-zero securities cash row fails closed so the statement cannot silently discard securities activity.
+- Flow amounts are classified with stable printed-column boundaries and each subaccount's running balance. Right-aligned withdrawals are retained, while ambiguous rows, balance discontinuities, and page headers outside the transaction-detail region fail closed.
+- The browser UI exposes only the BOCHK Consolidated Statement PDF importer. For compatibility, the API still accepts `broker=boc_hk` with `zircon_hk_transactions_xlsx` through the tested legacy standard-workbook fallback; do not remove that backend path without an explicit migration.
 
 ## IBKR import convention (handover reference)
 
@@ -387,7 +410,7 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   - **GainsKeeper**: OFX/GKX files for precision upgrades and overlapping historical coverage.
   - **Web paste**: copied Trade Notifications page text for immediate provisional
     filled trades. It is not a browser session, API, or direct broker transport.
-- Each newly imported file or pasted evidence capture is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
+- Each newly imported file or pasted evidence capture is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB. On POSIX systems, evidence directories are owner-only (`0700`) and artifacts, including staging files, are owner-only (`0600`).
 - Application startup and read-only Investment browsing require only `investment.parquet`. Source-evidence verification remains mandatory at the investment-import commit boundary, so a device without the matching evidence sidecar can inspect the portable ledger but cannot silently extend it with unauditable imports.
 - Existing ledger records remain readable after a Parquet-only transfer and
   remain mergeable when their matching evidence sidecar is present. Legacy
@@ -440,7 +463,8 @@ count match the ledger manifest, then runs the complete verification again.
 
 ### Investment import adapters
 
-The Investment workspace currently exposes import adapters for HSBC, IBKR,
+The Investment workspace currently exposes import adapters for HSBC, Bank of China
+(Hong Kong), IBKR,
 Futu (HK), Longbridge (HK), Longbridge (SG), Charles Schwab, Tiger Trade,
 uSMART (HK), CMB Wing Lung Bank, and Zircon HK. The Zircon HK flow downloads a
 plain generic fallback XLSX template whose Broker dropdown covers every cataloged

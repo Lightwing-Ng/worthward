@@ -1028,6 +1028,33 @@
     max-width: 100%;
 }
 
+.style-token-text-input-shell {
+    width: min(100%, var(--style-token-demo-width));
+}
+
+.style-token-ticker-input-shell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: min(100%, var(--style-token-demo-width));
+    padding: 2rem 0;
+}
+
+.style-token-ticker-input-form {
+    width: 100%;
+    max-width: 320px;
+}
+
+.style-token-ticker-input-form .ticker-field {
+    margin: 0;
+}
+
+.style-token-ticker-input-form .ticker-input-row {
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;

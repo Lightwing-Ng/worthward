@@ -1,4 +1,4 @@
-{# Code version: v0.2.0 #}
+{# Code version: v0.3.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -7,8 +7,7 @@
 <span class="compare-percent-empty">—</span>
 {% else %}
 {% set percent_text = "{:,.2f}".format(value) %}
-{% set percent_parts = percent_text.split(".") %}
-<span class="compare-percent-major">{{ percent_parts[0] }}</span><span class="compare-percent-dot">.</span><span class="compare-percent-minor">{{ percent_parts[1] }}</span><span class="compare-percent-suffix">%</span>
+<span data-numeric-display-value="{{ percent_text }}%">{{ percent_text }}%</span>
 {% endif %}
 {%- endmacro %}
 

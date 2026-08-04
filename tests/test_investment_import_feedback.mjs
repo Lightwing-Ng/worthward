@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.3.0 */
+/* Tests for Investment import-feedback markup. Code version: v1.7.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -93,8 +93,44 @@ test('Schwab feedback reports snapshot evidence and ambiguous in-kind transfer r
     assert.match(message, /Charles Schwab import complete/);
     assert.match(message, /authoritative <strong>Positions<\/strong> snapshot/);
     assert.match(message, /SHA-256-verified immutable evidence/);
-    assert.match(message, /1 ambiguous in-kind transfer match<\/strong>/);
-    assert.match(message, /Exact same-day ticker-and-quantity pairs are linked automatically/);
+    assert.match(message, /1 in-kind transfer counterpart<\/strong>/);
+    assert.match(message, /Same-day ticker-and-quantity similarity never creates an automatic link/);
+});
+
+test('Schwab feedback preserves unmatched inbound receipts without inventing a source leg', () => {
+    const message = buildSchwabImportFeedbackMessage({
+        importSummary: {
+            schwab_positions_validation: {status: 'matched'},
+            holdings_validation: {mismatch_count: 0},
+            security_transfer_reconciliation: {
+                unreconciled_inbound_count: 2,
+                aggregate_holdings_available: false,
+                pnl_unavailable_tickers: ['DRAM', 'QQQI'],
+            },
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /Positions Total<\/strong> reconciled/);
+    assert.match(message, /Receipt review required/);
+    assert.match(message, /Only unresolved receipt rows are excluded from All brokers Holdings and Equity/);
+    assert.match(message, /no source-broker transfer-out was created or inferred/);
+    assert.match(message, /P&amp;L is unavailable only for <strong class="notice-floating-banner-emphasis-danger">DRAM, QQQI<\/strong>/);
+});
+
+test('Schwab feedback explains an aggregate-only source-account overlay', () => {
+    const message = buildSchwabImportFeedbackMessage({
+        importSummary: {
+            security_transfer_reconciliation: {
+                aggregate_holdings_available: true,
+                aggregate_overlay: {active_receipt_keys: ['v2:receipt']},
+                pnl_unavailable_tickers: ['QQQI'],
+            },
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /Aggregate-only confirmation/);
+    assert.match(message, /user-attested net-neutral overlay/);
+    assert.match(message, /automatically superseded when exact source evidence is imported/);
 });
 
 test('Schwab feedback requires the composition root HTML escaper', () => {

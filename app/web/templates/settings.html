@@ -1,4 +1,4 @@
-{# Code version: v0.4.2 #}
+{# Code version: v0.5.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -86,7 +86,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.14.2') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.16.0') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -100,7 +100,7 @@
     {% if settings_section == "about" %}
     <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">{{ translate_ui('What this service does') }}</h2>
-            <p class="about-copy">{{ translate_ui('Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.') }}</p>
+            <p class="about-copy">{{ translate_ui('antigravity is a local-first workspace for comparing supported-market stocks and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running strategy and grid-trading backtests, and reviewing locally imported investment records. It uses locally cached daily and recent 1-minute market data; optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.') }}</p>
     </article>
 
     <article class="report-card workspace-content-card about-section settings-reading-guard">
@@ -409,8 +409,9 @@
                                 <p
                                     class="font-token-sample-text font-token-sample-numeric-fraction"
                                     aria-label="{{ sample.sample_text }}"
+                                    data-numeric-display-value="{{ sample.sample_text }}"
                                 >
-                                    <span class="workspace-metric-value-major">{{ sample.sample_text.split('.')[0] }}</span><span class="workspace-metric-value-minor">.{{ sample.sample_text.split('.')[1] }}</span>
+                                    {{ sample.sample_text }}
                                 </p>
                                 {% else %}
                                 <p
@@ -541,6 +542,7 @@
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">{{ labels.email_smtp }}</p>
                 <p class="settings-service-note">{{ translate_ui('Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full') }} <code>@yahoo.com</code> {{ translate_ui('address with the generated app password.') }}</p>
             </div>
     </section>
@@ -578,6 +580,7 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_save }}</p>
                         <p class="settings-service-note">{{ translate_ui('Store the Yahoo SMTP endpoint, mailbox, app password, and STARTTLS setting on this device.') }}</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -587,6 +590,7 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_test }}</p>
                         <p class="settings-service-note">{{ translate_ui('Verify SMTP login against Yahoo Mail with the saved app password.') }}</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -612,7 +616,7 @@
                 </form>
     </section>
     <p class="settings-summary">{{ labels.local_store_summary }}</p>
-    <div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
+    <div class="scrollable-data-table-shell local-store-pagination-host local-store-table-shell{% if local_store_total_pages > 1 %} has-floating-pagination{% endif %}" id="local_store_region" data-local-store-region>
                 <table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
                     <colgroup>
                         <col class="local-store-col-index">
@@ -633,7 +637,7 @@
                         </tr>
                     </thead>
                 </table>
-                <div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
+                <div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll" id="local_store_table_scroll">
                     <table class="settings-table local-store-table scrollable-data-table">
                         <colgroup>
                             <col class="local-store-col-index">
@@ -643,7 +647,7 @@
                             <col class="local-store-col-1m">
                             <col class="local-store-col-delete">
                         </colgroup>
-                        <tbody>
+                        <tbody id="local_store_table_body">
                             {% if local_market_rows %}
                             {% for row in local_market_rows %}
                             <tr data-local-store-ticker="{{ row.ticker }}">
@@ -727,28 +731,36 @@
                     </table>
                 </div>
     {% if local_store_total_pages > 1 %}
-    <nav class="settings-pagination local-store-pagination local-store-table-pagination" aria-label="{{ translate_ui('Local market store pages') }}" data-local-store-pagination>
-                {% if local_store_prev_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="{{ translate_ui('Previous pages') }}">
-                    <span class="icon icon-page-prev" aria-hidden="true"></span>
+    <nav class="settings-pagination local-store-pagination local-store-pagination--floating local-store-table-pagination"
+         aria-label="{{ translate_ui('Local market store pages') }}"
+         aria-controls="local_store_table_body"
+         data-local-store-pagination
+         data-pagination-scroll-target="local_store_table_scroll"
+         data-pagination-page-count="{{ local_store_total_pages }}"
+         data-pagination-current-page="{{ local_store_current_page }}"
+         data-pagination-compact="{{ '1' if local_store_total_pages <= 5 else '0' }}"
+         style="--local-store-pagination-slots: {{ local_store_pagination_items|length }};">
+                <span class="local-store-pagination-indicator" aria-hidden="true"></span>
+                {% for item in local_store_pagination_items %}
+                {% if item.kind == 'ellipsis' %}
+                <span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="{{ item.position }}"><span class="local-store-page-ellipsis-dots"></span></span>
+                {% elif item.kind == 'previous' or item.kind == 'next' %}
+                <a href="{{ local_store_page_urls[item.page] }}"
+                   class="local-store-page-button local-store-page-nav"
+                   data-pagination-target="{{ item.page }}"
+                   data-pagination-current="0"
+                   aria-label="{{ 'Previous page' if item.kind == 'previous' else 'Next page' }}">
+                    <span class="icon {{ 'icon-page-prev' if item.kind == 'previous' else 'icon-page-next' }}" aria-hidden="true"></span>
                 </a>
                 {% else %}
-                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
-                {% endif %}
-                {% for slot in local_store_page_slots %}
-                {% if slot.page %}
-                <a href="{{ local_store_page_urls[slot.page] }}" class="local-store-page-button{% if slot.is_active %} is-active{% endif %}">{{ slot.page }}</a>
-                {% else %}
-                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
+                <a href="{{ local_store_page_urls[item.page] }}"
+                   class="local-store-page-button{% if item.is_active %} is-active{% endif %}"
+                   data-pagination-target="{{ item.page }}"
+                   data-pagination-current="{{ '1' if item.is_active else '0' }}"
+                   aria-label="Page {{ item.page }}"{% if item.is_active %}
+                   aria-current="page"{% endif %}>{{ item.page }}</a>
                 {% endif %}
                 {% endfor %}
-                {% if local_store_next_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="{{ translate_ui('Next pages') }}">
-                    <span class="icon icon-page-next" aria-hidden="true"></span>
-                </a>
-                {% else %}
-                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
-                {% endif %}
     </nav>
     {% endif %}
     </div>
@@ -859,6 +871,7 @@
     <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Clear market data caches') }}</p>
                     <p class="settings-service-note">{{ translate_ui('This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.') }}</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
@@ -870,6 +883,7 @@
     <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Clear local broker transaction record') }}</p>
                     <p class="settings-service-note">{{ translate_ui('This deletes') }} <code>settings_store/investment.parquet</code> {{ translate_ui('on this device, which removes the imported local broker transaction history shown in My investment.') }}</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
@@ -1017,28 +1031,31 @@
                             </div>
                         </article>
                     </section>
-                    {% elif row.sample_kind == "settings-form-input" %}
-                    <div class="style-token-settings-input-shell">
-                        <label class="style-token-settings-input-label" for="style_token_settings_text_input">{{ row.sample_title }}</label>
-                        <input id="style_token_settings_text_input" type="text" class="settings-form-control style-token-settings-input" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" readonly>
+                    {% elif row.sample_kind == "text-input-control" %}
+                    <div class="style-token-settings-input-shell style-token-text-input-shell">
+                        <label class="style-token-settings-input-label" for="style_token_text_input">{{ row.sample_title }}</label>
+                        <div class="text-input-control-shell">
+                            <input id="style_token_text_input" type="text" class="text-input-control style-token-settings-input" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" readonly>
+                            <button type="button" class="text-input-clear is-visible" aria-label="{{ translate_ui('Clear input') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                        </div>
                     </div>
                     {% elif row.sample_kind == "ticker-input-control" %}
-                    <div class="style-token-settings-input-shell" style="width: 100%; display: flex; justify-content: center; align-items: center; padding: 2rem 0;">
-                        <form class="controls sidebar-form ticker-controls ticker-form-controls" style="width: 100%; max-width: 320px;" onsubmit="return false;">
-                            <div class="field ticker-field" data-index="1" style="margin: 0;">
-                                <div class="ticker-input-row" style="padding: 0; background: transparent; box-shadow: none;">
+                    <div class="style-token-settings-input-shell style-token-ticker-input-shell">
+                        <form class="controls sidebar-form ticker-controls ticker-form-controls style-token-ticker-input-form" onsubmit="return false;">
+                            <div class="field ticker-field" data-index="1">
+                                <div class="ticker-input-row">
                                     <div class="ticker-input-main">
-                                        <label for="style_token_ticker_input" style="color: var(--text);">{{ row.sample_title }}</label>
+                                        <label for="style_token_ticker_input">{{ row.sample_title }}</label>
                                         <div class="ticker-input-control">
                                             <span class="ticker-leading-slot" aria-hidden="true">
                                                 <span class="ticker-logo-placeholder"></span>
-                                                <img class="ticker-input-logo" src="/market-store/logos/{{ row.sample_value }}.png" alt="" onerror="this.style.display='none'; this.previousElementSibling.style.display='flex'">
+                                                <img class="ticker-input-logo" src="/market-store/logos/{{ row.sample_value }}.svg" alt="" onerror="this.style.display='none'; this.previousElementSibling.style.display='flex'">
                                             </span>
-                                            <input id="style_token_ticker_input" class="settings-form-control style-token-settings-input" style="padding-left: 44px; padding-right: 32px; width: 100%; box-sizing: border-box;" name="ticker" data-ticker-input value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
-                                            <button type="button" class="ticker-clear is-visible" aria-label="{{ translate_ui('Clear ticker') }}" style="opacity: 1; pointer-events: auto;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                            <input id="style_token_ticker_input" class="text-input-control style-token-settings-input" name="ticker" data-ticker-input data-symbol="{{ row.sample_value }}" data-logo-url="/market-store/logos/{{ row.sample_value }}.svg" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
+                                            <button type="button" class="ticker-clear is-visible" aria-label="{{ translate_ui('Clear ticker') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                                         </div>
                                     </div>
-                                    <button type="button" class="ticker-remove" aria-label="{{ translate_ui('Remove ticker') }}" style="opacity: 1; pointer-events: auto; margin-top: 24px; margin-left: 8px;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                    <button type="button" class="ticker-remove" aria-label="{{ translate_ui('Remove ticker') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                                 </div>
                             </div>
                         </form>
@@ -1046,7 +1063,7 @@
                     {% elif row.sample_kind == "ticker-identity-row" %}
                     <div class="ticker-identity-item is-active style-token-ticker-identity-demo" aria-hidden="true">
                         <div class="ticker-identity-row">
-                            <img src="/market-store/logos/{{ row.sample_value }}.png" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                            <img src="/market-store/logos/GOOGL.svg" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
                             <span class="ticker-identity-copy">
                                 <span class="suggestion-symbol ticker-identity-symbol">{{ row.sample_value }}</span>
                                 <span class="suggestion-name ticker-identity-name" title="{{ row.sample_title }}">{{ row.sample_title }}</span>
@@ -1095,7 +1112,7 @@
                                     <span class="chart-tooltip-dot" data-inline-background="{{ item.color }}"></span>
                                     <span></span>
                                     <span class="chart-tooltip-label">{{ item.label }}</span>
-                                    <span class="chart-tooltip-value">{{ item.value }}</span>
+                                    <span class="chart-tooltip-value" data-numeric-display-value="{{ item.value }}">{{ item.value }}</span>
                                 </div>
                                 {% endfor %}
                             </div>
@@ -1110,14 +1127,14 @@
                                 <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.svg" alt="" data-ticker="NVDA" data-style-token-donut-angle="225" decoding="async">
                                 <img class="portfolio-donut-logo" src="/market-store/logos/MSFT.svg" alt="" data-ticker="MSFT" data-style-token-donut-angle="315" decoding="async">
                             </div>
-                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 88.8deg, transparent 88.8deg 90deg, color-mix(in srgb, var(--theme-accent-primary) 72%, var(--theme-accent-secondary) 28%) 90deg 178.8deg, transparent 178.8deg 180deg, color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-accent-secondary) 72%) 180deg 268.8deg, transparent 268.8deg 270deg, var(--theme-accent-secondary) 270deg 358.8deg, transparent 358.8deg 360deg);"></div>
+                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 159.84deg, transparent 159.84deg 161.04deg, color-mix(in srgb, var(--theme-accent-primary) 72%, var(--theme-accent-secondary) 28%) 161.04deg 249.84deg, transparent 249.84deg 251.04deg, color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-accent-secondary) 72%) 251.04deg 322.08deg, transparent 322.08deg 323.28deg, var(--theme-accent-secondary) 323.28deg 358.8deg, transparent 358.8deg 360deg);"></div>
                         </div>
                     </div>
                     {% elif row.sample_kind == "metric-value" %}
                     <div class="style-token-metric-demo-shell">
                         <div class="trade-metric-card style-token-metric-card-demo{% if row.sample_card_class %} {{ row.sample_card_class }}{% endif %}">
                             <span class="trade-metric-label">{{ row.sample_title }}</span>
-                            <span class="trade-metric-value style-token-metric-value-demo">{{ row.sample_value }}</span>
+                            <span class="trade-metric-value style-token-metric-value-demo" data-numeric-display-value="{{ row.sample_value }}">{{ row.sample_value }}</span>
                         </div>
                     </div>
                     {% elif row.sample_kind == "data-table" %}
@@ -1132,7 +1149,7 @@
                                 </tr>
                                 <tr data-table-summary-row data-summary-scope="both">
                                     <td colspan="3"><span class="investment-holdings-summary-copy">{{ translate_ui('4 filtered of 12 total') }}</span></td>
-                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} $7,089.68</span></td>
+                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68">$7,089.68</span></span></td>
                                 </tr>
                                 </thead>
                             </table>
@@ -1142,7 +1159,7 @@
                                     {% for sample_row in row.sample_table_rows %}
                                     <tr>
                                         {% for cell in sample_row %}
-                                        <td>{{ cell }}</td>
+                                        <td data-numeric-display-cell>{{ cell }}</td>
                                         {% endfor %}
                                     </tr>
                                     {% endfor %}
@@ -1155,8 +1172,8 @@
                     <div class="style-token-holdings-allocation-badge-demo" aria-hidden="true">
                         {% for allocation in row.sample_allocations %}
                         <span class="investment-holdings-summary-metric-label">{{ allocation.label }}</span>
-                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount"><span class="workspace-metric-value-major">{{ allocation.amount_integer }}</span><span class="workspace-metric-value-minor">.{{ allocation.amount_fraction }}</span></span>
-                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value"><span class="workspace-metric-value-major">{{ allocation.percent_integer }}</span><span class="workspace-metric-value-minor">.{{ allocation.percent_fraction }}</span><span class="workspace-metric-value-suffix">%</span></span></span>
+                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount" data-numeric-display-value="{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}">{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}</span>
+                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value" data-numeric-display-value="{{ allocation.percent_integer }}.{{ allocation.percent_fraction }}%">{{ allocation.percent_integer }}.{{ allocation.percent_fraction }}%</span></span>
                         {% endfor %}
                     </div>
                     {% elif row.sample_kind == "shared-select-filter" %}

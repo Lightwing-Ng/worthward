@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.5.2
+Code version: v1.5.3
 """
 
 from __future__ import annotations
@@ -229,7 +229,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                 raw_token("--workspace-metric-value-line-height", "1"),
                 raw_token("--workspace-metric-value-letter-spacing", "-0.04em"),
                 raw_token("--workspace-metric-value-font-weight", "var(--font-weight-regular)"),
-                raw_token("--font-numeric-fraction-scale", "0.76"),
+                raw_token("--workspace-metric-decimal-scale", "var(--font-numeric-fraction-scale)"),
                 raw_token("--workspace-metric-card-padding", "6px 8px 8px"),
                 px_token("--workspace-metric-card-row-gap", 4, 1),
                 raw_token("--workspace-metric-card-radius", "var(--radius-panel)"),
@@ -386,6 +386,31 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "related_styles": [],
         },
         {
+            "id": style_token_id("Text input control"),
+            "name": "Text input control",
+            "sample_kind": "text-input-control",
+            "sample_title": "Yahoo app password",
+            "sample_copy": "",
+            "sample_button": "",
+            "sample_button_class": "",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "sample_placeholder": "Yahoo Mail app password",
+            "sample_value": "abcd efgh ijkl mnop",
+            "tokens": [
+                px_token("--text-input-control-radius", 999, 0),
+                px_token("--text-input-control-pad-block", 0, 0),
+                px_token("--text-input-control-pad-inline", 10, 0),
+                raw_token("--text-input-control-background", "transparent"),
+                raw_token("--text-input-control-border", "var(--control-liquid-border)"),
+                raw_token("--text-input-control-color", "var(--text)"),
+                raw_token("--text-input-control-font-size", "var(--font-form-label)"),
+                raw_token("--text-input-control-shadow", "none"),
+                raw_token("--text-input-control-shadow-hover", "var(--control-liquid-shadow-focus)"),
+            ],
+            "related_styles": [],
+        },
+        {
             "id": style_token_id("Ticker input control"),
             "name": "Ticker input control",
             "sample_kind": "ticker-input-control",
@@ -397,37 +422,13 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "sample_icon_shell_class": "",
             "sample_placeholder": "",
             "sample_value": "NVDA",
-            "tokens": [
-                px_token("--trade-control-input-height", 30, 0),
-                px_token("--ticker-input-control-radius", 999, 0),
-                raw_token("--control-liquid-shadow", "none"),
-                raw_token("--control-liquid-shadow-focus", "none"),
-                raw_token("--ticker-input-glass-background", "transparent"),
+            "tokens": [],
+            "related_styles": [
+                {
+                    "name": "Text input control",
+                    "target_id": style_token_id("Text input control"),
+                },
             ],
-            "related_styles": [],
-        },
-        {
-            "id": style_token_id("Settings form input"),
-            "name": "Settings form input",
-            "sample_kind": "settings-form-input",
-            "sample_title": "Yahoo app password",
-            "sample_copy": "",
-            "sample_button": "",
-            "sample_button_class": "",
-            "sample_icon_class": "",
-            "sample_icon_shell_class": "",
-            "sample_placeholder": "Yahoo Mail app password",
-            "sample_value": "abcd efgh ijkl mnop",
-            "tokens": [
-                px_token("--radius-control", 999, 0),
-                px_token("--settings-text-input-pad-block", 5, 0),
-                px_token("--settings-text-input-pad-inline", 10, 0),
-                px_token("--settings-form-control-max-width", 384, 0),
-                raw_token("--settings-text-input-background", "var(--panel-strong)"),
-                raw_token("--settings-text-input-color", "var(--text)"),
-                raw_token("--settings-text-input-font-size", "var(--font-form-control)"),
-            ],
-            "related_styles": [],
         },
         {
             "id": style_token_id("Settings execution option"),
@@ -572,7 +573,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
     ]
     token_order = {
         "Investment community share card": 5,
-        "Settings form input": 10,
+        "Text input control": 10,
         "Ticker input control": 15,
         "Settings execution option": 20,
         "Segmented control": 30,
@@ -690,8 +691,8 @@ def build_export_image_rows(project_display_url: str) -> list[dict[str, object]]
                     "target_id": style_token_id("Portfolio donut orbit"),
                 },
                 {
-                    "name": "Settings form input",
-                    "target_id": style_token_id("Settings form input"),
+                    "name": "Text input control",
+                    "target_id": style_token_id("Text input control"),
                 },
                 {
                     "name": "Ticker identity row",
@@ -723,8 +724,8 @@ def build_font_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
                 {"token_name": "--font-size-4", "usage_label": "Form label", "sample_text": "Ticker  Period  Reinvest cash dividends", "sample_value": "14px"},
                 {"token_name": "--font-size-5", "usage_label": "Control text", "sample_text": "smtp.mail.yahoo.com", "sample_value": "15px"},
                 {"token_name": "--font-size-6", "usage_label": "Section title", "sample_text": labels["hero_title"], "sample_value": "24px"},
-                {"token_name": "--font-size-7", "usage_label": "Large metric", "sample_text": "+19.84%", "sample_value": "32px"},
-                {"token_name": "--font-size-8", "usage_label": "XL metric", "sample_text": "67.01%", "sample_value": "36px"},
+                {"token_name": "--font-size-7", "usage_label": "Large metric", "sample_text": "+19.84%", "sample_value": "32px", "sample_kind": "numeric-fraction"},
+                {"token_name": "--font-size-8", "usage_label": "XL metric", "sample_text": "67.01%", "sample_value": "36px", "sample_kind": "numeric-fraction"},
             ],
             "tokens": [
                 raw_token("--font-size-1", "11px"),
@@ -747,9 +748,9 @@ def build_font_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
                 {"token_name": "--font-ui-md", "usage_label": "Standard label size", "sample_text": "Ticker  Period  Strategy", "sample_value": "14px"},
                 {"token_name": "--font-ui-lg", "usage_label": "Standard control size", "sample_text": "QQQ  NVDA  AAPL", "sample_value": "15px"},
                 {"token_name": "--font-title-md", "usage_label": "Workspace title", "sample_text": labels["portfolio_title"], "sample_value": "24px"},
-                {"token_name": "--font-metric-md", "usage_label": "Metric medium", "sample_text": "$ 10,333.71", "sample_value": "24px"},
-                {"token_name": "--font-metric-lg", "usage_label": "Metric large", "sample_text": "32.48%", "sample_value": "32px"},
-                {"token_name": "--font-metric-xl", "usage_label": "Metric extra large", "sample_text": "67.01%", "sample_value": "36px"},
+                {"token_name": "--font-metric-md", "usage_label": "Metric medium", "sample_text": "$ 10,333.71", "sample_value": "24px", "sample_kind": "numeric-fraction"},
+                {"token_name": "--font-metric-lg", "usage_label": "Metric large", "sample_text": "32.48%", "sample_value": "32px", "sample_kind": "numeric-fraction"},
+                {"token_name": "--font-metric-xl", "usage_label": "Metric extra large", "sample_text": "67.01%", "sample_value": "36px", "sample_kind": "numeric-fraction"},
             ],
             "tokens": [
                 raw_token("--font-ui-xs", "var(--font-size-1)"),
@@ -778,7 +779,7 @@ def build_font_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
                 {"token_name": "--font-card-title", "usage_label": "Card title", "sample_text": labels["hero_title"], "sample_value": "24px"},
                 {"token_name": "--font-card-subtitle", "usage_label": "Card subtitle", "sample_text": "AAPL  MSFT  NVDA  META  AVGO  AMD  ORCL  QQQ  SPY  TLT",
                  "sample_value": "15px"},
-                {"token_name": "--font-metric-value", "usage_label": "Metric value", "sample_text": "67.01%", "sample_value": "24px"},
+                {"token_name": "--font-metric-value", "usage_label": "Metric value", "sample_text": "67.01%", "sample_value": "24px", "sample_kind": "numeric-fraction"},
                 {"token_name": "--font-numeric-fraction-scale", "usage_label": "Numeric fraction",
                  "sample_text": "62.76", "sample_value": "0.76x", "sample_kind": "numeric-fraction"},
             ],

@@ -1,4 +1,4 @@
-"""Build the isolated deterministic market store used by Playwright. Code version: v1.0.0."""
+"""Build the isolated deterministic market store used by Playwright. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -17,7 +17,10 @@ DAILY_TICKERS = (
     "000660.KS",
     "7709.HK",
     "AAPL",
+    "AMD",
     "DRAM",
+    "GOOGL",
+    "META",
     "MU",
     "NVDA",
     "QQQ",
@@ -28,7 +31,10 @@ PROFILE_ROWS = (
     ("000660.KS", "SK hynix Inc.", "https://www.skhynix.com"),
     ("7709.HK", "CSOP SK Hynix Daily (2x) Leveraged Product", ""),
     ("AAPL", "Apple Inc.", "https://www.apple.com"),
+    ("AMD", "Advanced Micro Devices, Inc.", "https://www.amd.com"),
     ("DRAM", "Roundhill Memory ETF", "https://www.roundhillinvestments.com/etf/dram/"),
+    ("GOOGL", "Alphabet Inc.", "https://abc.xyz"),
+    ("META", "Meta Platforms, Inc.", "https://about.meta.com"),
     ("MU", "Micron Technology, Inc.", "https://www.micron.com"),
     ("NVDA", "NVIDIA Corporation", "https://www.nvidia.com"),
     ("QQQ", "Invesco QQQ Trust", "https://www.invesco.com"),

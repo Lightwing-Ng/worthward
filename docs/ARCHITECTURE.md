@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.20.0`
+Documentation version: `v1.21.3`
 
 ## Runtime flow
 
@@ -118,7 +118,11 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   explicit review when an identity becomes ambiguous.
 - Authoritative broker position snapshots reconcile synthesized grant quantities.
 - HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
-- HSBC monthly PDF imports accept one unordered file bundle, classify composite and investment statements from extracted content, and require a matched pair for every end date. Investment rows own security identity; composite rows own cash reconciliation, and historical statement snapshots cannot supersede a newer live paste snapshot.
+- HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
+- HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
+- HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
+- BOCHK imports accept one or more full Consolidated Statement PDFs per batch. The customer number is the parent account, while full deposit-account numbers and short subaccount identifiers remain source-scoped. `0079` CNY and USD sections are separate cash ledgers. The parser anchors the rightmost amount as the balance, reconciles each subaccount's running balance, rejects composite page-header continuations, and fails closed on non-zero securities cash activity because this adapter is cash-only. Its period/count/balance metadata is broker-scoped so it survives a mixed ledger.
+- The browser UI exposes only the BOCHK PDF path. The backend retains a tested legacy fallback for `broker=boc_hk` with `zircon_hk_transactions_xlsx`; this compatibility path must not be removed as part of PDF UI changes.
 - Canonical tickers are market-qualified only when the market needs to be
   distinguished: US securities are bare (`META`), Hong Kong uses `.HK`,
   Shanghai uses `.SH`, and Shenzhen uses `.SZ`. The format applies to display,
@@ -157,6 +161,7 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing theme-token consumers keep local fallbacks if the shared script is unavailable.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.ANTIGRAVITY_EXPORT_IMAGE`.
+- `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
 - `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.

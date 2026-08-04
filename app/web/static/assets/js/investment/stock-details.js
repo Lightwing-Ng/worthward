@@ -18,6 +18,7 @@
  * - Fixed: Stock-details intraday average-price curves no longer draw solid point markers on cost-change indexes.
  * - Changed: Stock-details intraday average-price curves now render as event-stepped cost lines with subtle change points so each trade-driven cost update is visible.
  * - Fixed: Stock-details overnight trades at or after 20:00 now prefer the next visible intraday session's first candle before falling back to the ledger date.
+ * - Fixed: Date-only HSBC order-status trades now anchor to the same day's regular-session close instead of being discarded as synthetic 20:00 overnight trades.
  * - Changed: Stock-details 1W uses regular-session 1-minute candles outside realtime sessions and anchors off-hours trade markers to the nearest session candle.
  * - Fixed: Broker metric replay now builds its own rendered split-factor hints instead of reading a stock-detail row-local variable.
  * - Fixed: Stock-details transaction replay now shares rendered split-factor hints with zero-price grant rows.
@@ -31,7 +32,35 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.8.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.8.4';
+
+const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
+    'hsbc_order_status_capture',
+    'hsbc_order_status_text',
+]);
+
+export function isInvestmentTransactionDateOnly(transaction) {
+    const source = transaction?.source;
+    const sourceTimestampFlag = source?.source_has_intraday_timestamp;
+    if (sourceTimestampFlag === false || String(sourceTimestampFlag).trim().toLowerCase() === 'false') {
+        return true;
+    }
+    if (sourceTimestampFlag === true || String(sourceTimestampFlag).trim().toLowerCase() === 'true') {
+        return false;
+    }
+    return INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS.has(
+        String(source?.file_kind || '').trim().toLowerCase(),
+    );
+}
+
+export function getInvestmentStockDetailsTransactionSessionType(
+    transaction,
+    datetimeValue,
+    getTradeSessionType = getInvestmentTradeSessionType,
+) {
+    if (isInvestmentTransactionDateOnly(transaction)) return 'intraday';
+    return getTradeSessionType(datetimeValue);
+}
 
 export function normalizeInvestmentRange(range, options = [], fallback = 'max') {
     const normalizedRange = String(range || '').trim().toLowerCase();
@@ -665,6 +694,13 @@ export function createInvestmentStockDetailsUtils({
         const intradayDayFallbackIndex = buildInvestmentIntradayDayFallbackIndex(labels);
         const intradayDayBoundaries = buildInvestmentIntradayDayBoundaries(labels);
         const getTransactionDatetimeValue = (txn) => String(txn?.datetime || txn?.date || '').trim();
+        const getTransactionSessionType = (txn, datetimeValue) => (
+            getInvestmentStockDetailsTransactionSessionType(
+                txn,
+                datetimeValue,
+                getInvestmentTradeSessionType,
+            )
+        );
         const getNextVisibleIntradayDayBoundary = (ledgerDate) => {
             const normalizedLedgerDate = normalizeLedgerDate(ledgerDate);
             if (!normalizedLedgerDate) return null;
@@ -698,7 +734,7 @@ export function createInvestmentStockDetailsUtils({
             if (transactionLedgerDate > lastVisibleLedgerDate) return true;
             if (transactionLedgerDate < lastVisibleLedgerDate) return false;
             const transactionDatetimeValue = getTransactionDatetimeValue(txn);
-            const sessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
+            const sessionType = getTransactionSessionType(txn, transactionDatetimeValue);
             const datetimeMatch = transactionDatetimeValue.match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
             const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
             const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
@@ -730,7 +766,7 @@ export function createInvestmentStockDetailsUtils({
             let markerSessionType = 'intraday';
             let markerPrice = null;
             if (useIntradayCandles) {
-                markerSessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
+                markerSessionType = getTransactionSessionType(txn, transactionDatetimeValue);
                 const exactMinuteIndex = dateIndex.get(exactMinuteKey);
                 if (Number.isInteger(exactMinuteIndex)) {
                     markerIndex = exactMinuteIndex;
@@ -782,7 +818,7 @@ export function createInvestmentStockDetailsUtils({
                 const transactionDatetimeValue = getTransactionDatetimeValue(txn);
                 const exactMinuteIndex = dateIndex.get(normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue));
                 if (Number.isInteger(exactMinuteIndex)) return exactMinuteIndex;
-                const sessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
+                const sessionType = getTransactionSessionType(txn, transactionDatetimeValue);
                 const dayBoundary = resolveIntradayDayBoundaryForTransaction(txn, sessionType);
                 if (dayBoundary) {
                     if (sessionType === 'post') {

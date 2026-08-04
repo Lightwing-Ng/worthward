@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and alphabetical sort order.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         code="boc_hk",
         label="Bank of China (Hong Kong)",
         icon_filename="Bank of China.svg",
-        description="Record Hong Kong bank-account activity in RMB (CNY/CNH), HKD, or USD through the standard XLSX.",
+        description="Upload one or more BOCHK Consolidated Statement PDFs for Hong Kong cash-account activity.",
     ),
     "icbc_cn": BrokerCatalogEntry(
         code="icbc_cn",

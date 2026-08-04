@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.9.1
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from app.services.investment_record_basics import (
 )
 
 
-ZIRCON_HK_IMPORTER_VERSION = "0.6.0"
+ZIRCON_HK_IMPORTER_VERSION = "0.8.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
 ZIRCON_HK_BROKER_LABEL = "Zircon (HK)"
 ZIRCON_HK_TEMPLATE_FILENAME = "Manual_investment_import.xlsx"
@@ -71,6 +71,7 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
     "Sell": "sell",
     "Deposit": "deposit",
     "Withdrawal": "withdrawal",
+    "Virtual balance reset": "virtual_balance_reset",
     "Dividend": "dividend",
     "Dividend reinvestment": "dividend_reinvestment",
     "Fee": "fee",
@@ -141,6 +142,7 @@ _POSITIVE_CASH_TYPES = {
 }
 _NEGATIVE_CASH_TYPES = {
     "withdrawal",
+    "virtual_balance_reset",
     "fee",
     "debit_interest",
     "foreign_tax_withholding",
@@ -1417,7 +1419,7 @@ def _validate_and_enrich_reference_groups(
         acquired_amount = Decimal(acquired["net_amount_raw"])
         exchange_rate = sold_amount / acquired_amount
         pair_ticker = f"{acquired_currency}.{sold_currency}"
-        description = f"FX FROM {sold_currency} TO {acquired_currency}"
+        description = f"FX from {sold_currency} to {acquired_currency}"
         reference_id = normalize_import_text(
             (sold.get("source") or {}).get("reference_id")
         )

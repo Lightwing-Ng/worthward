@@ -1,10 +1,12 @@
 /**
  * Investment transaction filter state helpers.
  *
- * Code version: v1.0.0
+ * Code version: v1.3.0
+ * - Fixed: Mainland CNY rows remain CNY while offshore RMB rows retain the CNH filter.
+ * - Added: Description filtering can isolate the unresolved internal-transfer rows that need a binding.
  */
 
-export const INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION = 'v1.0.0';
+export const INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION = 'v1.3.0';
 
 export function normalizeInvestmentBroker(broker) {
     const normalizedBroker = String(broker || '').trim().toLowerCase();
@@ -92,6 +94,58 @@ export function selectInvestmentBrokerRows(index, selectedCodes) {
         .sort((left, right) => left.index - right.index);
 }
 
+export function normalizeInvestmentTransactionCurrency(value) {
+    const normalizedCurrency = String(value || '').trim().toUpperCase();
+    if (['CNY', 'RMB'].includes(normalizedCurrency)) return 'CNH';
+    return normalizedCurrency;
+}
+
+function isMainlandCnyBroker(transaction) {
+    const broker = normalizeInvestmentBroker(transaction?.broker || transaction?.source?.broker);
+    return broker === 'cmb_cn' || broker === 'cmb' || broker.endsWith('_cn');
+}
+
+export function normalizeInvestmentTransactionCurrencyForFilter(
+    transaction,
+    formatCurrency = (row) => row?.currency,
+) {
+    const row = transaction?.txn ?? transaction;
+    const rawCurrency = String(formatCurrency(row) || '').trim().toUpperCase();
+    if (['CNY', 'RMB'].includes(rawCurrency) && isMainlandCnyBroker(row)) return 'CNY';
+    return normalizeInvestmentTransactionCurrency(rawCurrency);
+}
+
+export function selectInvestmentCurrencyRows(
+    rows = [],
+    selectedCurrency = 'all',
+    formatCurrency = (transaction) => transaction?.currency,
+) {
+    const source = Array.isArray(rows) ? rows : [];
+    const normalizedCurrency = normalizeInvestmentTransactionCurrency(selectedCurrency);
+    const normalizedSelectedCurrency = String(selectedCurrency || '').trim().toUpperCase() === 'CNY'
+        ? 'CNY'
+        : normalizedCurrency;
+    if (!normalizedSelectedCurrency || normalizedSelectedCurrency === 'ALL') return source;
+    return source.filter((row) => {
+        const transaction = row?.txn ?? row;
+        return normalizeInvestmentTransactionCurrencyForFilter(transaction, formatCurrency)
+            === normalizedSelectedCurrency;
+    });
+}
+
+export function selectInvestmentBrokerCurrencyRows(
+    index,
+    selectedCodes,
+    selectedCurrency = 'all',
+    formatCurrency = (transaction) => transaction?.currency,
+) {
+    return selectInvestmentCurrencyRows(
+        selectInvestmentBrokerRows(index, selectedCodes),
+        selectedCurrency,
+        formatCurrency,
+    );
+}
+
 export function getAvailableInvestmentCurrencyCodes(transactions = [], {
     isHidden = () => false,
     formatCurrency = (transaction) => transaction?.currency,
@@ -99,20 +153,24 @@ export function getAvailableInvestmentCurrencyCodes(transactions = [], {
     return Array.from(new Set(
         (Array.isArray(transactions) ? transactions : [])
             .filter((txn) => !isHidden(txn))
-            .map((txn) => String(formatCurrency(txn) || '').trim().toUpperCase())
+            .map((txn) => normalizeInvestmentTransactionCurrencyForFilter(txn, formatCurrency))
             .filter((currency) => /^[A-Z]{3}$/.test(currency)),
     )).sort((left, right) => left.localeCompare(right));
 }
 
 export function normalizeInvestmentCurrencyFilter(value, availableCurrencies = []) {
-    const normalized = String(value || '').trim().toUpperCase();
+    const raw = String(value || '').trim().toUpperCase();
+    const normalized = availableCurrencies.includes(raw)
+        ? raw
+        : normalizeInvestmentTransactionCurrency(raw);
     if (!normalized || normalized === 'ALL') return 'all';
     return availableCurrencies.includes(normalized) ? normalized : 'all';
 }
 
 export function matchesInvestmentCurrencyFilter(transaction, selectedCurrency, formatCurrency) {
     if (selectedCurrency === 'all') return true;
-    return String(formatCurrency(transaction) || '').trim().toUpperCase() === selectedCurrency;
+    return normalizeInvestmentTransactionCurrencyForFilter(transaction, formatCurrency)
+        === selectedCurrency;
 }
 
 export function matchesInvestmentDateFilter(transaction, dateFilter, normalizeDate = (value) => String(value || '')) {
@@ -124,4 +182,29 @@ export function matchesInvestmentDateFilter(transaction, dateFilter, normalizeDa
     if (mode === 'day') return transactionDate === value;
     if (mode === 'month') return transactionDate.startsWith(`${value}-`);
     return false;
+}
+
+export function isInvestmentTransactionUnbound(transaction) {
+    const row = transaction?.txn ?? transaction;
+    return row?.manual_internal_transfer_needs_binding === true
+        && Number(row?.manual_internal_transfer_candidate_count || 0) > 0;
+}
+
+export function hasInvestmentUnboundTransactions(transactions = []) {
+    return (Array.isArray(transactions) ? transactions : []).some((transaction) => (
+        isInvestmentTransactionUnbound(transaction)
+    ));
+}
+
+export function normalizeInvestmentDescriptionBindingFilter(value, transactions = []) {
+    const normalizedValue = String(value || '').trim().toLowerCase();
+    if (normalizedValue !== 'unbound') return 'all';
+    return hasInvestmentUnboundTransactions(transactions) ? 'unbound' : 'all';
+}
+
+export function selectInvestmentDescriptionBindingRows(rows = [], selectedFilter = 'all') {
+    const source = Array.isArray(rows) ? rows : [];
+    return String(selectedFilter || '').trim().toLowerCase() === 'unbound'
+        ? source.filter((row) => isInvestmentTransactionUnbound(row))
+        : source;
 }

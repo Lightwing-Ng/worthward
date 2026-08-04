@@ -1,7 +1,12 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.58.0
+Code version: v0.64.0
+- Added: CSRF-protected Schwab security-transfer source-account confirmation persists metadata only and refreshes fail-closed aggregate reconciliation.
+- Changed: Local Market Store pagination now mirrors the shared Investment page-boundary controls.
+- Added: BOCHK Consolidated Statement PDF imports preserve HKD, CNY, and USD subaccounts across batches.
+- Added: Investment payloads include date-aware USD FX history for HKD, CNY, and CNH cash conversion.
+- Fixed: Investment FX payloads are bounded to the ledger date range instead of returning unused provider history.
 """
 
 from __future__ import annotations
@@ -135,7 +140,11 @@ from app.services.date_constraints import (
     nyse_recent_trading_days,
 )
 from app.services.dca import simulate_recurring_investment
-from app.services.market_cap import build_market_cap_series_payload, extract_stock_split_events
+from app.services.market_cap import (
+    build_market_cap_series_payload,
+    extract_stock_split_events,
+    fetch_usd_exchange_rate_history,
+)
 from app.services.range_options import (
     COMPARE_INTRADAY_PERIODS,
     build_supported_compare_periods,
@@ -146,7 +155,12 @@ from app.services.investment_import import (
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
+    normalize_investment_security_transfer_attributions,
     parse_investment_payload,
+    refresh_investment_security_transfer_reconciliation,
+    validate_hsbc_pasted_text,
+    validate_investment_internal_transfer_binding,
+    validate_investment_security_transfer_attribution,
 )
 from app.services.investment_import_registry import commit_investment_import
 from app.services.zircon_hk_import import (
@@ -311,7 +325,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v7"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v10"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
@@ -373,12 +387,14 @@ class WebRuntime:
     investment_download_zircon_hk_template: Any
     investment_export_standard_xlsx: Any
     investment_validate_zircon_hk_workbook: Any
+    investment_validate_hsbc_pasted_text: Any
     investment_get_latest_price: Any
     investment_get_parquet: Any
     investment_get_intraday_history: Any
     investment_get_market_session: Any
     investment_get_realtime_quotes: Any
     investment_update_internal_transfer_binding: Any
+    investment_update_security_transfer_attribution: Any
     live_trading_get_positions: Any
     live_trading_submit_order: Any
 
@@ -891,7 +907,9 @@ def build_web_runtime() -> WebRuntime:
             return None
         return cast(
             dict[str, Any],
-            normalize_investment_payload_tickers(payload),
+            refresh_investment_security_transfer_reconciliation(
+                normalize_investment_payload_tickers(payload)
+            ),
         )
 
     def write_investment_transactions_cache(
@@ -918,12 +936,16 @@ def build_web_runtime() -> WebRuntime:
             )
 
     def load_normalized_investment_payload() -> dict[str, Any]:
-        return normalize_investment_payload_tickers(
-            load_investment_store_payload(INVESTMENT_STORE_PATH)
+        return refresh_investment_security_transfer_reconciliation(
+            normalize_investment_payload_tickers(
+                load_investment_store_payload(INVESTMENT_STORE_PATH)
+            )
         )
 
     def write_investment_payload(payload: dict[str, Any]) -> None:
-        normalized_payload = normalize_investment_payload_tickers(payload)
+        normalized_payload = refresh_investment_security_transfer_reconciliation(
+            normalize_investment_payload_tickers(payload)
+        )
         save_investment_store_payload(cast(dict[str, Any], normalized_payload), INVESTMENT_STORE_PATH)
         invalidate_investment_transactions_cache()
 
@@ -1041,6 +1063,79 @@ def build_web_runtime() -> WebRuntime:
                 )
             ),
         }
+
+    def build_investment_fx_rate_history_payload(
+        transactions: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Build local-currency-per-USD daily rates for the investment frontend."""
+        transaction_currencies = {
+            str(transaction.get("currency") or "").strip().upper()
+            for transaction in (transactions if isinstance(transactions, list) else [])
+        }
+        requested_currencies: list[str] = []
+        if "HKD" in transaction_currencies:
+            requested_currencies.append("HKD")
+        if transaction_currencies.intersection({"CNY", "CNH", "RMB"}):
+            requested_currencies.append("CNY")
+        if not requested_currencies:
+            return {}
+
+        parsed_dates: list[pd.Timestamp] = []
+        for transaction in (transactions if isinstance(transactions, list) else []):
+            parsed = pd.to_datetime(transaction.get("date"), errors="coerce")
+            if pd.isna(parsed):
+                continue
+            parsed_timestamp = pd.Timestamp(parsed)
+            if parsed_timestamp.tzinfo is not None:
+                parsed_timestamp = parsed_timestamp.tz_convert("America/New_York").tz_localize(None)
+            parsed_dates.append(parsed_timestamp.normalize())
+
+        end_date = pd.Timestamp.now(tz="America/New_York").tz_localize(None).normalize()
+        start_date = min(parsed_dates) if parsed_dates else end_date
+        if start_date > end_date:
+            start_date = end_date
+
+        payload: dict[str, dict[str, Any]] = {}
+        for currency in requested_currencies:
+            try:
+                history = fetch_usd_exchange_rate_history(currency, start_date, end_date)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Unable to build investment %s FX history: %s", currency, exc)
+                continue
+
+            history = history.copy()
+            history["Date"] = pd.to_datetime(history["Date"], errors="coerce").dt.normalize()
+            history = history.loc[
+                history["Date"].notna()
+                & (history["Date"] >= start_date)
+                & (history["Date"] <= end_date)
+            ]
+            values: dict[str, float] = {}
+            for row in history.itertuples(index=False):
+                row_date = pd.to_datetime(getattr(row, "Date", None), errors="coerce")
+                usd_per_unit = pd.to_numeric(getattr(row, "UsdPerUnit", None), errors="coerce")
+                if pd.isna(row_date) or pd.isna(usd_per_unit) or float(usd_per_unit) <= 0:
+                    continue
+                normalized_date = pd.Timestamp(row_date)
+                if normalized_date.tzinfo is not None:
+                    normalized_date = normalized_date.tz_convert("America/New_York").tz_localize(None)
+                values[normalized_date.date().isoformat()] = 1.0 / float(usd_per_unit)
+            if values:
+                dates = sorted(values)
+                payload[currency] = {
+                    "dates": dates,
+                    "values": {date: values[date] for date in dates},
+                }
+
+        # Yahoo has a CNY history but no separate CNH mapping in this project.
+        # Use it as the RMB fallback; transaction- or statement-specific rates
+        # are applied later by the frontend and therefore remain authoritative.
+        if "CNY" in payload and "CNH" in transaction_currencies and "CNH" not in payload:
+            payload["CNH"] = {
+                "dates": list(payload["CNY"]["dates"]),
+                "values": dict(payload["CNY"]["values"]),
+            }
+        return payload
 
     def collect_investment_display_tickers(transactions: list[dict[str, Any]]) -> list[str]:
         tickers: list[str] = []
@@ -2378,29 +2473,50 @@ def build_web_runtime() -> WebRuntime:
             strategy_factory=instantiate_strategy,
         )
 
-    def build_local_store_pagination_slots(
+    def build_local_store_pagination_items(
             current_page: int,
             total_pages: int,
-    ) -> tuple[dict[str, int | None], list[dict[str, int | None]], dict[str, int | None]]:
+    ) -> list[dict[str, int | str | bool]]:
         page_group_index = (current_page - 1) // 5
         page_start = (page_group_index * 5) + 1
-        page_slots: list[dict[str, int | None]] = []
-        for offset in range(5):
-            page_number = page_start + offset
-            page_slots.append(
+        page_end = min(page_start + 4, total_pages)
+        items: list[dict[str, int | str | bool]] = []
+
+        if total_pages <= 1:
+            return items
+        if total_pages <= 5:
+            return [
                 {
-                    "page": page_number if page_number <= total_pages else None,
+                    "kind": "page",
+                    "page": page_number,
                     "is_active": page_number == current_page,
                 }
-            )
+                for page_number in range(1, total_pages + 1)
+            ]
 
-        previous_page = page_start - 5 if page_start > 1 else None
-        next_page = page_start + 5 if page_start + 5 <= total_pages else None
-        return (
-            {"page": previous_page},
-            page_slots,
-            {"page": next_page},
+        if page_start > 1:
+            items.extend((
+                {"kind": "previous", "page": page_start - 1},
+                {"kind": "page", "page": 1, "is_active": current_page == 1},
+                {"kind": "ellipsis", "position": "leading"},
+            ))
+
+        items.extend(
+            {
+                "kind": "page",
+                "page": page_number,
+                "is_active": page_number == current_page,
+            }
+            for page_number in range(page_start, page_end + 1)
         )
+
+        if page_end < total_pages:
+            items.extend((
+                {"kind": "ellipsis", "position": "trailing"},
+                {"kind": "page", "page": total_pages, "is_active": current_page == total_pages},
+                {"kind": "next", "page": page_end + 1},
+            ))
+        return items
 
     def has_local_profile_snapshot(ticker: str) -> bool:
         return has_profile_record(ticker)
@@ -3041,9 +3157,7 @@ def build_web_runtime() -> WebRuntime:
         local_market_rows: list[dict[str, Any]] = []
         local_store_total_pages = 1
         local_store_current_page = 1
-        local_store_prev_slot = {"page": None}
-        local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
-        local_store_next_slot = {"page": None}
+        local_store_pagination_items: list[dict[str, int | str | bool]] = []
         backtest_periods_by_interval: dict[str, list[str]] = {
             "1d": list(SUPPORTED_PERIODS_1D),
             "1m": list(SUPPORTED_PERIODS_1M),
@@ -4120,7 +4234,7 @@ def build_web_runtime() -> WebRuntime:
                 local_store_current_page = local_store_page_value()
                 local_store_total_pages = max((len(all_local_market_tickers) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
                 local_store_current_page = min(local_store_current_page, local_store_total_pages)
-                local_store_prev_slot, local_store_page_slots, local_store_next_slot = build_local_store_pagination_slots(
+                local_store_pagination_items = build_local_store_pagination_items(
                     local_store_current_page,
                     local_store_total_pages,
                 )
@@ -4251,9 +4365,7 @@ def build_web_runtime() -> WebRuntime:
             local_store_current_page=local_store_current_page,
             local_store_page_size=LOCAL_STORE_PAGE_SIZE,
             local_store_total_pages=local_store_total_pages,
-            local_store_prev_slot=local_store_prev_slot,
-            local_store_page_slots=local_store_page_slots,
-            local_store_next_slot=local_store_next_slot,
+            local_store_pagination_items=local_store_pagination_items,
             page_title=page_title,
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
@@ -5617,6 +5729,7 @@ def build_web_runtime() -> WebRuntime:
                 "transactions": [],
                 "ticker_profiles": {},
                 "price_history_by_ticker": {},
+                "fx_rate_history_by_currency": {},
                 "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
                 "money_market_quote_currencies": configured_money_market_quote_currencies,
@@ -5679,6 +5792,7 @@ def build_web_runtime() -> WebRuntime:
             )
             investment_store_fingerprint = build_file_fingerprint(investment_store_path_for(INVESTMENT_STORE_PATH))
             transactions = data.get("transactions", [])
+            data["fx_rate_history_by_currency"] = build_investment_fx_rate_history_payload(transactions)
             price_history_by_ticker, price_history_failures = load_investment_price_histories(
                 transactions,
                 open_tickers=section_freshness["open_tickers"],
@@ -5885,6 +5999,52 @@ def build_web_runtime() -> WebRuntime:
                     "The manual investment workbook could not be validated. "
                     "Download a fresh template and try again."
                 ),
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
+    def investment_validate_hsbc_pasted_text():
+        """Validate HSBC paste content without writing ledger or evidence data."""
+        try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+            request_payload = request.get_json(silent=True)
+            if not isinstance(request_payload, dict):
+                response = jsonify({
+                    "success": False,
+                    "error": "HSBC pasted text validation requires a JSON request body.",
+                })
+                response.status_code = 400
+                return apply_no_store_headers(response)
+            validation = validate_hsbc_pasted_text(
+                portfolio_text=str(request_payload.get("portfolio_text", "") or ""),
+                order_status_text=str(request_payload.get("order_status_text", "") or ""),
+                cash_account_text=str(request_payload.get("cash_account_text", "") or ""),
+                dividend_action_loader=load_local_investment_dividend_actions,
+            )
+            return apply_no_store_headers(jsonify({"success": True, **validation}))
+        except RequestEntityTooLarge:
+            response = jsonify({
+                "success": False,
+                "error": (
+                    f"The pasted HSBC text exceeds the {MAX_INVESTMENT_IMPORT_REQUEST_MIB} MiB "
+                    "investment import limit."
+                ),
+            })
+            response.status_code = 413
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to validate HSBC pasted text")
+            response = jsonify({
+                "success": False,
+                "error": "The HSBC pasted text could not be validated. Paste the full HSBC page again.",
             })
             response.status_code = 500
             return apply_no_store_headers(response)
@@ -6097,9 +6257,9 @@ def build_web_runtime() -> WebRuntime:
                         statement_pdf_payloads=statement_pdf_payloads,
                     )
                     success_message = (
-                        "HSBC statement import complete. Matching composite and investment statements were reconciled "
-                        "by period, account, holdings, trades, fees, dividends, and USD cash before the committed store "
-                        "was read back."
+                        "HSBC statement import complete. Full monthly cash-account statements, or compatible "
+                        "composite/investment statement pairs, were reconciled by period and account before the "
+                        "committed store was read back."
                     )
                 else:
                     imported_payload = parse_investment_payload(
@@ -6116,11 +6276,22 @@ def build_web_runtime() -> WebRuntime:
                         ).strip(),
                         dividend_action_loader=load_local_investment_dividend_actions,
                     )
-                    success_message = (
-                        "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
-                        "merged incrementally into the local investment store without "
-                        "clearing older data first."
+                    import_summary = (
+                        imported_payload.get("summary")
+                        if isinstance(imported_payload.get("summary"), dict)
+                        else {}
                     )
+                    if import_summary.get("hsbc_paste_import_scope") == "cash_only_non_usd":
+                        success_message = (
+                            "HSBC cash-only sync complete. The pasted HKD/CNH cash-account text was normalized and "
+                            "merged incrementally without replacing the existing USD Portfolio or cash snapshot."
+                        )
+                    else:
+                        success_message = (
+                            "HSBC sync complete. The pasted cash-account, Portfolio, and Order Status text were normalized and "
+                            "merged incrementally into the local investment store without "
+                            "clearing older data first."
+                        )
             elif broker == "schwab":
                 schwab_transactions_file = request.files.get("transactions_csv")
                 if schwab_transactions_file is None:
@@ -6156,6 +6327,57 @@ def build_web_runtime() -> WebRuntime:
                     "Charles Schwab import complete. Transactions and the authoritative Positions snapshot were "
                     "merged incrementally into the local investment store without clearing older data first."
                 )
+            elif broker == "boc_hk" and request.files.getlist("boc_hk_statement_pdfs"):
+                statement_pdf_payloads: list[tuple[bytes, str]] = []
+                for statement_pdf_file in request.files.getlist("boc_hk_statement_pdfs"):
+                    if statement_pdf_file is None:
+                        continue
+                    source_filename = str(
+                        getattr(statement_pdf_file, "filename", "") or ""
+                    ).strip()
+                    if not source_filename:
+                        return jsonify({
+                            "success": False,
+                            "error": "Every uploaded BOCHK statement must have a non-empty filename.",
+                        }), 400
+                    if not source_filename.lower().endswith(".pdf"):
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                f"The uploaded BOCHK statement '{source_filename}' must use a .pdf filename."
+                            ),
+                        }), 400
+                    pdf_bytes = statement_pdf_file.read()
+                    if not pdf_bytes:
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                f"The uploaded BOCHK statement PDF '{source_filename}' is empty."
+                            ),
+                        }), 400
+                    statement_pdf_payloads.append((
+                        pdf_bytes,
+                        source_filename,
+                    ))
+                if not statement_pdf_payloads:
+                    return jsonify({
+                        "success": False,
+                        "error": "Please upload at least one BOCHK Consolidated Statement PDF.",
+                    }), 400
+                imported_payload = parse_investment_payload(
+                    "boc_hk",
+                    "statement_pdfs",
+                    statement_pdf_payloads=statement_pdf_payloads,
+                )
+                success_message = (
+                    "BOCHK import complete. Consolidated Statement PDFs were parsed in memory, with each cash subaccount "
+                    "and source currency preserved, then merged incrementally without clearing older data first."
+                )
+            elif broker == "boc_hk" and request.files.get("zircon_hk_transactions_xlsx") is None:
+                return jsonify({
+                    "success": False,
+                    "error": "Please upload at least one BOCHK Consolidated Statement PDF.",
+                }), 400
             elif broker in {
                 "zircon_hk",
                 "standard_xlsx",
@@ -6308,9 +6530,9 @@ def build_web_runtime() -> WebRuntime:
                 response.status_code = 403
                 return apply_no_store_headers(response)
             payload = request.get_json(silent=True) or {}
-            source_key = str(payload.get("source_key", "")).strip()
-            target_key = str(payload.get("target_key", "")).strip()
-            if not source_key:
+            requested_source_key = str(payload.get("source_key", "")).strip()
+            requested_target_key = str(payload.get("target_key", "")).strip()
+            if not requested_source_key:
                 return jsonify({
                     "success": False,
                     "error": "A source transfer key is required.",
@@ -6321,35 +6543,162 @@ def build_web_runtime() -> WebRuntime:
                     "error": "No local investment store exists yet.",
                 }), 400
 
-            def update_bindings(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, str]]:
+            def update_bindings(
+                current_payload: dict[str, object],
+            ) -> tuple[dict[str, object], dict[str, object]]:
                 investment_payload = normalize_investment_payload_tickers(current_payload)
+                transactions = investment_payload.get("transactions")
+                requested_pair = normalize_investment_internal_transfer_bindings(
+                    {
+                        requested_source_key: requested_target_key or requested_source_key,
+                    },
+                    transactions=transactions,
+                )
+                source_key = next(iter(requested_pair), requested_source_key)
+                target_key = requested_pair.get(source_key, "") if requested_target_key else ""
+                if requested_target_key:
+                    validate_investment_internal_transfer_binding(
+                        transactions,
+                        source_key,
+                        target_key,
+                    )
                 next_bindings = normalize_investment_internal_transfer_bindings(
-                    investment_payload.get("manual_internal_transfer_bindings")
+                    investment_payload.get("manual_internal_transfer_bindings"),
+                    transactions=transactions,
                 )
                 if target_key:
-                    for existing_source_key, existing_target_key in list(next_bindings.items()):
+                    for existing_source_key, existing_target_key in next_bindings.items():
                         if existing_source_key != source_key and existing_target_key == target_key:
-                            del next_bindings[existing_source_key]
+                            raise ValueError(
+                                "The selected internal-transfer counterpart is already bound to another source record. Remove that binding first."
+                            )
                     next_bindings[source_key] = target_key
                 else:
                     next_bindings.pop(source_key, None)
                 investment_payload["manual_internal_transfer_bindings"] = next_bindings
-                return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)), next_bindings
+                updated_payload = refresh_investment_security_transfer_reconciliation(
+                    investment_payload
+                )
+                return cast(dict[str, object], updated_payload), {
+                    "manual_internal_transfer_bindings": next_bindings,
+                    "summary": updated_payload.get("summary", {}),
+                }
 
-            next_bindings = cast(
-                dict[str, str],
+            update_result = cast(
+                dict[str, object],
                 update_investment_store_payload(update_bindings, INVESTMENT_STORE_PATH),
             )
             invalidate_investment_transactions_cache()
             return jsonify({
                 "success": True,
-                "manual_internal_transfer_bindings": next_bindings,
+                "manual_internal_transfer_bindings": update_result.get(
+                    "manual_internal_transfer_bindings", {}
+                ),
+                "summary": update_result.get("summary", {}),
             })
+        except ValueError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+            }), 400
         except Exception:  # noqa: BLE001
             LOGGER.exception("Unable to update internal transfer binding")
             return jsonify({
                 "success": False,
                 "error": "Unable to update the internal transfer binding. Try again later.",
+            }), 500
+
+    def investment_update_security_transfer_attribution():
+        """Persist a user-attested source account for one Schwab receipt only."""
+        try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+            request_payload = request.get_json(silent=True) or {}
+            requested_receipt_key = str(request_payload.get("receipt_key", "")).strip()
+            raw_source_broker = str(request_payload.get("source_broker", "")).strip()
+            raw_source_account = str(request_payload.get("source_account", "")).strip()
+            if not requested_receipt_key:
+                return jsonify({
+                    "success": False,
+                    "error": "A Schwab transfer receipt key is required.",
+                }), 400
+            if bool(raw_source_broker) != bool(raw_source_account):
+                return jsonify({
+                    "success": False,
+                    "error": "Select both a source broker and a source account, or clear the attribution.",
+                }), 400
+            if not investment_store_exists(INVESTMENT_STORE_PATH):
+                return jsonify({
+                    "success": False,
+                    "error": "No local investment store exists yet.",
+                }), 400
+
+            def update_attributions(
+                current_payload: dict[str, object],
+            ) -> tuple[dict[str, object], dict[str, object]]:
+                investment_payload = normalize_investment_payload_tickers(current_payload)
+                transactions = investment_payload.get("transactions")
+                next_attributions = normalize_investment_security_transfer_attributions(
+                    investment_payload.get("manual_security_transfer_attributions"),
+                    transactions=transactions,
+                )
+                if raw_source_broker:
+                    validate_investment_security_transfer_attribution(
+                        transactions,
+                        requested_receipt_key,
+                        raw_source_broker,
+                        raw_source_account,
+                        existing_attributions=next_attributions,
+                    )
+                    next_attributions[requested_receipt_key] = {
+                        "schema_version": "1",
+                        "source_broker": raw_source_broker,
+                        "source_account": raw_source_account,
+                        "attested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                else:
+                    next_attributions.pop(requested_receipt_key, None)
+                investment_payload["manual_security_transfer_attributions"] = (
+                    next_attributions
+                )
+                updated_payload = refresh_investment_security_transfer_reconciliation(
+                    investment_payload
+                )
+                return cast(dict[str, object], updated_payload), {
+                    "manual_security_transfer_attributions": updated_payload.get(
+                        "manual_security_transfer_attributions", {}
+                    ),
+                    "summary": updated_payload.get("summary", {}),
+                }
+
+            update_result = cast(
+                dict[str, object],
+                update_investment_store_payload(
+                    update_attributions,
+                    INVESTMENT_STORE_PATH,
+                ),
+            )
+            invalidate_investment_transactions_cache()
+            return jsonify({
+                "success": True,
+                "manual_security_transfer_attributions": update_result.get(
+                    "manual_security_transfer_attributions", {}
+                ),
+                "summary": update_result.get("summary", {}),
+            })
+        except ValueError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+            }), 400
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to update Schwab transfer attribution")
+            return jsonify({
+                "success": False,
+                "error": "Unable to update the Schwab transfer attribution. Try again later.",
             }), 500
 
     def investment_get_latest_price():
@@ -6859,12 +7208,16 @@ def build_web_runtime() -> WebRuntime:
         investment_download_zircon_hk_template=investment_download_zircon_hk_template,
         investment_export_standard_xlsx=investment_export_standard_xlsx,
         investment_validate_zircon_hk_workbook=investment_validate_zircon_hk_workbook,
+        investment_validate_hsbc_pasted_text=investment_validate_hsbc_pasted_text,
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,
         investment_get_realtime_quotes=investment_get_realtime_quotes,
         investment_get_market_session=investment_get_market_session,
         investment_update_internal_transfer_binding=investment_update_internal_transfer_binding,
+        investment_update_security_transfer_attribution=(
+            investment_update_security_transfer_attribution
+        ),
         live_trading_get_positions=live_trading_get_positions,
         live_trading_submit_order=live_trading_submit_order,
     )

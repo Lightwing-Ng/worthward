@@ -1,10 +1,11 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.3.0
+ * Code version: v1.7.1
+ * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.3.0';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.7.1';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -80,6 +81,22 @@ export function buildSchwabImportFeedbackMessage({
         : null;
     const importedRecordCount = Number(incrementalImport?.imported_record_count);
     const addedRecordCount = Number(incrementalImport?.added_record_count);
+    const holdingsMismatchCount = Number(importSummary?.holdings_validation?.mismatch_count);
+    const positionsValidation = importSummary?.schwab_positions_validation;
+    const securityTransferReconciliation = (
+        importSummary?.security_transfer_reconciliation
+        && typeof importSummary.security_transfer_reconciliation === 'object'
+    ) ? importSummary.security_transfer_reconciliation : {};
+    const unreconciledInboundCount = Number(securityTransferReconciliation.unreconciled_inbound_count);
+    const aggregateHoldingsAvailable = securityTransferReconciliation.aggregate_holdings_available !== false;
+    const activeOverlayCount = Array.isArray(
+        securityTransferReconciliation?.aggregate_overlay?.active_receipt_keys,
+    ) ? securityTransferReconciliation.aggregate_overlay.active_receipt_keys.length : 0;
+    const pnlUnavailableTickers = Array.isArray(securityTransferReconciliation.pnl_unavailable_tickers)
+        ? securityTransferReconciliation.pnl_unavailable_tickers
+            .map((ticker) => String(ticker || '').trim().toUpperCase())
+            .filter(Boolean)
+        : [];
     const items = [
         'Transactions and the authoritative <strong>Positions</strong> snapshot were merged <strong>incrementally</strong> without clearing older records.',
         'Both uploaded CSV files are retained locally as <strong>SHA-256-verified immutable evidence</strong>.',
@@ -89,9 +106,35 @@ export function buildSchwabImportFeedbackMessage({
             `This run parsed <strong>${importedRecordCount.toLocaleString('en-US')}</strong> records and added <strong>${addedRecordCount.toLocaleString('en-US')}</strong>.`
         );
     }
+    if (positionsValidation?.status === 'matched') {
+        items.push('The reported <strong>Positions Total</strong> reconciled to the listed securities and cash before this import was committed.');
+    }
+    if (Number.isFinite(holdingsMismatchCount) && holdingsMismatchCount > 0) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>Review required</u>:</span> The Transactions CSV does not independently replay to <strong class="notice-floating-banner-emphasis-danger">${holdingsMismatchCount.toLocaleString('en-US')} Positions snapshot ${holdingsMismatchCount === 1 ? 'holding' : 'holdings'}</strong>. The broker snapshot remains source evidence, but the transaction-history scope is incomplete.`,
+        );
+    }
+    if (!aggregateHoldingsAvailable) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>Receipt review required</u>:</span> Confirm a concrete source broker and account for each unresolved Schwab security receipt in Transaction history. <strong class="notice-floating-banner-emphasis-danger">Only unresolved receipt rows are excluded from All brokers Holdings and Equity; unaffected holdings, chart, and Metrics remain visible, while P&amp;L stays unavailable only for affected transferred tickers.</strong> Real receipts and broker-specific records are retained unchanged; no source-broker transfer-out was created or inferred. No carried cost basis was created or inferred.`,
+        );
+    } else if (activeOverlayCount > 0) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>Aggregate-only confirmation</u>:</span> <strong class="notice-floating-banner-emphasis-danger">${activeOverlayCount.toLocaleString('en-US')} Schwab in-kind receipt ${activeOverlayCount === 1 ? 'uses' : 'use'} a user-attested net-neutral overlay</strong>. It affects only All brokers aggregation, creates no source transfer-out, and is automatically superseded when exact source evidence is imported.`,
+        );
+    } else if (Number.isFinite(unreconciledInboundCount) && unreconciledInboundCount > 0) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>Source-side evidence needed</u>:</span> <strong class="notice-floating-banner-emphasis-danger">${unreconciledInboundCount.toLocaleString('en-US')} in-kind transfer ${unreconciledInboundCount === 1 ? 'receipt has' : 'receipts have'} no confirmed source record</strong>. The real Schwab receipts were retained; no source-broker transfer-out was created or inferred.`,
+        );
+    }
+    if (pnlUnavailableTickers.length) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>P&amp;L unavailable</u>:</span> Transferred-position cost basis is not carried in the Schwab snapshot, so P&amp;L is unavailable only for <strong class="notice-floating-banner-emphasis-danger">${pnlUnavailableTickers.join(', ')}</strong> until verified carried basis is imported.`,
+        );
+    }
     if (pendingTransferCount > 0) {
         items.push(
-            `<span class="notice-floating-banner-emphasis-danger"><u>Manual review required</u>:</span> Bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} ambiguous in-kind transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history. Exact same-day ticker-and-quantity pairs are linked automatically.`
+            `<span class="notice-floating-banner-emphasis-danger"><u>Manual review required</u>:</span> Bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} in-kind transfer ${pendingTransferCount === 1 ? 'counterpart' : 'counterparts'}</strong> in Transaction history. Same-day ticker-and-quantity similarity never creates an automatic link.`
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();

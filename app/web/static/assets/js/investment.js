@@ -1,7 +1,41 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.37.1
+ * Code version: v2.58.5
+ * - Fixed: Stock-details date-only HSBC orders now render their buy/sell marker at the same day's regular-session close.
+ * - Changed: Matched security-transfer receipts replay source-account cost basis with an explicit FIFO reconstructed method label in the live Holdings cache.
+ * - Changed: Confirmed Schwab security-transfer receipts render as passive destination records without a source-confirmation removal action or aggregate-only basis warning.
+ * - Fixed: Bound cash transfers replay the outflow leg before the receiving deposit, using the same deterministic ordering rule for restored and manual bindings.
+ * - Fixed: Manual internal-transfer bindings now impose the logical predecessor order even when imported source row numbers place the counterpart first.
+ * - Fixed: Unconfirmed Schwab security receipts now scope All brokers exclusions to the affected receipt and ticker, so unaffected holdings, equity, chart, and metrics remain visible while transferred positions with unverified carried basis keep P&L unavailable.
+ * - Fixed: Manual in-kind transfer selections require the same source and receipt date as server-side reconciliation.
+ * - Fixed: Manually bound in-kind transfers replay the source broker's transfer-out before the destination broker's transfer-in, even when same-day source row numbers sort the receipt first.
+ * - Added: Schwab in-kind receipts require server-validated source-account attribution before All brokers aggregation; overlays never fabricate a source leg or tax basis.
+ * - Fixed: Holdings values with a leading non-USD marker now split their integer and decimal parts consistently.
+ * - Changed: Transaction History Amount, Commission, Market value, Cash, and Equity values reuse the split-number markup.
+ * - Fixed: Undated cash-transfer outflows may post one calendar day after the matching deposit.
+ * - Fixed: Schwab Journal adjustments retain their signed share quantity in Transaction history.
+ * - Fixed: BOCHK rejects empty, unnamed, and non-PDF statement uploads before submission.
+ * - Changed: Transaction-history pagination reuses the shared Local store
+ *   pagination builder, renderer, and active-indicator motion.
+ * - Added: Metrics exposes broker-scoped cut-loss attribution for reconstructed buy/sell spreads.
+ * - Added: Unbound-transfer indicators follow the currently visible history filters and use a focused action tooltip.
+ * - Changed: Transaction descriptions standardize eDDA, KOL Rewards, and Longbridge US dividend wording.
+ * - Added: BOCHK accepts one or more Consolidated Statement PDFs and keeps its cash subaccounts separate in source metadata.
+ * - Changed: Transaction history descriptions now use a canonical middle-dot separator for spaced clause delimiters.
+ * - Fixed: Metrics broker selection now shows the selected broker logo in the selector.
+ * - Changed: Metrics combines coupon rebates and cash rewards into one expandable, base-currency card.
+ * - Removed: The duplicate Total gain card from Metrics.
+ * - Added: Virtual balance reset rows retain their ledger cash effect without becoming a real-world withdrawal.
+ * - Fixed: Native KOL reward rows and mainland CNY metrics use their correct classification and historical FX.
+ * - Fixed: Currency-evidenced cash records retain their source descriptions instead of the legacy equivalent placeholder.
+ * - Added: Transaction history can isolate unresolved internal-transfer bindings from the Description header.
+ * - Fixed: Funding Metrics now preserve each deposit's source currency and pair HKD, CNH, and CNY FX legs before calculating USD equivalents.
+ * - Added: Realized P&L can disclose trading spread, dividends, rewards, interest, and fee contributions in the workspace base currency.
+ * - Fixed: Holdings and Metrics now share the same realized P&L total, including explicit interest and fee cash flows.
+ * - Fixed: Internal-transfer keys disambiguate duplicate rows, validate counterpart semantics server-side, roll back failed saves, and attribute transfer fees to the outflow leg.
+ * - Fixed: Longbridge HK cash-transfer candidates now use a two-day link window, excluding unrelated same-amount HSBC withdrawals several days later.
+ * - Fixed: Cash-transfer candidates now require the bank outflow to precede the deposit leg, while honoring an explicit earlier event date embedded in a bank description.
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -20,20 +54,25 @@ import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     classifyInvestmentUsRealtimeSession,
     createInvestmentDataUtils,
+    filterAggregateOnlyOverlayTransactions,
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.62.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.70.1';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildSchwabImportFeedbackMessage,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.3.0';
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.7.1';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
+    animateLocalStorePaginationIndicator,
+    bindLocalStorePagination,
     buildInvestmentHistoryPagination,
-} from './investment/pagination.js?v=investment-pagination-v1.2.0';
+    positionLocalStorePaginationIndicator,
+    renderLocalStorePagination,
+} from './investment/pagination.js?v=investment-pagination-v1.3.1';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
@@ -43,24 +82,29 @@ import {
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.8.3';
+} from './investment/stock-details.js?v=investment-stock-details-v0.8.4';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.2.0';
+} from './investment/realtime.js?v=investment-realtime-v1.2.1';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
     getAvailableInvestmentCurrencyCodes as getAvailableInvestmentCurrencyCodesFromRows,
+    hasInvestmentUnboundTransactions,
     isInvestmentBrokerFilterAllSelected,
     matchesInvestmentCurrencyFilter as matchesInvestmentCurrencyFilterValue,
     matchesInvestmentDateFilter,
     normalizeInvestmentBroker,
+    normalizeInvestmentDescriptionBindingFilter as normalizeInvestmentDescriptionBindingFilterValue,
     normalizeInvestmentCurrencyFilter as normalizeInvestmentCurrencyFilterValue,
     selectInvestmentBrokerRows,
+    selectInvestmentBrokerCurrencyRows,
+    selectInvestmentDescriptionBindingRows,
+    selectInvestmentCurrencyRows,
     sortInvestmentBrokerFilterCodes as sortInvestmentBrokerFilterCodesCore,
-} from './investment/transaction-filters.js?v=investment-transaction-filters-v1.0.0';
+} from './investment/transaction-filters.js?v=investment-transaction-filters-v1.3.0';
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
@@ -73,15 +117,20 @@ import {
     isInvestmentHistoryDisplayHidden,
     selectVisibleInvestmentHistoryTransactions,
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
+import {
+    NUMERIC_DISPLAY_MODULE_VERSION,
+    renderNumericDisplayContent as renderWorkspaceMetricValueContent,
+} from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.37.1',
+    entry: 'v2.58.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     layout: INVESTMENT_LAYOUT_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
     realtime: INVESTMENT_REALTIME_MODULE_VERSION,
+    numericDisplay: NUMERIC_DISPLAY_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     transactionFilters: INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     transactionTable: INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
@@ -168,6 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const longbridgeHkFundDetailsStatus = document.getElementById('longbridge_hk_fund_details_txt_status');
     const longbridgeHkHistoryOrdersStatus = document.getElementById('longbridge_hk_history_orders_xlsx_status');
     const investmentImportFutuhkFields = document.getElementById('investment_import_futuhk_fields');
+    const investmentImportBocHkFields = document.getElementById('investment_import_boc_hk_fields');
+    const bocHkStatementPdfsInput = document.getElementById('boc_hk_statement_pdfs');
+    const bocHkStatementPdfsStatus = document.getElementById('boc_hk_statement_pdfs_status');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
     const investmentImportHsbcMode = document.getElementById('investment_import_hsbc_mode');
     const investmentImportSchwabFields = document.getElementById('investment_import_schwab_fields');
@@ -198,18 +250,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const hsbcPortfolioTextPasteButton = document.getElementById('hsbc_portfolio_text_paste_button');
     const hsbcOrderStatusPasteButton = document.getElementById('hsbc_order_status_paste_button');
     const hsbcCashAccountPasteButton = document.getElementById('hsbc_cash_account_paste_button');
+    const hsbcPortfolioTextClearButton = document.getElementById('hsbc_portfolio_text_clear_button');
+    const hsbcOrderStatusTextClearButton = document.getElementById('hsbc_order_status_text_clear_button');
+    const hsbcCashAccountTextClearButton = document.getElementById('hsbc_cash_account_clear_button');
     const hsbcPortfolioTextStatus = document.getElementById('hsbc_portfolio_text_status');
     const hsbcOrderStatusTextStatus = document.getElementById('hsbc_order_status_text_status');
     const hsbcCashAccountTextStatus = document.getElementById('hsbc_cash_account_text_status');
     const hsbcStatementPdfsInput = document.getElementById('hsbc_statement_pdfs');
     const hsbcStatementPdfsStatus = document.getElementById('hsbc_statement_pdfs_status');
-    const HSBC_EXPECTED_ACCOUNT_NUMBER = '103-555700-329';
-    const HSBC_ACCOUNT_NUMBER_PATTERN = /\d{3}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{6}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{3}/g;
     const HSBC_PASTE_CHUNK_MARKER = '===== HSBC PASTE CHUNK =====';
+    const HSBC_PASTE_VALIDATION_ENDPOINT = '/api/investment/imports/hsbc-paste/validate';
+    const HSBC_PASTE_VALIDATION_DEBOUNCE_MS = 140;
     const hsbcPasteButtonFlashTimers = new WeakMap();
     const INVESTMENT_LOADING_MODAL_TITLE = 'Loading investment data';
     const INVESTMENT_LOADING_MODAL_COPY = 'We are reading the locally stored broker activity and rebuilding the holdings, charts, metrics, and transaction history for this page. Please keep this tab open while loading finishes.';
     const INVESTMENT_LOADING_MODAL_ICON_CLASS = 'suggestion-loading-spinner';
+    const INVESTMENT_TRANSFER_BINDING_MODAL_TITLE = 'Binding internal transfer';
+    const INVESTMENT_TRANSFER_BINDING_MODAL_COPY = 'This is a multi-step operation. It may take up to 10 seconds while the affected transaction history, holdings, and Metrics are rebuilt. Please keep this tab open.';
     const INVESTMENT_SHARE_RENDER_MODAL_TITLE = 'Rendering share image';
     const INVESTMENT_SHARE_RENDER_MODAL_COPY = 'We are rendering the community share card and encoding the PNG export. Please wait until the image finishes saving.';
     const INVESTMENT_SHARE_RENDER_MODAL_ICON_CLASS = 'suggestion-loading-spinner';
@@ -225,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     const markInvestmentPageDisposed = () => {
         investmentPageDisposed = true;
+        cancelHsbcPasteValidation();
         if (investmentBootstrapTimer) {
             window.clearTimeout(investmentBootstrapTimer);
             investmentBootstrapTimer = 0;
@@ -286,8 +344,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
     const INVESTMENT_PAGE_MEMORY_STORAGE_KEY = 'antigravity:investment:page-memory:v1';
-    const INVESTMENT_INTERNAL_TRANSFER_BINDINGS_STORAGE_KEY = 'antigravity:investment:internal-transfer-bindings:v1';
     const INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS = 7;
+    const INVESTMENT_INTERNAL_TRANSFER_UNDATED_POSTING_LAG_DAYS = 1;
+    const INVESTMENT_LONGBRIDGE_HK_CASH_TRANSFER_LINK_WINDOW_DAYS = 2;
+    const INVESTMENT_INTERNAL_TRANSFER_MONTHS = Object.freeze({
+        JAN: 0,
+        FEB: 1,
+        MAR: 2,
+        APR: 3,
+        MAY: 4,
+        JUN: 5,
+        JUL: 6,
+        AUG: 7,
+        SEP: 8,
+        OCT: 9,
+        NOV: 10,
+        DEC: 11,
+    });
     const NO_COMMISSION_TRANSACTION_TYPES = new Set([
         'foreign_tax_withholding',
         'dividend',
@@ -303,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'kol_reward',
         'grant',
         'withdrawal',
+        'virtual_balance_reset',
         'transfer_in',
         'transfer_out',
     ]);
@@ -310,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'direct-deposits',
             label: 'Direct deposits',
-            summary: 'USD deposits still available to fund investments after matched USD conversions. Deposit rows consumed by a later conversion are excluded.',
+            summary: 'External deposits converted to the workspace base currency at the ledger-date FX rate. Only the source amount consumed by a matched FX conversion is excluded.',
             valueKey: 'directUsdDeposits',
             rowsKey: 'directDepositRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.directUsdDeposits, 'USD', { showUsdSymbol: false }),
@@ -318,7 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'net-usd-converted',
             label: 'Net USD converted',
-            summary: 'USD received from matched FX conversions after conversion commissions are deducted.',
+            summary: 'USD received from matched FX conversions. Each conversion is paired by broker, account, timestamp, and source reference so the received USD is never counted as a new deposit.',
             valueKey: 'netUsdConverted',
             rowsKey: 'netUsdConvertedRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.netUsdConverted, 'USD', { showUsdSymbol: false }),
@@ -326,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'fx-funding-loss',
             label: 'FX funding loss',
-            summary: 'Funding loss on matched FX conversions: conversion commission plus any deposit-to-USD shortfall. Ordinary trading P&L is excluded.',
+            summary: 'Funding loss on matched FX conversions after both source and received legs are expressed in USD. Ordinary trading P&L is excluded.',
             valueKey: 'fxFundingLoss',
             rowsKey: 'fxFundingLossRows',
             formatValue: (metrics) => formatMetricLossAmountWithCurrency(metrics?.fxFundingLoss, 'USD'),
@@ -335,7 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'final-investable-usd',
             label: 'Final investable USD',
-            summary: 'Direct USD deposits plus net USD received from matched FX conversions. This is the funding base used by the investment ledger.',
+            summary: 'Remaining direct deposits plus USD received from matched FX conversions. This is the USD funding base used by the investment ledger.',
             valueKey: 'finalInvestableUsd',
             rowsKey: 'finalInvestableUsdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.finalInvestableUsd, 'USD', { showUsdSymbol: false }),
@@ -343,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'total-commission',
             label: 'Total commission',
-            summary: 'All commissions charged by imported investment activity, including trading commissions and other broker-reported fees.',
+            summary: 'All commissions charged by imported investment activity, converted to the workspace base currency at the ledger-date FX rate.',
             valueKey: 'totalCommission',
             rowsKey: 'totalCommissionRows',
             formatValue: (metrics) => formatMetricLossAmount(metrics?.totalCommission),
@@ -352,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'interest-charged',
             label: 'Interest charged',
-            summary: 'Debit interest charged by the broker and deducted from cash. It is kept separate from commission and trading P&L.',
+            summary: 'Debit interest charged by the broker, converted to the workspace base currency at the ledger-date FX rate. It remains separate from trading commissions.',
             valueKey: 'interestCharged',
             rowsKey: 'interestChargedRows',
             formatValue: (metrics) => formatMetricLossAmount(metrics?.interestCharged),
@@ -361,40 +435,19 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     const BROKER_BENEFIT_METRIC_DEFINITIONS = [
         {
-            key: 'coupon-rebates-hkd',
-            label: 'Coupon rebates HKD',
-            summary: 'Imported broker coupon and fee-rebate benefits whose source notional is denominated in HKD. The converted contribution is included in P&L once.',
-            valueKey: 'couponRebateHkd',
-            rowsKey: 'couponRebateHkdRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateHkd, 'HKD'),
-            valueClass: (metrics) => getSignedMetricClass(metrics?.couponRebateHkd),
-        },
-        {
-            key: 'coupon-rebates-usd',
-            label: 'Coupon rebates USD',
-            summary: 'Imported broker coupon and fee-rebate benefits whose source notional is denominated in USD. The benefit is included in P&L once.',
-            valueKey: 'couponRebateUsd',
-            rowsKey: 'couponRebateUsdRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateUsd, 'USD', { showUsdSymbol: false }),
-            valueClass: (metrics) => getSignedMetricClass(metrics?.couponRebateUsd),
-        },
-        {
-            key: 'cash-rewards-hkd',
-            label: 'Cash rewards HKD',
-            summary: 'Imported HKD cash cards, stock-cash coupons, task rewards, and signup or funding rewards. The converted contribution is included in P&L once.',
-            valueKey: 'cashRewardHkd',
-            rowsKey: 'cashRewardHkdRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardHkd, 'HKD'),
-            valueClass: (metrics) => getSignedMetricClass(metrics?.cashRewardHkd),
-        },
-        {
-            key: 'cash-rewards-usd',
-            label: 'Cash rewards USD',
-            summary: 'Imported USD cash cards, stock-cash coupons, task rewards, and signup or funding rewards. The benefit is included in P&L once.',
-            valueKey: 'cashRewardUsd',
-            rowsKey: 'cashRewardUsdRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardUsd, 'USD', { showUsdSymbol: false }),
-            valueClass: (metrics) => getSignedMetricClass(metrics?.cashRewardUsd),
+            key: 'coupon-rebates-cash-rewards',
+            label: 'Coupon rebates / Cash rewards',
+            summary: 'Imported coupon rebates and cash rewards converted to the workspace base currency using each ledger date’s FX rate. A leading * identifies one or more non-USD source amounts. The converted contribution is included in P&L once.',
+            valueKey: 'couponAndCashRewardIncome',
+            rowsKey: 'couponAndCashRewardRows',
+            detailsKey: 'couponAndCashRewardDetails',
+            renderMode: 'breakdown',
+            formatValue: (metrics) => `${metrics?.hasNonUsdCouponAndCashRewardSource ? '*' : ''}${formatAmountWithCurrency(
+                metrics?.couponAndCashRewardIncome,
+                getInvestmentBaseCurrency(),
+                { showUsdSymbol: false },
+            )}`,
+            valueClass: (metrics) => getSignedMetricClass(metrics?.couponAndCashRewardIncome),
         },
         {
             key: 'kol-rewards',
@@ -424,17 +477,6 @@ document.addEventListener('DOMContentLoaded', () => {
             valueClass: (metrics) => getSignedMetricClass(metrics?.stockGrantUnrealizedPnl),
         },
     ];
-    const OFFSHORE_GAIN_METRIC_DEFINITIONS = [
-        {
-            key: 'total-offshore-gain',
-            label: 'Total offshore gain',
-            summary: 'Offshore gain view: Holdings realized P&L plus Holdings unrealized P&L, including converted broker coupon, cash, and KOL rewards. Stock-grant P&L is included once through ticker Holdings.',
-            valueKey: 'totalOffshoreGain',
-            rowsKey: 'totalOffshoreGainRows',
-            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalOffshoreGain),
-            valueClass: (metrics) => getSignedMetricClass(metrics?.totalOffshoreGain),
-        },
-    ];
     const HOLDINGS_SUMMARY_METRIC_DEFINITIONS = [
         {
             key: 'cumulative-pnl',
@@ -450,9 +492,11 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Realized P&L from Holdings activity plus converted broker coupon, cash, and KOL rewards. Stock-grant sale proceeds remain included through the ticker result.',
+            summary: 'Realized P&L from Holdings activity, cash rewards, and explicit cash costs. Expand for trading spread, dividends, interest, and fee attribution in USD; a broker-reported reconciliation remains visible whenever authoritative broker performance data cannot be allocated row by row.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
+            detailsKey: 'realizedPnlDetails',
+            renderMode: 'breakdown',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
             valueClass: (metrics) => getSignedMetricClass(metrics?.totalRealizedPnl),
         },
@@ -477,6 +521,20 @@ document.addEventListener('DOMContentLoaded', () => {
         signature: '',
         valid: false,
         transactionCount: 0,
+    };
+    let hsbcPasteValidationAbortController = null;
+    let hsbcPasteValidationTimer = 0;
+    let hsbcPasteValidation = {
+        signature: '',
+        state: 'idle',
+        ready: false,
+        mode: '',
+        fieldStatus: {
+            cash: false,
+            portfolio: false,
+            order_status: false,
+        },
+        cashCurrencies: [],
     };
     let investmentSegmentedMeasureRaf = 0;
     let investmentSegmentedMeasureTimer = 0;
@@ -550,7 +608,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsTableAlignmentCleanup = null;
     let investmentHistoryCurrentPage = 1;
     let investmentHistoryPendingPaginationAnimation = null;
-    let investmentHistoryPaginationAnimationTimer = 0;
     let investmentBrokerFilterSelectedCodes = new Set();
     let investmentBrokerSummarySelectedCode = 'all';
     let investmentBrokerSummarySelectionInitialized = false;
@@ -561,6 +618,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentSideFilterDocumentListenersBound = false;
     let investmentCurrencyFilter = 'all';
     let investmentCurrencyFilterDocumentListenersBound = false;
+    let investmentDescriptionBindingFilter = 'all';
+    let investmentDescriptionBindingFilterDocumentListenersBound = false;
+    let investmentDescriptionBindingAlertTooltipState = null;
     let investmentStockDetailsDateFilter = { mode: 'all', value: '' };
     let investmentStockDetailsTimeFilterDocumentListenersBound = false;
     let investmentBrokerFilterTransactionIndex = {
@@ -575,6 +635,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentTickerClosePricesCache = {};
     let investmentInternalTransferSourceOptionsByKey = new Map();
     let investmentInternalTransferResolvedBindingsBySourceKey = new Map();
+    let investmentAggregateSecurityTransferState = {
+        blocked: false,
+        reconciliationBlocked: false,
+        activeReceiptKeys: new Set(),
+        excludedReceiptKeys: new Set(),
+        pnlUnavailableTickers: new Set(),
+    };
     let investmentStockDetailsPriceChartRequestSerial = 0;
     const investmentStockDetailsIntradayCache = new Map();
     const investmentStockDetailsIntradayInflight = new Map();
@@ -745,7 +812,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'standard_xlsx',
         'cmb_cn',
         'boc_cn',
-        'boc_hk',
         'icbc_cn',
         'icbc_hk',
         'ccb_cn',
@@ -769,6 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
         convertAmountToBaseCurrency,
         convertAmountToBaseCurrencyAtLatestRate,
         createCashLedger,
+        createCashLedgerFromBalances,
         compareInvestmentTransactions,
         createPositionState,
         escapeHtml,
@@ -785,8 +852,13 @@ document.addEventListener('DOMContentLoaded', () => {
         getAuthoritativePositionSnapshot,
         getInvestmentEquityRangeLabels,
         getInvestmentBrokerEndingCash,
+        getInvestmentBrokerEndingCashBalances,
+        getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentEndingCash,
+        getInvestmentEndingCashBalances,
+        getInvestmentEndingCashInBaseCurrency,
         getInvestmentStartingCash,
+        getInvestmentStartingCashBalances,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         getTodayLedgerDate,
@@ -1795,66 +1867,372 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function readInvestmentInternalTransferBindings() {
-        const serverBindings = normalizeInvestmentInternalTransferBindings(
+        return normalizeInvestmentInternalTransferBindings(
             window.ANTIGRAVITY_INVESTMENT_DATA?.manual_internal_transfer_bindings
         );
-        let localBindings = {};
-        try {
-            const raw = window.localStorage.getItem(INVESTMENT_INTERNAL_TRANSFER_BINDINGS_STORAGE_KEY);
-            if (raw) {
-                localBindings = normalizeInvestmentInternalTransferBindings(JSON.parse(raw));
-            }
-        } catch (_error) {
-            // ignore corrupt localStorage
-        }
-        return { ...serverBindings, ...localBindings };
     }
 
     function writeInvestmentInternalTransferBindings(nextBindings) {
-        try {
-            window.localStorage.setItem(
-                INVESTMENT_INTERNAL_TRANSFER_BINDINGS_STORAGE_KEY,
-                JSON.stringify(normalizeInvestmentInternalTransferBindings(nextBindings))
-            );
-        } catch (_error) {
+        const normalizedBindings = normalizeInvestmentInternalTransferBindings(nextBindings);
+        if (!window.ANTIGRAVITY_INVESTMENT_DATA || typeof window.ANTIGRAVITY_INVESTMENT_DATA !== 'object') {
+            return;
         }
+        window.ANTIGRAVITY_INVESTMENT_DATA.manual_internal_transfer_bindings = normalizedBindings;
     }
 
-    function rememberInvestmentInternalTransferBinding(sourceKey, targetKey) {
+    async function rememberInvestmentInternalTransferBinding(sourceKey, targetKey) {
         const normalizedSourceKey = String(sourceKey || '').trim();
         const normalizedTargetKey = String(targetKey || '').trim();
-        if (!normalizedSourceKey) return;
-        const nextBindings = {
-            ...readInvestmentInternalTransferBindings(),
-        };
-        Object.entries(nextBindings).forEach(([existingSourceKey, existingTargetKey]) => {
-            if (existingSourceKey !== normalizedSourceKey && existingTargetKey === normalizedTargetKey) {
-                delete nextBindings[existingSourceKey];
-            }
-        });
-        if (normalizedTargetKey) {
-            nextBindings[normalizedSourceKey] = normalizedTargetKey;
-        } else {
-            delete nextBindings[normalizedSourceKey];
-        }
-        writeInvestmentInternalTransferBindings(nextBindings);
-        try {
-            fetch('/api/investment/internal-transfer-binding', {
-                ...buildInvestmentRequestOptions({
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        source_key: normalizedSourceKey,
-                        target_key: normalizedTargetKey,
-                    }),
+        if (!normalizedSourceKey) throw new Error('A source transfer key is required.');
+        const response = await fetch('/api/investment/internal-transfer-binding', {
+            ...buildInvestmentRequestOptions({
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_key: normalizedSourceKey,
+                    target_key: normalizedTargetKey,
                 }),
-            }).catch(() => {});
+            }),
+        });
+        let payload = null;
+        try {
+            payload = await response.json();
         } catch (_error) {
-            // fire-and-forget: do not block the UI if the server is unreachable
         }
+        if (!response.ok || payload?.success !== true) {
+            throw new Error(
+                String(payload?.error || 'The internal transfer binding could not be saved.').trim()
+            );
+        }
+        if (payload && Object.prototype.hasOwnProperty.call(payload, 'manual_internal_transfer_bindings')) {
+            writeInvestmentInternalTransferBindings(payload.manual_internal_transfer_bindings);
+        }
+        if (payload?.summary && window.ANTIGRAVITY_INVESTMENT_DATA) {
+            window.ANTIGRAVITY_INVESTMENT_DATA.summary = payload.summary;
+        }
+        applyInvestmentSecurityTransferBasisToTransactions(investmentRawTransactionsCache);
+        return payload || {success: true};
     }
 
-    function buildInvestmentTransactionBindingKey(txn) {
+    function getInvestmentSecurityTransferReconciliation() {
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.summary;
+        const reconciliation = summary?.security_transfer_reconciliation;
+        return reconciliation && typeof reconciliation === 'object' ? reconciliation : {};
+    }
+
+    function applyInvestmentSecurityTransferBasisToTransactions(transactions = []) {
+        const reconciliation = getInvestmentSecurityTransferReconciliation();
+        const basisEntries = Array.isArray(reconciliation?.transfer_basis)
+            ? reconciliation.transfer_basis
+            : [];
+        if (!basisEntries.length) {
+            (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+                if (!txn || typeof txn !== 'object') return;
+                [
+                    'carried_cost_basis_raw',
+                    'carried_cost_basis_status',
+                    'carried_cost_basis_method',
+                    'carried_cost_basis_method_label',
+                    'carried_cost_basis_quantity_raw',
+                    'carried_cost_basis_source_transfer_key',
+                    'carried_cost_basis_allocations',
+                    'transfer_out_cost_basis_raw',
+                    'transfer_out_cost_basis_status',
+                    'transfer_out_cost_basis_method',
+                    'transfer_out_cost_basis_method_label',
+                    'transfer_out_cost_basis_quantity_raw',
+                    'transfer_out_cost_basis_allocations',
+                ].forEach((fieldName) => delete txn[fieldName]);
+            });
+            return;
+        }
+        const bySourceKey = new Map(
+            basisEntries
+                .map((entry) => [String(entry?.source_key || '').trim(), entry])
+                .filter(([key]) => Boolean(key)),
+        );
+        const byTargetKey = new Map(
+            basisEntries
+                .map((entry) => [String(entry?.target_key || '').trim(), entry])
+                .filter(([key]) => Boolean(key)),
+        );
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            if (!txn || typeof txn !== 'object') return;
+            const transactionKey = String(txn?.manual_internal_transfer_key || '').trim();
+            const sourceEntry = bySourceKey.get(transactionKey);
+            const targetEntry = byTargetKey.get(transactionKey);
+            if (sourceEntry) {
+                const basis = String(sourceEntry.source_transfer_out_cost_basis || '').trim();
+                txn.transfer_out_cost_basis_raw = basis;
+                txn.transfer_out_cost_basis_status = String(sourceEntry.status || '').trim();
+                txn.transfer_out_cost_basis_method = String(sourceEntry.method || '').trim();
+                txn.transfer_out_cost_basis_method_label = String(sourceEntry.method_label || '').trim();
+                txn.transfer_out_cost_basis_quantity_raw = String(sourceEntry.quantity || '').trim();
+            }
+            if (targetEntry) {
+                const basis = String(targetEntry.carried_cost_basis || '').trim();
+                txn.carried_cost_basis_raw = basis;
+                txn.carried_cost_basis_status = String(targetEntry.status || '').trim();
+                txn.carried_cost_basis_method = String(targetEntry.method || '').trim();
+                txn.carried_cost_basis_method_label = String(targetEntry.method_label || '').trim();
+                txn.carried_cost_basis_quantity_raw = String(targetEntry.quantity || '').trim();
+                txn.carried_cost_basis_source_transfer_key = String(targetEntry.source_key || '').trim();
+            }
+        });
+    }
+
+    function refreshInvestmentAggregateSecurityTransferState(transactions = []) {
+        applyInvestmentSecurityTransferBasisToTransactions(transactions);
+        const reconciliation = getInvestmentSecurityTransferReconciliation();
+        const overlay = reconciliation?.aggregate_overlay && typeof reconciliation.aggregate_overlay === 'object'
+            ? reconciliation.aggregate_overlay
+            : {};
+        const activeReceiptKeys = new Set(
+            (Array.isArray(overlay.active_receipt_keys) ? overlay.active_receipt_keys : [])
+                .map((key) => String(key || '').trim())
+                .filter(Boolean),
+        );
+        const sourceAttributionRequiredReceiptKeys = new Set(
+            (Array.isArray(overlay.source_attribution_required_receipt_keys)
+                ? overlay.source_attribution_required_receipt_keys
+                : [])
+                .map((key) => String(key || '').trim())
+                .filter(Boolean),
+        );
+        const invalidReceiptKeys = new Set(
+            (Array.isArray(overlay.invalid_receipt_keys) ? overlay.invalid_receipt_keys : [])
+                .map((key) => String(key || '').trim())
+                .filter(Boolean),
+        );
+        const excludedReceiptKeys = new Set([
+            ...activeReceiptKeys,
+            ...sourceAttributionRequiredReceiptKeys,
+            ...invalidReceiptKeys,
+        ]);
+        const pnlUnavailableTickers = new Set(
+            (Array.isArray(reconciliation?.pnl_unavailable_tickers)
+                ? reconciliation.pnl_unavailable_tickers
+                : [])
+                .map((ticker) => getInvestmentCanonicalTicker(ticker))
+                .filter(Boolean),
+        );
+        const aggregateHoldingsUnavailable = reconciliation?.aggregate_holdings_available === false;
+        const hasUsableAggregateTransactions = (Array.isArray(transactions) ? transactions : []).some((txn) => {
+            const receiptKey = String(txn?.manual_internal_transfer_key || '').trim();
+            return !receiptKey || !excludedReceiptKeys.has(receiptKey);
+        });
+        const aggregateSurfaceBlocked = (
+            aggregateHoldingsUnavailable
+            && (!excludedReceiptKeys.size || !hasUsableAggregateTransactions)
+        );
+        investmentAggregateSecurityTransferState = {
+            // Exclude only receipt rows whose source attribution is unresolved.
+            // Keep unrelated aggregate evidence available; the affected ticker's
+            // carried basis remains explicitly unavailable below.
+            blocked: aggregateSurfaceBlocked,
+            reconciliationBlocked: aggregateHoldingsUnavailable,
+            activeReceiptKeys,
+            excludedReceiptKeys,
+            pnlUnavailableTickers,
+        };
+        const sourceAttributionByReceiptKey = window.ANTIGRAVITY_INVESTMENT_DATA?.manual_security_transfer_attributions;
+        const normalizedAttributions = sourceAttributionByReceiptKey && typeof sourceAttributionByReceiptKey === 'object'
+            ? sourceAttributionByReceiptKey
+            : {};
+        const unresolvedByReceiptKey = new Map(
+            (Array.isArray(reconciliation?.unreconciled_inbounds)
+                ? reconciliation.unreconciled_inbounds
+                : [])
+                .map((item) => [String(item?.record_key || '').trim(), item])
+                .filter(([key]) => Boolean(key)),
+        );
+        const attributionStatusByReceiptKey = new Map(
+            (Array.isArray(overlay.attribution_statuses) ? overlay.attribution_statuses : [])
+                .map((item) => [String(item?.receipt_key || '').trim(), item])
+                .filter(([key]) => Boolean(key)),
+        );
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const receiptKey = String(txn?.manual_internal_transfer_key || '').trim();
+            const unresolved = unresolvedByReceiptKey.get(receiptKey);
+            const attributionStatus = attributionStatusByReceiptKey.get(receiptKey);
+            txn.security_transfer_receipt_key = receiptKey;
+            txn.security_transfer_attribution_status = String(
+                attributionStatus?.status
+                || unresolved?.aggregate_overlay_status
+                || ''
+            ).trim();
+            txn.security_transfer_requires_attribution = sourceAttributionRequiredReceiptKeys.has(receiptKey);
+            txn.security_transfer_attribution = normalizedAttributions[receiptKey] || null;
+            txn.security_transfer_pnl_unavailable = pnlUnavailableTickers.has(
+                getInvestmentCanonicalTicker(txn?.ticker),
+            );
+        });
+        return investmentAggregateSecurityTransferState;
+    }
+
+    function getInvestmentAggregateSecurityTransferBlockedMessage() {
+        const reconciliation = getInvestmentSecurityTransferReconciliation();
+        const overlay = reconciliation?.aggregate_overlay && typeof reconciliation.aggregate_overlay === 'object'
+            ? reconciliation.aggregate_overlay
+            : {};
+        const requiredReceiptCount = (Array.isArray(overlay.source_attribution_required_receipt_keys)
+            ? overlay.source_attribution_required_receipt_keys
+            : []).map((key) => String(key || '').trim()).filter(Boolean).length;
+        const invalidReceiptCount = (Array.isArray(overlay.invalid_receipt_keys)
+            ? overlay.invalid_receipt_keys
+            : []).map((key) => String(key || '').trim()).filter(Boolean).length;
+        const receiptCount = requiredReceiptCount || invalidReceiptCount;
+        if (!receiptCount) {
+            return 'All brokers holdings, equity, and P&L are unavailable until the outstanding cross-broker security-transfer evidence is reconciled. Transaction history remains available as immutable broker evidence; no source transfer-out or cost basis is inferred.';
+        }
+        const receiptLabel = receiptCount === 1 ? 'receipt' : 'receipts';
+        const actionVerb = receiptCount === 1 ? 'requires' : 'require';
+        const action = invalidReceiptCount
+            ? 'uniquely matching source-transfer evidence'
+            : 'a confirmed concrete source broker and account';
+        return `All brokers holdings, equity, and P&L are unavailable until ${receiptCount} Schwab security-transfer ${receiptLabel} ${actionVerb} ${action}. Transaction history remains available as immutable broker evidence; no source transfer-out or cost basis is inferred.`;
+    }
+
+    function getInvestmentAggregateOnlyTransactions(transactions = []) {
+        return filterAggregateOnlyOverlayTransactions(
+            transactions,
+            investmentAggregateSecurityTransferState.excludedReceiptKeys,
+            (transaction) => transaction?.manual_internal_transfer_key,
+        );
+    }
+
+    function isInvestmentAggregateSecurityTransferPnlUnavailable(ticker) {
+        return investmentAggregateSecurityTransferState.pnlUnavailableTickers.has(
+            getInvestmentCanonicalTicker(ticker),
+        );
+    }
+
+    function applyInvestmentAggregatePnlAvailability(tickerSummaries = []) {
+        return (Array.isArray(tickerSummaries) ? tickerSummaries : []).map((summary) => {
+            const pnlUnavailable = (
+                summary?.pnlUnavailable === true
+                || isInvestmentAggregateSecurityTransferPnlUnavailable(summary?.ticker)
+            );
+            if (!pnlUnavailable) return summary;
+            return {
+                ...summary,
+                pnlUnavailable: true,
+                pnlUnavailableReason: String(
+                    summary?.pnlUnavailableReason
+                    || getInvestmentSecurityTransferReconciliation()?.pnl_unavailable_reason
+                    || 'cost_basis_unverified'
+                ),
+                realizedPnl: null,
+                realizedPnlLocal: null,
+                realizedPnlByDate: {},
+                unrealizedPnl: null,
+                unrealizedPnlLocal: null,
+            };
+        });
+    }
+
+    function hasInvestmentPnlUnavailable(tickerSummaries = []) {
+        return (Array.isArray(tickerSummaries) ? tickerSummaries : []).some(
+            (summary) => summary?.pnlUnavailable === true,
+        );
+    }
+
+    function isInvestmentAggregatePnlUnavailable(tickerSummaries = []) {
+        const safeSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
+        return safeSummaries.length > 0 && safeSummaries.every(
+            (summary) => summary?.pnlUnavailable === true,
+        );
+    }
+
+    function getInvestmentSecurityTransferAttributionOptions(receiptTxn) {
+        const receiptDate = normalizeLedgerDate(receiptTxn?.date);
+        const optionsByKey = new Map();
+        (Array.isArray(investmentRawTransactionsCache) ? investmentRawTransactionsCache : []).forEach((txn) => {
+            const broker = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+            const account = String(
+                txn?.account
+                || txn?.source?.account
+                || txn?.source?.account_number
+                || ''
+            ).trim();
+            if (!broker || broker === 'schwab' || !account) return;
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            // Same-day source transfer-out evidence is valid for an in-kind
+            // receipt; the server still verifies its exact immutable fields.
+            if (receiptDate && transactionDate && transactionDate > receiptDate) return;
+            const key = `${broker}\u0000${account}`;
+            if (optionsByKey.has(key)) return;
+            optionsByKey.set(key, {
+                source_broker: broker,
+                source_account: account,
+                label: `${getInvestmentBrokerMeta(broker).label} · ${account}`,
+            });
+        });
+        return [...optionsByKey.values()].sort((left, right) => left.label.localeCompare(right.label));
+    }
+
+    async function rememberInvestmentSecurityTransferAttribution(
+        receiptKey,
+        sourceBroker,
+        sourceAccount,
+    ) {
+        const normalizedReceiptKey = String(receiptKey || '').trim();
+        if (!normalizedReceiptKey) throw new Error('A Schwab transfer receipt key is required.');
+        const response = await fetch('/api/investment/security-transfer-attribution', {
+            ...buildInvestmentRequestOptions({
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    receipt_key: normalizedReceiptKey,
+                    source_broker: String(sourceBroker || '').trim(),
+                    source_account: String(sourceAccount || '').trim(),
+                }),
+            }),
+        });
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (_error) {
+        }
+        if (!response.ok || payload?.success !== true) {
+            throw new Error(
+                String(payload?.error || 'The Schwab transfer attribution could not be saved.').trim()
+            );
+        }
+        if (window.ANTIGRAVITY_INVESTMENT_DATA && payload?.summary) {
+            window.ANTIGRAVITY_INVESTMENT_DATA.summary = payload.summary;
+        }
+        if (
+            window.ANTIGRAVITY_INVESTMENT_DATA
+            && Object.prototype.hasOwnProperty.call(payload || {}, 'manual_security_transfer_attributions')
+        ) {
+            window.ANTIGRAVITY_INVESTMENT_DATA.manual_security_transfer_attributions = (
+                payload.manual_security_transfer_attributions
+            );
+        }
+        return payload || {success: true};
+    }
+
+    function getInvestmentTransactionSourceIdentity(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const firstSourceValue = (fieldNames) => {
+            for (const fieldName of fieldNames) {
+                const value = String(source?.[fieldName] ?? '').trim();
+                if (value) return value;
+            }
+            return '';
+        };
+        return [
+            String(source?.file_kind || '').trim(),
+            String(source?.source_filename || '').trim(),
+            String(source?.source_file_sha256 || '').trim(),
+            firstSourceValue(['row_number', 'source_row', 'ledger_sequence']),
+            firstSourceValue(['reference_id', 'order_reference', 'transaction_id']),
+            String(txn?.description || '').replace(/\s+/g, ' ').trim(),
+        ];
+    }
+
+    function buildInvestmentTransactionBaseBindingKey(txn) {
         if (!txn || typeof txn !== 'object') return '';
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
         const amountValue = (
@@ -1910,6 +2288,14 @@ document.addEventListener('DOMContentLoaded', () => {
         ])}`;
     }
 
+    function buildInvestmentTransactionBindingKey(txn, duplicateBaseKeys = null) {
+        const baseKey = buildInvestmentTransactionBaseBindingKey(txn);
+        if (!(duplicateBaseKeys instanceof Set) || !duplicateBaseKeys.has(baseKey)) return baseKey;
+        const identity = getInvestmentTransactionSourceIdentity(txn);
+        if (!identity.some(Boolean)) return '';
+        return `v3:${JSON.stringify([baseKey, identity])}`;
+    }
+
     function parseInvestmentLedgerDateUtc(value) {
         const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!match) return null;
@@ -1927,6 +2313,75 @@ document.addEventListener('DOMContentLoaded', () => {
             return Number.POSITIVE_INFINITY;
         }
         return Math.round(Math.abs(right.getTime() - left.getTime()) / 86400000);
+    }
+
+    function getInvestmentInternalTransferEffectiveDate(txn) {
+        const bookedDate = parseInvestmentLedgerDateUtc(normalizeLedgerDate(txn?.date));
+        if (!(bookedDate instanceof Date) || Number.isNaN(bookedDate.getTime())) {
+            return {effectiveDate: null, hasExplicitEventDate: false};
+        }
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const evidenceTexts = Array.from(new Set([
+            txn?.description,
+            source?.reference_id,
+            source?.memo_raw,
+        ].map((value) => String(value || '').replace(/\s+/g, ' ').trim()).filter(Boolean)));
+        const datePattern = /(?<![A-Z0-9])(\d{1,2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2}|\d{4})?(?![A-Z0-9])/gi;
+        const dayMilliseconds = 86400000;
+        for (const evidenceText of evidenceTexts) {
+            for (const match of evidenceText.matchAll(datePattern)) {
+                const day = Number(match[1]);
+                const monthIndex = INVESTMENT_INTERNAL_TRANSFER_MONTHS[String(match[2] || '').toUpperCase()];
+                const yearText = String(match[3] || '').trim();
+                let year = yearText
+                    ? (yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText))
+                    : bookedDate.getUTCFullYear();
+                if (!Number.isInteger(day) || !Number.isInteger(monthIndex) || !Number.isInteger(year)) continue;
+                let evidenceDate = new Date(Date.UTC(year, monthIndex, day));
+                if (
+                    evidenceDate.getUTCFullYear() !== year
+                    || evidenceDate.getUTCMonth() !== monthIndex
+                    || evidenceDate.getUTCDate() !== day
+                ) continue;
+                if (!yearText) {
+                    const distanceFromBooked = evidenceDate.getTime() - bookedDate.getTime();
+                    if (distanceFromBooked > 31 * dayMilliseconds) {
+                        evidenceDate = new Date(Date.UTC(year - 1, monthIndex, day));
+                    } else if (distanceFromBooked < -180 * dayMilliseconds) {
+                        evidenceDate = new Date(Date.UTC(year + 1, monthIndex, day));
+                    }
+                }
+                return {effectiveDate: evidenceDate, hasExplicitEventDate: true};
+            }
+        }
+        return {effectiveDate: bookedDate, hasExplicitEventDate: false};
+    }
+
+    function isInvestmentInternalTransferChronologicallyValid(sourceTxn, targetTxn) {
+        const direction = getInvestmentInternalTransferDirection(sourceTxn);
+        if (!direction || direction === 'security_broker_to_broker') return true;
+        const sourceDate = parseInvestmentLedgerDateUtc(normalizeLedgerDate(sourceTxn?.date));
+        const targetDateEvidence = getInvestmentInternalTransferEffectiveDate(targetTxn);
+        const targetEffectiveDate = targetDateEvidence?.effectiveDate;
+        if (!(sourceDate instanceof Date) || Number.isNaN(sourceDate.getTime())) return false;
+        if (!(targetEffectiveDate instanceof Date) || Number.isNaN(targetEffectiveDate.getTime())) return false;
+        const postingLagDays = targetDateEvidence.hasExplicitEventDate
+            ? 0
+            : INVESTMENT_INTERNAL_TRANSFER_UNDATED_POSTING_LAG_DAYS;
+        return targetEffectiveDate.getTime() <= sourceDate.getTime() + (postingLagDays * 86400000);
+    }
+
+    function getInvestmentInternalTransferLinkWindowDays(sourceTxn, targetTxn) {
+        const direction = getInvestmentInternalTransferDirection(sourceTxn);
+        if (direction === 'security_broker_to_broker') return 0;
+        const isCashTransfer = direction && direction !== 'security_broker_to_broker';
+        const brokerCodes = [sourceTxn, targetTxn]
+            .map((txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)))
+            .filter(Boolean);
+        if (isCashTransfer && brokerCodes.includes('longbridge_hk')) {
+            return INVESTMENT_LONGBRIDGE_HK_CASH_TRANSFER_LINK_WINDOW_DAYS;
+        }
+        return INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS;
     }
 
     function getInvestmentInternalTransferDirection(txn) {
@@ -1984,14 +2439,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!direction || direction === 'security_broker_to_broker') return 0;
         const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
         const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
-        const feeAmount = targetAmount - sourceAmount;
-        return feeAmount > 0.005 ? feeAmount : 0;
+        const targetOutflowDifference = targetAmount - sourceAmount;
+        return targetOutflowDifference > 0.005 ? targetOutflowDifference : 0;
     }
 
     function getInvestmentInternalTransferCommissionTxn(sourceTxn, targetTxn) {
         const direction = getInvestmentInternalTransferDirection(sourceTxn);
-        if (direction === 'broker_to_hsbc') return sourceTxn;
-        if (direction === 'hsbc_to_broker') return targetTxn;
+        if (direction === 'broker_to_hsbc' || direction === 'hsbc_to_broker') return targetTxn;
         return null;
     }
 
@@ -2043,7 +2497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatInvestmentInternalTransferFeeNote(feeAmount, currency) {
         const numericFeeAmount = Number(feeAmount);
         if (!Number.isFinite(numericFeeAmount) || numericFeeAmount <= 0.005) return '';
-        return `Transfer fee ${formatInvestmentInternalTransferFeeAmount(numericFeeAmount, currency || 'USD')} is retained as broker commission.`;
+        return `Transfer difference ${formatInvestmentInternalTransferFeeAmount(numericFeeAmount, currency || 'USD')} is recorded as a transfer fee.`;
     }
 
     function getInvestmentInternalTransferReferenceText(txn) {
@@ -2082,12 +2536,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const sourceOptionsByKey = new Map();
         const resolvedBindingsBySourceKey = new Map();
         const targetByKey = new Map();
+        const ambiguousTargetKeys = new Set();
+        const claimedTargetKeys = new Set();
         const sourceTransactions = [];
         const targetTransactions = [];
         const storedBindings = readInvestmentInternalTransferBindings();
+        const baseKeyCounts = new Map();
+        processedTransactions.forEach((txn) => {
+            const baseKey = buildInvestmentTransactionBaseBindingKey(txn);
+            if (!baseKey) return;
+            baseKeyCounts.set(baseKey, (baseKeyCounts.get(baseKey) || 0) + 1);
+        });
+        const duplicateBaseKeys = new Set(
+            [...baseKeyCounts.entries()]
+                .filter(([, count]) => count > 1)
+                .map(([key]) => key),
+        );
 
         processedTransactions.forEach((txn) => {
-            const transactionKey = buildInvestmentTransactionBindingKey(txn);
+            const transactionKey = buildInvestmentTransactionBindingKey(txn, duplicateBaseKeys);
             txn.manual_internal_transfer_key = transactionKey;
             if (!transactionKey) return;
             if (isInvestmentInternalTransferSourceCandidate(txn)) {
@@ -2099,13 +2566,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 || (normalizedType === 'transfer_in' && Math.abs(Number(getTransactionQuantity(txn)) || 0) > 1e-9)
             ) {
                 targetTransactions.push(txn);
-                targetByKey.set(transactionKey, txn);
+                if (ambiguousTargetKeys.has(transactionKey)) return;
+                if (targetByKey.has(transactionKey)) {
+                    targetByKey.delete(transactionKey);
+                    ambiguousTargetKeys.add(transactionKey);
+                } else {
+                    targetByKey.set(transactionKey, txn);
+                }
             }
         });
 
         sourceTransactions.forEach((sourceTxn) => {
             const sourceKey = String(sourceTxn?.manual_internal_transfer_key || '').trim();
             if (!sourceKey) return;
+            if (ambiguousTargetKeys.has(sourceKey)) return;
             const direction = getInvestmentInternalTransferDirection(sourceTxn);
             if (!direction) return;
             const transferKind = getInvestmentInternalTransferKind(sourceTxn);
@@ -2116,12 +2590,40 @@ document.addEventListener('DOMContentLoaded', () => {
             const amountTolerance = Math.max(0.01, sourceAmount * 0.02);
             const quantityTolerance = Math.max(0.000001, sourceQuantity * 0.000001);
             const selectedTargetCandidate = selectedTargetKey ? targetByKey.get(selectedTargetKey) || null : null;
+            const selectedTargetLinkWindowDays = selectedTargetCandidate
+                ? getInvestmentInternalTransferLinkWindowDays(sourceTxn, selectedTargetCandidate)
+                : INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS;
             const selectedTarget = (
                 selectedTargetCandidate
+                && !claimedTargetKeys.has(selectedTargetKey)
                 && isInvestmentInternalTransferTargetCandidateForDirection(
                     sourceTxn,
                     selectedTargetCandidate,
                     direction,
+                )
+                && isInvestmentInternalTransferChronologicallyValid(sourceTxn, selectedTargetCandidate)
+                && getInvestmentLedgerDateDistanceDays(
+                    sourceDate,
+                    normalizeLedgerDate(selectedTargetCandidate?.date),
+                ) <= selectedTargetLinkWindowDays
+                && (
+                    transferKind === 'security'
+                        ? Math.abs(
+                            Math.abs(Number(getTransactionQuantity(selectedTargetCandidate)) || 0)
+                            - sourceQuantity,
+                        ) <= quantityTolerance
+                        : (
+                            Math.abs(
+                                Math.abs(Number(getTransactionAmount(selectedTargetCandidate)) || 0)
+                                - sourceAmount,
+                            ) <= amountTolerance
+                            && (
+                                !String(formatTransactionCurrency(sourceTxn) || '').trim()
+                                || !String(formatTransactionCurrency(selectedTargetCandidate) || '').trim()
+                                || String(formatTransactionCurrency(sourceTxn) || '').trim().toUpperCase()
+                                    === String(formatTransactionCurrency(selectedTargetCandidate) || '').trim().toUpperCase()
+                            )
+                        )
                 )
             )
                 ? selectedTargetCandidate
@@ -2129,11 +2631,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const options = targetTransactions
                 .filter((targetTxn) => {
                     const targetKey = String(targetTxn?.manual_internal_transfer_key || '').trim();
-                    if (!targetKey || targetKey === selectedTargetKey) return Boolean(targetKey);
+                    if (!targetKey) return false;
+                    if (ambiguousTargetKeys.has(targetKey)) return false;
+                    if (claimedTargetKeys.has(targetKey)) return false;
                     if (!isInvestmentInternalTransferTargetCandidateForDirection(sourceTxn, targetTxn, direction)) return false;
+                    if (!isInvestmentInternalTransferChronologicallyValid(sourceTxn, targetTxn)) return false;
                     const targetDate = normalizeLedgerDate(targetTxn?.date);
                     const dayDistance = getInvestmentLedgerDateDistanceDays(sourceDate, targetDate);
-                    if (!Number.isFinite(dayDistance) || dayDistance > INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS) return false;
+                    const linkWindowDays = getInvestmentInternalTransferLinkWindowDays(sourceTxn, targetTxn);
+                    if (!Number.isFinite(dayDistance) || dayDistance > linkWindowDays) return false;
                     if (transferKind === 'security') {
                         const targetQuantity = Math.abs(Number(getTransactionQuantity(targetTxn)) || 0);
                         return Math.abs(targetQuantity - sourceQuantity) <= quantityTolerance;
@@ -2189,17 +2695,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            const automaticSecurityTarget = (
-                transferKind === 'security'
-                && !selectedTarget
-                && options.length === 1
-                && options[0].dayDistance === 0
-                && options[0].amountDiff <= quantityTolerance
-            ) ? options[0].targetTxn : null;
-            const resolvedTarget = selectedTarget || automaticSecurityTarget;
-            const resolvedTargetKey = selectedTargetKey || String(
-                automaticSecurityTarget?.manual_internal_transfer_key || ''
-            ).trim();
+            // Security transfers are evidence-sensitive: even an exact same-day
+            // quantity match must be confirmed by the user and persisted by the server.
+            const resolvedTarget = selectedTarget;
+            const resolvedTargetKey = selectedTargetKey;
 
             sourceOptionsByKey.set(sourceKey, options);
             if (resolvedTarget) {
@@ -2211,7 +2710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     targetTxn: resolvedTarget,
                     kind: transferKind,
                     quantity: transferKind === 'security' ? sourceQuantity : 0,
-                    autoMatched: Boolean(automaticSecurityTarget),
+                    autoMatched: false,
                     amount: getInvestmentInternalTransferPairAmount(sourceTxn, resolvedTarget),
                     feeAmount,
                     commissionTxn: getInvestmentInternalTransferCommissionTxn(sourceTxn, resolvedTarget),
@@ -2220,6 +2719,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(resolvedTarget) || 'USD'
                     ),
                 });
+                claimedTargetKeys.add(resolvedTargetKey);
             }
         });
 
@@ -2227,6 +2727,92 @@ document.addEventListener('DOMContentLoaded', () => {
             sourceOptionsByKey,
             resolvedBindingsBySourceKey,
         };
+    }
+
+    function reorderInvestmentTransactionsForBoundTransfers(
+        orderedTransactions = [],
+        transferContext = {},
+    ) {
+        const transactions = Array.isArray(orderedTransactions) ? orderedTransactions : [];
+        const resolvedBindings = transferContext?.resolvedBindingsBySourceKey;
+        if (transactions.length < 2 || !(resolvedBindings instanceof Map) || !resolvedBindings.size) {
+            return transactions;
+        }
+
+        const originalIndex = new Map(transactions.map((txn, index) => [txn, index]));
+        const predecessors = new Map();
+        resolvedBindings.forEach((binding) => {
+            const sourceTxn = binding?.sourceTxn;
+            const targetTxn = binding?.targetTxn;
+            if (!sourceTxn || !targetTxn) {
+                return;
+            }
+
+            const sourceType = getNormalizedTransactionType(sourceTxn);
+            const targetType = getNormalizedTransactionType(targetTxn);
+            const transferDirection = getInvestmentInternalTransferDirection(sourceTxn);
+            let predecessorTxn = null;
+            let successorTxn = null;
+            if (
+                transferDirection === 'security_broker_to_broker'
+                && sourceType === 'transfer_out'
+                && targetType === 'transfer_in'
+            ) {
+                predecessorTxn = sourceTxn;
+                successorTxn = targetTxn;
+            } else if (
+                transferDirection !== 'security_broker_to_broker'
+                && sourceType === 'deposit'
+                && targetType === 'withdrawal'
+            ) {
+                // The source map is deposit-first for cash transfers, but the
+                // natural ledger sequence is withdrawal/outflow before deposit.
+                predecessorTxn = targetTxn;
+                successorTxn = sourceTxn;
+            } else {
+                return;
+            }
+
+            if (
+                !Number.isInteger(originalIndex.get(predecessorTxn))
+                || !Number.isInteger(originalIndex.get(successorTxn))
+            ) {
+                return;
+            }
+            // A confirmed binding is an explicit ordering constraint. Keep it
+            // even when the imported source row number sorts after its receipt.
+            predecessors.set(successorTxn, predecessorTxn);
+        });
+        if (!predecessors.size) return transactions;
+
+        const indegree = new Map();
+        const successors = new Map();
+        predecessors.forEach((sourceTxn, targetTxn) => {
+            if (sourceTxn === targetTxn) return;
+            indegree.set(targetTxn, (indegree.get(targetTxn) || 0) + 1);
+            const targetList = successors.get(sourceTxn) || [];
+            targetList.push(targetTxn);
+            successors.set(sourceTxn, targetList);
+        });
+
+        const ready = transactions.filter((txn) => (indegree.get(txn) || 0) === 0);
+        const reordered = [];
+        const emitted = new Set();
+        while (ready.length) {
+            ready.sort((left, right) => originalIndex.get(left) - originalIndex.get(right));
+            const txn = ready.shift();
+            if (emitted.has(txn)) continue;
+            emitted.add(txn);
+            reordered.push(txn);
+            (successors.get(txn) || []).forEach((successor) => {
+                const nextIndegree = (indegree.get(successor) || 0) - 1;
+                indegree.set(successor, nextIndegree);
+                if (nextIndegree === 0) ready.push(successor);
+            });
+        }
+
+        // A malformed binding graph must never suppress transactions from the ledger.
+        return reordered.length === transactions.length ? reordered : transactions;
     }
 
     function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) {
@@ -2241,7 +2827,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         brokerCodes.forEach((brokerCode) => {
             const authoritativeEndingCash = getInvestmentBrokerEndingCash(brokerCode);
-            if (authoritativeEndingCash === null) return;
+            const authoritativeEndingCashBalances = getInvestmentBrokerEndingCashBalances(brokerCode);
+            const authoritativeEndingCashInBaseCurrency = getInvestmentBrokerEndingCashInBaseCurrency(brokerCode);
+            if (authoritativeEndingCash === null && authoritativeEndingCashBalances === null) return;
+            const hasAuthoritativeBalances = authoritativeEndingCashBalances !== null;
+            const endingCashCandidate = authoritativeEndingCashInBaseCurrency
+                ?? authoritativeEndingCash
+                ?? authoritativeEndingCashBalances?.[getInvestmentBaseCurrency()];
+            const numericEndingCash = Number(endingCashCandidate);
+            const normalizedEndingCash = Number.isFinite(numericEndingCash)
+                ? Math.max(0, numericEndingCash)
+                : 0;
 
             const lastBrokerTxn = [...transactions].reverse().find(
                 (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode
@@ -2250,17 +2846,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (brokerCode === 'hsbc') {
                 const replayedCash = Number(lastBrokerTxn.broker_running_cash);
-                if (Number.isFinite(replayedCash) && Math.abs(replayedCash - authoritativeEndingCash) < 0.005) {
+                if (
+                    !hasAuthoritativeBalances
+                    && Number.isFinite(replayedCash)
+                    && Math.abs(replayedCash - normalizedEndingCash) < 0.005
+                ) {
                     return;
                 }
             }
 
-            const normalizedEndingCash = Math.max(0, authoritativeEndingCash);
             lastBrokerTxn.broker_running_cash = normalizedEndingCash;
-            lastBrokerTxn.broker_cash_by_currency = createCashLedger(
-                normalizedEndingCash,
-                getInvestmentBaseCurrency(),
-            );
+            lastBrokerTxn.broker_cash_by_currency = hasAuthoritativeBalances
+                ? { ...authoritativeEndingCashBalances }
+                : createCashLedger(normalizedEndingCash, getInvestmentBaseCurrency());
             const brokerMarketValue = Number(lastBrokerTxn.broker_market_value) || 0;
             const brokerPendingSettlementCash = Number(lastBrokerTxn.broker_pending_settlement_cash) || 0;
             lastBrokerTxn.broker_display_cash = normalizedEndingCash + brokerPendingSettlementCash;
@@ -2268,36 +2866,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const isSingleBroker = brokerCodes.length <= 1;
-        if (!isSingleBroker) {
-            const latestProcessed = transactions[transactions.length - 1];
-            if (latestProcessed) {
-                let finalAggregateCash = 0;
-                brokerCodes.forEach((brokerCode) => {
-                    const normBroker = normalizeInvestmentBroker(brokerCode);
-                    const authEndingCash = getInvestmentBrokerEndingCash(normBroker);
-                    const lastBrokerTxn = [...transactions].reverse().find(
-                        (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normBroker
-                    );
-                    let brokerEndingCash = 0;
-                    if (authEndingCash !== null) {
-                        brokerEndingCash = Math.max(0, authEndingCash);
-                    } else if (lastBrokerTxn) {
-                        brokerEndingCash = Number(lastBrokerTxn.broker_running_cash) || 0;
-                    }
-                    finalAggregateCash += brokerEndingCash;
-                });
-                latestProcessed.running_cash = finalAggregateCash;
-                latestProcessed.aggregate_running_cash = finalAggregateCash;
-                latestProcessed.cash_by_currency = createCashLedger(
-                    finalAggregateCash,
-                    getInvestmentBaseCurrency(),
-                );
-                latestProcessed.aggregate_cash_by_currency = latestProcessed.cash_by_currency;
-                const marketVal = Number(latestProcessed.market_value) || 0;
-                const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
-                latestProcessed.aggregate_display_cash = finalAggregateCash + aggregatePendingSettlementCash;
-                latestProcessed.total_equity = finalAggregateCash + marketVal + aggregatePendingSettlementCash;
-                latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
+        const hasAuthoritativeAggregateCash = brokerCodes.some((brokerCode) => (
+            getInvestmentBrokerEndingCash(brokerCode) !== null
+            || getInvestmentBrokerEndingCashBalances(brokerCode) !== null
+            || getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) !== null
+        ));
+        const latestProcessed = transactions[transactions.length - 1];
+        if (!latestProcessed) return;
+        const finalAggregateBalances = {};
+        let finalAggregateCash = 0;
+        brokerCodes.forEach((brokerCode) => {
+            const normBroker = normalizeInvestmentBroker(brokerCode);
+            const authBalances = getInvestmentBrokerEndingCashBalances(normBroker);
+            const lastBrokerTxn = [...transactions].reverse().find(
+                (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normBroker
+            );
+            const brokerBalances = authBalances
+                ?? lastBrokerTxn?.broker_cash_by_currency
+                ?? {};
+            Object.entries(brokerBalances).forEach(([currency, value]) => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
+                finalAggregateBalances[currency] = (Number(finalAggregateBalances[currency]) || 0) + numericValue;
+            });
+            const authBaseCash = getInvestmentBrokerEndingCashInBaseCurrency(normBroker);
+            finalAggregateCash += Number.isFinite(Number(authBaseCash))
+                ? Math.max(0, Number(authBaseCash))
+                : Number(lastBrokerTxn?.broker_running_cash) || 0;
+        });
+        if (!isSingleBroker || hasAuthoritativeAggregateCash) {
+            latestProcessed.running_cash = finalAggregateCash;
+            latestProcessed.aggregate_running_cash = finalAggregateCash;
+            latestProcessed.cash_by_currency = cloneCashLedgerBalances(finalAggregateBalances);
+            latestProcessed.aggregate_cash_by_currency = latestProcessed.cash_by_currency;
+            const marketVal = Number(latestProcessed.market_value) || 0;
+            const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
+            latestProcessed.aggregate_display_cash = finalAggregateCash + aggregatePendingSettlementCash;
+            latestProcessed.total_equity = finalAggregateCash + marketVal + aggregatePendingSettlementCash;
+            latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
+            if (isSingleBroker && brokerCodes.length === 1) {
+                latestProcessed.broker_running_cash = finalAggregateCash;
+                latestProcessed.broker_display_cash = latestProcessed.aggregate_display_cash;
+                latestProcessed.broker_cash_by_currency = { ...latestProcessed.aggregate_cash_by_currency };
+                latestProcessed.broker_total_equity = latestProcessed.aggregate_total_equity;
             }
         }
     }
@@ -4404,6 +5015,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderInvestmentDummyPortfolioDonut(pointRecord, tickerProfiles) {
         const resolvedTheme = resolveInvestmentTheme();
         if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
+        if (investmentAggregateSecurityTransferState.blocked) {
+            investmentDummyChart.hidden = true;
+            investmentDummyChart.setAttribute('aria-hidden', 'true');
+            syncAnimatedDonutLogos(investmentDummyLogoLayer, []);
+            return;
+        }
+        investmentDummyChart.hidden = false;
+        investmentDummyChart.removeAttribute('aria-hidden');
         const holdingsMarketValues = pointRecord?.aggregate_holdings_market_values || pointRecord?.holdings_market_values || {};
         const cashEquivalentSet = getCashEquivalentTickerSet();
         const allHoldings = Object.entries(holdingsMarketValues)
@@ -4828,6 +5447,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function showInvestmentTransferBindingModal() {
+        showInvestmentWorkspaceModal({
+            title: INVESTMENT_TRANSFER_BINDING_MODAL_TITLE,
+            copy: INVESTMENT_TRANSFER_BINDING_MODAL_COPY,
+            iconClass: 'suggestion-loading-spinner',
+            lockClose: true,
+        });
+    }
+
     function hideInvestmentLoadingModal({ resetContent = false } = {}) {
         if (!workspaceModalOverlay) return;
         workspaceModalOverlay.hidden = true;
@@ -4875,6 +5503,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const lowerName = String(file.name || '').trim().toLowerCase();
         const mimeType = String(file.type || '').trim().toLowerCase();
         return lowerName.endsWith('.pdf') || mimeType === 'application/pdf';
+    }
+
+    function isLikelyBocHkStatementPdf(file) {
+        if (!(file instanceof File)) return false;
+        const lowerName = String(file.name || '').trim().toLowerCase();
+        return lowerName.endsWith('.pdf') && file.size > 0;
     }
 
     function isLikelyFutuStatementPdf(file) {
@@ -5309,12 +5943,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn)));
     }
 
-    function getInvestmentBrokerFilteredTransactionRows(processedTransactions = []) {
-        const index = ensureInvestmentBrokerFilterTransactionIndex(processedTransactions);
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
-        return selectInvestmentBrokerRows(index, selectedBrokerCodes);
-    }
-
     function initializeInvestmentBrokerFilterSelection() {
         investmentBrokerFilterSelectedCodes = new Set(getAvailableInvestmentBrokerCodes());
     }
@@ -5417,25 +6045,62 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(trigger instanceof HTMLButtonElement)) return;
 
         if (triggerLogo instanceof HTMLImageElement) {
+            triggerLogo.onload = null;
+            triggerLogo.onerror = null;
             triggerLogo.hidden = true;
             triggerLogo.alt = '';
             triggerLogo.removeAttribute('src');
+            delete triggerLogo.dataset.investmentBrokerFilterLogoUrl;
         }
         if (triggerPlaceholder instanceof HTMLElement) {
             triggerPlaceholder.hidden = true;
         }
+        field.classList.remove('has-selected-broker-logo');
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         const triggerLabel = field.querySelector('[data-investment-broker-filter-label]');
         if (isInvestmentBrokerSummaryFilterField(field)) {
             const selectedCode = getInvestmentBrokerSummarySelectedCode();
+            const selectedBrokerMeta = selectedCode === 'all'
+                ? null
+                : getInvestmentBrokerMeta(selectedCode);
+            const selectedBrokerLogoUrl = String(selectedBrokerMeta?.logoUrl || '').trim();
             const selectedLabel = selectedCode === 'all'
                 ? 'All'
-                : getInvestmentBrokerMeta(selectedCode).label;
+                : selectedBrokerMeta.label;
+            field.classList.toggle('has-selected-broker-logo', Boolean(selectedBrokerLogoUrl));
             if (triggerLabel instanceof HTMLElement) {
                 triggerLabel.textContent = selectedLabel;
                 triggerLabel.hidden = false;
                 triggerLabel.setAttribute('aria-hidden', 'false');
+            }
+            if (triggerLogo instanceof HTMLImageElement && selectedBrokerLogoUrl) {
+                triggerLogo.dataset.investmentBrokerFilterLogoUrl = selectedBrokerLogoUrl;
+                triggerLogo.onload = () => {
+                    if (triggerLogo.dataset.investmentBrokerFilterLogoUrl !== selectedBrokerLogoUrl) return;
+                    triggerLogo.hidden = false;
+                    if (triggerPlaceholder instanceof HTMLElement) {
+                        triggerPlaceholder.hidden = true;
+                    }
+                };
+                triggerLogo.onerror = () => {
+                    if (triggerLogo.dataset.investmentBrokerFilterLogoUrl !== selectedBrokerLogoUrl) return;
+                    triggerLogo.hidden = true;
+                    triggerLogo.removeAttribute('src');
+                    if (triggerPlaceholder instanceof HTMLElement) {
+                        triggerPlaceholder.hidden = false;
+                    }
+                };
+                if (triggerPlaceholder instanceof HTMLElement) {
+                    triggerPlaceholder.hidden = false;
+                }
+                triggerLogo.src = selectedBrokerLogoUrl;
+                if (triggerLogo.complete && triggerLogo.naturalWidth > 0 && triggerLogo.naturalHeight > 0) {
+                    triggerLogo.hidden = false;
+                    if (triggerPlaceholder instanceof HTMLElement) {
+                        triggerPlaceholder.hidden = true;
+                    }
+                }
             }
             trigger.disabled = !availableBrokerCodes.length;
             trigger.title = `Brokers: ${selectedLabel}`;
@@ -5924,6 +6589,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeInvestmentSideFilterDropdowns();
         mountInvestmentSideFilterHeaders();
         mountInvestmentCurrencyFilterHeaders();
+        mountInvestmentDescriptionBindingFilterHeaders();
         renderInvestmentHistoryTableRows(
             investmentProcessedTransactionsCache,
             investmentChartPointsCache,
@@ -6187,6 +6853,305 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 'investment_history_currency_filter';
             th.innerHTML = renderInvestmentCurrencyFilterHeaderInnerMarkup(filterId);
             bindInvestmentCurrencyFilterField(th.querySelector('[data-investment-currency-filter]'));
+        });
+    }
+
+    function getInvestmentHistoryTransactionsForCurrentScope(
+        processedTransactions = [],
+        chartPoints = [],
+        {includeDescriptionBindingFilter = true} = {},
+    ) {
+        return selectVisibleInvestmentHistoryTransactions({
+            brokerFilteredRows: selectInvestmentDescriptionBindingRows(
+                getInvestmentBrokerCurrencyFilteredRowsForVisibleHistory(processedTransactions),
+                includeDescriptionBindingFilter ? investmentDescriptionBindingFilter : 'all',
+            ),
+            chartPoints,
+            selectedRange: selectedInvestmentEquityRange,
+            matchesSide: (transaction) => (
+                window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(
+                    transaction,
+                    investmentSideFilter,
+                ) ?? true
+            ),
+            matchesCurrency: () => true,
+            normalizeRange: normalizeInvestmentEquityRange,
+            getRangeLabels: getInvestmentEquityRangeLabels,
+        });
+    }
+
+    function hasInvestmentDescriptionBindingFilterOptions(
+        processedTransactions = investmentProcessedTransactionsCache,
+    ) {
+        return hasInvestmentUnboundTransactions(
+            getInvestmentHistoryTransactionsForCurrentScope(
+                processedTransactions,
+                investmentChartPointsCache,
+                {includeDescriptionBindingFilter: false},
+            ),
+        );
+    }
+
+    function normalizeInvestmentDescriptionBindingFilter(value) {
+        return normalizeInvestmentDescriptionBindingFilterValue(
+            value,
+            getInvestmentHistoryTransactionsForCurrentScope(
+                investmentProcessedTransactionsCache,
+                investmentChartPointsCache,
+                {includeDescriptionBindingFilter: false},
+            ),
+        );
+    }
+
+    function renderInvestmentDescriptionBindingFilterHeaderInnerMarkup(
+        filterId = 'investment_history_description_filter',
+    ) {
+        const selectedLabel = investmentDescriptionBindingFilter === 'unbound' ? 'Unbound' : 'All';
+        return `
+            <span class="investment-description-filter-default-label" aria-hidden="true">Description</span>
+            <div class="field investment-description-filter-field backtest-shared-select-field"
+                 data-investment-description-filter data-filter-id="${escapeHtml(filterId)}">
+                <div class="trade-strategy-row backtest-shared-select-row investment-description-filter-row">
+                    <button type="button"
+                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger investment-description-filter-trigger"
+                            data-investment-description-filter-trigger
+                            aria-haspopup="listbox" aria-expanded="false"
+                            aria-label="Description filter: ${escapeHtml(selectedLabel)}">
+                        <span class="trade-strategy-trigger-label" data-investment-description-filter-label>${escapeHtml(selectedLabel)}</span>
+                        <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                    </button>
+                    <div class="trade-strategy-dropdown backtest-shared-select-dropdown investment-description-filter-dropdown"
+                         data-investment-description-filter-dropdown role="listbox" aria-label="Description filter" hidden></div>
+                </div>
+            </div>
+            <span class="investment-description-binding-alert"
+                  data-investment-description-binding-alert
+                  tabindex="0"
+                  role="img"
+                  aria-label="Unbound internal transfer. Choose the matching transfer counterpart in the Description cell.">
+                <span class="investment-description-binding-alert-dot" aria-hidden="true"></span>
+            </span>
+        `;
+    }
+
+    function closeInvestmentDescriptionBindingFilterDropdowns() {
+        document.querySelectorAll('[data-investment-description-filter]').forEach((field) => {
+            if (!(field instanceof HTMLElement)) return;
+            const trigger = field.querySelector('[data-investment-description-filter-trigger]');
+            const dropdown = document.querySelector(
+                `[data-investment-description-filter-dropdown][data-filter-owner="${CSS.escape(field.dataset.filterId || '')}"]`,
+            ) || field.querySelector('[data-investment-description-filter-dropdown]');
+            trigger?.setAttribute('aria-expanded', 'false');
+            field.classList.remove('is-open');
+            if (dropdown instanceof HTMLElement) {
+                dropdown.hidden = true;
+                dropdown.removeAttribute('style');
+                const row = field.querySelector('.investment-description-filter-row');
+                if (row instanceof HTMLElement && dropdown.parentElement !== row) row.appendChild(dropdown);
+                delete dropdown.dataset.filterOwner;
+            }
+        });
+    }
+
+    function applyInvestmentDescriptionBindingFilter(nextFilter) {
+        investmentDescriptionBindingFilter = normalizeInvestmentDescriptionBindingFilter(nextFilter);
+        closeInvestmentDescriptionBindingFilterDropdowns();
+        renderInvestmentHistoryTableRows(
+            investmentProcessedTransactionsCache,
+            investmentChartPointsCache,
+            { resetPage: true, scrollToTop: true },
+        );
+        mountInvestmentDescriptionBindingFilterHeaders();
+    }
+
+    function openInvestmentDescriptionBindingFilterDropdown(field) {
+        const trigger = field.querySelector('[data-investment-description-filter-trigger]');
+        const dropdown = field.querySelector('[data-investment-description-filter-dropdown]');
+        if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return;
+        const options = [
+            {value: 'all', label: 'All'},
+            {value: 'unbound', label: 'Unbound'},
+        ];
+        dropdown.innerHTML = options.map(({value, label}) => {
+            const selected = value === investmentDescriptionBindingFilter;
+            const labelMarkup = value === 'unbound'
+                ? '<span class="investment-unbound-filter-pill">Unbound</span>'
+                : escapeHtml(label);
+            return `<button type="button" class="trade-strategy-dropdown-option${selected ? ' is-selected is-active' : ''}${value === 'unbound' ? ' investment-description-filter-unbound-option' : ''}"
+                            data-investment-description-filter-option="${escapeHtml(value)}" role="option" aria-selected="${selected}">
+                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">${labelMarkup}</span></span>
+                    </button>`;
+        }).join('');
+        const rect = trigger.getBoundingClientRect();
+        dropdown.dataset.filterOwner = field.dataset.filterId || '';
+        document.body.appendChild(dropdown);
+        Object.assign(dropdown.style, {
+            position: 'fixed',
+            left: `${Math.round(rect.left)}px`,
+            top: `${Math.round(rect.bottom + 4)}px`,
+            width: `${Math.max(132, Math.round(rect.width))}px`,
+            zIndex: '10002',
+        });
+        dropdown.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        field.classList.add('is-open');
+        dropdown.querySelectorAll('[data-investment-description-filter-option]').forEach((option) => {
+            option.addEventListener('click', (event) => {
+                event.stopPropagation();
+                applyInvestmentDescriptionBindingFilter(
+                    option.dataset.investmentDescriptionFilterOption,
+                );
+            });
+        });
+    }
+
+    function bindInvestmentDescriptionBindingFilterField(field) {
+        if (!(field instanceof HTMLElement) || field.dataset.investmentDescriptionFilterBound === '1') return;
+        field.dataset.investmentDescriptionFilterBound = '1';
+        const trigger = field.querySelector('[data-investment-description-filter-trigger]');
+        trigger?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const wasOpen = field.classList.contains('is-open');
+            closeInvestmentDescriptionBindingFilterDropdowns();
+            if (!wasOpen) openInvestmentDescriptionBindingFilterDropdown(field);
+        });
+    }
+
+    function positionInvestmentDescriptionBindingAlertTooltip(alert, tooltip) {
+        if (!(alert instanceof HTMLElement) || !(tooltip instanceof HTMLElement)) return;
+        tooltip.style.left = '0px';
+        tooltip.style.top = '0px';
+        const alertRect = alert.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const viewportWidth = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
+        const margin = 12;
+        const gap = 8;
+        const maxLeft = Math.max(margin, viewportWidth - tooltipRect.width - margin);
+        const left = Math.min(Math.max(margin, alertRect.left - tooltipRect.width + alertRect.width), maxLeft);
+        const roomBelow = viewportHeight - alertRect.bottom - margin;
+        const roomAbove = alertRect.top - margin;
+        const shouldPlaceAbove = roomBelow < tooltipRect.height + gap && roomAbove >= tooltipRect.height + gap;
+        const preferredTop = shouldPlaceAbove
+            ? alertRect.top - tooltipRect.height - gap
+            : alertRect.bottom + gap;
+        const maxTop = Math.max(margin, viewportHeight - tooltipRect.height - margin);
+        const top = Math.min(Math.max(margin, preferredTop), maxTop);
+        tooltip.style.left = `${Math.round(left)}px`;
+        tooltip.style.top = `${Math.round(top)}px`;
+    }
+
+    function closeInvestmentDescriptionBindingAlertTooltip() {
+        const activeState = investmentDescriptionBindingAlertTooltipState;
+        if (!activeState) return;
+        activeState.alert.removeAttribute('aria-describedby');
+        activeState.tooltip.remove();
+        window.removeEventListener('resize', activeState.reposition);
+        window.removeEventListener('scroll', activeState.reposition, true);
+        investmentDescriptionBindingAlertTooltipState = null;
+    }
+
+    function openInvestmentDescriptionBindingAlertTooltip(alert) {
+        if (!(alert instanceof HTMLElement)) return;
+        if (investmentDescriptionBindingAlertTooltipState?.alert === alert) {
+            investmentDescriptionBindingAlertTooltipState.reposition();
+            return;
+        }
+        closeInvestmentDescriptionBindingAlertTooltip();
+        const tooltip = document.createElement('div');
+        tooltip.id = 'investment-description-binding-alert-tooltip';
+        tooltip.className = 'investment-description-binding-alert-tooltip settings-action-package settings-callout-card-warning';
+        tooltip.setAttribute('role', 'tooltip');
+        tooltip.innerHTML = `
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell investment-description-binding-alert-tooltip-logo"
+                  aria-hidden="true">
+                <span class="icon icon-settings-network"></span>
+            </span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">Unbound internal transfer</p>
+                <p class="settings-service-note">Choose the matching transfer counterpart in the Description cell to keep cash flow and aggregate equity accurate.</p>
+            </div>
+        `;
+        document.body.appendChild(tooltip);
+        const reposition = () => positionInvestmentDescriptionBindingAlertTooltip(alert, tooltip);
+        investmentDescriptionBindingAlertTooltipState = {alert, tooltip, reposition};
+        alert.setAttribute('aria-describedby', tooltip.id);
+        tooltip.classList.add('is-visible');
+        reposition();
+        window.addEventListener('resize', reposition);
+        window.addEventListener('scroll', reposition, true);
+    }
+
+    function bindInvestmentDescriptionBindingAlertInteractions() {
+        if (investmentDescriptionBindingFilterDocumentListenersBound) return;
+        investmentDescriptionBindingFilterDocumentListenersBound = true;
+        document.addEventListener('click', closeInvestmentDescriptionBindingFilterDropdowns);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeInvestmentDescriptionBindingFilterDropdowns();
+                closeInvestmentDescriptionBindingAlertTooltip();
+            }
+        });
+        document.addEventListener('pointerover', (event) => {
+            const alert = event.target instanceof Element
+                ? event.target.closest('[data-investment-description-binding-alert]')
+                : null;
+            if (!(alert instanceof HTMLElement)) return;
+            if (event.relatedTarget instanceof Node && alert.contains(event.relatedTarget)) return;
+            openInvestmentDescriptionBindingAlertTooltip(alert);
+        });
+        document.addEventListener('pointerout', (event) => {
+            const alert = event.target instanceof Element
+                ? event.target.closest('[data-investment-description-binding-alert]')
+                : null;
+            if (!(alert instanceof HTMLElement)) return;
+            if (event.relatedTarget instanceof Node && alert.contains(event.relatedTarget)) return;
+            if (investmentDescriptionBindingAlertTooltipState?.alert === alert) {
+                closeInvestmentDescriptionBindingAlertTooltip();
+            }
+        });
+        document.addEventListener('focusin', (event) => {
+            const alert = event.target instanceof Element
+                ? event.target.closest('[data-investment-description-binding-alert]')
+                : null;
+            if (alert instanceof HTMLElement) openInvestmentDescriptionBindingAlertTooltip(alert);
+        });
+        document.addEventListener('focusout', (event) => {
+            const alert = event.target instanceof Element
+                ? event.target.closest('[data-investment-description-binding-alert]')
+                : null;
+            if (!(alert instanceof HTMLElement)) return;
+            if (event.relatedTarget instanceof Node && alert.contains(event.relatedTarget)) return;
+            if (investmentDescriptionBindingAlertTooltipState?.alert === alert) {
+                closeInvestmentDescriptionBindingAlertTooltip();
+            }
+        });
+    }
+
+    function mountInvestmentDescriptionBindingFilterHeaders(root = document) {
+        bindInvestmentDescriptionBindingAlertInteractions();
+        const hasUnboundTransactions = hasInvestmentDescriptionBindingFilterOptions();
+        if (!hasUnboundTransactions) {
+            investmentDescriptionBindingFilter = 'all';
+            closeInvestmentDescriptionBindingAlertTooltip();
+        }
+        root.querySelectorAll?.('th[data-markdown-export-label="Description"]').forEach((th) => {
+            if (!(th instanceof HTMLElement) || !th.closest('#history_table_wrap')) return;
+            if (!hasUnboundTransactions) {
+                th.classList.remove('investment-history-description-filter-header');
+                if (th.querySelector('[data-investment-description-filter]')) {
+                    th.textContent = 'Description';
+                }
+                return;
+            }
+            th.classList.add('investment-history-description-filter-header');
+            if (!th.querySelector('[data-investment-description-filter]')) {
+                th.innerHTML = renderInvestmentDescriptionBindingFilterHeaderInnerMarkup();
+            }
+            bindInvestmentDescriptionBindingFilterField(
+                th.querySelector('[data-investment-description-filter]'),
+            );
         });
     }
 
@@ -6462,6 +7427,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             mountInvestmentSideFilterHeaders();
             mountInvestmentCurrencyFilterHeaders();
+            mountInvestmentDescriptionBindingFilterHeaders();
         });
     }
 
@@ -6485,16 +7451,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-right">${formatAmountWithCurrency(txn.display_amount ?? getTransactionEconomicAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmountWithCurrency(txn.rowMarketValue, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
-                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
+                <td class="investment-history-cell investment-history-cell-right ${txn.pnlUnavailable ? '' : (txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative'))}">${txn.pnlUnavailable ? 'Unavailable' : (txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false }))}</td>
             </tr>
         `).join('');
+    }
+
+    function buildSafeInvestmentStockDetailRows(processedTransactions, ticker) {
+        const detailRows = buildInvestmentStockDetailRows(
+            getInvestmentAggregateOnlyTransactions(processedTransactions),
+            ticker,
+        );
+        const pnlUnavailable = isInvestmentAggregateSecurityTransferPnlUnavailable(ticker)
+            || investmentTickerSummariesCache.some((summary) => (
+                normalizeInvestmentTicker(summary?.ticker) === normalizeInvestmentTicker(ticker)
+                && summary?.pnlUnavailable === true
+            ));
+        if (!pnlUnavailable) return detailRows;
+        return detailRows.map((row) => ({
+            ...row,
+            rowRealizedPnl: null,
+            pnlUnavailable: true,
+        }));
     }
 
     function refreshInvestmentStockDetailsTableRows({ refreshHeaders = true } = {}) {
         if (!(investmentStockDetailsTableHost instanceof HTMLElement)) return;
         const activeTicker = ensureSelectedInvestmentStockTicker();
         if (!activeTicker) return;
-        const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
+        const detailRows = buildSafeInvestmentStockDetailRows(
+            investmentProcessedTransactionsCache,
+            activeTicker,
+        );
         const tbody = investmentStockDetailsTableHost.querySelector('.investment-stock-details-table-scroll tbody');
         if (!(tbody instanceof HTMLElement)) return;
         tbody.innerHTML = renderInvestmentStockDetailsTableRowsMarkup(detailRows);
@@ -6690,29 +7677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function normalizeHsbcAccountNumber(value) {
-        return String(value || '')
-            .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-            .replace(/\s+/g, '')
-            .trim();
-    }
-
-    function extractHsbcAccountNumber(text) {
-        const candidates = Array.from(String(text || '').matchAll(HSBC_ACCOUNT_NUMBER_PATTERN))
-            .map((match) => normalizeHsbcAccountNumber(match[0]))
-            .filter(Boolean);
-        if (!candidates.length) {
-            return '';
-        }
-        const expectedAccount = normalizeHsbcAccountNumber(HSBC_EXPECTED_ACCOUNT_NUMBER);
-        return candidates.find((candidate) => candidate === expectedAccount) || candidates[0];
-    }
-
-    function hsbcTextBelongsToExpectedAccount(rawText) {
-        return extractHsbcAccountNumber(rawText) === normalizeHsbcAccountNumber(HSBC_EXPECTED_ACCOUNT_NUMBER);
-    }
-
-    function summarizeHsbcPastedText(kind, rawText, isValid) {
+    function summarizeHsbcPastedText(kind, rawText, validationState) {
         const normalized = normalizeClipboardText(rawText);
         if (!normalized) {
             return '';
@@ -6721,45 +7686,281 @@ document.addEventListener('DOMContentLoaded', () => {
         const lineCount = countClipboardLines(normalized);
         const charCount = normalized.length.toLocaleString('en-US');
         const label = kind === 'cash'
-            ? 'USD Savings'
+            ? 'HSBC cash accounts'
             : (kind === 'portfolio' ? 'Portfolio' : 'Order Status');
         const chunkLabel = chunkCount === 1 ? '1 clip' : `${chunkCount.toLocaleString('en-US')} clips`;
-        return `${label} clipboard pasted · ${chunkLabel} · ${lineCount} lines · ${charCount} chars${isValid ? ' · Ready' : ' · Check format'}`;
+        const readiness = validationState === 'valid'
+            ? 'Ready'
+            : (validationState === 'pending' ? 'Checking…' : 'Check format');
+        return `${label} clipboard pasted · ${chunkLabel} · ${lineCount} lines · ${charCount} chars · ${readiness}`;
     }
 
-    function isLikelyHsbcCashAccountText(rawText) {
-        const text = normalizeClipboardText(rawText);
-        return Boolean(
-            text
-            && hsbcTextBelongsToExpectedAccount(text)
-            && /USD Savings/i.test(text)
-            && /Available balance/i.test(text)
-            && /Post date/i.test(text)
-            && text.length >= 400
+    function getHsbcPasteTexts() {
+        return {
+            cash: String(hsbcCashAccountTextInput?.value || '').trim(),
+            portfolio: String(hsbcPortfolioTextInput?.value || '').trim(),
+            order_status: String(hsbcOrderStatusTextInput?.value || '').trim(),
+        };
+    }
+
+    function getHsbcPasteValidationSignature(texts = getHsbcPasteTexts()) {
+        return [texts.cash, texts.portfolio, texts.order_status].join('\u0000');
+    }
+
+    function getHsbcPasteInput(kind) {
+        if (kind === 'cash') return hsbcCashAccountTextInput;
+        if (kind === 'portfolio') return hsbcPortfolioTextInput;
+        if (kind === 'order') return hsbcOrderStatusTextInput;
+        return null;
+    }
+
+    function getHsbcPasteDisplayInput(kind) {
+        if (kind === 'cash') return hsbcCashAccountDisplay;
+        if (kind === 'portfolio') return hsbcPortfolioTextDisplay;
+        if (kind === 'order') return hsbcOrderStatusDisplay;
+        return null;
+    }
+
+    function getHsbcPasteClearButton(kind) {
+        if (kind === 'cash') return hsbcCashAccountTextClearButton;
+        if (kind === 'portfolio') return hsbcPortfolioTextClearButton;
+        if (kind === 'order') return hsbcOrderStatusTextClearButton;
+        return null;
+    }
+
+    function getHsbcPasteValidationFieldKey(kind) {
+        return kind === 'order' ? 'order_status' : kind;
+    }
+
+    function getHsbcPasteFieldValidationState(kind, rawText) {
+        if (!String(rawText || '').trim()) {
+            return 'empty';
+        }
+        const texts = getHsbcPasteTexts();
+        const signature = getHsbcPasteValidationSignature(texts);
+        if (hsbcPasteValidation.signature !== signature) {
+            return 'pending';
+        }
+        if (hsbcPasteValidation.state === 'pending') {
+            return 'pending';
+        }
+        const fieldKey = getHsbcPasteValidationFieldKey(kind);
+        return hsbcPasteValidation.state === 'valid' && hsbcPasteValidation.fieldStatus[fieldKey]
+            ? 'valid'
+            : 'invalid';
+    }
+
+    function syncHsbcPasteClearButtons() {
+        ['cash', 'portfolio', 'order'].forEach((kind) => {
+            const input = getHsbcPasteInput(kind);
+            const button = getHsbcPasteClearButton(kind);
+            if (!(button instanceof HTMLButtonElement)) {
+                return;
+            }
+            button.classList.toggle('is-visible', Boolean(String(input?.value || '').trim()));
+        });
+    }
+
+    function setHsbcPasteStatusIcon(icon, validationState, title = '') {
+        if (!icon) return;
+        const isPending = validationState === 'pending';
+        icon.classList.toggle('suggestion-loading-spinner', isPending);
+        setImportStatusIcon(
+            icon,
+            isPending || validationState === 'valid',
+            title || (isPending ? 'Checking HSBC pasted text…' : ''),
         );
     }
 
-    function isLikelyHsbcPortfolioText(rawText) {
-        const text = normalizeClipboardText(rawText);
-        return Boolean(
-            text
-            && hsbcTextBelongsToExpectedAccount(text)
-            && /Portfolio/i.test(text)
-            && /Market value/i.test(text)
-            && /Average purchase price/i.test(text)
-            && text.length >= 300
-        );
+    function cancelHsbcPasteValidation() {
+        if (hsbcPasteValidationTimer) {
+            window.clearTimeout(hsbcPasteValidationTimer);
+            hsbcPasteValidationTimer = 0;
+        }
+        hsbcPasteValidationAbortController?.abort();
+        hsbcPasteValidationAbortController = null;
     }
 
-    function isLikelyHsbcOrderStatusText(rawText) {
-        const text = normalizeClipboardText(rawText);
-        return Boolean(
-            text
-            && hsbcTextBelongsToExpectedAccount(text)
-            && /Order Status/i.test(text)
-            && /P-\d+/i.test(text)
-            && text.length >= 400
-        );
+    function isHsbcPasteValidationActive() {
+        return getSelectedInvestmentImportBroker() === 'hsbc'
+            && getSelectedHsbcImportMode() === 'paste';
+    }
+
+    function resetHsbcPasteValidation() {
+        cancelHsbcPasteValidation();
+        hsbcPasteValidation = {
+            signature: '',
+            state: 'idle',
+            ready: false,
+            mode: '',
+            fieldStatus: {
+                cash: false,
+                portfolio: false,
+                order_status: false,
+            },
+            cashCurrencies: [],
+        };
+    }
+
+    function requestHsbcPasteValidation({ debounce = true } = {}) {
+        if (!isHsbcPasteValidationActive()) {
+            return;
+        }
+        const texts = getHsbcPasteTexts();
+        const signature = getHsbcPasteValidationSignature(texts);
+        cancelHsbcPasteValidation();
+        if (!texts.cash && !texts.portfolio && !texts.order_status) {
+            hsbcPasteValidation = {
+                signature,
+                state: 'idle',
+                ready: false,
+                mode: '',
+                fieldStatus: {
+                    cash: false,
+                    portfolio: false,
+                    order_status: false,
+                },
+                cashCurrencies: [],
+            };
+            syncHsbcPasteDisplaySummaries();
+            syncImportValidationState();
+            return;
+        }
+
+        hsbcPasteValidation = {
+            signature,
+            state: 'pending',
+            ready: false,
+            mode: '',
+            fieldStatus: {
+                cash: Boolean(texts.cash),
+                portfolio: Boolean(texts.portfolio),
+                order_status: Boolean(texts.order_status),
+            },
+            cashCurrencies: [],
+        };
+        syncHsbcPasteDisplaySummaries();
+        syncImportValidationState();
+
+        const validate = async () => {
+            hsbcPasteValidationTimer = 0;
+            const abortController = new AbortController();
+            hsbcPasteValidationAbortController = abortController;
+            try {
+                const response = await fetch(
+                    HSBC_PASTE_VALIDATION_ENDPOINT,
+                    buildInvestmentRequestOptions({
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            cash_account_text: texts.cash,
+                            portfolio_text: texts.portfolio,
+                            order_status_text: texts.order_status,
+                        }),
+                        signal: abortController.signal,
+                    }),
+                );
+                const result = await response.json().catch(() => ({}));
+                if (
+                    !isHsbcPasteValidationActive()
+                    ||
+                    signature !== getHsbcPasteValidationSignature()
+                    || hsbcPasteValidationAbortController !== abortController
+                ) {
+                    return;
+                }
+                if (!response.ok || !result.success) {
+                    hsbcPasteValidation = {
+                        signature,
+                        state: 'invalid',
+                        ready: false,
+                        mode: '',
+                        fieldStatus: {
+                            cash: false,
+                            portfolio: false,
+                            order_status: false,
+                        },
+                        cashCurrencies: [],
+                    };
+                    setImportFeedback(
+                        result.error || 'The pasted HSBC text did not pass validation.',
+                        'error',
+                    );
+                    return;
+                }
+                const fieldStatus = result.field_status && typeof result.field_status === 'object'
+                    ? result.field_status
+                    : {};
+                hsbcPasteValidation = {
+                    signature,
+                    state: 'valid',
+                    ready: Boolean(result.ready),
+                    mode: String(result.mode || ''),
+                    fieldStatus: {
+                        cash: fieldStatus.cash === true,
+                        portfolio: fieldStatus.portfolio === true,
+                        order_status: fieldStatus.order_status === true,
+                    },
+                    cashCurrencies: Array.isArray(result.cash_currencies)
+                        ? result.cash_currencies.map((currency) => String(currency || '').trim()).filter(Boolean)
+                        : [],
+                };
+                clearImportFeedback();
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
+                if (
+                    !isHsbcPasteValidationActive()
+                    || signature !== getHsbcPasteValidationSignature()
+                ) {
+                    return;
+                }
+                hsbcPasteValidation = {
+                    signature,
+                    state: 'invalid',
+                    ready: false,
+                    mode: '',
+                    fieldStatus: {
+                        cash: false,
+                        portfolio: false,
+                        order_status: false,
+                    },
+                    cashCurrencies: [],
+                };
+                setImportFeedback(
+                    `Unable to validate the pasted HSBC text: ${error?.message || 'network request failed'}`,
+                    'error',
+                );
+            } finally {
+                if (hsbcPasteValidationAbortController === abortController) {
+                    hsbcPasteValidationAbortController = null;
+                }
+                syncHsbcPasteDisplaySummaries();
+                syncImportValidationState();
+            }
+        };
+        if (debounce) {
+            hsbcPasteValidationTimer = window.setTimeout(
+                () => { void validate(); },
+                HSBC_PASTE_VALIDATION_DEBOUNCE_MS,
+            );
+        } else {
+            void validate();
+        }
+    }
+
+    function clearHsbcPastedText(kind) {
+        const input = getHsbcPasteInput(kind);
+        if (!(input instanceof HTMLTextAreaElement)) {
+            return;
+        }
+        input.value = '';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        const displayInput = getHsbcPasteDisplayInput(kind);
+        if (displayInput instanceof HTMLInputElement) {
+            displayInput.focus();
+        }
     }
 
     function getHsbcPasteButton(kind) {
@@ -6798,21 +7999,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const cashText = String(hsbcCashAccountTextInput?.value || '');
         const portfolioText = String(hsbcPortfolioTextInput?.value || '');
         const orderText = String(hsbcOrderStatusTextInput?.value || '');
+        const cashState = getHsbcPasteFieldValidationState('cash', cashText);
+        const portfolioState = getHsbcPasteFieldValidationState('portfolio', portfolioText);
+        const orderState = getHsbcPasteFieldValidationState('order', orderText);
         updateHsbcPasteFieldDisplay(
             hsbcCashAccountDisplay,
-            summarizeHsbcPastedText('cash', cashText, isLikelyHsbcCashAccountText(cashText)),
+            summarizeHsbcPastedText('cash', cashText, cashState),
             cashText,
         );
         updateHsbcPasteFieldDisplay(
             hsbcPortfolioTextDisplay,
-            summarizeHsbcPastedText('portfolio', portfolioText, isLikelyHsbcPortfolioText(portfolioText)),
+            summarizeHsbcPastedText('portfolio', portfolioText, portfolioState),
             portfolioText,
         );
         updateHsbcPasteFieldDisplay(
             hsbcOrderStatusDisplay,
-            summarizeHsbcPastedText('order', orderText, isLikelyHsbcOrderStatusText(orderText)),
+            summarizeHsbcPastedText('order', orderText, orderState),
             orderText,
         );
+        syncHsbcPasteClearButtons();
     }
 
     async function pasteHsbcClipboardIntoField(kind) {
@@ -6838,15 +8043,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 mergeResult = mergeHsbcPastedText(hsbcOrderStatusTextInput.value, normalizedText);
                 hsbcOrderStatusTextInput.value = mergeResult.mergedText;
             }
-            if (mergeResult?.duplicate) {
-                setImportFeedback('That HSBC clipboard capture is already present. Existing pasted content was kept.', 'warning');
-            } else if (mergeResult?.addedChunkCount) {
-                setImportFeedback('Added a supplementary HSBC clipboard capture to this field.', 'success');
-            } else {
-                clearImportFeedback();
-            }
+            clearImportFeedback();
             syncHsbcPasteDisplaySummaries();
             syncImportValidationState();
+            requestHsbcPasteValidation({debounce: false});
             flashHsbcPasteButton(kind);
         } catch (_error) {
             setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
@@ -6887,6 +8087,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
+        const isBocHk = selectedBroker === 'boc_hk';
         const isHsbc = selectedBroker === 'hsbc';
         const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
         const isHsbcStatementPdf = isHsbc && hsbcImportMode === 'statement_pdf';
@@ -6911,6 +8112,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportFutuhkFields instanceof HTMLElement) {
             investmentImportFutuhkFields.hidden = !isFutuhk;
+        }
+        if (investmentImportBocHkFields instanceof HTMLElement) {
+            investmentImportBocHkFields.hidden = !isBocHk;
         }
         if (investmentImportHsbcFields instanceof HTMLElement) {
             investmentImportHsbcFields.hidden = !isHsbc;
@@ -6952,6 +8156,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (futuhkStatementPdfsInput instanceof HTMLInputElement) {
             futuhkStatementPdfsInput.required = isFutuhk;
         }
+        if (bocHkStatementPdfsInput instanceof HTMLInputElement) {
+            bocHkStatementPdfsInput.required = isBocHk;
+        }
         if (schwabTransactionsCsvInput instanceof HTMLInputElement) {
             schwabTransactionsCsvInput.required = isSchwab;
         }
@@ -6973,14 +8180,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
-                    ? 'Choose matching HSBC composite and investment statements together. File types and monthly pairs are identified automatically.'
-                    : 'Paste the HSBC USD Savings, Portfolio, and Order Status pages. Supplementary captures are allowed; duplicate chunks are ignored.')
+                    ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
+                    : 'Paste HSBC cash-account pages here. HKD and CNH cash-only captures can sync on their own; USD Savings requires the matching Portfolio and Order Status pages. Supplementary captures are allowed and duplicate chunks are ignored.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                     : (isLongbridgeSg
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.parquet</code> without clearing existing records.'
                         : (isFutuhk
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                        : (isBocHk
+                        ? 'Imports one or more BOCHK Consolidated Statement PDFs, preserving each HKD, CNY, and USD subaccount in the local ledger without clearing existing records.'
                         : (isIbkrWebPaste
                             ? 'Paste the IBKR Trade Notifications page for an immediate provisional sync. Matching CSV or GainsKeeper files imported later replace the rounded web values.'
                         : (isIbkrGainskeeper
@@ -6997,11 +8206,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ? 'Upload the Charles Schwab Transactions and Positions CSV exports together. Exact same-day ticker and quantity matches are linked as in-kind transfers; ambiguous matches require manual binding.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.'))))))))));
+                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
             importSubmitButton.dataset.pendingLabel = usesSyncAction ? 'Syncing' : 'Importing';
+        }
+        if (isHsbcPaste) {
+            const hsbcPasteTexts = getHsbcPasteTexts();
+            const hsbcPasteSignature = getHsbcPasteValidationSignature(hsbcPasteTexts);
+            if (
+                (hsbcPasteTexts.cash || hsbcPasteTexts.portfolio || hsbcPasteTexts.order_status)
+                && hsbcPasteValidation.signature !== hsbcPasteSignature
+            ) {
+                requestHsbcPasteValidation();
+            }
+        } else {
+            resetHsbcPasteValidation();
         }
         seedLongbridgeImportDateRange();
     }
@@ -7285,7 +8506,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedInvestmentStockTicker || getInvestmentLocationTicker(),
             );
             return getVisibleInvestmentStockDetailTransactions(
-                buildInvestmentStockDetailRows(processedTransactions, activeTicker),
+                buildSafeInvestmentStockDetailRows(processedTransactions, activeTicker),
             );
         }
         return getVisibleInvestmentHistoryTransactions(
@@ -7358,6 +8579,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return table;
     }
 
+    function renderInvestmentHistoryMetricValue(value) {
+        return `<span class="trade-metric-value investment-history-metric-value">${renderWorkspaceMetricValueContent(value)}</span>`;
+    }
+
     function renderInvestmentHistoryRowMarkup(txn) {
         const description = formatTransactionDescription(txn);
         const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
@@ -7396,7 +8621,70 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'from';
         const transferIsAutoMatched = txn?.manual_internal_transfer_auto_matched === true;
         const currencyDisplay = formatInvestmentHistoryCurrencyDisplay(txn);
-        const descriptionMarkup = transferOptions.length
+        const receiptKey = String(
+            txn?.security_transfer_receipt_key || txn?.manual_internal_transfer_key || ''
+        ).trim();
+        const securityTransferAttributionStatus = String(
+            txn?.security_transfer_attribution_status || ''
+        ).trim();
+        const isSchwabSecurityReceipt = (
+            brokerCode === 'schwab'
+            && getNormalizedTransactionType(txn) === 'transfer_in'
+            && Math.abs(Number(getTransactionQuantity(txn)) || 0) > 1e-9
+            && receiptKey
+        );
+        const securityTransferAttribution = txn?.security_transfer_attribution;
+        const attributionSourceBroker = normalizeInvestmentBroker(
+            securityTransferAttribution?.source_broker || '',
+        );
+        const attributionSourceAccount = String(
+            securityTransferAttribution?.source_account || '',
+        ).trim();
+        const attributionOptions = isSchwabSecurityReceipt
+            ? getInvestmentSecurityTransferAttributionOptions(txn)
+            : [];
+        const isPassiveBoundSecurityReceipt = isSchwabSecurityReceipt
+            && txn?.manual_internal_transfer_role === 'target'
+            && txn?.manual_internal_transfer_kind === 'security'
+            && String(txn?.manual_internal_transfer_pair_key || '').trim();
+        const securityTransferAttributionNote = securityTransferAttributionStatus === 'superseded_by_source_evidence'
+            ? 'A uniquely matching imported source transfer-out now confirms this receipt. No aggregate-only overlay is active.'
+            : (attributionOptions.length
+                ? ''
+                : 'No eligible prior imported source broker and account are available for confirmation.');
+        const securityTransferAttributionMarkup = isSchwabSecurityReceipt
+            && !isPassiveBoundSecurityReceipt
+            && (
+            txn?.security_transfer_requires_attribution
+            || attributionSourceBroker
+            || securityTransferAttributionStatus
+        )
+            ? `
+                <div class="investment-transfer-link-shell${txn?.security_transfer_requires_attribution ? ' is-unresolved' : ' is-resolved'}">
+                    <span class="investment-transfer-link-current">${escapeHtml(description)}</span>
+                    <select class="investment-security-transfer-attribution-select trade-strategy-select form-select"
+                            data-investment-security-transfer-receipt-key="${escapeHtml(receiptKey)}"
+                            aria-label="Confirm Schwab security-transfer source broker and account">
+                        ${attributionSourceBroker ? '' : '<option value="">Confirm source broker and account...</option>'}
+                        ${attributionOptions.map((option) => {
+                            const optionValue = JSON.stringify({
+                                source_broker: option.source_broker,
+                                source_account: option.source_account,
+                            });
+                            const isSelected = (
+                                option.source_broker === attributionSourceBroker
+                                && option.source_account === attributionSourceAccount
+                            );
+                            return `<option value="${escapeHtml(optionValue)}"${isSelected ? ' selected' : ''}>${escapeHtml(option.label)}</option>`;
+                        }).join('')}
+                    </select>
+                    ${securityTransferAttributionNote
+                        ? `<span class="investment-transfer-link-fee-note">${escapeHtml(securityTransferAttributionNote)}</span>`
+                        : ''}
+                </div>
+            `
+            : '';
+        const descriptionMarkup = securityTransferAttributionMarkup || (transferOptions.length
             ? `
                 <div class="investment-transfer-link-shell${txn?.manual_internal_transfer_needs_binding ? ' is-unresolved' : ' is-resolved'}">
                     <span class="investment-transfer-link-current">${escapeHtml(descriptionCurrentText)}</span>
@@ -7417,7 +8705,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${transferFeeNote ? `<span class="investment-transfer-link-fee-note">${escapeHtml(transferFeeNote)}</span>` : ''}
                 </div>
             `
-            : escapeHtml(description);
+            : escapeHtml(description));
         return `
             <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
                 ${renderInvestmentBrokerCell(txn)}
@@ -7426,11 +8714,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
                 <td class="investment-history-cell investment-history-cell-left${txn?.manual_internal_transfer_needs_binding ? ' investment-history-cell-transfer-pending' : ''}">${descriptionMarkup}</td>
                 <td class="investment-history-cell investment-history-cell-center">${escapeHtml(currencyDisplay)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(brokerMarketValue)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(brokerCashForDisplay)}</td>
-                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(brokerTotalEquity)}</strong></td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(txn.display_amount))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatTransactionCommissionDisplay(txn))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(brokerMarketValue))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(brokerCashForDisplay))}</td>
+                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${renderInvestmentHistoryMetricValue(formatAmount(brokerTotalEquity))}</strong></td>
             </tr>
         `;
     }
@@ -7439,6 +8727,90 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(tbody instanceof HTMLElement) || tbody.dataset.transferBindingBound === '1') return;
         tbody.dataset.transferBindingBound = '1';
         tbody.addEventListener('change', async (event) => {
+            const attributionSelect = event.target.closest('.investment-security-transfer-attribution-select');
+            if (attributionSelect instanceof HTMLSelectElement) {
+                const receiptKey = String(
+                    attributionSelect.dataset.investmentSecurityTransferReceiptKey || '',
+                ).trim();
+                if (!receiptKey) return;
+                let sourceBroker = '';
+                let sourceAccount = '';
+                const rawSelection = String(attributionSelect.value || '').trim();
+                if (rawSelection) {
+                    try {
+                        const selection = JSON.parse(rawSelection);
+                        sourceBroker = normalizeInvestmentBroker(selection?.source_broker || '');
+                        sourceAccount = String(selection?.source_account || '').trim();
+                    } catch (_error) {
+                        sourceBroker = '';
+                        sourceAccount = '';
+                    }
+                    if (!sourceBroker || !sourceAccount) {
+                        setImportFeedback('Select a valid source broker and account.', 'error');
+                        await renderTransactionTable(
+                            investmentRawTransactionsCache,
+                            { preserveHistoryPage: true, scrollToTop: false },
+                        );
+                        return;
+                    }
+                    const sourceLabel = `${getInvestmentBrokerMeta(sourceBroker).label} · ${sourceAccount}`;
+                    const confirmed = window.confirm(
+                        `Confirm ${sourceLabel} as the source for this Schwab security receipt?`,
+                    );
+                    if (!confirmed) {
+                        await renderTransactionTable(
+                            investmentRawTransactionsCache,
+                            { preserveHistoryPage: true, scrollToTop: false },
+                        );
+                        return;
+                    }
+                }
+                const historyScrollContainer = getInvestmentHistoryScrollContainer();
+                const historyScrollPosition = historyScrollContainer instanceof HTMLElement
+                    ? { top: historyScrollContainer.scrollTop, left: historyScrollContainer.scrollLeft }
+                    : null;
+                showInvestmentTransferBindingModal();
+                await new Promise((resolve) => window.requestAnimationFrame(resolve));
+                try {
+                    await rememberInvestmentSecurityTransferAttribution(
+                        receiptKey,
+                        sourceBroker,
+                        sourceAccount,
+                    );
+                    await renderTransactionTable(
+                        investmentRawTransactionsCache,
+                        { preserveHistoryPage: true, scrollToTop: false },
+                    );
+                    setImportFeedback(
+                        sourceBroker
+                            ? 'Saved the source-account confirmation.'
+                            : 'The source-account confirmation was not changed.',
+                        sourceBroker ? 'success' : 'warning',
+                    );
+                    if (historyScrollPosition && historyScrollContainer instanceof HTMLElement) {
+                        const restoreHistoryScrollPosition = () => {
+                            historyScrollContainer.scrollTop = historyScrollPosition.top;
+                            historyScrollContainer.scrollLeft = historyScrollPosition.left;
+                        };
+                        restoreHistoryScrollPosition();
+                        window.requestAnimationFrame(restoreHistoryScrollPosition);
+                    }
+                } catch (error) {
+                    if (isLifecycleInterruptedFetch(error)) return;
+                    console.error('Failed to confirm Schwab security-transfer source:', error);
+                    setImportFeedback(
+                        String(error?.message || 'The Schwab source confirmation could not be saved.'),
+                        'error',
+                    );
+                    await renderTransactionTable(
+                        investmentRawTransactionsCache,
+                        { preserveHistoryPage: true, scrollToTop: false },
+                    );
+                } finally {
+                    hideInvestmentLoadingModal({ resetContent: true });
+                }
+                return;
+            }
             const select = event.target.closest('.investment-transfer-link-select');
             if (!(select instanceof HTMLSelectElement)) return;
             const sourceKey = String(select.dataset.investmentTransferSourceKey || '').trim();
@@ -7448,21 +8820,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const historyScrollPosition = historyScrollContainer instanceof HTMLElement
                 ? { top: historyScrollContainer.scrollTop, left: historyScrollContainer.scrollLeft }
                 : null;
-            rememberInvestmentInternalTransferBinding(sourceKey, targetKey);
-            setImportFeedback(
-                targetKey
-                    ? 'Linked the selected internal-transfer counterpart. Aggregate equity now treats that bridge as internal.'
-                    : 'Removed the manual internal-transfer link. The aggregate curve now shows the raw transfer path again.',
-                targetKey ? 'success' : 'warning'
-            );
-            await renderTransactionTable(investmentRawTransactionsCache, { preserveHistoryPage: true, scrollToTop: false });
-            if (historyScrollPosition && historyScrollContainer instanceof HTMLElement) {
-                const restoreHistoryScrollPosition = () => {
-                    historyScrollContainer.scrollTop = historyScrollPosition.top;
-                    historyScrollContainer.scrollLeft = historyScrollPosition.left;
-                };
-                restoreHistoryScrollPosition();
-                window.requestAnimationFrame(restoreHistoryScrollPosition);
+            showInvestmentTransferBindingModal();
+            await new Promise((resolve) => window.requestAnimationFrame(resolve));
+            try {
+                await rememberInvestmentInternalTransferBinding(sourceKey, targetKey);
+                await renderTransactionTable(
+                    investmentRawTransactionsCache,
+                    { preserveHistoryPage: true, scrollToTop: false },
+                );
+                setImportFeedback(
+                    targetKey
+                        ? 'Linked the selected internal-transfer counterpart. Aggregate equity now treats that bridge as internal.'
+                        : 'Removed the manual internal-transfer link. The aggregate curve now shows the raw transfer path again.',
+                    targetKey ? 'success' : 'warning'
+                );
+                if (historyScrollPosition && historyScrollContainer instanceof HTMLElement) {
+                    const restoreHistoryScrollPosition = () => {
+                        historyScrollContainer.scrollTop = historyScrollPosition.top;
+                        historyScrollContainer.scrollLeft = historyScrollPosition.left;
+                    };
+                    restoreHistoryScrollPosition();
+                    window.requestAnimationFrame(restoreHistoryScrollPosition);
+                }
+            } catch (error) {
+                if (isLifecycleInterruptedFetch(error)) return;
+                console.error('Failed to bind internal transfer:', error);
+                setImportFeedback('The internal transfer could not be bound. Please try again.', 'error');
+            } finally {
+                hideInvestmentLoadingModal({ resetContent: true });
             }
         });
     }
@@ -7495,9 +8880,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ));
     }
 
-    function getInvestmentBrokerFilteredRowsForVisibleHistory(processedTransactions = []) {
+    function getInvestmentBrokerCurrencyFilteredRowsForVisibleHistory(processedTransactions = []) {
+        const index = ensureInvestmentBrokerFilterTransactionIndex(processedTransactions);
         if (activeInvestmentView !== 'metrics') {
-            return getInvestmentBrokerFilteredTransactionRows(processedTransactions);
+            return selectInvestmentBrokerCurrencyRows(
+                index,
+                getInvestmentBrokerFilterSelectedCodes(),
+                investmentCurrencyFilter,
+                formatTransactionCurrency,
+            );
         }
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
@@ -7505,9 +8896,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedBrokerCodes = selectedBrokerCode === 'all'
             ? new Set(availableBrokerCodes)
             : new Set([selectedBrokerCode]);
-        return selectInvestmentBrokerRows(
-            ensureInvestmentBrokerFilterTransactionIndex(processedTransactions),
+        const brokerRows = selectInvestmentBrokerRows(
+            index,
             selectedBrokerCodes,
+        );
+        return selectInvestmentCurrencyRows(
+            brokerRows,
+            investmentCurrencyFilter,
+            formatTransactionCurrency,
         );
     }
 
@@ -7525,6 +8921,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `Broker: ${allBrokersSelected ? 'All brokers' : (selectedBrokerLabels.join(', ') || 'No brokers')}`,
             `Type: ${investmentSideFilter === 'all' ? 'All types' : (sideLabels.join(', ') || 'No types')}`,
             `Currency: ${investmentCurrencyFilter === 'all' ? 'All currencies' : investmentCurrencyFilter}`,
+            `Description: ${investmentDescriptionBindingFilter === 'unbound' ? 'Unbound internal transfers' : 'All descriptions'}`,
         ];
         if (includeTransactionDate) {
             scopeParts.push(`Transaction date: ${getInvestmentStockDetailsDateFilterLabel()}`);
@@ -7554,7 +8951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? investmentProcessedTransactionsCache
                 : [];
             const tickerTransactions = getVisibleInvestmentStockDetailTransactions(
-                buildInvestmentStockDetailRows(processedTransactions, activeTicker),
+                buildSafeInvestmentStockDetailRows(processedTransactions, activeTicker),
             );
             const dateRange = buildExportDateRange(tickerTransactions, latestEquityDate);
             if (!dateRange) {
@@ -9037,27 +10434,102 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } = {}) {
-        return metricDefinitions.map((definition) => `
-            <div class="trade-metric-card trade-metric-card--value-align-end">
-                <span class="trade-metric-label">${definition.label}</span>
-                ${renderMetricValueWithTooltip({
-                    key: definition.key,
-                    value: definition.formatValue
-                        ? definition.formatValue(metricValues)
-                        : formatAmount(metricValues?.[definition.valueKey]),
-                    valueClass: typeof definition.valueClass === 'function'
-                        ? definition.valueClass(metricValues)
-                        : (definition.valueClass || ''),
-                    summary: definition.summary,
-                    rows: metricValues?.[definition.rowsKey],
-                    liveField: definition.liveField,
-                    liveNumber: definition.liveNumberKey
-                        ? metricValues?.[definition.liveNumberKey]
-                        : metricValues?.[definition.valueKey],
-                }, { keyPrefix })}
+    function renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPrefix = '' } = {}) {
+        const metricLabel = String(definition?.label || 'Metric');
+        const metricKey = keyPrefix ? `${keyPrefix}-${definition?.key || 'metric'}` : (definition?.key || 'metric');
+        const breakdownId = `investment_metric_breakdown_${String(metricKey).replace(/[^a-z0-9_-]/gi, '_')}`;
+        const pnlUnavailable = metricValues?.pnlUnavailable === true && /pnl/i.test(String(definition?.key || ''));
+        const details = !pnlUnavailable && Array.isArray(metricValues?.[definition?.detailsKey])
+            ? metricValues[definition.detailsKey]
+            : [];
+        const hasBreakdown = details.length > 0;
+        const value = pnlUnavailable
+            ? 'Unavailable'
+            : (definition?.formatValue
+            ? definition.formatValue(metricValues)
+            : formatAmount(metricValues?.[definition?.valueKey]));
+        const valueClass = pnlUnavailable
+            ? ''
+            : (typeof definition?.valueClass === 'function'
+            ? definition.valueClass(metricValues)
+            : (definition?.valueClass || ''));
+        const valueMarkup = `
+            <span class="trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}"
+                  data-workspace-mask="trade-metric">${renderWorkspaceMetricValueContent(value)}</span>
+        `;
+        const valueRowMarkup = hasBreakdown
+            ? `
+                <div class="investment-metric-value-row">
+                    <button type="button"
+                            class="investment-stock-details-metric-breakdown-trigger"
+                            data-investment-metric-breakdown-trigger
+                            data-investment-metric-label="${escapeHtml(metricLabel)}"
+                            aria-controls="${breakdownId}"
+                            aria-expanded="false"
+                            aria-label="Show ${escapeHtml(metricLabel)} details"></button>
+                    ${valueMarkup}
+                </div>
+            `
+            : valueMarkup;
+        const breakdownMarkup = hasBreakdown
+            ? `
+                <div id="${breakdownId}"
+                     class="investment-stock-details-metric-breakdown"
+                     role="region"
+                     aria-label="${escapeHtml(metricLabel)} details"
+                     hidden>
+                    ${details.map((detail) => `
+                        <div class="investment-stock-details-metric-breakdown-row">
+                            <span class="investment-stock-details-metric-breakdown-label">${escapeHtml(detail?.label || '')}</span>
+                            <span class="investment-stock-details-metric-breakdown-value${detail?.valueClass ? ` ${detail.valueClass}` : ''}"
+                                  data-workspace-mask="trade-metric">${renderWorkspaceMetricValueContent(detail?.value || '--')}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `
+            : '';
+
+        return `
+            <div class="trade-metric-card trade-metric-card--value-align-end${hasBreakdown ? ' investment-metric-card-with-breakdown' : ''}"
+                 data-metric-key="${escapeHtml(metricKey)}">
+                <span class="trade-metric-label">${escapeHtml(metricLabel)}</span>
+                ${valueRowMarkup}
+                ${breakdownMarkup}
             </div>
-        `).join('');
+        `;
+    }
+
+    function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } = {}) {
+        return metricDefinitions.map((definition) => {
+            if (definition?.renderMode === 'breakdown') {
+                return renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPrefix });
+            }
+            const pnlUnavailable = metricValues?.pnlUnavailable === true && /pnl/i.test(String(definition?.key || ''));
+            return `
+                <div class="trade-metric-card trade-metric-card--value-align-end">
+                    <span class="trade-metric-label">${definition.label}</span>
+                    ${renderMetricValueWithTooltip({
+                        key: definition.key,
+                        value: pnlUnavailable
+                            ? 'Unavailable'
+                            : (definition.formatValue
+                            ? definition.formatValue(metricValues)
+                            : formatAmount(metricValues?.[definition.valueKey])),
+                        valueClass: pnlUnavailable
+                            ? ''
+                            : (typeof definition.valueClass === 'function'
+                            ? definition.valueClass(metricValues)
+                            : (definition.valueClass || '')),
+                        summary: definition.summary,
+                        rows: pnlUnavailable ? [] : metricValues?.[definition.rowsKey],
+                        liveField: pnlUnavailable ? '' : definition.liveField,
+                        liveNumber: pnlUnavailable ? null : (definition.liveNumberKey
+                            ? metricValues?.[definition.liveNumberKey]
+                            : metricValues?.[definition.valueKey]),
+                    }, { keyPrefix })}
+                </div>
+            `;
+        }).join('');
     }
 
     function getBrokerRewardRealizedIncome(brokerBenefitMetrics) {
@@ -9078,25 +10550,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ]));
     }
 
-    function getTotalOffshoreGainMetrics(holdingsSummaryMetrics) {
-        const cumulativePnl = Number(holdingsSummaryMetrics?.cumulativePnl) || 0;
-        return {
-            totalOffshoreGain: cumulativePnl,
-            totalOffshoreGainRows: Array.isArray(holdingsSummaryMetrics?.cumulativePnlRows)
-                ? [...holdingsSummaryMetrics.cumulativePnlRows]
-                : [],
-        };
-    }
-
     function renderFundingMetricCards(
         fundingMetrics,
         holdingsSummaryMetrics,
         brokerBenefitMetrics,
         { keyPrefix = '' } = {},
     ) {
-        const offshoreGainMetrics = getTotalOffshoreGainMetrics(holdingsSummaryMetrics);
         return [
-            renderMetricCards(OFFSHORE_GAIN_METRIC_DEFINITIONS, offshoreGainMetrics, { keyPrefix }),
             renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics, { keyPrefix }),
             renderMetricCards(FUNDING_METRIC_DEFINITIONS, fundingMetrics, { keyPrefix }),
             renderMetricCards(BROKER_BENEFIT_METRIC_DEFINITIONS, brokerBenefitMetrics, { keyPrefix }),
@@ -9121,7 +10581,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentBrokerSummaryTransactions(brokerCode = getInvestmentBrokerSummarySelectedCode()) {
         const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
-        if (normalizedBrokerCode === 'all') return [...investmentRawTransactionsCache];
+        if (normalizedBrokerCode === 'all') {
+            return getInvestmentAggregateOnlyTransactions(investmentRawTransactionsCache);
+        }
         if (!normalizedBrokerCode) return [];
         return investmentRawTransactionsCache.filter((txn) => (
             normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normalizedBrokerCode
@@ -9151,6 +10613,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedBrokerCode = getInvestmentBrokerSummarySelectedCode();
         const isAllBrokersSelected = selectedBrokerCode === 'all';
+        if (isAllBrokersSelected && investmentAggregateSecurityTransferState.blocked) {
+            removeInvestmentMetricTooltips();
+            metricsPanel.innerHTML = `
+                <div class="investment-holdings-table-shell">
+                    <div class="investment-holdings-empty">${escapeHtml(getInvestmentAggregateSecurityTransferBlockedMessage())}</div>
+                </div>
+            `;
+            return;
+        }
         const scopedTransactions = getInvestmentBrokerSummaryTransactions(selectedBrokerCode);
         const mergedLatestPrices = {
             ...(investmentBaseLatestPricesCache && typeof investmentBaseLatestPricesCache === 'object'
@@ -9193,6 +10664,7 @@ document.addEventListener('DOMContentLoaded', () => {
             metricsToRender[1],
             metricsToRender[2],
         );
+        bindInvestmentMetricBreakdownControls(metricsPanel);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
     }
 
@@ -9243,6 +10715,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
+        const isBocHk = selectedBroker === 'boc_hk';
         const isHsbc = selectedBroker === 'hsbc';
         const hsbcImportMode = getSelectedHsbcImportMode();
         const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
@@ -9252,6 +10725,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isUsmartHk = selectedBroker === 'usmart_hk';
         const usesStandardXlsxImport = GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker);
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
+        const bocHkStatementFiles = getSelectedStatementPdfFiles(bocHkStatementPdfsInput);
         const hsbcStatementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
         const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
         const usmartHkStatementFiles = getSelectedStatementPdfFiles(usmartHkStatementPdfsInput);
@@ -9271,19 +10745,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
+        const hsbcPasteSignature = getHsbcPasteValidationSignature({
+            cash: hsbcCashAccountText,
+            portfolio: hsbcPortfolioText,
+            order_status: hsbcOrderStatusText,
+        });
         const longbridgeHkFundDetailsFile = longbridgeHkFundDetailsInput?.files?.[0];
         const longbridgeHkHistoryOrdersFile = longbridgeHkHistoryOrdersInput?.files?.[0];
         const longbridgeHkFilesReady = isLongbridgeHk && isLikelyLongbridgeSgFundDetailsFile(longbridgeHkFundDetailsFile) && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeHkHistoryOrdersFile);
         const longbridgeSgFundDetailsReady = isLongbridgeSg && isLikelyLongbridgeSgFundDetailsFile(longbridgeSgFundDetailsFile);
         const longbridgeSgHistoryOrdersReady = isLongbridgeSg && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeSgHistoryOrdersFile);
-        const hsbcPortfolioReady = isHsbcPaste && isLikelyHsbcPortfolioText(hsbcPortfolioText);
-        const hsbcOrderStatusReady = isHsbcPaste && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
-        const hsbcCashAccountReady = isHsbcPaste && isLikelyHsbcCashAccountText(hsbcCashAccountText);
+        const hsbcPortfolioValidationState = isHsbcPaste
+            ? getHsbcPasteFieldValidationState('portfolio', hsbcPortfolioText)
+            : 'empty';
+        const hsbcOrderStatusValidationState = isHsbcPaste
+            ? getHsbcPasteFieldValidationState('order', hsbcOrderStatusText)
+            : 'empty';
+        const hsbcCashAccountValidationState = isHsbcPaste
+            ? getHsbcPasteFieldValidationState('cash', hsbcCashAccountText)
+            : 'empty';
+        const hsbcPasteReady = isHsbcPaste
+            && hsbcPasteValidation.signature === hsbcPasteSignature
+            && hsbcPasteValidation.state === 'valid'
+            && hsbcPasteValidation.ready;
         const hsbcStatementsReady = isHsbcStatementPdf
             && isCompleteHsbcStatementPdfBundle(hsbcStatementFiles, isLikelyPdfFile);
         const futuhkStatementsReady = isFutuhk
             && futuhkStatementFiles.length > 0
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
+        const bocHkStatementsReady = isBocHk
+            && bocHkStatementFiles.length > 0
+            && bocHkStatementFiles.every((file) => isLikelyBocHkStatementPdf(file));
         const schwabTransactionsFile = schwabTransactionsCsvInput?.files?.[0];
         const schwabPositionsFile = schwabPositionsCsvInput?.files?.[0];
         const schwabTransactionsReady = isSchwab && isLikelyCsvFile(schwabTransactionsFile);
@@ -9308,7 +10800,8 @@ document.addEventListener('DOMContentLoaded', () => {
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
-            || (isHsbcPaste && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
+            || (isBocHk && Boolean(bocHkStatementsReady))
+            || Boolean(hsbcPasteReady)
             || (isHsbcStatementPdf && Boolean(hsbcStatementsReady))
             || (isSchwab && Boolean(schwabReady))
             || (isTigertrade && Boolean(tigertradeStatementsReady))
@@ -9330,11 +10823,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const longbridgeHkHistoryOrdersReady = !!(longbridgeHkHistoryOrdersInput && longbridgeHkHistoryOrdersInput.files && longbridgeHkHistoryOrdersInput.files.length > 0);
         setImportStatusIcon(longbridgeHkFundDetailsStatus, longbridgeHkFundDetailsReady);
         setImportStatusIcon(longbridgeHkHistoryOrdersStatus, longbridgeHkHistoryOrdersReady);
-        setImportStatusIcon(hsbcPortfolioTextStatus, Boolean(hsbcPortfolioReady));
-        setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
-        setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
+        setHsbcPasteStatusIcon(
+            hsbcPortfolioTextStatus,
+            hsbcPortfolioValidationState,
+            hsbcPortfolioValidationState === 'valid' ? 'HSBC Portfolio text validated.' : '',
+        );
+        setHsbcPasteStatusIcon(
+            hsbcOrderStatusTextStatus,
+            hsbcOrderStatusValidationState,
+            hsbcOrderStatusValidationState === 'valid' ? 'HSBC Order Status text validated.' : '',
+        );
+        setHsbcPasteStatusIcon(
+            hsbcCashAccountTextStatus,
+            hsbcCashAccountValidationState,
+            hsbcCashAccountValidationState === 'valid'
+                ? `HSBC ${hsbcPasteValidation.cashCurrencies.join(', ') || 'cash-account'} text validated.`
+                : '',
+        );
         setImportStatusIcon(hsbcStatementPdfsStatus, Boolean(hsbcStatementsReady));
         setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
+        setImportStatusIcon(bocHkStatementPdfsStatus, Boolean(bocHkStatementsReady));
         setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabTransactionsReady));
         setImportStatusIcon(schwabPositionsCsvStatus, Boolean(schwabPositionsReady));
         setImportStatusIcon(tigertradeStatementPdfsStatus, Boolean(tigertradeStatementsReady));
@@ -9559,6 +11067,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mountInvestmentBrokerSummarySelector();
     mountInvestmentSideFilterHeaders();
     mountInvestmentCurrencyFilterHeaders();
+    mountInvestmentDescriptionBindingFilterHeaders();
     bindInvestmentExportButton();
     syncInvestmentImportMode();
     syncIbkrTradeNotificationsDisplay();
@@ -9573,7 +11082,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput, schwabPositionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, futuhkStatementPdfsInput, bocHkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput, schwabPositionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -9616,6 +11125,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearImportFeedback();
             syncHsbcPasteDisplaySummaries();
             syncImportValidationState();
+            requestHsbcPasteValidation();
         });
     });
     if (ibkrTradeNotificationsTextInput) {
@@ -9638,6 +11148,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(button instanceof HTMLButtonElement)) return;
         button.addEventListener('click', () => {
             pasteHsbcClipboardIntoField(kind);
+        });
+    });
+    [
+        ['cash', hsbcCashAccountTextClearButton],
+        ['portfolio', hsbcPortfolioTextClearButton],
+        ['order', hsbcOrderStatusTextClearButton],
+    ].forEach(([kind, button]) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+        });
+        button.addEventListener('click', () => {
+            clearHsbcPastedText(kind);
         });
     });
     window.addEventListener('resize', syncInvestmentImportContainerHeight);
@@ -9789,13 +11312,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 statementFiles.forEach((file) => {
                     formData.append('futuhk_statement_pdfs', file);
                 });
+            } else if (selectedBroker === 'boc_hk') {
+                const statementFiles = getSelectedStatementPdfFiles(bocHkStatementPdfsInput);
+                if (!statementFiles.length) {
+                    setImportFeedback('Please choose at least one BOCHK Consolidated Statement PDF before importing.', 'error');
+                    return;
+                }
+                if (!statementFiles.every((file) => isLikelyBocHkStatementPdf(file))) {
+                    setImportFeedback('Please upload valid BOCHK Consolidated Statement PDF files.', 'error');
+                    return;
+                }
+                statementFiles.forEach((file) => {
+                    formData.append('boc_hk_statement_pdfs', file);
+                });
             } else if (selectedBroker === 'hsbc') {
                 const hsbcImportMode = getSelectedHsbcImportMode();
                 formData.append('hsbc_import_mode', hsbcImportMode);
                 if (hsbcImportMode === 'statement_pdf') {
                     const statementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
                     if (!isCompleteHsbcStatementPdfBundle(statementFiles, isLikelyPdfFile)) {
-                        setImportFeedback('Please choose one matching HSBC composite and investment statement for each period.', 'error');
+                        setImportFeedback('Please choose at least one valid HSBC monthly statement PDF.', 'error');
                         return;
                     }
                     statementFiles.forEach((file) => {
@@ -9805,28 +11341,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     const portfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
                     const orderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
                     const cashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
-                    if (!cashAccountText) {
-                        setImportFeedback('Please paste the HSBC USD Savings page text before syncing.', 'error');
-                        return;
-                    }
-                    if (!portfolioText) {
-                        setImportFeedback('Please paste the HSBC Portfolio page text before syncing.', 'error');
-                        return;
-                    }
-                    if (!orderStatusText) {
-                        setImportFeedback('Please paste the HSBC Order Status page text before syncing.', 'error');
-                        return;
-                    }
-                    if (!isLikelyHsbcCashAccountText(cashAccountText)) {
-                        setImportFeedback('The HSBC USD Savings page text is missing required details or belongs to the wrong account.', 'error');
-                        return;
-                    }
-                    if (!isLikelyHsbcPortfolioText(portfolioText)) {
-                        setImportFeedback('The HSBC Portfolio page text is missing required details or belongs to the wrong account.', 'error');
-                        return;
-                    }
-                    if (!isLikelyHsbcOrderStatusText(orderStatusText)) {
-                        setImportFeedback('The HSBC Order Status page text is missing required details or belongs to the wrong account.', 'error');
+                    const hsbcPasteSignature = getHsbcPasteValidationSignature({
+                        cash: cashAccountText,
+                        portfolio: portfolioText,
+                        order_status: orderStatusText,
+                    });
+                    if (
+                        hsbcPasteValidation.signature !== hsbcPasteSignature
+                        || hsbcPasteValidation.state !== 'valid'
+                        || !hsbcPasteValidation.ready
+                    ) {
                         return;
                     }
                     formData.append('hsbc_portfolio_text', portfolioText);
@@ -10053,8 +11577,16 @@ document.addEventListener('DOMContentLoaded', () => {
             filteredSummaries = summaries,
             summaryScope = 'all',
             brokerBenefitMetrics = {},
+            holdingsSummaryMetrics = null,
         } = {},
     ) {
+        if (investmentAggregateSecurityTransferState.blocked) {
+            return `
+                <div class="investment-holdings-table-shell">
+                    <div class="investment-holdings-empty">${escapeHtml(getInvestmentAggregateSecurityTransferBlockedMessage())}</div>
+                </div>
+            `;
+        }
         const brokerRewardRealizedIncome = getBrokerRewardRealizedIncome(brokerBenefitMetrics);
         const hasBrokerRewardRealizedIncome = Math.abs(brokerRewardRealizedIncome) > 1e-9;
         if (!summaries.length && !hasBrokerRewardRealizedIncome) {
@@ -10075,10 +11607,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const openSummaries = summarySummaries.filter((summary) => summary.hasOpenPosition);
         const openCount = openSummaries.length;
         const closedCount = summarySummaries.length - openCount;
+        const hasPnlUnavailable = (
+            holdingsSummaryMetrics?.pnlUnavailable === true
+            || isInvestmentAggregatePnlUnavailable(summarySummaries)
+        );
         const holdingsRealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
-        const totalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
+        const fallbackTotalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
+        const totalRealizedPnl = normalizedSummaryScope === 'all'
+            && Number.isFinite(Number(holdingsSummaryMetrics?.totalRealizedPnl))
+            ? Number(holdingsSummaryMetrics.totalRealizedPnl)
+            : fallbackTotalRealizedPnl;
         const totalUnrealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const totalDailyPnl = summarySummaries.reduce((totals, summary) => {
+            if (summary?.pnlUnavailable === true) return totals;
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
             totals.realized += Number(dailyPnl.realized) || 0;
             totals.unrealized += Number(dailyPnl.unrealized) || 0;
@@ -10089,15 +11630,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9
             ? (totalNetMarketValue / TOTAL_EQUITY) * 100
             : 0;
-        const totalRealizedClass = totalRealizedPnl >= 0
+        const totalRealizedClass = hasPnlUnavailable
+            ? ''
+            : (totalRealizedPnl >= 0
             ? ' investment-holdings-value-positive'
-            : ' investment-holdings-value-negative';
-        const totalUnrealizedClass = totalUnrealizedPnl >= 0
+            : ' investment-holdings-value-negative');
+        const totalUnrealizedClass = hasPnlUnavailable
+            ? ''
+            : (totalUnrealizedPnl >= 0
             ? ' investment-holdings-value-positive'
-            : ' investment-holdings-value-negative';
-        const cumulativePnlClass = cumulativePnl >= 0
+            : ' investment-holdings-value-negative');
+        const cumulativePnlClass = hasPnlUnavailable
+            ? ''
+            : (cumulativePnl >= 0
             ? ' investment-holdings-value-positive'
-            : ' investment-holdings-value-negative';
+            : ' investment-holdings-value-negative');
 
         const rowsHtml = summaries.map((summary, index) => {
             const profile = resolveInvestmentTickerProfile(tickerProfiles, summary.ticker);
@@ -10119,11 +11666,17 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                 `;
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
+            const costBasisMethodDisplay = summary.costBasisMethod === 'FIFO reconstructed'
+                ? '<span class="investment-holdings-cost-basis-method">FIFO reconstructed</span>'
+                : '';
             const positionDisplay = formatHoldingsPosition(summary.shares);
-            const realizedClass = summary.realizedPnl >= 0
+            const pnlUnavailable = summary?.pnlUnavailable === true;
+            const realizedClass = pnlUnavailable
+                ? ''
+                : (summary.realizedPnl >= 0
                 ? ' investment-holdings-value-positive'
-                : ' investment-holdings-value-negative';
-            const unrealizedClass = summary.unrealizedPnl === null
+                : ' investment-holdings-value-negative');
+            const unrealizedClass = pnlUnavailable || summary.unrealizedPnl === null
                 ? ''
                 : (summary.unrealizedPnl >= 0
                     ? ' investment-holdings-value-positive'
@@ -10149,7 +11702,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         </a>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">
-                        <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(averagePriceDisplay)}</span>
+                        <span class="investment-holdings-cost-basis-stack">
+                            <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(averagePriceDisplay)}</span>
+                            ${costBasisMethodDisplay}
+                        </span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${lastClass}">
                         <span class="investment-holdings-pnl-stack">
@@ -10187,13 +11743,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
                         <span class="investment-holdings-pnl-stack">
-                            ${renderHoldingsDualCurrencyValue(
+                            ${pnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderHoldingsDualCurrencyValue(
                                 summary.realizedPnl,
                                 summary.realizedPnlLocal,
                                 summary.quoteCurrency,
                                 { valueClass: realizedClass },
                             )}
-                            ${summary.hasOpenPosition
+                            ${!pnlUnavailable && summary.hasOpenPosition
                                 ? renderInvestmentHoldingsDailyPnlBadge(
                                     'daily_realized_pnl',
                                     summary.ticker,
@@ -10204,13 +11760,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">
                         <span class="investment-holdings-pnl-stack">
-                            ${renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
+                            ${pnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
                                 ticker: summary.ticker,
                                 className: `trade-metric-value investment-stock-details-metric-value ${unrealizedClass.trim()}`,
                                 formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
                                 useSplitValue: true,
                             })}
-                            ${summary.hasOpenPosition
+                            ${!pnlUnavailable && summary.hasOpenPosition
                                 ? renderInvestmentHoldingsDailyPnlBadge(
                                     'daily_unrealized_pnl',
                                     summary.ticker,
@@ -10307,7 +11863,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cumulative P&amp;L</span>
-                                ${renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
+                                ${hasPnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
                                     className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cumulativePnlClass}`,
                                     formatter: (nextValue) => formatSignedHoldingsMoney(nextValue),
                                     useSplitValue: true,
@@ -10328,26 +11884,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(formatHoldingsMoney(totalRealizedPnl))}</span>
-                        ${renderInvestmentHoldingsDailyPnlBadge(
+                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(hasPnlUnavailable ? 'Unavailable' : formatHoldingsMoney(totalRealizedPnl))}</span>
+                        ${!hasPnlUnavailable ? renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_realized_pnl',
                             '',
                             totalDailyPnl.realized,
-                        )}
+                        ) : ''}
                     </span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
+                        ${hasPnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
                             formatter: (nextValue) => formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
-                        ${renderInvestmentHoldingsDailyPnlBadge(
+                        ${!hasPnlUnavailable ? renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_unrealized_pnl',
                             '',
                             totalDailyPnl.unrealized,
-                        )}
+                        ) : ''}
                     </span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money">
@@ -10537,23 +12093,6 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    function getWorkspaceMetricValueParts(value) {
-        const rawValue = String(value ?? '').trim() || '--';
-        const numericMatch = rawValue.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(?:\.(\d+))(%?)$/);
-        if (!numericMatch) {
-            return [{ className: 'workspace-metric-value-major', text: rawValue }];
-        }
-        const [, prefix, integerPart, decimalPart = '', suffix = ''] = numericMatch;
-        if (!decimalPart) {
-            return [{ className: 'workspace-metric-value-major', text: `${prefix}${integerPart}${suffix}` }];
-        }
-        return [
-            { className: 'workspace-metric-value-major', text: `${prefix}${integerPart}` },
-            { className: 'workspace-metric-value-minor', text: `.${decimalPart}` },
-            ...(suffix ? [{ className: 'workspace-metric-value-suffix', text: suffix }] : []),
-        ];
-    }
-
     function normalizeShareHoldingsMoneyText(value) {
         return String(value || '').replace(/([+-]?)\$\s*/g, '$1').trim();
     }
@@ -10583,12 +12122,6 @@ document.addEventListener('DOMContentLoaded', () => {
         metric.className = `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${toneClass}`.trim();
         metric.innerHTML = renderWorkspaceMetricValueContent(displayText);
         cell.appendChild(metric);
-    }
-
-    function renderWorkspaceMetricValueContent(value) {
-        return getWorkspaceMetricValueParts(value)
-            .map((part) => `<span class="${part.className}">${escapeHtml(part.text)}</span>`)
-            .join('');
     }
 
     function formatHoldingsLocalMoney(value, currency) {
@@ -10891,9 +12424,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentHoldingsRealtimeState() {
+        if (investmentAggregateSecurityTransferState.blocked) {
+            return null;
+        }
         if (!Array.isArray(investmentRawTransactionsCache) || !investmentRawTransactionsCache.length) {
             return null;
         }
+        const aggregateTransactions = getInvestmentAggregateOnlyTransactions(
+            investmentRawTransactionsCache,
+        );
         const latestSnapshot = investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1];
         const rawAggregateCash = Number(latestSnapshot?.aggregate_display_cash);
         const aggregateCash = Number.isFinite(rawAggregateCash)
@@ -10919,17 +12458,22 @@ document.addEventListener('DOMContentLoaded', () => {
             || normalizeLedgerDate(investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]?.date)
             || '';
         const baseCurrency = getInvestmentBaseCurrency();
-        const fxTimeline = buildInvestmentFxRateTimeline(investmentRawTransactionsCache, baseCurrency);
-        const summaries = buildTickerSummaries(
-            investmentRawTransactionsCache,
-            investmentLatestPricesCache,
-            safeTotalEquity,
-            investmentTickerClosePricesCache,
+        const fxTimeline = buildInvestmentFxRateTimeline(aggregateTransactions, baseCurrency);
+        const summaries = applyInvestmentAggregatePnlAvailability(
+            buildTickerSummaries(
+                aggregateTransactions,
+                investmentLatestPricesCache,
+                safeTotalEquity,
+                investmentTickerClosePricesCache,
+            ),
         ).map((summary) => {
             const nextSummary = { ...summary };
             const livePrice = Number(investmentLatestPricesCache[nextSummary.ticker]);
             if (Number.isFinite(livePrice) && livePrice > 0) {
                 nextSummary.lastPrice = livePrice;
+            }
+            if (nextSummary.pnlUnavailable) {
+                return nextSummary;
             }
             if (!nextSummary.hasOpenPosition || !Number.isFinite(livePrice) || livePrice <= 0) {
                 return nextSummary;
@@ -11016,11 +12560,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary.hasOpenPosition ? formatHoldingsMoney(summary.marketValue) : '-',
                 summary.hasOpenPosition ? summary.marketValue : null,
             );
-            updateInvestmentLiveValueNode(
-                unrealizedNode,
-                summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl),
-                summary.unrealizedPnl,
-            );
+            if (!summary.pnlUnavailable) {
+                updateInvestmentLiveValueNode(
+                    unrealizedNode,
+                    summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl),
+                    summary.unrealizedPnl,
+                );
+            }
             updateInvestmentHoldingsDailyPnlBadge(
                 dailyLastPriceNode,
                 resolveInvestmentHoldingDailyPriceChange(summary),
@@ -11031,39 +12577,51 @@ document.addEventListener('DOMContentLoaded', () => {
                     ),
                 },
             );
-            updateInvestmentHoldingsDailyPnlBadge(
-                dailyUnrealizedNode,
-                resolveInvestmentHoldingDailyPnl(summary).unrealized,
-            );
+            if (!summary.pnlUnavailable) {
+                updateInvestmentHoldingsDailyPnlBadge(
+                    dailyUnrealizedNode,
+                    resolveInvestmentHoldingDailyPnl(summary).unrealized,
+                );
+            }
             updateInvestmentLiveValueNode(
                 weightNode,
                 summary.hasOpenPosition ? formatHoldingsPercent(summary.positionWeight) : '-',
                 summary.hasOpenPosition ? summary.positionWeight : null,
             );
             syncInvestmentLiveDirectionTone([lastNode, lastCell], previousLastPrice, summary.lastPrice);
-            syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
-                enableSignedTone: summary.unrealizedPnl !== null,
-            });
+            if (!summary.pnlUnavailable) {
+                syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
+                    enableSignedTone: summary.unrealizedPnl !== null,
+                });
+            }
         });
 
         const openSummaries = summaries.filter((summary) => summary.hasOpenPosition);
-        const brokerBenefitMetrics = getBrokerBenefitMetrics(
+        const aggregateTransactions = getInvestmentAggregateOnlyTransactions(
             investmentRawTransactionsCache,
+        );
+        const hasPnlUnavailable = isInvestmentAggregatePnlUnavailable(summaries);
+        const brokerBenefitMetrics = getBrokerBenefitMetrics(
+            aggregateTransactions,
             investmentLatestPricesCache,
             totalEquity,
         );
-        const totalRealizedPnl = (
-            summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0)
-            + getBrokerRewardRealizedIncome(brokerBenefitMetrics)
-        );
-        const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
-        const totalDailyPnl = summaries.reduce((totals, summary) => {
+        const totalRealizedPnl = hasPnlUnavailable ? null : getRealizedPnlAttribution(
+            aggregateTransactions,
+            summaries,
+            brokerBenefitMetrics,
+        ).totalRealizedPnl;
+        const totalUnrealizedPnl = hasPnlUnavailable
+            ? null
+            : summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const totalDailyPnl = hasPnlUnavailable ? null : summaries.reduce((totals, summary) => {
+            if (summary?.pnlUnavailable === true) return totals;
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
             totals.realized += Number(dailyPnl.realized) || 0;
             totals.unrealized += Number(dailyPnl.unrealized) || 0;
             return totals;
         }, { realized: 0, unrealized: 0 });
-        const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
+        const cumulativePnl = hasPnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
         const totalWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON
             ? (totalNetMarketValue / totalEquity) * 100
@@ -11121,17 +12679,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const metricsCumulativeTrigger = metricsCumulativeNode?.closest('.investment-metric-tooltip-trigger');
         const metricsUnrealizedTrigger = metricsUnrealizedNode?.closest('.investment-metric-tooltip-trigger');
 
-        updateInvestmentLiveValueNode(cumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
-        updateInvestmentLiveValueNode(summaryUnrealizedNode, formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-        updateInvestmentHoldingsDailyPnlBadge(summaryDailyRealizedNode, totalDailyPnl.realized);
-        updateInvestmentHoldingsDailyPnlBadge(summaryDailyUnrealizedNode, totalDailyPnl.unrealized);
+        if (!hasPnlUnavailable) {
+            updateInvestmentLiveValueNode(cumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
+            updateInvestmentLiveValueNode(summaryUnrealizedNode, formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
+            updateInvestmentHoldingsDailyPnlBadge(summaryDailyRealizedNode, totalDailyPnl.realized);
+            updateInvestmentHoldingsDailyPnlBadge(summaryDailyUnrealizedNode, totalDailyPnl.unrealized);
+        }
         updateInvestmentLiveValueNode(summaryWeightNode, formatHoldingsPercent(totalWeight), totalWeight);
-        updateInvestmentLiveValueNode(metricsCumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
-        updateInvestmentLiveValueNode(metricsUnrealizedNode, formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-        syncInvestmentLiveTone(cumulativeNode, cumulativePnl, { enableSignedTone: true });
-        syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, { enableSignedTone: true });
-        syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, { enableSignedTone: true });
-        syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, { enableSignedTone: true });
+        if (!hasPnlUnavailable) {
+            updateInvestmentLiveValueNode(metricsCumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
+            updateInvestmentLiveValueNode(metricsUnrealizedNode, formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
+            syncInvestmentLiveTone(cumulativeNode, cumulativePnl, { enableSignedTone: true });
+            syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, { enableSignedTone: true });
+            syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, { enableSignedTone: true });
+            syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, { enableSignedTone: true });
+        }
         syncInvestmentStockDetailsRealtimeMetrics();
         if (activeInvestmentView === 'metrics') {
             renderInvestmentMetricsPanel();
@@ -11164,19 +12726,22 @@ document.addEventListener('DOMContentLoaded', () => {
         ));
         if (!tickerSummary) return;
 
-        const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
+        const pnlUnavailable = tickerSummary?.pnlUnavailable === true;
+        const totalPnl = pnlUnavailable
+            ? null
+            : (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const updates = [
             {
                 field: 'stock_unrealized_pnl',
-                display: tickerSummary.unrealizedPnl === null ? '-' : formatHoldingsMoney(tickerSummary.unrealizedPnl),
-                value: tickerSummary.unrealizedPnl,
-                signedTone: true,
+                display: pnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : formatHoldingsMoney(tickerSummary.unrealizedPnl)),
+                value: pnlUnavailable ? null : tickerSummary.unrealizedPnl,
+                signedTone: !pnlUnavailable,
             },
             {
                 field: 'stock_total_pnl',
-                display: formatHoldingsMoney(totalPnl),
+                display: pnlUnavailable ? 'Unavailable' : formatHoldingsMoney(totalPnl),
                 value: totalPnl,
-                signedTone: true,
+                signedTone: !pnlUnavailable,
             },
             {
                 field: 'stock_market_value',
@@ -11322,6 +12887,21 @@ document.addEventListener('DOMContentLoaded', () => {
             closeInvestmentStockDetailsTimeFilters();
             window.ANTIGRAVITY_DATE_PICKERS?.dispose(investmentStockDetailsTableHost);
         }
+        if (investmentAggregateSecurityTransferState.blocked) {
+            clearInvestmentStockDetailsRangeControlBindings();
+            destroyInvestmentStockDetailsPriceChart();
+            investmentStockDetailsPanel.innerHTML = `
+                <div class="investment-stock-details-empty-shell">
+                    <p class="investment-holdings-empty">${escapeHtml(getInvestmentAggregateSecurityTransferBlockedMessage())}</p>
+                </div>
+            `;
+            if (investmentStockDetailsTableHost instanceof HTMLElement) {
+                investmentStockDetailsTableHost.innerHTML = '';
+                syncInvestmentStockDetailsTableVisibility();
+            }
+            syncSelectedStockLinkState();
+            return;
+        }
         const activeTicker = ensureSelectedInvestmentStockTicker();
         destroyInvestmentStockDetailsPriceChart();
         if (!activeTicker) {
@@ -11358,7 +12938,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const identityLogoPlaceholderMarkup = moneyMarketFundTokenLogoClass
             ? ''
             : '<span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>';
-        const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
+        const detailRows = buildSafeInvestmentStockDetailRows(
+            investmentProcessedTransactionsCache,
+            activeTicker,
+        );
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
         const totalCommissionCurrency = detailRows
             .map((txn) => formatTransactionCurrency(txn))
@@ -11382,26 +12965,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const realizedBreakdown = getStockDetailRealizedBreakdown(detailRows);
         const brokerMetricDetails = buildInvestmentStockDetailBrokerMetrics(detailRows, activeTicker, tickerSummary.lastPrice);
         const hasBrokerMetricBreakdown = brokerMetricDetails.length > 1;
-        const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
-        const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
-        const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
-        const unrealizedClass = (Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
+        const pnlUnavailable = tickerSummary?.pnlUnavailable === true;
+        const totalPnl = pnlUnavailable
+            ? null
+            : (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
+        const totalPnlClass = pnlUnavailable
+            ? ''
+            : (totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
+        const realizedClass = pnlUnavailable
+            ? ''
+            : ((Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
+        const unrealizedClass = pnlUnavailable
+            ? ''
+            : ((Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
         const lastPriceDisplay = tickerSummary.lastPrice === null ? '-' : formatHoldingsMoney(tickerSummary.lastPrice);
         const lastPriceClass = resolveInvestmentLastPriceToneClass(tickerSummary.lastPrice, activeTicker);
         const weightDisplay = tickerSummary.hasOpenPosition ? formatHoldingsPercent(tickerSummary.positionWeight) : '-';
         const stockMetricCards = [
             {
                 label: 'Unrealized P&L',
-                value: tickerSummary.unrealizedPnl === null ? '-' : formatHoldingsMoney(tickerSummary.unrealizedPnl),
-                valueClass: tickerSummary.unrealizedPnl === null ? '' : unrealizedClass,
-                liveField: 'stock_unrealized_pnl',
-                liveNumber: tickerSummary.unrealizedPnl,
+                value: pnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : formatHoldingsMoney(tickerSummary.unrealizedPnl)),
+                valueClass: pnlUnavailable || tickerSummary.unrealizedPnl === null ? '' : unrealizedClass,
+                liveField: pnlUnavailable ? '' : 'stock_unrealized_pnl',
+                liveNumber: pnlUnavailable ? null : tickerSummary.unrealizedPnl,
             },
             {
                 label: 'Realized P&L',
-                value: formatHoldingsMoney(tickerSummary.realizedPnl),
+                value: pnlUnavailable ? 'Unavailable' : formatHoldingsMoney(tickerSummary.realizedPnl),
                 valueClass: realizedClass,
-                details: [
+                details: pnlUnavailable ? [] : [
                     realizedBreakdown.dividendIncome !== 0 && {
                         label: 'Dividend income',
                         value: formatHoldingsMoney(realizedBreakdown.dividendIncome),
@@ -11426,10 +13018,10 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             {
                 label: 'Total P&L',
-                value: formatHoldingsMoney(totalPnl),
+                value: pnlUnavailable ? 'Unavailable' : formatHoldingsMoney(totalPnl),
                 valueClass: totalPnlClass,
-                liveField: 'stock_total_pnl',
-                liveNumber: totalPnl,
+                liveField: pnlUnavailable ? '' : 'stock_total_pnl',
+                liveNumber: pnlUnavailable ? null : totalPnl,
             },
             {
                 label: 'Position',
@@ -11462,7 +13054,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     : [],
             },
             {
-                label: 'Average price',
+                label: tickerSummary.costBasisMethod === 'FIFO reconstructed'
+                    ? 'Average price · FIFO reconstructed'
+                    : 'Average price',
                 value: averagePriceDisplay,
                 valueClass: '',
             },
@@ -11578,7 +13172,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         bindInvestmentStockDetailsMetricBreakdownControls();
         bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
-        renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
+        if (pnlUnavailable) {
+            const chartShell = investmentStockDetailsPanel.querySelector('[data-investment-stock-price-chart]');
+            if (chartShell instanceof HTMLElement) {
+                chartShell.innerHTML = '<p class="investment-holdings-empty">Cost-basis-derived stock analysis is unavailable until the transferred position has verified carried basis.</p>';
+            }
+        } else {
+            renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
+        }
         syncInvestmentStockDetailsLivePulse();
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
         syncSelectedStockLinkState();
@@ -11660,20 +13261,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
-        return selectVisibleInvestmentHistoryTransactions({
-            brokerFilteredRows: getInvestmentBrokerFilteredRowsForVisibleHistory(processedTransactions),
+        return getInvestmentHistoryTransactionsForCurrentScope(
+            processedTransactions,
             chartPoints,
-            selectedRange: selectedInvestmentEquityRange,
-            matchesSide: (transaction) => (
-                window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(
-                    transaction,
-                    investmentSideFilter,
-                ) ?? true
-            ),
-            matchesCurrency: matchesInvestmentCurrencyFilter,
-            normalizeRange: normalizeInvestmentEquityRange,
-            getRangeLabels: getInvestmentEquityRangeLabels,
-        });
+            {includeDescriptionBindingFilter: true},
+        );
     }
 
     function mountInvestmentHistoryPagination() {
@@ -11702,142 +13294,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function ensureInvestmentHistoryPaginationIndicator(pagination) {
-        if (!(pagination instanceof HTMLElement)) return null;
-        let indicator = pagination.querySelector('.local-store-pagination-indicator');
-        if (!(indicator instanceof HTMLElement)) {
-            indicator = document.createElement('span');
-            indicator.className = 'local-store-pagination-indicator';
-            indicator.setAttribute('aria-hidden', 'true');
-            pagination.prepend(indicator);
-        }
-        return indicator;
-    }
-
     function positionInvestmentHistoryPaginationIndicator({ immediate = false } = {}) {
         if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) return;
         const target = investmentHistoryPagination.querySelector('.local-store-page-button.is-active');
         if (!(target instanceof HTMLElement)) return;
-        const indicator = ensureInvestmentHistoryPaginationIndicator(investmentHistoryPagination);
-        if (!(indicator instanceof HTMLElement)) return;
-        const navRect = investmentHistoryPagination.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const x = targetRect.left - navRect.left - investmentHistoryPagination.clientLeft;
-        const y = targetRect.top - navRect.top - investmentHistoryPagination.clientTop;
-        if (immediate) indicator.style.transition = 'none';
-        indicator.style.width = `${targetRect.width}px`;
-        indicator.style.height = `${targetRect.height}px`;
-        indicator.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-        investmentHistoryPagination.classList.add('is-animated');
-        if (immediate) {
-            void indicator.offsetWidth;
-            indicator.style.removeProperty('transition');
-        }
-    }
-
-    function getInvestmentHistoryPaginationButtonRect(button) {
-        if (!(investmentHistoryPagination instanceof HTMLElement) || !(button instanceof HTMLElement)) return null;
-        const navRect = investmentHistoryPagination.getBoundingClientRect();
-        const buttonRect = button.getBoundingClientRect();
-        return {
-            x: buttonRect.left - navRect.left - investmentHistoryPagination.clientLeft,
-            y: buttonRect.top - navRect.top - investmentHistoryPagination.clientTop,
-            width: buttonRect.width,
-            height: buttonRect.height,
-        };
-    }
-
-    function captureInvestmentHistoryPaginationAnimation(targetPage) {
-        if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) return null;
-        const current = investmentHistoryPagination.querySelector('.local-store-page-button.is-active')
-            || investmentHistoryPagination.querySelector('.local-store-page-button[data-pagination-current="1"]');
-        if (!(current instanceof HTMLElement)) return null;
-        const currentRect = current.getBoundingClientRect();
-        return {
-            fromRect: {
-                left: currentRect.left,
-                top: currentRect.top,
-                width: currentRect.width,
-                height: currentRect.height,
-            },
-            targetPage: Number(targetPage),
-        };
-    }
-
-    function getInvestmentHistoryPaginationMotionDurationMs() {
-        if (!(investmentHistoryPagination instanceof HTMLElement)) return 500;
-        const styles = window.getComputedStyle(investmentHistoryPagination);
-        const rawDuration = styles.getPropertyValue('--local-store-pagination-motion-duration').trim();
-        const parsedDuration = Number.parseFloat(rawDuration);
-        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) return 500;
-        return rawDuration.endsWith('ms') ? parsedDuration : parsedDuration * 1000;
-    }
-
-    function animateInvestmentHistoryPaginationIndicator(animationState) {
-        if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) {
-            positionInvestmentHistoryPaginationIndicator({ immediate: true });
-            return;
-        }
-        const fromRect = animationState?.fromRect;
-        const targetPage = Number(animationState?.targetPage);
-        const target = Number.isFinite(targetPage)
-            ? investmentHistoryPagination.querySelector(
-                `.local-store-page-button[data-investment-history-page-target="${CSS.escape(String(targetPage))}"]:not(.local-store-page-nav)`
-            )
-            : investmentHistoryPagination.querySelector('.local-store-page-button.is-active');
-        if (!(target instanceof HTMLElement) || !fromRect) {
-            positionInvestmentHistoryPaginationIndicator({ immediate: true });
-            return;
-        }
-        const indicator = ensureInvestmentHistoryPaginationIndicator(investmentHistoryPagination);
-        if (!(indicator instanceof HTMLElement)) return;
-        const navRect = investmentHistoryPagination.getBoundingClientRect();
-        const targetRect = getInvestmentHistoryPaginationButtonRect(target);
-        if (!targetRect) {
-            positionInvestmentHistoryPaginationIndicator({ immediate: true });
-            return;
-        }
-        const fromX = fromRect.left - navRect.left - investmentHistoryPagination.clientLeft;
-        const fromY = fromRect.top - navRect.top - investmentHistoryPagination.clientTop;
-        investmentHistoryPagination.classList.add('is-animated', 'is-animating');
-        indicator.style.transition = 'none';
-        indicator.style.width = `${fromRect.width}px`;
-        indicator.style.height = `${fromRect.height}px`;
-        indicator.style.transform = `translate3d(${fromX}px, ${fromY}px, 0)`;
-        void indicator.offsetWidth;
-        indicator.style.removeProperty('transition');
-        window.requestAnimationFrame(() => {
-            const currentTargetRect = getInvestmentHistoryPaginationButtonRect(target) || targetRect;
-            indicator.style.width = `${currentTargetRect.width}px`;
-            indicator.style.height = `${currentTargetRect.height}px`;
-            indicator.style.transform = `translate3d(${currentTargetRect.x}px, ${currentTargetRect.y}px, 0)`;
-        });
-        if (investmentHistoryPaginationAnimationTimer) {
-            window.clearTimeout(investmentHistoryPaginationAnimationTimer);
-        }
-        investmentHistoryPaginationAnimationTimer = window.setTimeout(() => {
-            investmentHistoryPaginationAnimationTimer = 0;
-            investmentHistoryPagination?.classList.remove('is-animating');
-            positionInvestmentHistoryPaginationIndicator({ immediate: true });
-        }, getInvestmentHistoryPaginationMotionDurationMs());
-    }
-
-    function renderInvestmentHistoryPaginationItem(item) {
-        if (item?.kind === 'ellipsis') {
-            return `<span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="${item.position}"><span class="local-store-page-ellipsis-dots"></span></span>`;
-        }
-
-        const targetPage = Number(item?.page);
-        if (!Number.isFinite(targetPage) || targetPage <= 0) return '';
-        if (item.kind === 'previous' || item.kind === 'next') {
-            const isPrevious = item.kind === 'previous';
-            const direction = isPrevious ? 'Previous' : 'Next';
-            const iconClass = isPrevious ? 'icon-page-prev' : 'icon-page-next';
-            return `<button type="button" class="local-store-page-button local-store-page-nav" data-investment-history-page-target="${targetPage}" data-pagination-current="0" aria-label="${direction} page"><span class="icon ${iconClass}" aria-hidden="true"></span></button>`;
-        }
-
-        const isActive = Boolean(item.isActive);
-        return `<button type="button" class="local-store-page-button${isActive ? ' is-active' : ''}" data-investment-history-page-target="${targetPage}" data-pagination-current="${isActive ? '1' : '0'}" aria-label="Page ${targetPage}"${isActive ? ' aria-current="page"' : ''}>${targetPage}</button>`;
+        positionLocalStorePaginationIndicator(investmentHistoryPagination, target, {immediate});
     }
 
     function renderInvestmentHistoryPagination(totalRows = 0) {
@@ -11850,27 +13311,18 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentHistoryCurrentPage = paginationState.currentPage;
         if (!paginationState.shouldRender) {
             setInvestmentHistoryPaginationVisibility(false);
-            investmentHistoryPagination.innerHTML = '';
-            delete investmentHistoryPagination.dataset.paginationPageCount;
-            delete investmentHistoryPagination.dataset.paginationCompact;
-            investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
-            if (investmentHistoryPaginationAnimationTimer) {
-                window.clearTimeout(investmentHistoryPaginationAnimationTimer);
-                investmentHistoryPaginationAnimationTimer = 0;
-            }
+            renderLocalStorePagination(investmentHistoryPagination, paginationState, {
+                additionalPageTargetAttribute: 'data-investment-history-page-target',
+            });
             return;
         }
         setInvestmentHistoryPaginationVisibility(true);
-        investmentHistoryPagination.dataset.paginationPageCount = String(paginationState.totalPages);
-        investmentHistoryPagination.dataset.paginationCompact = paginationState.isCompact ? '1' : '0';
-        investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
-        investmentHistoryPagination.innerHTML = `
-            <span class="local-store-pagination-indicator" aria-hidden="true"></span>
-            ${paginationState.items.map((item) => renderInvestmentHistoryPaginationItem(item)).join('')}
-        `;
+        renderLocalStorePagination(investmentHistoryPagination, paginationState, {
+            additionalPageTargetAttribute: 'data-investment-history-page-target',
+        });
         positionInvestmentHistoryPaginationIndicator({ immediate: true });
         if (pendingAnimation) {
-            animateInvestmentHistoryPaginationIndicator(pendingAnimation);
+            animateLocalStorePaginationIndicator(investmentHistoryPagination, pendingAnimation);
         }
     }
 
@@ -11889,22 +13341,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function bindInvestmentHistoryPagination() {
-        if (!mountInvestmentHistoryPagination() || investmentHistoryPagination.dataset.bound === '1') return;
-        investmentHistoryPagination.dataset.bound = '1';
-        const handleInvestmentHistoryPaginationActivation = (event) => {
-            const button = event.target instanceof Element
-                ? event.target.closest('[data-investment-history-page-target]')
-                : null;
-            if (!(button instanceof HTMLElement)) return;
-            if (button.matches(':disabled') || button.getAttribute('aria-disabled') === 'true') return;
-            const targetPage = Number(button.dataset.investmentHistoryPageTarget || 0);
+        if (!mountInvestmentHistoryPagination()) return;
+        bindLocalStorePagination(investmentHistoryPagination, (targetPage, {animationState}) => {
             if (!Number.isFinite(targetPage) || targetPage <= 0 || targetPage === investmentHistoryCurrentPage) return;
-            event.preventDefault();
-            investmentHistoryPendingPaginationAnimation = captureInvestmentHistoryPaginationAnimation(targetPage);
+            investmentHistoryPendingPaginationAnimation = animationState;
             investmentHistoryCurrentPage = targetPage;
             renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, investmentChartPointsCache, { scrollToTop: true });
-        };
-        investmentHistoryPagination.addEventListener('click', handleInvestmentHistoryPaginationActivation);
+        });
         window.addEventListener('resize', () => {
             positionInvestmentHistoryPaginationIndicator({ immediate: true });
         });
@@ -11965,7 +13408,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="investment-history-empty-state" role="status" aria-live="polite">
                             <p class="investment-history-empty-title"><strong>Import or sync broker activity to begin.</strong></p>
                             <p class="investment-history-empty-step">➊ Click <span class="investment-inline-plus-icon" aria-hidden="true"></span> above to open the import panel.</p>
-                            <p class="investment-history-empty-step">➋ Select a broker, then upload IBKR CSV files or paste the HSBC USD Savings, Portfolio, and Order Status page text.</p>
+                            <p class="investment-history-empty-step">➋ Select a broker, then upload IBKR CSV files or paste the HSBC cash-account, Portfolio, and Order Status page text.</p>
                             <p class="investment-history-empty-step">➌ IBKR, Longbridge (HK)/(SG), and HSBC are available through their current import adapters.</p>
                         </div>
                     </td>
@@ -11975,6 +13418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mountInvestmentBrokerFilterHeaders();
             mountInvestmentSideFilterHeaders();
             mountInvestmentCurrencyFilterHeaders();
+            mountInvestmentDescriptionBindingFilterHeaders();
             renderInvestmentHistoryPagination(0);
             attachHistoryTableAlignmentSync(historyTable);
             return { isDegraded: false, message: '' };
@@ -11985,9 +13429,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Sort by date ascending to calculate running cash and holdings
         // Read starting_cash from top-level JSON if available, otherwise default to 0
         const baseCurrency = getInvestmentBaseCurrency();
-        const aggregateStartingCash = getInvestmentStartingCash();
+        const aggregateStartingCashBalances = getInvestmentStartingCashBalances();
+        const aggregateStartingCash = Number.isFinite(Number(aggregateStartingCashBalances?.[baseCurrency]))
+            ? Number(aggregateStartingCashBalances[baseCurrency])
+            : getInvestmentStartingCash();
         const aggregateLedgerState = {
-            cashBalances: createCashLedger(aggregateStartingCash, baseCurrency),
+            cashBalances: createCashLedgerFromBalances(
+                aggregateStartingCashBalances,
+                aggregateStartingCash,
+                baseCurrency,
+            ),
             runningCash: aggregateStartingCash,
             pendingSettlementCash: 0,
             holdings: {},
@@ -12000,7 +13451,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const lastKnownTickerPrices = {};
 
-        const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        let orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        // Transfer keys come from immutable imported record fields.  Establish
+        // them before replay so the server's reconciliation is the only source
+        // of truth for aggregate-only exclusions.
+        const transferContext = buildInvestmentInternalTransferContext(orderedTransactions);
+        orderedTransactions = reorderInvestmentTransactionsForBoundTransfers(
+            orderedTransactions,
+            transferContext,
+        );
+        const aggregateSecurityTransferState = refreshInvestmentAggregateSecurityTransferState(
+            orderedTransactions,
+        );
         const hsbcAvailableCashWindowStartDate = orderedTransactions.reduce((latestDate, txn) => {
             if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) !== 'hsbc') return latestDate;
             const settlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
@@ -12019,11 +13481,15 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
         const brokerLedgerStates = new Map();
 
-        function createLedgerState(startingCash = 0) {
+        function createLedgerState(startingCash = 0, startingBalances = null) {
             const numericStartingCash = Number(startingCash);
             const safeStartingCash = Number.isFinite(numericStartingCash) ? numericStartingCash : 0;
             return {
-                cashBalances: createCashLedger(safeStartingCash, baseCurrency),
+                cashBalances: createCashLedgerFromBalances(
+                    startingBalances,
+                    safeStartingCash,
+                    baseCurrency,
+                ),
                 runningCash: safeStartingCash,
                 pendingSettlementCash: 0,
                 holdings: {},
@@ -12037,7 +13503,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const brokerStartingCash = isSingleBrokerPortfolio && normalizedBrokerCode === singleBrokerCode
                     ? aggregateStartingCash
                     : 0;
-                brokerLedgerStates.set(normalizedBrokerCode, createLedgerState(brokerStartingCash));
+                const brokerStartingBalances = isSingleBrokerPortfolio && normalizedBrokerCode === singleBrokerCode
+                    ? aggregateStartingCashBalances
+                    : null;
+                brokerLedgerStates.set(normalizedBrokerCode, createLedgerState(
+                    brokerStartingCash,
+                    brokerStartingBalances,
+                ));
             }
             return brokerLedgerStates.get(normalizedBrokerCode);
         }
@@ -12124,11 +13596,21 @@ document.addEventListener('DOMContentLoaded', () => {
             state.runningCash = sumCashLedgerInBaseCurrency(state.cashBalances, ledgerDate, fxTimeline, baseCurrency);
         }
 
-        function applyAuthoritativeCashBalance(state, authoritativeCash) {
+        function applyAuthoritativeCashBalance(state, authoritativeCash, currency = baseCurrency, ledgerDate = '') {
             const normalizedCash = Number(authoritativeCash);
             if (!Number.isFinite(normalizedCash)) return;
-            state.cashBalances = createCashLedger(normalizedCash, baseCurrency);
-            state.runningCash = normalizedCash;
+            const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+            if (Math.abs(normalizedCash) < 1e-9) {
+                delete state.cashBalances[normalizedCurrency];
+            } else {
+                state.cashBalances[normalizedCurrency] = normalizedCash;
+            }
+            state.runningCash = sumCashLedgerInBaseCurrency(
+                state.cashBalances,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
         }
 
         function rebuildAggregateCashState(ledgerDate) {
@@ -12210,7 +13692,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     cashDelta += amount;
                 }
-            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment'
+            } else if (normalizedType === 'withdrawal' || normalizedType === 'virtual_balance_reset' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment'
                 || normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
                 if (amount !== 0) {
                     cashDelta += amount;
@@ -12288,7 +13770,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalizedType = getNormalizedTransactionType(txn);
             const brokerCode = getTransactionBrokerCode(txn);
             const brokerLedgerState = getBrokerLedgerState(brokerCode);
-            applyHoldingStateUpdate(aggregateLedgerState, txn, normalizedType, valuationQty, price);
+            const receiptKey = String(txn?.manual_internal_transfer_key || '').trim();
+            const includeInAggregate = !aggregateSecurityTransferState.excludedReceiptKeys.has(receiptKey);
+            if (includeInAggregate) {
+                applyHoldingStateUpdate(aggregateLedgerState, txn, normalizedType, valuationQty, price);
+            }
             applyHoldingStateUpdate(brokerLedgerState, txn, normalizedType, valuationQty, price);
 
             if (shouldTrackHoldingTicker(txn) && price !== null && Number.isFinite(price) && price > 0) {
@@ -12331,7 +13817,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 )
                 ?? txn?.source?.cash_settlement_balance_after_raw
                 ?? (
-                    txn?.source?.file_kind === 'hsbc_usd_account_text'
+                    (
+                        txn?.source?.cash_balance_authoritative === true
+                        || txn?.source?.file_kind === 'hsbc_usd_account_text'
+                    )
                         ? txn?.source?.balance_after_raw
                         : undefined
                 )
@@ -12341,9 +13830,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 && Number.isFinite(authoritativeHsbcCashAfter)
                 && authoritativeHsbcCashAfter >= -1e-9
             ) {
-                applyAuthoritativeCashBalance(brokerLedgerState, Math.max(0, authoritativeHsbcCashAfter));
+                applyAuthoritativeCashBalance(
+                    brokerLedgerState,
+                    Math.max(0, authoritativeHsbcCashAfter),
+                    transactionCurrency,
+                    ledgerDate,
+                );
                 if (isSingleBrokerPortfolio) {
-                    applyAuthoritativeCashBalance(aggregateLedgerState, Math.max(0, authoritativeHsbcCashAfter));
+                    applyAuthoritativeCashBalance(
+                        aggregateLedgerState,
+                        Math.max(0, authoritativeHsbcCashAfter),
+                        transactionCurrency,
+                        ledgerDate,
+                    );
                 } else {
                     rebuildAggregateCashState(ledgerDate);
                 }
@@ -12383,7 +13882,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
-        if (authoritativePositionSnapshot !== null && processed.length) {
+        const mayApplyAuthoritativeAggregateSnapshot = (
+            !aggregateSecurityTransferState.reconciliationBlocked
+            && aggregateSecurityTransferState.excludedReceiptKeys.size === 0
+        );
+        if (
+            authoritativePositionSnapshot !== null
+            && processed.length
+            && mayApplyAuthoritativeAggregateSnapshot
+        ) {
             const latestProcessed = processed[processed.length - 1];
             const authoritativeHoldings = {};
             Object.entries(authoritativePositionSnapshot).forEach(([ticker, snapshot]) => {
@@ -12497,9 +14004,14 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.total_equity = txn.aggregate_total_equity;
         });
         applyAuthoritativeBrokerEndingCashBalances(processed);
-        if (authoritativePositionSnapshot !== null && processed.length) {
+        if (
+            authoritativePositionSnapshot !== null
+            && processed.length
+            && mayApplyAuthoritativeAggregateSnapshot
+        ) {
             const latestProcessed = processed[processed.length - 1];
-            const authoritativeEndingCash = getInvestmentEndingCash();
+            const authoritativeEndingCash = getInvestmentEndingCashInBaseCurrency();
+            const authoritativeEndingCashBalances = getInvestmentEndingCashBalances();
             const authoritativeMarketValue = Object.values(authoritativePositionSnapshot).reduce((sum, snapshot) => {
                 const marketValue = Number(snapshot?.marketValue);
                 return Number.isFinite(marketValue) ? (sum + marketValue) : sum;
@@ -12507,6 +14019,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (authoritativeEndingCash !== null) {
                 latestProcessed.running_cash = authoritativeEndingCash;
                 latestProcessed.aggregate_running_cash = authoritativeEndingCash;
+            }
+            if (authoritativeEndingCashBalances !== null) {
+                latestProcessed.cash_by_currency = { ...authoritativeEndingCashBalances };
+                latestProcessed.aggregate_cash_by_currency = { ...authoritativeEndingCashBalances };
             }
             if (Number.isFinite(authoritativeMarketValue) && authoritativeMarketValue > 0) {
                 latestProcessed.market_value = authoritativeMarketValue;
@@ -12539,7 +14055,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const latestSnapshot = processed[processed.length - 1];
-        let chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
+        let chartPoints = aggregateSecurityTransferState.blocked
+            ? []
+            : buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
@@ -12557,7 +14075,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const embeddedQuotes = getInvestmentEmbeddedRealtimeQuotes();
         const bootstrapRealtimeQuotes = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes);
         rememberInvestmentRealtimeQuotes(bootstrapRealtimeQuotes);
-        const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
+        const bootstrapSessionQuotes = aggregateSecurityTransferState.blocked
+            ? []
+            : bootstrapRealtimeQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (bootstrapSessionQuotes.length) {
             applyInvestmentSessionRealtimePrices(latestPrices, bootstrapSessionQuotes);
             if (isInvestmentDailyEquityLiveRange()) {
@@ -12572,7 +14092,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fire-and-forget fresher quotes (using efficient batched yfinance).
         // The main render uses the server-preloaded quotes so import doesn't block on this.
         // Subsequent poll / interactions will pick up fresher data via caches.
-        bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot).then((fresh) => {
+        const realtimeBootstrap = aggregateSecurityTransferState.blocked
+            ? Promise.resolve([])
+            : bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot);
+        realtimeBootstrap.then((fresh) => {
             const merged = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes, fresh);
             rememberInvestmentRealtimeQuotes(merged);
             syncInvestmentStockDetailsLivePulse();
@@ -12607,11 +14130,14 @@ document.addEventListener('DOMContentLoaded', () => {
         mountInvestmentBrokerFilterHeaders();
         mountInvestmentSideFilterHeaders();
         mountInvestmentCurrencyFilterHeaders();
+        mountInvestmentDescriptionBindingFilterHeaders();
         renderInvestmentHistoryTableRows(processed, chartPoints, { resetPage: !preserveHistoryPage, scrollToTop });
 
         // 4. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints, tickerClosePrices);
-        restartInvestmentRealtimeQuotePolling();
+        if (!aggregateSecurityTransferState.blocked) {
+            restartInvestmentRealtimeQuotePolling();
+        }
         return valuationStatus;
     }
 
@@ -12650,11 +14176,23 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(latestPrices && typeof latestPrices === 'object' ? latestPrices : {}),
             ...(investmentLatestPricesCache && typeof investmentLatestPricesCache === 'object' ? investmentLatestPricesCache : {}),
         };
-        const tickerSummaries = buildTickerSummaries(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY, tickerClosePrices);
+        const aggregateTransactions = getInvestmentAggregateOnlyTransactions(rawTransactions);
+        const tickerSummaries = applyInvestmentAggregatePnlAvailability(
+            buildTickerSummaries(
+                aggregateTransactions,
+                mergedLatestPrices,
+                AGGREGATE_TOTAL_EQUITY,
+                tickerClosePrices,
+            ),
+        );
         const fundingMetrics = getUsdFundingMetrics(processed);
-        const brokerBenefitMetrics = getBrokerBenefitMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
+        const brokerBenefitMetrics = getBrokerBenefitMetrics(
+            aggregateTransactions,
+            mergedLatestPrices,
+            AGGREGATE_TOTAL_EQUITY,
+        );
         const holdingsSummaryMetrics = getHoldingsSummaryMetrics(
-            rawTransactions,
+            aggregateTransactions,
             mergedLatestPrices,
             AGGREGATE_TOTAL_EQUITY,
             brokerBenefitMetrics,
@@ -12677,7 +14215,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tickerProfiles,
             AGGREGATE_TOTAL_EQUITY,
             AGGREGATE_CASH,
-            { brokerBenefitMetrics },
+            { brokerBenefitMetrics, holdingsSummaryMetrics },
         );
         attachHoldingsTableAlignmentSync(holdingsPanel);
         bindHoldingsLogoFallbacks(holdingsPanel);
@@ -12975,7 +14513,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (investmentStockDetailsPriceChartInstance?.canvas?.isConnected && selectedInvestmentStockTicker) {
                 renderInvestmentStockDetailsPriceChart(
                     selectedInvestmentStockTicker,
-                    buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, selectedInvestmentStockTicker)
+                    buildSafeInvestmentStockDetailRows(
+                        investmentProcessedTransactionsCache,
+                        selectedInvestmentStockTicker,
+                    )
                 );
             }
         });
@@ -13094,6 +14635,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Reuse the same chart styling from the backtest page
     function renderEquityChartWithEquity(chartPoints) {
+        const container = document.getElementById('investment_equity_chart');
         if (!chartPoints.length || !window.Chart) {
             clearInvestmentEquityRangeControlBindings();
             if (investmentEquityChartInstance) {
@@ -13102,11 +14644,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             investmentEquityChartRuntimeState = null;
             setInvestmentChartReady(false);
+            if (investmentAggregateSecurityTransferState.blocked && container) {
+                container.innerHTML = `<div class="investment-holdings-empty">${escapeHtml(getInvestmentAggregateSecurityTransferBlockedMessage())}</div>`;
+            }
             console.warn('Chart.js not available');
             return;
         }
 
-        const container = document.getElementById('investment_equity_chart');
         if (!container) {
             clearInvestmentEquityRangeControlBindings();
             if (investmentEquityChartInstance) {
@@ -13713,6 +15257,228 @@ document.addEventListener('DOMContentLoaded', () => {
             .reduce((sum, t) => sum + getTransactionAmount(t), 0);
     }
 
+    function getInvestmentMetricTransactionCurrency(txn, baseCurrency = getInvestmentBaseCurrency()) {
+        const explicitCurrency = String(txn?.currency || '').trim().toUpperCase();
+        if (/^[A-Z]{3}$/.test(explicitCurrency)) return explicitCurrency;
+        const formattedCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+        return /^[A-Z]{3}$/.test(formattedCurrency)
+            ? formattedCurrency
+            : baseCurrency;
+    }
+
+    function getInvestmentMetricBaseAmount(amount, txn, fxTimeline, baseCurrency) {
+        return convertAmountToBaseCurrency(
+            amount,
+            getInvestmentMetricTransactionCurrency(txn, baseCurrency),
+            normalizeLedgerDate(txn?.date),
+            fxTimeline,
+            baseCurrency,
+        );
+    }
+
+    function classifyInvestmentRealizedCashFlow(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'dividend' || normalizedType === 'payment_in_lieu') return 'dividend';
+        if (normalizedType === 'foreign_tax_withholding') return 'dividend';
+        if (normalizedType === 'credit_interest') return 'interest_credit';
+        if (normalizedType === 'debit_interest') return 'interest_charge';
+        if (normalizedType === 'fee') return 'fee';
+        if (normalizedType !== 'adjustment') return '';
+
+        const description = String(txn?.description || '').toLowerCase();
+        if (/\b(withholding|tax)\b/.test(description)) return 'dividend';
+        if (/\b(debit|short selling)\b.*\binterest\b|\binterest\b.*\b(debit|short selling)\b/.test(description)) {
+            return 'interest_charge';
+        }
+        if (/\b(commission|trade fee|bank charges?|fee)\b/.test(description)) return 'fee';
+        return '';
+    }
+
+    function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitMetrics) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
+        const pnlUnavailableTickers = new Set(
+            safeTickerSummaries
+                .filter((summary) => summary?.pnlUnavailable === true)
+                .map((summary) => getInvestmentCanonicalTicker(summary?.ticker))
+                .filter(Boolean),
+        );
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
+        const priceHistory = normalizePriceHistoryPayload(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {},
+        );
+        const tickerPriceIndex = buildTickerPriceIndex(priceHistory);
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(safeTransactions, tickerPriceIndex);
+        const sortedTransactions = getSortedInvestmentMetricTransactions(safeTransactions);
+        const lotStates = new Map();
+        const categoryAmounts = {
+            tradingSpreadGains: 0,
+            cutLosses: 0,
+            dividendsNet: 0,
+            cashRewards: getBrokerRewardRealizedIncome(brokerBenefitMetrics),
+            interestCredited: 0,
+            interestCharged: 0,
+            commissionsAndFees: 0,
+        };
+        const realizedPnlRowSet = new Set(getBrokerRewardLedgerRows(brokerBenefitMetrics));
+        let standaloneCashRealizedPnl = 0;
+
+        const recordCategoryAmount = (key, value, ledgerNo) => {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return;
+            categoryAmounts[key] += numericValue;
+            realizedPnlRowSet.add(ledgerNo);
+        };
+        const addStandaloneCashAmount = (key, value, ledgerNo) => {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return;
+            standaloneCashRealizedPnl += numericValue;
+            recordCategoryAmount(key, numericValue, ledgerNo);
+        };
+
+        sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+            const tracksHolding = shouldTrackHoldingTicker(txn);
+            const canonicalTicker = tracksHolding
+                ? getInvestmentCanonicalTicker(txn?.ticker)
+                : '';
+            // Do not let a transferred ticker with unverified carried basis
+            // contaminate aggregate realized-P&L categories. Cash-only rows
+            // and unaffected tickers remain fully attributable.
+            if (canonicalTicker && pnlUnavailableTickers.has(canonicalTicker)) return;
+            const cashFlowCategory = classifyInvestmentRealizedCashFlow(txn);
+            const baseAmount = getInvestmentMetricBaseAmount(
+                getTransactionAmount(txn),
+                txn,
+                fxTimeline,
+                baseCurrency,
+            );
+
+            if (tracksHolding) {
+                realizedPnlRowSet.add(ledgerNo);
+            }
+
+            if (tracksHolding && ['buy', 'sell', 'grant', 'dividend_reinvestment', 'transfer_in', 'transfer_out'].includes(normalizedType)) {
+                const quantity = Math.abs(Number(
+                    getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints),
+                ));
+                if (canonicalTicker && Number.isFinite(quantity) && quantity > 1e-9) {
+                    const lotScopeKey = getTransactionLotScopeKey(txn, canonicalTicker);
+                    if (!lotStates.has(lotScopeKey)) {
+                        lotStates.set(lotScopeKey, createPositionState(canonicalTicker));
+                    }
+                    const lotState = lotStates.get(lotScopeKey);
+                    const rawPrice = getTransactionPrice(txn);
+                    const unitPrice = Number.isFinite(rawPrice) && rawPrice >= 0
+                        ? rawPrice
+                        : getTransactionEffectiveUnitPrice(txn, quantity);
+
+                    if (normalizedType === 'buy') {
+                        applyDirectionalTrade(lotState, 'long', quantity, unitPrice);
+                    } else if (normalizedType === 'grant' || normalizedType === 'dividend_reinvestment' || normalizedType === 'transfer_in') {
+                        lotState.shares += quantity;
+                    } else if (normalizedType === 'transfer_out') {
+                        lotState.shares -= quantity;
+                    } else if (normalizedType === 'sell') {
+                        const spreadPnl = getInvestmentMetricBaseAmount(
+                            applyDirectionalTrade(lotState, 'short', quantity, unitPrice),
+                            txn,
+                            fxTimeline,
+                            baseCurrency,
+                        );
+                        recordCategoryAmount(
+                            spreadPnl >= 0 ? 'tradingSpreadGains' : 'cutLosses',
+                            spreadPnl,
+                            ledgerNo,
+                        );
+                    }
+
+                    if (['buy', 'sell'].includes(normalizedType)) {
+                        const commission = Math.abs(getTransactionCommission(txn));
+                        if (commission > 1e-9) {
+                            recordCategoryAmount(
+                                'commissionsAndFees',
+                                -getInvestmentMetricBaseAmount(commission, txn, fxTimeline, baseCurrency),
+                                ledgerNo,
+                            );
+                        }
+                    }
+                }
+            }
+
+            if (cashFlowCategory === 'dividend' && tracksHolding && txn?.source?.excluded_from_broker_pnl !== true) {
+                recordCategoryAmount('dividendsNet', baseAmount, ledgerNo);
+                return;
+            }
+
+            if (cashFlowCategory === 'interest_credit') {
+                addStandaloneCashAmount('interestCredited', baseAmount, ledgerNo);
+                return;
+            }
+            if (cashFlowCategory === 'interest_charge') {
+                addStandaloneCashAmount('interestCharged', baseAmount, ledgerNo);
+                return;
+            }
+            if (cashFlowCategory === 'fee') {
+                if (tracksHolding && normalizedType === 'adjustment') {
+                    recordCategoryAmount('commissionsAndFees', baseAmount, ledgerNo);
+                } else {
+                    addStandaloneCashAmount('commissionsAndFees', baseAmount, ledgerNo);
+                }
+            }
+        });
+
+        const holdingsRealizedPnl = safeTickerSummaries.reduce(
+            (sum, summary) => sum + (Number(summary?.realizedPnl) || 0),
+            0,
+        );
+        const totalRealizedPnl = (
+            holdingsRealizedPnl
+            + categoryAmounts.cashRewards
+            + standaloneCashRealizedPnl
+        );
+        const classifiedPnl = Object.values(categoryAmounts).reduce(
+            (sum, value) => sum + (Number(value) || 0),
+            0,
+        );
+        const reconciliation = totalRealizedPnl - classifiedPnl;
+        const detailDefinitions = [
+            ['tradingSpreadGains', 'Trading spread gains'],
+            ['dividendsNet', 'Dividends, net of withholding'],
+            ['cashRewards', 'Cash rewards'],
+            ['interestCredited', 'Interest credited'],
+            ['cutLosses', 'Cut losses'],
+            ['interestCharged', 'Interest charged'],
+            ['commissionsAndFees', 'Commissions / fees'],
+        ];
+        const realizedPnlDetails = detailDefinitions
+            .map(([key, label]) => ({
+                key,
+                label,
+                amount: categoryAmounts[key],
+            }))
+            .filter((detail) => Math.abs(Number(detail.amount) || 0) >= 0.005)
+            .map((detail) => ({
+                label: detail.label,
+                value: formatSignedHoldingsMoney(detail.amount),
+                valueClass: getSignedMetricClass(detail.amount),
+            }));
+        if (Math.abs(reconciliation) >= 0.005) {
+            realizedPnlDetails.push({
+                label: 'Broker-reported reconciliation',
+                value: formatSignedHoldingsMoney(reconciliation),
+                valueClass: getSignedMetricClass(reconciliation),
+            });
+        }
+
+        return {
+            totalRealizedPnl,
+            realizedPnlRows: Array.from(realizedPnlRowSet),
+            realizedPnlDetails,
+        };
+    }
+
     function getHoldingsSummaryMetrics(
         transactions,
         latestPrices,
@@ -13721,27 +15487,41 @@ document.addEventListener('DOMContentLoaded', () => {
     ) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
-        const tickerSummaries = buildTickerSummaries(
-            safeTransactions,
-            safeLatestPrices,
-            TOTAL_EQUITY,
-            normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
+        const tickerSummaries = applyInvestmentAggregatePnlAvailability(
+            buildTickerSummaries(
+                safeTransactions,
+                safeLatestPrices,
+                TOTAL_EQUITY,
+                normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
+            ),
         );
-        const holdingsRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
         const resolvedBrokerBenefitMetrics = brokerBenefitMetrics || getBrokerBenefitMetrics(
             safeTransactions,
             safeLatestPrices,
             TOTAL_EQUITY,
         );
-        const brokerRewardRealizedIncome = getBrokerRewardRealizedIncome(resolvedBrokerBenefitMetrics);
-        const totalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
-        const totalUnrealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
-        const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
+        const realizedPnlAttribution = getRealizedPnlAttribution(
+            safeTransactions,
+            tickerSummaries,
+            resolvedBrokerBenefitMetrics,
+        );
+        const pnlUnavailable = isInvestmentAggregatePnlUnavailable(tickerSummaries);
+        const totalRealizedPnl = pnlUnavailable ? null : realizedPnlAttribution.totalRealizedPnl;
+        const totalUnrealizedPnl = pnlUnavailable
+            ? null
+            : tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const cumulativePnl = pnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         const openTickers = new Set(
             tickerSummaries
                 .filter((summary) => summary.hasOpenPosition)
                 .map((summary) => normalizeInvestmentTicker(summary.ticker))
                 .filter(Boolean)
+        );
+        const unavailableTickers = new Set(
+            tickerSummaries
+                .filter((summary) => summary?.pnlUnavailable === true)
+                .map((summary) => getInvestmentCanonicalTicker(summary?.ticker))
+                .filter(Boolean),
         );
         const sortedTransactions = safeTransactions
             .map((txn, index) => ({ txn, index }))
@@ -13750,14 +15530,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 txn,
                 ledgerNo: sortedIndex + 1,
             }));
-        const realizedPnlRows = getBrokerRewardLedgerRows(resolvedBrokerBenefitMetrics);
+        const realizedPnlRows = [...realizedPnlAttribution.realizedPnlRows];
         const unrealizedPnlRows = [];
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             if (!shouldTrackHoldingTicker(txn)) return;
-            realizedPnlRows.push(ledgerNo);
             const normalizedTicker = getInvestmentCanonicalTicker(txn?.ticker);
-            if (normalizedTicker && openTickers.has(normalizedTicker)) {
+            if (
+                normalizedTicker
+                && openTickers.has(normalizedTicker)
+                && !unavailableTickers.has(normalizedTicker)
+            ) {
                 unrealizedPnlRows.push(ledgerNo);
             }
         });
@@ -13766,9 +15549,11 @@ document.addEventListener('DOMContentLoaded', () => {
             totalRealizedPnl,
             totalUnrealizedPnl,
             cumulativePnl,
-            realizedPnlRows,
-            unrealizedPnlRows,
-            cumulativePnlRows: Array.from(new Set([
+            pnlUnavailable,
+            realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
+            realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
+            unrealizedPnlRows: pnlUnavailable ? [] : unrealizedPnlRows,
+            cumulativePnlRows: pnlUnavailable ? [] : Array.from(new Set([
                 ...realizedPnlRows,
                 ...unrealizedPnlRows,
             ])),
@@ -13816,6 +15601,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedText = `${description} ${rawItem}`.toLowerCase();
         const amount = Math.abs(getTransactionAmount(txn));
 
+        if (getNormalizedTransactionType(txn) === 'kol_reward') return 'kol_reward';
         if (/\bkol\b/i.test(description)) return 'kol_reward';
         if (broker === 'longbridge_sg') return 'kol_reward';
         if (broker === 'tigertrade' && description === 'Order Rebate' && amount >= 12) {
@@ -13963,11 +15749,41 @@ document.addEventListener('DOMContentLoaded', () => {
         let couponRebateIncome = 0;
         let cashRewardIncome = 0;
         let hasNonUsdRewardSource = false;
+        let couponAndCashRewardIncome = 0;
+        let hasNonUsdCouponAndCashRewardSource = false;
         const couponRebateHkdRowSet = new Set();
         const couponRebateUsdRowSet = new Set();
         const cashRewardHkdRowSet = new Set();
         const cashRewardUsdRowSet = new Set();
         const kolRewardRowSet = new Set();
+        const couponAndCashRewardRowSet = new Set();
+        const couponAndCashRewardDetailsByKey = new Map();
+
+        const recordCouponAndCashReward = ({
+            category,
+            currency,
+            sourceAmount,
+            convertedAmount,
+            ledgerNo,
+        }) => {
+            const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+            const normalizedSourceAmount = Number(sourceAmount);
+            const normalizedConvertedAmount = Number(convertedAmount);
+            if (!Number.isFinite(normalizedSourceAmount) || !Number.isFinite(normalizedConvertedAmount)) return;
+            couponAndCashRewardIncome += normalizedConvertedAmount;
+            hasNonUsdCouponAndCashRewardSource = (
+                hasNonUsdCouponAndCashRewardSource || normalizedCurrency !== 'USD'
+            );
+            couponAndCashRewardRowSet.add(ledgerNo);
+            const detailKey = `${category}|${normalizedCurrency}`;
+            const detail = couponAndCashRewardDetailsByKey.get(detailKey) || {
+                category,
+                currency: normalizedCurrency,
+                sourceAmount: 0,
+            };
+            detail.sourceAmount += normalizedSourceAmount;
+            couponAndCashRewardDetailsByKey.set(detailKey, detail);
+        };
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             const benefitType = classifyBrokerBenefitTransaction(txn);
@@ -13990,68 +15806,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (benefitType === 'coupon_hkd_notional') {
-                hasNonUsdRewardSource = true;
-                couponRebateHkd += 100;
-                couponRebateIncome += convertAmountToBaseCurrency(
-                    100,
-                    'HKD',
-                    ledgerDate,
-                    fxTimeline,
-                    baseCurrency,
-                );
-                couponRebateHkdRowSet.add(ledgerNo);
-                return;
-            }
-
-            if (benefitType === 'coupon_usd' || currency === 'USD') {
-                if (benefitType === 'cash_reward') {
-                    cashRewardUsd += amount;
-                    cashRewardIncome += convertAmountToBaseCurrency(
-                        amount,
-                        currency,
-                        ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    );
-                    cashRewardUsdRowSet.add(ledgerNo);
-                } else {
-                    couponRebateUsd += amount;
-                    couponRebateIncome += convertAmountToBaseCurrency(
-                        amount,
-                        currency,
-                        ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    );
-                    couponRebateUsdRowSet.add(ledgerNo);
-                }
-                return;
-            }
-
-            if (benefitType === 'cash_reward') {
-                cashRewardHkd += amount;
-                cashRewardIncome += convertAmountToBaseCurrency(
-                    amount,
-                    currency,
-                    ledgerDate,
-                    fxTimeline,
-                    baseCurrency,
-                );
-                cashRewardHkdRowSet.add(ledgerNo);
-                return;
-            }
-
-            couponRebateHkd += amount;
-            couponRebateIncome += convertAmountToBaseCurrency(
-                amount,
-                currency,
+            const sourceAmount = benefitType === 'coupon_hkd_notional' ? 100 : amount;
+            const sourceCurrency = benefitType === 'coupon_hkd_notional' ? 'HKD' : currency;
+            const convertedAmount = convertAmountToBaseCurrency(
+                sourceAmount,
+                sourceCurrency,
                 ledgerDate,
                 fxTimeline,
                 baseCurrency,
             );
-            couponRebateHkdRowSet.add(ledgerNo);
+            const isCashReward = benefitType === 'cash_reward';
+            const usesUsdBucket = benefitType === 'coupon_usd' || sourceCurrency === 'USD';
+            hasNonUsdRewardSource = hasNonUsdRewardSource || sourceCurrency !== 'USD';
+
+            if (isCashReward) {
+                cashRewardIncome += convertedAmount;
+                if (usesUsdBucket) {
+                    cashRewardUsd += sourceAmount;
+                    cashRewardUsdRowSet.add(ledgerNo);
+                } else {
+                    cashRewardHkd += sourceAmount;
+                    cashRewardHkdRowSet.add(ledgerNo);
+                }
+            } else {
+                couponRebateIncome += convertedAmount;
+                if (usesUsdBucket) {
+                    couponRebateUsd += sourceAmount;
+                    couponRebateUsdRowSet.add(ledgerNo);
+                } else {
+                    couponRebateHkd += sourceAmount;
+                    couponRebateHkdRowSet.add(ledgerNo);
+                }
+            }
+
+            recordCouponAndCashReward({
+                category: isCashReward ? 'cash_reward' : 'coupon_rebate',
+                currency: sourceCurrency,
+                sourceAmount,
+                convertedAmount,
+                ledgerNo,
+            });
         });
+
+        const couponAndCashRewardDetails = Array.from(couponAndCashRewardDetailsByKey.values())
+            .sort((left, right) => {
+                const leftCategoryOrder = left.category === 'coupon_rebate' ? 0 : 1;
+                const rightCategoryOrder = right.category === 'coupon_rebate' ? 0 : 1;
+                if (leftCategoryOrder !== rightCategoryOrder) return leftCategoryOrder - rightCategoryOrder;
+                return left.currency.localeCompare(right.currency);
+            })
+            .map((detail) => ({
+                label: `${detail.category === 'coupon_rebate' ? 'Coupon rebates' : 'Cash rewards'} · ${detail.currency}`,
+                value: formatAmountWithCurrency(detail.sourceAmount, detail.currency, { showUsdSymbol: false }),
+                valueClass: getSignedMetricClass(detail.sourceAmount),
+            }));
 
         return {
             couponRebateHkd,
@@ -14062,6 +15870,10 @@ document.addEventListener('DOMContentLoaded', () => {
             couponRebateIncome,
             cashRewardIncome,
             hasNonUsdRewardSource,
+            couponAndCashRewardIncome,
+            hasNonUsdCouponAndCashRewardSource,
+            couponAndCashRewardRows: Array.from(couponAndCashRewardRowSet),
+            couponAndCashRewardDetails,
             couponRebateHkdRows: Array.from(couponRebateHkdRowSet),
             couponRebateUsdRows: Array.from(couponRebateUsdRowSet),
             cashRewardHkdRows: Array.from(cashRewardHkdRowSet),
@@ -14192,6 +16004,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('[data-investment-metric-tooltip="1"]').forEach((tooltip) => tooltip.remove());
     }
 
+    function bindInvestmentMetricBreakdownControls(metricsPanel) {
+        if (!(metricsPanel instanceof HTMLElement)) return;
+        if (metricsPanel.dataset.investmentMetricBreakdownBound === '1') return;
+        metricsPanel.dataset.investmentMetricBreakdownBound = '1';
+        metricsPanel.addEventListener('click', (event) => {
+            const trigger = event.target instanceof Element
+                ? event.target.closest('[data-investment-metric-breakdown-trigger]')
+                : null;
+            if (!(trigger instanceof HTMLButtonElement) || !metricsPanel.contains(trigger)) return;
+            const breakdownId = String(trigger.getAttribute('aria-controls') || '').trim();
+            const breakdown = breakdownId ? document.getElementById(breakdownId) : null;
+            if (!(breakdown instanceof HTMLElement) || !metricsPanel.contains(breakdown)) return;
+            const shouldExpand = trigger.getAttribute('aria-expanded') !== 'true';
+            const metricLabel = String(trigger.dataset.investmentMetricLabel || 'Metric');
+            trigger.setAttribute('aria-expanded', String(shouldExpand));
+            trigger.setAttribute('aria-label', `${shouldExpand ? 'Hide' : 'Show'} ${metricLabel} details`);
+            breakdown.hidden = !shouldExpand;
+        });
+    }
+
     function bindInvestmentMetricTooltipInteractions(metricsPanel) {
         if (!metricsPanel) return;
         metricsPanel.querySelectorAll('.investment-metric-tooltip-trigger').forEach((trigger) => {
@@ -14240,181 +16072,250 @@ document.addEventListener('DOMContentLoaded', () => {
         return getUsdFundingMetrics(transactions).netUsdConverted;
     }
 
-    function getUsdFundingMetrics(transactions) {
-        if (!Array.isArray(transactions)) {
-            return {
-                totalDeposits: 0,
-                directUsdDeposits: 0,
-                netUsdConverted: 0,
-                fxFundingLoss: 0,
-                finalInvestableUsd: 0,
-                totalCommission: 0,
-                interestCharged: 0,
-                directDepositRows: [],
-                netUsdConvertedRows: [],
-                fxFundingLossRows: [],
-                finalInvestableUsdRows: [],
-                totalCommissionRows: [],
-                interestChargedRows: [],
+    function getFundingMetricEmptyState() {
+        return {
+            totalDeposits: 0,
+            directUsdDeposits: 0,
+            netUsdConverted: 0,
+            fxFundingLoss: 0,
+            finalInvestableUsd: 0,
+            totalCommission: 0,
+            interestCharged: 0,
+            directDepositRows: [],
+            netUsdConvertedRows: [],
+            fxFundingLossRows: [],
+            finalInvestableUsdRows: [],
+            totalCommissionRows: [],
+            interestChargedRows: [],
+        };
+    }
+
+    function getFundingForexGroupKey(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType !== 'forex_trade_component') return '';
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const broker = String(txn?.broker || source?.broker || '').trim().toLowerCase();
+        const account = String(txn?.account || source?.account || '').trim();
+        const ledgerDate = normalizeLedgerDate(txn?.date);
+        const pair = String(source?.forex_pair || txn?.ticker || '').trim().toUpperCase();
+        const description = String(txn?.description || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        const directionMatch = description.match(/\bFX\s+FROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/i);
+        const reference = String(
+            source?.forex_pair_reference_id
+            || source?.reference_id
+            || source?.execution_key?.replace(/:[A-Z]{3}$/i, '')
+            || '',
+        ).trim();
+        const fallbackIdentity = reference || pair || (
+            directionMatch
+                ? `${directionMatch[1].toUpperCase()}.${directionMatch[2].toUpperCase()}`
+                : description
+        );
+        return broker && account && ledgerDate && fallbackIdentity
+            ? `${broker}|${account}|${ledgerDate}|${fallbackIdentity}`
+            : '';
+    }
+
+    function buildFundingForexPairIndex(sortedTransactions, baseCurrency) {
+        const groups = new Map();
+        sortedTransactions.forEach((entry) => {
+            const groupKey = getFundingForexGroupKey(entry?.txn);
+            if (!groupKey) return;
+            if (!groups.has(groupKey)) groups.set(groupKey, []);
+            groups.get(groupKey).push({
+                ...entry,
+                amount: Number(getTransactionAmount(entry.txn)),
+                currency: getInvestmentMetricTransactionCurrency(entry.txn, baseCurrency),
+            });
+        });
+
+        const pairByLedgerNo = new Map();
+        groups.forEach((entries) => {
+            const receivedBaseEntries = entries.filter((entry) => (
+                entry.currency === baseCurrency
+                && Number.isFinite(entry.amount)
+                && entry.amount > 1e-9
+            ));
+            const soldNonBaseEntries = entries.filter((entry) => (
+                entry.currency !== baseCurrency
+                && Number.isFinite(entry.amount)
+                && entry.amount < -1e-9
+            ));
+            if (receivedBaseEntries.length !== 1 || soldNonBaseEntries.length !== 1) return;
+
+            const receivedEntry = receivedBaseEntries[0];
+            const soldEntry = soldNonBaseEntries[0];
+            const pair = {
+                ownerLedgerNo: Math.min(...entries.map((entry) => entry.ledgerNo)),
+                ledgerNos: entries.map((entry) => entry.ledgerNo),
+                sourceCurrency: soldEntry.currency,
+                sourceAmount: Math.abs(soldEntry.amount),
+                receivedUsd: receivedEntry.amount,
+                ledgerDate: normalizeLedgerDate(receivedEntry.txn?.date || soldEntry.txn?.date),
             };
-        }
+            pair.ledgerNos.forEach((ledgerNo) => pairByLedgerNo.set(ledgerNo, pair));
+        });
+        return pairByLedgerNo;
+    }
 
-        const sortedTransactions = transactions
-            .map((txn, index) => ({ txn, index }))
-            .sort((left, right) => {
-                const leftDate = new Date(left.txn?.date || 0).getTime();
-                const rightDate = new Date(right.txn?.date || 0).getTime();
-                if (leftDate !== rightDate) return leftDate - rightDate;
-                const leftRow = Number(left.txn?.source?.row_number ?? left.index);
-                const rightRow = Number(right.txn?.source?.row_number ?? right.index);
-                return leftRow - rightRow;
-            })
-            .map(({ txn, index }, sortedIndex) => ({
-                txn,
-                index,
-                ledgerNo: sortedIndex + 1,
-            }));
+    function getUsdFundingMetrics(transactions) {
+        if (!Array.isArray(transactions)) return getFundingMetricEmptyState();
 
-        const currentDepositStreak = [];
+        const baseCurrency = getInvestmentBaseCurrency();
+        const sortedTransactions = getSortedInvestmentMetricTransactions(transactions);
+        const fxTimeline = buildInvestmentFxRateTimeline(transactions, baseCurrency);
+        const fundingForexPairByLedgerNo = buildFundingForexPairIndex(sortedTransactions, baseCurrency);
+        const currentDepositStreakByCurrency = new Map();
         const allDepositRows = [];
+        const remainingDepositAmountsByLedgerNo = new Map();
         let totalDeposits = 0;
         let pairedDepositFunding = 0;
         let netUsdConverted = 0;
-        let pairedNetUsdConverted = 0;
+        let fxFundingLoss = 0;
         let totalCommission = 0;
         let interestCharged = 0;
         const pairedDepositRowSet = new Set();
         const netUsdConvertedRowSet = new Set();
-        const pairedNetUsdConvertedRowSet = new Set();
+        const fxFundingLossRowSet = new Set();
         const totalCommissionRowSet = new Set();
         const interestChargedRowSet = new Set();
 
-        const getFundingTolerance = (targetAmount) => Math.max(0.01, targetAmount * 0.001);
-        const chooseClosestDepositSubset = (entries, targetAmount) => {
-            const itemCount = entries.length;
-            if (!itemCount) return null;
-
-            let bestMask = 0;
-            let bestTotal = 0;
-            let bestDiff = Number.POSITIVE_INFINITY;
-            const subsetCount = 1 << itemCount;
-
-            for (let mask = 1; mask < subsetCount; mask += 1) {
-                let subsetTotal = 0;
-                for (let bit = 0; bit < itemCount; bit += 1) {
-                    if (mask & (1 << bit)) subsetTotal += entries[bit].amount;
-                }
-                const diff = Math.abs(subsetTotal - targetAmount);
-                if (diff < bestDiff - 1e-9 || (Math.abs(diff - bestDiff) <= 1e-9 && subsetTotal < bestTotal)) {
-                    bestMask = mask;
-                    bestTotal = subsetTotal;
-                    bestDiff = diff;
-                }
-            }
-
-            return {
-                mask: bestMask,
-                total: bestTotal,
-                diff: bestDiff,
-            };
-        };
+        const clearCurrentDepositStreak = () => currentDepositStreakByCurrency.clear();
+        const getFundingKey = (txn, currency) => [
+            String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase(),
+            String(txn?.account || txn?.source?.account || '').trim(),
+            currency,
+        ].join('|');
+        const getFundingTolerance = (amount) => Math.max(0.000001, Math.abs(Number(amount) || 0) * 1e-9);
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             const normalizedType = getNormalizedTransactionType(txn);
             const commissionAmount = Math.abs(getTransactionCommission(txn));
+            const ledgerDate = normalizeLedgerDate(txn?.date);
 
             if (commissionAmount > 1e-9) {
-                totalCommission += commissionAmount;
+                totalCommission += getInvestmentMetricBaseAmount(
+                    commissionAmount,
+                    txn,
+                    fxTimeline,
+                    baseCurrency,
+                );
                 totalCommissionRowSet.add(ledgerNo);
             }
 
             if (normalizedType === 'debit_interest') {
                 const chargedInterest = Math.abs(getTransactionAmount(txn));
                 if (chargedInterest > 1e-9) {
-                    interestCharged += chargedInterest;
+                    interestCharged += getInvestmentMetricBaseAmount(
+                        chargedInterest,
+                        txn,
+                        fxTimeline,
+                        baseCurrency,
+                    );
                     interestChargedRowSet.add(ledgerNo);
                 }
             }
 
             if (normalizedType === 'deposit') {
                 if (isKolRewardTransaction(txn)) {
-                    currentDepositStreak.length = 0;
+                    clearCurrentDepositStreak();
                     return;
                 }
                 if (txn?.manual_internal_transfer_external_flow_excluded === true) {
-                    currentDepositStreak.length = 0;
+                    clearCurrentDepositStreak();
                     return;
                 }
                 const depositAmount = getTransactionAmount(txn);
                 if (Number.isFinite(depositAmount) && depositAmount > 0) {
-                    totalDeposits += depositAmount;
-                    const depositEntry = { amount: depositAmount, ledgerNo };
+                    const currency = getInvestmentMetricTransactionCurrency(txn, baseCurrency);
+                    totalDeposits += convertAmountToBaseCurrency(
+                        depositAmount,
+                        currency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    const depositEntry = {
+                        amount: depositAmount,
+                        currency,
+                        ledgerNo,
+                        txn,
+                    };
                     allDepositRows.push(depositEntry);
-                    currentDepositStreak.push(depositEntry);
+                    remainingDepositAmountsByLedgerNo.set(ledgerNo, depositAmount);
+                    const fundingKey = getFundingKey(txn, currency);
+                    if (!currentDepositStreakByCurrency.has(fundingKey)) {
+                        currentDepositStreakByCurrency.set(fundingKey, []);
+                    }
+                    currentDepositStreakByCurrency.get(fundingKey).push({
+                        ...depositEntry,
+                        remainingAmount: depositAmount,
+                    });
                 }
                 return;
             }
 
             if (normalizedType !== 'forex_trade_component') {
-                currentDepositStreak.length = 0;
+                clearCurrentDepositStreak();
                 return;
             }
 
-            const forexPair = String(txn?.ticker || '').trim().toUpperCase();
-            if (!forexPair.startsWith('USD.')) {
-                currentDepositStreak.length = 0;
+            const forexPair = fundingForexPairByLedgerNo.get(ledgerNo);
+            if (!forexPair || forexPair.ownerLedgerNo !== ledgerNo) {
                 return;
             }
 
-            const quantity = getTransactionQuantity(txn);
-            const commissionDisplay = Number(txn?.normalized?.commission_display ?? txn?.commission_abs ?? 0);
-            const safeQuantity = Number.isFinite(quantity) ? quantity : 0;
-            const safeCommission = Number.isFinite(commissionDisplay) ? commissionDisplay : 0;
-            const netConvertedAmount = safeQuantity - safeCommission;
-
-            if (netConvertedAmount > 0) {
-                netUsdConverted += netConvertedAmount;
-                netUsdConvertedRowSet.add(ledgerNo);
-            }
-
-            const grossFundingTarget = safeQuantity + safeCommission;
-            if (!(grossFundingTarget > 0) || currentDepositStreak.length === 0) return;
-
-            const tolerance = getFundingTolerance(grossFundingTarget);
-            const bestSubset = chooseClosestDepositSubset(currentDepositStreak, grossFundingTarget);
-            if (!bestSubset || bestSubset.total <= 0 || bestSubset.diff > tolerance) {
-                currentDepositStreak.length = 0;
+            const fundingKey = getFundingKey(txn, forexPair.sourceCurrency);
+            const candidates = currentDepositStreakByCurrency.get(fundingKey) || [];
+            const availableAmount = candidates.reduce(
+                (sum, entry) => sum + (Number(entry.remainingAmount) || 0),
+                0,
+            );
+            if (availableAmount + getFundingTolerance(forexPair.sourceAmount) < forexPair.sourceAmount) {
+                clearCurrentDepositStreak();
                 return;
             }
 
-            const remainingDeposits = [];
-            currentDepositStreak.forEach((entry, index) => {
-                if (!(bestSubset.mask & (1 << index))) {
-                    remainingDeposits.push(entry);
-                } else {
-                    pairedDepositRowSet.add(entry.ledgerNo);
-                }
+            let remainingToConsume = forexPair.sourceAmount;
+            let consumedFundingInBase = 0;
+            candidates.forEach((entry) => {
+                if (!(remainingToConsume > 1e-9) || !(entry.remainingAmount > 1e-9)) return;
+                const consumedAmount = Math.min(entry.remainingAmount, remainingToConsume);
+                entry.remainingAmount -= consumedAmount;
+                remainingDepositAmountsByLedgerNo.set(entry.ledgerNo, entry.remainingAmount);
+                remainingToConsume -= consumedAmount;
+                consumedFundingInBase += convertAmountToBaseCurrency(
+                    consumedAmount,
+                    entry.currency,
+                    forexPair.ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+                pairedDepositRowSet.add(entry.ledgerNo);
             });
-            currentDepositStreak.length = 0;
-            remainingDeposits.forEach((entry) => currentDepositStreak.push(entry));
-
-            pairedDepositFunding += bestSubset.total;
-            if (netConvertedAmount > 0) {
-                pairedNetUsdConverted += netConvertedAmount;
-                pairedNetUsdConvertedRowSet.add(ledgerNo);
+            if (remainingToConsume > getFundingTolerance(forexPair.sourceAmount)) {
+                clearCurrentDepositStreak();
+                return;
             }
+
+            pairedDepositFunding += consumedFundingInBase;
+            netUsdConverted += forexPair.receivedUsd;
+            fxFundingLoss += Math.max(0, consumedFundingInBase - forexPair.receivedUsd);
+            forexPair.ledgerNos.forEach((pairLedgerNo) => {
+                netUsdConvertedRowSet.add(pairLedgerNo);
+                fxFundingLossRowSet.add(pairLedgerNo);
+            });
         });
 
         const directUsdDeposits = totalDeposits - pairedDepositFunding;
-        const fxFundingLoss = Math.max(0, pairedDepositFunding - pairedNetUsdConverted);
         const finalInvestableUsd = directUsdDeposits + netUsdConverted;
         const directDepositRows = allDepositRows
             .map((entry) => entry.ledgerNo)
-            .filter((ledgerNo) => !pairedDepositRowSet.has(ledgerNo));
+            .filter((ledgerNo) => (remainingDepositAmountsByLedgerNo.get(ledgerNo) || 0) > 1e-9);
         const netUsdConvertedRows = Array.from(netUsdConvertedRowSet);
         const fxFundingLossRows = Array.from(new Set([
             ...Array.from(pairedDepositRowSet),
-            ...Array.from(pairedNetUsdConvertedRowSet),
+            ...Array.from(fxFundingLossRowSet),
         ]));
         const finalInvestableUsdRows = Array.from(new Set([
             ...directDepositRows,

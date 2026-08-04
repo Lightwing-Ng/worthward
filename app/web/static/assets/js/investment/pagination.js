@@ -1,91 +1,37 @@
 /**
- * Fixed-chunk pagination helpers for Investment transaction history.
+ * Investment pagination compatibility exports.
  *
- * Code version: v1.2.0
- * - Changed: Navigation arrows now move between adjacent five-page chunks instead of stepping one page.
+ * Code version: v1.3.1
+ * - Changed: Investment history now reuses the shared Local store pagination
+ *   builder instead of maintaining a second pagination algorithm.
  */
 
-export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.2.0';
-export const INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE = 5;
+import {
+    LOCAL_STORE_PAGINATION_CHUNK_SIZE,
+    LOCAL_STORE_PAGINATION_MODULE_VERSION,
+    animateLocalStorePaginationIndicator,
+    bindLocalStorePagination,
+    captureLocalStorePaginationAnimation,
+    buildLocalStorePagination,
+    ensureLocalStorePaginationIndicator,
+    getLocalStorePaginationMotionDurationMs,
+    positionLocalStorePaginationIndicator,
+    renderLocalStorePagination,
+    setLocalStorePaginationActivePage,
+} from '../local-store-pagination.js?v=local-store-pagination-v1.1.0';
 
-function normalizePositiveInteger(value, fallback = 1) {
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) return fallback;
-    return Math.max(1, Math.trunc(numericValue));
-}
+export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.3.1';
+export const INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE = LOCAL_STORE_PAGINATION_CHUNK_SIZE;
 
-function createPageItem(page, currentPage) {
-    return {
-        kind: 'page',
-        page,
-        isActive: page === currentPage,
-    };
-}
-
-/**
- * Build a stable five-page bucket with navigation arrows targeting adjacent chunks.
- */
-export function buildInvestmentHistoryPagination(totalPages = 1, currentPage = 1) {
-    const normalizedTotalPages = normalizePositiveInteger(totalPages);
-    const normalizedCurrentPage = Math.min(
-        normalizedTotalPages,
-        normalizePositiveInteger(currentPage),
-    );
-    const startPage = Math.floor(
-        (normalizedCurrentPage - 1) / INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE,
-    ) * INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE + 1;
-    const endPage = Math.min(
-        startPage + INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE - 1,
-        normalizedTotalPages,
-    );
-    const isFirstChunk = startPage === 1;
-    const isLastChunk = endPage === normalizedTotalPages;
-    const shouldRender = normalizedTotalPages > 1;
-    const isCompact = shouldRender
-        && normalizedTotalPages <= INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE;
-    const items = [];
-
-    if (!shouldRender) {
-        return {
-            totalPages: normalizedTotalPages,
-            currentPage: normalizedCurrentPage,
-            startPage,
-            endPage,
-            shouldRender,
-            isCompact,
-            items,
-        };
-    }
-
-    if (isCompact) {
-        for (let page = 1; page <= normalizedTotalPages; page += 1) {
-            items.push(createPageItem(page, normalizedCurrentPage));
-        }
-    } else {
-        if (!isFirstChunk) {
-            items.push({ kind: 'previous', page: startPage - 1 });
-            items.push(createPageItem(1, normalizedCurrentPage));
-            items.push({ kind: 'ellipsis', position: 'leading' });
-        }
-
-        for (let page = startPage; page <= endPage; page += 1) {
-            items.push(createPageItem(page, normalizedCurrentPage));
-        }
-
-        if (!isLastChunk) {
-            items.push({ kind: 'ellipsis', position: 'trailing' });
-            items.push(createPageItem(normalizedTotalPages, normalizedCurrentPage));
-            items.push({ kind: 'next', page: endPage + 1 });
-        }
-    }
-
-    return {
-        totalPages: normalizedTotalPages,
-        currentPage: normalizedCurrentPage,
-        startPage,
-        endPage,
-        shouldRender,
-        isCompact,
-        items,
-    };
-}
+export {
+    LOCAL_STORE_PAGINATION_MODULE_VERSION,
+    animateLocalStorePaginationIndicator,
+    bindLocalStorePagination,
+    captureLocalStorePaginationAnimation,
+    buildLocalStorePagination as buildInvestmentHistoryPagination,
+    ensureLocalStorePaginationIndicator,
+    getLocalStorePaginationMotionDurationMs,
+    positionLocalStorePaginationIndicator,
+    renderLocalStorePagination,
+    setLocalStorePaginationActivePage,
+};

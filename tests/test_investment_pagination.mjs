@@ -1,4 +1,4 @@
-/* Tests for fixed-chunk Investment pagination. Code version: v1.2.0 */
+/* Tests for shared fixed-chunk pagination. Code version: v1.3.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,6 +7,10 @@ import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
 } from '../app/web/static/assets/js/investment/pagination.js';
+import {
+    buildLocalStorePagination,
+    renderLocalStorePaginationItem,
+} from '../app/web/static/assets/js/local-store-pagination.js';
 
 function summarizeItems(items) {
     return items.map((item) => {
@@ -94,4 +98,44 @@ test('moves between adjacent chunks and selects the destination boundary page', 
     assert.equal(pageSix.items.at(-1).page, 11);
     assert.equal(pageEleven.items[0].kind, 'previous');
     assert.equal(pageEleven.items[0].page, 10);
+});
+
+test('keeps the Investment compatibility builder identical to the shared builder', () => {
+    for (const [totalPages, currentPage] of [
+        [1, 1],
+        [3, 2],
+        [51, 1],
+        [51, 6],
+        [51, 51],
+    ]) {
+        assert.deepEqual(
+            buildInvestmentHistoryPagination(totalPages, currentPage),
+            buildLocalStorePagination(totalPages, currentPage),
+        );
+    }
+});
+
+test('renders server-backed anchors without changing the canonical control contract', () => {
+    const anchorMarkup = renderLocalStorePaginationItem(
+        {kind: 'page', page: 2, isActive: true},
+        {
+            additionalPageTargetAttribute: 'data-local-store-page',
+            hrefForPage: (page) => `/settings/local-market-store?page=${page}&scope="all"`,
+        },
+    );
+    const buttonMarkup = renderLocalStorePaginationItem({kind: 'previous', page: 5});
+
+    assert.equal(
+        anchorMarkup,
+        '<a href="/settings/local-market-store?page=2&amp;scope=&quot;all&quot;" '
+            + 'class="local-store-page-button is-active" data-pagination-target="2" '
+            + 'data-local-store-page="2" data-pagination-current="1" aria-label="Page 2" '
+            + 'aria-current="page">2</a>',
+    );
+    assert.equal(
+        buttonMarkup,
+        '<button type="button" class="local-store-page-button local-store-page-nav" '
+            + 'data-pagination-target="5" data-pagination-current="0" aria-label="Previous page">'
+            + '<span class="icon icon-page-prev" aria-hidden="true"></span></button>',
+    );
 });
