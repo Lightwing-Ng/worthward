@@ -1,7 +1,8 @@
-/* Code version: v0.27.4 */
+/* Code version: v0.28.6 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
+    const responsive = window.ANTIGRAVITY_RESPONSIVE;
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const fetchAbortDebugConfig = state.debug?.fetchAbort || null;
     const reportFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = "post-fix") => {
@@ -24,6 +25,7 @@
     };
 
     const {defaults, labels, endpoints, constraints, theme} = state;
+    const workspaceUrlState = window.ANTIGRAVITY_WORKSPACE_URL_STATE || null;
     const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const MONTH_TOKEN_TO_INDEX = MONTH_ABBREVIATIONS.reduce((accumulator, label, index) => {
@@ -33,7 +35,7 @@
     }, {});
     const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
-    const isBacktestView = state.currentView === "backtest";
+    const isBacktestView = ["backtest", "grid-trading"].includes(state.currentView);
     const isDcaView = state.currentView === "dca";
     const MIN_TICKERS = constraints?.minTickers || 2;
     const MAX_TICKERS = constraints?.maxTickers || 5;
@@ -109,7 +111,7 @@
             ? Boolean(state.dcaResult)
             : Boolean(state.chart?.series?.length);
     let autoSubmitTimer = null;
-    let dockFrame = 0;
+    let dockFrame = null;
     let mobilePagePaddingFrame = 0;
     let mobilePagePaddingShouldPreserveBottom = false;
     let mobilePagePaddingObserver = null;
@@ -789,6 +791,7 @@
         "email-smtp": {title: translateUi("Email (SMTP)"), layout: "form"},
         "export-image": {title: translateUi("Export images"), layout: "tokens"},
         "font-tokens": {title: translateUi("Font tokens"), layout: "tokens"},
+        "color-tokens": {title: translateUi("Color tokens"), layout: "tokens"},
         general: {title: translateUi("General"), layout: "options"},
         "local-market-store": {title: translateUi("Local market store"), layout: "table"},
         "material-tokens": {title: translateUi("Material tokens"), layout: "tokens"},
@@ -1264,7 +1267,7 @@
         const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
         if (currentTickers !== nextTickers) return true;
 
-        const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
+        const xAxisKeys = ["period", "range", "date", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "return", "extended-hours", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
         for (const key of xAxisKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -1277,9 +1280,8 @@
     const sidebarToggle = $("#sidebar_toggle");
     const appSidebar = $("#app_sidebar");
     const sidebarBackdrop = $("#sidebar_backdrop");
-    const mobileSidebarMedia = window.matchMedia("(max-width: 600px)");
+    const mobileSidebarMedia = responsive.media("sidebarOverlayMax");
     let isSidebarOpen = true;
-    let isSidebarAnimating = false;
 
     const readSidebarMemory = () => {
         try {
@@ -1320,38 +1322,45 @@
         scheduleWorkspaceSummaryMorphSync?.();
     };
 
-    const animateDock = () => {
-        scheduleDockPosition();
-        if (isSidebarAnimating) {
-            requestAnimationFrame(animateDock);
+    let sidebarFlipCancel = null;
+    const applySidebarStateWithMotion = (nextIsOpen) => {
+        // During expansion the sidebar occupies the final layout slot immediately;
+        // keeping the title in that slot prevents it from crossing the glass panel.
+        if (nextIsOpen) {
+            sidebarFlipCancel?.();
+            sidebarFlipCancel = null;
+            applySidebarState(nextIsOpen);
+            return;
         }
+        const targets = $$(".workspace-summary-card .report-heading, .workspace-mode-title-card .report-heading, .settings-summary-card .report-heading")
+            .filter((element) => element.getClientRects().length > 0);
+        const motion = window.AntigravityMotion;
+        if (!motion?.flip || !targets.length) {
+            applySidebarState(nextIsOpen);
+            return;
+        }
+        sidebarFlipCancel?.();
+        sidebarFlipCancel = motion.flip(targets, () => applySidebarState(nextIsOpen), {
+            duration: motion.durations.spatial,
+            easing: motion.easingTokens?.emphasized,
+        });
     };
 
     if (sidebarToggle && appSidebar && appShell) {
         applySidebarState(readSidebarMemory());
         sidebarToggle.addEventListener("click", () => {
-            applySidebarState(!isSidebarOpen);
+            applySidebarStateWithMotion(!isSidebarOpen);
             writeSidebarMemory(isSidebarOpen);
-            isSidebarAnimating = true;
-            animateDock();
-            setTimeout(() => {
-                isSidebarAnimating = false;
-                scheduleDockPosition();
-            }, 650);
+            scheduleDockPosition();
         });
     }
 
     if (sidebarBackdrop) {
         sidebarBackdrop.addEventListener("click", () => {
             if (!mobileSidebarMedia.matches || !isSidebarOpen) return;
-            applySidebarState(false);
+            applySidebarStateWithMotion(false);
             writeSidebarMemory(false);
-            isSidebarAnimating = true;
-            animateDock();
-            setTimeout(() => {
-                isSidebarAnimating = false;
-                scheduleDockPosition();
-            }, 650);
+            scheduleDockPosition();
         });
     }
 
@@ -1418,13 +1427,18 @@
         const shell = $("[data-trade-detail-shell]");
         if (!shell) return;
         const panels = $$("[data-trade-detail-panel]");
+        const urlState = workspaceUrlState?.parseWorkspaceUrlState?.(window.location.href);
         try {
             const storedValue = window.sessionStorage.getItem(TRADE_DETAIL_MEMORY_KEY);
-            const storedInput = storedValue ? shell.querySelector(`input[name="trade_detail_tab"][value="${storedValue}"]`) : null;
+            const requestedValue = urlState?.tab === "transactions"
+                || (urlState?.tab === "metrics" && window.location.search.includes("tab="))
+                ? urlState.tab
+                : storedValue;
+            const storedInput = requestedValue ? shell.querySelector(`input[name="trade_detail_tab"][value="${requestedValue}"]`) : null;
             if (storedInput) storedInput.checked = true;
         } catch (_error) {
         }
-        const syncPanels = () => {
+        const syncPanels = ({syncUrl = false} = {}) => {
             const active = shell.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
             shell.dataset.active = active;
             try {
@@ -1434,11 +1448,19 @@
             panels.forEach((panel) => {
                 panel.hidden = panel.dataset.tradeDetailPanel !== active;
             });
+            if (syncUrl && typeof buildCleanWorkspaceUrl === "function") {
+                const nextUrl = buildCleanWorkspaceUrl();
+                const currentUrl = `${window.location.pathname}${window.location.search}`;
+                if (nextUrl !== currentUrl) {
+                    window.history.pushState({}, "", nextUrl);
+                    rememberCurrentViewUrl(nextUrl);
+                }
+            }
         };
         shell.querySelectorAll('input[name="trade_detail_tab"]').forEach((input) => {
             if (input.dataset.bound === "1") return;
             input.dataset.bound = "1";
-            input.addEventListener("change", syncPanels);
+            input.addEventListener("change", () => syncPanels({syncUrl: true}));
         });
         syncPanels();
     };
@@ -1498,7 +1520,7 @@
         const summaryShells = Array.from(document.querySelectorAll(".workspace-mobile-summary-shell[data-mobile-summary-fixed]"));
         const sidebar = document.getElementById("app_sidebar");
         if (!summaryShells.length || !(sidebar instanceof HTMLElement)) return;
-        const mobileMedia = window.matchMedia("(max-width: 767px)");
+        const mobileMedia = responsive.media("contentStackMax");
         let frameId = 0;
         let resizeObserver = null;
         const summaryCards = summaryShells
@@ -1590,7 +1612,7 @@
         if (!(sidebar instanceof HTMLElement) || !(layout instanceof HTMLElement) || !(resultsStack instanceof HTMLElement)) {
             return;
         }
-        const stackedWorkspaceMedia = window.matchMedia("(max-width: 767px)");
+        const stackedWorkspaceMedia = responsive.media("contentStackMax");
         let frameId = 0;
         let resizeObserver = null;
         const resetLayoutHeight = () => {
@@ -1844,14 +1866,7 @@
         };
     };
 
-    const initializeWorkspaceEnhancements = () => {
-        initMobilePageBottomPadding();
-        attachNoticeHandlers();
-        attachTradeDetailTabs();
-        bootstrap.initWorkspaceShareDrawer?.();
-        attachWorkspaceSummaryMorph();
-        attachWorkspaceModeLayout();
-        attachScrollableDataTableHeaderMeasurements();
+    const initializeSettingsWorkspace = () => {
         bootstrap.initSettingsWorkspace?.({
             state,
             endpoints,
@@ -1864,6 +1879,19 @@
             fetchJsonCached,
             progressiveResourceCache,
         });
+    };
+
+    window.addEventListener("antigravity:settings-bootstrap-ready", initializeSettingsWorkspace);
+
+    const initializeWorkspaceEnhancements = () => {
+        initMobilePageBottomPadding();
+        attachNoticeHandlers();
+        attachTradeDetailTabs();
+        bootstrap.initWorkspaceShareDrawer?.();
+        attachWorkspaceSummaryMorph();
+        attachWorkspaceModeLayout();
+        attachScrollableDataTableHeaderMeasurements();
+        initializeSettingsWorkspace();
         window.requestAnimationFrame(() => {
             window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initPriceCompareWorkspace?.();
@@ -2040,12 +2068,15 @@
             const rangeKeys = [
                 "range",
                 "period",
+                "date",
                 "trading_date",
                 "exact_trading_date",
                 "from",
                 "to",
                 "exact_start",
                 "exact_end",
+                "return",
+                "extended-hours",
                 "extended_hours",
                 "include_extended_hours",
                 "overnight",
@@ -2898,8 +2929,8 @@
                 ],
                 {
                     id: "ticker-field-order",
-                    duration: 420,
-                    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                    duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
+                    easing: window.AntigravityMotion?.easingTokens?.emphasized,
                 },
             );
             if (!animation) return;
@@ -3816,21 +3847,35 @@
         });
     };
 
-    const positionSidebarDock = () => {
+    const readSidebarDockPosition = () => {
         const sidebar = $(".sidebar");
         const dock = $(".sidebar-dock");
-        if (!sidebar || !dock) return;
-        if (mobileSidebarMedia.matches) {
-            dock.style.left = "";
-            return;
-        }
+        if (!sidebar || !dock || mobileSidebarMedia.matches) return {dock, left: ""};
         const rect = sidebar.getBoundingClientRect();
-        dock.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+        return {dock, left: `${Math.round(rect.left + rect.width / 2)}px`};
+    };
+
+    const positionSidebarDock = ({dock, left} = {}) => {
+        if (!(dock instanceof HTMLElement)) return;
+        dock.style.left = left || "";
     };
 
     const scheduleDockPosition = () => {
-        if (dockFrame) window.cancelAnimationFrame(dockFrame);
-        dockFrame = window.requestAnimationFrame(positionSidebarDock);
+        dockFrame?.();
+        if (window.AntigravityMotion?.scheduler?.readWrite) {
+            dockFrame = window.AntigravityMotion.scheduler.readWrite(
+                "sidebar-dock-position",
+                readSidebarDockPosition,
+                positionSidebarDock,
+            );
+            return;
+        }
+        let frameId = 0;
+        frameId = window.requestAnimationFrame(() => {
+            dockFrame = null;
+            positionSidebarDock(readSidebarDockPosition());
+        });
+        dockFrame = () => window.cancelAnimationFrame(frameId);
     };
 
     const readElementCssPx = (element, propertyName, fallback = 0) => {
@@ -4161,7 +4206,7 @@
     };
 
     const didCompareRequestChangeRange = (currentParams, nextParams) => {
-        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight"];
+        const rangeKeys = ["period", "range", "date", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended-hours", "extended_hours", "include_extended_hours", "overnight", "include_overnight"];
         for (const key of rangeKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -4324,6 +4369,45 @@
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
     const getSharedSelectFields = () => Array.from(document.querySelectorAll("[data-shared-select-field]"))
         .filter((field) => field instanceof HTMLElement);
+    let sharedSelectOwnerSequence = 0;
+    const getSharedSelectOverlayHost = () => {
+        let host = document.querySelector("[data-shared-select-overlay]");
+        if (host instanceof HTMLElement) return host;
+        if (!(document.body instanceof HTMLElement)) return null;
+        host = document.createElement("div");
+        host.className = "shared-select-overlay";
+        host.dataset.sharedSelectOverlay = "";
+        document.body.appendChild(host);
+        return host;
+    };
+    const shouldPortalSharedSelectDropdown = (field) => (
+        field instanceof HTMLElement
+        && (
+            String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-import-broker"
+            || field.classList.contains("investment-import-broker-field")
+        )
+    );
+    const getSharedSelectDropdown = (field) => {
+        if (!(field instanceof HTMLElement)) return null;
+        const nestedDropdown = field.querySelector("[data-shared-select-dropdown]");
+        if (nestedDropdown instanceof HTMLElement) return nestedDropdown;
+        const owner = String(field.dataset.sharedSelectOwner || "").trim();
+        if (!owner) return null;
+        return Array.from(document.querySelectorAll("[data-shared-select-dropdown]"))
+            .find((dropdown) => dropdown instanceof HTMLElement && dropdown.dataset.sharedSelectOwner === owner)
+            || null;
+    };
+    const portalSharedSelectDropdown = (field, dropdown) => {
+        if (!shouldPortalSharedSelectDropdown(field) || !(dropdown instanceof HTMLElement)) return false;
+        const host = getSharedSelectOverlayHost();
+        if (!(host instanceof HTMLElement)) return false;
+        const owner = String(field.dataset.sharedSelectOwner || "").trim()
+            || `shared-select-${++sharedSelectOwnerSequence}`;
+        field.dataset.sharedSelectOwner = owner;
+        dropdown.dataset.sharedSelectOwner = owner;
+        if (dropdown.parentElement !== host) host.appendChild(dropdown);
+        return true;
+    };
 
     const isOneDayExactDateMode = () => (
         ["tickers", "market-caps", "prices"].includes(state.currentView)
@@ -4396,7 +4480,7 @@
         const select = field.querySelector("select");
         const trigger = field.querySelector("[data-shared-select-trigger]");
         const triggerLabel = field.querySelector("[data-shared-select-trigger-label]");
-        const dropdown = field.querySelector("[data-shared-select-dropdown]");
+        const dropdown = getSharedSelectDropdown(field);
         if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
             return null;
         }
@@ -4515,28 +4599,13 @@
         const dropdown = parts.dropdown;
         const trigger = parts.trigger;
         const triggerRect = trigger.getBoundingClientRect();
-        // If this shared select lives inside the constrained import form container,
-        // open downward within the control row while the form temporarily allows overflow.
+        // The import Broker menu must not inherit the form's transformed and clipped context.
         const isInsideImportForm = !!trigger.closest('#transaction_form_container')
             || parts.field.classList.contains('investment-import-broker-field')
             || parts.field.dataset.sharedSelectKind === 'investment-import-broker';
         if (isInsideImportForm) {
-            // Use fixed positioning to escape the height-constrained floating #transaction_form_container.
-            // This ensures the full broker list (including Longbridge (SG) and Charles Schwab at the end)
-            // is visible and scrollable/selectable even when the browser window or form panel is short.
-            const container = trigger.closest('#transaction_form_container');
-            let offsetLeft = 0;
-            let offsetTop = 0;
-            if (container) {
-                const style = window.getComputedStyle(container);
-                const hasTransform = style.transform !== 'none' || style.perspective !== 'none' || style.filter !== 'none';
-                if (hasTransform) {
-                    const containerRect = container.getBoundingClientRect();
-                    offsetLeft = containerRect.left;
-                    offsetTop = containerRect.top;
-                }
-            }
-
+            // Portal the import broker menu above the transformed, clipped form before positioning it.
+            portalSharedSelectDropdown(field, dropdown);
             const dropdownGap = 4;
             const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
             const spaceBelow = Math.max(140, viewportHeight - triggerRect.bottom - dropdownGap - 12);
@@ -4544,8 +4613,8 @@
             const maxH = Math.min(380, spaceBelow);
 
             dropdown.style.position = 'fixed';
-            dropdown.style.left = `${Math.round(triggerRect.left - offsetLeft)}px`;
-            dropdown.style.top = `${Math.round(triggerRect.bottom - offsetTop + dropdownGap)}px`;
+            dropdown.style.left = `${Math.round(triggerRect.left)}px`;
+            dropdown.style.top = `${Math.round(triggerRect.bottom + dropdownGap)}px`;
             dropdown.style.bottom = 'auto';
             dropdown.style.right = 'auto';
             dropdown.style.width = `${Math.round(triggerRect.width)}px`;
@@ -6454,75 +6523,83 @@
     };
 
     const buildCleanWorkspaceUrl = () => {
-        const params = new URLSearchParams();
-        const tickers = getFilledTickers();
-        tickers.forEach((ticker) => params.append("ticker", ticker));
-
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
-        if (rangeMode === "exact") {
-            params.set("range", "exact");
-            const periodValue = $("#period")?.value || defaults.period;
-            if (periodValue) params.set("period", periodValue);
-            if (isOneDayExactDateMode()) {
-                if (exactTradingDateInput?.value) params.set("trading_date", exactTradingDateInput.value);
-            } else {
-                if (exactStartInput?.value) params.set("from", exactStartInput.value);
-                if (exactEndInput?.value) params.set("to", exactEndInput.value);
+        if (typeof workspaceUrlState?.buildWorkspaceUrl !== "function") return window.location.pathname;
+
+        const strategySelect = $("#trade_strategy");
+        const strategyValue = strategySelect?.value
+            || document.querySelector("input[name='strategy']")?.value
+            || "";
+        const strategyParamDefaults = {};
+        $$('[data-strategy-param-key]').forEach((field) => {
+            const key = field.dataset.strategyParamKey?.trim();
+            const control = field.querySelector("[data-strategy-param-input]");
+            if (key && control?.dataset.default !== undefined) {
+                if (control.dataset.strategyParamInput === "boolean") {
+                    const defaultValue = control.dataset.default.trim().toLowerCase();
+                    const isDefaultOn = ["1", "true", "on"].includes(defaultValue);
+                    strategyParamDefaults[key] = isDefaultOn
+                        ? control.dataset.switchOnValue
+                        : control.dataset.switchOffValue;
+                } else {
+                    strategyParamDefaults[key] = control.dataset.default;
+                }
             }
-        } else {
-            const periodValue = $("#period")?.value || defaults.period;
-            if (periodValue) params.set("period", periodValue);
-        }
-
-        if (priceOnlyInput?.checked) {
-            params.set("price_only", "1");
-        } else if (includeDividendsInput?.checked) {
-            params.set("dividends", "1");
-        }
-        if (extendedHoursInput?.checked && !extendedHoursInput.disabled) {
-            params.set("extended_hours", "1");
-        }
-        if (overnightInput?.checked && !overnightInput.disabled) {
-            params.set("overnight", "1");
-        }
-
-        if (isPortfolioView) {
-            const allocationMode = getPortfolioAllocationMode();
-            if (allocationMode === "shares") {
-                params.set("allocation", "shares");
-                getFilledWeightEntries().forEach((entry) => {
-                    params.append("shares", String(Number.parseInt(entry.shares?.value || "0", 10) || 0));
-                });
-            } else {
-                getFilledWeightEntries().forEach((entry) => {
-                    params.append("weight", String(Number.parseInt(entry.number.value, 10) || 0));
-                });
-            }
-        }
-
-        if (isBacktestView) {
-            const strategySelect = $("#trade_strategy");
-            const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
-            const intervalValue = getSelectedBacktestInterval();
-            if (intervalValue) params.set("interval", intervalValue);
-            if (strategySelect?.value) params.set("strategy", strategySelect.value);
-            if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
-            collectStrategyParamEntries().forEach(([key, value]) => {
-                if (key) params.set(key, value);
-            });
-        } else if (isDcaView) {
-            const amountValue = parseTradeCapitalValue(tradeCapitalInput?.value);
-            const frequencyValue = getSelectedDcaFrequency();
-            const weekdayValue = document.getElementById("dca_weekday")?.value || "0";
-            const monthDayValue = document.getElementById("dca_month_day")?.value || "15";
-            if (Number.isFinite(amountValue)) params.set("amount", String(amountValue));
-            params.set("frequency", frequencyValue);
-            if (frequencyValue === "weekly") params.set("weekday", weekdayValue);
-            if (frequencyValue === "monthly") params.set("month_day", monthDayValue);
-        }
-
-        const queryString = params.toString();
-        return queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+        });
+        const currentUrlState = workspaceUrlState.parseWorkspaceUrlState(window.location.href, {
+            defaultPeriod: defaults.period || "1y",
+        });
+        const activePeriod = $("#period")?.value || defaults.period || "1y";
+        const rangeState = {
+            rangeMode,
+            period: activePeriod,
+            date: isOneDayExactDateMode() ? exactTradingDateInput?.value || "" : "",
+            from: isOneDayExactDateMode() ? "" : exactStartInput?.value || "",
+            to: isOneDayExactDateMode() ? "" : exactEndInput?.value || "",
+        };
+        const portfolioEntries = getFilledWeightEntries();
+        const activeTab = $("[data-trade-detail-shell] input[name='trade_detail_tab']:checked")?.value || "metrics";
+        return workspaceUrlState.buildWorkspaceUrl(window.location.href, {
+            ...rangeState,
+            tickers: getFilledTickers(),
+            defaultTickers: state.currentView === "portfolio"
+                ? (defaults.portfolio_tickers || [])
+                : isBacktestView || isDcaView
+                    ? [defaults[isBacktestView ? "backtest_ticker" : "dca_ticker"] || defaults.ticker_a || ""]
+                    : [defaults.ticker_a || "QQQ", defaults.ticker_b || "JEPQ"],
+            returnMode: priceOnlyInput?.checked ? "price" : includeDividendsInput?.checked ? "dividends" : "total",
+            extendedHours: Boolean(extendedHoursInput?.checked && !extendedHoursInput.disabled),
+            overnight: Boolean(overnightInput?.checked && !overnightInput.disabled),
+            isPortfolio: isPortfolioView,
+            allocation: isPortfolioView ? getPortfolioAllocationMode() : "weight",
+            weights: portfolioEntries.map((entry) => Number.parseInt(entry.number.value, 10) || 0),
+            shares: portfolioEntries.map((entry) => Number.parseInt(entry.shares?.value || "0", 10) || 0),
+            defaultWeights: defaults.portfolio_weights || [],
+            isBacktest: isBacktestView,
+            strategy: strategyValue,
+            defaultStrategy: state.currentView === "grid-trading"
+                ? "grid-trading"
+                : defaults.backtest_strategy || "buy-and-hold",
+            capital: isBacktestView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
+            defaultCapital: defaults.backtest_capital ?? 10000,
+            interval: isBacktestView ? getSelectedBacktestInterval() : "",
+            defaultInterval: defaults.backtest_interval || "1d",
+            strategyParams: isBacktestView ? collectStrategyParamEntries() : [],
+            strategyParamDefaults,
+            isDca: isDcaView,
+            amount: isDcaView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
+            defaultAmount: defaults.dca_amount ?? 1000,
+            frequency: isDcaView ? getSelectedDcaFrequency() : "",
+            defaultFrequency: defaults.dca_frequency || "monthly",
+            weekday: document.getElementById("dca_weekday")?.value || "0",
+            defaultWeekday: defaults.dca_weekday ?? 0,
+            monthDay: document.getElementById("dca_month_day")?.value || "15",
+            defaultMonthDay: defaults.dca_month_day ?? 15,
+            tab: activeTab,
+            page: bootstrap.workspaceTablePage ?? currentUrlState.page,
+        }, {
+            defaultPeriod: defaults.period || "1y",
+        });
     };
 
     const buildPeriodOptionDefs = (periodValues) => (
@@ -7544,7 +7621,11 @@
     document.addEventListener("click", (event) => {
         const {field} = getTradeStrategyRefs();
         const clickedInsideStrategyField = field instanceof HTMLElement && field.contains(event.target);
-        const clickedInsideSharedField = getSharedSelectFields().some((sharedField) => sharedField.contains(event.target));
+        const clickedInsideSharedField = getSharedSelectFields().some((sharedField) => {
+            if (sharedField.contains(event.target)) return true;
+            const dropdown = getSharedSelectParts(sharedField)?.dropdown;
+            return dropdown instanceof HTMLElement && dropdown.contains(event.target);
+        });
         if (!clickedInsideStrategyField) {
             setTradeStrategyDropdownOpen(false);
             setTradeStrategyPanelOpen(false);
@@ -7556,7 +7637,11 @@
     document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
         const {trigger, tuneButton, dropdown, panel} = getTradeStrategyRefs();
-        const sharedField = getSharedSelectFields().find((field) => field.contains(document.activeElement));
+        const sharedField = getSharedSelectFields().find((field) => {
+            if (field.contains(document.activeElement)) return true;
+            const dropdown = getSharedSelectParts(field)?.dropdown;
+            return dropdown instanceof HTMLElement && dropdown.contains(document.activeElement);
+        });
         if (sharedField) {
             setSharedSelectDropdownOpen(sharedField, false);
             getSharedSelectParts(sharedField)?.trigger.focus({preventScroll: true});
@@ -7621,6 +7706,7 @@
                 window.clearTimeout(autoSubmitTimer);
                 autoSubmitTimer = null;
             }
+            bootstrap.workspaceTablePage = 1;
             const nextUrl = buildCleanWorkspaceUrl();
             const currentUrlObj = new URL(window.location.href);
             const nextUrlObj = new URL(nextUrl, window.location.origin);
@@ -7668,7 +7754,7 @@
                 // - If ticker/period/interval/exact dates change: full rebuild from scratch (original behavior)
                 // - If only strategy parameters / dividends / capital change: animate y-values keeping same x-axis with smooth transition
                 function doesRequestChangedXAxis(currentParams, nextParams) {
-                    const xAxisKeys = ["ticker", "period", "interval", "from", "exact_start", "to", "exact_end"];
+                    const xAxisKeys = ["ticker", "period", "range", "date", "interval", "from", "exact_start", "to", "exact_end"];
                     for (const key of xAxisKeys) {
                         const current = (currentParams.get(key) || "").toString().trim();
                         const next = (nextParams.get(key) || "").toString().trim();
@@ -7878,6 +7964,14 @@
     window.addEventListener("orientationchange", scheduleMobilePageBottomPaddingSync);
     window.addEventListener("pageshow", scheduleMobilePageBottomPaddingSync);
 
+    if (WORKSPACE_VIEWS.has(state.currentView) && typeof workspaceUrlState?.buildWorkspaceUrl === "function") {
+        const canonicalWorkspaceUrl = buildCleanWorkspaceUrl();
+        const currentWorkspaceUrl = `${window.location.pathname}${window.location.search}`;
+        if (canonicalWorkspaceUrl !== currentWorkspaceUrl) {
+            window.history.replaceState(window.history.state, "", canonicalWorkspaceUrl);
+            rememberCurrentViewUrl(canonicalWorkspaceUrl);
+        }
+    }
     initializeWorkspaceEnhancements();
     syncTradeStrategyTriggerLabel();
     renderTradeStrategyDropdown();

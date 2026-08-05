@@ -1,10 +1,10 @@
-{# Code version: v0.15.11 #}
+{# Code version: v0.15.20 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{{ page_title or labels.page_title }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('market_store_logo', filename='favicon.svg', v=version) }}">
     <script src="{{ url_for('static', filename='assets/js/vendor/chart/chart.umd.min.js', v=version) }}"></script>
@@ -22,7 +22,7 @@
             --theme-muted: {{ theme_light.muted }};
             --theme-accent-primary: {{ theme_light.accent_primary }};
             --theme-accent-secondary: {{ theme_light.accent_secondary }};
-            --theme-accent-positive: #16a34a;
+            --theme-accent-positive: {{ theme_light.accent_positive }};
             --theme-shadow: {{ theme_light.shadow }};
             --theme-glass-highlight: {{ theme_light.glass_highlight }};
             --theme-trade-capital-slider-radius: {{ theme_light.trade_capital_slider_radius }};
@@ -46,8 +46,8 @@
             --theme-warning: {{ theme_light.warning }};
             --theme-warning-text: {{ theme_light.warning_text }};
             --theme-warning-translucent: {{ theme_light.warning_translucent }};
-            --theme-success: #16a34a;
-            --theme-success-strong: #16a34a;
+            --theme-success: {{ theme_light.success }};
+            --theme-success-strong: {{ theme_light.success_strong }};
             --theme-muted-translucent: rgba(107, 114, 128, 0.62);
             --logo-card-size: {{ logos.card_size }}px;
             --logo-tooltip-size: {{ logos.tooltip_size }}px;
@@ -125,15 +125,19 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.24') }}">
+    <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.41') }}">
+    <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.0.0') }}"></script>
 </head>
 <body>
+<div class="shared-select-overlay" data-shared-select-overlay></div>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
     try {
         const storedSidebarState = window.sessionStorage.getItem("antigravity:sidebar-open");
+        const sidebarOverlayMedia = window.ANTIGRAVITY_RESPONSIVE?.media?.("sidebarOverlayMax");
         const shouldStartCollapsed = storedSidebarState === "false"
-            || (storedSidebarState === null && window.matchMedia("(max-width: 600px)").matches);
+            || (storedSidebarState === null && Boolean(sidebarOverlayMedia?.matches));
         if (shouldStartCollapsed) {
             document.documentElement.classList.add("sidebar-memory-collapsed");
         }
@@ -209,14 +213,14 @@
         </a>
     </nav>
 </main>
-<div id="workspace_modal_overlay" class="workspace-modal-overlay" hidden>
+<div id="workspace_modal_overlay" class="workspace-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="workspace_modal_overlay_title" aria-describedby="workspace_modal_overlay_copy" hidden>
     <div class="workspace-modal-dialog">
         <button type="button" id="workspace_modal_overlay_close" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}">
             <span class="icon icon-dismiss-control" aria-hidden="true"></span>
         </button>
         <span id="workspace_modal_overlay_icon" class="suggestion-loading-spinner workspace-modal-icon" aria-hidden="true"></span>
-        <p class="workspace-modal-title">{{ translate_ui('Updating local market data') }}</p>
-        <p class="workspace-modal-copy">{{ translate_ui('This may take a moment while the app checks remote data and refreshes the local store.') }}</p>
+        <p id="workspace_modal_overlay_title" class="workspace-modal-title">{{ translate_ui('Updating local market data') }}</p>
+        <p id="workspace_modal_overlay_copy" class="workspace-modal-copy">{{ translate_ui('This may take a moment while the app checks remote data and refreshes the local store.') }}</p>
     </div>
 </div>
 <script id="antigravity_state" type="application/json">{{ {
@@ -246,6 +250,9 @@
     "project": {"sourceUrl": project_source_url, "displayUrl": project_display_url},
     "currentView": current_view_name,
     "settingsSection": settings_section,
+    "investmentCostBasisMethod": investment_cost_basis_method,
+    "settingsTab": settings_tab,
+    "settingsPage": settings_page_number,
     "debug": {
         "fetchAbort": fetch_abort_debug_config,
     },
@@ -259,25 +266,28 @@
 </script>
 <script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.0.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.1.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.1.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.1') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.0.2') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
+<script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.1.0') }}"></script>
+{% endif %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.1') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.15.7') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.27.4') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.28.6') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
-<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
 {% endif %}
 {% if current_view in ["backtest", "grid-trading"] %}
-<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version) }}"></script>
+<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.3.16') }}"></script>
 {% endif %}
 </body>
 </html>

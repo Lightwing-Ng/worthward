@@ -1,4 +1,4 @@
-{# Code version: v1.49.10 #}
+{# Code version: v1.50.5 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -545,7 +545,7 @@
                                                {% if statement_broker.code == 'boc_hk' %}aria-label="Upload one or more BOCHK Consolidated Statement PDFs" title="Choose one or more BOCHK Consolidated Statement PDFs"{% endif %}
                                                class="settings-form-control investment-import-file-input">
                                         {% if statement_broker.code == 'boc_hk' %}
-                                        <p class="investment-import-file-hint" id="boc_hk_statement_pdfs_hint">Select one or more PDFs together; each statement is parsed and merged while its HKD, CNY, and USD subaccounts remain separate.</p>
+                                        <p class="investment-import-file-hint" id="boc_hk_statement_pdfs_hint">Select one or more PDFs together; each statement is parsed and merged while HKD Savings, HKD Current, CNH (printed CNY/RMB), and USD subaccounts remain separate.</p>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -859,6 +859,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.58.5') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.75.17') }}"></script>
 {% endblock %}

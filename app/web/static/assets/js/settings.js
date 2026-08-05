@@ -1,6 +1,10 @@
-/* Code version: v0.16.0 */
+/* Code version: v0.19.0 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
+import {
+    buildSettingsUrl,
+    parseSettingsUrlState,
+} from './settings/url-state.js?v=settings-url-state-v0.2.0';
 
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
@@ -12,6 +16,7 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
     let didBindSettingsSectionNavigation = false;
     let didBindLocalStorePagination = false;
     let didBindStyleTokenControlDismiss = false;
+    let didBindColorTokenGlobalEvents = false;
     let styleTokenActiveControl = null;
     let activeStyleTokenResizerCleanup = null;
     let activeStyleTokenDemoDensityCleanup = null;
@@ -100,6 +105,43 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
     };
     const canTransitionDom = () => Boolean(getContext().canTransitionDom);
     const rememberCurrentViewUrl = (url) => getContext().rememberCurrentViewUrl?.(url);
+    const getSettingsCurrentUrl = () => (
+        `${window.location.pathname}${window.location.search}${window.location.hash}`
+    );
+    const canonicalizeSettingsUrl = () => {
+        const currentState = parseSettingsUrlState(window.location.href);
+        const nextUrl = buildSettingsUrl(window.location.href, currentState);
+        if (getSettingsCurrentUrl() !== nextUrl) {
+            window.history.replaceState(window.history.state, "", nextUrl);
+            rememberCurrentViewUrl(nextUrl);
+        }
+        return parseSettingsUrlState(nextUrl);
+    };
+    const syncSettingsUrl = ({section, tab, page, historyMode = "replace"} = {}) => {
+        const currentState = parseSettingsUrlState(window.location.href);
+        const nextUrl = buildSettingsUrl(window.location.href, {
+            section: section ?? currentState.section,
+            tab: tab ?? currentState.tab,
+            page: page ?? currentState.page,
+        });
+        if (getSettingsCurrentUrl() === nextUrl) return nextUrl;
+        const historyState = {
+            settings: true,
+            section: section ?? currentState.section,
+            tab: tab ?? currentState.tab,
+            page: page ?? currentState.page,
+        };
+        if (historyMode === "push") window.history.pushState(historyState, "", nextUrl);
+        else window.history.replaceState(historyState, "", nextUrl);
+        const state = getState();
+        if (state) state.settingsSection = historyState.section;
+        if (window.ANTIGRAVITY_APP) {
+            window.ANTIGRAVITY_APP.settingsTab = historyState.tab;
+            window.ANTIGRAVITY_APP.settingsPage = historyState.page;
+        }
+        rememberCurrentViewUrl(nextUrl);
+        return nextUrl;
+    };
     const getProgressiveManifest = (view, section = null) => getContext().getProgressiveManifest?.(view, section) || {masks: []};
     const renderOptimisticNavigationSkeleton = (options) => getContext().renderOptimisticNavigationSkeleton?.(options);
     const clearOptimisticNavigationSkeleton = () => getContext().clearOptimisticNavigationSkeleton?.();
@@ -340,7 +382,7 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
             return;
         }
         summaryCard.classList.add("workspace-article-card", "workspace-summary-card");
-        const mobileMedia = window.matchMedia("(max-width: 767px)");
+        const mobileMedia = window.ANTIGRAVITY_RESPONSIVE.media("contentStackMax");
         let frameId = 0;
         let resizeObserver = null;
         const clearMorph = () => {
@@ -561,8 +603,15 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
         if (!(shell instanceof HTMLElement)) return;
         shell.querySelectorAll(".style-token-portfolio-donut-orbit").forEach((orbitElement) => {
             if (!(orbitElement instanceof HTMLElement)) return;
+            const donutElement = orbitElement.querySelector(".portfolio-donut");
             const computed = getComputedStyle(orbitElement);
-            const donutSize = Number.parseFloat(computed.getPropertyValue("--portfolio-donut-orbit-donut-size"))
+            const orbitRect = orbitElement.getBoundingClientRect();
+            const donutRect = donutElement?.getBoundingClientRect();
+            const renderedDonutSize = donutRect
+                ? Math.min(Number(donutRect.width) || 0, Number(donutRect.height) || 0)
+                : 0;
+            const donutSize = renderedDonutSize
+                || Number.parseFloat(computed.getPropertyValue("--portfolio-donut-orbit-donut-size"))
                 || Number.parseFloat(computed.getPropertyValue("--portfolio-donut-size"))
                 || 120;
             const logoSize = Number.parseFloat(computed.getPropertyValue("--portfolio-donut-orbit-logo-size"))
@@ -570,11 +619,22 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 || 20;
             const satelliteRadius = (logoSize * Math.SQRT2) / 2;
             const orbitRadius = (donutSize / 2) + satelliteRadius;
-            const centerX = orbitElement.clientWidth / 2;
-            const centerY = orbitElement.clientHeight / 2;
+            const centerX = donutRect
+                ? (donutRect.left - orbitRect.left) + (donutRect.width / 2)
+                : orbitElement.clientWidth / 2;
+            const centerY = donutRect
+                ? (donutRect.top - orbitRect.top) + (donutRect.height / 2)
+                : orbitElement.clientHeight / 2;
             orbitElement.querySelectorAll(".portfolio-donut-logo[data-style-token-donut-angle]").forEach((logoElement) => {
                 if (!(logoElement instanceof HTMLImageElement)) return;
-                const angle = Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || "");
+                const segmentStart = Number.parseFloat(logoElement.dataset.styleTokenDonutSegmentStart || "");
+                const segmentEnd = Number.parseFloat(logoElement.dataset.styleTokenDonutSegmentEnd || "");
+                const segmentSweep = Number.isFinite(segmentStart) && Number.isFinite(segmentEnd)
+                    ? ((segmentEnd - segmentStart) + 360) % 360
+                    : 0;
+                const angle = segmentSweep > 0
+                    ? segmentStart + (segmentSweep / 2)
+                    : Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || "");
                 if (!Number.isFinite(angle)) return;
                 const radians = ((angle - 90) * Math.PI) / 180;
                 const x = centerX + (Math.cos(radians) * orbitRadius);
@@ -792,6 +852,123 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 input.dispatchEvent(new Event("change", {bubbles: true}));
             });
             syncActiveValue();
+        });
+    };
+
+    const attachStyleTokenTableFilterDemos = () => {
+        const shell = getStyleTokenShell();
+        if (!(shell instanceof HTMLElement)) return;
+        shell.querySelectorAll("[data-style-token-table-filter-demo]").forEach((demo) => {
+            if (!(demo instanceof HTMLElement) || demo.dataset.styleTokenTableFilterBound === "1") return;
+            const field = demo.querySelector("[data-style-token-table-filter-field]");
+            const trigger = demo.querySelector("[data-style-token-table-filter-trigger]");
+            const dropdown = demo.querySelector("[data-style-token-table-filter-dropdown]");
+            const summary = demo.querySelector("[data-style-token-table-filter-summary]");
+            const optionHost = dropdown?.parentElement;
+            if (!(field instanceof HTMLElement)
+                || !(trigger instanceof HTMLButtonElement)
+                || !(dropdown instanceof HTMLElement)
+                || !(summary instanceof HTMLElement)
+                || !(optionHost instanceof HTMLElement)) return;
+
+            const options = Array.from(dropdown.querySelectorAll("[data-style-token-table-filter-option]"))
+                .filter((option) => option instanceof HTMLButtonElement);
+            const rows = Array.from(demo.querySelectorAll("[data-style-token-table-demo-row]"))
+                .filter((row) => row instanceof HTMLTableRowElement);
+            const defaultLabel = demo.querySelector("[data-style-token-table-filter-header]")
+                ?.querySelector(".scrollable-data-table-filter-default-label")
+                ?.textContent
+                ?.trim() || "Type";
+
+            const closeDropdown = () => {
+                field.classList.remove("is-open");
+                trigger.setAttribute("aria-expanded", "false");
+                dropdown.hidden = true;
+                dropdown.removeAttribute("style");
+                if (dropdown.parentElement !== optionHost) optionHost.append(dropdown);
+            };
+
+            const positionDropdown = () => {
+                if (dropdown.hidden) return;
+                const rect = trigger.getBoundingClientRect();
+                const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
+                const width = Math.max(120, Math.round(rect.width));
+                const left = Math.min(
+                    Math.max(12, Math.round(rect.left)),
+                    Math.max(12, viewportWidth - width - 12),
+                );
+                Object.assign(dropdown.style, {
+                    position: "fixed",
+                    left: `${left}px`,
+                    top: `${Math.round(rect.bottom + 4)}px`,
+                    width: `${width}px`,
+                    zIndex: "10002",
+                });
+            };
+
+            const syncFilter = (value, {close = true} = {}) => {
+                const nextValue = String(value || "all").trim().toLowerCase();
+                let selectedOption = options.find((option) => option.dataset.styleTokenTableFilterOption === nextValue);
+                if (!(selectedOption instanceof HTMLButtonElement)) {
+                    selectedOption = options[0] || null;
+                }
+                const selectedValue = selectedOption?.dataset.styleTokenTableFilterOption || "all";
+                const selectedLabel = selectedOption?.querySelector(".trade-strategy-dropdown-title")?.textContent?.trim()
+                    || selectedValue;
+                options.forEach((option) => {
+                    const isSelected = option === selectedOption;
+                    option.classList.toggle("is-selected", isSelected);
+                    option.classList.toggle("is-active", isSelected);
+                    option.setAttribute("aria-selected", String(isSelected));
+                });
+                const allRows = rows.length;
+                let visibleRows = 0;
+                rows.forEach((row) => {
+                    const isVisible = selectedValue === "all"
+                        || row.dataset.styleTokenTableFilterValue === selectedValue;
+                    row.hidden = !isVisible;
+                    if (isVisible) visibleRows += 1;
+                });
+                trigger.setAttribute("aria-label", `${defaultLabel} filter: ${selectedLabel}`);
+                const label = trigger.querySelector("[data-style-token-table-filter-label]");
+                if (label instanceof HTMLElement) label.textContent = selectedLabel;
+                summary.textContent = `${visibleRows} filtered of ${allRows} total`;
+                if (close) closeDropdown();
+            };
+
+            demo.dataset.styleTokenTableFilterBound = "1";
+            trigger.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (field.classList.contains("is-open")) {
+                    closeDropdown();
+                    return;
+                }
+                dropdown.hidden = false;
+                document.body.append(dropdown);
+                field.classList.add("is-open");
+                trigger.setAttribute("aria-expanded", "true");
+                positionDropdown();
+            });
+            options.forEach((option) => {
+                option.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    syncFilter(option.dataset.styleTokenTableFilterOption);
+                });
+            });
+            document.addEventListener("click", (event) => {
+                if (!(event.target instanceof Node)
+                    || demo.contains(event.target)
+                    || dropdown.contains(event.target)) return;
+                closeDropdown();
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") closeDropdown();
+            });
+            window.addEventListener("resize", positionDropdown);
+            syncFilter("all", {close: false});
+            closeDropdown();
         });
     };
 
@@ -1911,7 +2088,9 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
 
     const setNetworkStatusesPending = () => {
         const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
+        const transportNode = document.querySelector("[data-network-transport]");
         if (summaryCheckedAtNode instanceof HTMLElement) summaryCheckedAtNode.textContent = `${translateUi("Last checked:")} ${translateUi("Checking...")}`;
+        if (transportNode instanceof HTMLElement) transportNode.textContent = translateUi("Running independent checks from the application host...");
         document.querySelectorAll("[data-settings-service-row]").forEach((row) => {
             const statusNode = row.querySelector("[data-settings-service-status]");
             const noteNode = row.querySelector("[data-settings-service-note]");
@@ -1946,9 +2125,13 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 {ttlMs: force ? 0 : 45000},
             );
             const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
+            const transportNode = document.querySelector("[data-network-transport]");
             const firstCheckedAtText = payload?.rows?.[0]?.checked_at_text || "";
             if (summaryCheckedAtNode instanceof HTMLElement) {
                 summaryCheckedAtNode.textContent = firstCheckedAtText || `${translateUi("Last checked:")} ${translateUi("Not checked yet.")}`;
+            }
+            if (transportNode instanceof HTMLElement && payload?.transport_note) {
+                transportNode.textContent = payload.transport_note;
             }
             (payload?.rows || []).forEach((item) => {
                 const row = document.querySelector(`[data-settings-service-row][data-service-key="${CSS.escape(item.key || "")}"]`);
@@ -1991,9 +2174,10 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
     };
 
     const buildLocalStorePageHref = (pageValue) => {
-        const pageUrl = new URL(window.location.href);
-        pageUrl.searchParams.set("page", String(pageValue));
-        return `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`;
+        return buildSettingsUrl(window.location.href, {
+            section: "local-market-store",
+            page: pageValue,
+        });
     };
 
     const supersedeLocalStorePaginationRequest = () => {
@@ -2032,6 +2216,15 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
         ) || 1;
         const totalPages = Number.parseInt(pagination.dataset.paginationPageCount || "1", 10) || 1;
         const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+        const canonicalUrl = buildSettingsUrl(window.location.href, {
+            section: "local-market-store",
+            page: paginationState.currentPage,
+        });
+        const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (currentUrl !== canonicalUrl) {
+            window.history.replaceState({localStore: true}, "", canonicalUrl);
+            rememberCurrentViewUrl(canonicalUrl);
+        }
         paginationApi.renderLocalStorePagination(pagination, paginationState, {
             hrefForPage: buildLocalStorePageHref,
         });
@@ -2068,8 +2261,10 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
             || nextPageInput?.value
             || requestedUrl.searchParams.get("page")
             || "1";
-        requestedUrl.searchParams.set("page", actualPage);
-        const actualUrl = `${requestedUrl.pathname}${requestedUrl.search}${requestedUrl.hash}`;
+        const actualUrl = buildSettingsUrl(requestedUrl, {
+            section: "local-market-store",
+            page: actualPage,
+        });
         if (requestGeneration !== localStorePaginationRequestGeneration) return false;
         replaceLocalStoreRegion(nextShell);
         if (pushHistory) window.history.pushState({localStore: true}, "", actualUrl);
@@ -2157,6 +2352,91 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
         });
     };
 
+    const attachColorTokenControls = () => {
+        const root = document.querySelector("[data-color-token-layout]");
+        const colorTokens = window.ANTIGRAVITY_COLOR_TOKENS;
+        if (!(root instanceof HTMLElement) || !colorTokens) return;
+
+        const controls = () => [...root.querySelectorAll("[data-color-token-control]")];
+        const syncControl = (control) => {
+            if (!(control instanceof HTMLElement)) return;
+            const tokenName = control.dataset.colorTokenName || "";
+            const mode = control.dataset.colorTokenMode || "light";
+            const defaultValue = control.dataset.colorTokenDefault || "";
+            const value = colorTokens.getOverride(tokenName, mode) || defaultValue;
+            const valueInput = control.querySelector("[data-color-token-value]");
+            const picker = control.querySelector("[data-color-token-picker]");
+            const swatch = control.querySelector("[data-color-token-swatch]");
+            if (valueInput instanceof HTMLInputElement) {
+                valueInput.value = value;
+                valueInput.classList.remove("is-invalid");
+            }
+            if (picker instanceof HTMLInputElement && /^#[0-9a-f]{6}$/i.test(value)) picker.value = value;
+            if (swatch instanceof HTMLElement) swatch.style.setProperty("--color-token-swatch-value", value);
+        };
+        const syncToken = (tokenName, mode) => {
+            controls().forEach((control) => {
+                if (control.dataset.colorTokenName === tokenName && (!mode || control.dataset.colorTokenMode === mode)) {
+                    syncControl(control);
+                }
+            });
+        };
+        const saveValue = (control, value) => {
+            const tokenName = control.dataset.colorTokenName || "";
+            const mode = control.dataset.colorTokenMode || "light";
+            const valueInput = control.querySelector("[data-color-token-value]");
+            if (!colorTokens.isValidColor(value)) {
+                valueInput?.classList.add("is-invalid");
+                return;
+            }
+            if (colorTokens.setOverride(tokenName, mode, value)) syncToken(tokenName, mode);
+        };
+
+        controls().forEach((control) => {
+            if (!(control instanceof HTMLElement)) return;
+            syncControl(control);
+            if (control.dataset.colorTokenBound === "1") return;
+            control.dataset.colorTokenBound = "1";
+            const valueInput = control.querySelector("[data-color-token-value]");
+            const picker = control.querySelector("[data-color-token-picker]");
+            valueInput?.addEventListener("input", () => saveValue(control, valueInput.value));
+            valueInput?.addEventListener("change", () => saveValue(control, valueInput.value));
+            picker?.addEventListener("input", () => saveValue(control, picker.value));
+            picker?.addEventListener("change", () => saveValue(control, picker.value));
+            control.querySelector("[data-color-token-reset]")?.addEventListener("click", () => {
+                colorTokens.resetOverride(control.dataset.colorTokenName || "", control.dataset.colorTokenMode || "light");
+                syncToken(control.dataset.colorTokenName || "", control.dataset.colorTokenMode || "light");
+            });
+        });
+
+        root.querySelectorAll("[data-color-token-group-link]").forEach((link) => {
+            if (!(link instanceof HTMLAnchorElement) || link.dataset.colorTokenLinkBound === "1") return;
+            link.dataset.colorTokenLinkBound = "1";
+            link.addEventListener("click", () => {
+                root.querySelectorAll("[data-color-token-group-link]").forEach((candidate) => candidate.classList.remove("is-active"));
+                link.classList.add("is-active");
+            });
+        });
+
+        const resetAll = root.querySelector("[data-color-token-reset-all]");
+        if (resetAll instanceof HTMLButtonElement && resetAll.dataset.colorTokenResetBound !== "1") {
+            resetAll.dataset.colorTokenResetBound = "1";
+            resetAll.addEventListener("click", () => {
+                colorTokens.resetAll();
+                controls().forEach(syncControl);
+            });
+        }
+
+        if (!didBindColorTokenGlobalEvents) {
+            didBindColorTokenGlobalEvents = true;
+            window.addEventListener("antigravity:color-token-change", () => {
+                document.querySelectorAll("[data-color-token-layout] [data-color-token-control]").forEach((control) => {
+                    if (control instanceof HTMLElement) syncControl(control);
+                });
+            });
+        }
+    };
+
     const attachSettingsSectionNavigation = () => {
         if (didBindSettingsSectionNavigation) return;
         didBindSettingsSectionNavigation = true;
@@ -2193,10 +2473,10 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 if (!nextRegion) throw new Error("Settings workspace region missing.");
                 await replaceSettingsWorkspaceRegion(nextRegion);
                 clearOptimisticNavigationSkeleton();
-                reinitializeSettingsWorkspaceRegion();
                 window.history.pushState({settingsSection: targetSection}, "", nextUrl);
                 state.settingsSection = targetSection;
                 rememberCurrentViewUrl(nextUrl);
+                reinitializeSettingsWorkspaceRegion();
                 if (parsed.hash) {
                     revealStyleTokenHashTarget(parsed.hash);
                 }
@@ -2383,8 +2663,9 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
             .filter((tab) => tab instanceof HTMLButtonElement);
         const tabShell = form.querySelector(".settings-language-tabs");
         const setActiveTab = (targetName) => {
+            const nextTab = targetName === "history" ? "history" : "current";
             tabs.forEach((tab, index) => {
-                const isActive = tab.dataset.languageTab === targetName;
+                const isActive = tab.dataset.languageTab === nextTab;
                 tab.classList.toggle("is-active", isActive);
                 tab.setAttribute("aria-selected", String(isActive));
                 tab.tabIndex = isActive ? 0 : -1;
@@ -2394,16 +2675,36 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 }
             });
             panels.forEach((panel) => {
-                const isActive = panel.dataset.languagePanel === targetName;
+                const isActive = panel.dataset.languagePanel === nextTab;
                 panel.classList.toggle("is-active", isActive);
                 panel.hidden = !isActive;
             });
+            return nextTab;
         };
         tabs.forEach((tab) => {
             tab.addEventListener("click", () => {
-                setActiveTab(tab.dataset.languageTab || "current");
+                const nextTab = tab.dataset.languageTab === "history" ? "history" : "current";
+                const currentState = parseSettingsUrlState(window.location.href);
+                if (currentState.tab !== nextTab || currentState.page !== 1) {
+                    syncSettingsUrl({
+                        section: "general",
+                        tab: nextTab,
+                        page: 1,
+                        historyMode: "push",
+                    });
+                }
+                setActiveTab(nextTab);
+                const targetPanel = panels.find((panel) => panel.dataset.languagePanel === nextTab);
+                const targetPagination = targetPanel?.querySelector("[data-language-pagination]");
+                const targetBody = targetPanel?.querySelector("[data-language-paginated-body]");
+                if (targetPagination instanceof HTMLElement && targetBody instanceof HTMLElement) {
+                    renderPagination(targetPagination, targetBody, 1);
+                }
             });
         });
+
+        const initialSettingsState = canonicalizeSettingsUrl();
+        setActiveTab(initialSettingsState.tab);
 
         const renderPagination = (pagination, body, page) => {
             if (!(pagination instanceof HTMLElement) || !(body instanceof HTMLElement)) return;
@@ -2418,11 +2719,23 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 .filter((row) => row instanceof HTMLTableRowElement);
             const pageSize = Math.max(Number.parseInt(body.dataset.languagePageSize || "10", 10) || 10, 1);
             const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-            const currentPage = Math.min(Math.max(page, 1), totalPages);
+            const requestedPage = Number.parseInt(String(page || "1"), 10) || 1;
+            const currentPage = Math.min(Math.max(requestedPage, 1), totalPages);
             rows.forEach((row, index) => {
                 const rowPage = Math.floor(index / pageSize) + 1;
                 row.hidden = rowPage !== currentPage;
             });
+            if (pagination.closest('[data-language-panel]')?.classList.contains("is-active")) {
+                const currentUrlState = parseSettingsUrlState(window.location.href);
+                if (currentUrlState.page !== currentPage) {
+                    syncSettingsUrl({
+                        section: "general",
+                        tab: pagination.dataset.languagePagination || "current",
+                        page: currentPage,
+                        historyMode: "replace",
+                    });
+                }
+            }
             const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
             paginationApi.renderLocalStorePagination(pagination, paginationState, {
                 additionalPageTargetAttribute: "data-language-page",
@@ -2431,6 +2744,14 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
                 pagination,
                 (nextPage, {animationState}) => {
                     renderPagination(pagination, body, nextPage);
+                    if (pagination.closest('[data-language-panel]')?.classList.contains("is-active")) {
+                        syncSettingsUrl({
+                            section: "general",
+                            tab: pagination.dataset.languagePagination || "current",
+                            page: nextPage,
+                            historyMode: "replace",
+                        });
+                    }
                     paginationApi.animateLocalStorePaginationIndicator(pagination, animationState);
                 },
             );
@@ -2441,7 +2762,10 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
             const panelName = pagination.dataset.languagePagination || "current";
             const panel = form.querySelector(`[data-language-panel="${panelName}"]`);
             const body = panel?.querySelector("[data-language-paginated-body]");
-            if (body instanceof HTMLElement) renderPagination(pagination, body, 1);
+            const initialPage = panel instanceof HTMLElement
+                ? Number.parseInt(panel.dataset.languageInitialPage || "1", 10) || 1
+                : 1;
+            if (body instanceof HTMLElement) renderPagination(pagination, body, initialPage);
         });
     };
 
@@ -2461,10 +2785,12 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
         attachStyleTokenResizer();
         attachStyleTokenDemoResponsiveness();
         attachStyleTokenControls();
+        attachColorTokenControls();
         attachTextInputClearHandlers();
         attachStyleTokenReferences();
         attachStyleTokenCopyButtons();
         attachStyleTokenModeSwitches();
+        attachStyleTokenTableFilterDemos();
         attachStyleTokenDemoInteractions();
         attachStyleTokenActionPackageLiveControl();
         revealStyleTokenHashTarget();
@@ -2473,7 +2799,13 @@ import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.
         attachSettingsSectionNavigation();
         attachLanguageMappingHandlers();
         attachCashEquivalentsHandlers();
+        // Module scripts execute after the classic app bootstrap. Hydrate here as well
+        // so progressive Settings placeholders cannot remain in the Checking... state.
+        void hydrateNetworkStatuses();
+        void hydrateLocalStoreRanges();
     };
+
+    window.dispatchEvent(new Event("antigravity:settings-bootstrap-ready"));
 
     function attachCashEquivalentsAddActionPosition() {
         const actionShell = document.getElementById('cash_equivalents_add_action_shell');

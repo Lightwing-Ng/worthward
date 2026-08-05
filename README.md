@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.67.0`
+Documentation version: `v2.70.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -140,8 +140,10 @@ The current `Settings` navigation includes:
 
 - `About`
 - `General`
+- `Investment`
 - `Backtest`
 - `Font tokens`
+- `Color tokens`
 - `Material tokens`
 - `Style tokens`
 - `Network self-check`
@@ -150,6 +152,11 @@ The current `Settings` navigation includes:
 - `Local market store`
 - `Strategies`
 - `Clear caches`
+
+`Settings -> Color tokens` exposes the semantic palette in grouped Light and Dark
+rows. Color edits are browser-local overrides stored in localStorage; Reset
+controls restore the configured defaults. Positive accent, success, and strong
+success intentionally keep distinct Light and Dark green values.
 
 ## Data sources and local storage
 
@@ -286,6 +293,10 @@ profile name.
 - Investment transactions are read from `settings_store/investment.parquet`
 - The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these device-local files are ignored by Git, are never required for startup, and are rebuilt from `investment.parquet` plus local market history files
 - The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
+- `Settings -> Investment` controls the shared buy-lot matching method used by Holdings, Stock details, and local realized P&L. The default is `Lowest-cost lots first`, which attributes a sale to the cheapest open lots first; FIFO, LIFO, and moving-average alternatives remain available.
+- Holdings remaining shares, cost basis, and unrealized P&L are aggregated only after each broker/account/ticker/currency scope has replayed its own transactions, so one account's sale cannot consume another account's lots.
+- If one canonical ticker has open lots in multiple currencies, Holdings preserves shares but leaves combined cost basis, market value, average price, and local unrealized P&L unavailable rather than adding incompatible raw currency units; an authoritative broker performance snapshot still supplies realized P&L. Unknown carried basis on an in-kind `transfer_in` remains explicitly disclosed as a reconstruction limitation.
+- Broker-reported closed-trade P&L remains authoritative when present. Security-transfer basis reconstruction is a separate FIFO-reconstructed path and does not inherit the buy/sell display preference.
 - The Overview and Transaction history surfaces share a responsive horizontal separator that appears on hover or focus and supports pointer, touch, and keyboard resizing
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists

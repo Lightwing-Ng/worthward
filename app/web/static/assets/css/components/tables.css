@@ -1,0 +1,71 @@
+/* Code version: v0.1.0 */
+
+/* Compact filter headers are a shared scrollable-table contract. */
+.scrollable-data-table-filter-header {
+    position: relative;
+    padding: var(--scrollable-data-table-header-padding);
+    vertical-align: top;
+    color: var(--scrollable-data-table-header-color);
+    pointer-events: auto;
+}
+
+.scrollable-data-table-filter-default-label {
+    position: static;
+    display: block;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 160ms var(--motion-standard);
+}
+
+.scrollable-data-table-filter-field {
+    position: absolute;
+    inset: 2px 1px;
+    width: 100%;
+    margin: 0;
+    opacity: 0;
+    transition: opacity 160ms var(--motion-standard);
+}
+
+.scrollable-data-table-filter-header:hover .scrollable-data-table-filter-field,
+.scrollable-data-table-filter-header:focus-within .scrollable-data-table-filter-field,
+.scrollable-data-table-filter-header:has(.scrollable-data-table-filter-field.is-open) .scrollable-data-table-filter-field {
+    opacity: 1;
+}
+
+.scrollable-data-table-filter-header:hover .scrollable-data-table-filter-default-label,
+.scrollable-data-table-filter-header:focus-within .scrollable-data-table-filter-default-label,
+.scrollable-data-table-filter-header:has(.scrollable-data-table-filter-field.is-open) .scrollable-data-table-filter-default-label {
+    opacity: 0;
+}
+
+.scrollable-data-table-filter-trigger {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    height: 22px;
+    padding: 0 14px 0 4px;
+    border: 0 !important;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+}
+
+.scrollable-data-table-filter-trigger .trade-strategy-trigger-label {
+    justify-content: center;
+    width: 100%;
+}
+
+.scrollable-data-table-filter-trigger .trade-strategy-trigger-chevron {
+    position: absolute;
+    inset-inline-end: 3px;
+    width: 7px;
+    height: 5px;
+}

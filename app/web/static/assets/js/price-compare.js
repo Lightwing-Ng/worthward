@@ -1,4 +1,4 @@
-/* Code version: v0.15.5 */
+/* Code version: v0.15.7 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -149,10 +149,12 @@
 
 	const updatePriceCompareHeadingDate = (tradingDateOverride = "") => {
 		const params = new URLSearchParams(window.location.search);
-		if ((params.get("period") || "").toLowerCase() !== "1d") return;
-		const rangeMode = (params.get("range") || "period").toLowerCase();
+		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const period = workspaceState?.period || (params.get("period") || "").toLowerCase();
+		if (period !== "1d") return;
+		const rangeMode = workspaceState?.rangeMode || (params.get("range") || "period").toLowerCase();
 		const tradingDate = rangeMode === "exact"
-			? (params.get("trading_date") || params.get("exact_trading_date") || tradingDateOverride || state.chart?.tradingDate)
+			? (workspaceState?.date || params.get("trading_date") || params.get("exact_trading_date") || tradingDateOverride || state.chart?.tradingDate)
 			: (tradingDateOverride || state.chart?.tradingDate);
 		const headingDate = formatPriceCompareHeadingDate(tradingDate);
 		const displayRange = document.querySelector(".price-compare-range");
@@ -489,8 +491,8 @@
 					},
 				],
 				{
-					duration: 420,
-					easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+					duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
+					easing: window.AntigravityMotion?.easingTokens?.emphasized,
 				},
 			);
 		});
@@ -682,7 +684,9 @@
 		const profiles = Array.isArray(state.chart?.profiles) ? state.chart.profiles : [];
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
-		const requestedPeriod = new URLSearchParams(window.location.search).get("period")?.toLowerCase() || "";
+		const requestedPeriod = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
+			|| new URLSearchParams(window.location.search).get("period")?.toLowerCase()
+			|| "";
 		const sharedRawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
 		const marketSessionEvents = requestedPeriod === "1d"
 			? buildMarketSessionEvents(sharedRawDates, series.map((item) => item.ticker))
@@ -1033,11 +1037,12 @@
 	const refreshLivePrices = async () => {
 		if (state.currentView !== "prices") return;
 		const pageParams = new URLSearchParams(window.location.search);
-		const period = (pageParams.get("period") || "").toLowerCase();
-		const rangeMode = (pageParams.get("range") || "period").toLowerCase();
+		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const period = workspaceState?.period || (pageParams.get("period") || "").toLowerCase();
+		const rangeMode = workspaceState?.rangeMode || (pageParams.get("range") || "period").toLowerCase();
 		if (!state.endpoints?.compareLive || !["1d", "3d", "1w"].includes(period)) return;
 		if (rangeMode === "exact" && period !== "1d") return;
-		const selectedTradingDate = pageParams.get("trading_date") || pageParams.get("exact_trading_date") || "";
+		const selectedTradingDate = workspaceState?.date || pageParams.get("trading_date") || pageParams.get("exact_trading_date") || "";
 		if (rangeMode === "exact" && selectedTradingDate !== formatLocalIsoDate()) return;
 		const tickers = (state.chart?.series || [])
 			.map((item) => String(item?.ticker || "").trim())
@@ -1047,8 +1052,8 @@
 		tickers.forEach((ticker) => params.append("ticker", ticker));
 		params.set("period", period);
 		params.set("live_date", formatLocalIsoDate());
-		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || pageParams.get("trading_date") || "");
-		if (pageParams.get("extended_hours") === "1") params.set("extended_hours", "1");
+		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || selectedTradingDate || "");
+		if (pageParams.get("extended-hours") === "1" || pageParams.get("extended_hours") === "1") params.set("extended_hours", "1");
 		if (pageParams.get("overnight") === "1") params.set("overnight", "1");
 		params.set("refresh", "1");
 		const requestFingerprint = `${window.location.pathname}?${pageParams.toString()}`;

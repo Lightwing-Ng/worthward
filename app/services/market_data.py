@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.22.0
+Code version: v0.22.1
 """
 
 from __future__ import annotations
@@ -1833,6 +1833,12 @@ def ensure_fresh_history_store(ticker: str) -> bool:
     if is_daily_store_fresh(normalized_ticker):
         return False
     if not has_remote_market_access():
-        return False
+        # Yahoo availability is provider-specific. A valid Longbridge source
+        # is sufficient for the daily-history fallback on covered markets.
+        if (
+            not _supports_longbridge_history_fallback(normalized_ticker)
+            or _load_longbridge_market_settings() is None
+        ):
+            return False
     refresh_history_store(normalized_ticker)
     return True

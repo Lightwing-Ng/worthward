@@ -1,4 +1,4 @@
-{# Code version: v0.5.1 #}
+{# Code version: v0.8.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -12,7 +12,9 @@
     'email-smtp',
     'export-image',
     'font-tokens',
+    'color-tokens',
     'general',
+    'investment',
     'local-market-store',
     'material-tokens',
     'network',
@@ -58,9 +60,17 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
         <span class="settings-nav-label">{{ translate_ui('Font tokens') }}</span>
     </a>
+    <a href="{{ settings_urls['color-tokens'] }}" class="settings-nav-item settings-nav-item-color-tokens{% if settings_section == 'color-tokens' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
+        <span class="settings-nav-label">{{ translate_ui('Color tokens') }}</span>
+    </a>
     <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
         <span class="settings-nav-label">{{ translate_ui('General') }}</span>
+    </a>
+    <a href="{{ settings_urls.investment }}" class="settings-nav-item settings-nav-item-investment{% if settings_section == 'investment' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-trade-investment"></span></span>
+        <span class="settings-nav-label">{{ translate_ui('Investment') }}</span>
     </a>
     <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item settings-nav-item-store{% if settings_section == 'local-market-store' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
@@ -86,7 +96,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.16.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.19.0') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -167,6 +177,8 @@
         </div>
         <form class="settings-general-form settings-language-form" method="post" action="{{ settings_urls.general }}/action" enctype="multipart/form-data" data-settings-language-form data-language-saving-label="{{ translate_ui('Saving...') }}" data-language-saving-translations-label="{{ translate_ui('Saving translations...') }}" data-language-saved-label="{{ translate_ui('Translations saved.') }}" data-language-save-error-label="{{ translate_ui('Unable to save translations right now.') }}">
             <input type="hidden" name="language_action" value="save" data-language-action-input>
+            <input type="hidden" name="settings_tab" value="{{ settings_tab }}">
+            <input type="hidden" name="settings_page" value="{{ settings_page_number }}">
             <div class="settings-language-options" role="radiogroup" aria-label="{{ translate_ui('Language') }}">
                 {% for option in language_options %}
                 <label class="settings-general-option">
@@ -178,9 +190,9 @@
                 {% endfor %}
             </div>
             <div class="settings-language-toolbar">
-                <div class="settings-language-tabs segmented-control" role="tablist" aria-label="{{ translate_ui('Language') }}" data-option-count="2" data-segmented-active-index="0">
-                    <button type="button" class="settings-language-tab segmented-control-option is-active" data-language-tab="current" role="tab" aria-selected="true" tabindex="0"><span>{{ translate_ui('Current') }}</span></button>
-                    <button type="button" class="settings-language-tab segmented-control-option" data-language-tab="history" role="tab" aria-selected="false" tabindex="-1"><span>{{ translate_ui('History') }}</span></button>
+                <div class="settings-language-tabs segmented-control" role="tablist" aria-label="{{ translate_ui('Language') }}" data-option-count="2" data-segmented-active-index="{{ 1 if settings_tab == 'history' else 0 }}">
+                    <button type="button" class="settings-language-tab segmented-control-option{% if settings_tab == 'current' %} is-active{% endif %}" data-language-tab="current" role="tab" aria-selected="{{ 'true' if settings_tab == 'current' else 'false' }}" tabindex="{{ '0' if settings_tab == 'current' else '-1' }}"><span>{{ translate_ui('Current') }}</span></button>
+                    <button type="button" class="settings-language-tab segmented-control-option{% if settings_tab == 'history' %} is-active{% endif %}" data-language-tab="history" role="tab" aria-selected="{{ 'true' if settings_tab == 'history' else 'false' }}" tabindex="{{ '0' if settings_tab == 'history' else '-1' }}"><span>{{ translate_ui('History') }}</span></button>
                 </div>
                 <div class="settings-language-file-actions" aria-label="{{ translate_ui('Language mapping file actions') }}">
                     <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="{{ translate_ui('Upload i18n mapping') }}" title="{{ translate_ui('Upload i18n mapping') }}">
@@ -192,7 +204,7 @@
                     <input type="file" name="language_mapping_xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-language-upload-input hidden>
                 </div>
             </div>
-            <div class="settings-language-panel is-active" data-language-panel="current">
+            <div class="settings-language-panel{% if settings_tab == 'current' %} is-active{% endif %}" data-language-panel="current" data-language-initial-page="{{ settings_page_number if settings_tab == 'current' else 1 }}"{% if settings_tab != 'current' %} hidden{% endif %}>
                 <div class="settings-language-table-shell scrollable-data-table-shell">
                     <table class="settings-table settings-language-table scrollable-data-table" aria-hidden="true">
                         <colgroup>
@@ -233,7 +245,7 @@
                                 <col>
                                 <col>
                             </colgroup>
-                            <tbody data-language-paginated-body data-language-page-size="10">
+                            <tbody data-language-paginated-body data-language-page-size="{{ settings_language_page_size }}">
                                 {% for row in language_translations %}
                                 <tr data-language-row>
                                     <td>{{ loop.index }}</td>
@@ -248,7 +260,7 @@
                 </div>
                 <nav class="local-store-pagination settings-language-pagination" data-language-pagination="current" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
             </div>
-            <div class="settings-language-panel" data-language-panel="history" hidden>
+            <div class="settings-language-panel{% if settings_tab == 'history' %} is-active{% endif %}" data-language-panel="history" data-language-initial-page="{{ settings_page_number if settings_tab == 'history' else 1 }}"{% if settings_tab != 'history' %} hidden{% endif %}>
                 <div class="settings-language-table-shell scrollable-data-table-shell">
                     <table class="settings-table settings-language-history-table scrollable-data-table" aria-hidden="true">
                         <colgroup>
@@ -271,7 +283,7 @@
                                 <col class="settings-language-col-timestamp">
                                 <col>
                             </colgroup>
-                            <tbody data-language-paginated-body data-language-page-size="10">
+                            <tbody data-language-paginated-body data-language-page-size="{{ settings_language_page_size }}">
                                 {% for row in language_history_rows %}
                                 <tr data-language-row>
                                     <td>{{ loop.index }}</td>
@@ -303,6 +315,8 @@
             <p class="settings-general-copy">{{ translate_ui('Choose the date styles used across long-form and compact displays throughout the workspace.') }}</p>
         </div>
         <form class="settings-general-form settings-date-format-form" method="post" action="{{ settings_urls.general }}/action">
+            <input type="hidden" name="settings_tab" value="{{ settings_tab }}">
+            <input type="hidden" name="settings_page" value="{{ settings_page_number }}">
             <div class="field settings-date-format-field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="settings-full-date">
                 <label for="settings_full_date_format">{{ translate_ui('Full') }}</label>
                 <div class="trade-strategy-row backtest-shared-select-row">
@@ -365,6 +379,33 @@
                 </div>
             </div>
         </form>
+    </section>
+    {% elif settings_section == "investment" %}
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">{{ translate_ui('Investment accounting') }}</p>
+            <p class="settings-general-copy">{{ translate_ui('Choose how each sell is matched to the open buy inventory. Holdings, Stock details, and local realized P&L use the same method.') }}</p>
+        </div>
+        <form class="settings-general-form settings-investment-accounting-form" method="post" action="{{ settings_urls.investment }}/action">
+            <div class="field settings-date-format-field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="settings-investment-cost-basis">
+                <label for="settings_investment_cost_basis_method">{{ translate_ui('Sell matching method') }}</label>
+                <div class="trade-strategy-row backtest-shared-select-row">
+                    <select id="settings_investment_cost_basis_method" name="investment_cost_basis_method" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
+                        <option value="lowest_cost_first" data-description="{{ translate_ui('Match sells against the lowest-cost open lots first. This is the default strategy-attribution method.') }}" {% if investment_cost_basis_method == 'lowest_cost_first' %}selected{% endif %}>{{ translate_ui('Lowest-cost lots first') }}</option>
+                        <option value="fifo" data-description="{{ translate_ui('Match sells against the oldest open lots first.') }}" {% if investment_cost_basis_method == 'fifo' %}selected{% endif %}>{{ translate_ui('First in, first out (FIFO)') }}</option>
+                        <option value="lifo" data-description="{{ translate_ui('Match sells against the newest open lots first.') }}" {% if investment_cost_basis_method == 'lifo' %}selected{% endif %}>{{ translate_ui('Last in, first out (LIFO)') }}</option>
+                        <option value="moving_average" data-description="{{ translate_ui('Pool open buys into one moving average cost before each sell.') }}" {% if investment_cost_basis_method == 'moving_average' %}selected{% endif %}>{{ translate_ui('Moving average cost') }}</option>
+                    </select>
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false" aria-controls="settings_investment_cost_basis_method_dropdown">
+                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                        </button>
+                    </div>
+                    <div id="settings_investment_cost_basis_method_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" aria-label="{{ translate_ui('Sell matching method') }}" hidden></div>
+                </div>
+            </div>
+        </form>
+        <p class="settings-general-copy">{{ translate_ui('Broker-reported closed-trade P&L remains authoritative when available. Transfer-basis reconstruction remains separately labelled as FIFO reconstructed.') }}</p>
     </section>
     {% elif settings_section == "backtest" %}
     <section class="settings-card settings-general-card settings-general-panel">
@@ -448,7 +489,9 @@
     <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-note">{{ translate_ui('Run the network checks again and refresh the availability results shown below.') }}</p>
+                <p class="settings-service-name">{{ labels.network_self_check }}</p>
+                <p class="settings-service-note">{{ translate_ui('Review every fixed external dependency used by this application from the application host.') }}</p>
+                <p class="settings-service-note settings-service-meta" data-network-transport>{{ translate_ui('Checks run from the application host. HTTP(S) probes honor standard proxy variables and verified TLS; account credentials are not submitted here.') }}</p>
                 <p class="settings-service-note settings-service-meta" data-network-last-checked>{% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text }}{% else %}{{ translate_ui('Last checked:') }} {{ translate_ui('Not checked yet.') }}{% endif %}</p>
             </div>
             <div class="settings-action-package-form">
@@ -462,7 +505,7 @@
     <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
             <div class="settings-general-header">
                 <p class="settings-general-kicker">{{ labels.service_status }}</p>
-                <p class="settings-general-copy">{{ translate_ui('Review the latest connectivity and dependency availability checks for this device.') }}</p>
+                <p class="settings-general-copy">{{ translate_ui('Each row is checked independently, so a blocked provider does not prevent the remaining diagnostics from completing.') }}</p>
             </div>
             <div class="settings-service-list settings-service-list-network">
                 {% for row in settings_service_rows %}
@@ -474,7 +517,7 @@
                             {% endif %}
                             <p class="settings-service-name">{{ row.name }}</p>
                         </div>
-                        <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}{{ translate_ui('Checking whether Yahoo Finance can be reached from this device.') }}{% elif row.key == 'logo' %}{{ translate_ui('Checking whether the primary ticker logo service and its fallbacks can be reached from this device.') }}{% elif row.key == 'google-hk' %}{{ translate_ui('Checking whether Google (Hong Kong) can be reached from this device.') }}{% else %}{{ translate_ui('Checking...') }}{% endif %}">{{ row.note }}</p>
+                        <p class="settings-service-note" data-settings-service-note data-pending-note="{{ row.pending_note }}">{{ row.note }}</p>
                         <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
                     </div>
                     <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
@@ -974,6 +1017,81 @@
             <input type="hidden" name="action" value="set">
         </form>
     </section>
+    {% elif settings_section == "color-tokens" %}
+    <section class="settings-color-token-layout" data-color-token-layout>
+        <aside class="settings-color-token-sidebar" data-color-token-sidebar aria-label="{{ translate_ui('Color token groups') }}">
+            <div class="settings-color-token-sidebar-heading">
+                <p class="settings-color-token-sidebar-kicker">{{ translate_ui('Palette') }}</p>
+                <p class="settings-color-token-sidebar-note">{{ translate_ui('Tune the Light and Dark values independently. Changes stay in this browser.') }}</p>
+            </div>
+            <nav class="settings-color-token-sidebar-nav" aria-label="{{ translate_ui('Color token groups') }}">
+                {% for group in color_token_rows %}
+                <a class="settings-color-token-sidebar-link{% if loop.first %} is-active{% endif %}" href="#color-token-{{ group.id }}" data-color-token-group-link="{{ group.id }}">
+                    <span class="settings-color-token-sidebar-swatches" aria-hidden="true">
+                        <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-light" style="--color-token-sidebar-swatch: {{ group.tokens[0].light_value }};"></span>
+                        <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-dark" style="--color-token-sidebar-swatch: {{ group.tokens[0].dark_value }};"></span>
+                    </span>
+                    <span class="settings-color-token-sidebar-link-copy">
+                        <span class="settings-color-token-sidebar-link-name">{{ group.name }}</span>
+                        <span class="settings-color-token-sidebar-link-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
+                    </span>
+                </a>
+                {% endfor %}
+            </nav>
+            <button type="button" class="settings-color-token-reset-all" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
+        </aside>
+        <div class="settings-color-token-content">
+            <div class="settings-color-token-intro settings-card">
+                <p class="settings-color-token-intro-title">{{ translate_ui('Color tokens') }}</p>
+                <p class="settings-color-token-intro-copy">{{ translate_ui('Use the text field for any CSS color expression. Hex colors also expose a native color picker. The positive green group intentionally keeps separate Light and Dark values.') }}</p>
+            </div>
+            {% for group in color_token_rows %}
+            <section id="color-token-{{ group.id }}" class="settings-color-token-group settings-card" data-color-token-group="{{ group.id }}">
+                <header class="settings-color-token-group-header">
+                    <div>
+                        <p class="settings-color-token-group-title">{{ group.name }}</p>
+                        <p class="settings-color-token-group-description">{{ group.description }}</p>
+                    </div>
+                    <span class="settings-color-token-group-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
+                </header>
+                <div class="settings-color-token-list">
+                    {% for token in group.tokens %}
+                    <article class="settings-color-token-card" data-color-token-card="{{ token.name }}">
+                        <div class="settings-color-token-card-heading">
+                            <p class="settings-color-token-label">{{ token.label }}</p>
+                            <code class="settings-color-token-name">{{ token.name }}</code>
+                        </div>
+                        <div class="settings-color-token-variants">
+                            <div class="settings-color-token-variant" data-color-token-control data-color-token-name="{{ token.name }}" data-color-token-mode="light" data-color-token-default="{{ token.light_value }}">
+                                <span class="settings-color-token-mode">{{ translate_ui('Light') }}</span>
+                                <span class="settings-color-token-swatch" data-color-token-swatch style="--color-token-swatch-value: {{ token.light_value }};" aria-hidden="true"></span>
+                                <input class="settings-color-token-value" type="text" value="{{ token.light_value }}" data-color-token-value aria-label="{{ token.label }} {{ translate_ui('Light') }} {{ translate_ui('color') }}">
+                                {% if token.light_is_hex %}
+                                <input class="settings-color-token-picker" type="color" value="{{ token.light_value }}" data-color-token-picker aria-label="{{ token.label }} {{ translate_ui('Light') }} {{ translate_ui('color picker') }}">
+                                {% else %}
+                                <span class="settings-color-token-picker-spacer" aria-hidden="true"></span>
+                                {% endif %}
+                                <button type="button" class="settings-color-token-reset" data-color-token-reset>{{ translate_ui('Reset') }}</button>
+                            </div>
+                            <div class="settings-color-token-variant" data-color-token-control data-color-token-name="{{ token.name }}" data-color-token-mode="dark" data-color-token-default="{{ token.dark_value }}">
+                                <span class="settings-color-token-mode">{{ translate_ui('Dark') }}</span>
+                                <span class="settings-color-token-swatch" data-color-token-swatch style="--color-token-swatch-value: {{ token.dark_value }};" aria-hidden="true"></span>
+                                <input class="settings-color-token-value" type="text" value="{{ token.dark_value }}" data-color-token-value aria-label="{{ token.label }} {{ translate_ui('Dark') }} {{ translate_ui('color') }}">
+                                {% if token.dark_is_hex %}
+                                <input class="settings-color-token-picker" type="color" value="{{ token.dark_value }}" data-color-token-picker aria-label="{{ token.label }} {{ translate_ui('Dark') }} {{ translate_ui('color picker') }}">
+                                {% else %}
+                                <span class="settings-color-token-picker-spacer" aria-hidden="true"></span>
+                                {% endif %}
+                                <button type="button" class="settings-color-token-reset" data-color-token-reset>{{ translate_ui('Reset') }}</button>
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endfor %}
+        </div>
+    </section>
     {% elif settings_section == "style-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
             <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
@@ -1122,10 +1240,10 @@
                     <div class="style-token-portfolio-donut-shell">
                         <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
                             <div class="portfolio-donut-logo-layer">
-                                <img class="portfolio-donut-logo" src="/market-store/logos/AAPL.svg" alt="" data-ticker="AAPL" data-style-token-donut-angle="45" decoding="async">
-                                <img class="portfolio-donut-logo" src="/market-store/logos/GOOGL.svg" alt="" data-ticker="GOOGL" data-style-token-donut-angle="135" decoding="async">
-                                <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.svg" alt="" data-ticker="NVDA" data-style-token-donut-angle="225" decoding="async">
-                                <img class="portfolio-donut-logo" src="/market-store/logos/MSFT.svg" alt="" data-ticker="MSFT" data-style-token-donut-angle="315" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/AAPL.svg" alt="" data-ticker="AAPL" data-style-token-donut-angle="79.92" data-style-token-donut-segment-start="0" data-style-token-donut-segment-end="159.84" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/GOOGL.svg" alt="" data-ticker="GOOGL" data-style-token-donut-angle="205.44" data-style-token-donut-segment-start="161.04" data-style-token-donut-segment-end="249.84" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.svg" alt="" data-ticker="NVDA" data-style-token-donut-angle="286.56" data-style-token-donut-segment-start="251.04" data-style-token-donut-segment-end="322.08" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/MSFT.svg" alt="" data-ticker="MSFT" data-style-token-donut-angle="341.04" data-style-token-donut-segment-start="323.28" data-style-token-donut-segment-end="358.8" decoding="async">
                             </div>
                             <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 159.84deg, transparent 159.84deg 161.04deg, color-mix(in srgb, var(--theme-accent-primary) 72%, var(--theme-accent-secondary) 28%) 161.04deg 249.84deg, transparent 249.84deg 251.04deg, color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-accent-secondary) 72%) 251.04deg 322.08deg, transparent 322.08deg 323.28deg, var(--theme-accent-secondary) 323.28deg 358.8deg, transparent 358.8deg 360deg);"></div>
                         </div>
@@ -1139,16 +1257,54 @@
                     </div>
                     {% elif row.sample_kind == "data-table" %}
                     <div class="style-token-table-demo-shell">
-                        <div class="scrollable-data-table-shell style-token-table-demo">
-                            <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table" aria-hidden="true">
+                        <div class="scrollable-data-table-shell style-token-table-demo" data-style-token-table-filter-demo>
+                            <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table"
+                                   data-table-header
+                                   data-table-interactive-header
+                                   aria-label="{{ translate_ui('Transaction history') }}">
                                 <thead>
                                 <tr>
                                     {% for column in row.sample_table_columns %}
+                                    {% if loop.index0 == row.sample_table_filter_column_index %}
+                                    <th class="scrollable-data-table-filter-header" data-style-token-table-filter-header>
+                                        <span class="scrollable-data-table-filter-default-label" aria-hidden="true">{{ translate_ui(row.sample_table_filter_label) }}</span>
+                                        <div class="field scrollable-data-table-filter-field backtest-shared-select-field" data-style-token-table-filter-field>
+                                            <div class="trade-strategy-row backtest-shared-select-row">
+                                                <button type="button"
+                                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger scrollable-data-table-filter-trigger"
+                                                        data-style-token-table-filter-trigger
+                                                        aria-haspopup="listbox"
+                                                        aria-expanded="false"
+                                                        aria-label="{{ translate_ui(row.sample_table_filter_label) }} filter: {{ translate_ui(row.sample_table_filter_options[0]) }}">
+                                                    <span class="trade-strategy-trigger-label" data-style-token-table-filter-label>{{ translate_ui(row.sample_table_filter_options[0]) }}</span>
+                                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                                </button>
+                                                <div class="trade-strategy-dropdown backtest-shared-select-dropdown style-token-table-filter-dropdown"
+                                                     data-style-token-table-filter-dropdown
+                                                     role="listbox"
+                                                     aria-label="{{ translate_ui(row.sample_table_filter_label) }} filter"
+                                                     hidden>
+                                                    {% for option in row.sample_table_filter_options %}
+                                                    <button type="button"
+                                                            class="trade-strategy-dropdown-option{% if loop.first %} is-selected is-active{% endif %}"
+                                                            data-style-token-table-filter-option="{{ option|lower }}"
+                                                            role="option"
+                                                            aria-selected="{{ 'true' if loop.first else 'false' }}">
+                                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ translate_ui(option) }}</span></span>
+                                                    </button>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </th>
+                                    {% else %}
                                     <th>{{ column }}</th>
+                                    {% endif %}
                                     {% endfor %}
                                 </tr>
                                 <tr data-table-summary-row data-summary-scope="both">
-                                    <td colspan="3"><span class="investment-holdings-summary-copy">{{ translate_ui('4 filtered of 12 total') }}</span></td>
+                                    <td colspan="3"><span class="investment-holdings-summary-copy" data-style-token-table-filter-summary>4 filtered of 4 total</span></td>
                                     <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68">$7,089.68</span></span></td>
                                 </tr>
                                 </thead>
@@ -1157,7 +1313,7 @@
                                 <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table">
                                     <tbody>
                                     {% for sample_row in row.sample_table_rows %}
-                                    <tr>
+                                    <tr data-style-token-table-demo-row data-style-token-table-filter-value="{{ sample_row[row.sample_table_filter_column_index]|lower }}">
                                         {% for cell in sample_row %}
                                         <td data-numeric-display-cell>{{ cell }}</td>
                                         {% endfor %}
@@ -1173,7 +1329,11 @@
                         {% for allocation in row.sample_allocations %}
                         <span class="investment-holdings-summary-metric-label">{{ allocation.label }}</span>
                         <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount" data-numeric-display-value="{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}">{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}</span>
-                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value" data-numeric-display-value="{{ allocation.percent_integer }}.{{ allocation.percent_fraction }}%">{{ allocation.percent_integer }}.{{ allocation.percent_fraction }}%</span></span>
+                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value">
+                            <span class="workspace-metric-value-major">{% for glyph in allocation.percent_integer %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
+                            <span class="workspace-metric-value-minor"><span class="investment-holdings-allocation-badge-glyph">.</span>{% for glyph in allocation.percent_fraction %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
+                            <span class="workspace-metric-value-suffix"><span class="investment-holdings-allocation-badge-glyph">%</span></span>
+                        </span></span>
                         {% endfor %}
                     </div>
                     {% elif row.sample_kind == "shared-select-filter" %}

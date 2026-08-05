@@ -1,11 +1,11 @@
-/* Code version: v3.28.0 */
+/* Code version: v3.28.2 */
 .app-shell {
-	--sidebar-layout-transition-duration: 560ms;
+	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
 	--sidebar-layout-transition-delay: 0ms;
 }
 .app-shell.is-sidebar-open { --sidebar-layout-transition-delay: 40ms; }
-.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--frosted-glass-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay), opacity 420ms var(--motion-standard) var(--sidebar-layout-transition-delay), transform var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay); }
+.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--frosted-glass-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: transform, opacity; transform-origin: left center; transition: opacity var(--motion-duration-emphasized) var(--motion-standard) var(--sidebar-layout-transition-delay), transform var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay); }
 .settings-round-icon-button,
 .global-quick-action-button,
 .sidebar-toggle {
@@ -80,7 +80,7 @@
 	transform-origin: center;
 	transition:
 		opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-		transform 440ms cubic-bezier(0.16, 1, 0.3, 1),
+		transform var(--motion-duration-spatial) var(--motion-emphasized),
 		background 160ms var(--motion-standard),
 		box-shadow 160ms var(--motion-standard),
 		color 160ms var(--motion-standard);
@@ -126,8 +126,8 @@
 .icon-sidebar-left { width: 18px; height: 18px; background-color: currentColor; mask: url("/static/images/sidebar.left.svg") center/contain no-repeat; -webkit-mask: url("/static/images/sidebar.left.svg") center/contain no-repeat; }
 .app-shell.is-sidebar-collapsed { --sidebar-toggle-x: 0px; }
 .app-shell.is-sidebar-collapsed .sidebar { margin-left: -326px; opacity: 0; transform: scale(0.95); pointer-events: none; }
-.app-shell.is-sidebar-collapsed ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px) scale(0.95); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); transition-delay: 90ms; }
-.app-shell.is-sidebar-open ~ .sidebar-dock { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0) scale(1); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); transition-delay: 140ms; }
+.app-shell.is-sidebar-collapsed ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px) scale(0.95); transition: opacity var(--motion-duration-emphasized) var(--motion-standard), transform var(--motion-duration-spatial) var(--motion-emphasized); transition-delay: 90ms; }
+.app-shell.is-sidebar-open ~ .sidebar-dock { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0) scale(1); transition: opacity var(--motion-duration-emphasized) var(--motion-standard), transform var(--motion-duration-spatial) var(--motion-emphasized); transition-delay: 140ms; }
 html.sidebar-memory-collapsed .app-shell { --sidebar-toggle-x: 0px; }
 html.sidebar-memory-collapsed .app-shell .sidebar { margin-left: -326px; opacity: 0; transform: scale(0.95); pointer-events: none; }
 html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px) scale(0.95); transition-delay: 90ms; }
@@ -136,7 +136,7 @@ body.is-page-navigating .sidebar {
 	transition-duration: 360ms;
 }
 body.is-page-navigating .sidebar-dock {
-	animation: dock-navigation-settle 560ms var(--motion-inertial) both;
+	animation: dock-navigation-settle var(--motion-duration-spatial) var(--motion-inertial) both;
 }
 body.is-page-navigating .sidebar-dock::before {
 	background: color-mix(in srgb, var(--accent-fill) 18%, var(--accent-surface-muted));

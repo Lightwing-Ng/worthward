@@ -1,4 +1,4 @@
-/* Code version: v0.1.12 */
+/* Code version: v0.1.15 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -263,6 +263,7 @@
         const commonOptions = {
             responsive: true,
             maintainAspectRatio: false,
+            animation: false,
             interaction: {
                 intersect: false,
                 mode: "index",
@@ -424,7 +425,7 @@
                 hoverLine.style.top = `${frame.top}px`;
                 hoverLine.style.height = `${Math.max(0, frame.bottom - frame.top)}px`;
             }
-            hoverLine.style.left = `${hoverLinePosition.x}px`;
+            hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
             hoverLine.classList.add("is-visible");
 
             const equityValue = Number(equity[index] || 0);
@@ -509,6 +510,14 @@
             const pageSize = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
             const totalPages = Math.max(1, Math.ceil(trades.length / pageSize));
             let currentPage = 1;
+			const syncTablePageUrl = (page) => {
+				const nextPage = Math.max(1, Number(page) || 1);
+				bootstrap.workspaceTablePage = nextPage;
+				const nextUrl = new URL(window.location.href);
+				if (nextPage > 1) nextUrl.searchParams.set("page", String(nextPage));
+				else nextUrl.searchParams.delete("page");
+				window.history.replaceState(window.history.state, "", `${nextUrl.pathname}${nextUrl.search}`);
+			};
 
             const renderPage = (page, {animationState = null} = {}) => {
                 currentPage = Math.min(totalPages, Math.max(1, Number(page) || 1));
@@ -546,8 +555,11 @@
             paginationApi.bindLocalStorePagination(nav, (targetPage, {animationState}) => {
                 if (targetPage === currentPage) return;
                 renderPage(targetPage, {animationState});
+				syncTablePageUrl(currentPage);
             });
-            renderPage(1);
+            const requestedPage = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
+            renderPage(requestedPage);
+			syncTablePageUrl(currentPage);
         };
 
         attachHover(priceCanvas, priceChart);
@@ -565,8 +577,8 @@
             equityChart.data.datasets[1].borderColor = nextTheme.muted;
             priceChart.options.scales.y.ticks.color = nextTheme.muted;
             equityChart.options.scales.y.ticks.color = nextTheme.muted;
-            priceChart.update();
-            equityChart.update();
+            priceChart.update("none");
+            equityChart.update("none");
         });
 
         const markDcaChartReady = (canvas) => {

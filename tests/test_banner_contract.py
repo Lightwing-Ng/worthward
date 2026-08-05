@@ -57,3 +57,17 @@ def test_server_notice_renders_the_same_title_and_numbered_copy_structure() -> N
     assert '<p class="notice-floating-banner-copy">' in body
     assert 'Saved the latest configuration.' in body
     assert 'class="notice-floating-banner-list"><li>Saved the latest configuration.' not in body
+
+
+def test_investment_import_progress_uses_the_workspace_modal_contract() -> None:
+    base_template = (TEMPLATES_ROOT / "base.html").read_text(encoding="utf-8")
+    investment_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
+
+    assert 'id="workspace_modal_overlay"' in base_template
+    assert 'role="dialog"' in base_template
+    assert 'aria-modal="true"' in base_template
+    assert 'aria-labelledby="workspace_modal_overlay_title"' in base_template
+    assert 'aria-describedby="workspace_modal_overlay_copy"' in base_template
+    assert "title: 'Import in progress'" in investment_javascript
+    assert "showInvestmentImportProgressModal(resolvedMessage);" in investment_javascript
+    assert "if (isLoading) {" in investment_javascript

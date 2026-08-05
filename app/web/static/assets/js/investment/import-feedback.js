@@ -1,11 +1,12 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.7.1
+ * Code version: v1.8.0
  * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
+ * - Added: HSBC feedback states the authoritative transferable cash and the pending-sell display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.7.1';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.0';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -200,6 +201,20 @@ export function buildHsbcImportFeedbackMessage({
     if (pendingExecutionCount > 0) {
         items.push(
             `<strong>${pendingExecutionCount.toLocaleString('en-US')}</strong> newer executed ${pendingExecutionCount === 1 ? 'order remains' : 'orders remain'} provisional until its matching USD Savings settlement appears in a later paste.`,
+        );
+    }
+    const pendingSettlementCash = Number(summary.hsbc_pending_settlement_cash);
+    const brokerCashEstimate = Number(summary.hsbc_broker_cash_estimate);
+    if (Number.isFinite(pendingSettlementCash) && Number.isFinite(brokerCashEstimate)) {
+        const bankAvailableCash = brokerCashEstimate - pendingSettlementCash;
+        items.push(
+            `HSBC transferable cash remains <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>; the transaction table may show <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> after adding <strong>$${pendingSettlementCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> of positive unsettled sell proceeds.`,
+        );
+    }
+    const holdingsMismatchCount = Number(summary.holdings_validation?.mismatch_count);
+    if (Number.isFinite(holdingsMismatchCount) && holdingsMismatchCount > 0) {
+        items.push(
+            `The visible Order Status history does not independently replay to the current Portfolio snapshot. Pending-order rows use current HSBC Portfolio market value and a cash projection, rather than presenting incomplete replay as a historical balance.`,
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();

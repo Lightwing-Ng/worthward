@@ -1,7 +1,12 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.8.3
+ * Code version: v0.10.3
+ * - Changed: Stock-details hover guides reuse the shared soft muted gray token.
+ * - Refactored: Average-cost chart aggregation now reuses the shared scoped-position aggregation contract from data-utils.
+ * - Fixed: Average-cost chart points now replay each broker/account/currency lot scope before aggregating the visible position, so cross-account sells cannot consume unrelated lots.
+ * - Changed: Average-cost aggregation returns no curve for a ticker whose visible lots use multiple currencies rather than summing raw currency units.
+ * - Refactored: Stock-details rows, broker metrics, and average-cost charts now use the shared transaction applier for trades, grants, and transfers.
  * - Changed: Stock-details exact-price hover badges now reuse the Holdings allocation badge corner radius while preserving their existing blue fill and alignment.
  * - Fixed: Stock-details hover guides span the complete chart area instead of stopping at the average-cost curve.
  * - Fixed: Daily stock-details replay carries weekend and market-holiday position changes to the next visible market close.
@@ -32,7 +37,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.8.4';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.80.0';
+
+const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
+
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.10.3';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -160,11 +169,15 @@ export function getInvestmentTradeSessionType(value, parseDateParts) {
     return 'night';
 }
 
+export {
+    aggregateInvestmentScopedPositionStates as aggregateInvestmentStockDetailPositionStates,
+};
+
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
     INVESTMENT_SURFACE_LAYOUT_SETTLE_MS,
     adjustTradePriceForRenderedSeries,
-    applyDirectionalTrade,
+    applyInvestmentTransactionToState,
     buildInvestmentFxRateTimeline,
     buildInvestmentAxisTickIndexes,
     buildInvestmentIntradayDayBoundaries,
@@ -261,26 +274,21 @@ export function createInvestmentStockDetailsUtils({
             const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const transactionPrice = getTransactionPrice(txn);
             let realizedPnl = null;
-            if (normalizedType === 'buy' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                applyDirectionalTrade(stockState, 'long', valuationQuantity, getTransactionEffectiveUnitPrice(txn, valuationQuantity));
-            } else if (normalizedType === 'grant' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                stockState.shares += valuationQuantity;
-            } else if (normalizedType === 'dividend_reinvestment' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                stockState.shares += valuationQuantity;
-            } else if (normalizedType === 'sell' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                const computedRealizedPnl = applyDirectionalTrade(
-                    stockState,
-                    'short',
-                    valuationQuantity,
-                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
-                );
+            const computedRealizedPnl = applyInvestmentTransactionToState(
+                stockState,
+                txn,
+                normalizedType,
+                valuationQuantity,
+                getTransactionAmount(txn),
+                normalizeLedgerDate(txn?.date),
+                {
+                    unitPriceOverride: getTransactionEffectiveUnitPrice(txn, valuationQuantity),
+                },
+            );
+            if (normalizedType === 'sell') {
                 realizedPnl = getTransactionBrokerRealizedPnl(txn) ?? computedRealizedPnl;
-            } else if (normalizedType === 'transfer_in' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                stockState.shares += valuationQuantity;
-            } else if (normalizedType === 'transfer_out' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                stockState.shares -= valuationQuantity;
             } else if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
-                realizedPnl = getTransactionAmount(txn);
+                realizedPnl = computedRealizedPnl;
             }
             if (shouldTrackHoldingTicker(txn) && Number.isFinite(transactionPrice) && transactionPrice > 0) {
                 lastKnownTickerPrice = transactionPrice;
@@ -439,41 +447,18 @@ export function createInvestmentStockDetailsUtils({
                 );
             }
             metric.totalCommission += Math.abs(getTransactionCommission(txn));
-            if (normalizedType === 'buy' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                applyDirectionalTrade(
-                    metric.positionState,
-                    'long',
-                    valuationQuantity,
-                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
-                );
-                metric.totalTrades += 1;
-                return;
-            }
-            if (normalizedType === 'transfer_in' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                metric.positionState.shares += valuationQuantity;
-                return;
-            }
-            if (normalizedType === 'grant' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                metric.positionState.shares += valuationQuantity;
-                return;
-            }
-            if (normalizedType === 'dividend_reinvestment' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                metric.positionState.shares += valuationQuantity;
-                return;
-            }
-            if (normalizedType === 'sell' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                applyDirectionalTrade(
-                    metric.positionState,
-                    'short',
-                    valuationQuantity,
-                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
-                );
-                metric.totalTrades += 1;
-                return;
-            }
-            if (normalizedType === 'transfer_out' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                metric.positionState.shares -= valuationQuantity;
-            }
+            applyInvestmentTransactionToState(
+                metric.positionState,
+                txn,
+                normalizedType,
+                valuationQuantity,
+                getTransactionAmount(txn),
+                normalizeLedgerDate(txn?.date),
+                {
+                    unitPriceOverride: getTransactionEffectiveUnitPrice(txn, valuationQuantity),
+                },
+            );
+            if (['buy', 'sell'].includes(normalizedType)) metric.totalTrades += 1;
         });
 
         return Array.from(brokerMetrics.values()).map((metric) => {
@@ -854,11 +839,25 @@ export function createInvestmentStockDetailsUtils({
         const investmentPointByDate = new Map((Array.isArray(getInvestmentChartPointsCache()) ? getInvestmentChartPointsCache() : [])
             .map((point) => [normalizeLedgerDate(point?.date), point])
             .filter(([date]) => Boolean(date)));
-        const stockState = createPositionState(normalizedTicker);
-        const renderedStockState = createPositionState(normalizedTicker);
+        const stockStates = new Map();
+        const renderedStockStates = new Map();
+        const getStockDetailScopeKey = (txn) => (
+            getTransactionLotScopeKey(txn, normalizedTicker)
+            || `ticker:${normalizedTicker}`
+        );
+        const getOrCreateStockState = (states, scopeKey) => {
+            if (!states.has(scopeKey)) states.set(scopeKey, createPositionState(normalizedTicker));
+            return states.get(scopeKey);
+        };
         const averagePriceSeries = [];
         const applyStockDetailsTransactionToStates = (txn, renderIndex = null) => {
             const normalizedType = getNormalizedTransactionType(txn);
+            const scopeKey = getStockDetailScopeKey(txn);
+            const stockState = getOrCreateStockState(stockStates, scopeKey);
+            const renderedStockState = getOrCreateStockState(renderedStockStates, scopeKey);
+            const lotScope = getTransactionLotScope(txn, normalizedTicker);
+            stockState.lotScope = lotScope;
+            renderedStockState.lotScope = lotScope;
             const quantity = Number(getTransactionValuationQuantity(
                 txn,
                 tickerPriceIndex,
@@ -868,45 +867,33 @@ export function createInvestmentStockDetailsUtils({
             const renderedEffectiveUnitPrice = Number.isInteger(renderIndex)
                 ? resolveTradeMarkerPrice(renderIndex, effectiveUnitPrice)
                 : effectiveUnitPrice;
+            applyInvestmentTransactionToState(
+                stockState,
+                txn,
+                normalizedType,
+                quantity,
+                getTransactionAmount(txn),
+                normalizeLedgerDate(txn?.date),
+                {unitPriceOverride: effectiveUnitPrice},
+            );
+            applyInvestmentTransactionToState(
+                renderedStockState,
+                txn,
+                normalizedType,
+                quantity,
+                getTransactionAmount(txn),
+                normalizeLedgerDate(txn?.date),
+                {
+                    unitPriceOverride: Number.isFinite(renderedEffectiveUnitPrice)
+                        ? renderedEffectiveUnitPrice
+                        : effectiveUnitPrice,
+                },
+            );
             if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
-                applyDirectionalTrade(stockState, 'long', quantity, effectiveUnitPrice);
-                applyDirectionalTrade(
-                    renderedStockState,
-                    'long',
-                    quantity,
-                    Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
-                );
                 return { buyQuantity: quantity, sellQuantity: 0 };
             }
-            if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
-                stockState.shares += quantity;
-                renderedStockState.shares += quantity;
-                return { buyQuantity: 0, sellQuantity: 0 };
-            }
-            if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
-                stockState.shares += quantity;
-                renderedStockState.shares += quantity;
-                return { buyQuantity: 0, sellQuantity: 0 };
-            }
-            if (normalizedType === 'transfer_in' && Number.isFinite(quantity) && quantity > 0) {
-                stockState.shares += quantity;
-                renderedStockState.shares += quantity;
-                return { buyQuantity: 0, sellQuantity: 0 };
-            }
             if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
-                applyDirectionalTrade(stockState, 'short', quantity, effectiveUnitPrice);
-                applyDirectionalTrade(
-                    renderedStockState,
-                    'short',
-                    quantity,
-                    Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
-                );
                 return { buyQuantity: 0, sellQuantity: quantity };
-            }
-            if (normalizedType === 'transfer_out' && Number.isFinite(quantity) && quantity > 0) {
-                stockState.shares -= quantity;
-                renderedStockState.shares -= quantity;
-                return { buyQuantity: 0, sellQuantity: 0 };
             }
             return { buyQuantity: 0, sellQuantity: 0 };
         };
@@ -927,15 +914,28 @@ export function createInvestmentStockDetailsUtils({
                 .map((txn) => Number(txn?.ledger_no))
                 .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 .sort((left, right) => right - left);
-            const averagePrice = !isFlatPosition(renderedStockState.shares)
-                ? renderedStockState.totalCost / Math.abs(renderedStockState.shares)
-                : null;
+            const aggregateState = aggregateInvestmentStockDetailPositionStates(
+                stockStates,
+                normalizedTicker,
+                getTickerQuoteCurrency,
+            );
+            const renderedAggregateState = aggregateInvestmentStockDetailPositionStates(
+                renderedStockStates,
+                normalizedTicker,
+                getTickerQuoteCurrency,
+            );
             const close = Number(closeValues[index]);
-            averagePriceSeries.push(Number.isFinite(averagePrice) ? averagePrice : null);
+            averagePriceSeries.push(
+                Number.isFinite(renderedAggregateState.averagePrice)
+                    ? renderedAggregateState.averagePrice
+                    : null,
+            );
             stockSnapshotsByDate.set(String(label), {
-                shares: Number.isFinite(stockState.shares) ? stockState.shares : 0,
+                shares: Number.isFinite(aggregateState.shares) ? aggregateState.shares : 0,
                 close: Number.isFinite(close) ? close : null,
-                averagePrice: Number.isFinite(averagePrice) ? averagePrice : null,
+                averagePrice: Number.isFinite(renderedAggregateState.averagePrice)
+                    ? renderedAggregateState.averagePrice
+                    : null,
                 buyQuantity,
                 sellQuantity,
                 buySellLedgerNos,
@@ -1214,7 +1214,7 @@ export function createInvestmentStockDetailsUtils({
                 const { left, right } = chartArea;
                 chartInstance._activeInvestmentStockDetailsGuideBounds = { left, right, y };
                 ctx.save();
-                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.strokeStyle = resolvedTheme.mutedSoft;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(left, y);
@@ -1228,7 +1228,7 @@ export function createInvestmentStockDetailsUtils({
                 const x = tooltip.caretX;
                 if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
                 ctx.save();
-                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.strokeStyle = resolvedTheme.mutedSoft;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(x, chartArea.top);
@@ -1659,9 +1659,7 @@ export function createInvestmentStockDetailsUtils({
                     },
                 },
                 interaction: { mode: 'index', intersect: false },
-                animation: {
-                    onComplete: notifyChartReady,
-                },
+                animation: false,
                 plugins: {
                     legend: { display: false },
                     tooltip: { enabled: false, external: externalTooltipHandler },
@@ -1708,7 +1706,18 @@ export function createInvestmentStockDetailsUtils({
             yScale.max = nextYScale.max;
             chartInstance.update('none');
         };
-        window.requestAnimationFrame(() => window.requestAnimationFrame(notifyChartReady));
+        const readyScheduler = window.AntigravityMotion?.scheduler;
+        if (readyScheduler?.frame) {
+            let readyFrameCount = 0;
+            readyScheduler.frame(`investment-stock-details-chart-ready-${renderRequestId}`, () => {
+                readyFrameCount += 1;
+                if (readyFrameCount < 2) return true;
+                notifyChartReady();
+                return false;
+            });
+        } else {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(notifyChartReady));
+        }
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
         const TRADE_MARKER_SNAP_VERTICAL_PX = 20;

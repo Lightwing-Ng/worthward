@@ -1,6 +1,135 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.42`
+Documentation version: `v1.11.70`
+
+- Changed: The fixed Holdings summary no longer shows a realtime `Today's net
+  P&L` badge beside `Cumulative P&L`. The cumulative value remains the
+  cumulative realized-plus-unrealized calculation; daily badges on the other
+  Holdings surfaces are unchanged.
+
+- Fixed: Realtime Holdings quote updates now refresh both fixed and scrollable
+  row layers, avoiding stale duplicate rows after a quote poll.
+
+- Fixed: All-brokers Cash, Cash equivalents, and Total equity now retain the
+  actual aggregate broker cash balance. Internal-transfer bridge adjustments
+  remain available for excluding those rows from external funding attribution,
+  but can no longer make current cash or equity disappear.
+
+- Refined: Holdings summary and Settings Investment Holdings allocation badges
+  now use narrower code-style glyph slots while preserving right-edge and
+  decimal alignment. Last price and Unrealized P&L badges are unchanged.
+
+- Changed: Holdings now suppresses zero daily-change badges only in the
+  Realized P&L column, while retaining the gray `0.00` main value. Last price
+  and Unrealized P&L keep their existing zero-change badges.
+
+- Fixed: HSBC pending-sell cash and equity projections now use authoritative
+  transferable cash plus the source-bounded cumulative unsettled sell
+  proceeds. Replay drift cannot create unsupported cash during the settlement
+  window, and the row note states that unknown fees and settlement adjustments
+  are excluded.
+
+- Fixed: HSBC pending-sell transaction rows now reverse-replay virtual
+  post-trade holdings and value them with the day's intraday close before
+  calculating Market value and Equity.
+
+- Fixed: Holdings live Total equity now recalculates from aggregate cash and the
+  same live market-value snapshot displayed in the table, preventing a stale
+  chart-point equity from disagreeing with the visible market value.
+
+- Fixed: An unknown carried-basis `transfer_in` now appends a zero-cost lot
+  without erasing existing tax-lot identities, preserving the configured sell
+  matching method for subsequent disposals while keeping basis status unknown.
+
+- Fixed: Holdings and Stock details now consume the same
+  `aggregateInvestmentScopedPositionStates` helper after replaying
+  broker/account/ticker/currency scopes independently.
+
+- Changed: A mixed-currency ticker still keeps combined cost, market value,
+  unrealized P&L, and total P&L unavailable, while retaining each independently
+  converted account-level realized P&L result for auditability.
+
+- Fixed: A missing market value no longer renders as a `0%` portfolio weight.
+  The weight remains unavailable until both market value and total equity are
+  numeric.
+
+- Fixed: HSBC pending-sell rows no longer inherit incomplete order-replay drift
+  as a cash loss. Mixed-broker payloads retain the account-level Portfolio
+  snapshot, while the table distinguishes authoritative transferable cash from
+  positive unsettled sell proceeds and labels the resulting balance as a current
+  snapshot projection.
+
+- Fixed: Holdings and Stock details now replay broker/account/currency lot scopes
+  before ticker aggregation, preventing cross-account sells from consuming
+  unrelated lots and preventing the average-cost chart from showing a different
+  cost basis than Holdings.
+
+- Changed: Same-ticker positions with multiple currencies now fail closed for
+  combined cost basis, market value, average price, and P&L instead of summing
+  incompatible raw currency units. Authoritative Longbridge HK/SG broker
+  performance snapshots remain unchanged for realized P&L. Unknown carried
+  basis on `transfer_in` is documented as an explicit reconstruction limitation.
+
+- Fixed: Manual internal-transfer bridge amounts now convert HKD, CNH, and
+  other source currencies into the workspace base currency before adjusting
+  All brokers equity, preventing a raw HKD amount from rendering as USD.
+
+- Fixed: IBKR `Realized Summary` foreign-currency cash flows now reach the
+  internal-transfer candidate menu as exact native `CNH`/`HKD` records after
+  their base-currency `Transaction History` equivalents are safely replaced.
+  June 2026 BOCHK/HSBC funding legs remain available for manual binding, with
+  no automatic counterpart selection.
+
+- Fixed: Futu (HK) `TRANSFER FROM HK STOCKS ACCOUNT` rows now preserve Futu
+  subaccount cash while removing the internal movement from All brokers equity,
+  the daily transfer series, and funding metrics.
+
+- Fixed: Negative Longbridge (HK) cash reversals, including the 17 Apr 2024
+  returned-cheque record, no longer appear as internal-transfer deposit sources.
+
+- Fixed: The 31 Mar 2023 Longbridge (HK) `1,632.14 USD` deposit can bind to
+  the 30 Mar 2023 BOCHK `1,633.44 USD` withdrawal, with the `1.30 USD`
+  difference shown as a transfer fee.
+
+- Fixed: The July 2025 Longbridge (HK) `4.94 USD` deposit can be bound to
+  the matching BOCHK withdrawal after an earlier `4.93 USD` HSBC-to-BOCHK
+  leg. Binding failures now also surface the server's actionable error text.
+
+- Changed: Unresolved internal-transfer binding selects now use the standard
+  control border instead of a magenta emphasis border, and their surrounding
+  binding shells no longer draw a magenta frame. The existing unresolved alert
+  affordance remains available for review.
+
+- Fixed: A BOCHK deposit can now bind to a matching Longbridge (HK)
+  withdrawal, while HSBC-to-BOCHK bindings remain available for the same
+  receiving-bank ledger.
+
+- Fixed: A Longbridge (HK) cash deposit can now bind to a matching BOCHK
+  withdrawal when BOCHK is the intermediate bank in a multi-bank funding chain.
+
+- Changed: The standard scrollable-table filter header contract now lives in the
+  shared table component stylesheet. Settings → Style tokens → Scrollable data
+  table now demonstrates the Type-to-All hover disclosure, dropdown selection,
+  and filtered-row update used by Investment History.
+
+- Fixed: The `+` import panel's Broker dropdown now uses the single semantic
+  frosted-glass surface with stable coverage and a page-level overlay, so HSBC,
+  Charles Schwab, and IBKR options remain legible without inheriting the import
+  form's `transform` or `overflow` composition context.
+
+- Changed: BOCHK binding options now show the source subaccount type and short
+  number, so HKD Current and HKD Savings are distinguishable. Printed CNY/RMB
+  in BOCHK statements is displayed and stored as canonical CNH while the raw
+  statement marker remains available as provenance.
+
+- Changed: Transaction History `Type`, `Description`, and `Currency` compact
+  filters now share the Type header's hover disclosure motion, inherited
+  typography, and centered `All` alignment. Future compact column filters must
+  use the same shared header classes and visual contract.
+
+- Added: Internal-transfer candidate dropdowns now offer `Incorrectly identified, ignore`.
+  The choice is durable and reversible, removes only the false-positive binding review,
+  and leaves ledger cash, KOL classification, and aggregate replay unchanged.
 
 - Fixed: Date-only HSBC order-status trades no longer disappear from the 1W
   intraday chart when the importer uses `20:00:00` solely as an ordering
@@ -85,7 +214,8 @@ architectural boundary summary so code navigation begins at the imports.
   displays an error banner.
 
 - Added: Bank of China (Hong Kong) now has a multi-file Consolidated Statement PDF
-  input. The import help explains that HKD, CNY, and USD subaccounts remain
+  input. The import help explains that HKD Savings, HKD Current, CNH (printed
+  CNY/RMB), and USD subaccounts remain
   separate, while the server accepts incremental batches and exact re-uploads
   idempotently. Non-zero securities cash activity is rejected by the cash-only
   adapter.

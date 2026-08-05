@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.5.3
+Code version: v1.6.2
 """
 
 from __future__ import annotations
@@ -275,6 +275,9 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "sample_table_columns": ["No.", "Time", "Type", "Description", "Amount"],
+            "sample_table_filter_label": "Type",
+            "sample_table_filter_column_index": 2,
+            "sample_table_filter_options": ["All", "Buy", "Sell"],
             "sample_table_rows": [
                 ["12", "2 Apr 2026", "Buy", "NVDA @ 123.45 x 10", "$1,234.50"],
                 ["11", "1 Apr 2026", "Deposit", "--", "$5,000.00"],
@@ -335,9 +338,24 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                     "percent_integer": "99",
                     "percent_fraction": "00",
                 },
+                {
+                    "label": "1.11%",
+                    "amount_integer": "1",
+                    "amount_fraction": "11",
+                    "percent_integer": "1",
+                    "percent_fraction": "11",
+                },
+                {
+                    "label": "8.88%",
+                    "amount_integer": "8",
+                    "amount_fraction": "88",
+                    "percent_integer": "8",
+                    "percent_fraction": "88",
+                },
             ],
             "tokens": [
                 px_token("--investment-holdings-allocation-badge-inline-size", 52, 1),
+                raw_token("--investment-holdings-allocation-badge-glyph-width", "0.625em"),
                 px_token("--investment-holdings-allocation-badge-padding-block", 2, 0),
                 px_token("--investment-holdings-allocation-badge-padding-inline", 6, 0),
                 px_token("--investment-holdings-allocation-badge-radius", 2, 0),
@@ -530,7 +548,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                 raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                 raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-shadow)"),
                 raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-blur)"),
-                raw_token("--local-store-pagination-motion-duration", "500ms"),
+                raw_token("--local-store-pagination-motion-duration", "var(--motion-duration-spatial)"),
                 raw_token("--local-store-pagination-motion-easing", "var(--motion-bouncy)"),
             ],
             "related_styles": [],
@@ -549,10 +567,11 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                 {"label": "Close price", "value": "44.38", "color": "var(--accent-fill)"},
                 {"label": "Net return", "value": "3.34%", "color": "var(--theme-accent-positive)"},
                 {"label": "Equity", "value": "10,333.71", "color": "var(--theme-text)"},
-                {"label": "If all in", "value": "9,840.88", "color": "var(--theme-muted)"},
+                {"label": "If all in", "value": "9,840.88", "color": "var(--theme-muted-soft)"},
                 {"label": "vs all in", "value": "+492.83", "color": "var(--theme-accent-positive)"},
             ],
             "tokens": [
+                raw_token("--theme-muted-soft", "color-mix(in srgb, var(--theme-muted) 72%, var(--theme-background))"),
                 material_reference_token("--tooltip-background", "Frosted glass"),
                 material_reference_token("--tooltip-border", "Frosted glass"),
                 material_reference_token("--tooltip-shadow", "Frosted glass"),
@@ -701,6 +720,96 @@ def build_export_image_rows(project_display_url: str) -> list[dict[str, object]]
             ],
         },
     ]
+
+def build_color_token_rows(
+    theme_light: Mapping[str, object],
+    theme_dark: Mapping[str, object],
+) -> list[dict[str, object]]:
+    def color_token_id(name: str) -> str:
+        return name.strip().lower().replace(" ", "-")
+
+    def is_hex_color(value: object) -> bool:
+        return bool(re.fullmatch(r"#[0-9a-fA-F]{6}", str(value or "").strip()))
+
+    def color_token(
+        css_name: str,
+        label: str,
+        config_key: str,
+    ) -> dict[str, object]:
+        light_value = str(theme_light.get(config_key, "")).strip()
+        dark_value = str(theme_dark.get(config_key, "")).strip()
+        return {
+            "name": css_name,
+            "label": label,
+            "light_value": light_value,
+            "dark_value": dark_value,
+            "light_is_hex": is_hex_color(light_value),
+            "dark_is_hex": is_hex_color(dark_value),
+        }
+
+    def group(
+        name: str,
+        description: str,
+        tokens: list[dict[str, object]],
+    ) -> dict[str, object]:
+        return {
+            "id": color_token_id(name),
+            "name": name,
+            "description": description,
+            "tokens": tokens,
+        }
+
+    return [
+        group(
+            "Surfaces and text",
+            "The base canvas, panels, readable text, and adaptive white used by both appearances.",
+            [
+                color_token("--theme-background", "Background", "background"),
+                color_token("--theme-panel", "Panel", "panel"),
+                color_token("--theme-panel-strong", "Strong panel", "panel_strong"),
+                color_token("--theme-text", "Text", "text"),
+                color_token("--theme-muted", "Muted text", "muted"),
+                color_token("--theme-color-white-adaptive", "Adaptive white", "color_white_adaptive"),
+            ],
+        ),
+        group(
+            "Accent colors",
+            "The primary and secondary brand colors used by controls, charts, links, and emphasis.",
+            [
+                color_token("--theme-accent-primary", "Primary blue", "accent_primary"),
+                color_token("--theme-accent-secondary", "Secondary magenta", "accent_secondary"),
+            ],
+        ),
+        group(
+            "Positive green",
+            "Positive values, success states, live markers, and cash-equivalent highlights. Light and Dark intentionally use different green tokens.",
+            [
+                color_token("--theme-accent-positive", "Positive accent", "accent_positive"),
+                color_token("--theme-success", "Success", "success"),
+                color_token("--theme-success-strong", "Strong success", "success_strong"),
+            ],
+        ),
+        group(
+            "Feedback colors",
+            "Error, warning, and supporting text colors for validation and operational feedback.",
+            [
+                color_token("--theme-error", "Error", "error"),
+                color_token("--theme-error-strong", "Strong error", "error_strong"),
+                color_token("--theme-warning", "Warning", "warning"),
+                color_token("--theme-warning-text", "Warning text", "warning_text"),
+            ],
+        ),
+        group(
+            "Translucent colors",
+            "Alpha-bearing values for feedback surfaces and glass highlights. Edit the CSS color expression directly when needed.",
+            [
+                color_token("--theme-error-translucent", "Translucent error", "error_translucent"),
+                color_token("--theme-warning-translucent", "Translucent warning", "warning_translucent"),
+                color_token("--theme-glass-highlight", "Glass highlight", "glass_highlight"),
+            ],
+        ),
+    ]
+
 
 def build_font_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
     def font_token_id(name: str) -> str:

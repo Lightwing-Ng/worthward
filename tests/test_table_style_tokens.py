@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.2."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.3."""
 
 from __future__ import annotations
 
@@ -72,10 +72,32 @@ def test_style_tokens_expose_the_investment_holdings_allocation_badge_contract()
     assert 'data-style-token-card="investment-holdings-allocation-badge"' in html
     assert "style-token-holdings-allocation-badge-demo" in html
     assert "--investment-holdings-allocation-badge-inline-size" in html
+    assert "--investment-holdings-allocation-badge-glyph-width" in html
     assert "--investment-holdings-allocation-badge-radius" in html
     assert "--investment-holdings-allocation-badge-background-positive" in html
     assert "--investment-holdings-allocation-badge-background-negative" in html
     assert "--investment-holdings-allocation-badge-color" in html
+    assert "--theme-muted-soft" in html
+    assert "1.11%" in html
+    assert "8.88%" in html
+
+
+def test_color_tokens_settings_expose_paired_light_dark_rows_and_local_override_script() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/color-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'data-color-token-layout' in html
+    assert 'data-color-token-group="positive-green"' in html
+    assert 'data-color-token-name="--theme-accent-positive" data-color-token-mode="light"' in html
+    assert 'data-color-token-name="--theme-accent-positive" data-color-token-mode="dark"' in html
+    assert 'data-color-token-name="--theme-success"' in html
+    assert 'value="#16a34a"' in html
+    assert 'value="#2fff9c"' in html
+    assert 'assets/js/color-tokens.js' in html
+    assert 'href="/settings/color-tokens"' in html
 
 
 def test_holdings_allocation_badge_uses_the_active_theme_background_for_text() -> None:
@@ -91,6 +113,33 @@ def test_holdings_allocation_badge_uses_the_active_theme_background_for_text() -
     assert "color: var(--investment-holdings-allocation-badge-color);" not in badge_rule
 
 
+def test_neutral_holdings_badge_and_investment_hover_guides_share_soft_muted_gray() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    investment_js = (
+        project_root / "app/web/static/assets/js/investment.js"
+    ).read_text(encoding="utf-8")
+    stock_details_js = (
+        project_root / "app/web/static/assets/js/investment/stock-details.js"
+    ).read_text(encoding="utf-8")
+
+    assert "--theme-muted-soft: color-mix(in srgb, var(--theme-muted) 72%, var(--theme-background));" in tokens_css
+    neutral_rule = investment_css.split(
+        ".investment-holdings-daily-pnl-badge.investment-holdings-daily-pnl-badge-neutral {",
+        maxsplit=1,
+    )[1].split("}", maxsplit=1)[0]
+    assert "background: var(--theme-muted-soft);" in neutral_rule
+    assert "color: var(--theme-text);" in neutral_rule
+    assert "mutedSoft: computed.getPropertyValue(\"--theme-muted-soft\").trim()" in investment_js
+    assert "ctx.strokeStyle = resolvedTheme.mutedSoft;" in investment_js
+    assert "ctx.strokeStyle = resolvedTheme.mutedSoft;" in stock_details_js
+
+
 def test_style_tokens_portfolio_orbit_uses_four_distinct_mega_cap_logos() -> None:
     client = create_app().test_client()
 
@@ -101,6 +150,39 @@ def test_style_tokens_portfolio_orbit_uses_four_distinct_mega_cap_logos() -> Non
     for ticker in ("AAPL", "GOOGL", "NVDA", "MSFT"):
         assert f'data-ticker="{ticker}"' in html
         assert f'src="/market-store/logos/{ticker}.svg"' in html
+
+
+def test_style_tokens_portfolio_orbit_centers_logos_on_their_segments() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    for ticker, start, end, midpoint in (
+        ("AAPL", "0", "159.84", "79.92"),
+        ("GOOGL", "161.04", "249.84", "205.44"),
+        ("NVDA", "251.04", "322.08", "286.56"),
+        ("MSFT", "323.28", "358.8", "341.04"),
+    ):
+        logo = f'data-ticker="{ticker}"'
+        assert f'{logo} data-style-token-donut-angle="{midpoint}"' in html
+        assert f'{logo} data-style-token-donut-angle="{midpoint}" data-style-token-donut-segment-start="{start}" data-style-token-donut-segment-end="{end}"' in html
+
+
+def test_style_tokens_modal_title_uses_shared_bold_weight() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    trade_css = (
+        project_root / "app/web/static/assets/css/views/trade.css"
+    ).read_text(encoding="utf-8")
+
+    modal_title_rule = trade_css.split(
+        ".style-token-modal-demo .workspace-modal-title {",
+        maxsplit=1,
+    )[1].split("}", maxsplit=1)[0]
+
+    assert "font-weight: var(--font-weight-bold);" in modal_title_rule
+    assert "font-weight: var(--font-weight-regular);" not in modal_title_rule
 
 
 def test_investment_equity_range_uses_the_compact_segmented_control_contract() -> None:
@@ -225,3 +307,50 @@ def test_investment_type_filter_uses_progressive_disclosure() -> None:
     assert "position: absolute;" in side_filter_rule
     assert ".investment-history-side-filter-header:hover .investment-side-filter-field" in investment_css
     assert ".investment-history-side-filter-header:focus-within .investment-side-filter-field" in investment_css
+
+
+def test_investment_compact_filters_share_the_type_hover_contract() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tables_css = (
+        project_root / "app/web/static/assets/css/components/tables.css"
+    ).read_text(encoding="utf-8")
+    investment_js = (
+        project_root / "app/web/static/assets/js/investment.js"
+    ).read_text(encoding="utf-8")
+
+    assert "scrollable-data-table-filter-header" in investment_js
+    assert "scrollable-data-table-filter-default-label" in investment_js
+    assert "scrollable-data-table-filter-field" in investment_js
+    assert "scrollable-data-table-filter-trigger" in investment_js
+    assert ".scrollable-data-table-filter-header:hover .scrollable-data-table-filter-field" in tables_css
+    assert ".scrollable-data-table-filter-header:focus-within .scrollable-data-table-filter-field" in tables_css
+    assert ".scrollable-data-table-filter-header:hover .scrollable-data-table-filter-default-label" in tables_css
+    assert ".scrollable-data-table-filter-trigger" in tables_css
+    assert "font: inherit;" in tables_css.split(
+        ".scrollable-data-table-filter-trigger {",
+        1,
+    )[1].split("}", 1)[0]
+    assert ".scrollable-data-table-filter-trigger .trade-strategy-trigger-label" in tables_css
+    assert "justify-content: center;" in tables_css.split(
+        ".scrollable-data-table-filter-trigger .trade-strategy-trigger-label {",
+        1,
+    )[1].split("}", 1)[0]
+    assert "font-size: var(--font-tooltip);" not in tables_css.split(
+        ".scrollable-data-table-filter-trigger {",
+        1,
+    )[1].split("}", 1)[0]
+
+
+def test_style_tokens_render_the_interactive_standard_table_filter_demo() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'data-style-token-card="scrollable-data-table"' in html
+    assert 'data-style-token-table-filter-demo' in html
+    assert 'data-table-interactive-header' in html
+    assert 'data-style-token-table-filter-trigger' in html
+    assert 'data-style-token-table-filter-option="buy"' in html
+    assert 'data-style-token-table-filter-summary' in html

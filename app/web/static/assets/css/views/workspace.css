@@ -1,4 +1,4 @@
-/* Code version: v1.15.4 */
+/* Code version: v1.15.6 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
@@ -187,7 +187,7 @@
         padding-bottom: 0;
         display: flex;
         align-items: flex-start;
-        transition: padding-left var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay);
+        transition: none;
     }
 
     .workspace > .workspace-header:first-child > .workspace-summary-card:first-child > .report-heading-row,
@@ -239,21 +239,15 @@
         -webkit-backdrop-filter: var(--workspace-article-blur);
         overflow: visible;
         transform-origin: top left;
-        will-change: transform, opacity, border-radius, background, box-shadow;
+        will-change: transform, opacity;
         box-shadow: var(--workspace-article-mobile-shadow);
-        transition:
-            transform 620ms var(--workspace-article-sidebar-morph-easing),
-            opacity 420ms var(--motion-standard),
-            border-radius 620ms var(--workspace-article-sidebar-morph-easing),
-            background 220ms var(--motion-standard),
-            box-shadow 220ms var(--motion-standard),
-            border-color 220ms var(--motion-standard);
+        transition: transform var(--workspace-article-sidebar-morph-duration) var(--workspace-article-sidebar-morph-easing), opacity var(--motion-duration-emphasized) var(--motion-standard);
     }
 
     .workspace-mobile-summary-shell > .workspace-summary-card .report-heading-row {
         transition:
             opacity 180ms var(--motion-standard),
-            transform 560ms var(--motion-emphasized);
+            transform var(--motion-duration-spatial) var(--motion-emphasized);
     }
 
     .workspace-mobile-summary-shell > .workspace-summary-card + .workspace-content-card {
@@ -418,6 +412,8 @@
 }
 
 .portfolio-donut-logo {
+    --investment-donut-orbit-x: 0px;
+    --investment-donut-orbit-y: 0px;
     position: absolute;
     top: 50%;
     left: 50%;
@@ -425,13 +421,10 @@
     height: var(--portfolio-donut-logo-size, 20px);
     object-fit: contain;
     object-position: center;
-    transform: translate(-50%, -50%);
+    transform: translate3d(-50%, -50%, 0) translate3d(var(--investment-donut-orbit-x), var(--investment-donut-orbit-y), 0);
     opacity: 1;
-    transition:
-        left 300ms var(--motion-standard),
-        top 300ms var(--motion-standard),
-        opacity 220ms var(--motion-standard);
-    will-change: left, top, opacity;
+    transition: opacity 220ms var(--motion-standard);
+    will-change: transform, opacity;
 }
 
 .portfolio-donut-logo.is-exiting {
@@ -1032,7 +1025,7 @@
 }
 
 .timing-suggestions-panel {
-    transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized);
+    transition: opacity var(--motion-duration-emphasized) var(--motion-standard), transform var(--motion-duration-spatial) var(--motion-emphasized);
 }
 
 .timing-layout-row.is-list-collapsed {
@@ -1963,7 +1956,7 @@ footer {
     border-radius: var(--radius-pill);
     background: var(--accent-surface-muted);
     transform: translateY(calc(var(--settings-active-index, 0) * 56px)) scale(1.01);
-    transition: transform 500ms var(--motion-bouncy);
+    transition: transform var(--motion-duration-spatial) var(--motion-bouncy);
     pointer-events: none;
     z-index: var(--layer-decorative-backdrop);
 }
@@ -2476,7 +2469,7 @@ body.is-price-subplot-reordering {
         0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 35%, transparent),
         0 8px 24px color-mix(in srgb, var(--theme-accent-primary) 34%, transparent);
     pointer-events: none;
-    animation: price-subplot-insertion-pulse 420ms var(--motion-emphasized) both;
+    animation: price-subplot-insertion-pulse var(--motion-duration-emphasized) var(--motion-emphasized) both;
 }
 
 .price-subplot.is-order-insert-before::before {

@@ -1,4 +1,4 @@
-/* Code version: v0.9.4 */
+/* Code version: v0.9.6 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -836,7 +836,11 @@
 					&& (!selectedTradingDateParam || selectedTradingDateParam === liveCompareDate);
 				if (!isLiveOneDayCompare) {
 					if (chartInstance.$compareLiveMarkerFrame) {
-						window.cancelAnimationFrame(chartInstance.$compareLiveMarkerFrame);
+						if (typeof chartInstance.$compareLiveMarkerFrame === "function") {
+							chartInstance.$compareLiveMarkerFrame();
+						} else {
+							window.cancelAnimationFrame(chartInstance.$compareLiveMarkerFrame);
+						}
 						chartInstance.$compareLiveMarkerFrame = 0;
 					}
 					return;
@@ -887,6 +891,18 @@
 					drewMarker = true;
 				});
 				if (!drewMarker || chartInstance.$compareLiveMarkerFrame) return;
+				const scheduler = window.AntigravityMotion?.scheduler;
+				if (scheduler?.frame) {
+					chartInstance.$compareLiveMarkerFrame = scheduler.frame(chartInstance, (_now, reduced) => {
+						if (reduced || !chartInstance.canvas?.isConnected || window.Chart?.getChart?.(chartInstance.canvas) !== chartInstance) {
+							chartInstance.$compareLiveMarkerFrame = 0;
+							return false;
+						}
+						chartInstance.draw();
+						return true;
+					});
+					return;
+				}
 				chartInstance.$compareLiveMarkerFrame = window.requestAnimationFrame(() => {
 					chartInstance.$compareLiveMarkerFrame = 0;
 					if (!chartInstance.canvas?.isConnected) return;
@@ -1245,7 +1261,7 @@
 				}),
 			},
 			options: {
-				animation: hasIntradayLabels || shouldAnimateRefreshTransition ? false : undefined,
+				animation: false,
 				responsive: true,
 				maintainAspectRatio: false,
 				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: xAxisBottomPadding, left: 4 } },
@@ -1306,19 +1322,37 @@
 				dataset.pointHoverBackgroundColor = strokeColor;
 				dataset.shadowColor = hexToRgba(strokeColor, 0.4);
 			});
-			chart.update();
+			chart.update("none");
 		});
 		if (shouldAnimateRefreshTransition) {
-			window.requestAnimationFrame(() => {
-				chart.options.animation = {
-					duration: 540,
-					easing: "easeOutCubic",
-				};
-				chart.data.datasets.forEach((dataset, index) => {
-					dataset.data = targetSeriesByIndex[index];
+			const startSeriesByIndex = chart.data.datasets.map((dataset) => (
+				Array.isArray(dataset.data) ? dataset.data.slice() : []
+			));
+			const applySeriesProgress = (progress) => {
+				chart.data.datasets.forEach((dataset, datasetIndex) => {
+					const startSeries = startSeriesByIndex[datasetIndex] || [];
+					const targetSeries = targetSeriesByIndex[datasetIndex] || [];
+					dataset.data = targetSeries.map((targetValue, valueIndex) => {
+						const startValue = Number(startSeries[valueIndex]);
+						const endValue = Number(targetValue);
+						if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return progress >= 1 ? targetValue : startSeries[valueIndex] ?? targetValue;
+						return startValue + ((endValue - startValue) * progress);
+					});
 				});
-				chart.update();
-			});
+				chart.update("none");
+			};
+			const scheduler = window.AntigravityMotion?.scheduler;
+			if (scheduler?.animate) {
+				scheduler.animate({
+					key: canvas,
+					duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
+					ease: window.AntigravityMotion?.easing?.emphasized,
+					update: applySeriesProgress,
+					complete: () => applySeriesProgress(1),
+				});
+			} else {
+				applySeriesProgress(1);
+			}
 		}
 		if (state.currentView === "tickers" || state.currentView === "portfolio") {
 			bootstrap.workspaceShare?.dispatchReady?.(state.currentView);

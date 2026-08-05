@@ -1,14 +1,19 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.37.0
+ * Code version: v1.37.2
  * - Changed: Orbit geometry now follows the rendered donut diameter so responsive CSS sizes keep satellites on the real track.
+ * - Changed: Orbit writes use compositor-friendly transform variables and the shared Motion Core scheduler.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
 
-export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.37.0';
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.37.2';
 
 const investmentDonutOrbitLayerState = new WeakMap();
+
+const getMotionDuration = (name, fallback) => (
+    window.AntigravityMotion?.durations?.[name] ?? fallback
+);
 
 export function getInvestmentDonutOrbitAnimationState(logoLayer) {
     if (!(logoLayer instanceof HTMLElement)) return null;
@@ -81,10 +86,10 @@ export function renderInvestmentDonutOrbitLogoPosition(
 ) {
     if (!(logoElement instanceof HTMLElement) || !orbitMetrics) return;
     const radians = ((normalizeOrbitAngle(angle) - 90) * Math.PI) / 180;
-    const x = orbitMetrics.centerX + (Math.cos(radians) * orbitMetrics.orbitRadius * radiusScale);
-    const y = orbitMetrics.centerY + (Math.sin(radians) * orbitMetrics.orbitRadius * radiusScale);
-    logoElement.style.left = `${x.toFixed(2)}px`;
-    logoElement.style.top = `${y.toFixed(2)}px`;
+    const x = Math.cos(radians) * orbitMetrics.orbitRadius * radiusScale;
+    const y = Math.sin(radians) * orbitMetrics.orbitRadius * radiusScale;
+    logoElement.style.setProperty('--investment-donut-orbit-x', `${x.toFixed(2)}px`);
+    logoElement.style.setProperty('--investment-donut-orbit-y', `${y.toFixed(2)}px`);
     logoElement.style.opacity = `${Math.max(0, Math.min(1, opacity))}`;
 }
 
@@ -134,6 +139,7 @@ function ensureInvestmentDonutOrbitLayerState(logoLayer) {
     if (state) return state;
     state = {
         animationFrame: 0,
+        animationCancel: null,
         logos: new Map(),
         orbitMetrics: null,
     };
@@ -142,16 +148,18 @@ function ensureInvestmentDonutOrbitLayerState(logoLayer) {
 }
 
 function stopInvestmentDonutOrbitLayerAnimation(layerState) {
-    if (!layerState?.animationFrame) return;
-    window.cancelAnimationFrame(layerState.animationFrame);
+    if (!layerState) return;
+    layerState.animationCancel?.();
+    layerState.animationCancel = null;
+    if (layerState.animationFrame) window.cancelAnimationFrame(layerState.animationFrame);
     layerState.animationFrame = 0;
 }
 
 function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
     if (!(logoLayer instanceof HTMLElement)) return;
     const layerState = ensureInvestmentDonutOrbitLayerState(logoLayer);
-    if (layerState.animationFrame) return;
-    const step = (now) => {
+    if (layerState.animationCancel || layerState.animationFrame) return;
+    const step = (now, reduced = false) => {
         const orbitMetrics = layerState.orbitMetrics
             || getPortfolioDonutOrbitMetrics(logoLayer.closest('.portfolio-donut-orbit'));
         if (orbitMetrics) layerState.orbitMetrics = orbitMetrics;
@@ -161,7 +169,9 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
             if (!(logoElement instanceof HTMLImageElement) || !logoElement.isConnected || !orbitMetrics) return;
             const animationStartTime = Number.isFinite(entry.animationStartTime) ? entry.animationStartTime : now;
             const duration = Math.max(1, Number(entry.duration) || 1);
-            const progress = Math.max(0, Math.min(1, (now - animationStartTime) / duration));
+            const progress = reduced || window.AntigravityMotion?.isReducedMotion?.()
+                ? 1
+                : Math.max(0, Math.min(1, (now - animationStartTime) / duration));
             const easedProgress = easeInOutCubic(progress);
             const currentAngle = entry.startAngle + (entry.deltaAngle * easedProgress);
             const currentRadiusScale = entry.startRadiusScale + ((entry.targetRadiusScale - entry.startRadiusScale) * easedProgress);
@@ -192,13 +202,18 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
                 hasActiveAnimation = true;
             }
         });
-        if (hasActiveAnimation) {
-            layerState.animationFrame = window.requestAnimationFrame(step);
-        } else {
-            stopInvestmentDonutOrbitLayerAnimation(layerState);
-        }
+        if (!hasActiveAnimation) layerState.animationCancel = null;
+        return hasActiveAnimation;
     };
-    layerState.animationFrame = window.requestAnimationFrame(step);
+    if (window.AntigravityMotion?.scheduler?.frame) {
+        layerState.animationCancel = window.AntigravityMotion.scheduler.frame(layerState, step);
+        return;
+    }
+    const fallbackStep = (now) => {
+        if (step(now)) layerState.animationFrame = window.requestAnimationFrame(fallbackStep);
+        else layerState.animationFrame = 0;
+    };
+    layerState.animationFrame = window.requestAnimationFrame(fallbackStep);
 }
 
 export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
@@ -249,7 +264,7 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
                 startOpacity: 0,
                 targetOpacity: 1,
                 animationStartTime: performance.now(),
-                duration: 620,
+                duration: getMotionDuration('spatial', 560),
                 isExiting: false,
             };
             layerState.logos.set(ticker, entry);
@@ -270,7 +285,7 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
                 entry.startOpacity = entry.currentOpacity;
                 entry.targetOpacity = 1;
                 entry.animationStartTime = performance.now();
-                entry.duration = 520;
+                entry.duration = getMotionDuration('spatial', 560);
             }
         }
 
@@ -287,7 +302,7 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
         if (!entry) {
             window.setTimeout(() => {
                 if (logo.classList.contains('is-exiting')) logo.remove();
-            }, 220);
+            }, getMotionDuration('fast', 160));
             return;
         }
         entry.isExiting = true;
@@ -298,7 +313,7 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
         entry.startOpacity = entry.currentOpacity;
         entry.targetOpacity = 0;
         entry.animationStartTime = performance.now();
-        entry.duration = 220;
+        entry.duration = getMotionDuration('fast', 160);
     });
 
     scheduleInvestmentDonutOrbitLayerAnimation(logoLayer);
@@ -377,6 +392,7 @@ export function registerInvestmentChartHelpers(targetWindow = window) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 layout: { padding: { top: 8, right: 8, bottom: 22, left: 4 } },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {

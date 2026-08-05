@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.4.1
+Code version: v0.4.3
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Broker access", "zh_hant_hk": "券商存取", "zh_hans_cn": "券商访问"},
     {"en": "Cash equivalents", "zh_hant_hk": "現金等價物", "zh_hans_cn": "现金等价物"},
     {"en": "Change", "zh_hant_hk": "變更", "zh_hans_cn": "变更"},
+    {"en": "Color token groups", "zh_hant_hk": "色彩權杖分組", "zh_hans_cn": "色彩令牌分组"},
+    {"en": "Color tokens", "zh_hant_hk": "色彩權杖", "zh_hans_cn": "色彩令牌"},
     {"en": "Choose the date styles used across long-form and compact displays throughout the workspace.", "zh_hant_hk": "選擇工作區長格式與緊湊顯示使用的日期樣式。", "zh_hans_cn": "选择工作区长格式与紧凑显示使用的日期样式。"},
     {"en": "Choose whether the interface follows your system appearance or stays locked to Light or Dark mode.", "zh_hant_hk": "選擇介面跟隨系統外觀，或固定為淺色或深色模式。", "zh_hans_cn": "选择界面跟随系统外观，或固定为浅色或深色模式。"},
     {"en": "Clear caches", "zh_hant_hk": "清除快取", "zh_hans_cn": "清除缓存"},
@@ -46,6 +48,8 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Compact date format", "zh_hant_hk": "短格式日期格式", "zh_hans_cn": "短格式日期格式"},
     {"en": "Compute your portfolio", "zh_hant_hk": "計算你的投資組合", "zh_hans_cn": "计算你的投资组合"},
     {"en": "Current", "zh_hant_hk": "目前", "zh_hans_cn": "当前"},
+    {"en": "color", "zh_hant_hk": "色彩", "zh_hans_cn": "颜色"},
+    {"en": "color picker", "zh_hant_hk": "色彩選擇器", "zh_hans_cn": "取色器"},
     {"en": "Day is always zero-padded, such as 08 Dec 2026.", "zh_hant_hk": "日期固定以補零顯示，例如 08 Dec 2026。", "zh_hans_cn": "日期固定以补零显示，例如 08 Dec 2026。"},
     {"en": "Date format", "zh_hant_hk": "日期格式", "zh_hans_cn": "日期格式"},
     {"en": "Dark", "zh_hant_hk": "深色", "zh_hans_cn": "深色"},
@@ -76,6 +80,9 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Network self-check", "zh_hant_hk": "網絡自檢", "zh_hans_cn": "网络自检"},
     {"en": "No.", "zh_hant_hk": "序號", "zh_hans_cn": "序号"},
     {"en": "No language mapping changes recorded yet.", "zh_hant_hk": "尚未記錄任何語言對照表變更。", "zh_hans_cn": "尚未记录任何语言映射变更。"},
+    {"en": "Palette", "zh_hant_hk": "調色板", "zh_hans_cn": "调色板"},
+    {"en": "Reset", "zh_hant_hk": "重設", "zh_hans_cn": "重置"},
+    {"en": "Reset all color overrides", "zh_hant_hk": "重設所有色彩覆寫", "zh_hans_cn": "重置所有色彩覆盖"},
     {"en": "Save translations", "zh_hant_hk": "儲存翻譯", "zh_hans_cn": "保存翻译"},
     {"en": "Saving...", "zh_hant_hk": "儲存中…", "zh_hans_cn": "保存中…"},
     {"en": "Saving translations...", "zh_hant_hk": "正在儲存翻譯…", "zh_hans_cn": "正在保存翻译…"},
@@ -91,10 +98,12 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "繁體中文（香港）", "zh_hant_hk": "繁體中文（香港）", "zh_hans_cn": "繁體中文（香港）"},
     {"en": "简体中文（中国大陆）", "zh_hant_hk": "简体中文（中国大陆）", "zh_hans_cn": "简体中文（中国大陆）"},
     {"en": "Translations saved.", "zh_hant_hk": "翻譯已儲存。", "zh_hans_cn": "翻译已保存。"},
+    {"en": "Tune the Light and Dark values independently. Changes stay in this browser.", "zh_hant_hk": "獨立調整淺色與深色數值。變更只會保留在此瀏覽器。", "zh_hans_cn": "独立调节浅色与深色数值。修改仅保存在此浏览器中。"},
     {"en": "Unable to save translations right now.", "zh_hant_hk": "目前無法儲存翻譯。", "zh_hans_cn": "暂时无法保存翻译。"},
     {"en": "Upload i18n mapping", "zh_hant_hk": "上傳 i18n 對照表", "zh_hans_cn": "上传 i18n 映射表"},
     {"en": "Year-first numeric format, such as 2026/12/08.", "zh_hant_hk": "年份在前的數字格式，例如 2026/12/08。", "zh_hans_cn": "年份在前的数字格式，例如 2026/12/08。"},
     {"en": "European day-first numeric format, such as 08/12/2026.", "zh_hant_hk": "歐洲日月年數字格式，例如 08/12/2026。", "zh_hans_cn": "欧洲日月年数字格式，例如 08/12/2026。"},
+    {"en": "Use the text field for any CSS color expression. Hex colors also expose a native color picker. The positive green group intentionally keeps separate Light and Dark values.", "zh_hant_hk": "可使用文字欄位輸入任何 CSS 色彩表達式。Hex 色彩亦會顯示原生色彩選擇器。正面綠色分組特意保留獨立的淺色與深色數值。", "zh_hans_cn": "可使用文本字段输入任意 CSS 颜色表达式。Hex 颜色还会显示原生取色器。正向绿色分组特意保留独立的浅色与深色数值。"},
 )
 
 
@@ -221,6 +230,19 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.", "訊號出現時，以同一訊號柱的收市價執行交易。此方式簡單且具確定性，但較為樂觀，因為模型使用了產生訊號的柱。", "信号出现时，以同一信号柱的收盘价执行交易。此方式简单且具确定性，但较为乐观，因为模型使用了产生信号的柱。"),
         ("Next bar open", "下一柱開市", "下一柱开盘"),
         ("When a signal appears, queue the trade for the next bar's opening price. This is more conservative and avoids using the signal bar's closing price.", "訊號出現時，將交易排程至下一柱的開市價執行。此方式較為保守，並避免使用訊號柱的收市價。", "信号出现时，将交易排程至下一柱的开盘价执行。此方式较为保守，并避免使用信号柱的收盘价。"),
+        ("Investment", "投資", "投资"),
+        ("Investment accounting", "投資會計", "投资会计"),
+        ("Choose how each sell is matched to the open buy inventory. Holdings, Stock details, and local realized P&L use the same method.", "選擇每次賣出如何與未平倉買入批次配對。持倉、股票詳情及本地已實現損益使用相同方法。", "请选择每次卖出如何与未平仓买入批次匹配。持仓、股票详情及本地已实现损益使用相同方法。"),
+        ("Sell matching method", "賣出配對方法", "卖出匹配方法"),
+        ("Match sells against the lowest-cost open lots first. This is the default strategy-attribution method.", "將賣出優先與成本最低的未平倉批次配對。這是預設的策略歸因方法。", "将卖出优先与成本最低的未平仓批次匹配。这是默认的策略归因方法。"),
+        ("Lowest-cost lots first", "成本最低批次優先", "成本最低批次优先"),
+        ("Match sells against the oldest open lots first.", "將賣出優先與最早的未平倉批次配對。", "将卖出优先与最早的未平仓批次匹配。"),
+        ("First in, first out (FIFO)", "先進先出（FIFO）", "先进先出（FIFO）"),
+        ("Match sells against the newest open lots first.", "將賣出優先與最新的未平倉批次配對。", "将卖出优先与最新的未平仓批次匹配。"),
+        ("Last in, first out (LIFO)", "後進先出（LIFO）", "后进先出（LIFO）"),
+        ("Pool open buys into one moving average cost before each sell.", "每次賣出前，將未平倉買入合併為一個移動平均成本。", "每次卖出前，将未平仓买入合并为一个移动平均成本。"),
+        ("Moving average cost", "移動平均成本", "移动平均成本"),
+        ("Broker-reported closed-trade P&L remains authoritative when available. Transfer-basis reconstruction remains separately labelled as FIFO reconstructed.", "如有券商報告的已平倉交易損益，仍以其為準。轉倉成本基礎重建則會獨立標示為 FIFO 重建。", "如有券商报告的已平仓交易损益，仍以其为准。转仓成本基础重建则会单独标示为 FIFO 重建。"),
         ("Token map", "權杖對照表", "令牌映射表"),
         ("Run the network checks again and refresh the availability results shown below.", "再次執行網絡檢查，並更新下方顯示的可用性結果。", "再次执行网络检查，并更新下方显示的可用性结果。"),
         ("Last checked:", "上次檢查：", "上次检查："),
@@ -228,6 +250,10 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Check again", "再次檢查", "再次检查"),
         ("Review the latest connectivity and dependency availability checks for this device.", "檢視此裝置最新的連線及依賴項可用性檢查結果。", "查看此设备最新的连接及依赖项可用性检查结果。"),
         ("Checking...", "檢查中…", "检查中…"),
+        ("Running independent checks from the application host...", "正在從應用程式主機執行獨立檢查…", "正在从应用主机执行独立检查…"),
+        ("Review every fixed external dependency used by this application from the application host.", "檢視此應用程式從應用程式主機使用的每項固定外部依賴項。", "查看此应用从应用主机使用的每项固定外部依赖项。"),
+        ("Checks run from the application host. HTTP(S) probes honor standard proxy variables and verified TLS; account credentials are not submitted here.", "檢查從應用程式主機執行。HTTP(S) 探測遵循標準代理變數及已驗證 TLS；此頁面不會提交帳戶憑證。", "检查从应用主机执行。HTTP(S) 探测遵循标准代理变量及已验证 TLS；此页面不会提交账户凭据。"),
+        ("Each row is checked independently, so a blocked provider does not prevent the remaining diagnostics from completing.", "每個項目均獨立檢查，因此某個被封鎖的服務不會阻止其餘診斷完成。", "每一项均独立检查，因此某个被阻断的服务不会阻止其余诊断完成。"),
         ("Checking whether Yahoo Finance can be reached from this device.", "正在檢查此裝置能否連線至 Yahoo Finance。", "正在检查此设备能否连接至 Yahoo Finance。"),
         ("Checking whether the primary ticker logo service and its fallbacks can be reached from this device.", "正在檢查此裝置能否連線至主要股票代號標誌服務及其後備服務。", "正在检查此设备能否连接至主要股票代码标志服务及其备用服务。"),
         ("Checking whether Google (Hong Kong) can be reached from this device.", "正在檢查此裝置能否連線至 Google（香港）。", "正在检查此设备能否连接至 Google（香港）。"),

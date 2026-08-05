@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.18.3`
+Documentation version: `v1.20.2`
 
 ## Supported commands
 
@@ -114,7 +114,10 @@ Current suite inventory remeasured on 1 Aug 2026:
   calculations, including the user-confirmed CMB Wing Lung five-share GOOGL
   round trip, the four-account `414.80816032` GOOGL total, the account-scoped
   `220.95` AAPL total, and exclusion of incomplete HSBC DRAM, BOXX, and EUV
-  histories from complete-account totals.
+  histories from complete-account totals. The suite also verifies the default
+  lowest-cost lot matcher, the FIFO, LIFO, and moving-average alternatives,
+  zero-cost grant retention, cross-account cost aggregation, and P&L
+  conservation.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
@@ -137,16 +140,27 @@ Current suite inventory remeasured on 1 Aug 2026:
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
 - `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
-  session, and day-boundary contracts.
+  session, day-boundary, and shared transaction-applier contracts.
 - `tests/test_investment_transaction_filters.mjs`: broker, currency, type, and
   canonical date-filter behavior.
 - `tests/test_investment_transaction_table.mjs`: visible-row selection,
   descending page state, clamping, and ledger-to-page lookup.
 - `tests/test_investment_layout.mjs`: split-layout measurement and clamp rules.
 - `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
+- `tests/test_investment_url_state.mjs`: Node unit tests for canonical Investment
+  view, range, broker, table-filter, date, ticker, and pagination query state.
+- `tests/test_workspace_url_state.mjs`: Node unit tests for the shared Workspace
+  URL contract, including default omission, exact dates, repeated allocation
+  order, backtest parameters, DCA schedule parameters, and legacy aliases.
+- `tests/test_settings_url_state.mjs`: Node unit tests for canonical Settings
+  sections, language tabs, pagination, default omission, and legacy aliases.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
+- `tests/test_settings_url_state.py`: Flask route redirects and server-rendered
+  Settings tab state for canonical and legacy URLs.
+- `tests/test_investment_settings.py`: isolated persistence and normalization
+  tests for the Settings Investment cost-basis preference.
 - `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
 - `tests/test_web_strategy_forms.py`: pure strategy grouping, field-schema,
   injected factory, and Settings catalog presentation contracts.
@@ -175,6 +189,12 @@ Current suite inventory remeasured on 1 Aug 2026:
   restrict Longbridge's `.US` and Yahoo's `.SS` spellings to their adapter
   boundaries.
 - `tests/e2e/`: Playwright browser tests and inert fixtures.
+  Holdings coverage also verifies that an internal subaccount bridge cannot
+  reduce the actual aggregate Cash, Cash equivalents, or Total equity.
+  It also verifies that the fixed summary's realtime Today's net P&L can be
+  positive while Cumulative P&L remains negative, and that both update after
+  a quote poll; the same assertion covers all duplicated fixed and scrollable
+  Holdings row layers.
 
 All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
 

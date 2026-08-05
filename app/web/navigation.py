@@ -1,9 +1,11 @@
-"""Canonical workspace, trade, and settings path helpers.
+"""Canonical workspace, trade, and settings navigation helpers.
 
-Code version: v1.1.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
+
+from urllib.parse import urlencode
 
 MAX_TICKERS = 5
 MARKET_CAP_MAX_TICKERS = 10
@@ -27,8 +29,10 @@ BACKTEST_VIEWS = {"backtest", "grid-trading"}
 SUPPORTED_SETTINGS_SECTIONS = {
     "about",
     "general",
+    "investment",
     "backtest",
     "font-tokens",
+    "color-tokens",
     "material-tokens",
     "network",
     "strategies",
@@ -40,6 +44,23 @@ SUPPORTED_SETTINGS_SECTIONS = {
     "export-image",
     "cash-equivalents",
 }
+LEGACY_SETTINGS_SECTION_ALIASES = {
+    "broker": "broker-access",
+    "broker_access": "broker-access",
+    "font_tokens": "font-tokens",
+    "color_tokens": "color-tokens",
+    "local_market_store": "local-market-store",
+    "local_store": "local-market-store",
+    "material_tokens": "material-tokens",
+    "style_tokens": "style-tokens",
+    "cash_equivalents": "cash-equivalents",
+    "investment_accounting": "investment",
+    "clear_caches": "clear-caches",
+    "email_smtp": "email-smtp",
+    "export_image": "export-image",
+}
+SUPPORTED_SETTINGS_TABS = {"current", "history"}
+SETTINGS_PAGINATED_SECTIONS = {"general", "local-market-store"}
 SUPPORTED_TRADE_SECTIONS = {"investment", "live-trading"}
 LEGACY_TRADE_SECTION_ALIASES = {
     "timing": "investment",
@@ -85,6 +106,7 @@ def build_view_url(view_name: str) -> str:
 def normalize_settings_section(section_name: str | None) -> str:
     """Return a supported settings section key."""
     candidate = (section_name or "about").strip().lower()
+    candidate = LEGACY_SETTINGS_SECTION_ALIASES.get(candidate, candidate)
     return candidate if candidate in SUPPORTED_SETTINGS_SECTIONS else "about"
 
 
@@ -96,6 +118,41 @@ def build_settings_path(section_name: str) -> str:
 def build_settings_url(section_name: str) -> str:
     """Alias of build_settings_path for template/url call sites."""
     return build_settings_path(section_name)
+
+
+def normalize_settings_tab(tab_name: str | None) -> str:
+    """Return the canonical General language-mapping tab."""
+    candidate = (tab_name or "current").strip().lower()
+    return candidate if candidate in SUPPORTED_SETTINGS_TABS else "current"
+
+
+def normalize_settings_page(page_number: object, fallback: int = 1) -> int:
+    """Return a positive Settings page number, defaulting safely to page one."""
+    try:
+        parsed = int(str(page_number).strip())
+    except (TypeError, ValueError):
+        return max(int(fallback), 1)
+    return max(parsed, 1)
+
+
+def build_settings_state_url(
+    section_name: str | None,
+    *,
+    tab: str | None = "current",
+    page: object = 1,
+) -> str:
+    """Return a canonical Settings path and its non-default URL state."""
+    section = normalize_settings_section(section_name)
+    normalized_tab = normalize_settings_tab(tab)
+    normalized_page = normalize_settings_page(page)
+    params: list[tuple[str, str]] = []
+    if section == "general" and normalized_tab == "history":
+        params.append(("tab", "history"))
+    if section in SETTINGS_PAGINATED_SECTIONS and normalized_page > 1:
+        params.append(("page", str(normalized_page)))
+    query_string = urlencode(params)
+    base_path = build_settings_path(section)
+    return f"{base_path}?{query_string}" if query_string else base_path
 
 
 def normalize_trade_section(section_name: str | None) -> str:

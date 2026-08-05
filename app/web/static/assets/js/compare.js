@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.5.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -110,7 +110,7 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
+		const xAxisKeys = ["period", "range", "date", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "return", "extended-hours", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
 			const next = (nextParams.get(key) || "").toString().trim();
@@ -199,11 +199,15 @@
 		&& tickers.every((ticker) => !nonUsMarketSuffixPattern.test(normalizeTicker(ticker)));
 
 	const getComparePeriod = () => {
+		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		if (workspaceState?.period) return workspaceState.period;
 		const params = new URLSearchParams(window.location.search);
 		return (params.get("period") || "").trim().toLowerCase();
 	};
 
 	const getCompareRangeMode = () => {
+		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		if (workspaceState?.rangeMode) return workspaceState.rangeMode;
 		const params = new URLSearchParams(window.location.search);
 		return (params.get("range") || params.get("range_mode") || "").trim().toLowerCase();
 	};
@@ -221,7 +225,8 @@
 		const params = new URLSearchParams(window.location.search);
 		return getCompareRangeMode() === "exact"
 			&& getComparePeriod() === "1d"
-			&& Boolean(params.get("trading_date") || params.get("exact_trading_date") || params.get("from") || params.get("exact_start"));
+			&& Boolean(window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.date
+				|| params.get("trading_date") || params.get("exact_trading_date") || params.get("from") || params.get("exact_start"));
 	};
 
 	const isRelativeMultiDayLiveComparePage = () => {
@@ -232,6 +237,8 @@
 	};
 
 	const getCompareSelectedDate = () => {
+		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		if (workspaceState?.date) return workspaceState.date;
 		const params = new URLSearchParams(window.location.search);
 		return params.get("trading_date")
 			|| params.get("exact_trading_date")
@@ -274,7 +281,7 @@
 		if (
 			areAllCompareTickersUs(tickers)
 			&& getComparePeriod() === "1d"
-			&& (currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1")
+			&& (currentParams.get("extended-hours") === "1" || currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1")
 		) {
 			params.set("extended_hours", "1");
 		}

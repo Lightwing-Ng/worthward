@@ -1,4 +1,4 @@
-/* Code version: v0.3.12 */
+/* Code version: v0.3.16 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -168,21 +168,39 @@
 		priceChart.update("none");
 		equityChart.update("none");
 
-		window.requestAnimationFrame(() => {
-			const animationConfig = {
-				duration: 540,
-				easing: "easeOutCubic",
-			};
-			priceChart.options.animation = animationConfig;
-			equityChart.options.animation = animationConfig;
-			priceChart.data.datasets[0].data = nextClose;
-			equityChart.data.datasets[0].data = nextEquity;
-			equityChart.data.datasets[1].data = nextAllIn;
-			applyBacktestYAxisScale(priceChart, priceChart.canvas, [nextClose], chartYPaddingPx);
-			applyBacktestYAxisScale(equityChart, equityChart.canvas, [nextEquity, nextAllIn], chartYPaddingPx);
-			priceChart.update();
-			equityChart.update();
-		});
+		const startSeries = [
+			priceChart.data.datasets[0].data.slice(),
+			equityChart.data.datasets[0].data.slice(),
+			equityChart.data.datasets[1].data.slice(),
+		];
+		const targetSeries = [nextClose, nextEquity, nextAllIn];
+		const applyProgress = (progress) => {
+			const interpolate = (series, index) => series.map((targetValue, valueIndex) => {
+				const startValue = Number(startSeries[index][valueIndex]);
+				const endValue = Number(targetValue);
+				if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return progress >= 1 ? targetValue : startSeries[index][valueIndex] ?? targetValue;
+				return startValue + ((endValue - startValue) * progress);
+			});
+			priceChart.data.datasets[0].data = interpolate(targetSeries[0], 0);
+			equityChart.data.datasets[0].data = interpolate(targetSeries[1], 1);
+			equityChart.data.datasets[1].data = interpolate(targetSeries[2], 2);
+			applyBacktestYAxisScale(priceChart, priceChart.canvas, [priceChart.data.datasets[0].data], chartYPaddingPx);
+			applyBacktestYAxisScale(equityChart, equityChart.canvas, [equityChart.data.datasets[0].data, equityChart.data.datasets[1].data], chartYPaddingPx);
+			priceChart.update("none");
+			equityChart.update("none");
+		};
+		const scheduler = window.AntigravityMotion?.scheduler;
+		if (scheduler?.animate) {
+			scheduler.animate({
+				key: 'backtest-refresh-transition',
+				duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
+				ease: window.AntigravityMotion?.easing?.emphasized,
+				update: applyProgress,
+				complete: () => applyProgress(1),
+			});
+		} else {
+			applyProgress(1);
+		}
 	};
 
 	const initBacktestWorkspace = () => {
@@ -520,6 +538,7 @@
 		const commonOptions = {
 			responsive: true,
 			maintainAspectRatio: false,
+			animation: false,
 			layout: { padding: { bottom: 22 } },
 			interaction: { mode: "index", intersect: false },
 			plugins: { legend: { display: false }, tooltip: { enabled: false } },
@@ -654,7 +673,7 @@
 				hoverLine.style.top = `${hoverLineFrame.top}px`;
 				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
 			}
-			hoverLine.style.left = `${hoverLinePosition.x}px`;
+			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
 			hoverLine.classList.add("is-visible");
 			const relativeX = hoverLinePosition.x;
 			const relativeY = tooltipAnchorPosition.y;
@@ -778,26 +797,20 @@
 				bootstrap.workspaceShare?.dispatchReady?.("backtest");
 			}
 		};
-		const resolveChartReadyAnimation = (canvas, animationConfig) => {
-			if (animationConfig === false) {
-				window.requestAnimationFrame(() => {
-					window.requestAnimationFrame(() => {
-						markBacktestChartReady(canvas);
-					});
-				});
-				return false;
-			}
-			const normalizedAnimation = (animationConfig && typeof animationConfig === "object") ? animationConfig : {};
-			const previousOnComplete = typeof normalizedAnimation.onComplete === "function"
-				? normalizedAnimation.onComplete
-				: null;
-			return {
-				...normalizedAnimation,
-				onComplete: (context) => {
-					previousOnComplete?.(context);
+		const resolveChartReadyAnimation = (canvas) => {
+			const readyScheduler = window.AntigravityMotion?.scheduler;
+			if (readyScheduler?.frame) {
+				let readyFrameCount = 0;
+				readyScheduler.frame(`backtest-chart-ready-${canvas.id}`, () => {
+					readyFrameCount += 1;
+					if (readyFrameCount < 2) return true;
 					markBacktestChartReady(canvas);
-				},
-			};
+					return false;
+				});
+			} else {
+				window.requestAnimationFrame(() => window.requestAnimationFrame(() => markBacktestChartReady(canvas)));
+			}
+			return false;
 		};
 
 		priceChart = new Chart(priceCanvas, {
@@ -827,7 +840,7 @@
 			},
 			options: {
 				...commonOptions,
-				animation: resolveChartReadyAnimation(priceCanvas, refreshTransition ? false : undefined),
+				animation: resolveChartReadyAnimation(priceCanvas),
 				scales: {
 					...commonOptions.scales,
 					x: { ...commonOptions.scales.x, display: false },
@@ -883,7 +896,7 @@
 			},
 			options: {
 				...commonOptions,
-				animation: resolveChartReadyAnimation(equityCanvas, refreshTransition ? false : undefined),
+				animation: resolveChartReadyAnimation(equityCanvas),
 				scales: {
 					...commonOptions.scales,
 					x: { ...commonOptions.scales.x, display: false },
@@ -921,6 +934,14 @@
 			const PAGE_SIZE = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
 			const totalPages = Math.max(1, Math.ceil(displayTrades.length / PAGE_SIZE));
 			let currentPage = 1;
+			const syncTablePageUrl = (page) => {
+				const nextPage = Math.max(1, Number(page) || 1);
+				bootstrap.workspaceTablePage = nextPage;
+				const nextUrl = new URL(window.location.href);
+				if (nextPage > 1) nextUrl.searchParams.set("page", String(nextPage));
+				else nextUrl.searchParams.delete("page");
+				window.history.replaceState(window.history.state, "", `${nextUrl.pathname}${nextUrl.search}`);
+			};
 
 			const formatNumber = (num) => Number(num || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 			const formatShares = (num) => Math.round(Number(num || 0)).toLocaleString();
@@ -960,8 +981,11 @@
 			paginationApi.bindLocalStorePagination(nav, (targetPage, {animationState}) => {
 				if (targetPage === currentPage) return;
 				goToPage(targetPage, {animationState});
+				syncTablePageUrl(currentPage);
 			});
-			goToPage(1);
+			const requestedPage = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
+			goToPage(requestedPage);
+			syncTablePageUrl(currentPage);
 		};
 
 		attachHover(priceCanvas, priceChart);
@@ -983,8 +1007,8 @@
 					? "rgba(0, 0, 0, 0)"
 					: nextAllInReferenceColor
 			);
-			priceChart.update();
-			equityChart.update();
+			priceChart.update("none");
+			equityChart.update("none");
 		});
 		initTransactionsPagination();
 		if (refreshTransition) {

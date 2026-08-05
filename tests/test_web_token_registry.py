@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.7.4
+Code version: v0.7.5
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
 from app.web.style_token_rows import (
+    build_color_token_rows,
     build_export_image_rows,
     build_font_token_rows,
     build_material_token_rows,
@@ -179,12 +180,25 @@ class WebTokenRegistryTests(unittest.TestCase):
         export_rows = build_export_image_rows("example.test/design-preview")
         font_rows = build_font_token_rows(labels)
         material_rows = build_material_token_rows()
+        color_rows = build_color_token_rows(
+            {"accent_positive": "#16a34a", "success": "#16a34a", "success_strong": "#16a34a"},
+            {"accent_positive": "#2fff9c", "success": "#2fff9c", "success_strong": "#2fff9c"},
+        )
 
         action_package = next(row for row in style_rows if row["name"] == "Settings action package")
         self.assertEqual(action_package["sample_title"], labels["local_store_maintain_title"])
         self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
         self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
         self.assertEqual(material_rows[0]["name"], "Frosted glass")
+        positive_green = next(row for row in color_rows if row["id"] == "positive-green")
+        self.assertEqual(
+            {token["name"] for token in positive_green["tokens"]},
+            {"--theme-accent-positive", "--theme-success", "--theme-success-strong"},
+        )
+        self.assertEqual(
+            next(token for token in positive_green["tokens"] if token["name"] == "--theme-accent-positive")["dark_value"],
+            "#2fff9c",
+        )
 
     def test_numeric_fraction_scale_has_one_font_owner_and_shared_markup_inputs(self) -> None:
         labels = {
@@ -256,7 +270,7 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(registry["--font-size-8"].value, "36px")
         self.assertEqual(
             registry["--tooltip-background"].value,
-            "var(--frosted-glass-background)",
+            "var(--frosted-glass-surface)",
         )
         self.assertEqual(registry["--glass-mask-shadow"].value, "0 12px 24px var(--theme-glass-border)")
         self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())

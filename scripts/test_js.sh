@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.1.2
+# Code version: v1.1.5
 
 set -euo pipefail
 
@@ -28,6 +28,8 @@ node --experimental-test-coverage --test \
 	--test-coverage-include='app/web/static/assets/js/investment-filter-utils.js' \
 	--test-coverage-include='app/web/static/assets/js/numeric-display.js' \
 	--test-coverage-include='app/web/static/assets/js/table-controller.js' \
+	--test-coverage-include='app/web/static/assets/js/settings/url-state.js' \
+	--test-coverage-include='app/web/static/assets/js/workspace/url-state.js' \
 	--test-coverage-include='app/web/static/assets/js/investment/*.js' \
 	tests/test_chart_axis_utils.mjs \
 	tests/test_export_image_config.mjs \
@@ -36,8 +38,12 @@ node --experimental-test-coverage --test \
 	tests/test_investment_layout.mjs \
 	tests/test_investment_pagination.mjs \
 	tests/test_investment_realtime.mjs \
+	tests/test_motion_core.mjs \
 	tests/test_investment_stock_details.mjs \
 	tests/test_investment_transaction_filters.mjs \
 	tests/test_investment_transaction_table.mjs \
+	tests/test_investment_url_state.mjs \
 	tests/test_numeric_display.mjs \
-	tests/test_table_filter_contracts.mjs
+	tests/test_settings_url_state.mjs \
+	tests/test_table_filter_contracts.mjs \
+	tests/test_workspace_url_state.mjs

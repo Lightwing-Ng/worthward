@@ -1,13 +1,14 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
  * - Added: Realtime quote scheduling, cancellation, and active/idle cadence are encapsulated behind a tested poller.
+ * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.0.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.1';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.2';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -194,6 +195,7 @@ export function createInvestmentLiveValueAnimator({
     windowRef = globalThis.window,
     documentRef = globalThis.document,
     HTMLElementClass = globalThis.HTMLElement,
+    scheduler = windowRef?.AntigravityMotion?.scheduler,
 } = {}) {
     const charWidthCache = new Map();
     const animationCancels = new WeakMap();
@@ -296,41 +298,41 @@ export function createInvestmentLiveValueAnimator({
         }
     }
 
-    function animateDigit(digit, direction, onComplete) {
-        if (!isElement(digit)) {
+    function runDigitAnimations(entries, onComplete, animationKey) {
+        const animatedEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry?.animate);
+        if (!animatedEntries.length) {
             onComplete?.();
             return () => {};
         }
+        const render = (eased) => animatedEntries.forEach(({digit, direction}) => {
+            applyDigitFrame(digit, direction, eased);
+        });
+        render(0);
+        if (scheduler?.animate) {
+            return scheduler.animate({
+                key: animationKey,
+                duration: animationMs,
+                ease: (progress) => easeOutCubic(progress),
+                update: (eased) => render(eased),
+                complete: onComplete,
+            });
+        }
+
         const startTime = globalThis.performance.now();
         let frameId = 0;
         const step = (now) => {
             const progress = Math.min(1, (now - startTime) / animationMs);
-            applyDigitFrame(digit, direction, easeOutCubic(progress));
+            render(easeOutCubic(progress));
             if (progress < 1) {
                 frameId = windowRef.requestAnimationFrame(step);
                 return;
             }
             onComplete?.();
         };
-        applyDigitFrame(digit, direction, 0);
         frameId = windowRef.requestAnimationFrame(step);
         return () => {
             if (frameId) windowRef.cancelAnimationFrame(frameId);
         };
-    }
-
-    function runDigitAnimations(entries, onComplete) {
-        const animatedEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry?.animate);
-        if (!animatedEntries.length) {
-            onComplete?.();
-            return () => {};
-        }
-        let remaining = animatedEntries.length;
-        const cancelers = animatedEntries.map(({digit, direction}) => animateDigit(digit, direction, () => {
-            remaining -= 1;
-            if (remaining <= 0) onComplete?.();
-        }));
-        return () => cancelers.forEach((cancel) => cancel?.());
     }
 
     function cancelValueAnimation(node) {
@@ -479,7 +481,7 @@ export function createInvestmentLiveValueAnimator({
                 node.classList.remove('is-live-rise', 'is-live-fall');
                 delete node.dataset.investmentLiveAnimationToken;
                 animationCancels.delete(node);
-            });
+            }, node);
             animationCancels.set(node, cancelAnimation);
         } else {
             delete node.dataset.investmentLiveAnimationToken;

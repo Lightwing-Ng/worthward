@@ -1,9 +1,9 @@
-{# Code version: v1.5.0 #}
+{# Code version: v1.5.4 #}
 <!doctype html>
 <html lang="en-US">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
     <title>Unlock Live trading</title>
     <script>
@@ -31,6 +31,7 @@
             --theme-muted: {{ theme_light.muted }};
             --theme-accent-primary: {{ theme_light.accent_primary }};
             --theme-accent-secondary: {{ theme_light.accent_secondary }};
+            --theme-accent-positive: {{ theme_light.accent_positive }};
             --theme-shadow: {{ theme_light.shadow }};
             --theme-glass-highlight: {{ theme_light.glass_highlight }};
             --theme-color-white-adaptive: {{ theme_light.color_white_adaptive }};
@@ -47,6 +48,8 @@
             --theme-error: {{ theme_light.error }};
             --theme-error-strong: {{ theme_light.error_strong }};
             --theme-error-translucent: {{ theme_light.error_translucent }};
+            --theme-success: {{ theme_light.success }};
+            --theme-success-strong: {{ theme_light.success_strong }};
         }
 
         @media (prefers-color-scheme: dark) {
@@ -60,6 +63,7 @@
                 --theme-muted: {{ theme_dark.muted }};
                 --theme-accent-primary: {{ theme_dark.accent_primary }};
                 --theme-accent-secondary: {{ theme_dark.accent_secondary }};
+                --theme-accent-positive: {{ theme_dark.accent_positive }};
                 --theme-shadow: {{ theme_dark.shadow }};
                 --theme-glass-highlight: {{ theme_dark.glass_highlight }};
                 --theme-color-white-adaptive: {{ theme_dark.color_white_adaptive }};
@@ -74,6 +78,8 @@
                 --theme-error: {{ theme_dark.error }};
                 --theme-error-strong: {{ theme_dark.error_strong }};
                 --theme-error-translucent: {{ theme_dark.error_translucent }};
+                --theme-success: {{ theme_dark.success }};
+                --theme-success-strong: {{ theme_dark.success_strong }};
             }
         }
 
@@ -87,6 +93,7 @@
             --theme-muted: {{ theme_dark.muted }};
             --theme-accent-primary: {{ theme_dark.accent_primary }};
             --theme-accent-secondary: {{ theme_dark.accent_secondary }};
+            --theme-accent-positive: {{ theme_dark.accent_positive }};
             --theme-shadow: {{ theme_dark.shadow }};
             --theme-glass-highlight: {{ theme_dark.glass_highlight }};
             --theme-color-white-adaptive: {{ theme_dark.color_white_adaptive }};
@@ -101,9 +108,12 @@
             --theme-error: {{ theme_dark.error }};
             --theme-error-strong: {{ theme_dark.error_strong }};
             --theme-error-translucent: {{ theme_dark.error_translucent }};
+            --theme-success: {{ theme_dark.success }};
+            --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
+    <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.41') }}">
     <style>
         html,
         body {

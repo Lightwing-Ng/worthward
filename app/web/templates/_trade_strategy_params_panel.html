@@ -18,6 +18,7 @@
                     name="{{ field.key }}"
                     class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
                     data-strategy-param-input="number"
+                    data-default="{{ field.default }}"
                     type="number"
                     inputmode="{{ field.input_mode }}"
                     value="{{ field.value }}"
@@ -56,6 +57,7 @@
             name="{{ field.key }}"
             value="{{ field.switch_on_value if field.switch_checked else field.switch_off_value }}"
             data-strategy-param-input="boolean"
+            data-default="{{ field.default }}"
             data-switch-on-value="{{ field.switch_on_value }}"
             data-switch-off-value="{{ field.switch_off_value }}"
         >
@@ -74,6 +76,7 @@
                     id="strategy_param_{{ field.key }}"
                     name="{{ field.key }}"
                     data-strategy-param-input="text"
+                    data-default="{{ field.default }}"
                     type="text"
                     value="{{ field.value }}"
                     {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
@@ -98,6 +101,7 @@
                     name="{{ field.key }}"
                     class="trade-strategy-param-select form-select"
                     data-strategy-param-input="select"
+                    data-default="{{ field.default }}"
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
                 >
                     {% for option in field.options %}

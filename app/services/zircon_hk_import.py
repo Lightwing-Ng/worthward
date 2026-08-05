@@ -71,6 +71,8 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
     "Sell": "sell",
     "Deposit": "deposit",
     "Withdrawal": "withdrawal",
+    "Virtual deposit": "virtual_deposit",
+    "Virtual withdrawal": "virtual_withdrawal",
     "Virtual balance reset": "virtual_balance_reset",
     "Dividend": "dividend",
     "Dividend reinvestment": "dividend_reinvestment",
@@ -125,7 +127,12 @@ _QUANTITY_TYPES = {
 _PRICE_TYPES = {"buy", "sell", "dividend_reinvestment"}
 _CASHLESS_SECURITY_TRANSFER_TYPES = {"transfer_in", "transfer_out"}
 _IBKR_STATEMENT_BASE_CURRENCY = "USD"
-_IBKR_BASE_CURRENCY_CASH_TYPES = {"deposit", "withdrawal"}
+_IBKR_BASE_CURRENCY_CASH_TYPES = {
+    "deposit",
+    "withdrawal",
+    "virtual_deposit",
+    "virtual_withdrawal",
+}
 _AMOUNTLESS_SECURITY_TYPES = {
     "buy",
     "sell",
@@ -135,6 +142,7 @@ _AMOUNTLESS_SECURITY_TYPES = {
 }
 _POSITIVE_CASH_TYPES = {
     "deposit",
+    "virtual_deposit",
     "dividend",
     "credit_interest",
     "payment_in_lieu",
@@ -142,6 +150,7 @@ _POSITIVE_CASH_TYPES = {
 }
 _NEGATIVE_CASH_TYPES = {
     "withdrawal",
+    "virtual_withdrawal",
     "virtual_balance_reset",
     "fee",
     "debit_interest",

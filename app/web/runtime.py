@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.64.0
+Code version: v0.68.0
+- Added: Settings -> Investment persists one shared buy/sell lot-matching preference and exposes it in every Investment payload.
+- Added: Settings URL state uses canonical section paths, language tabs, and pagination with legacy query aliases readable during migration.
 - Added: CSRF-protected Schwab security-transfer source-account confirmation persists metadata only and refreshes fail-closed aggregate reconciliation.
 - Changed: Local Market Store pagination now mirrors the shared Investment page-boundary controls.
 - Added: BOCHK Consolidated Statement PDF imports preserve HKD, CNY, and USD subaccounts across batches.
@@ -34,6 +36,10 @@ from app.core.backtest_settings import load_backtest_execution_mode, save_backte
 from app.core.cash_equivalent_settings import (
     load_cash_equivalent_tickers,
     save_cash_equivalent_tickers,
+)
+from app.core.investment_settings import (
+    load_investment_cost_basis_method,
+    save_investment_cost_basis_method,
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.date_display_settings import (
@@ -106,12 +112,9 @@ from app.core.email_settings import (
 from strategies.backtest import run_single_ticker_backtest
 from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
 from app.infrastructure.connectivity import (
-    has_google_hk_access,
-    has_remote_logo_access,
     has_remote_market_access,
-    last_google_hk_check_at,
-    last_remote_logo_check_at,
-    last_remote_market_check_at,
+    network_transport_note,
+    run_network_self_check,
     reset_connectivity_caches,
 )
 from app.core.config import (
@@ -152,8 +155,10 @@ from app.services.range_options import (
     resolve_requested_period_from_supported,
 )
 from app.services.investment_import import (
+    build_investment_internal_transfer_binding_index,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
+    normalize_investment_internal_transfer_ignored_source_keys,
     normalize_investment_payload_tickers,
     normalize_investment_security_transfer_attributions,
     parse_investment_payload,
@@ -269,13 +274,16 @@ from app.web.navigation import (
     MIN_TICKERS,
     VIEW_PATHS,
     build_settings_path,
+    build_settings_state_url,
     build_settings_url,
     build_trade_path,
     build_trade_url,
     build_view_path,
     build_view_url,
     max_tickers_for_view,
+    normalize_settings_page,
     normalize_settings_section,
+    normalize_settings_tab,
     normalize_trade_section,
     normalize_view_name,
 )
@@ -290,6 +298,7 @@ from app.web.strategy_forms import (
     build_strategy_settings_rows as build_strategy_settings_rows_for_factory,
 )
 from app.web.style_token_rows import (
+    build_color_token_rows,
     build_export_image_rows,
     build_font_token_rows,
     build_material_token_rows,
@@ -335,6 +344,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "QQQ": "#c7c7cc",
 }
 LOCAL_STORE_PAGE_SIZE = 10
+SETTINGS_LANGUAGE_PAGE_SIZE = 10
 SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
 @dataclass(frozen=True)
 class WebRuntime:
@@ -366,6 +376,7 @@ class WebRuntime:
     language_cycle_api: Any
     language_download_api: Any
     backtest_settings_action: Any
+    investment_settings_action: Any
     cash_equivalents_action: Any
     email_smtp_action: Any
     broker_access_action: Any
@@ -1412,13 +1423,14 @@ def build_web_runtime() -> WebRuntime:
     ):
         target_path = build_settings_path(section_name)
         if query_params:
-            normalized_params = {
-                str(key): str(value).strip()
-                for key, value in query_params.items()
-                if value is not None and str(value).strip()
-            }
-            if normalized_params:
-                target_path = f"{target_path}?{urlencode(normalized_params)}"
+            target_path = build_settings_state_url(
+                section_name,
+                tab=query_params.get("tab", query_params.get("settings_tab", "current")),
+                page=query_params.get(
+                    "page",
+                    query_params.get("settings_page", query_params.get("local_page", 1)),
+                ),
+            )
         response = make_response(redirect(target_path, code=303))
         payload = {
             key: value.strip()
@@ -2317,7 +2329,25 @@ def build_web_runtime() -> WebRuntime:
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def resolve_settings_section() -> str:
-        return normalize_settings_section(request.args.get("section", "about"))
+        for parameter_name in ("section", "settings_section"):
+            requested_section = request.args.get(parameter_name, "").strip()
+            if requested_section:
+                return normalize_settings_section(requested_section)
+        return "about"
+
+    def resolve_settings_tab() -> str:
+        for parameter_name in ("tab", "settings_tab", "language_tab"):
+            requested_tab = request.args.get(parameter_name, "").strip()
+            if requested_tab:
+                return normalize_settings_tab(requested_tab)
+        return "current"
+
+    def settings_page_value() -> int:
+        for parameter_name in ("page", "settings_page", "local_page", "language_page"):
+            requested_page = request.args.get(parameter_name, "").strip()
+            if requested_page:
+                return normalize_settings_page(requested_page)
+        return 1
 
     def should_use_modal_banner_message(message: str | None) -> bool:
         normalized = (message or "").strip()
@@ -2338,14 +2368,7 @@ def build_web_runtime() -> WebRuntime:
         return "icon-modal-dialog-banner-default"
 
     def build_local_store_page_url(page_number: int) -> str:
-        params = request.args.to_dict(flat=False)
-        params.pop("view", None)
-        params.pop("section", None)
-        params.pop("local_page", None)
-        params["page"] = [str(page_number)]
-        query_string = urlencode(params, doseq=True)
-        base_path = build_settings_path("local-market-store")
-        return f"{base_path}?{query_string}" if query_string else base_path
+        return build_settings_state_url("local-market-store", page=page_number)
 
     def _run_backtest_from_request():
         backtest_execution_mode = load_backtest_execution_mode()
@@ -2356,8 +2379,11 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError("No ticker selected for backtest.")
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
         backtest_cache_refresh = ensure_latest_backtest_caches(trade_ticker)
-        price_only = parse_bool_flag("price_only", "price_return_only")
-        include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
+        price_only = request.args.get("return", "").strip().lower() == "price" or parse_bool_flag("price_only", "price_return_only")
+        include_dividends = False if price_only else (
+            request.args.get("return", "").strip().lower() == "dividends"
+            or parse_bool_flag("dividends", "include_dividends")
+        )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         supported_intervals = list_available_market_intervals(trade_ticker)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
@@ -2662,7 +2688,7 @@ def build_web_runtime() -> WebRuntime:
         pending: bool,
         service_labels: dict[str, str] | None = None,
         translate_fn: Callable[[str], str] | None = None,
-    ) -> list[dict[str, str | bool]]:
+    ) -> list[dict[str, Any]]:
         if service_labels is None or translate_fn is None:
             current_language_settings = load_language_settings()
             current_translations = build_translation_map(current_language_settings)
@@ -2690,90 +2716,103 @@ def build_web_runtime() -> WebRuntime:
             stamp = pd.Timestamp(value, unit="s")
             return f"{prefix} {format_display_datetime(stamp, include_seconds=True)}"
 
-        if pending:
-            return [
-                {
-                    "key": "market",
-                    "name": "yfinance",
-                    "status": translate("Checking..."),
-                    "note": translate("Checking whether Yahoo Finance can be reached from this device."),
-                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
-                    "logo_url": service_logo_url("Yahoo-Logo.svg"),
-                    "is_available": False,
-                    "is_pending": True,
-                },
-                {
-                    "key": "logo",
-                    "name": service_labels["logo_network"],
-                    "status": translate("Checking..."),
-                    "note": translate("Checking whether the primary ticker logo service and its fallbacks can be reached from this device."),
-                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
-                    "logo_url": service_logo_url("apple.logo.svg"),
-                    "is_available": False,
-                    "is_pending": True,
-                },
-                {
-                    "key": "google-hk",
-                    "name": translate("Google (Hong Kong)"),
-                    "status": translate("Checking..."),
-                    "note": translate("Checking whether Google (Hong Kong) can be reached from this device."),
-                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
-                    "logo_url": service_logo_url("Google__G__logo.svg"),
-                    "is_available": False,
-                    "is_pending": True,
-                },
-            ]
-
-        remote_market_access = has_remote_market_access()
-        remote_logo_access = has_remote_logo_access()
-        google_hk_access = has_google_hk_access()
-        remote_market_access = bool(remote_market_access)
-        remote_logo_access = bool(remote_logo_access)
-        google_hk_access = bool(google_hk_access)
-        return [
+        service_definitions = (
             {
                 "key": "market",
                 "name": "yfinance",
-                "status": service_labels["service_ok"] if remote_market_access else service_labels["service_down"],
-                "note": (
-                    translate("Yahoo Finance is reachable, so missing price history can be refreshed from the network.")
-                    if remote_market_access
-                    else translate("Yahoo Finance could not be reached. Check the proxy and corporate CA configuration; local market data remains available.")
-                ),
-                "checked_at_text": format_checked_at(last_remote_market_check_at()),
-                "logo_url": service_logo_url("Yahoo-Logo.svg"),
-                "is_available": remote_market_access,
-                "is_pending": False,
+                "logo": "Yahoo-Logo.svg",
+                "pending_note": "Checking Yahoo Finance Chart through the verified HTTP(S) and yfinance transports from this application host.",
+            },
+            {
+                "key": "sec",
+                "name": "SEC EDGAR",
+                "logo": "network.svg",
+                "pending_note": "Checking SEC EDGAR submissions through the verified HTTP(S) transport from this application host.",
+            },
+            {
+                "key": "longbridge",
+                "name": "Longbridge OpenAPI",
+                "logo": "network.svg",
+                "pending_note": "Checking the Longbridge OpenAPI transport without sending credentials or trading requests.",
             },
             {
                 "key": "logo",
                 "name": service_labels["logo_network"],
-                "status": service_labels["service_ok"] if remote_logo_access else service_labels["service_down"],
-                "note": (
-                    translate("Logo providers are reachable, so missing brand marks can be fetched when needed.")
-                    if remote_logo_access
-                    else translate("Remote logo sources could not be reached. Check the proxy and corporate CA configuration; stored logos remain available.")
-                ),
-                "checked_at_text": format_checked_at(last_remote_logo_check_at()),
-                "logo_url": service_logo_url("apple.logo.svg"),
-                "is_available": remote_logo_access,
-                "is_pending": False,
+                "logo": "apple.logo.svg",
+                "pending_note": "Checking the primary ticker logo provider and its fallback providers from this application host.",
             },
             {
                 "key": "google-hk",
                 "name": translate("Google (Hong Kong)"),
-                "status": service_labels["service_ok"] if google_hk_access else service_labels["service_down"],
-                "note": (
-                    translate("Google (Hong Kong) is reachable from this device.")
-                    if google_hk_access
-                    else translate("Google (Hong Kong) could not be reached from this device.")
-                ),
-                "checked_at_text": format_checked_at(last_google_hk_check_at()),
-                "logo_url": service_logo_url("Google__G__logo.svg"),
-                "is_available": google_hk_access,
-                "is_pending": False,
+                "logo": "Google__G__logo.svg",
+                "pending_note": "Checking Google (Hong Kong) and its global fallback from this application host.",
             },
-        ]
+            {
+                "key": "smtp",
+                "name": "Yahoo Mail SMTP",
+                "logo": "envelope.fill.svg",
+                "pending_note": "Checking the configured SMTP host and STARTTLS transport without submitting mailbox credentials.",
+            },
+        )
+
+        if pending:
+            return [
+                {
+                    "key": definition["key"],
+                    "name": definition["name"],
+                    "status": translate("Checking..."),
+                    "note": translate(definition["pending_note"]),
+                    "pending_note": translate(definition["pending_note"]),
+                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
+                    "logo_url": service_logo_url(definition["logo"]),
+                    "is_available": False,
+                    "is_pending": True,
+                }
+                for definition in service_definitions
+            ]
+
+        raw_payload = run_network_self_check(
+            smtp_settings=load_smtp_settings(),
+            broker_settings=load_broker_settings(),
+        )
+        raw_rows = {
+            str(item.get("key")): item
+            for item in raw_payload.get("rows", [])
+            if isinstance(item, dict)
+        }
+        status_labels = {
+            "available": service_labels["service_ok"],
+            "unavailable": service_labels["service_down"],
+            "disabled": translate("Disabled by configuration"),
+            "not_configured": translate("Not configured"),
+            "not_installed": translate("Not installed"),
+            "not_applicable": translate("Not applicable"),
+        }
+        rows: list[dict[str, Any]] = []
+        for definition in service_definitions:
+            raw_row = raw_rows.get(definition["key"], {})
+            state = str(raw_row.get("state") or "unavailable")
+            checked_at_value = raw_row.get("checked_at")
+            try:
+                checked_at = float(checked_at_value) if checked_at_value is not None else None
+            except (TypeError, ValueError):
+                checked_at = None
+            rows.append(
+                {
+                    "key": definition["key"],
+                    "name": definition["name"],
+                    "status": status_labels.get(state, service_labels["service_down"]),
+                    "note": str(raw_row.get("note") or translate("No diagnostic was returned.")),
+                    "pending_note": translate(definition["pending_note"]),
+                    "checked_at_text": format_checked_at(checked_at),
+                    "logo_url": service_logo_url(definition["logo"]),
+                    "is_available": bool(raw_row.get("is_available")),
+                    "is_pending": False,
+                    "state": state,
+                    "latency_ms": raw_row.get("latency_ms"),
+                }
+            )
+        return rows
 
     def maintain_local_market_store() -> dict[str, Any]:
         historical_tickers = list_historical_tickers()
@@ -2817,7 +2856,7 @@ def build_web_runtime() -> WebRuntime:
         }
 
     def local_store_page_value() -> int:
-        return max(parse_int_value(request.args.get("page", request.args.get("local_page")), 1), 1)
+        return settings_page_value()
 
     def build_modern_query_pairs(view_name: str | None = None) -> list[tuple[str, str]]:
         pairs: list[tuple[str, str]] = []
@@ -2841,29 +2880,46 @@ def build_web_runtime() -> WebRuntime:
             for weight in parse_requested_weights(view_max_tickers):
                 pairs.append(("weight", str(weight)))
 
+        raw_range_value = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
         period_value = request.args.get("period", "").strip().lower()
-        if period_value:
-            pairs.append(("period", period_value))
+        if raw_range_value in {"exact", "custom"}:
+            pairs.append(("range", "custom"))
+            if period_value:
+                pairs.append(("period", period_value))
+        elif period_value and period_value != str(defaults.get("period", DEFAULT_PERIOD)).strip().lower():
+            pairs.append(("range", period_value))
+        elif raw_range_value and raw_range_value not in {"period"}:
+            pairs.append(("range", raw_range_value))
 
-        range_value = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
-        if range_value:
-            pairs.append(("range", range_value))
-
+        date_value = request.args.get("date", request.args.get("trading_date", request.args.get("exact_trading_date", ""))).strip()
         start_value = request.args.get("from", request.args.get("exact_start", "")).strip()
-        if start_value:
-            pairs.append(("from", start_value))
-
         end_value = request.args.get("to", request.args.get("exact_end", "")).strip()
-        if end_value:
-            pairs.append(("to", end_value))
+        if date_value and (period_value == "1d" or raw_range_value in {"exact", "custom"}):
+            pairs.append(("date", date_value))
+        else:
+            if start_value:
+                pairs.append(("from", start_value))
+            if end_value:
+                pairs.append(("to", end_value))
 
-        dividends_value = request.args.get("dividends", request.args.get("include_dividends", "")).strip()
-        if dividends_value:
-            pairs.append(("dividends", dividends_value))
-
+        return_value = request.args.get("return", "").strip().lower()
         price_only_value = request.args.get("price_only", request.args.get("price_return_only", "")).strip()
-        if price_only_value:
-            pairs.append(("price_only", price_only_value))
+        dividends_value = request.args.get("dividends", request.args.get("include_dividends", "")).strip()
+        if return_value in {"price", "total"}:
+            if return_value == "price":
+                pairs.append(("return", "price"))
+        elif price_only_value == "1":
+            pairs.append(("return", "price"))
+        elif dividends_value == "1":
+            pairs.append(("dividends", "1"))
+
+        overnight_value = request.args.get("overnight", request.args.get("include_overnight", "")).strip()
+        if overnight_value == "1":
+            pairs.append(("overnight", "1"))
+
+        extended_hours_value = request.args.get("extended-hours", request.args.get("extended_hours", request.args.get("include_extended_hours", ""))).strip()
+        if extended_hours_value == "1":
+            pairs.append(("extended-hours", "1"))
 
         strategy_value = request.args.get("strategy", "").strip()
         if strategy_value:
@@ -2885,9 +2941,13 @@ def build_web_runtime() -> WebRuntime:
         if weekday_value:
             pairs.append(("weekday", weekday_value))
 
-        month_day_value = request.args.get("month_day", "").strip()
+        month_day_value = request.args.get("month-day", request.args.get("month_day", "")).strip()
         if month_day_value:
-            pairs.append(("month_day", month_day_value))
+            pairs.append(("month-day", month_day_value))
+
+        tab_value = request.args.get("tab", request.args.get("trade_detail_tab", "")).strip().lower()
+        if tab_value == "transactions":
+            pairs.append(("tab", "transactions"))
 
         page_value = request.args.get("page", request.args.get("local_page", "")).strip()
         if page_value:
@@ -2902,14 +2962,23 @@ def build_web_runtime() -> WebRuntime:
             "period",
             "range",
             "range_mode",
+            "date",
+            "trading_date",
+            "exact_trading_date",
             "from",
             "to",
             "exact_start",
             "exact_end",
             "dividends",
             "include_dividends",
+            "return",
             "price_only",
             "price_return_only",
+            "extended-hours",
+            "extended_hours",
+            "include_extended_hours",
+            "overnight",
+            "include_overnight",
             "strategy",
             "capital",
             "initial_capital",
@@ -2917,6 +2986,9 @@ def build_web_runtime() -> WebRuntime:
             "frequency",
             "weekday",
             "month_day",
+            "month-day",
+            "tab",
+            "trade_detail_tab",
             "page",
             "local_page",
             "view",
@@ -2954,6 +3026,7 @@ def build_web_runtime() -> WebRuntime:
 
     def render_workspace_page(current_view: str, settings_section: str = "about", trade_section: str = "investment"):
         backtest_execution_mode = load_backtest_execution_mode()
+        investment_cost_basis_method = load_investment_cost_basis_method()
         date_display_settings = load_date_display_settings()
         language_settings = load_language_settings()
         labels = translate_labels(base_labels, language_settings)
@@ -2972,8 +3045,11 @@ def build_web_runtime() -> WebRuntime:
         view_max_tickers = max_tickers_for_view(current_view)
         requested_tickers = parse_requested_tickers(current_view)
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
-        include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
+        price_only = request.args.get("return", "").strip().lower() == "price" or parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
+        include_dividends = False if price_only else (
+            request.args.get("return", "").strip().lower() == "dividends"
+            or parse_bool_flag("dividends", "include_dividends")
+        )
         if current_view in {"prices", "market-caps"}:
             price_only = True
             include_dividends = False
@@ -3099,7 +3175,7 @@ def build_web_runtime() -> WebRuntime:
             else "monthly"
         )
         dca_weekday = min(max(parse_int_value(request.args.get("weekday"), parse_int_value(defaults.get("dca_weekday"), 0)), 0), 4)
-        dca_month_day = min(max(parse_int_value(request.args.get("month_day"), parse_int_value(defaults.get("dca_month_day"), 15)), 1), 28)
+        dca_month_day = min(max(parse_int_value(request.args.get("month-day", request.args.get("month_day")), parse_int_value(defaults.get("dca_month_day"), 15)), 1), 28)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         supported_intervals = ["1d"]
         if current_view in BACKTEST_VIEWS and requested_tickers:
@@ -3145,9 +3221,10 @@ def build_web_runtime() -> WebRuntime:
         report_heading = labels["performance_summary"]
         chart_heading = labels["chart_summary"]
         settings_title = labels["about"]
-        settings_service_rows: list[dict[str, str | bool]] = []
+        settings_service_rows: list[dict[str, Any]] = []
         strategy_settings_rows: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
+        color_token_rows: list[dict[str, object]] = []
         export_image_rows: list[dict[str, object]] = []
         material_token_rows: list[dict[str, object]] = []
         cash_equivalent_rows: list[dict[str, object]] = []
@@ -3158,6 +3235,8 @@ def build_web_runtime() -> WebRuntime:
         local_store_total_pages = 1
         local_store_current_page = 1
         local_store_pagination_items: list[dict[str, int | str | bool]] = []
+        settings_tab = "current"
+        settings_page_number = 1
         backtest_periods_by_interval: dict[str, list[str]] = {
             "1d": list(SUPPORTED_PERIODS_1D),
             "1m": list(SUPPORTED_PERIODS_1M),
@@ -3165,6 +3244,23 @@ def build_web_runtime() -> WebRuntime:
 
         settings_section = normalize_settings_section(settings_section)
         trade_section = normalize_trade_section(trade_section)
+
+        if current_view == "settings":
+            settings_tab = resolve_settings_tab() if settings_section == "general" else "current"
+            if settings_section == "general":
+                settings_page_number = settings_page_value()
+                language_row_count = (
+                    len(language_settings.translations)
+                    if settings_tab == "current"
+                    else max(len(language_history_rows), 1)
+                )
+                language_total_pages = max(
+                    (language_row_count - 1) // SETTINGS_LANGUAGE_PAGE_SIZE + 1,
+                    1,
+                )
+                settings_page_number = min(settings_page_number, language_total_pages)
+            elif settings_section == "local-market-store":
+                settings_page_number = settings_page_value()
 
         if current_view == "settings" and settings_section == "about":
             error = None
@@ -3196,8 +3292,12 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = translate_ui("General")
             elif settings_section == "backtest":
                 settings_title = translate_ui("Backtest")
+            elif settings_section == "investment":
+                settings_title = translate_ui("Investment")
             elif settings_section == "font-tokens":
                 settings_title = translate_ui("Font tokens")
+            elif settings_section == "color-tokens":
+                settings_title = translate_ui("Color tokens")
             elif settings_section == "material-tokens":
                 settings_title = translate_ui("Material tokens")
             elif settings_section == "strategies":
@@ -4190,7 +4290,7 @@ def build_web_runtime() -> WebRuntime:
             if settings_section in {"general", "backtest", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(
-                pending=settings_section == "network",
+                pending=settings_section != "network",
                 service_labels=labels,
                 translate_fn=translate_ui,
             )
@@ -4201,6 +4301,11 @@ def build_web_runtime() -> WebRuntime:
             )
             font_token_rows = translate_nested_text(
                 build_font_token_rows(labels),
+                language_settings.language,
+                language_translations,
+            )
+            color_token_rows = translate_nested_text(
+                build_color_token_rows(theme_light, theme_dark),
                 language_settings.language,
                 language_translations,
             )
@@ -4234,6 +4339,7 @@ def build_web_runtime() -> WebRuntime:
                 local_store_current_page = local_store_page_value()
                 local_store_total_pages = max((len(all_local_market_tickers) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
                 local_store_current_page = min(local_store_current_page, local_store_total_pages)
+                settings_page_number = local_store_current_page
                 local_store_pagination_items = build_local_store_pagination_items(
                     local_store_current_page,
                     local_store_total_pages,
@@ -4341,11 +4447,13 @@ def build_web_runtime() -> WebRuntime:
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
             font_token_rows=font_token_rows,
+            color_token_rows=color_token_rows,
             style_token_rows=style_token_rows,
             export_image_rows=export_image_rows,
             material_token_rows=material_token_rows,
             cash_equivalent_rows=cash_equivalent_rows,
             backtest_execution_mode=backtest_execution_mode,
+            investment_cost_basis_method=investment_cost_basis_method,
             date_display_full_format=date_display_settings.full_date_format,
             date_display_short_format=date_display_settings.short_date_format,
             language_code=language_settings.language,
@@ -4366,13 +4474,16 @@ def build_web_runtime() -> WebRuntime:
             local_store_page_size=LOCAL_STORE_PAGE_SIZE,
             local_store_total_pages=local_store_total_pages,
             local_store_pagination_items=local_store_pagination_items,
+            settings_tab=settings_tab,
+            settings_page_number=settings_page_number,
+            settings_language_page_size=SETTINGS_LANGUAGE_PAGE_SIZE,
             page_title=page_title,
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
-                           ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
+                           ("about", "general", "investment", "backtest", "font-tokens", "color-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
             trade_urls={section_name: build_trade_url(section_name) for section_name in ("investment", "live-trading")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
@@ -4650,8 +4761,15 @@ def build_web_runtime() -> WebRuntime:
         legacy_view = request.args.get("view")
         if request.args:
             target_view = resolve_view() if legacy_view else "tickers"
-            target_section = resolve_settings_section() if target_view == "settings" else "about"
-            target_path = build_settings_path(target_section) if target_view == "settings" else build_view_path(target_view)
+            if target_view == "settings":
+                return redirect(
+                    build_settings_state_url(
+                        resolve_settings_section(),
+                        tab=resolve_settings_tab(),
+                        page=settings_page_value(),
+                    )
+                )
+            target_path = build_view_path(target_view)
             query_string = urlencode(build_modern_query_pairs(target_view), doseq=True)
             return redirect(f"{target_path}?{query_string}" if query_string else target_path)
         return redirect(build_view_path("tickers"))
@@ -4736,20 +4854,37 @@ def build_web_runtime() -> WebRuntime:
         return redirect(build_trade_path(normalize_trade_section(section_name)))
 
     def settings_root():
-        return redirect(build_settings_path("about"))
+        return redirect(
+            build_settings_state_url(
+                resolve_settings_section(),
+                tab=resolve_settings_tab(),
+                page=settings_page_value(),
+            )
+        )
 
     def settings_page(section_name: str):
+        normalized_section = normalize_settings_section(section_name)
+        canonical_url = build_settings_state_url(
+            normalized_section,
+            tab=resolve_settings_tab(),
+            page=settings_page_value(),
+        )
+        current_url = request.path
+        if request.query_string:
+            current_url = f"{current_url}?{request.query_string.decode()}"
+        if current_url != canonical_url:
+            return redirect(canonical_url)
         report_fetch_abort_debug_event(
             "E",
             "runtime.py:settings_page",
             "settings page request received",
             {
-                "section_name": section_name,
+                "section_name": normalized_section,
                 "path": request.path,
                 "query_string": request.query_string.decode(),
             },
         )
-        return render_workspace_page("settings", section_name)
+        return render_workspace_page("settings", normalized_section)
 
     def _language_rows_from_request_form() -> list[dict[str, str]]:
         return [
@@ -4798,6 +4933,10 @@ def build_web_runtime() -> WebRuntime:
         selected_language_settings = load_language_settings()
         language_action = str(request.form.get("language_action", "save")).strip()
         language_file = request.files.get("language_mapping_xlsx")
+        settings_state_from_form = {
+            "tab": request.form.get("settings_tab", ""),
+            "page": request.form.get("settings_page", ""),
+        }
         if language_action == "upload" and language_file and language_file.filename:
             try:
                 selected_language_settings = save_language_settings(
@@ -4823,12 +4962,14 @@ def build_web_runtime() -> WebRuntime:
                         "Language spreadsheet import failed: "
                         f"{str(exc).strip() or 'check the file and try again.'}"
                     ),
+                    query_params=settings_state_from_form,
                 )
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Language spreadsheet import failed")
                 return _redirect_with_settings_feedback(
                     "general",
                     error="Language spreadsheet import failed. Check the file and try again.",
+                    query_params=settings_state_from_form,
                 )
         elif "language_code" in request.form or "translation_en" in request.form:
             current_language_settings = load_language_settings()
@@ -4882,7 +5023,11 @@ def build_web_runtime() -> WebRuntime:
                 }
                 notices.append(f"Compact date format updated: {short_labels[selected_short]}.")
         notice = " ".join(notices)
-        return _redirect_with_settings_feedback("general", notice=notice)
+        return _redirect_with_settings_feedback(
+            "general",
+            notice=notice,
+            query_params=settings_state_from_form,
+        )
 
     def language_download_api():
         settings = load_language_settings()
@@ -4959,6 +5104,27 @@ def build_web_runtime() -> WebRuntime:
                 selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
                 notice = f"Backtest execution model updated: {selected_label}."
         return _redirect_with_settings_feedback("backtest", notice=notice)
+
+    def investment_settings_action():
+        current_method = load_investment_cost_basis_method()
+        selected_method = save_investment_cost_basis_method(
+            request.form.get("investment_cost_basis_method", current_method),
+        )
+        if selected_method == current_method:
+            return _redirect_with_settings_feedback("investment")
+        selected_labels = {
+            "lowest_cost_first": "Lowest-cost lots first",
+            "fifo": "First in, first out (FIFO)",
+            "lifo": "Last in, first out (LIFO)",
+            "moving_average": "Moving average cost",
+        }
+        return _redirect_with_settings_feedback(
+            "investment",
+            notice=(
+                "Investment cost basis method updated: "
+                f"{selected_labels[selected_method]}."
+            ),
+        )
 
     def cash_equivalents_action():
         action = str(request.form.get("action", "save")).strip().lower()
@@ -5138,12 +5304,13 @@ def build_web_runtime() -> WebRuntime:
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
         action = request.form.get("action", "").strip().lower()
-        page = max(parse_int_value(request.form.get("page", request.form.get("local_page")), 1), 1)
-        base_path = build_settings_path("local-market-store")
+        page = normalize_settings_page(request.form.get("page", request.form.get("local_page")))
 
         def build_local_store_redirect(**extra_params: str) -> str:
-            params = {"page": page, **extra_params}
-            return f"{base_path}?{urlencode(params)}"
+            return build_settings_state_url(
+                "local-market-store",
+                page=extra_params.get("page", page),
+            )
 
         redirect_url = build_local_store_redirect()
 
@@ -5334,12 +5501,17 @@ def build_web_runtime() -> WebRuntime:
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):
             return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
-        price_only_flag = request.args.get("price_only", request.args.get("price_return_only", "0")) == "1"
-        include_dividends_flag = False if price_only_flag else request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+        price_only_flag = request.args.get("return", "").strip().lower() == "price" or request.args.get("price_only", request.args.get("price_return_only", "0")) == "1"
+        include_dividends_flag = False if price_only_flag else (
+            request.args.get("return", "").strip().lower() == "dividends"
+            or request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+        )
         dividend_mode = resolve_workspace_dividend_mode(price_only_flag, include_dividends_flag)
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
         requested_range = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
+        if requested_range == "custom":
+            requested_range = "exact"
         requested_period = request.args.get("period", "").strip().lower()
         freshness_refresh_failures: list[str] = []
         if requested_view in {"tickers", "market-caps", "prices"} and requested_range == "exact" and requested_period == "1d":
@@ -5651,10 +5823,13 @@ def build_web_runtime() -> WebRuntime:
     def settings_network_status_api():
         if request.args.get("refresh", "").strip() == "1":
             reset_connectivity_caches()
-        return jsonify({"rows": build_network_service_rows(pending=False)})
+        return jsonify({
+            "rows": build_network_service_rows(pending=False),
+            "transport_note": network_transport_note(),
+        })
 
     def local_market_store_page_data_api():
-        current_page = max(parse_int_value(request.args.get("page"), 1), 1)
+        current_page = normalize_settings_page(request.args.get("page"))
         all_local_market_tickers = list_local_market_tickers()
         total_pages = max((len(all_local_market_tickers) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
         current_page = min(current_page, total_pages)
@@ -5736,6 +5911,7 @@ def build_web_runtime() -> WebRuntime:
                 "cash_equivalent_tickers": sorted(get_cash_equivalent_tickers()),
                 "ticker_lineage": investment_ticker_lineage_payload(),
                 "known_ticker_company_names": known_ticker_company_names_payload(),
+                "investment_cost_basis_method": load_investment_cost_basis_method(),
                 "realtime_quotes": [],
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
@@ -5765,6 +5941,7 @@ def build_web_runtime() -> WebRuntime:
                 cached_data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
                 cached_data["ticker_lineage"] = investment_ticker_lineage_payload()
                 cached_data["known_ticker_company_names"] = known_ticker_company_names_payload()
+                cached_data["investment_cost_basis_method"] = load_investment_cost_basis_method()
                 cached_data["success"] = True
                 cached_data["investment_store_version"] = str(
                     investment_store_fingerprint.get("mtime_ns", 0)
@@ -5808,6 +5985,7 @@ def build_web_runtime() -> WebRuntime:
             data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
             data["ticker_lineage"] = investment_ticker_lineage_payload()
             data["known_ticker_company_names"] = known_ticker_company_names_payload()
+            data["investment_cost_basis_method"] = load_investment_cost_basis_method()
             data["realtime_quotes"] = load_investment_realtime_quotes(section_freshness["open_tickers"])
             data["freshness_refresh_failures"] = freshness_refresh_failures
             data["section_freshness"] = section_freshness
@@ -6532,6 +6710,12 @@ def build_web_runtime() -> WebRuntime:
             payload = request.get_json(silent=True) or {}
             requested_source_key = str(payload.get("source_key", "")).strip()
             requested_target_key = str(payload.get("target_key", "")).strip()
+            requested_action = str(payload.get("action", "")).strip().lower()
+            if requested_action not in {"", "bind", "ignore", "restore"}:
+                return jsonify({
+                    "success": False,
+                    "error": "The internal-transfer action is invalid.",
+                }), 400
             if not requested_source_key:
                 return jsonify({
                     "success": False,
@@ -6548,6 +6732,53 @@ def build_web_runtime() -> WebRuntime:
             ) -> tuple[dict[str, object], dict[str, object]]:
                 investment_payload = normalize_investment_payload_tickers(current_payload)
                 transactions = investment_payload.get("transactions")
+                ignored_source_keys = normalize_investment_internal_transfer_ignored_source_keys(
+                    investment_payload.get("manual_internal_transfer_ignored_source_keys"),
+                    transactions=transactions,
+                )
+                if requested_action in {"ignore", "restore"}:
+                    normalized_requested_source_keys = normalize_investment_internal_transfer_ignored_source_keys(
+                        [requested_source_key],
+                        transactions=transactions,
+                    )
+                    source_key = (
+                        normalized_requested_source_keys[0]
+                        if len(normalized_requested_source_keys) == 1
+                        else requested_source_key
+                    )
+                    binding_index = build_investment_internal_transfer_binding_index(
+                        transactions
+                    )
+                    if len(binding_index.get(source_key, [])) != 1:
+                        raise ValueError("The source transfer key is missing or ambiguous.")
+                    next_bindings = normalize_investment_internal_transfer_bindings(
+                        investment_payload.get("manual_internal_transfer_bindings"),
+                        transactions=transactions,
+                    )
+                    if requested_action == "ignore":
+                        next_bindings.pop(source_key, None)
+                        if source_key not in ignored_source_keys:
+                            ignored_source_keys.append(source_key)
+                    else:
+                        ignored_source_keys = [
+                            key for key in ignored_source_keys if key != source_key
+                        ]
+                    investment_payload["manual_internal_transfer_bindings"] = next_bindings
+                    investment_payload["manual_internal_transfer_ignored_source_keys"] = (
+                        ignored_source_keys
+                    )
+                    updated_payload = refresh_investment_security_transfer_reconciliation(
+                        investment_payload
+                    )
+                    return cast(dict[str, object], updated_payload), {
+                        "manual_internal_transfer_bindings": next_bindings,
+                        "manual_internal_transfer_ignored_source_keys": (
+                            updated_payload.get(
+                                "manual_internal_transfer_ignored_source_keys", []
+                            )
+                        ),
+                        "summary": updated_payload.get("summary", {}),
+                    }
                 requested_pair = normalize_investment_internal_transfer_bindings(
                     {
                         requested_source_key: requested_target_key or requested_source_key,
@@ -6566,6 +6797,9 @@ def build_web_runtime() -> WebRuntime:
                     investment_payload.get("manual_internal_transfer_bindings"),
                     transactions=transactions,
                 )
+                ignored_source_keys = [
+                    key for key in ignored_source_keys if key != source_key
+                ]
                 if target_key:
                     for existing_source_key, existing_target_key in next_bindings.items():
                         if existing_source_key != source_key and existing_target_key == target_key:
@@ -6576,11 +6810,19 @@ def build_web_runtime() -> WebRuntime:
                 else:
                     next_bindings.pop(source_key, None)
                 investment_payload["manual_internal_transfer_bindings"] = next_bindings
+                investment_payload["manual_internal_transfer_ignored_source_keys"] = (
+                    ignored_source_keys
+                )
                 updated_payload = refresh_investment_security_transfer_reconciliation(
                     investment_payload
                 )
                 return cast(dict[str, object], updated_payload), {
                     "manual_internal_transfer_bindings": next_bindings,
+                    "manual_internal_transfer_ignored_source_keys": (
+                        updated_payload.get(
+                            "manual_internal_transfer_ignored_source_keys", []
+                        )
+                    ),
                     "summary": updated_payload.get("summary", {}),
                 }
 
@@ -6593,6 +6835,9 @@ def build_web_runtime() -> WebRuntime:
                 "success": True,
                 "manual_internal_transfer_bindings": update_result.get(
                     "manual_internal_transfer_bindings", {}
+                ),
+                "manual_internal_transfer_ignored_source_keys": update_result.get(
+                    "manual_internal_transfer_ignored_source_keys", []
                 ),
                 "summary": update_result.get("summary", {}),
             })
@@ -7187,6 +7432,7 @@ def build_web_runtime() -> WebRuntime:
         language_cycle_api=language_cycle_api,
         language_download_api=language_download_api,
         backtest_settings_action=backtest_settings_action,
+        investment_settings_action=investment_settings_action,
         cash_equivalents_action=cash_equivalents_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,

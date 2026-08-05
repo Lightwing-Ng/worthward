@@ -1,4 +1,4 @@
-/* Code version: v0.11.0 */
+/* Code version: v0.11.2 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -89,7 +89,7 @@
 	transform: translateY(-4px) scaleY(0.85);
 	transform-origin: top;
 	z-index: var(--layer-global-popover);
-	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), max-height 180ms var(--motion-standard), transform 180ms var(--motion-standard);
+	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), transform 180ms var(--motion-standard);
 }
 .portfolio-weight-field.is-open .portfolio-weight-slider-shell,
 .portfolio-weight-field:focus-within .portfolio-weight-slider-shell {
@@ -160,7 +160,7 @@
 	overflow: hidden;
 	transform: translateY(-4px) scaleY(0.85);
 	transform-origin: top;
-	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), max-height 180ms var(--motion-standard), margin 180ms var(--motion-standard), transform 180ms var(--motion-standard);
+	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), transform 180ms var(--motion-standard);
 }
 .trade-capital-field:focus-within .trade-capital-slider-shell,
 .trade-capital-field.is-open .trade-capital-slider-shell { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); }
@@ -861,7 +861,7 @@
 	right: 0;
 	padding: var(--shared-select-dropdown-padding);
 	border-radius: var(--shared-select-dropdown-radius);
-	background: var(--frosted-glass-background);
+	background: var(--frosted-glass-surface);
 	box-shadow: var(--frosted-glass-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
@@ -886,13 +886,22 @@
 .backtest-shared-select-dropdown {
 	position: absolute;
 	color: var(--text);
-	background: var(--frosted-glass-background);
+	background: var(--frosted-glass-surface);
 	border: var(--frosted-glass-border);
 	box-shadow: var(--frosted-glass-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
+}
+[data-shared-select-overlay] {
+	position: fixed;
+	inset: 0;
+	z-index: var(--layer-global-popover);
+	pointer-events: none;
+}
+[data-shared-select-overlay] > .backtest-shared-select-dropdown {
+	pointer-events: auto;
 }
 .backtest-shared-select-dropdown > * {
 	position: relative;
@@ -1539,7 +1548,7 @@
 .segmented-control:hover,
 .range-mode-shell:hover { background: var(--control-glass-background-hover); }
 .segmented-control::before,
-.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform var(--segmented-thumb-duration) var(--segmented-thumb-easing), width var(--segmented-thumb-duration) var(--segmented-thumb-easing), box-shadow 275ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; pointer-events: none; z-index: 0; }
+.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform var(--segmented-thumb-duration) var(--segmented-thumb-easing); will-change: transform; backface-visibility: hidden; pointer-events: none; z-index: 0; }
 .segmented-control:has(> .segmented-control-option:first-child input:checked)::before,
 .range-mode-shell:has(> .segmented-control-option:first-child input:checked)::before,
 .range-mode-shell:has(> .range-mode-option:first-child input:checked)::before {
@@ -1565,9 +1574,7 @@
 	opacity: 0;
 	transition:
 		transform 400ms var(--segmented-thumb-easing),
-		width 400ms var(--segmented-thumb-easing),
-		opacity 140ms var(--motion-standard),
-		box-shadow 275ms var(--motion-standard);
+		opacity 140ms var(--motion-standard);
 }
 .segmented-control[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before,
 .range-mode-shell[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before {

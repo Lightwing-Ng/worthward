@@ -1,7 +1,8 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.5.1
+Code version: v0.5.2
+- Changed: Longbridge HTTP requests now reuse the verified proxy-aware transport.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from importlib import import_module
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from app.core.broker_settings import (
     BrokerSettings,
@@ -21,6 +22,7 @@ from app.core.broker_settings import (
     uses_longbridge_cli_oauth,
 )
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
+from app.infrastructure.runtime_network import open_scoped_network_url as urlopen
 
 LONGBRIDGE_OPENAPI_BASE_URL = "https://openapi.longbridge.com"
 LONGBRIDGE_OPENAPI_TIMEOUT_SECONDS = 8

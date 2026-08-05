@@ -1,6 +1,6 @@
 """Pure form and query parsing helpers for workspace request handling.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -153,16 +153,40 @@ def parse_range_request_args_from_args(
     default_range_mode: str,
     default_period: str,
 ) -> tuple[str, str, str, str]:
-    """Parse range mode, period, and exact start/end bounds from workspace query args."""
-    range_mode = str(
+    """Parse canonical or legacy range state from workspace query args."""
+    raw_range = str(
         args.get("range", args.get("range_mode", default_range_mode)) or default_range_mode
     ).strip().lower()
-    period = str(args.get("period", default_period) or default_period).strip().lower()
+    canonical_periods = {
+        "1d",
+        "3d",
+        "1w",
+        "2w",
+        "1mo",
+        "3mo",
+        "6mo",
+        "1y",
+        "2y",
+        "3y",
+        "5y",
+        "10y",
+        "max",
+    }
+    is_custom_range = raw_range in {"custom", "exact"}
+    range_mode = "exact" if is_custom_range else ("period" if raw_range in {"", "period"} else "period")
+    period_value = str(args.get("period", "") or "").strip().lower()
+    if not period_value and raw_range in canonical_periods and not is_custom_range:
+        period_value = raw_range
+    period = period_value or default_period
     exact_trading_date = str(
-        args.get("trading_date", args.get("exact_trading_date", "")) or ""
+        args.get("date", args.get("trading_date", args.get("exact_trading_date", ""))) or ""
     ).strip()
     exact_start = str(args.get("from", args.get("exact_start", "")) or "").strip()
     exact_end = str(args.get("to", args.get("exact_end", "")) or "").strip()
+    if is_custom_range and exact_trading_date:
+        period = "1d"
+        exact_start = exact_trading_date
+        exact_end = exact_trading_date
     if range_mode == "exact" and period == "1d" and exact_trading_date:
         exact_start = exact_trading_date
         exact_end = exact_trading_date

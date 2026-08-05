@@ -1436,6 +1436,22 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertTrue(refreshed)
         refresh_mock.assert_called_once_with("BRK-B")
 
+    def test_ensure_fresh_history_store_uses_longbridge_when_yahoo_is_unavailable(self) -> None:
+        longbridge_settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.is_daily_store_fresh", return_value=False),
+            patch("app.services.market_data.has_remote_market_access", return_value=False),
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=longbridge_settings),
+            patch("app.services.market_data.refresh_history_store") as refresh_mock,
+        ):
+            refreshed = ensure_fresh_history_store("AAPL")
+
+        self.assertTrue(refreshed)
+        refresh_mock.assert_called_once_with("AAPL")
+
     def test_compare_page_checks_each_selected_ticker_for_fresh_daily_cache(self) -> None:
         refresh_requests: list[list[str]] = []
 

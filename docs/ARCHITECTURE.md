@@ -1,6 +1,21 @@
 # Architecture guide
 
-Documentation version: `v1.21.3`
+Documentation version: `v1.25.4`
+
+## Holdings P&L display contract
+
+The fixed Holdings summary keeps the cumulative account result separate from
+the daily P&L badges shown on other Holdings surfaces:
+
+- `Cumulative P&L` is cumulative realized P&L plus current cumulative
+  unrealized P&L.
+- Daily realized and unrealized P&L remain available beneath their respective
+  values where those badges are rendered.
+- Holdings rows may be rendered in fixed and scrollable DOM layers; realtime
+  synchronization must update every matching ticker row in both layers.
+
+These values may have opposite signs. A daily badge must not be used as a
+replacement for the cumulative account result.
 
 ## Runtime flow
 
@@ -50,6 +65,10 @@ Trade
   Live trading       /trade/live-trading
 
 Settings             /settings/<section>
+
+Settings includes a grouped `/settings/color-tokens` palette editor. Its Light
+and Dark values are rendered from the versioned theme configuration, while
+browser-local overrides remain in localStorage and never enter `settings_store/`.
 ```
 
 Older `/compare`, `/portfolio`, `/backtest`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects.
@@ -60,6 +79,10 @@ runtime.
 
 Backtest and Grid trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid trading locks strategy execution to `grid-trading` and owns its parameter surface.
 
+All `/workspaces/*` pages use the `Canonical URL State Contract`: semantic query names, repeated values whose order carries meaning, omitted defaults, and one stable serialization order. Relative windows use `range=<period>`; custom windows use `range=custom` with `period` and either `date` or `from` / `to`. Workspace tabs and result pagination use `tab` and `page`. Legacy aliases remain readable and are normalized to the canonical form on page hydration or the next state-changing interaction.
+
+Settings uses the same contract: the section is always the path in `/settings/<section>`, General language mapping uses `tab=history` when History is active, and General or Local Market Store pagination uses `page=<n>`. Current and page one are defaults and are omitted. Legacy `section`, `settings_section`, `language_tab`, `settings_tab`, `local_page`, and `language_page` aliases remain readable and redirect or hydrate into the canonical form. The container deployment uses these same Flask routes; there is no Docker-specific URL dialect.
+
 Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates. The market-cap workspace accepts up to 10 user-selected tickers; other comparison workspaces retain the shared 5-ticker limit.
 
 ## Data ownership
@@ -68,7 +91,53 @@ Return comparison, Market cap comparison, and Price performance share ticker, re
 - `settings_store/`: device-local settings and investment ledger data.
 - `config.toml`: versioned defaults and UI labels.
 
+Investment buy/sell cost attribution is a browser-side replay concern owned by
+the shared `data-utils.js` engine. It tracks open lots inside each broker,
+account, ticker, and currency scope, then aggregates the scoped results for
+display. The persisted `Settings -> Investment` preference selects the matcher
+(`lowest_cost_first` by default, with FIFO, LIFO, and moving-average options).
+Broker-reported closed-trade P&L remains authoritative; security-transfer basis
+reconstruction is explicitly labelled FIFO reconstructed and remains separate.
+The shared `aggregateInvestmentScopedPositionStates` helper owns the common
+scope-to-ticker aggregation contract. Stock details replays the same scopes
+independently at every visible chart point before calculating the aggregate
+average-cost curve. A canonical ticker with multiple position currencies is not
+reduced to one raw-unit average; its combined cost, market value, unrealized P&L,
+and total P&L remain unavailable unless an authoritative snapshot provides a
+valid aggregate basis. Converted account-level realized P&L evidence remains
+  available in the scoped breakdown, even when the combined row remains
+  unavailable.
+Unknown carried basis on a security `transfer_in` is represented by an explicit
+zero-cost lot while retaining the scope's unknown basis status. This preserves
+the lot identities that existed before the receipt without fabricating the
+transferred cost basis.
+
 Tests must not rely on or mutate real device-local data. Unit tests patch store paths; browser tests avoid committing write actions.
+
+## HSBC pending-sell transaction valuation contract
+
+HSBC's transferable cash and current Portfolio position snapshot remain the
+authoritative broker facts. Pending sell proceeds remain a separate display
+projection and must not be treated as settled cash.
+
+For row-level transaction valuation, the browser applies the following explicit
+projection contract:
+
+- The current authoritative broker position snapshot is treated as the
+  post-trade endpoint for the broker's visible transaction sequence.
+- The sequence is replayed in reverse. A pending sell row is valued using the
+  current virtual holdings, representing the holdings immediately after that
+  sell. After valuing the row, its sold quantity is added back before an earlier
+  row is valued. This keeps sequential pending sells distinct; a later sell is
+  not retroactively applied to an earlier sell row.
+- `Market value` is the sum of each virtual holding quantity multiplied by the
+  last available close in that trading day's one-minute intraday series. If no
+  usable intraday row exists, the existing daily close fallback is used.
+- `Equity` is the row's displayed broker cash projection plus that row's
+  `Market value`.
+- Because exact execution timestamps are unavailable, this convention is a
+  deterministic display approximation. It must not be presented as a precise
+  fill-time or settlement-time valuation.
 
 ## High-risk invariants
 
@@ -117,11 +186,20 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   adapters must preserve their cross-import leg identities and must fail back to
   explicit review when an identity becomes ambiguous.
 - Authoritative broker position snapshots reconcile synthesized grant quantities.
+- Mixed-broker payloads retain authoritative position snapshots per broker/account;
+  a scoped HSBC Holdings view may use its Portfolio snapshot even when the global
+  portfolio intentionally disables a single top-level snapshot.
 - HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
+  Pending sell proceeds are a separate display projection, while the transferable
+  bank balance remains the authoritative cash fact.
+- All-brokers account-balance fields retain the aggregate broker cash ledgers and
+  source-bounded pending sell proceeds. Internal-transfer bridges are an
+  external-flow attribution layer only; they must not subtract from the cash or
+  equity balance displayed by Holdings.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
 - HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
-- BOCHK imports accept one or more full Consolidated Statement PDFs per batch. The customer number is the parent account, while full deposit-account numbers and short subaccount identifiers remain source-scoped. `0079` CNY and USD sections are separate cash ledgers. The parser anchors the rightmost amount as the balance, reconciles each subaccount's running balance, rejects composite page-header continuations, and fails closed on non-zero securities cash activity because this adapter is cash-only. Its period/count/balance metadata is broker-scoped so it survives a mixed ledger.
+- BOCHK imports accept one or more full Consolidated Statement PDFs per batch. The customer number is the parent account, while full deposit-account numbers and short subaccount identifiers remain source-scoped. HKD Savings and HKD Current remain distinct subaccounts; `0079` printed CNY/RMB (canonical CNH) and USD sections are separate cash ledgers, with the printed marker retained as raw provenance. The parser anchors the rightmost amount as the balance, reconciles each subaccount's running balance, rejects composite page-header continuations, and fails closed on non-zero securities cash activity because this adapter is cash-only. Its period/count/balance metadata is broker-scoped so it survives a mixed ledger.
 - The browser UI exposes only the BOCHK PDF path. The backend retains a tested legacy fallback for `broker=boc_hk` with `zircon_hk_transactions_xlsx`; this compatibility path must not be removed as part of PDF UI changes.
 - Canonical tickers are market-qualified only when the market needs to be
   distinguished: US securities are bare (`META`), Hong Kong uses `.HK`,
@@ -155,7 +233,8 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   Settings catalog presentation builders. WebRuntime supplies strategy usage
   history and the strategy factory while retaining request assembly.
 - `app/web/style_token_rows.py`: pure Settings design-token presentation
-  builders. WebRuntime supplies translated labels and the project display URL;
+  builders. WebRuntime supplies translated labels, the project display URL,
+  and the Light / Dark theme mappings;
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
@@ -164,8 +243,12 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
+- `app/web/static/assets/js/investment/data-utils.js`: shared investment ledger replay, lot matching, cost basis, realized P&L, and unrealized P&L calculations used by Holdings and Stock details.
 - `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.
 - `app/web/static/assets/js/investment/transaction-table.js`: visible-row selection, stable descending order, page clamping, and ledger-to-page lookup.
+- `app/web/static/assets/js/investment/url-state.js`: canonical query-string parsing and serialization for Investment views, ranges, broker scopes, table filters, Stock details dates, and pagination.
+- `app/web/static/assets/js/workspace/url-state.js`: shared canonical query-string parsing and serialization for Workspace tickers, ranges, return modes, portfolio allocation, backtest and DCA parameters, detail tabs, and pagination.
+- `app/web/static/assets/js/settings/url-state.js`: canonical Settings section, language-tab, and pagination parsing and serialization, including legacy aliases and default omission.
 - `app/web/static/assets/js/investment/layout.js`: split-layout measurement, clamping, observers, and resizer cleanup.
 
 `investment.js` imports these browser modules and remains their composition root.

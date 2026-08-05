@@ -51,6 +51,7 @@ class OptimisticNavigationTests(unittest.TestCase):
             "email-smtp",
             "export-image",
             "font-tokens",
+            "color-tokens",
             "general",
             "local-market-store",
             "material-tokens",

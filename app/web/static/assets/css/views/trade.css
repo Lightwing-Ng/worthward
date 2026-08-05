@@ -1,4 +1,4 @@
-/* Code version: v3.27.1 */
+/* Code version: v3.27.5 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -260,7 +260,7 @@
 }
 
 .trade-metrics-panel-grid {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-auto-rows: max-content;
     align-items: start;
     justify-items: stretch;
@@ -277,21 +277,9 @@
     }
 }
 
-@media (min-width: 768px) and (max-width: 1199px) {
-    .trade-metrics-panel-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
 @media (min-width: 1200px) {
     .trade-metrics-panel-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 767px) {
-    .trade-metrics-panel-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -597,10 +585,11 @@
     bottom: 0;
     width: 1px;
     background: color-mix(in srgb, var(--theme-muted) 72%, transparent);
-    transform: translateX(-0.5px);
+    --trade-chart-hover-line-x: 0px;
+    transform: translate3d(calc(var(--trade-chart-hover-line-x) - 0.5px), 0, 0);
     pointer-events: none;
     opacity: 0;
-    transition: opacity 120ms var(--motion-standard), left 120ms var(--motion-emphasized);
+    transition: opacity 120ms var(--motion-standard);
     z-index: var(--layer-chart-overlay-line);
 }
 
@@ -717,7 +706,7 @@
     border-radius: var(--radius-pill);
     background: var(--accent-surface-muted);
     transform: translateX(calc(var(--active-index, 0) * 50px)) scale(1.08);
-    transition: transform 420ms var(--motion-emphasized);
+    transition: transform var(--motion-duration-emphasized) var(--motion-emphasized);
     pointer-events: none;
     z-index: -1;
 }
@@ -759,7 +748,7 @@
     align-items: center;
     justify-content: center;
     text-decoration: none;
-    transition: background 500ms var(--motion-bouncy), color 400ms var(--motion-standard), transform 300ms var(--motion-bouncy);
+    transition: background var(--motion-duration-spatial) var(--motion-bouncy), color var(--motion-duration-emphasized) var(--motion-standard), transform var(--motion-duration-standard) var(--motion-bouncy);
 }
 
 .sidebar-dock-item::after {
@@ -1003,7 +992,7 @@
 }
 
 .style-token-modal-demo .workspace-modal-title {
-    font-weight: var(--font-weight-regular);
+    font-weight: var(--font-weight-bold);
 }
 
 .style-token-settings-input-shell {

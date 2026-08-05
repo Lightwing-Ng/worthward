@@ -1,7 +1,24 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.70.1
+ * Code version: v1.80.0
+ * - Added: Virtual cash reconciliation rows now distinguish virtual deposits from virtual withdrawals while retaining the shared Virtual balance reset description.
+ * - Fixed: Unknown carried-basis transfers append an explicit zero-cost lot instead of erasing existing tax-lot identities.
+ * - Added: Holdings and Stock details share one scoped-position aggregation helper, including the same mixed-currency fail-closed contract.
+ * - Fixed: Unavailable market values no longer turn portfolio weight into a numeric zero through JavaScript null coercion.
+ * - Changed: Mixed-currency ticker summaries retain converted account-level realized P&L evidence while combined P&L remains unavailable.
+ * - Added: Broker-scoped authoritative position snapshots remain available in mixed-broker payloads, allowing HSBC current holdings to stay separate from incomplete order replay.
+ * - Fixed: HSBC pending-settlement rows can use the authoritative broker cash boundary instead of presenting replay drift as a cash loss.
+ * - Fixed: Holdings now replays transactions only inside broker/account/currency lot scopes before ticker aggregation.
+ * - Changed: Holdings fail closed for same-ticker positions whose cost basis spans multiple currencies instead of adding raw currency units.
+ * - Fixed: Authoritative broker performance snapshots retain realized P&L even when local open-position cost basis is unavailable because of mixed currencies.
+ * - Added: Buy and sell replay now uses one configurable lot-matching policy across Holdings, Stock details, and local realized P&L, defaulting to lowest-cost lots first.
+ * - Fixed: Cost basis and open-position valuation now aggregate from broker/account/currency scopes.
+ * - Fixed: Zero-cost grant lots remain valid open positions after a sale.
+ * - Refactored: Stock-details transaction replay now uses the shared transaction applier.
+ * - Fixed: Internal cash-transfer bridge amounts are converted from their source currency into the workspace base currency before aggregate equity adjustments are applied.
+ * - Fixed: Imported Futu (HK) HK Stocks Account transfers now expose an aggregate-only bridge adjustment while preserving the signed subaccount cash delta.
+ * - Fixed: Authoritative HSBC broker cash now converts the preserved USD, HKD, and CNH ending balances into the workspace base currency before rebuilding aggregate equity.
  * - Changed: Matched security-transfer receipts carry reconstructed FIFO basis into Holdings and P&L even when Schwab's snapshot omits cost basis, with the method preserved for display.
  * - Fixed: Authoritative Schwab position snapshots preserve unknown or partial cost basis as unavailable P&L instead of coercing blank values to zero, and use the reported close price when a last price is absent.
  * - Changed: KOL reward descriptions use the canonical `KOL Rewards` prefix while retaining imported details.
@@ -128,6 +145,107 @@ export function filterAggregateOnlyOverlayTransactions(
     ));
 }
 
+function isFlatScopedPosition(value) {
+    const numericValue = Number(value);
+    return !Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9;
+}
+
+export function aggregateInvestmentScopedPositionStates(
+    states,
+    ticker,
+    getTickerQuoteCurrency = () => '',
+) {
+    const aggregate = {
+        ticker,
+        shares: 0,
+        totalCost: 0,
+        realizedPnl: 0,
+        nonPerformanceRealizedPnl: 0,
+        realizedPnlByDate: {},
+        lastCloseDate: null,
+        lastTradeDate: null,
+        buyCount: 0,
+        buyQuantity: 0,
+        sellCount: 0,
+        sellQuantity: 0,
+        brokerRealizedSellCount: 0,
+        realizedPnlStatus: 'complete',
+        hasPartialTaxLotHistory: false,
+        costBasisStatus: 'known',
+        costBasisMethod: null,
+        lotMatchingMethod: null,
+    };
+    const currencies = new Set();
+    const stateValues = states instanceof Map
+        ? Array.from(states.values())
+        : (Array.isArray(states) ? states : []);
+
+    stateValues.forEach((state) => {
+        if (!state || typeof state !== 'object') return;
+        aggregate.shares += Number(state.shares) || 0;
+        aggregate.totalCost += Number(state.totalCost) || 0;
+        aggregate.realizedPnl += Number(state.realizedPnl) || 0;
+        aggregate.nonPerformanceRealizedPnl += Number(state.nonPerformanceRealizedPnl) || 0;
+        aggregate.buyCount += Number(state.buyCount) || 0;
+        aggregate.buyQuantity += Number(state.buyQuantity) || 0;
+        aggregate.sellCount += Number(state.sellCount) || 0;
+        aggregate.sellQuantity += Number(state.sellQuantity) || 0;
+        aggregate.brokerRealizedSellCount += Number(state.brokerRealizedSellCount) || 0;
+        aggregate.hasPartialTaxLotHistory = (
+            aggregate.hasPartialTaxLotHistory || state.hasPartialTaxLotHistory === true
+        );
+        aggregate.realizedPnlStatus = (
+            aggregate.realizedPnlStatus === 'incomplete' || state.realizedPnlStatus === 'incomplete'
+        ) ? 'incomplete' : aggregate.realizedPnlStatus;
+        if (state.costBasisStatus === 'unknown') {
+            aggregate.costBasisStatus = 'unknown';
+        } else if (
+            state.costBasisStatus === 'partial'
+            && aggregate.costBasisStatus === 'known'
+        ) {
+            aggregate.costBasisStatus = 'partial';
+        }
+        if (state.costBasisMethod) aggregate.costBasisMethod = state.costBasisMethod;
+        if (state.lotMatchingMethod) aggregate.lotMatchingMethod = state.lotMatchingMethod;
+        aggregate.lastTradeDate = [aggregate.lastTradeDate, state.lastTradeDate]
+            .filter(Boolean)
+            .sort()
+            .pop() || null;
+        aggregate.lastCloseDate = [aggregate.lastCloseDate, state.lastCloseDate]
+            .filter(Boolean)
+            .sort()
+            .pop() || null;
+        Object.entries(state.realizedPnlByDate || {}).forEach(([ledgerDate, value]) => {
+            aggregate.realizedPnlByDate[ledgerDate] = (
+                Number(aggregate.realizedPnlByDate[ledgerDate]) || 0
+            ) + (Number(value) || 0);
+        });
+        const currency = String(
+            state.lotScope?.currency || getTickerQuoteCurrency(ticker) || '',
+        ).trim().toUpperCase();
+        if (!isFlatScopedPosition(state.shares) && currency) currencies.add(currency);
+    });
+
+    const positionCurrencies = Array.from(currencies).sort();
+    const hasMixedPositionCurrencies = positionCurrencies.length > 1;
+    const hasOpenPosition = !isFlatScopedPosition(aggregate.shares);
+    const averagePrice = (
+        hasMixedPositionCurrencies
+        || !Number.isFinite(aggregate.shares)
+        || !hasOpenPosition
+    ) ? null : aggregate.totalCost / Math.abs(aggregate.shares);
+
+    return {
+        ...aggregate,
+        totalCost: hasMixedPositionCurrencies ? null : aggregate.totalCost,
+        averagePrice,
+        currencies: positionCurrencies,
+        positionCurrencies,
+        hasMixedPositionCurrencies,
+        hasOpenPosition,
+    };
+}
+
 export function createInvestmentDataUtils({
     noCommissionTransactionTypes,
     investmentCommonSplitFactors,
@@ -184,6 +302,17 @@ export function createInvestmentDataUtils({
 
     function getNormalizedTransactionType(txn) {
         return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
+    }
+
+    const CASH_DEPOSIT_TYPES = new Set(['deposit', 'virtual_deposit']);
+    const CASH_WITHDRAWAL_TYPES = new Set(['withdrawal', 'virtual_withdrawal', 'virtual_balance_reset']);
+
+    function isCashDepositType(normalizedType) {
+        return CASH_DEPOSIT_TYPES.has(normalizedType);
+    }
+
+    function isCashWithdrawalType(normalizedType) {
+        return CASH_WITHDRAWAL_TYPES.has(normalizedType);
     }
 
     function getTransactionQuantity(txn) {
@@ -278,6 +407,41 @@ export function createInvestmentDataUtils({
         return 0;
     }
 
+    function getInvestmentInternalTransferAggregateBridgeAmount(
+        amount,
+        txn,
+        fxTimeline = null,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return 0;
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const currency = normalizeCurrencyCode(formatTransactionCurrency(txn)) || normalizedBaseCurrency;
+        return convertAmountToBaseCurrency(
+            numericAmount,
+            currency,
+            normalizeLedgerDate(txn?.date),
+            fxTimeline,
+            normalizedBaseCurrency,
+        );
+    }
+
+    function getInvestmentInternalTransferAggregateBridgeDelta(
+        txn,
+        fxTimeline = null,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        if (txn?.internal_transfer_external_flow_excluded !== true) return 0;
+        const cashDelta = getTransactionAmount(txn);
+        const bridgeAmount = getInvestmentInternalTransferAggregateBridgeAmount(
+            cashDelta,
+            txn,
+            fxTimeline,
+            baseCurrency,
+        );
+        return Number.isFinite(bridgeAmount) ? -bridgeAmount : 0;
+    }
+
     function getTransactionCommission(txn) {
         const commission = txn?.normalized?.commission ?? txn?.commission ?? 0;
         const numericCommission = Number(commission);
@@ -304,10 +468,12 @@ export function createInvestmentDataUtils({
         const normalizedType = getNormalizedTransactionType(txn);
         const cashAmount = getTransactionCashSortAmount(txn);
         if (cashAmount > 1e-9) return 0;
-        if (['deposit', 'kol_reward', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)) return 0;
+        if (['kol_reward', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)
+            || isCashDepositType(normalizedType)) return 0;
         if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) return 1;
         if (cashAmount < -1e-9) return 2;
-        if (['withdrawal', 'virtual_balance_reset', 'foreign_tax_withholding', 'debit_interest'].includes(normalizedType)) return 2;
+        if (['foreign_tax_withholding', 'debit_interest'].includes(normalizedType)
+            || isCashWithdrawalType(normalizedType)) return 2;
         return 1;
     }
 
@@ -960,11 +1126,11 @@ export function createInvestmentDataUtils({
 
         const currency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
         if (hasExplicitTransactionCurrency(txn) && currency) {
-            const action = normalizedType === 'withdrawal' ? 'Withdrawal' : 'Deposit';
+            const action = isCashWithdrawalType(normalizedType) ? 'Withdrawal' : 'Deposit';
             return `${action} · ${currency}`;
         }
 
-        return normalizedType === 'deposit' ? '* Equivalent' : '--';
+        return isCashDepositType(normalizedType) ? '* Equivalent' : '--';
     }
 
     function escapeInvestmentDescriptionRegExp(value) {
@@ -1159,8 +1325,8 @@ export function createInvestmentDataUtils({
         const fileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
         const normalizedType = getNormalizedTransactionType(txn);
         if (['hsbc_usd_account_text', 'hsbc_multi_currency_cash_account_text', 'hsbc_statement_cash'].includes(fileKind)) {
-            if (['deposit', 'credit_interest'].includes(normalizedType)) return 0;
-            if (['withdrawal', 'debit_interest'].includes(normalizedType)) return 2;
+            if (isCashDepositType(normalizedType) || normalizedType === 'credit_interest') return 0;
+            if (isCashWithdrawalType(normalizedType) || normalizedType === 'debit_interest') return 2;
             return 3;
         }
         if (fileKind === 'hsbc_order_status_text' || fileKind === 'hsbc_order_status_capture') {
@@ -1191,7 +1357,7 @@ export function createInvestmentDataUtils({
             } else {
                 description = `${displayTicker} × ${cleanQty}`;
             }
-        } else if (['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
+        } else if (isCashDepositType(normalizedTypeDesc) || isCashWithdrawalType(normalizedTypeDesc)) {
             description = getCashTransactionDescription(txn, normalizedTypeDesc);
         } else {
             description = getTransactionDescriptionText(txn);
@@ -1307,6 +1473,9 @@ export function createInvestmentDataUtils({
             hasPartialTaxLotHistory: false,
             costBasisStatus: 'known',
             costBasisMethod: null,
+            lotMatchingMethod: null,
+            lots: [],
+            nextLotSequence: 0,
             lotScope: null,
         };
     }
@@ -1506,11 +1675,7 @@ export function createInvestmentDataUtils({
         return 'partial';
     }
 
-    function getAuthoritativePositionSnapshot() {
-        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
-            return null;
-        }
-        const rawSnapshot = window.ANTIGRAVITY_INVESTMENT_DATA?.position_snapshot;
+    function normalizeAuthoritativePositionSnapshot(rawSnapshot) {
         if (!rawSnapshot || typeof rawSnapshot !== 'object') {
             return {};
         }
@@ -1537,6 +1702,62 @@ export function createInvestmentDataUtils({
             };
         });
         return normalizedSnapshot;
+    }
+
+    function getAuthoritativePositionSnapshot() {
+        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
+            return null;
+        }
+        return normalizeAuthoritativePositionSnapshot(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.position_snapshot,
+        );
+    }
+
+    function getAuthoritativeBrokerPositionSnapshots() {
+        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
+        const snapshots = [];
+        Object.entries(brokerSummaries).forEach(([broker, summary]) => {
+            if (!summary || typeof summary !== 'object') return;
+            if (summary.position_snapshot_authoritative !== true) return;
+            const rawSnapshot = summary.position_snapshot;
+            if (!rawSnapshot || typeof rawSnapshot !== 'object') return;
+            const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
+            if (!normalizedBroker) return;
+            snapshots.push({
+                broker: normalizedBroker,
+                accountId: String(summary.account_id ?? summary.account ?? '').trim(),
+                positionSnapshot: normalizeAuthoritativePositionSnapshot(rawSnapshot),
+                holdingsValidation: summary.holdings_validation && typeof summary.holdings_validation === 'object'
+                    ? summary.holdings_validation
+                    : null,
+            });
+        });
+        return snapshots;
+    }
+
+    function getAuthoritativePositionSnapshotForTransactions(transactions = []) {
+        const globalSnapshot = getAuthoritativePositionSnapshot();
+        if (globalSnapshot !== null) return globalSnapshot;
+        const scopedTransactions = Array.isArray(transactions) ? transactions : [];
+        const brokerCodes = new Set(
+            scopedTransactions
+                .map((txn) => String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase())
+                .filter(Boolean),
+        );
+        if (brokerCodes.size !== 1) return null;
+        const broker = [...brokerCodes][0];
+        const accountIds = new Set(
+            scopedTransactions
+                .map((txn) => String(txn?.account || txn?.source?.account || '').trim())
+                .filter(Boolean),
+        );
+        const candidates = getAuthoritativeBrokerPositionSnapshots().filter((entry) => (
+            entry.broker === broker
+            && (!accountIds.size || !entry.accountId || accountIds.has(entry.accountId))
+        ));
+        if (candidates.length !== 1) return null;
+        return candidates[0].positionSnapshot;
     }
 
     function normalizeAuthoritativePerformanceSnapshot(rawSnapshot) {
@@ -1715,6 +1936,125 @@ export function createInvestmentDataUtils({
         }
     }
 
+    function applyInvestmentTransactionToState(
+        summary,
+        txn,
+        normalizedType,
+        quantity,
+        amount,
+        ledgerDate,
+        {
+            preferBrokerRealizedPnl = false,
+            preferTradePriceAndCommission = false,
+            unitPriceOverride = null,
+        } = {},
+    ) {
+        summary.hasPartialTaxLotHistory = (
+            summary.hasPartialTaxLotHistory || hasPartialTaxLotHistorySource(txn)
+        );
+        const resolveTradeUnitPrice = () => {
+            if (unitPriceOverride !== null && Number.isFinite(Number(unitPriceOverride))) {
+                return Number(unitPriceOverride);
+            }
+            return preferTradePriceAndCommission
+                ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
+                : getTransactionEffectiveUnitPrice(txn, quantity);
+        };
+        if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
+            summary.buyCount += 1;
+            summary.buyQuantity += quantity;
+            summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
+            applyDirectionalTrade(summary, 'long', quantity, resolveTradeUnitPrice());
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return 0;
+        }
+        if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
+            openPositionLots(summary, 'long', quantity, 0);
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return 0;
+        }
+        // Dividend reinvestment is funded by a separate dividend cash flow.
+        if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
+            openPositionLots(summary, 'long', quantity, 0);
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return 0;
+        }
+        if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
+            const sharesBeforeSell = Number(summary.shares) || 0;
+            const realizedBeforeSell = Number(summary.realizedPnl) || 0;
+            applyDirectionalTrade(summary, 'short', quantity, resolveTradeUnitPrice());
+            summary.sellCount += 1;
+            summary.sellQuantity += quantity;
+            summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
+            const brokerRealizedPnl = preferBrokerRealizedPnl
+                ? getTransactionBrokerRealizedPnl(txn)
+                : null;
+            if (brokerRealizedPnl !== null) {
+                summary.realizedPnl = realizedBeforeSell + brokerRealizedPnl;
+                summary.brokerRealizedSellCount += 1;
+            } else if (sharesBeforeSell < quantity - 1e-9) {
+                summary.realizedPnlStatus = 'incomplete';
+            }
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return (Number(summary.realizedPnl) || 0) - realizedBeforeSell;
+        }
+        if (normalizedType === 'transfer_in' && quantity !== null && !Number.isNaN(quantity)) {
+            const carriedCostBasis = getTransactionDerivedCostBasis(txn, 'carried');
+            if (carriedCostBasis !== null) {
+                openPositionLots(summary, 'long', quantity, carriedCostBasis / quantity);
+                markReconstructedCostBasis(
+                    summary,
+                    txn,
+                    'carried',
+                    txn?.carried_cost_basis_status,
+                );
+            } else {
+                // Preserve existing lot identities. Unknown carried basis is represented by
+                // a zero-cost lot and remains marked unknown below; it must not erase lots
+                // that were opened before the transfer receipt.
+                openPositionLots(summary, 'long', quantity, 0);
+                markReconstructedCostBasis(
+                    summary,
+                    txn,
+                    'carried',
+                    txn?.carried_cost_basis_status || 'unknown',
+                );
+            }
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return 0;
+        }
+        if (normalizedType === 'transfer_out' && quantity !== null && !Number.isNaN(quantity)) {
+            const transferredCostBasis = getTransactionDerivedCostBasis(txn, 'transfer_out');
+            const sharesBeforeTransfer = Number(summary.shares) || 0;
+            if (sharesBeforeTransfer > 1e-9) {
+                removePositionLots(summary, quantity, {
+                    basisOverride: transferredCostBasis,
+                });
+            } else {
+                summary.shares -= quantity;
+            }
+            markReconstructedCostBasis(
+                summary,
+                txn,
+                'transfer_out',
+                transferredCostBasis !== null
+                    ? txn?.transfer_out_cost_basis_status
+                    : txn?.transfer_out_cost_basis_status || 'unknown',
+            );
+            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+            return 0;
+        }
+        if (
+            ['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)
+            && txn?.source?.excluded_from_broker_pnl !== true
+        ) {
+            summary.realizedPnl += amount;
+            summary.nonPerformanceRealizedPnl += amount;
+            return amount;
+        }
+        return 0;
+    }
+
     function getTransactionTradePriceAndCommissionUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
         const price = getTransactionPrice(txn);
@@ -1731,6 +2071,27 @@ export function createInvestmentDataUtils({
         return getNormalizedTransactionType(txn) === 'sell'
             ? Math.max(0, price - commissionPerShare)
             : price + commissionPerShare;
+    }
+
+    const INVESTMENT_COST_BASIS_METHODS = new Set([
+        'lowest_cost_first',
+        'fifo',
+        'lifo',
+        'moving_average',
+    ]);
+
+    function normalizeInvestmentCostBasisMethod(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return INVESTMENT_COST_BASIS_METHODS.has(normalized)
+            ? normalized
+            : 'lowest_cost_first';
+    }
+
+    function getInvestmentCostBasisMethod() {
+        return normalizeInvestmentCostBasisMethod(
+            globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.investment_cost_basis_method
+            ?? globalThis.window?.ANTIGRAVITY_APP?.investmentCostBasisMethod,
+        );
     }
 
     const INVESTMENT_LINEAGE_PROXY_TICKERS = new Set(['SPY', 'SPY.US']);
@@ -1861,34 +2222,152 @@ export function createInvestmentDataUtils({
     function resetPositionState(state) {
         state.shares = 0;
         state.totalCost = 0;
+        state.lots = [];
+        state.nextLotSequence = 0;
+    }
+
+    function ensurePositionLots(state) {
+        if (!Array.isArray(state.lots)) state.lots = [];
+        if (state.lots.length || isFlatPosition(state.shares)) return state.lots;
+        const shares = Number(state.shares) || 0;
+        const totalCost = Number(state.totalCost) || 0;
+        const averagePrice = Math.abs(shares) > 1e-9 ? totalCost / Math.abs(shares) : 0;
+        state.lots.push({
+            quantity: shares,
+            unitPrice: Number.isFinite(averagePrice) ? averagePrice : 0,
+            sequence: Number(state.nextLotSequence) || 0,
+        });
+        state.nextLotSequence = (Number(state.nextLotSequence) || 0) + 1;
+        return state.lots;
     }
 
     function openPositionLots(state, side, quantity, unitPrice) {
         if (!Number.isFinite(quantity) || quantity <= 0) return;
+        ensurePositionLots(state);
+        const safeUnitPrice = Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : 0;
         const signedQuantity = side === 'short' ? -quantity : quantity;
         state.shares += signedQuantity;
-        state.totalCost += unitPrice * quantity;
+        state.totalCost += safeUnitPrice * quantity;
+        state.lotMatchingMethod = getInvestmentCostBasisMethod();
+        state.lots.push({
+            quantity: signedQuantity,
+            unitPrice: safeUnitPrice,
+            sequence: Number(state.nextLotSequence) || 0,
+        });
+        state.nextLotSequence = (Number(state.nextLotSequence) || 0) + 1;
+    }
+
+    function getLotsForClosing(state, side) {
+        const method = getInvestmentCostBasisMethod();
+        const sign = side === 'short' ? -1 : 1;
+        const lots = ensurePositionLots(state).filter((lot) => (
+            Math.sign(Number(lot?.quantity) || 0) === sign
+            && Math.abs(Number(lot?.quantity) || 0) > 1e-9
+            && Number.isFinite(Number(lot?.unitPrice))
+        ));
+        const sequenceOrder = (left, right) => (
+            (Number(left?.sequence) || 0) - (Number(right?.sequence) || 0)
+        );
+        if (method === 'fifo') return lots.sort(sequenceOrder);
+        if (method === 'lifo') return lots.sort((left, right) => sequenceOrder(right, left));
+        if (method === 'lowest_cost_first') {
+            return lots.sort((left, right) => {
+                const priceDelta = sign > 0
+                    ? Number(left.unitPrice) - Number(right.unitPrice)
+                    : Number(right.unitPrice) - Number(left.unitPrice);
+                return Math.abs(priceDelta) > 1e-9 ? priceDelta : sequenceOrder(left, right);
+            });
+        }
+        return lots;
+    }
+
+    function consumePositionLots(state, quantity, {useAverage = false} = {}) {
+        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) {
+            return {removedQuantity: 0, removedCost: 0};
+        }
+        const sign = state.shares > 0 ? 1 : -1;
+        const originalShares = Number(state.shares) || 0;
+        const originalTotalCost = Number(state.totalCost) || 0;
+        if (useAverage) {
+            const averagePrice = Math.abs(originalShares) > 1e-9
+                ? originalTotalCost / Math.abs(originalShares)
+                : 0;
+            state.lots = [{
+                quantity: originalShares,
+                unitPrice: averagePrice,
+                sequence: Number(state.nextLotSequence) || 0,
+            }];
+        }
+        const lots = getLotsForClosing(state, sign > 0 ? 'long' : 'short');
+        let remaining = Math.min(quantity, Math.abs(originalShares));
+        let removedCost = 0;
+        let removedQuantity = 0;
+        lots.forEach((lot) => {
+            if (remaining <= 1e-9) return;
+            const lotQuantity = Math.abs(Number(lot.quantity) || 0);
+            const matchedQuantity = Math.min(lotQuantity, remaining);
+            if (matchedQuantity <= 1e-9) return;
+            lot.quantity -= sign * matchedQuantity;
+            removedQuantity += matchedQuantity;
+            removedCost += Number(lot.unitPrice) * matchedQuantity;
+            remaining -= matchedQuantity;
+        });
+        if (remaining > 1e-9) {
+            const sharesAfterLots = originalShares - (sign * removedQuantity);
+            const costAfterLots = originalTotalCost - removedCost;
+            const fallbackQuantity = Math.min(Math.abs(sharesAfterLots), remaining);
+            const fallbackAverage = Math.abs(sharesAfterLots) > 1e-9
+                ? costAfterLots / Math.abs(sharesAfterLots)
+                : 0;
+            removedQuantity += fallbackQuantity;
+            removedCost += fallbackAverage * fallbackQuantity;
+        }
+        state.shares = originalShares - (sign * removedQuantity);
+        state.totalCost = Math.max(0, originalTotalCost - removedCost);
+        state.lots = ensurePositionLots(state).filter((lot) => Math.abs(Number(lot.quantity) || 0) > 1e-9);
+        return {removedQuantity, removedCost};
+    }
+
+    function removePositionLots(state, quantity, { basisOverride = null, useAverage = false } = {}) {
+        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return 0;
+        const originalTotalCost = Number(state.totalCost) || 0;
+        const {removedQuantity} = consumePositionLots(state, quantity, {useAverage});
+        if (basisOverride !== null && Number.isFinite(Number(basisOverride))) {
+            const targetTotalCost = Math.max(0, originalTotalCost - Number(basisOverride));
+            const remainingShares = Math.abs(Number(state.shares) || 0);
+            const remainingLotCost = state.lots.reduce(
+                (total, lot) => total + (Math.abs(Number(lot.quantity) || 0) * Number(lot.unitPrice) || 0),
+                0,
+            );
+            const costAdjustmentPerShare = remainingShares > 1e-9
+                ? (targetTotalCost - remainingLotCost) / remainingShares
+                : 0;
+            state.lots.forEach((lot) => {
+                lot.unitPrice = Math.max(0, Number(lot.unitPrice) + costAdjustmentPerShare);
+            });
+            state.totalCost = targetTotalCost;
+        }
+        return removedQuantity;
     }
 
     function closePositionLots(state, quantity, unitPrice) {
         if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return 0;
 
-        const averagePrice = state.totalCost / Math.abs(state.shares);
         const isLongPosition = state.shares > 0;
-        let realizedDelta = 0;
-
-        if (isLongPosition) {
-            realizedDelta = (unitPrice - averagePrice) * quantity;
-            state.shares -= quantity;
-        } else {
-            realizedDelta = (averagePrice - unitPrice) * quantity;
-            state.shares += quantity;
-        }
+        const method = getInvestmentCostBasisMethod();
+        state.lotMatchingMethod = method;
+        const {removedQuantity, removedCost} = consumePositionLots(
+            state,
+            quantity,
+            {useAverage: method === 'moving_average'},
+        );
+        const realizedDelta = isLongPosition
+            ? (unitPrice * removedQuantity) - removedCost
+            : removedCost - (unitPrice * removedQuantity);
 
         state.realizedPnl += realizedDelta;
-        state.totalCost -= averagePrice * quantity;
 
-        if (isFlatPosition(state.shares) || isFlatPosition(state.totalCost)) {
+        if (isFlatPosition(state.shares)) {
             resetPositionState(state);
         }
         return realizedDelta;
@@ -2465,12 +2944,15 @@ export function createInvestmentDataUtils({
                 baseCurrency,
             );
             if (!Number.isFinite(transactionAmount) || transactionAmount <= 1e-9) return;
-            if (txn?.manual_internal_transfer_external_flow_excluded === true) return;
-            if (normalizedType === 'deposit') {
+            if (
+                txn?.manual_internal_transfer_external_flow_excluded === true
+                || getInvestmentInternalTransferAggregateBridgeDelta(txn) !== 0
+            ) return;
+            if (isCashDepositType(normalizedType)) {
                 entry.cashInAmountBase += transactionAmountBase;
                 entry.netTransferAmount += transactionAmount;
                 entry.netTransferAmountsInBase += transactionAmountBase;
-            } else if (['withdrawal', 'virtual_balance_reset'].includes(normalizedType)) {
+            } else if (isCashWithdrawalType(normalizedType)) {
                 entry.cashOutAmountBase += transactionAmountBase;
                 entry.netTransferAmount -= transactionAmount;
                 entry.netTransferAmountsInBase -= transactionAmountBase;
@@ -2592,7 +3074,7 @@ export function createInvestmentDataUtils({
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
-        const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
+        const authoritativePositionSnapshot = getAuthoritativePositionSnapshotForTransactions(orderedTransactions);
         const authoritativePerformanceSnapshot = getAuthoritativePerformanceSnapshot();
         const authoritativeBrokerPerformanceSnapshots = getAuthoritativeBrokerPerformanceSnapshots();
         const verifiedTaxLotHistoryScopes = getVerifiedTaxLotHistoryScopes();
@@ -2655,124 +3137,6 @@ export function createInvestmentDataUtils({
             });
         }
 
-        function applyTickerTransaction(
-            summary,
-            txn,
-            normalizedType,
-            quantity,
-            amount,
-            ledgerDate,
-            {
-                preferBrokerRealizedPnl = false,
-                preferTradePriceAndCommission = false,
-            } = {},
-        ) {
-            summary.hasPartialTaxLotHistory = (
-                summary.hasPartialTaxLotHistory || hasPartialTaxLotHistorySource(txn)
-            );
-            if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.buyCount += 1;
-                summary.buyQuantity += quantity;
-                summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
-                const effectiveUnitPrice = preferTradePriceAndCommission
-                    ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
-                    : getTransactionEffectiveUnitPrice(txn, quantity);
-                applyDirectionalTrade(summary, 'long', quantity, effectiveUnitPrice);
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            // Dividend reinvestment is funded by a separate dividend cash flow.
-            if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                const sharesBeforeSell = Number(summary.shares) || 0;
-                const realizedBeforeSell = Number(summary.realizedPnl) || 0;
-                const effectiveUnitPrice = preferTradePriceAndCommission
-                    ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
-                    : getTransactionEffectiveUnitPrice(txn, quantity);
-                applyDirectionalTrade(summary, 'short', quantity, effectiveUnitPrice);
-                summary.sellCount += 1;
-                summary.sellQuantity += quantity;
-                summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
-                const brokerRealizedPnl = preferBrokerRealizedPnl
-                    ? getTransactionBrokerRealizedPnl(txn)
-                    : null;
-                if (brokerRealizedPnl !== null) {
-                    summary.realizedPnl = realizedBeforeSell + brokerRealizedPnl;
-                    summary.brokerRealizedSellCount += 1;
-                } else if (sharesBeforeSell < quantity - 1e-9) {
-                    summary.realizedPnlStatus = 'incomplete';
-                }
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            if (normalizedType === 'transfer_in' && quantity !== null && !Number.isNaN(quantity)) {
-                const carriedCostBasis = getTransactionDerivedCostBasis(txn, 'carried');
-                if (carriedCostBasis !== null) {
-                    summary.shares += quantity;
-                    summary.totalCost += carriedCostBasis;
-                    markReconstructedCostBasis(
-                        summary,
-                        txn,
-                        'carried',
-                        txn?.carried_cost_basis_status,
-                    );
-                } else {
-                    summary.shares += quantity;
-                    markReconstructedCostBasis(
-                        summary,
-                        txn,
-                        'carried',
-                        txn?.carried_cost_basis_status || 'unknown',
-                    );
-                }
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            if (normalizedType === 'transfer_out' && quantity !== null && !Number.isNaN(quantity)) {
-                const transferredCostBasis = getTransactionDerivedCostBasis(txn, 'transfer_out');
-                const sharesBeforeTransfer = Number(summary.shares) || 0;
-                summary.shares -= quantity;
-                if (transferredCostBasis !== null) {
-                    summary.totalCost = Math.max(0, Number(summary.totalCost) - transferredCostBasis);
-                    markReconstructedCostBasis(
-                        summary,
-                        txn,
-                        'transfer_out',
-                        txn?.transfer_out_cost_basis_status,
-                    );
-                } else if (sharesBeforeTransfer > 1e-9) {
-                    summary.totalCost = Math.max(
-                        0,
-                        Number(summary.totalCost) * Math.max(0, (sharesBeforeTransfer - quantity) / sharesBeforeTransfer),
-                    );
-                    markReconstructedCostBasis(
-                        summary,
-                        txn,
-                        'transfer_out',
-                        txn?.transfer_out_cost_basis_status || 'unknown',
-                    );
-                }
-                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-                return;
-            }
-            if (
-                ['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)
-                && txn?.source?.excluded_from_broker_pnl !== true
-            ) {
-                summary.realizedPnl += amount;
-                summary.nonPerformanceRealizedPnl += amount;
-            }
-        }
-
         orderedTransactions.forEach((txn) => {
             const syntheticCashEquivalentTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
             const ticker = syntheticCashEquivalentTicker
@@ -2787,40 +3151,7 @@ export function createInvestmentDataUtils({
             const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const amount = getTransactionAmount(txn);
 
-            if (!tickerMap.has(ticker)) {
-                tickerMap.set(ticker, createPositionState(ticker));
-            }
-            const summary = tickerMap.get(ticker);
             const ledgerDate = normalizeLedgerDate(txn?.date);
-            const realizedPnlBeforeTransaction = Number(summary.realizedPnl) || 0;
-            if (syntheticCashEquivalentTicker) {
-                const valueAfter = Number(
-                    txn?.normalized?.cash_equivalent_value_after
-                    ?? txn?.source?.cash_equivalent_cost_basis_after_raw
-                    ?? 0
-                );
-                const interestAmount = Number(
-                    txn?.normalized?.cash_equivalent_interest_amount
-                    ?? txn?.source?.cash_equivalent_interest_raw
-                    ?? 0
-                );
-                summary.shares = Number.isFinite(valueAfter) ? Math.max(0, valueAfter) : 0;
-                summary.totalCost = summary.shares;
-                if (Number.isFinite(interestAmount)) {
-                    summary.realizedPnl += interestAmount;
-                }
-                if (isFlatPosition(summary.shares)) {
-                    summary.lastCloseDate = ledgerDate;
-                }
-            } else {
-                applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate);
-            }
-            const realizedPnlDelta = (Number(summary.realizedPnl) || 0) - realizedPnlBeforeTransaction;
-            if (ledgerDate && Math.abs(realizedPnlDelta) > 1e-9) {
-                summary.realizedPnlByDate[ledgerDate] = (
-                    Number(summary.realizedPnlByDate[ledgerDate]) || 0
-                ) + realizedPnlDelta;
-            }
 
             const lotScopeKey = getTransactionLotScopeKey(txn, ticker);
             if (!lotScopeMap.has(lotScopeKey)) {
@@ -2856,7 +3187,7 @@ export function createInvestmentDataUtils({
                     scopedState.lastCloseDate = ledgerDate;
                 }
             } else {
-                applyTickerTransaction(
+                applyInvestmentTransactionToState(
                     scopedState,
                     txn,
                     normalizedType,
@@ -2879,6 +3210,51 @@ export function createInvestmentDataUtils({
                     Number(scopedState.realizedPnlByDate[ledgerDate]) || 0
                 ) + scopedRealizedPnlDelta;
             }
+        });
+
+        // Position quantities, cost basis, and realized P&L are aggregated only
+        // from the same broker/account/currency scopes that generated them.
+        const scopedStatesByTicker = new Map();
+        lotScopeMap.forEach((scopeState, lotScopeKey) => {
+            const ticker = scopeState.lotScope?.ticker || scopeState.ticker;
+            if (!ticker) return;
+            if (!scopedStatesByTicker.has(ticker)) scopedStatesByTicker.set(ticker, new Map());
+            scopedStatesByTicker.get(ticker).set(lotScopeKey, scopeState);
+        });
+        const scopedPositionAggregatesByTicker = new Map();
+        scopedStatesByTicker.forEach((scopedStates, ticker) => {
+            scopedPositionAggregatesByTicker.set(
+                ticker,
+                aggregateInvestmentScopedPositionStates(
+                    scopedStates,
+                    ticker,
+                    getTickerQuoteCurrency,
+                ),
+            );
+        });
+        scopedPositionAggregatesByTicker.forEach((aggregate, ticker) => {
+            if (!tickerMap.has(ticker)) tickerMap.set(ticker, createPositionState(ticker));
+            const summary = tickerMap.get(ticker);
+            summary.shares = aggregate.shares;
+            summary.totalCost = aggregate.totalCost;
+            summary.realizedPnl = aggregate.realizedPnl;
+            summary.nonPerformanceRealizedPnl = aggregate.nonPerformanceRealizedPnl;
+            summary.buyCount = aggregate.buyCount;
+            summary.buyQuantity = aggregate.buyQuantity;
+            summary.sellCount = aggregate.sellCount;
+            summary.sellQuantity = aggregate.sellQuantity;
+            summary.brokerRealizedSellCount = aggregate.brokerRealizedSellCount;
+            summary.realizedPnlStatus = aggregate.realizedPnlStatus;
+            summary.hasPartialTaxLotHistory = aggregate.hasPartialTaxLotHistory;
+            summary.costBasisStatus = aggregate.costBasisStatus;
+            summary.costBasisMethod = aggregate.costBasisMethod;
+            summary.realizedPnlByDate = aggregate.realizedPnlByDate;
+            summary.lastTradeDate = aggregate.lastTradeDate;
+            summary.lastCloseDate = aggregate.lastCloseDate;
+            summary.positionCurrencies = aggregate.positionCurrencies;
+            summary.hasMixedPositionCurrencies = aggregate.hasMixedPositionCurrencies;
+            summary.lotMatchingMethod = getInvestmentCostBasisMethod();
+            summary.lots = [];
         });
 
         const realizedAccountResultsByTicker = new Map();
@@ -2985,17 +3361,34 @@ export function createInvestmentDataUtils({
             const snapshotCostPrice = costBasisStatus === 'known'
                 ? getAuthoritativeSnapshotFiniteNumber(snapshotEntry?.costPrice)
                 : null;
-            const pnlUnavailable = Boolean(snapshotEntry) && costBasisStatus !== 'known';
+            const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
+            const realizedPnlAccounts = realizedAccountResultsByTicker.get(summary.ticker) || [];
+            const hasAuthoritativeBrokerRealizedPnl = realizedPnlAccounts.some((result) => (
+                result.source === 'broker_performance_snapshot'
+                && result.realizedPnl !== null
+            ));
+            const hasMixedPositionCurrencies = !snapshotEntry && summary.hasMixedPositionCurrencies === true;
+            const preserveMixedCurrencyRealizedBreakdown = hasMixedPositionCurrencies;
+            const costBasisUnavailable = hasMixedPositionCurrencies;
+            const pnlUnavailable = (
+                hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
+            )
+                || (Boolean(snapshotEntry) && costBasisStatus !== 'known');
             const pnlUnavailableReason = !pnlUnavailable
                 ? null
-                : (costBasisStatus === 'partial'
-                    ? 'authoritative_position_snapshot_cost_basis_partial'
-                    : 'authoritative_position_snapshot_cost_basis_unknown');
+                : (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
+                    ? 'multiple_position_currencies'
+                    : (costBasisStatus === 'partial'
+                        ? 'authoritative_position_snapshot_cost_basis_partial'
+                        : 'authoritative_position_snapshot_cost_basis_unknown'));
+            const costBasisUnavailableReason = costBasisUnavailable
+                ? 'multiple_position_currencies'
+                : null;
             const totalCost = useAuthoritativePositionSnapshot && snapshotEntry
                 ? (snapshotCostPrice === null
                     ? (hasReconstructedCostBasis ? Number(summary.totalCost) : null)
                     : Math.abs(shares) * snapshotCostPrice)
-                : summary.totalCost;
+                : (hasMixedPositionCurrencies ? null : summary.totalCost);
             const hasOpenPosition = !isFlatPosition(shares);
             const averagePrice = hasOpenPosition
                 ? (snapshotEntry && snapshotCostPrice !== null
@@ -3020,8 +3413,6 @@ export function createInvestmentDataUtils({
                         : null));
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
-            const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
-            const realizedPnlAccounts = realizedAccountResultsByTicker.get(summary.ticker) || [];
             const completeRealizedPnlAccounts = realizedPnlAccounts.filter((result) => result.realizedPnl !== null);
             const hasOnlyUnavailableRealizedAccounts = (
                 realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
@@ -3066,18 +3457,22 @@ export function createInvestmentDataUtils({
                     )
                 );
             }
-            const marketValueLocal = hasOpenPosition
+            const marketValueLocal = hasMixedPositionCurrencies
+                ? null
+                : (hasOpenPosition
                 ? (marketValueFromSnapshot !== null
                     ? marketValueFromSnapshot
                     : (lastPrice !== null ? shares * lastPrice : 0))
-                : 0;
-            const marketValue = convertAmountToBaseCurrency(
-                marketValueLocal,
-                quoteCurrency,
-                lastLedgerDate,
-                fxTimeline,
-                baseCurrency,
-            );
+                : 0);
+            const marketValue = marketValueLocal === null
+                ? null
+                : convertAmountToBaseCurrency(
+                    marketValueLocal,
+                    quoteCurrency,
+                    lastLedgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
             const unrealizedPnlLocal = hasOpenPosition && lastPrice !== null && averagePrice !== null
                 ? (shares > 0
                     ? (lastPrice - averagePrice) * shares
@@ -3126,7 +3521,10 @@ export function createInvestmentDataUtils({
             const safeRealizedPnlLocal = pnlUnavailable ? null : realizedPnlLocal;
             const safeUnrealizedPnl = pnlUnavailable ? null : unrealizedPnl;
             const safeUnrealizedPnlLocal = pnlUnavailable ? null : unrealizedPnlLocal;
-            const safeRealizedPnlAccounts = pnlUnavailable
+            // Mixed-currency rows cannot expose one combined P&L, but each
+            // account result has already been converted from its own currency
+            // into the workspace base currency and remains useful evidence.
+            const safeRealizedPnlAccounts = pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
                 ? realizedPnlAccounts.map((accountResult) => ({
                     ...accountResult,
                     realizedPnl: null,
@@ -3136,15 +3534,18 @@ export function createInvestmentDataUtils({
                     source: 'unavailable',
                 }))
                 : realizedPnlAccounts;
-            const totalPnl = pnlUnavailable || safeRealizedPnl === null
+            const totalPnl = pnlUnavailable || safeRealizedPnl === null || costBasisUnavailable
                 ? null
                 : Number((safeRealizedPnl + (safeUnrealizedPnl ?? 0)).toFixed(12));
-            const totalPnlLocal = pnlUnavailable || safeRealizedPnlLocal === null
+            const totalPnlLocal = pnlUnavailable || safeRealizedPnlLocal === null || costBasisUnavailable
                 ? null
                 : Number((safeRealizedPnlLocal + (safeUnrealizedPnlLocal ?? 0)).toFixed(12));
-            const positionWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > 1e-9 && hasOpenPosition
+            const positionWeight = Number.isFinite(totalEquity)
+                && Number.isFinite(marketValue)
+                && Math.abs(totalEquity) > 1e-9
+                && hasOpenPosition
                 ? (marketValue / totalEquity) * 100
-                : 0;
+                : null;
 
             return {
                 ...summary,
@@ -3153,16 +3554,19 @@ export function createInvestmentDataUtils({
                 averagePrice,
                 costBasisStatus,
                 costBasisMethod: summary.costBasisMethod,
+                lotMatchingMethod: summary.lotMatchingMethod || getInvestmentCostBasisMethod(),
                 lastPrice,
                 marketValue,
                 realizedPnl: safeRealizedPnl,
                 realizedPnlLocal: safeRealizedPnlLocal,
                 realizedPnlAccounts: safeRealizedPnlAccounts,
-                realizedPnlStatus: pnlUnavailable
+                realizedPnlStatus: pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
                     ? 'unavailable'
                     : (realizedPnlAccounts.some((result) => result.status !== 'complete')
                         ? 'partial'
                         : 'complete'),
+                realizedPnlBreakdownAvailable: preserveMixedCurrencyRealizedBreakdown
+                    && realizedPnlAccounts.some((result) => result.realizedPnl !== null),
                 realizedPnlByDate,
                 realizedPnlByDateLocal,
                 quoteCurrency,
@@ -3175,6 +3579,8 @@ export function createInvestmentDataUtils({
                 totalPnlLocal,
                 pnlUnavailable,
                 pnlUnavailableReason,
+                costBasisUnavailable,
+                costBasisUnavailableReason,
                 positionWeight,
                 hasOpenPosition,
             };
@@ -3206,12 +3612,14 @@ export function createInvestmentDataUtils({
     return {
         adjustTradePriceForRenderedSeries,
         applyDirectionalTrade,
+        applyInvestmentTransactionToState,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
         buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        aggregateInvestmentScopedPositionStates,
         getInvestmentCanonicalTicker,
         getInvestmentLegacyLineageTickers,
         getInvestmentTickerProfileLookupCandidates,
@@ -3252,9 +3660,12 @@ export function createInvestmentDataUtils({
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         getAuthoritativePositionSnapshot,
+        getAuthoritativeBrokerPositionSnapshots,
+        getAuthoritativePositionSnapshotForTransactions,
         getFxRateForDate,
         getLatestFxRateForCurrency,
         getInvestmentBaseCurrency,
+        getInvestmentCostBasisMethod,
         getTodayLedgerDate,
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
@@ -3264,6 +3675,8 @@ export function createInvestmentDataUtils({
         isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
         getTransactionAmount,
+        getInvestmentInternalTransferAggregateBridgeAmount,
+        getInvestmentInternalTransferAggregateBridgeDelta,
         getTransactionCommission,
         getTransactionEconomicAmount,
         getTransactionEffectiveUnitPrice,
@@ -3292,4 +3705,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.70.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.80.0';

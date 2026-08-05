@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.13.1
+ * Code version: v1.13.2
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
  */
 
@@ -819,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(liveTradingLayoutRow instanceof HTMLElement && tradingGrid instanceof HTMLElement) || topRowSurfaces.length < 2) {
             return;
         }
-        if (!(sidebar instanceof HTMLElement) || window.matchMedia("(max-width: 767px)").matches) {
+        if (!(sidebar instanceof HTMLElement) || window.ANTIGRAVITY_RESPONSIVE.media("contentStackMax").matches) {
             resetTopRowAlignedHeight();
             scheduleBarsChartResize({ settleDelay: 80 });
             return;

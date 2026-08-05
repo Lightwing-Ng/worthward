@@ -215,7 +215,7 @@ warning_text = "#f4c542"
 warning_translucent = "rgba(244, 197, 66, 0.12)"
 success = "#2fff9c"
 success_strong = "#2fff9c"
-glass_highlight = "rgba(255, 255, 255, 0.08)"
+glass_highlight = "rgba(255, 255, 255, 0.02)"
 
 [ui.chart]
 zero_line_color = "rgba(160, 167, 178, 0.85)"

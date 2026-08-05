@@ -1,6 +1,6 @@
 """Behavior tests for shared workspace form and query parsing helpers.
 
-Code version: v1.1.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -25,9 +25,12 @@ from app.web.form_parsing import (
 )
 from app.web.navigation import (
     build_settings_path,
+    build_settings_state_url,
     build_trade_path,
     build_view_path,
     normalize_settings_section,
+    normalize_settings_page,
+    normalize_settings_tab,
     normalize_trade_section,
     normalize_view_name,
 )
@@ -164,6 +167,25 @@ class FormParsingTests(unittest.TestCase):
         self.assertEqual(start, "2026-01-01")
         self.assertEqual(end, "2026-02-01")
 
+        range_mode, period, start, end = parse_range_request_args_from_args(
+            _Args({"range": "3mo"}),
+            default_range_mode="period",
+            default_period="1y",
+        )
+        self.assertEqual((range_mode, period, start, end), ("period", "3mo", "", ""))
+
+        range_mode, period, start, end = parse_range_request_args_from_args(
+            _Args({
+                "range": "custom",
+                "period": "3mo",
+                "from": "2026-01-01",
+                "to": "2026-03-31",
+            }),
+            default_range_mode="period",
+            default_period="1y",
+        )
+        self.assertEqual((range_mode, period, start, end), ("exact", "3mo", "2026-01-01", "2026-03-31"))
+
     def test_portfolio_weight_normalization_invariants(self) -> None:
         self.assertEqual(build_default_weights(3), [34, 33, 33])
         self.assertEqual(build_default_weights(0), [])
@@ -206,8 +228,25 @@ class NavigationHelperTests(unittest.TestCase):
         self.assertEqual(build_view_path("grid-trading"), "/workspaces/grid-trading")
 
         self.assertEqual(normalize_settings_section("broker-access"), "broker-access")
+        self.assertEqual(normalize_settings_section("local_store"), "local-market-store")
         self.assertEqual(normalize_settings_section("missing"), "about")
         self.assertEqual(build_settings_path("general"), "/settings/general")
+        self.assertEqual(normalize_settings_tab("HISTORY"), "history")
+        self.assertEqual(normalize_settings_tab("missing"), "current")
+        self.assertEqual(normalize_settings_page("0"), 1)
+        self.assertEqual(normalize_settings_page("3"), 3)
+        self.assertEqual(
+            build_settings_state_url("general", tab="history", page=2),
+            "/settings/general?tab=history&page=2",
+        )
+        self.assertEqual(
+            build_settings_state_url("general", tab="current", page=1),
+            "/settings/general",
+        )
+        self.assertEqual(
+            build_settings_state_url("local_store", page=1),
+            "/settings/local-market-store",
+        )
 
         self.assertEqual(normalize_trade_section("timing"), "investment")
         self.assertEqual(normalize_trade_section("live"), "live-trading")

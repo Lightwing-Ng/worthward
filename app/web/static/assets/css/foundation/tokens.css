@@ -1,6 +1,24 @@
-/* Code version: v0.13.6 */
+/* Code version: v0.13.13 */
 :root {
 	color-scheme: var(--color-scheme);
+	/*
+	 * Responsive breakpoint registry. CSS media queries repeat these numeric
+	 * values because custom properties are not valid in media conditions
+	 * without a build step. JavaScript reads this registry through
+	 * assets/js/responsive.js.
+	 */
+	--responsive-breakpoint-layout-switch-min: 768px;
+	--responsive-breakpoint-sidebar-overlay-max: 600px;
+	--responsive-breakpoint-settings-density-max: 980px;
+	--responsive-breakpoint-investment-form-density-max: 1080px;
+	--responsive-breakpoint-trade-layout-min: 1024px;
+	--responsive-breakpoint-trade-metrics-wide-min: 1200px;
+	--responsive-breakpoint-pagination-compact-max: 320px;
+	--responsive-breakpoint-pagination-tiny-max: 280px;
+	--responsive-breakpoint-investment-date-grid-max: 560px;
+	--responsive-breakpoint-portfolio-donut-max: 430px;
+	--responsive-breakpoint-sidebar-toggle-tight-max: 500px;
+	--responsive-breakpoint-live-pin-tight-max: 420px;
 	--sidebar-form-gap: 2px;
 	--sidebar-form-field-min-height: 50px;
 	--sidebar-form-field-label-gap: 6px;
@@ -15,6 +33,7 @@
 	--panel-strong: var(--theme-panel-strong);
 	--text: var(--theme-text);
 	--muted: var(--theme-muted);
+	--theme-muted-soft: color-mix(in srgb, var(--theme-muted) 72%, var(--theme-background));
 	--accent: var(--theme-accent-primary);
 	--accent-secondary: var(--theme-accent-secondary);
 	--accent-text: var(--accent);
@@ -128,7 +147,7 @@
 	--settings-text-input-border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
 	--settings-text-input-color: var(--text);
 	--settings-text-input-font-size: var(--font-form-control);
-	--settings-reading-guard-single-column-width: 768px;
+	--settings-reading-guard-single-column-width: var(--responsive-breakpoint-layout-switch-min);
 	--settings-general-panel-background: color-mix(in srgb, var(--frosted-glass-background) 92%, transparent);
 	--settings-general-panel-border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
 	--scrollable-data-table-header-color: color-mix(in srgb, var(--theme-text) 92%, var(--color-white-adaptive) 8%);
@@ -169,7 +188,7 @@
 	--local-store-pagination-button-border: 1px solid var(--accent-border-strong);
 	--local-store-pagination-button-shadow: var(--frosted-glass-shadow);
 	--local-store-pagination-button-blur: var(--frosted-glass-blur);
-	--local-store-pagination-motion-duration: 500ms;
+	--local-store-pagination-motion-duration: var(--motion-duration-spatial);
 	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
 	--mode-switch-pad: 4px;
@@ -222,6 +241,7 @@
 	--workspace-article-heading-shadow: var(--frosted-glass-shadow);
 	--workspace-article-mobile-shadow: none;
 	--workspace-article-sidebar-morph-easing: var(--motion-inertial);
+	--workspace-article-sidebar-morph-duration: var(--motion-duration-spatial);
 	--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + 8px);
 	--workspace-content-article-background: transparent;
 	--workspace-content-article-shadow: none;
@@ -274,6 +294,7 @@
 	--shared-select-option-gap: 8px;
 	--investment-holdings-cell-padding: 4px 6px;
 	--investment-holdings-allocation-badge-inline-size: 52px;
+	--investment-holdings-allocation-badge-glyph-width: 0.625em;
 	--investment-holdings-allocation-badge-padding-block: 2px;
 	--investment-holdings-allocation-badge-padding-inline: 6px;
 	--investment-holdings-allocation-badge-radius: 2px;
@@ -292,25 +313,22 @@
 	--glass-chip-shadow-hover: 0 12px 32px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-shadow-active: 0 6px 18px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 94%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-blur: saturate(180%) blur(28px);
-	--frosted-glass-background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
-		rgba(255, 255, 255, 0.08);
-	--frosted-glass-opaque-background:
+	--frosted-glass-surface-opacity: 62%;
+	--frosted-glass-surface:
 		linear-gradient(
 			180deg,
-			color-mix(in srgb, var(--color-white-adaptive) 16%, transparent) 0%,
-			color-mix(in srgb, var(--color-white-adaptive) 8%, transparent) 100%
+			color-mix(in srgb, var(--theme-glass-highlight) 56%, transparent) 0%,
+			color-mix(in srgb, var(--theme-glass-highlight) 16%, transparent) 100%
 		),
-		var(--theme-background);
-	--frosted-glass-background-hover:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(248, 249, 250, 0.24) 100%),
-		rgba(255, 255, 255, 0.12);
+		color-mix(in srgb, var(--theme-background) var(--frosted-glass-surface-opacity), transparent);
+	--frosted-glass-background: var(--frosted-glass-surface);
+	--frosted-glass-background-hover: var(--frosted-glass-surface);
 	--frosted-glass-border: 1px solid rgba(255, 255, 255, 0.30);
 	--frosted-glass-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
-	--frosted-glass-blur: saturate(160%) blur(18px);
-	--tooltip-background: var(--frosted-glass-background);
+	--frosted-glass-blur: blur(12px);
+	--tooltip-background: var(--frosted-glass-surface);
 	--tooltip-border: var(--frosted-glass-border);
 	--tooltip-shadow: var(--frosted-glass-shadow);
 	--tooltip-blur: var(--frosted-glass-blur);
@@ -324,7 +342,7 @@
 	--chart-tooltip-item-gap: 8px;
 	--chart-tooltip-label-align: left;
 	--chart-tooltip-value-align: right;
-	--glass-popover-background: var(--tooltip-background);
+	--glass-popover-background: var(--frosted-glass-surface);
 	--glass-popover-border: var(--tooltip-border);
 	--glass-popover-shadow: var(--tooltip-shadow);
 	--glass-popover-blur: var(--tooltip-blur);
@@ -400,27 +418,15 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {
-		--frosted-glass-background:
-			linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
-			rgba(10, 14, 20, 0.06);
-		--frosted-glass-background-hover:
-			linear-gradient(180deg, rgba(84, 102, 130, 0.24) 0%, rgba(48, 56, 72, 0.18) 100%),
-			rgba(12, 16, 24, 0.09);
-		--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.225);
-		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
+		--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.125);
+		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 		--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 		--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
 	}
 }
 :root[data-theme-override="dark"] {
-	--frosted-glass-background:
-		linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
-		rgba(10, 14, 20, 0.06);
-	--frosted-glass-background-hover:
-		linear-gradient(180deg, rgba(84, 102, 130, 0.24) 0%, rgba(48, 56, 72, 0.18) 100%),
-		rgba(12, 16, 24, 0.09);
-	--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.225);
-	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
+	--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.125);
+	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
 }
@@ -481,5 +487,5 @@ html.is-theme-transitioning,
 html.is-theme-transitioning *,
 html.is-theme-transitioning *::before,
 html.is-theme-transitioning *::after {
-    transition: background-color 0.4s var(--motion-standard), border-color 0.4s var(--motion-standard), color 0.4s var(--motion-standard), fill 0.4s var(--motion-standard), stroke 0.4s var(--motion-standard), box-shadow 0.4s var(--motion-standard) !important;
+    transition: background-color var(--motion-duration-emphasized) var(--motion-standard), border-color var(--motion-duration-emphasized) var(--motion-standard), color var(--motion-duration-emphasized) var(--motion-standard), fill var(--motion-duration-emphasized) var(--motion-standard), stroke var(--motion-duration-emphasized) var(--motion-standard), box-shadow var(--motion-duration-emphasized) var(--motion-standard) !important;
 }

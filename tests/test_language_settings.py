@@ -1,6 +1,6 @@
 """Tests for complete Settings language mapping coverage.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -139,7 +139,8 @@ class LanguageSettingsTests(unittest.TestCase):
 
         self.assertIn('class="settings-language-tabs segmented-control"', template)
         self.assertIn('data-option-count="2"', template)
-        self.assertIn('class="settings-language-tab segmented-control-option is-active"', template)
+        self.assertIn('class="settings-language-tab segmented-control-option{% if settings_tab == \'current\' %} is-active{% endif %}"', template)
+        self.assertIn('data-language-initial-page=', template)
         self.assertNotIn(".settings-language-tabs::before", stylesheet)
         self.assertIn('"--segmented-active-index"', script)
 
