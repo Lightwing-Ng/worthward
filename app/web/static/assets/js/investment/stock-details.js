@@ -37,7 +37,7 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.80.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.82.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 

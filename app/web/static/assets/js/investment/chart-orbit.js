@@ -1,13 +1,14 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.37.2
+ * Code version: v1.38.0
+ * - Added: Donut orbit logos can render token-backed identities with theme-controlled mask colors.
  * - Changed: Orbit geometry now follows the rendered donut diameter so responsive CSS sizes keep satellites on the real track.
  * - Changed: Orbit writes use compositor-friendly transform variables and the shared Motion Core scheduler.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
 
-export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.37.2';
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.38.0';
 
 const investmentDonutOrbitLayerState = new WeakMap();
 
@@ -166,7 +167,7 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
         let hasActiveAnimation = false;
         layerState.logos.forEach((entry) => {
             const logoElement = entry.element;
-            if (!(logoElement instanceof HTMLImageElement) || !logoElement.isConnected || !orbitMetrics) return;
+            if (!(logoElement instanceof HTMLElement) || !logoElement.isConnected || !orbitMetrics) return;
             const animationStartTime = Number.isFinite(entry.animationStartTime) ? entry.animationStartTime : now;
             const duration = Math.max(1, Number(entry.duration) || 1);
             const progress = reduced || window.AntigravityMotion?.isReducedMotion?.()
@@ -234,17 +235,26 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
         const targetAngle = Number.isFinite(resolvedAngles[index]) ? resolvedAngles[index] : normalizeOrbitAngle(item.midAngle);
         nextTickers.add(ticker);
         let logo = existingLogos.get(ticker);
-        if (!(logo instanceof HTMLImageElement)) {
-            logo = document.createElement('img');
+        const shouldRenderAsToken = item?.renderAsToken === true;
+        const canReuseLogo = logo instanceof HTMLElement
+            && (shouldRenderAsToken ? logo.tagName === 'SPAN' : logo instanceof HTMLImageElement);
+        const logoWasReplaced = !canReuseLogo;
+        if (!canReuseLogo) {
+            if (logo instanceof HTMLElement) logo.remove();
+            logo = document.createElement(shouldRenderAsToken ? 'span' : 'img');
             logo.className = 'portfolio-donut-logo is-orbit-animated';
             logo.dataset.ticker = ticker;
-            logo.alt = `${ticker} logo`;
-            logo.src = item.logoUrl;
+            if (shouldRenderAsToken) {
+                logo.setAttribute('aria-hidden', 'true');
+            } else {
+                logo.alt = `${ticker} logo`;
+                logo.src = item.logoUrl;
+            }
             logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
             logoLayer.appendChild(logo);
             renderInvestmentDonutOrbitLogoPosition(logo, targetAngle, orbitMetrics, 1.85, 0);
         } else {
-            if (logo.src !== item.logoUrl) logo.src = item.logoUrl;
+            if (logo instanceof HTMLImageElement && logo.src !== item.logoUrl) logo.src = item.logoUrl;
             logo.classList.add('is-orbit-animated');
             logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
         }
@@ -272,7 +282,8 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
             entry.element = logo;
             entry.ticker = ticker;
             const angleDelta = getShortestOrbitAngleDelta(entry.currentAngle, targetAngle);
-            const shouldRetarget = entry.isExiting
+            const shouldRetarget = logoWasReplaced
+                || entry.isExiting
                 || Math.abs(angleDelta) > 0.05
                 || Math.abs((entry.targetRadiusScale ?? 1) - 1) > 1e-3
                 || Math.abs((entry.targetOpacity ?? 1) - 1) > 1e-3;
@@ -289,6 +300,7 @@ export function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
             }
         }
 
+        logo.classList.remove('investment-cash-equivalent-token-logo', 'investment-money-market-fund-token-logo');
         if (item.className) {
             logo.classList.add(...String(item.className).split(/\s+/).filter(Boolean));
         }

@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.75.17
+ * Code version: v2.78.0
+ * - Added: Money-market fund identities in the portfolio donut use the standard theme green token mask in both themes.
+ * - Added: IBKR base-currency-equivalent funding rows can be manually matched to CNH bank withdrawals with the transaction-date FX rate.
+ * - Added: 3M-through-Max Overview equity ranges render every calendar day, carrying non-trading-day close values and cash changes.
  * - Added: Directional virtual cash types preserve the shared Virtual balance reset description while keeping cash replay and ordering directional.
  * - Added: CMB Wing Lung bank-side cash deposits are available as manual counterparts for Futu (HK) withdrawals.
  * - Fixed: Holdings realtime quote updates now refresh both fixed and scrollable row layers instead of only the first duplicate DOM row.
@@ -84,7 +87,7 @@ import {
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
     syncInvestmentDonutOrbitLogos,
-} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.37.2';
+} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.38.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     classifyInvestmentUsRealtimeSession,
@@ -93,7 +96,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.80.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.82.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -164,7 +167,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.75.17',
+    entry: 'v2.78.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -879,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
         buildTickerSummaries,
         buildValuationStatus,
         getInvestmentCanonicalTicker,
+        getFxRateForDate,
         getInvestmentTickerProfileLookupCandidates,
         getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
@@ -2495,6 +2499,92 @@ document.addEventListener('DOMContentLoaded', () => {
         return '';
     }
 
+    function isInvestmentIbkrBaseCurrencyEquivalentCash(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+        const normalizedType = getNormalizedTransactionType(txn);
+        const currency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+        return (
+            brokerCode === 'ibkr'
+            && normalizedType === 'deposit'
+            && !currency
+            && String(source?.file_kind || '').trim() === 'transactions'
+            && Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9
+        );
+    }
+
+    function getInvestmentInternalTransferEffectiveCurrency(txn) {
+        const explicitCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+        if (explicitCurrency) return explicitCurrency;
+        return isInvestmentIbkrBaseCurrencyEquivalentCash(txn) ? getInvestmentBaseCurrency() : '';
+    }
+
+    function isInvestmentInternalTransferFxPair(sourceTxn, targetTxn) {
+        if (!isInvestmentIbkrBaseCurrencyEquivalentCash(sourceTxn)) return false;
+        if (normalizeInvestmentBroker(getTransactionBrokerCode(targetTxn)) === normalizeInvestmentBroker(getTransactionBrokerCode(sourceTxn))) {
+            return false;
+        }
+        if (getNormalizedTransactionType(targetTxn) !== 'withdrawal') return false;
+        if (!INVESTMENT_INTERNAL_TRANSFER_BANK_BROKERS.has(normalizeInvestmentBroker(getTransactionBrokerCode(targetTxn)))) {
+            return false;
+        }
+        const targetCurrency = String(formatTransactionCurrency(targetTxn) || '').trim().toUpperCase();
+        return ['CNH', 'CNY', 'RMB'].includes(targetCurrency);
+    }
+
+    function getInvestmentInternalTransferFxDate(txn) {
+        const effectiveDate = getInvestmentInternalTransferEffectiveDate(txn)?.effectiveDate;
+        return effectiveDate instanceof Date && !Number.isNaN(effectiveDate.getTime())
+            ? effectiveDate.toISOString().slice(0, 10)
+            : normalizeLedgerDate(txn?.date);
+    }
+
+    function getInvestmentInternalTransferComparableAmount(txn, fxTimeline) {
+        const amount = Math.abs(Number(getTransactionAmount(txn)) || 0);
+        if (!(amount > 1e-9)) return null;
+        const currency = getInvestmentInternalTransferEffectiveCurrency(txn);
+        if (!currency) return null;
+        const baseCurrency = getInvestmentBaseCurrency();
+        if (currency === baseCurrency) return amount;
+        const rate = getFxRateForDate(
+            fxTimeline,
+            currency,
+            getInvestmentInternalTransferFxDate(txn),
+        );
+        if (!Number.isFinite(Number(rate)) || Number(rate) <= 0) return null;
+        return amount / Number(rate);
+    }
+
+    function getInvestmentInternalTransferFxRate(txn, fxTimeline) {
+        const currency = getInvestmentInternalTransferEffectiveCurrency(txn);
+        if (!currency || currency === getInvestmentBaseCurrency()) return null;
+        const rate = getFxRateForDate(
+            fxTimeline,
+            currency,
+            getInvestmentInternalTransferFxDate(txn),
+        );
+        return Number.isFinite(Number(rate)) && Number(rate) > 0 ? Number(rate) : null;
+    }
+
+    function isInvestmentInternalTransferAmountMatch(sourceTxn, targetTxn, fxTimeline) {
+        const sourceCurrency = getInvestmentInternalTransferEffectiveCurrency(sourceTxn);
+        const targetCurrency = getInvestmentInternalTransferEffectiveCurrency(targetTxn);
+        if (!sourceCurrency || !targetCurrency) return false;
+        if (sourceCurrency === targetCurrency) {
+            const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
+            const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
+            return Math.abs(targetAmount - sourceAmount) <= Math.max(0.01, sourceAmount * 0.02);
+        }
+        if (!isInvestmentInternalTransferFxPair(sourceTxn, targetTxn)) return false;
+        const sourceComparableAmount = getInvestmentInternalTransferComparableAmount(sourceTxn, fxTimeline);
+        const targetComparableAmount = getInvestmentInternalTransferComparableAmount(targetTxn, fxTimeline);
+        if (!Number.isFinite(sourceComparableAmount) || !Number.isFinite(targetComparableAmount)) return false;
+        return Math.abs(targetComparableAmount - sourceComparableAmount) <= Math.max(
+            0.01,
+            Math.max(sourceComparableAmount, targetComparableAmount) * 0.02,
+        );
+    }
+
     function getInvestmentInternalTransferKind(txn) {
         return getInvestmentInternalTransferDirection(txn) === 'security_broker_to_broker'
             ? 'security'
@@ -2537,6 +2627,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn) {
         const direction = getInvestmentInternalTransferDirection(sourceTxn);
         if (!direction || direction === 'security_broker_to_broker') return 0;
+        if (
+            getInvestmentInternalTransferEffectiveCurrency(sourceTxn)
+            !== getInvestmentInternalTransferEffectiveCurrency(targetTxn)
+        ) return 0;
         const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
         const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
         const targetOutflowDifference = targetAmount - sourceAmount;
@@ -2580,6 +2674,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const amountLabel = transferKind === 'security'
             ? `${formatHoldingsPosition(Math.abs(Number(getTransactionQuantity(txn)) || 0))} ${formatInvestmentTickerForDisplay(txn?.ticker)}`
             : formatAmountWithCurrency(getTransactionAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false });
+        const fxRate = Number(metadata?.fxRate);
+        const comparableAmount = Number(metadata?.comparableAmount);
+        const fxLabel = (
+            Number.isFinite(fxRate)
+            && fxRate > 0
+            && Number.isFinite(comparableAmount)
+            && comparableAmount > 0
+        )
+            ? `≈ USD ${formatAmount(comparableAmount)} @ ${fxRate.toFixed(4)}`
+            : '';
         const feeAmount = Number(metadata?.feeAmount) || 0;
         const feeLabel = feeAmount > 0.005
             ? `includes ${formatInvestmentInternalTransferFeeAmount(feeAmount, formatTransactionCurrency(txn) || 'USD')} transfer fee`
@@ -2589,6 +2693,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dateLabel,
             descriptionLabel,
             amountLabel,
+            fxLabel,
             feeLabel,
         ].filter(Boolean).join(' · ');
     }
@@ -2660,6 +2765,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(([, count]) => count > 1)
                 .map(([key]) => key),
         );
+        const bindingFxTimeline = buildInvestmentFxRateTimeline(
+            processedTransactions,
+            getInvestmentBaseCurrency(),
+        );
 
         processedTransactions.forEach((txn) => {
             const transactionKey = buildInvestmentTransactionBindingKey(txn, duplicateBaseKeys);
@@ -2699,7 +2808,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
             const sourceQuantity = Math.abs(Number(getTransactionQuantity(sourceTxn)) || 0);
             const sourceDate = normalizeLedgerDate(sourceTxn?.date);
-            const amountTolerance = Math.max(0.01, sourceAmount * 0.02);
             const quantityTolerance = Math.max(0.000001, sourceQuantity * 0.000001);
             const selectedTargetCandidate = selectedTargetKey ? targetByKey.get(selectedTargetKey) || null : null;
             const selectedTargetLinkWindowDays = selectedTargetCandidate
@@ -2724,17 +2832,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             Math.abs(Number(getTransactionQuantity(selectedTargetCandidate)) || 0)
                             - sourceQuantity,
                         ) <= quantityTolerance
-                        : (
-                            Math.abs(
-                                Math.abs(Number(getTransactionAmount(selectedTargetCandidate)) || 0)
-                                - sourceAmount,
-                            ) <= amountTolerance
-                            && (
-                                !String(formatTransactionCurrency(sourceTxn) || '').trim()
-                                || !String(formatTransactionCurrency(selectedTargetCandidate) || '').trim()
-                                || String(formatTransactionCurrency(sourceTxn) || '').trim().toUpperCase()
-                                    === String(formatTransactionCurrency(selectedTargetCandidate) || '').trim().toUpperCase()
-                            )
+                        : isInvestmentInternalTransferAmountMatch(
+                            sourceTxn,
+                            selectedTargetCandidate,
+                            bindingFxTimeline,
                         )
                 )
             )
@@ -2756,24 +2857,43 @@ document.addEventListener('DOMContentLoaded', () => {
                         const targetQuantity = Math.abs(Number(getTransactionQuantity(targetTxn)) || 0);
                         return Math.abs(targetQuantity - sourceQuantity) <= quantityTolerance;
                     }
-                    const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
-                    if (Math.abs(targetAmount - sourceAmount) > amountTolerance) return false;
-                    const sourceCurrency = String(formatTransactionCurrency(sourceTxn) || '').trim().toUpperCase();
-                    const targetCurrency = String(formatTransactionCurrency(targetTxn) || '').trim().toUpperCase();
-                    return !sourceCurrency || !targetCurrency || sourceCurrency === targetCurrency;
+                    return isInvestmentInternalTransferAmountMatch(
+                        sourceTxn,
+                        targetTxn,
+                        bindingFxTimeline,
+                    );
                 })
                 .map((targetTxn) => {
                     const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn);
+                    const isFxPair = isInvestmentInternalTransferFxPair(sourceTxn, targetTxn);
+                    const comparableAmount = isFxPair
+                        ? getInvestmentInternalTransferComparableAmount(targetTxn, bindingFxTimeline)
+                        : null;
+                    const fxRate = isFxPair
+                        ? getInvestmentInternalTransferFxRate(targetTxn, bindingFxTimeline)
+                        : null;
+                    const sourceComparableAmount = isFxPair
+                        ? getInvestmentInternalTransferComparableAmount(sourceTxn, bindingFxTimeline)
+                        : null;
                     return {
                         key: String(targetTxn?.manual_internal_transfer_key || '').trim(),
-                        label: formatInvestmentInternalTransferOptionLabel(targetTxn, { feeAmount, transferKind }),
+                        label: formatInvestmentInternalTransferOptionLabel(targetTxn, {
+                            feeAmount,
+                            transferKind,
+                            comparableAmount,
+                            fxRate,
+                        }),
                         targetTxn,
                         dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(targetTxn?.date)),
                         amountDiff: transferKind === 'security'
                             ? Math.abs((Math.abs(Number(getTransactionQuantity(targetTxn)) || 0)) - sourceQuantity)
-                            : Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount),
+                            : (isFxPair
+                                ? Math.abs(Number(comparableAmount) - Number(sourceComparableAmount))
+                                : Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount)),
                         transferKind,
                         feeAmount,
+                        comparableAmount,
+                        fxRate,
                         feeNote: formatInvestmentInternalTransferFeeNote(
                             feeAmount,
                             formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(targetTxn) || 'USD'
@@ -2790,16 +2910,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (selectedTarget && !options.some((option) => option.key === selectedTargetKey)) {
                 const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, selectedTarget);
+                const isFxPair = isInvestmentInternalTransferFxPair(sourceTxn, selectedTarget);
+                const comparableAmount = isFxPair
+                    ? getInvestmentInternalTransferComparableAmount(selectedTarget, bindingFxTimeline)
+                    : null;
+                const fxRate = isFxPair
+                    ? getInvestmentInternalTransferFxRate(selectedTarget, bindingFxTimeline)
+                    : null;
+                const sourceComparableAmount = isFxPair
+                    ? getInvestmentInternalTransferComparableAmount(sourceTxn, bindingFxTimeline)
+                    : null;
                 options.unshift({
                     key: selectedTargetKey,
-                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget, { feeAmount, transferKind }),
+                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget, {
+                        feeAmount,
+                        transferKind,
+                        comparableAmount,
+                        fxRate,
+                    }),
                     targetTxn: selectedTarget,
                     dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(selectedTarget?.date)),
                     amountDiff: transferKind === 'security'
                         ? Math.abs((Math.abs(Number(getTransactionQuantity(selectedTarget)) || 0)) - sourceQuantity)
-                        : Math.abs((Math.abs(Number(getTransactionAmount(selectedTarget)) || 0)) - sourceAmount),
+                        : (isFxPair
+                            ? Math.abs(Number(comparableAmount) - Number(sourceComparableAmount))
+                            : Math.abs((Math.abs(Number(getTransactionAmount(selectedTarget)) || 0)) - sourceAmount)),
                     transferKind,
                     feeAmount,
+                    comparableAmount,
+                    fxRate,
                     feeNote: formatInvestmentInternalTransferFeeNote(
                         feeAmount,
                         formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(selectedTarget) || 'USD'
@@ -2824,6 +2963,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     quantity: transferKind === 'security' ? sourceQuantity : 0,
                     autoMatched: false,
                     amount: getInvestmentInternalTransferPairAmount(sourceTxn, resolvedTarget),
+                    sourceAmount: Math.abs(Number(getTransactionAmount(sourceTxn)) || 0),
+                    targetAmount: Math.abs(Number(getTransactionAmount(resolvedTarget)) || 0),
                     feeAmount,
                     commissionTxn: getInvestmentInternalTransferCommissionTxn(sourceTxn, resolvedTarget),
                     feeNote: formatInvestmentInternalTransferFeeNote(
@@ -3163,19 +3304,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetKey,
                 kind,
                 quantity,
-                amount,
                 feeAmount,
                 commissionTxn,
                 feeNote,
             } = binding;
-            const pairAmount = Number(amount) || 0;
+            const bindingAmount = Number(binding?.amount) || 0;
+            const sourcePairAmount = Number(binding?.sourceAmount ?? bindingAmount) || 0;
+            const targetPairAmount = Number(binding?.targetAmount ?? bindingAmount) || 0;
             const pairQuantity = Number(quantity) || 0;
             const isSecurityTransfer = kind === 'security';
-            if (!isSecurityTransfer && !(pairAmount > 1e-9)) return;
+            if (!isSecurityTransfer && (!(sourcePairAmount > 1e-9) || !(targetPairAmount > 1e-9))) return;
             sourceTxn.manual_internal_transfer_external_flow_excluded = true;
             sourceTxn.manual_internal_transfer_role = 'source';
             sourceTxn.manual_internal_transfer_pair_key = targetKey;
-            sourceTxn.manual_internal_transfer_pair_amount = pairAmount;
+            sourceTxn.manual_internal_transfer_pair_amount = sourcePairAmount;
             sourceTxn.manual_internal_transfer_pair_quantity = pairQuantity;
             sourceTxn.manual_internal_transfer_kind = String(kind || 'cash');
             sourceTxn.manual_internal_transfer_auto_matched = binding.autoMatched === true;
@@ -3183,7 +3325,7 @@ document.addEventListener('DOMContentLoaded', () => {
             targetTxn.manual_internal_transfer_external_flow_excluded = true;
             targetTxn.manual_internal_transfer_role = 'target';
             targetTxn.manual_internal_transfer_pair_key = String(sourceTxn?.manual_internal_transfer_key || '').trim();
-            targetTxn.manual_internal_transfer_pair_amount = pairAmount;
+            targetTxn.manual_internal_transfer_pair_amount = targetPairAmount;
             targetTxn.manual_internal_transfer_pair_quantity = pairQuantity;
             targetTxn.manual_internal_transfer_kind = String(kind || 'cash');
             targetTxn.manual_internal_transfer_auto_matched = binding.autoMatched === true;
@@ -3198,13 +3340,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceIndex = transactions.indexOf(sourceTxn);
             const targetIndex = transactions.indexOf(targetTxn);
             const sourceBridgeAmount = getInvestmentInternalTransferAggregateBridgeAmount(
-                pairAmount,
+                sourcePairAmount,
                 sourceTxn,
                 internalTransferFxTimeline,
                 aggregateBaseCurrency,
             );
             const targetBridgeAmount = getInvestmentInternalTransferAggregateBridgeAmount(
-                pairAmount,
+                targetPairAmount,
                 targetTxn,
                 internalTransferFxTimeline,
                 aggregateBaseCurrency,
@@ -5344,7 +5486,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
                 const logoUrl = resolveInvestmentLogoUrl(profile, ticker);
                 if (logoUrl) {
-                    logoItems.push({ ticker, logoUrl, midAngle });
+                    const tokenLogoClass = getMoneyMarketFundTokenLogoClass(ticker);
+                    logoItems.push({
+                        ticker,
+                        logoUrl,
+                        midAngle,
+                        className: tokenLogoClass,
+                        renderAsToken: Boolean(tokenLogoClass),
+                    });
                 }
                 if (!isCashEquivalent) {
                     gradientIndex += 1;
@@ -5364,7 +5513,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const renderSignature = `${fillFragments.join('|')}::${logoItems.map((item) => (
-            `${item.ticker}@${item.logoUrl}@${item.midAngle.toFixed(4)}`
+            `${item.ticker}@${item.logoUrl}@${item.className || ''}@${item.midAngle.toFixed(4)}`
         )).join('|')}`;
         if (renderSignature === investmentDummyDonutRenderSignature) return;
         investmentDummyDonutRenderSignature = renderSignature;
@@ -14727,7 +14876,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const latestSnapshot = processed[processed.length - 1];
         let chartPoints = aggregateSecurityTransferState.blocked
             ? []
-            : buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
+            : buildDailyEquityChartPoints(
+                processed,
+                tickerClosePrices,
+                moneyMarketTickers,
+                {includeCalendarDays: isInvestmentDailyEquityLiveRange()},
+            );
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
@@ -14931,7 +15085,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntradayLinePoints = []) {
         const useOverviewIntradayLineRequested = isInvestmentOverviewIntradayEquityRange();
         const preparedChartPoints = (Array.isArray(chartPoints) ? chartPoints : [])
-            .filter((point) => useOverviewIntradayLineRequested ? point?.is_realtime !== true : true);
+            .filter((point) => useOverviewIntradayLineRequested
+                ? point?.is_realtime !== true && point?.is_calendar_carry_forward !== true
+                : true);
         const normalizedChartPoints = useOverviewIntradayLineRequested
             ? preparedChartPoints
             : ensureInvestmentLiveSessionChartSlot(preparedChartPoints);

@@ -1,4 +1,4 @@
-/* Code version: v1.75.21 */
+/* Code version: v1.75.22 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -3520,9 +3520,12 @@
 .investment-holdings-ticker-link .investment-money-market-fund-token-logo,
 .investment-holdings-ticker-link .investment-broker-reward-token-logo,
 .investment-stock-details-identity .investment-cash-equivalent-token-logo,
-.investment-stock-details-identity .investment-money-market-fund-token-logo {
+.investment-stock-details-identity .investment-money-market-fund-token-logo,
+.portfolio-donut-logo.investment-cash-equivalent-token-logo,
+.portfolio-donut-logo.investment-money-market-fund-token-logo {
     background: var(--theme-accent-positive);
     box-shadow: none;
+    padding: 0;
 }
 
 .investment-holdings-ticker-link .investment-cash-equivalent-token-logo {
@@ -3535,12 +3538,22 @@
     -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
 }
 
+.portfolio-donut-logo.investment-cash-equivalent-token-logo {
+    mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+}
+
 .investment-holdings-ticker-link .investment-money-market-fund-token-logo {
     mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
     -webkit-mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
 }
 
 .investment-stock-details-identity .investment-money-market-fund-token-logo {
+    mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+}
+
+.portfolio-donut-logo.investment-money-market-fund-token-logo {
     mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
     -webkit-mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
 }

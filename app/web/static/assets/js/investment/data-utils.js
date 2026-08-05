@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.80.0
+ * Code version: v1.82.0
+ * - Fixed: Historical CNY FX payloads are also available to canonical CNH rows, including cross-currency IBKR funding review.
+ * - Added: Long-range daily equity charts can explicitly include every calendar day, carrying the latest available market close across non-trading days.
  * - Added: Virtual cash reconciliation rows now distinguish virtual deposits from virtual withdrawals while retaining the shared Virtual balance reset description.
  * - Fixed: Unknown carried-basis transfers append an explicit zero-cost lot instead of erasing existing tax-lot identities.
  * - Added: Holdings and Stock details share one scoped-position aggregation helper, including the same mixed-currency fail-closed contract.
@@ -712,10 +714,15 @@ export function createInvestmentDataUtils({
         const normalizedDate = normalizeLedgerDate(date);
         const numericRate = Number(rate);
         if (!normalizedCurrency || !normalizedDate || !Number.isFinite(numericRate) || numericRate <= 0) return;
-        if (!dateRates[normalizedCurrency]) {
-            dateRates[normalizedCurrency] = {};
-        }
-        dateRates[normalizedCurrency][normalizedDate] = numericRate;
+        const currencies = ['CNY', 'CNH'].includes(normalizedCurrency)
+            ? ['CNY', 'CNH']
+            : [normalizedCurrency];
+        currencies.forEach((currencyCode) => {
+            if (!dateRates[currencyCode]) {
+                dateRates[currencyCode] = {};
+            }
+            dateRates[currencyCode][normalizedDate] = numericRate;
+        });
     }
 
     function getTodayLedgerDate() {
@@ -2464,6 +2471,29 @@ export function createInvestmentDataUtils({
         return `${year}-${month}-${day}`;
     }
 
+    function enumerateCalendarDateKeys(startValue, endValue) {
+        const startDate = parseInvestmentChartDate(startValue);
+        const endDate = parseInvestmentChartDate(endValue);
+        if (
+            !(startDate instanceof Date)
+            || Number.isNaN(startDate.getTime())
+            || !(endDate instanceof Date)
+            || Number.isNaN(endDate.getTime())
+            || startDate > endDate
+        ) {
+            return [];
+        }
+        const dates = [];
+        for (
+            let currentDate = new Date(startDate.getTime());
+            currentDate <= endDate;
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+        ) {
+            dates.push(currentDate.toISOString().slice(0, 10));
+        }
+        return dates;
+    }
+
     function getInvestmentStockDetailsRangeLabels(labels, range = 'max', options = {}) {
         const orderedLabels = Array.isArray(labels)
             ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
@@ -2896,7 +2926,12 @@ export function createInvestmentDataUtils({
         return { marketValue, holdingsMarketValues };
     }
 
-    function buildDailyEquityChartPoints(processedTransactions, tickerClosePrices, moneyMarketTickers) {
+    function buildDailyEquityChartPoints(
+        processedTransactions,
+        tickerClosePrices,
+        moneyMarketTickers,
+        {includeCalendarDays = false} = {},
+    ) {
         if (!Array.isArray(processedTransactions) || !processedTransactions.length) {
             return [];
         }
@@ -2959,10 +2994,11 @@ export function createInvestmentDataUtils({
             }
         });
 
-        const candidateDates = Array.from(new Set([
+        const observedCandidateDates = Array.from(new Set([
             ...Array.from(tradingDateSet),
             ...Array.from(ledgerDateMap.keys()),
         ])).sort();
+        const observedCandidateDateSet = new Set(observedCandidateDates);
 
         const points = [];
         let processedCursor = 0;
@@ -2970,6 +3006,12 @@ export function createInvestmentDataUtils({
         let cumulativeNetTransferAmount = 0;
         let previousTradingPointIndex = -1;
         const anchorDate = shiftLedgerDate(firstLedgerDate, -1);
+        const candidateDates = includeCalendarDays && observedCandidateDates.length
+            ? Array.from(new Set([
+                ...observedCandidateDates,
+                ...enumerateCalendarDateKeys(firstLedgerDate, observedCandidateDates[observedCandidateDates.length - 1]),
+            ])).sort()
+            : observedCandidateDates;
         const startingCash = getInvestmentStartingCash();
 
         if (anchorDate) {
@@ -3027,6 +3069,7 @@ export function createInvestmentDataUtils({
             const aggregateMarketValue = valuation.marketValue;
             const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
             const ledgerEntry = ledgerDateMap.get(date);
+            const isCalendarCarryForward = includeCalendarDays && !observedCandidateDateSet.has(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 : [];
@@ -3054,6 +3097,7 @@ export function createInvestmentDataUtils({
                 net_transfer_amount: netTransferAmount,
                 cumulative_net_transfer_amount: cumulativeNetTransferAmount,
                 is_trading_day: isTradingDay,
+                is_calendar_carry_forward: isCalendarCarryForward,
                 previous_trading_point_index: previousTradingPointIndex,
             });
             if (isTradingDay) {
@@ -3705,4 +3749,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.80.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.82.0';

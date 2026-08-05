@@ -1,7 +1,7 @@
 """
 Investment money-market icon selection contracts.
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
 from pathlib import Path
@@ -25,5 +25,8 @@ def test_hkd_money_market_funds_use_the_abstract_token_and_all_usd_funds_keep_th
     assert "const moneyMarketFundTokenLogoClass = getMoneyMarketFundTokenLogoClass(activeTicker);" in investment_js
     assert "investment-stock-details-identity .investment-cash-equivalent-token-logo" in investment_css
     assert "investment-stock-details-identity .investment-money-market-fund-token-logo" in investment_css
+    assert "portfolio-donut-logo.investment-cash-equivalent-token-logo" in investment_css
+    assert "portfolio-donut-logo.investment-money-market-fund-token-logo" in investment_css
+    assert "renderAsToken: Boolean(tokenLogoClass)" in investment_js
     assert "money-market-fund.ring.svg" in investment_css
     assert abstract_icon.is_file()

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.25.4`
+Documentation version: `v1.26.0`
 
 ## Holdings P&L display contract
 
@@ -185,6 +185,12 @@ projection contract:
 - Manually confirmed internal-transfer bindings are durable ledger facts. Import
   adapters must preserve their cross-import leg identities and must fail back to
   explicit review when an identity becomes ambiguous.
+- IBKR Transaction History cash rows with an omitted currency are treated as
+  base-currency-equivalent USD evidence only for manual matching to CNH bank
+  withdrawals. Candidate ranking converts the CNH leg with the transaction-day
+  CNY/CNH-per-USD FX history; the raw CNH amount is never compared as USD, and
+  FPS is not inferred as a transfer fee. The persisted binding remains an
+  explicit user-selected pair.
 - Authoritative broker position snapshots reconcile synthesized grant quantities.
 - Mixed-broker payloads retain authoritative position snapshots per broker/account;
   a scoped HSBC Holdings view may use its Portfolio snapshot even when the global
