@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.82.0
+ * Code version: v2.84.0
+ * - Fixed: Validated HSBC position snapshots now attest complete open tax-lot replay, including same-day email execution chronology, so realized P&L contributes to Holdings and Metrics.
+ * - Fixed: Same-day authoritative cash snapshots retain chronological trade debits instead of being reordered behind trades and restoring pre-trade cash.
  * - Fixed: Equity replay aligns imported pre-split share counts with split-adjusted historical closes for affected tickers such as TQQQ and NVDA.
  * - Fixed: Investment tab ranges and Metrics broker state remain scoped to their owning view.
  * - Fixed: Stock-details intraday charts reject non-positive or malformed OHLC bars before scaling.
@@ -42,7 +44,7 @@
  * - Fixed: Stock-details date-only HSBC orders now render their buy/sell marker at the same day's regular-session close.
  * - Changed: Matched security-transfer receipts replay source-account cost basis with an explicit FIFO reconstructed method label in the live Holdings cache.
  * - Changed: Confirmed Schwab security-transfer receipts render as passive destination records without a source-confirmation removal action or aggregate-only basis warning.
- * - Fixed: Bound cash transfers replay the outflow leg before the receiving deposit, using the same deterministic ordering rule for restored and manual bindings.
+ * - Fixed: Ordinary bound cash transfers replay the outflow leg before the receiving deposit, while same-day authoritative cash snapshots retain chronological ledger order.
  * - Fixed: Manual internal-transfer bindings now impose the logical predecessor order even when imported source row numbers place the counterpart first.
  * - Fixed: Unconfirmed Schwab security receipts now scope All brokers exclusions to the affected receipt and ticker, so unaffected holdings, equity, chart, and metrics remain visible while transferred positions with unverified carried basis keep P&L unavailable.
  * - Fixed: Manual in-kind transfer selections require the same source and receipt date as server-side reconciliation.
@@ -100,7 +102,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.83.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.84.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -125,7 +127,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.11.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.12.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -170,7 +172,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.82.0',
+    entry: 'v2.84.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -912,6 +914,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createCashLedger,
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
+        compareInvestmentTaxLotTransactions,
         createPositionState,
         escapeHtml,
         formatAmountWithCurrency,
@@ -3062,8 +3065,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 && sourceType === 'deposit'
                 && targetType === 'withdrawal'
             ) {
-                // The source map is deposit-first for cash transfers, but the
-                // natural ledger sequence is withdrawal/outflow before deposit.
+                const sourceLedgerDate = normalizeLedgerDate(sourceTxn?.date);
+                const targetLedgerDate = normalizeLedgerDate(targetTxn?.date);
+                const sourceFileKind = String(sourceTxn?.source?.file_kind || '').trim().toLowerCase();
+                const hasAuthoritativeCashSnapshot = (
+                    sourceTxn?.source?.cash_balance_authoritative === true
+                    || sourceFileKind === 'hsbc_usd_savings_csv'
+                    || sourceFileKind === 'hsbc_usd_account_text'
+                );
+                if (
+                    hasAuthoritativeCashSnapshot
+                    && sourceLedgerDate
+                    && sourceLedgerDate === targetLedgerDate
+                ) {
+                    // A same-day authoritative cash snapshot already contains
+                    // the account's posted balance. Do not move its receipt
+                    // behind trades, or the snapshot will overwrite those
+                    // same-day debits in the historical replay.
+                    return;
+                }
+                // The source map is deposit-first for ordinary cash
+                // transfers, but the natural ledger sequence is
+                // withdrawal/outflow before deposit.
                 predecessorTxn = targetTxn;
                 successorTxn = sourceTxn;
             } else {
@@ -16199,7 +16222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         const tickerPriceIndex = buildTickerPriceIndex(priceHistory);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(safeTransactions, tickerPriceIndex);
-        const sortedTransactions = getSortedInvestmentMetricTransactions(safeTransactions);
+        const sortedTransactions = getSortedInvestmentTaxLotMetricTransactions(safeTransactions);
         const lotStates = new Map();
         const categoryAmounts = {
             tradingSpreadGains: 0,
@@ -16453,10 +16476,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return (Array.isArray(transactions) ? transactions : [])
             .map((txn, index) => ({ txn, index }))
             .sort((left, right) => compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
-            .map(({ txn }, sortedIndex) => ({
+            .map(({ txn, index }, sortedIndex) => ({
                 txn,
                 ledgerNo: sortedIndex + 1,
+                sourceIndex: index,
             }));
+    }
+
+    function getSortedInvestmentTaxLotMetricTransactions(transactions) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const displayLedgerNos = new Map(
+            getSortedInvestmentMetricTransactions(safeTransactions)
+                .map(({sourceIndex, ledgerNo}) => [sourceIndex, ledgerNo]),
+        );
+        return safeTransactions
+            .map((txn, sourceIndex) => ({
+                txn,
+                sourceIndex,
+                ledgerNo: displayLedgerNos.get(sourceIndex) ?? sourceIndex + 1,
+            }))
+            .sort((left, right) => compareInvestmentTaxLotTransactions(
+                left.txn,
+                right.txn,
+                left.sourceIndex,
+                right.sourceIndex,
+            ));
     }
 
     function getLatestInvestmentMetricPrice(ticker, latestPrices) {

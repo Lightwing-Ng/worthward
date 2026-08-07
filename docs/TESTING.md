@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.20.2`
+Documentation version: `v1.20.3`
 
 ## Supported commands
 
@@ -113,11 +113,11 @@ Current suite inventory remeasured on 1 Aug 2026:
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment
   calculations, including the user-confirmed CMB Wing Lung five-share GOOGL
   round trip, the four-account `414.80816032` GOOGL total, the account-scoped
-  `220.95` AAPL total, and exclusion of incomplete HSBC DRAM, BOXX, and EUV
-  histories from complete-account totals. The suite also verifies the default
-  lowest-cost lot matcher, the FIFO, LIFO, and moving-average alternatives,
-  zero-cost grant retention, cross-account cost aggregation, and P&L
-  conservation.
+  `220.95` AAPL total, and fail-closed handling for incomplete HSBC DRAM,
+  BOXX, and EUV histories. The suite also verifies validated HSBC open-position
+  snapshots, same-day execution chronology, the default lowest-cost lot matcher,
+  the FIFO, LIFO, and moving-average alternatives, zero-cost grant retention,
+  cross-account cost aggregation, and P&L conservation.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade

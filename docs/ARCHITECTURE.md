@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.26.0`
+Documentation version: `v1.27.0`
 
 ## Holdings P&L display contract
 
@@ -98,6 +98,10 @@ display. The persisted `Settings -> Investment` preference selects the matcher
 (`lowest_cost_first` by default, with FIFO, LIFO, and moving-average options).
 Broker-reported closed-trade P&L remains authoritative; security-transfer basis
 reconstruction is explicitly labelled FIFO reconstructed and remains separate.
+When a broker provides a validated current-position snapshot, explicit order
+history coverage, and a quantity-reconciling complete replay, the same engine
+may attest realized P&L for open lots; rolling or incomplete histories remain
+unverified.
 The shared `aggregateInvestmentScopedPositionStates` helper owns the common
 scope-to-ticker aggregation contract. Stock details replays the same scopes
 independently at every visible chart point before calculating the aggregate

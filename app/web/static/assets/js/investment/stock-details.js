@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.11.1
+ * Code version: v0.12.0
+ * - Fixed: Stock-details tax-lot replay uses source execution timestamps for same-day HSBC trades and attested open-position history.
  * - Fixed: Stock-details intraday charts ignore non-positive or structurally invalid OHLC bars.
  * - Changed: Stock-details hover guides reuse the shared soft muted gray token.
  * - Refactored: Average-cost chart aggregation now reuses the shared scoped-position aggregation contract from data-utils.
@@ -38,11 +39,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.83.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.84.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.11.1';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.12.0';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -221,6 +222,7 @@ export function createInvestmentStockDetailsUtils({
     clearInvestmentStockDetailHighlights,
     clearInvestmentStockDetailsVisibleLayoutTimer,
     compareInvestmentTransactions,
+    compareInvestmentTaxLotTransactions = compareInvestmentTransactions,
     constrainTickerDatesToSharedRange,
     convertAmountToBaseCurrency,
     createPositionState,
@@ -289,15 +291,24 @@ export function createInvestmentStockDetailsUtils({
     function buildInvestmentStockDetailRows(processedTransactions, ticker) {
         const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         if (!normalizedTicker) return [];
+        const sourceTransactions = Array.isArray(processedTransactions) ? processedTransactions : [];
         const stockStates = new Map();
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(processedTransactions, tickerPriceIndex);
         let lastKnownTickerPrice = null;
-        const detailRows = [];
-        (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
-            if (getInvestmentCanonicalTicker(txn?.ticker) !== normalizedTicker) return;
+        const detailRowsBySourceIndex = new Map();
+        sourceTransactions
+            .map((txn, sourceIndex) => ({txn, sourceIndex}))
+            .filter(({txn}) => getInvestmentCanonicalTicker(txn?.ticker) === normalizedTicker)
+            .sort((left, right) => compareInvestmentTaxLotTransactions(
+                left.txn,
+                right.txn,
+                left.sourceIndex,
+                right.sourceIndex,
+            ))
+            .forEach(({txn, sourceIndex}) => {
             const normalizedType = getNormalizedTransactionType(txn);
             const lotScopeKey = getTransactionLotScopeKey(txn, normalizedTicker);
             if (!stockStates.has(lotScopeKey)) {
@@ -345,13 +356,16 @@ export function createInvestmentStockDetailsUtils({
                     rowMarketValue = safeHoldingQuantity * closePrice;
                 }
             }
-            detailRows.push({
+            detailRowsBySourceIndex.set(sourceIndex, {
                 ...txn,
                 rowMarketValue,
                 rowRealizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : null,
             });
         });
-        return detailRows.reverse();
+        return sourceTransactions
+            .map((txn, sourceIndex) => detailRowsBySourceIndex.get(sourceIndex) || null)
+            .filter(Boolean)
+            .reverse();
     }
 
     function getInvestmentStockDetailsAutoRangeContext(ticker, detailRows = []) {
@@ -438,7 +452,9 @@ export function createInvestmentStockDetailsUtils({
 
     function buildInvestmentStockDetailBrokerMetrics(detailRows, ticker, lastPrice) {
         const normalizedTicker = getInvestmentCanonicalTicker(ticker);
-        const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
+        const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])]
+            .reverse()
+            .sort((left, right) => compareInvestmentTaxLotTransactions(left, right));
         if (!normalizedTicker || !orderedRows.length) return [];
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));

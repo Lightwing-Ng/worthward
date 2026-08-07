@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.83.0
+ * Code version: v1.84.0
  * - Fixed: Imported split-affected trades now rescale authoritative share counts when raw broker prices are on a pre-split basis and chart closes are split-adjusted.
  * - Fixed: Historical CNY FX payloads are also available to canonical CNH rows, including cross-currency IBKR funding review.
  * - Added: Long-range daily equity charts can explicitly include every calendar day, carrying the latest available market close across non-trading days.
@@ -1617,6 +1617,8 @@ export function createInvestmentDataUtils({
             source.history_order_datetime
             ?? source.execution_datetime
             ?? source.trade_datetime
+            ?? source.email_datetime
+            ?? source.source_datetime_raw
             ?? txn?.datetime
             ?? txn?.date
             ?? '',
@@ -1871,8 +1873,93 @@ export function createInvestmentDataUtils({
         return scopes;
     }
 
+    function getDynamicallyVerifiedTaxLotHistoryScopes(lotScopeMap) {
+        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const scopes = new Map();
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') return scopes;
+
+        const closeEnough = (left, right) => Math.abs(Number(left) - Number(right)) < 1e-9;
+        const getCoverageEndDate = (scopeSummary, snapshot) => {
+            const coverage = scopeSummary?.order_history_scope
+                || snapshot?.order_status_coverage;
+            if (coverage?.mode !== 'explicit_date_ranges' || !Array.isArray(coverage.windows)) {
+                return '';
+            }
+            return coverage.windows
+                .map((window) => normalizeLedgerDate(window?.end_date))
+                .filter(Boolean)
+                .sort()
+                .pop() || '';
+        };
+
+        lotScopeMap.forEach((scopeState) => {
+            const scope = scopeState?.lotScope;
+            if (!scope || scope.broker !== 'hsbc') return;
+
+            const matchingSummary = Object.entries(brokerSummaries).find(([broker, summary]) => {
+                if (!summary || typeof summary !== 'object') return false;
+                const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
+                const accountId = String(summary.account_id ?? summary.account ?? '').trim();
+                return (
+                    normalizedBroker === scope.broker
+                    && normalizeInvestmentLotScopeAccount(normalizedBroker, accountId) === scope.accountToken
+                );
+            });
+            const summary = matchingSummary?.[1];
+            const snapshot = summary?.hsbc_snapshot;
+            if (
+                !summary
+                || summary.position_snapshot_authoritative !== true
+                || snapshot?.status !== 'validated'
+                || scopeState.realizedPnlStatus !== 'complete'
+                || scopeState.sellCount <= scopeState.brokerRealizedSellCount
+                || scopeState.hasPartialTaxLotHistory !== true
+            ) return;
+
+            const positionSnapshotEntry = Object.entries(summary.position_snapshot || {})
+                .find(([ticker]) => getInvestmentCanonicalTicker(ticker) === scope.ticker)?.[1];
+            const expectedShares = Number(positionSnapshotEntry?.quantity);
+            const verifiedThrough = normalizeLedgerDate(summary.position_snapshot_as_of)
+                || normalizeLedgerDate(snapshot.portfolio_market_data_updated_at?.date);
+            const coverageEndDate = getCoverageEndDate(summary, snapshot);
+            if (
+                !positionSnapshotEntry
+                || !Number.isFinite(expectedShares)
+                || !verifiedThrough
+                || !coverageEndDate
+                || coverageEndDate < verifiedThrough
+                || !scopeState.lastTradeDate
+                || scopeState.lastTradeDate > verifiedThrough
+                || !closeEnough(scopeState.shares, expectedShares)
+            ) return;
+
+            scopes.set([
+                scope.broker,
+                scope.accountToken,
+                scope.ticker,
+                scope.currency,
+            ].join('|'), {
+                verifiedThrough,
+                expectedShares,
+                buyCount: scopeState.buyCount,
+                sellCount: scopeState.sellCount,
+                buyQuantity: scopeState.buyQuantity,
+                sellQuantity: scopeState.sellQuantity,
+                calculationMethod: 'trade_price_and_commission',
+                verificationSource: 'authoritative_position_snapshot_and_complete_replay',
+            });
+        });
+        return scopes;
+    }
+
     function matchesVerifiedTaxLotHistory(scopeState, verification) {
-        if (!verification || !isFlatPosition(scopeState?.shares)) return false;
+        if (!verification) return false;
+        const hasExpectedShares = (
+            verification.expectedShares !== undefined
+            && verification.expectedShares !== null
+            && Number.isFinite(Number(verification.expectedShares))
+        );
+        if (!hasExpectedShares && !isFlatPosition(scopeState?.shares)) return false;
         const closeEnough = (left, right) => Math.abs(Number(left) - Number(right)) < 1e-9;
         return (
             scopeState.realizedPnlStatus === 'complete'
@@ -1882,6 +1969,7 @@ export function createInvestmentDataUtils({
             && scopeState.sellCount === verification.sellCount
             && closeEnough(scopeState.buyQuantity, verification.buyQuantity)
             && closeEnough(scopeState.sellQuantity, verification.sellQuantity)
+            && (!hasExpectedShares || closeEnough(scopeState.shares, verification.expectedShares))
         );
     }
 
@@ -3302,6 +3390,12 @@ export function createInvestmentDataUtils({
             }
         });
 
+        getDynamicallyVerifiedTaxLotHistoryScopes(lotScopeMap).forEach((verification, key) => {
+            if (!verifiedTaxLotHistoryScopes.has(key)) {
+                verifiedTaxLotHistoryScopes.set(key, verification);
+            }
+        });
+
         // Position quantities, cost basis, and realized P&L are aggregated only
         // from the same broker/account/currency scopes that generated them.
         const scopedStatesByTicker = new Map();
@@ -3720,6 +3814,7 @@ export function createInvestmentDataUtils({
         createCashLedger,
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
+        compareInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
         createPositionState,
@@ -3795,4 +3890,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.83.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.84.0';
