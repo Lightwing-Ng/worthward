@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.78.0
+ * Code version: v2.80.0
+ * - Fixed: China Merchants Bank Hong Kong Branch uses its canonical name and the shared CMB institution logo.
  * - Added: Money-market fund identities in the portfolio donut use the standard theme green token mask in both themes.
  * - Added: IBKR base-currency-equivalent funding rows can be manually matched to CNH bank withdrawals with the transaction-date FX rate.
  * - Added: 3M-through-Max Overview equity ranges render every calendar day, carrying non-trading-day close values and cash changes.
@@ -771,6 +772,12 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
             logoAlt: 'China Merchants Bank logo',
         },
+        cmb_hk: {
+            code: 'cmb_hk',
+            label: 'China Merchants Bank Hong Kong Branch',
+            logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
+            logoAlt: 'China Merchants Bank Hong Kong Branch logo',
+        },
         boc_cn: {
             code: 'boc_cn',
             label: 'Bank of China',
@@ -836,6 +843,18 @@ document.addEventListener('DOMContentLoaded', () => {
             label: 'No specified broker',
             logoUrl: '/market-store/logos/brokers/Standard%20XLSX.svg',
             logoAlt: 'Standard XLSX icon',
+        },
+        standard_chartered_hk: {
+            code: 'standard_chartered_hk',
+            label: 'Standard Chartered (HK)',
+            logoUrl: '/market-store/logos/brokers/Standard%20Chartered.svg',
+            logoAlt: 'Standard Chartered (HK) logo',
+        },
+        welab_bank: {
+            code: 'welab_bank',
+            label: 'WeLab Bank',
+            logoUrl: '/market-store/logos/brokers/WeLab%20Bank.png',
+            logoAlt: 'WeLab Bank logo',
         },
     };
     const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set([
@@ -6406,8 +6425,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function getInvestmentBrokerSummarySelectedCode() {
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         if (!availableBrokerCodes.length) {
-            investmentBrokerSummarySelectedCode = 'all';
-            return 'all';
+            const pendingBrokerCode = normalizeInvestmentBroker(investmentBrokerSummarySelectedCode);
+            return pendingBrokerCode && pendingBrokerCode !== 'all'
+                ? pendingBrokerCode
+                : 'all';
         }
 
         if (!investmentBrokerSummarySelectionInitialized) {
@@ -8715,15 +8736,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInvestmentBrokerCell(txn) {
         const brokerMeta = getInvestmentBrokerMeta(getTransactionBrokerCode(txn));
-        return `
-            <td class="investment-history-cell investment-history-cell-center investment-history-broker-cell">
-                <span class="ticker-leading-slot investment-history-broker-slot" aria-hidden="true">
-                    <span class="ticker-logo-placeholder investment-history-broker-placeholder"></span>
+        const logoMarkup = brokerMeta.logoUrl
+            ? `
                     <img class="ticker-input-logo investment-history-broker-logo"
                          src="${escapeHtml(brokerMeta.logoUrl)}"
                          alt="${escapeHtml(brokerMeta.logoAlt)}"
                          loading="eager"
-                         decoding="async">
+                         decoding="async">`
+            : '';
+        return `
+            <td class="investment-history-cell investment-history-cell-center investment-history-broker-cell">
+                <span class="ticker-leading-slot investment-history-broker-slot" aria-hidden="true">
+                    <span class="ticker-logo-placeholder investment-history-broker-placeholder"></span>
+                    ${logoMarkup}
                 </span>
                 <span class="sr-only">${escapeHtml(brokerMeta.label)}</span>
             </td>

@@ -75,6 +75,10 @@ test-results/
 
 # Local verification artifacts and user-provided transaction material.
 /outputs/
+/tmp/
+# Ignore accidental duplicate copies created by workspace file collisions.
+**/* 2.*
+**/* 3.*
 /.codex_tmp/
 /body.html
 /main_rows.json

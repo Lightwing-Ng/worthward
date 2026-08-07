@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and alphabetical sort order.
 
-Code version: v0.10.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -98,6 +98,12 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="CMB Wing Lung.svg",
         description="Record Mainland China bank-account activity in CNY through the standard XLSX.",
     ),
+    "cmb_hk": BrokerCatalogEntry(
+        code="cmb_hk",
+        label="China Merchants Bank Hong Kong Branch",
+        icon_filename="CMB Wing Lung.svg",
+        description="Record Hong Kong bank-account activity through the standard XLSX.",
+    ),
     "boc_cn": BrokerCatalogEntry(
         code="boc_cn",
         label="Bank of China",
@@ -132,6 +138,18 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         code="ccb_hk",
         label="China Construction Bank (Asia)",
         icon_filename="CCB.svg",
+        description="Record Hong Kong bank-account activity through the standard XLSX.",
+    ),
+    "standard_chartered_hk": BrokerCatalogEntry(
+        code="standard_chartered_hk",
+        label="Standard Chartered (HK)",
+        icon_filename="Standard Chartered.svg",
+        description="Record Hong Kong bank-account activity through the standard XLSX.",
+    ),
+    "welab_bank": BrokerCatalogEntry(
+        code="welab_bank",
+        label="WeLab Bank",
+        icon_filename="WeLab Bank.png",
         description="Record Hong Kong bank-account activity through the standard XLSX.",
     ),
 }

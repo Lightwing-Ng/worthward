@@ -93,6 +93,22 @@ def test_manual_bank_institutions_are_generic_xlsx_import_choices():
     )
 
 
+def test_hk_bank_display_catalog_covers_restored_bank_records_and_logos():
+    logo_dir = Path(__file__).resolve().parents[1] / "market_store" / "logos" / "brokers"
+    expected = {
+        "cmb_hk": ("China Merchants Bank Hong Kong Branch", "CMB Wing Lung.svg"),
+        "standard_chartered_hk": ("Standard Chartered (HK)", "Standard Chartered.svg"),
+        "welab_bank": ("WeLab Bank", "WeLab Bank.png"),
+    }
+
+    for code, (label, icon_filename) in expected.items():
+        entry = BROKER_CATALOG[code]
+        assert entry.label == label
+        assert entry.icon_filename == icon_filename
+        if icon_filename:
+            assert (logo_dir / icon_filename).is_file()
+
+
 def test_settings_and_live_trading_broker_lists_use_ibkr_before_longbridge():
     assert sort_broker_codes(SETTINGS_BROKER_CODES) == ["ibkr", "longbridge"]
     assert sort_broker_codes(LIVE_TRADING_BROKER_CODES) == ["ibkr", "longbridge"]
