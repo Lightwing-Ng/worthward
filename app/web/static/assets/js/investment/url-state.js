@@ -1,10 +1,12 @@
 /**
  * Investment URL state parsing and serialization.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Changed: Overview and Stock-details ranges stay scoped to their own tabs.
+ * - Changed: Metrics broker state is serialized only while Metrics is active.
  */
 
-export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.0.0';
+export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.1.0';
 
 const INVESTMENT_URL_VIEW_SLUGS = Object.freeze({
     chart: 'overview',
@@ -170,13 +172,26 @@ export function buildInvestmentUrl(input, state = {}) {
     const ticker = normalizeTicker(state.ticker);
     if (view === 'stock_details' && ticker) params.set('ticker', ticker);
 
-    const activeRange = view === 'stock_details'
-        ? normalizeRange(state.stockDetailsRange ?? state.range)
-        : normalizeRange(state.overviewRange ?? state.range);
-    setIfNonDefault(params, 'range', activeRange, 'max');
+    if (view === 'stock_details') {
+        setIfNonDefault(
+            params,
+            'range',
+            normalizeRange(state.stockDetailsRange ?? state.range),
+            'max',
+        );
+    } else if (view === 'chart') {
+        setIfNonDefault(
+            params,
+            'range',
+            normalizeRange(state.overviewRange ?? state.range),
+            'max',
+        );
+    }
 
     const metricsBroker = String(state.metricsBroker || 'all').trim().toLowerCase();
-    setIfNonDefault(params, 'metrics-broker', metricsBroker, 'all');
+    if (view === 'metrics') {
+        setIfNonDefault(params, 'metrics-broker', metricsBroker, 'all');
+    }
 
     const brokerSelection = state.brokerSelection || {};
     if (!brokerSelection.all) {

@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.10.3
+ * Code version: v0.11.1
+ * - Fixed: Stock-details intraday charts ignore non-positive or structurally invalid OHLC bars.
  * - Changed: Stock-details hover guides reuse the shared soft muted gray token.
  * - Refactored: Average-cost chart aggregation now reuses the shared scoped-position aggregation contract from data-utils.
  * - Fixed: Average-cost chart points now replay each broker/account/currency lot scope before aggregating the visible position, so cross-account sells cannot consume unrelated lots.
@@ -37,11 +38,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.82.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.83.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.10.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.11.1';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -80,6 +81,38 @@ export function normalizeInvestmentRange(range, options = [], fallback = 'max') 
 
 export function isInvestmentStockDetailsIntradayRange(range, options = []) {
     return normalizeInvestmentRange(range, options) === '1w';
+}
+
+export function normalizeInvestmentStockDetailsIntradayRows(rows = []) {
+    return (Array.isArray(rows) ? rows : [])
+        .map((row) => {
+            if (!row || typeof row !== 'object') return null;
+            const date = String(row.date || '').trim();
+            const open = Number(row.open);
+            const high = Number(row.high);
+            const low = Number(row.low);
+            const close = Number(row.close);
+            const prices = [open, high, low, close];
+            if (!date || !prices.every(Number.isFinite) || prices.some((value) => value <= 0)) {
+                return null;
+            }
+            if (
+                high < Math.max(open, close)
+                || low > Math.min(open, close)
+                || high < low
+            ) {
+                return null;
+            }
+            return {
+                ...row,
+                date,
+                open,
+                high,
+                low,
+                close,
+            };
+        })
+        .filter(Boolean);
 }
 
 export function parseInvestmentIntradayTimestamp(value) {
@@ -580,18 +613,18 @@ export function createInvestmentStockDetailsUtils({
         let closeValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const close = Number(intradayRows[index]?.close);
-                return Number.isFinite(close) ? close : null;
+                return Number.isFinite(close) && close > 0 ? close : null;
             })
             : labels.map((date) => {
                 const close = Number(tickerPriceMap[date]);
-                return Number.isFinite(close) ? close : null;
+                return Number.isFinite(close) && close > 0 ? close : null;
             });
         if (!useIntradayCandles) {
             const liveDateKey = typeof getInvestmentLiveSessionDateKey === 'function'
                 ? getInvestmentLiveSessionDateKey()
                 : '';
             if (liveDateKey && !labels.some((label) => normalizeLedgerDate(label) === liveDateKey)) {
-                const lastFiniteClose = [...closeValues].reverse().find((value) => Number.isFinite(value));
+                const lastFiniteClose = [...closeValues].reverse().find((value) => Number.isFinite(value) && value > 0);
                 const fallbackClose = Number(
                     tickerPriceMap[liveDateKey]
                     ?? tickerPriceMap[labels[labels.length - 1]]
@@ -600,29 +633,32 @@ export function createInvestmentStockDetailsUtils({
                 labels = [...labels, liveDateKey];
                 closeValues = [
                     ...closeValues,
-                    Number.isFinite(fallbackClose) ? fallbackClose : null,
+                    Number.isFinite(fallbackClose) && fallbackClose > 0 ? fallbackClose : null,
                 ];
             }
         }
         const openValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const open = Number(intradayRows[index]?.open);
-                return Number.isFinite(open) ? open : null;
+                return Number.isFinite(open) && open > 0 ? open : null;
             })
             : [];
         const highValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const high = Number(intradayRows[index]?.high);
-                return Number.isFinite(high) ? high : null;
+                return Number.isFinite(high) && high > 0 ? high : null;
             })
             : [];
         const lowValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const low = Number(intradayRows[index]?.low);
-                return Number.isFinite(low) ? low : null;
+                return Number.isFinite(low) && low > 0 ? low : null;
             })
             : [];
-        if ((!tickerLabels.length && !useIntradayCandles) || !closeValues.some((value) => Number.isFinite(value))) {
+        if (
+            (!tickerLabels.length && !useIntradayCandles)
+            || !closeValues.some((value) => Number.isFinite(value) && value > 0)
+        ) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
@@ -731,10 +767,12 @@ export function createInvestmentStockDetailsUtils({
         const resolveTradeMarkerPrice = (markerIndex, transactionPrice) => {
             const normalizedTransactionPrice = Number(transactionPrice);
             const normalizedClosePrice = Number(closeValues[markerIndex]);
-            if (Number.isFinite(normalizedTransactionPrice)) {
+            if (Number.isFinite(normalizedTransactionPrice) && normalizedTransactionPrice > 0) {
                 return adjustTradePriceForRenderedSeries(normalizedTransactionPrice, normalizedClosePrice);
             }
-            return Number.isFinite(normalizedClosePrice) ? normalizedClosePrice : null;
+            return Number.isFinite(normalizedClosePrice) && normalizedClosePrice > 0
+                ? normalizedClosePrice
+                : null;
         };
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
@@ -925,9 +963,10 @@ export function createInvestmentStockDetailsUtils({
                 getTickerQuoteCurrency,
             );
             const close = Number(closeValues[index]);
+            const renderedAveragePrice = Number(renderedAggregateState.averagePrice);
             averagePriceSeries.push(
-                Number.isFinite(renderedAggregateState.averagePrice)
-                    ? renderedAggregateState.averagePrice
+                Number.isFinite(renderedAveragePrice) && renderedAveragePrice > 0
+                    ? renderedAveragePrice
                     : null,
             );
             stockSnapshotsByDate.set(String(label), {
@@ -1065,7 +1104,7 @@ export function createInvestmentStockDetailsUtils({
             const finiteValues = (Array.isArray(values) ? values : [])
                 .filter((value) => value !== null && value !== undefined && value !== '')
                 .map((value) => Number(value))
-                .filter((value) => Number.isFinite(value));
+                .filter((value) => Number.isFinite(value) && value > 0);
             if (!finiteValues.length) return {};
             const rawMin = Math.min(...finiteValues);
             const rawMax = Math.max(...finiteValues);

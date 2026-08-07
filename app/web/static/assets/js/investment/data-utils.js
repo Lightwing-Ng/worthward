@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.82.0
+ * Code version: v1.83.0
+ * - Fixed: Imported split-affected trades now rescale authoritative share counts when raw broker prices are on a pre-split basis and chart closes are split-adjusted.
  * - Fixed: Historical CNY FX payloads are also available to canonical CNH rows, including cross-currency IBKR funding review.
  * - Added: Long-range daily equity charts can explicitly include every calendar day, carrying the latest available market close across non-trading days.
  * - Added: Virtual cash reconciliation rows now distinguish virtual deposits from virtual withdrawals while retaining the shared Virtual balance reset description.
@@ -2156,6 +2157,7 @@ export function createInvestmentDataUtils({
 
     function buildRenderedSplitFactorHints(transactions, tickerPriceIndex) {
         const buckets = new Map();
+        const factorEvidenceByTicker = new Map();
         (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
             if (!shouldTrackHoldingTicker(txn)) return;
             const normalizedType = getNormalizedTransactionType(txn);
@@ -2164,6 +2166,13 @@ export function createInvestmentDataUtils({
             if (!key) return;
             const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
             if (!Number.isFinite(factor) || factor < 1 || Math.abs(factor - 1) < 1e-9) return;
+            const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+            if (ticker) {
+                if (!factorEvidenceByTicker.has(ticker)) {
+                    factorEvidenceByTicker.set(ticker, []);
+                }
+                factorEvidenceByTicker.get(ticker).push(factor);
+            }
             if (!buckets.has(key)) {
                 buckets.set(key, []);
             }
@@ -2181,6 +2190,40 @@ export function createInvestmentDataUtils({
             const numericFactor = Number(bestFactor);
             if (Number.isFinite(numericFactor) && numericFactor >= 1) {
                 hints.set(key, numericFactor);
+            }
+        });
+
+        // A trade can be far enough from that day's close to miss the strict
+        // per-row split match even though sibling trades for the same ticker
+        // prove the rendered price basis. Use the nearest proven factor only
+        // when the raw-to-rendered ratio still falls within the normal close
+        // movement tolerance. This preserves post-split rows whose ratio is
+        // near 1 while repairing noisy pre-split rows such as old TQQQ fills.
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const key = getRenderedSplitFactorHintKey(txn);
+            const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+            if (!key || !ticker || hints.has(key)) return;
+            const evidence = factorEvidenceByTicker.get(ticker);
+            if (!Array.isArray(evidence) || !evidence.length) return;
+            const rawPrice = getTransactionPrice(txn);
+            const renderedClose = getIndexedClosePriceForTransaction(txn, tickerPriceIndex);
+            if (!Number.isFinite(rawPrice) || rawPrice <= 0 || !Number.isFinite(renderedClose) || renderedClose <= 0) {
+                return;
+            }
+            const rawRatio = rawPrice / renderedClose;
+            if (!Number.isFinite(rawRatio) || rawRatio <= 0) return;
+            const bestFactor = evidence
+                .reduce((best, factor) => (
+                    Math.abs(Math.log(rawRatio / factor)) < best.distance
+                        ? {factor, distance: Math.abs(Math.log(rawRatio / factor))}
+                        : best
+                ), {factor: 1, distance: Number.POSITIVE_INFINITY});
+            if (
+                Number.isFinite(bestFactor.factor)
+                && bestFactor.factor > 1
+                && bestFactor.distance <= Math.log(1.35)
+            ) {
+                hints.set(key, bestFactor.factor);
             }
         });
         return hints;
@@ -2209,12 +2252,9 @@ export function createInvestmentDataUtils({
         const quantity = getTransactionQuantity(txn);
         if (!Number.isFinite(quantity)) return quantity;
         const normalizedType = getNormalizedTransactionType(txn);
-        if (hasAuthoritativeImportedPositionQuantity(txn)) {
-            return quantity;
-        }
         let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
         if (
-            normalizedType === 'grant'
+            ['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)
             && (!Number.isFinite(factor) || Math.abs(factor - 1) < 1e-9)
             && renderedSplitFactorHints instanceof Map
         ) {
@@ -2222,6 +2262,12 @@ export function createInvestmentDataUtils({
             if (Number.isFinite(hintedFactor) && hintedFactor >= 1) {
                 factor = hintedFactor;
             }
+        }
+        if (
+            hasAuthoritativeImportedPositionQuantity(txn)
+            && (!Number.isFinite(factor) || factor <= 1)
+        ) {
+            return quantity;
         }
         return quantity * (Number.isFinite(factor) && factor > 0 ? factor : 1);
     }
@@ -3749,4 +3795,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.82.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.83.0';

@@ -1369,6 +1369,39 @@ class MarketDataFreshnessTests(unittest.TestCase):
         refresh_mock.assert_not_called()
         fetch_history_mock.assert_not_called()
 
+    def test_intraday_endpoint_filters_non_positive_and_malformed_ohlc_bars(self) -> None:
+        dataset = pd.DataFrame({
+            "Date": pd.to_datetime([
+                "2026-08-06 09:30",
+                "2026-08-06 09:31",
+                "2026-08-06 09:32",
+            ]),
+            "Open": [24.0, 0.0, 24.0],
+            "High": [25.0, 25.0, 23.0],
+            "Low": [23.0, 0.0, 22.0],
+            "Close": [24.5, 24.5, 23.5],
+        })
+        with TemporaryDirectory() as tempdir:
+            store_path = Path(tempdir) / "EUV_1m.parquet"
+            dataset.to_parquet(store_path, index=False)
+            with patch(
+                "app.web.runtime.intraday_history_store_path_for",
+                return_value=store_path,
+            ):
+                response = create_app().test_client().get(
+                    "/api/investment/intraday?ticker=EUV&range=1w&days=2026-08-06"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["count"], 1)
+        self.assertEqual(response.get_json()["rows"], [{
+            "date": "2026-08-06 09:30",
+            "open": 24.0,
+            "high": 25.0,
+            "low": 23.0,
+            "close": 24.5,
+        }])
+
     def test_realtime_quote_endpoint_reuses_a_complete_batch_for_one_minute(self) -> None:
         qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}
         aapl_quote = {"ticker": "AAPL", "price": 200.0, "source": "yfinance"}

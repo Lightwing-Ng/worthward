@@ -1,4 +1,4 @@
-/* Tests for the canonical Investment URL state contract. Code version: v1.0.0 */
+/* Tests for the canonical Investment URL state contract. Code version: v1.1.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -87,6 +87,29 @@ test('omits default values while retaining the explicit Overview view', () => {
             page: 1,
         }),
         '/trade/investment?view=overview',
+    );
+});
+
+test('keeps range and Metrics broker state scoped to the active view', () => {
+    assert.equal(
+        buildInvestmentUrl('http://localhost:8688/trade/investment', {
+            view: 'metrics',
+            overviewRange: '1w',
+            stockDetailsRange: '3m',
+            metricsBroker: 'schwab',
+            brokerSelection: {all: true, codes: []},
+        }),
+        '/trade/investment?view=metrics&metrics-broker=schwab',
+    );
+    assert.equal(
+        buildInvestmentUrl('http://localhost:8688/trade/investment', {
+            view: 'holdings',
+            overviewRange: '1w',
+            stockDetailsRange: '3m',
+            metricsBroker: 'schwab',
+            brokerSelection: {all: true, codes: []},
+        }),
+        '/trade/investment?view=holdings',
     );
 });
 

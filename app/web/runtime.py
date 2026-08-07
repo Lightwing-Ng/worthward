@@ -1,7 +1,8 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.68.0
+Code version: v0.69.0
+- Fixed: Investment intraday history responses exclude non-positive and malformed OHLC bars without rewriting local stores.
 - Added: Settings -> Investment persists one shared buy/sell lot-matching preference and exposes it in every Investment payload.
 - Added: Settings URL state uses canonical section paths, language tabs, and pagination with legacy query aliases readable during migration.
 - Added: CSRF-protected Schwab security-transfer source-account confirmation persists metadata only and refreshes fail-closed aggregate reconciliation.
@@ -7046,6 +7047,25 @@ def build_web_runtime() -> WebRuntime:
             response.status_code = 500
             return apply_no_store_headers(response)
 
+    def normalize_investment_intraday_ohlc(dataset: pd.DataFrame) -> pd.DataFrame:
+        """Keep only positive, structurally valid OHLC bars at the API boundary."""
+        price_columns = ["Open", "High", "Low", "Close"]
+        if not all(column in dataset.columns for column in ["Date", *price_columns]):
+            return dataset.iloc[0:0].copy()
+        normalized = dataset.copy()
+        normalized["Date"] = pd.to_datetime(normalized["Date"], errors="coerce")
+        normalized[price_columns] = normalized[price_columns].apply(pd.to_numeric, errors="coerce")
+        normalized = normalized.dropna(subset=["Date", *price_columns])
+        positive_prices = (normalized[price_columns] > 0).all(axis=1)
+        valid_structure = (
+            (normalized["High"] >= normalized["Open"])
+            & (normalized["High"] >= normalized["Close"])
+            & (normalized["Low"] <= normalized["Open"])
+            & (normalized["Low"] <= normalized["Close"])
+            & (normalized["High"] >= normalized["Low"])
+        )
+        return normalized.loc[positive_prices & valid_structure].sort_values("Date")
+
     def investment_get_intraday_history():
         """Get local 1-minute OHLC history for Investment stock details charts."""
         ticker = request.args.get("ticker", "").strip().upper()
@@ -7091,9 +7111,7 @@ def build_web_runtime() -> WebRuntime:
                 response.status_code = 404
                 return apply_no_store_headers(response)
 
-            intraday = dataset.copy()
-            intraday["Date"] = pd.to_datetime(intraday["Date"], errors="coerce")
-            intraday = intraday.dropna(subset=["Date", "Open", "High", "Low", "Close"]).sort_values("Date")
+            intraday = normalize_investment_intraday_ohlc(dataset)
             if intraday.empty:
                 response = jsonify({"success": False, "error": f"No 1-minute OHLC data for {normalized_ticker}"})
                 response.status_code = 404
@@ -7109,9 +7127,7 @@ def build_web_runtime() -> WebRuntime:
                         )
                         intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
                         dataset = pd.read_parquet(intraday_path) if intraday_path is not None else dataset
-                        intraday = dataset.copy()
-                        intraday["Date"] = pd.to_datetime(intraday["Date"], errors="coerce")
-                        intraday = intraday.dropna(subset=["Date", "Open", "High", "Low", "Close"]).sort_values("Date")
+                        intraday = normalize_investment_intraday_ohlc(dataset)
                     except Exception:
                         pass
 

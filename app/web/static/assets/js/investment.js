@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.80.0
+ * Code version: v2.82.0
+ * - Fixed: Equity replay aligns imported pre-split share counts with split-adjusted historical closes for affected tickers such as TQQQ and NVDA.
+ * - Fixed: Investment tab ranges and Metrics broker state remain scoped to their owning view.
+ * - Fixed: Stock-details intraday charts reject non-positive or malformed OHLC bars before scaling.
  * - Fixed: China Merchants Bank Hong Kong Branch uses its canonical name and the shared CMB institution logo.
  * - Added: Money-market fund identities in the portfolio donut use the standard theme green token mask in both themes.
  * - Added: IBKR base-currency-equivalent funding rows can be manually matched to CNH bank withdrawals with the transaction-date FX rate.
@@ -97,7 +100,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.82.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.83.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -119,9 +122,10 @@ import {
     createInvestmentStockDetailsUtils,
     getInvestmentTradeSessionType as getInvestmentTradeSessionTypeCore,
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
+    normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.10.3';
+} from './investment/stock-details.js?v=investment-stock-details-v0.11.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -138,10 +142,8 @@ import {
     normalizeInvestmentBroker,
     normalizeInvestmentDescriptionBindingFilter as normalizeInvestmentDescriptionBindingFilterValue,
     normalizeInvestmentCurrencyFilter as normalizeInvestmentCurrencyFilterValue,
-    selectInvestmentBrokerRows,
     selectInvestmentBrokerCurrencyRows,
     selectInvestmentDescriptionBindingRows,
-    selectInvestmentCurrencyRows,
     sortInvestmentBrokerFilterCodes as sortInvestmentBrokerFilterCodesCore,
 } from './investment/transaction-filters.js?v=investment-transaction-filters-v1.3.0';
 import {
@@ -160,7 +162,7 @@ import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
     parseInvestmentUrlState,
-} from './investment/url-state.js?v=investment-url-state-v1.0.0';
+} from './investment/url-state.js?v=investment-url-state-v1.1.0';
 import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
@@ -168,7 +170,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.78.0',
+    entry: 'v2.82.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1881,6 +1883,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ticker = selectedInvestmentStockTicker || '',
         range = selectedInvestmentStockDetailsRange || 'max',
         equityRange = selectedInvestmentEquityRange || 'max',
+        metricsBroker,
     } = {}) {
         const normalizedView = normalizeInvestmentView(view);
         const normalizedTicker = normalizeInvestmentTicker(ticker);
@@ -1888,6 +1891,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedEquityRange = normalizeInvestmentEquityRange(equityRange);
         const nextUrl = buildInvestmentViewUrl(normalizedView, normalizedTicker);
         const currentMemory = readInvestmentPageMemory();
+        const rawMetricsBroker = metricsBroker === undefined
+            ? currentMemory.last_metrics_broker || investmentBrokerSummarySelectedCode
+            : metricsBroker;
+        const normalizedMetricsBroker = String(rawMetricsBroker || 'all').trim().toLowerCase() === 'all'
+            ? 'all'
+            : normalizeInvestmentBroker(rawMetricsBroker);
         writeInvestmentPageMemory({
             ...currentMemory,
             page_key: 'investment',
@@ -1897,6 +1906,7 @@ document.addEventListener('DOMContentLoaded', () => {
             last_stock_ticker: normalizedTicker,
             last_stock_details_range: normalizedRange,
             last_equity_range: normalizedEquityRange,
+            last_metrics_broker: normalizedMetricsBroker,
             last_stock_details_url: normalizedView === 'stock_details' ? nextUrl : buildInvestmentViewUrl('stock_details', normalizedTicker),
         });
     }
@@ -1906,11 +1916,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const rememberedTicker = normalizeInvestmentTicker(memory.last_stock_ticker || '');
         const rememberedRange = normalizeInvestmentStockDetailsRange(memory.last_stock_details_range || 'max');
         const rememberedEquityRange = normalizeInvestmentEquityRange(memory.last_equity_range || 'max');
+        const rememberedMetricsBroker = String(memory.last_metrics_broker || 'all').trim().toLowerCase() === 'all'
+            ? 'all'
+            : normalizeInvestmentBroker(memory.last_metrics_broker);
         if (rememberedTicker) {
             selectedInvestmentStockTicker = rememberedTicker;
         }
         selectedInvestmentStockDetailsRange = rememberedRange;
         selectedInvestmentEquityRange = rememberedEquityRange;
+        investmentBrokerSummarySelectedCode = rememberedMetricsBroker;
+        investmentBrokerSummarySelectionInitialized = false;
         return normalizeInvestmentView(memory.last_view || 'chart');
     }
 
@@ -3902,7 +3917,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok || payload?.success === false) {
                 throw new Error(payload?.error || `Unable to load 1-minute market data for ${normalizedTicker}.`);
             }
-            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            const rows = normalizeInvestmentStockDetailsIntradayRows(payload?.rows);
             investmentStockDetailsIntradayCache.set(cacheKey, rows);
             return rows;
         })();
@@ -3951,7 +3966,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok || payload?.success === false) {
                 throw new Error(payload?.error || `Unable to load 1-minute market data for ${normalizedTicker}.`);
             }
-            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            const rows = normalizeInvestmentStockDetailsIntradayRows(payload?.rows);
             investmentOverviewIntradayCache.set(cacheKey, rows);
             return rows;
         })();
@@ -4853,9 +4868,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextIndex = Math.max(0, INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
             updateInvestmentEquityRangePill();
-            syncInvestmentHistoryHeading();
             const nextChartPoints = getInvestmentEquityChartInputPoints(chartPoints);
-            renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, nextChartPoints, { resetPage: true, scrollToTop: true });
             updateInvestmentEquityChartDisplay(nextChartPoints);
         }, { signal });
         window.addEventListener('resize', updateInvestmentEquityRangePill, { signal });
@@ -6432,11 +6445,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!investmentBrokerSummarySelectionInitialized) {
-            const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
-            const selectedAvailableCode = availableBrokerCodes.find((brokerCode) => selectedBrokerCodes.has(brokerCode));
-            investmentBrokerSummarySelectedCode = selectedBrokerCodes.size === 1 && selectedAvailableCode
-                ? selectedAvailableCode
-                : 'all';
+            const pendingBrokerCode = String(investmentBrokerSummarySelectedCode || 'all').trim().toLowerCase();
+            investmentBrokerSummarySelectedCode = pendingBrokerCode === 'all'
+                ? 'all'
+                : availableBrokerCodes.includes(normalizeInvestmentBroker(pendingBrokerCode))
+                    ? normalizeInvestmentBroker(pendingBrokerCode)
+                    : 'all';
             investmentBrokerSummarySelectionInitialized = true;
             return investmentBrokerSummarySelectedCode;
         }
@@ -6457,6 +6471,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function isInvestmentBrokerSummaryFilterField(field) {
         return field instanceof HTMLElement && field.dataset.investmentBrokerFilterMode === 'single';
+    }
+
+    function isInvestmentMetricsHistoryBrokerFilterField(field) {
+        return field instanceof HTMLElement
+            && activeInvestmentView === 'metrics'
+            && field.dataset.filterId === 'investment_history_broker_filter';
     }
 
     function renderInvestmentBrokerFilterHeaderInnerMarkup(
@@ -6833,11 +6853,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (field instanceof HTMLElement) {
             setInvestmentBrokerFilterDropdownOpen(field, false);
         }
+        rememberInvestmentPageState({metricsBroker: investmentBrokerSummarySelectedCode});
         syncInvestmentUrl({historyMode: 'replace'});
-        investmentBrokerFilterSelectedCodes = isAll
-            ? new Set(availableBrokerCodes)
-            : new Set([normalizedBrokerCode]);
-        applyInvestmentBrokerFilterChange();
+        syncAllInvestmentBrokerFilterUi();
+        if (activeInvestmentView === 'metrics') {
+            renderInvestmentMetricsPanel();
+        }
     }
 
     function renderInvestmentBrokerFilterDropdown(field) {
@@ -6876,12 +6897,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+        const singleSelect = isInvestmentMetricsHistoryBrokerFilterField(field);
         dropdown.innerHTML = '';
         const fragment = document.createDocumentFragment();
         fragment.appendChild(createInvestmentBrokerFilterOptionButton({
             value: '__all__',
             label: 'All',
             isSelected: allSelected,
+            isActive: allSelected,
             onClick: () => {
                 investmentBrokerFilterSelectedCodes = new Set(availableBrokerCodes);
                 applyInvestmentBrokerFilterChange();
@@ -6898,9 +6921,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 iconUrl: brokerMeta.logoUrl,
                 iconAlt: brokerMeta.logoAlt,
                 logoOnly: false,
-                isSelected: allSelected || selectedBrokerCodes.has(brokerCode),
+                isSelected: singleSelect
+                    ? !allSelected && selectedBrokerCodes.has(brokerCode)
+                    : allSelected || selectedBrokerCodes.has(brokerCode),
                 isActive: !allSelected && selectedBrokerCodes.has(brokerCode),
                 onClick: () => {
+                    if (singleSelect) {
+                        investmentBrokerFilterSelectedCodes = new Set([brokerCode]);
+                        applyInvestmentBrokerFilterChange();
+                        return;
+                    }
                     const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes());
                     if (allSelected) {
                         nextSelection.delete(brokerCode);
@@ -7003,18 +7033,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function ensureInvestmentMetricsBrokerScope() {
         mountInvestmentBrokerSummarySelector();
-        const selectedCode = getInvestmentBrokerSummarySelectedCode();
-        const desiredBrokerCodes = selectedCode === 'all'
-            ? new Set(getAvailableInvestmentBrokerCodes())
-            : new Set([selectedCode]);
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
-        const isAlreadyScoped = selectedBrokerCodes.size === desiredBrokerCodes.size
-            && Array.from(desiredBrokerCodes).every((brokerCode) => selectedBrokerCodes.has(brokerCode));
-        if (!isAlreadyScoped) {
-            investmentBrokerFilterSelectedCodes = desiredBrokerCodes;
-            applyInvestmentBrokerFilterChange();
-            return;
-        }
+        getInvestmentBrokerSummarySelectedCode();
+        syncInvestmentBrokerFilterField(
+            investmentBrokerSummarySelector?.querySelector('[data-investment-broker-filter]'),
+        );
         renderInvestmentMetricsPanel();
     }
 
@@ -7349,7 +7371,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 includeDescriptionBindingFilter ? investmentDescriptionBindingFilter : 'all',
             ),
             chartPoints,
-            selectedRange: selectedInvestmentEquityRange,
+            // Transaction history is an all-time ledger surface. Overview's range only
+            // controls the Overview chart and must not change this table's scope.
+            selectedRange: 'max',
             matchesSide: (transaction) => (
                 window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(
                     transaction,
@@ -7896,6 +7920,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyInvestmentBrokerFilterChange() {
+        closeInvestmentBrokerFilterDropdowns();
         syncInvestmentUrl({historyMode: 'replace'});
         syncAllInvestmentBrokerFilterUi();
         if (investmentBrokerFilterApplyRaf) {
@@ -9408,26 +9433,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentBrokerCurrencyFilteredRowsForVisibleHistory(processedTransactions = []) {
         const index = ensureInvestmentBrokerFilterTransactionIndex(processedTransactions);
-        if (activeInvestmentView !== 'metrics') {
-            return selectInvestmentBrokerCurrencyRows(
-                index,
-                getInvestmentBrokerFilterSelectedCodes(),
-                investmentCurrencyFilter,
-                formatTransactionCurrency,
-            );
-        }
-
-        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-        const selectedBrokerCode = getInvestmentBrokerSummarySelectedCode();
-        const selectedBrokerCodes = selectedBrokerCode === 'all'
-            ? new Set(availableBrokerCodes)
-            : new Set([selectedBrokerCode]);
-        const brokerRows = selectInvestmentBrokerRows(
+        return selectInvestmentBrokerCurrencyRows(
             index,
-            selectedBrokerCodes,
-        );
-        return selectInvestmentCurrencyRows(
-            brokerRows,
+            getInvestmentBrokerFilterSelectedCodes(),
             investmentCurrencyFilter,
             formatTransactionCurrency,
         );
@@ -11580,7 +11588,14 @@ document.addEventListener('DOMContentLoaded', () => {
             success: data.success,
         });
         window.ANTIGRAVITY_INVESTMENT_DATA = data;
-        const valuationStatus = await renderTransactionTable(data.transactions || []);
+        const previousUrlStateApplying = investmentUrlStateApplying;
+        investmentUrlStateApplying = true;
+        let valuationStatus;
+        try {
+            valuationStatus = await renderTransactionTable(data.transactions || []);
+        } finally {
+            investmentUrlStateApplying = previousUrlStateApplying;
+        }
         applyInvestmentUrlStateFromLocation({render: true});
         scheduleInvestmentSegmentedPillUpdate();
         return { data, valuationStatus };
@@ -13827,7 +13842,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (urlState.view === 'stock_details') {
                 selectedInvestmentStockDetailsRange = normalizeInvestmentStockDetailsRange(urlState.range);
-            } else {
+            } else if (urlState.view === 'chart') {
                 selectedInvestmentEquityRange = normalizeInvestmentEquityRange(urlState.range);
             }
 
@@ -13853,6 +13868,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? normalizedMetricsBroker
                 : 'all';
             investmentBrokerSummarySelectionInitialized = true;
+            rememberInvestmentPageState({metricsBroker: investmentBrokerSummarySelectedCode});
             investmentSideFilter = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(urlState.typeFilter) || 'all';
             investmentCurrencyFilter = normalizeInvestmentCurrencyFilter(urlState.currencyFilter);
             investmentDescriptionBindingFilter = normalizeInvestmentDescriptionBindingFilter(urlState.descriptionFilter);
@@ -14037,7 +14053,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentHistoryCurrentPage = 1;
             tbody.innerHTML = `
                 <tr data-table-empty-row>
-                    <td colspan="11" class="investment-history-empty-cell">No transactions fall within the selected range.</td>
+                    <td colspan="11" class="investment-history-empty-cell">No transactions match the selected filters.</td>
                 </tr>
             `;
             renderInvestmentHistoryPagination(0);
