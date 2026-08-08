@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.20.4`
+Documentation version: `v1.20.5`
 
 ## Supported commands
 
@@ -118,6 +118,10 @@ Current suite inventory remeasured on 1 Aug 2026:
   snapshots, same-day execution chronology, the default lowest-cost lot matcher,
   the FIFO, LIFO, and moving-average alternatives, zero-cost grant retention,
   cross-account cost aggregation, and P&L conservation.
+- Investment replay coverage also asserts booking-date-first ordering when
+  execution metadata crosses a ledger day, history-only internal-transfer
+  continuity, dated ending-cash boundaries, and equality between the final
+  chart point and the current Holdings endpoint.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
@@ -191,6 +195,9 @@ Current suite inventory remeasured on 1 Aug 2026:
 - `tests/e2e/`: Playwright browser tests and inert fixtures.
   Holdings coverage also verifies that an internal subaccount bridge cannot
   reduce the actual aggregate Cash, Cash equivalents, or Total equity.
+  HSBC pending-sell coverage verifies that dated cash boundaries do not create
+  a false one-day equity loss, and internal-transfer coverage verifies both
+  historical bridge continuity and current Holdings equality.
   It also verifies that the fixed summary's realtime Today's net P&L can be
   positive while Cumulative P&L remains negative, and that both update after
   a quote poll; the same assertion covers all duplicated fixed and scrollable

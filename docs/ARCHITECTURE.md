@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.28.0`
+Documentation version: `v1.29.0`
 
 ## Holdings P&L display contract
 
@@ -142,6 +142,34 @@ projection contract:
 - Because exact execution timestamps are unavailable, this convention is a
   deterministic display approximation. It must not be presented as a precise
   fill-time or settlement-time valuation.
+
+## Investment equity replay contract
+
+The Investment overview curve is a deterministic historical replay, not a
+second broker balance ledger. Its accounting boundaries are explicit:
+
+- The canonical replay order is the broker ledger booking date. Execution
+  datetime, source row, and stable ledger identity are tie-breakers within the
+  same booking date; an earlier execution timestamp must not move a row into an
+  earlier equity day.
+- A cash settlement or available-cash boundary is valid only on its own ledger
+  date. A source row may retain a future settlement date as evidence, but its
+  balance must not replace cash on the execution or booking day.
+- A confirmed internal cash-transfer pair is cash in transit between its two
+  legs. The history-only bridge may keep the curve continuous until the receipt
+  is posted, including a documented currency conversion or fee difference.
+  Transfer rows remain excluded from external funding attribution.
+- The raw aggregate cash, current Holdings Cash, Cash equivalents, and Total
+  equity fields represent actual broker-account balances. History-only bridge
+  fields must never modify the current endpoint.
+- Authoritative ending-cash and position snapshots are dated boundaries. They
+  may calibrate a replay row only when that row's booking date is on or after
+  the snapshot's explicit as-of date. The final chart point must reconcile to
+  the current Holdings endpoint.
+
+The implementation lives in `app/web/static/assets/js/investment.js` and
+`app/web/static/assets/js/investment/data-utils.js`; regression coverage must
+assert both historical continuity and current-endpoint equality.
 
 ## High-risk invariants
 
