@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.70.0`
+Documentation version: `v2.71.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 

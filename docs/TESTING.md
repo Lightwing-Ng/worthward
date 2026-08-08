@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.20.3`
+Documentation version: `v1.20.4`
 
 ## Supported commands
 

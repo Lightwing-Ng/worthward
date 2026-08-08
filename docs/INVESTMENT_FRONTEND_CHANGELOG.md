@@ -1,6 +1,22 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.70`
+Documentation version: `v1.11.71`
+
+- Fixed: Ticker-level split-factor consensus now repairs an isolated noisy
+  1.5× inference on a pre-split TQQQ fill, preventing a phantom 12.50-share
+  Longbridge HK position after the position is flat.
+
+- Fixed: Investment equity replay now follows ledger booking dates before
+  execution timestamps, so the 10 May 2023 SPYM position is not carried into
+  the wrong day.
+
+- Fixed: Future-dated HSBC settlement balances no longer overwrite execution-day
+  cash. The 1–2 Jul 2026 BOXX settlement sequence remains continuous through
+  the sale and later buys.
+
+- Fixed: Confirmed internal-transfer bridges are history-only. Current Holdings
+  cash and equity remain broker-authoritative, while the final chart point is
+  reconciled to the current account boundary.
 
 - Changed: The fixed Holdings summary no longer shows a realtime `Today's net
   P&L` badge beside `Cumulative P&L`. The cumulative value remains the

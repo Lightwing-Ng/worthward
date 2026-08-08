@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.85.0
+ * Code version: v2.87.0
+ * - Fixed: Ticker-level split-factor consensus repairs isolated noisy pre-split fills, preventing a phantom 12.50-share TQQQ position after a flat Longbridge HK sequence.
+ * - Fixed: Investment replay now follows ledger booking dates before execution timestamps, preventing cross-day position carry-forward spikes.
+ * - Fixed: Future-dated HSBC settlement balances no longer overwrite execution-day cash, and internal-transfer bridges remain history-only.
+ * - Fixed: Broker ending-cash calibration is applied only on or after its explicit as-of date.
  * - Changed: Holdings Last price and Unrealized P&L change badges render only while the ticker's market is in a live session; closed markets no longer show muted 0.00 badges.
  * - Fixed: Validated HSBC position snapshots now attest complete open tax-lot replay, including same-day email execution chronology, so realized P&L contributes to Holdings and Metrics.
  * - Fixed: Same-day authoritative cash snapshots retain chronological trade debits instead of being reordered behind trades and restoring pre-trade cash.
@@ -103,7 +107,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.84.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.86.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -173,7 +177,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.85.0',
+    entry: 'v2.87.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -915,6 +919,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createCashLedger,
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
+        compareInvestmentTransactionsForReplay,
         compareInvestmentTaxLotTransactions,
         createPositionState,
         escapeHtml,
@@ -933,9 +938,11 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentBrokerEndingCash,
         getInvestmentBrokerEndingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
+        getInvestmentBrokerEndingCashAsOf,
         getInvestmentEndingCash,
         getInvestmentEndingCashBalances,
         getInvestmentEndingCashInBaseCurrency,
+        getInvestmentEndingCashInBaseCurrencyAsOf,
         getAuthoritativePositionSnapshotForTransactions,
         getInvestmentStartingCash,
         getInvestmentStartingCashBalances,
@@ -3163,6 +3170,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean)
         ));
         const authoritativeBaseCashByBroker = new Map();
+        const authoritativeCashEligibleBrokers = new Set();
 
         brokerCodes.forEach((brokerCode) => {
             const authoritativeEndingCash = getInvestmentBrokerEndingCash(brokerCode);
@@ -3173,6 +3181,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode
             );
             if (!lastBrokerTxn) return;
+            const endingCashAsOf = getInvestmentBrokerEndingCashAsOf(brokerCode);
+            const lastBrokerLedgerDate = normalizeLedgerDate(lastBrokerTxn?.date);
+            if (endingCashAsOf && lastBrokerLedgerDate && lastBrokerLedgerDate < endingCashAsOf) {
+                // The imported ending balance belongs to a later statement
+                // boundary.  Do not pin it onto an older historical row.
+                return;
+            }
+            authoritativeCashEligibleBrokers.add(brokerCode);
 
             const hasForeignCurrencyBalances = hasAuthoritativeBalances && Object.keys(
                 authoritativeEndingCashBalances || {},
@@ -3239,9 +3255,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const isSingleBroker = brokerCodes.length <= 1;
         const hasAuthoritativeAggregateCash = brokerCodes.some((brokerCode) => (
-            getInvestmentBrokerEndingCash(brokerCode) !== null
-            || getInvestmentBrokerEndingCashBalances(brokerCode) !== null
-            || getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) !== null
+            authoritativeCashEligibleBrokers.has(brokerCode)
+            && (
+                getInvestmentBrokerEndingCash(brokerCode) !== null
+                || getInvestmentBrokerEndingCashBalances(brokerCode) !== null
+                || getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) !== null
+            )
         ));
         const latestProcessed = transactions[transactions.length - 1];
         if (!latestProcessed) return;
@@ -3249,7 +3268,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let finalAggregateCash = 0;
         brokerCodes.forEach((brokerCode) => {
             const normBroker = normalizeInvestmentBroker(brokerCode);
-            const authBalances = getInvestmentBrokerEndingCashBalances(normBroker);
+            const isAuthoritativeCashEligible = authoritativeCashEligibleBrokers.has(normBroker);
+            const authBalances = isAuthoritativeCashEligible
+                ? getInvestmentBrokerEndingCashBalances(normBroker)
+                : null;
             const lastBrokerTxn = [...transactions].reverse().find(
                 (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normBroker
             );
@@ -3261,9 +3283,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
                 finalAggregateBalances[currency] = (Number(finalAggregateBalances[currency]) || 0) + numericValue;
             });
-            const authBaseCash = authoritativeBaseCashByBroker.has(normBroker)
+            const authBaseCash = isAuthoritativeCashEligible && authoritativeBaseCashByBroker.has(normBroker)
                 ? authoritativeBaseCashByBroker.get(normBroker)
-                : getInvestmentBrokerEndingCashInBaseCurrency(normBroker);
+                : isAuthoritativeCashEligible
+                    ? getInvestmentBrokerEndingCashInBaseCurrency(normBroker)
+                    : null;
             finalAggregateCash += Number.isFinite(Number(authBaseCash))
                 ? Math.max(0, Number(authBaseCash))
                 : Number(lastBrokerTxn?.broker_running_cash) || 0;
@@ -3457,6 +3481,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawDisplayCash = Number(txn?.aggregate_raw_display_cash) || rawRunningCash;
             const rawMarketValue = Number(txn?.aggregate_raw_market_value) || 0;
             txn.aggregate_bridge_adjustment = cumulativeBridgeAdjustment;
+            txn.aggregate_history_running_cash = rawRunningCash + cumulativeBridgeAdjustment;
+            txn.aggregate_history_display_cash = rawDisplayCash + cumulativeBridgeAdjustment;
+            txn.aggregate_history_total_equity = txn.aggregate_history_display_cash + rawMarketValue;
             // The aggregate cash fields are account balances, not external-flow
             // adjusted funding metrics. Keep them tied to the actual broker
             // ledgers so an internal-transfer bridge cannot make current Cash,
@@ -14230,7 +14257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const lastKnownTickerPrices = {};
 
-        let orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        let orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactionsForReplay(left, right));
         // Transfer keys come from immutable imported record fields.  Establish
         // them before replay so the server's reconciliation is the only source
         // of truth for aggregate-only exclusions.
@@ -14659,9 +14686,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 && txn?.source?.cash_settlement_balance_after_raw === undefined
             );
             const transactionDate = normalizeLedgerDate(txn?.date);
+            const cashSettlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
+            const settlementBoundaryAppliesOnLedgerDate = (
+                !cashSettlementDate
+                || !transactionDate
+                || cashSettlementDate === transactionDate
+            );
+            // A settlement balance is a dated cash boundary, not an
+            // execution-time balance.  Applying a future settlement posting
+            // here would replace the cash path with a later statement row and
+            // make a sale disappear until the next import day.
             const hasWindowedAvailableCash = (
                 txn?.source?.available_cash_after_raw !== undefined
                 && txn?.source?.available_cash_after_raw !== null
+                && settlementBoundaryAppliesOnLedgerDate
                 && (
                     !hsbcAvailableCashWindowStartDate
                     || !transactionDate
@@ -14674,7 +14712,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? txn?.source?.available_cash_after_raw
                         : undefined
                 )
-                ?? txn?.source?.cash_settlement_balance_after_raw
+                ?? (
+                    settlementBoundaryAppliesOnLedgerDate
+                        ? txn?.source?.cash_settlement_balance_after_raw
+                        : undefined
+                )
                 ?? (
                     (
                         txn?.source?.cash_balance_authoritative === true
@@ -14909,6 +14951,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode
                 ));
                 if (!brokerRows.length) return;
+                const positionSnapshotAsOf = getInvestmentBrokerEndingCashAsOf(brokerCode);
+                const latestBrokerDate = normalizeLedgerDate(brokerRows[brokerRows.length - 1]?.date);
+                if (positionSnapshotAsOf && latestBrokerDate && latestBrokerDate < positionSnapshotAsOf) {
+                    return;
+                }
                 const holdings = {};
                 Object.entries(snapshot).forEach(([ticker, position]) => {
                     const quantity = Number(position?.quantity);
@@ -14957,21 +15004,28 @@ document.addEventListener('DOMContentLoaded', () => {
             && mayApplyAuthoritativeAggregateSnapshot
         ) {
             const latestProcessed = processed[processed.length - 1];
+            const authoritativeAggregateAsOf = getInvestmentEndingCashInBaseCurrencyAsOf();
+            const latestProcessedDate = normalizeLedgerDate(latestProcessed?.date);
+            const canApplyAuthoritativeAggregateSnapshot = (
+                !authoritativeAggregateAsOf
+                || !latestProcessedDate
+                || latestProcessedDate >= authoritativeAggregateAsOf
+            );
             const authoritativeEndingCash = getInvestmentEndingCashInBaseCurrency();
             const authoritativeEndingCashBalances = getInvestmentEndingCashBalances();
             const authoritativeMarketValue = Object.values(authoritativePositionSnapshot).reduce((sum, snapshot) => {
                 const marketValue = Number(snapshot?.marketValue);
                 return Number.isFinite(marketValue) ? (sum + marketValue) : sum;
             }, 0);
-            if (authoritativeEndingCash !== null) {
+            if (canApplyAuthoritativeAggregateSnapshot && authoritativeEndingCash !== null) {
                 latestProcessed.running_cash = authoritativeEndingCash;
                 latestProcessed.aggregate_running_cash = authoritativeEndingCash;
             }
-            if (authoritativeEndingCashBalances !== null) {
+            if (canApplyAuthoritativeAggregateSnapshot && authoritativeEndingCashBalances !== null) {
                 latestProcessed.cash_by_currency = { ...authoritativeEndingCashBalances };
                 latestProcessed.aggregate_cash_by_currency = { ...authoritativeEndingCashBalances };
             }
-            if (Number.isFinite(authoritativeMarketValue) && authoritativeMarketValue > 0) {
+            if (canApplyAuthoritativeAggregateSnapshot && Number.isFinite(authoritativeMarketValue) && authoritativeMarketValue > 0) {
                 latestProcessed.market_value = authoritativeMarketValue;
                 latestProcessed.aggregate_market_value = authoritativeMarketValue;
             }

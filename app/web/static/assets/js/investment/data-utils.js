@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.84.0
+ * Code version: v1.86.0
+ * - Fixed: Ticker-level split-factor consensus now repairs isolated noisy 1.5× inferences on pre-split fills, preventing phantom residual positions such as the historical TQQQ 12.50-share balance.
+ * - Fixed: Daily equity replay now uses ledger-date order independently of execution timestamps, so booking-date corrections cannot carry a stale position into the wrong day.
+ * - Added: Internal-transfer cash bridges are exposed as history-only chart fields while current account cash remains tied to broker balances.
  * - Fixed: Imported split-affected trades now rescale authoritative share counts when raw broker prices are on a pre-split basis and chart closes are split-adjusted.
  * - Fixed: Historical CNY FX payloads are also available to canonical CNH rows, including cross-currency IBKR funding review.
  * - Added: Long-range daily equity charts can explicitly include every calendar day, carrying the latest available market close across non-trading days.
@@ -528,6 +531,16 @@ export function createInvestmentDataUtils({
         return getInvestmentEndingCash();
     }
 
+    function getInvestmentEndingCashInBaseCurrencyAsOf() {
+        const data = window.ANTIGRAVITY_INVESTMENT_DATA || {};
+        const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+        return normalizeLedgerDate(
+            data.ending_cash_base_currency_as_of
+            ?? summary.ending_cash_base_currency_as_of
+            ?? summary.position_snapshot_as_of,
+        );
+    }
+
     function getInvestmentBrokerEndingCash(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
@@ -572,6 +585,31 @@ export function createInvestmentDataUtils({
             if (Number.isFinite(numericValue)) return numericValue;
         }
         return getInvestmentBrokerEndingCash(normalizedBroker);
+    }
+
+    function getInvestmentBrokerEndingCashAsOf(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return '';
+        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summary = summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return '';
+        const explicitDate = normalizeLedgerDate(
+            summary.ending_cash_base_currency_as_of
+            ?? summary.ending_cash_as_of
+            ?? summary.cash_snapshot_as_of,
+        );
+        if (explicitDate) return explicitDate;
+        const positionSnapshotDate = normalizeLedgerDate(summary.position_snapshot_as_of);
+        if (positionSnapshotDate) return positionSnapshotDate;
+        const statementDate = normalizeLedgerDate(summary.statement_date_max);
+        if (statementDate) return statementDate;
+        const transactionDate = normalizeLedgerDate(summary.transaction_date_max);
+        if (transactionDate) return transactionDate;
+        const postDates = summary.hsbc_cash_component_post_dates;
+        if (postDates && typeof postDates === 'object') {
+            return Object.values(postDates).map(normalizeLedgerDate).filter(Boolean).sort().pop() || '';
+        }
+        return '';
     }
 
     function normalizeCurrencyCode(value) {
@@ -1611,6 +1649,20 @@ export function createInvestmentDataUtils({
         return leftRow - rightRow;
     }
 
+    function compareInvestmentTransactionsForReplay(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftDate = String(leftTxn?.date || '').slice(0, 10);
+        const rightDate = String(rightTxn?.date || '').slice(0, 10);
+        if (leftDate !== rightDate) {
+            return leftDate.localeCompare(rightDate);
+        }
+        const leftDatetime = String(leftTxn?.datetime || leftTxn?.date || '');
+        const rightDatetime = String(rightTxn?.datetime || rightTxn?.date || '');
+        if (leftDatetime !== rightDatetime) {
+            return leftDatetime.localeCompare(rightDatetime);
+        }
+        return compareInvestmentTransactions(leftTxn, rightTxn, leftIndex, rightIndex);
+    }
+
     function getInvestmentTaxLotOrderDatetime(txn) {
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
         return String(
@@ -2266,7 +2318,32 @@ export function createInvestmentDataUtils({
             }
             buckets.get(key).push(factor);
         });
+        const dominantFactorByTicker = new Map();
+        factorEvidenceByTicker.forEach((evidence, ticker) => {
+            const roundedCounts = new Map();
+            evidence.forEach((factor) => {
+                const roundedKey = factor.toFixed(8);
+                roundedCounts.set(roundedKey, (Number(roundedCounts.get(roundedKey)) || 0) + 1);
+            });
+            const rankedFactors = Array.from(roundedCounts.entries())
+                .sort((left, right) => right[1] - left[1] || Number(left[0]) - Number(right[0]));
+            const [bestFactor, bestCount] = rankedFactors[0] || [];
+            const secondCount = Number(rankedFactors[1]?.[1]) || 0;
+            const numericFactor = Number(bestFactor);
+            if (
+                Number.isFinite(numericFactor)
+                && numericFactor > 1
+                && bestCount >= 3
+                && (secondCount === 0 || bestCount >= secondCount * 2)
+            ) {
+                dominantFactorByTicker.set(ticker, {
+                    factor: numericFactor,
+                    count: bestCount,
+                });
+            }
+        });
         const hints = new Map();
+        const dominantFactorCorrections = new Map();
         buckets.forEach((factors, key) => {
             const roundedCounts = new Map();
             factors.forEach((factor) => {
@@ -2314,6 +2391,39 @@ export function createInvestmentDataUtils({
                 hints.set(key, bestFactor.factor);
             }
         });
+
+        // A single fill can produce a plausible but wrong common split factor
+        // when its raw price happens to be close to another candidate. If the
+        // ticker has overwhelming sibling evidence for one factor, prefer that
+        // factor for the isolated row while keeping the normal close movement
+        // tolerance. This keeps a noisy TQQQ 1.5× inference from leaving 12.50
+        // phantom shares after a genuinely flat 2-for-1-adjusted sequence.
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const key = getRenderedSplitFactorHintKey(txn);
+            const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+            const dominant = dominantFactorByTicker.get(ticker);
+            if (!key || !ticker || !dominant) return;
+            const currentFactor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
+            if (
+                Number.isFinite(currentFactor)
+                && currentFactor > 0
+                && Math.abs(Math.log(currentFactor / dominant.factor)) <= Math.log(1.12)
+            ) {
+                return;
+            }
+            const rawPrice = getTransactionPrice(txn);
+            const renderedClose = getIndexedClosePriceForTransaction(txn, tickerPriceIndex);
+            if (!Number.isFinite(rawPrice) || rawPrice <= 0 || !Number.isFinite(renderedClose) || renderedClose <= 0) {
+                return;
+            }
+            const rawRatio = rawPrice / renderedClose;
+            const dominantDistance = Math.abs(Math.log(rawRatio / dominant.factor));
+            if (Number.isFinite(rawRatio) && rawRatio > 0 && dominantDistance <= Math.log(1.35)) {
+                hints.set(key, dominant.factor);
+                dominantFactorCorrections.set(key, dominant.factor);
+            }
+        });
+        hints.dominantFactorCorrections = dominantFactorCorrections;
         return hints;
     }
 
@@ -2343,11 +2453,20 @@ export function createInvestmentDataUtils({
         let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
         if (
             ['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)
-            && (!Number.isFinite(factor) || Math.abs(factor - 1) < 1e-9)
             && renderedSplitFactorHints instanceof Map
         ) {
-            const hintedFactor = renderedSplitFactorHints.get(getRenderedSplitFactorHintKey(txn));
-            if (Number.isFinite(hintedFactor) && hintedFactor >= 1) {
+            const hintKey = getRenderedSplitFactorHintKey(txn);
+            const hintedFactor = renderedSplitFactorHints.get(hintKey);
+            const dominantHintedFactor = renderedSplitFactorHints.dominantFactorCorrections instanceof Map
+                ? renderedSplitFactorHints.dominantFactorCorrections.get(hintKey)
+                : null;
+            if (Number.isFinite(dominantHintedFactor) && dominantHintedFactor >= 1) {
+                factor = dominantHintedFactor;
+            } else if (
+                (!Number.isFinite(factor) || factor <= 1)
+                && Number.isFinite(hintedFactor)
+                && hintedFactor >= 1
+            ) {
                 factor = hintedFactor;
             }
         }
@@ -2567,7 +2686,11 @@ export function createInvestmentDataUtils({
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length
             ? chartPoints[chartPoints.length - 1]
             : null;
-        const latestValuationEquity = Number(latestChartPoint?.aggregate_total_equity ?? latestChartPoint?.total_equity);
+        const latestValuationEquity = Number(
+            latestChartPoint?.aggregate_current_total_equity
+            ?? latestChartPoint?.aggregate_total_equity
+            ?? latestChartPoint?.total_equity,
+        );
         if (Number.isFinite(latestValuationEquity)) {
             return latestValuationEquity;
         }
@@ -3070,7 +3193,13 @@ export function createInvestmentDataUtils({
             return [];
         }
 
-        const firstLedgerDate = normalizeLedgerDate(processedTransactions[0]?.date);
+        // Chart replay is keyed by the ledger booking date.  Do not trust the
+        // execution timestamp to establish day order: broker imports may carry
+        // a later booking date with an earlier history timestamp.
+        const chartTransactions = [...processedTransactions].sort(
+            (left, right) => compareInvestmentTransactionsForReplay(left, right),
+        );
+        const firstLedgerDate = normalizeLedgerDate(chartTransactions[0]?.date);
         if (!firstLedgerDate) return [];
 
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
@@ -3086,7 +3215,7 @@ export function createInvestmentDataUtils({
         });
 
         const ledgerDateMap = new Map();
-        processedTransactions.forEach((txn) => {
+        chartTransactions.forEach((txn) => {
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return;
             if (!ledgerDateMap.has(ledgerDate)) {
@@ -3159,6 +3288,8 @@ export function createInvestmentDataUtils({
                 aggregate_holdings_market_values: {},
                 total_equity: startingCash,
                 aggregate_total_equity: startingCash,
+                aggregate_current_display_cash: startingCash,
+                aggregate_current_total_equity: startingCash,
                 anchor_ledger_date: '',
                 anchor_ledger_nos: [],
                 cash_in_amount: 0,
@@ -3171,8 +3302,8 @@ export function createInvestmentDataUtils({
         }
 
         candidateDates.forEach((date) => {
-            while (processedCursor < processedTransactions.length) {
-                const nextSnapshot = processedTransactions[processedCursor];
+            while (processedCursor < chartTransactions.length) {
+                const nextSnapshot = chartTransactions[processedCursor];
                 const nextLedgerDate = normalizeLedgerDate(nextSnapshot?.date);
                 if (!nextLedgerDate || nextLedgerDate > date) break;
                 activeSnapshot = nextSnapshot;
@@ -3194,14 +3325,40 @@ export function createInvestmentDataUtils({
                 fxTimeline,
                 baseCurrency,
             );
-            const aggregateRunningCash = Number(activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash) || 0;
+            const rawRunningCash = Number(
+                activeSnapshot?.aggregate_running_cash
+                ?? activeSnapshot?.running_cash,
+            ) || 0;
             const aggregatePendingSettlementCash = Number(activeSnapshot?.aggregate_pending_settlement_cash) || 0;
-            const rawAggregateDisplayCash = Number(activeSnapshot?.aggregate_display_cash);
+            const currentRunningCash = rawRunningCash;
+            const currentDisplayCash = Number(
+                activeSnapshot?.aggregate_display_cash
+                ?? currentRunningCash + aggregatePendingSettlementCash,
+            );
+            const isCurrentReplayBoundary = activeSnapshot === chartTransactions[chartTransactions.length - 1];
+            const aggregateRunningCash = Number(
+                isCurrentReplayBoundary
+                    ? currentRunningCash
+                    : (
+                        activeSnapshot?.aggregate_history_running_cash
+                        ?? activeSnapshot?.aggregate_running_cash
+                        ?? activeSnapshot?.running_cash
+                    ),
+            ) || 0;
+            const rawAggregateDisplayCash = Number(
+                isCurrentReplayBoundary
+                    ? currentDisplayCash
+                    : (
+                        activeSnapshot?.aggregate_history_display_cash
+                        ?? activeSnapshot?.aggregate_display_cash
+                    ),
+            );
             const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
                 ? rawAggregateDisplayCash
                 : aggregateRunningCash + aggregatePendingSettlementCash;
             const aggregateMarketValue = valuation.marketValue;
             const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
+            const currentTotalEquity = currentDisplayCash + aggregateMarketValue;
             const ledgerEntry = ledgerDateMap.get(date);
             const isCalendarCarryForward = includeCalendarDays && !observedCandidateDateSet.has(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
@@ -3218,12 +3375,14 @@ export function createInvestmentDataUtils({
                 running_cash: aggregateRunningCash,
                 aggregate_running_cash: aggregateRunningCash,
                 aggregate_display_cash: aggregateDisplayCash,
+                aggregate_current_display_cash: currentDisplayCash,
                 market_value: aggregateMarketValue,
                 aggregate_market_value: aggregateMarketValue,
                 holdings_market_values: valuation.holdingsMarketValues,
                 aggregate_holdings_market_values: valuation.holdingsMarketValues,
                 total_equity: aggregateTotalEquity,
                 aggregate_total_equity: aggregateTotalEquity,
+                aggregate_current_total_equity: currentTotalEquity,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
                 anchor_ledger_nos: anchorLedgerNos,
                 cash_in_amount: cashInAmount,
@@ -3814,6 +3973,7 @@ export function createInvestmentDataUtils({
         createCashLedger,
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
+        compareInvestmentTransactionsForReplay,
         compareInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
@@ -3835,9 +3995,11 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerEndingCash,
         getInvestmentBrokerEndingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
+        getInvestmentBrokerEndingCashAsOf,
         getInvestmentEndingCash,
         getInvestmentEndingCashBalances,
         getInvestmentEndingCashInBaseCurrency,
+        getInvestmentEndingCashInBaseCurrencyAsOf,
         getAuthoritativePerformanceSnapshot,
         getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
@@ -3890,4 +4052,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.84.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.86.0';

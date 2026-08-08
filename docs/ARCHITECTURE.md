@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.27.0`
+Documentation version: `v1.28.0`
 
 ## Holdings P&L display contract
 
