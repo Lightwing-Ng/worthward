@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.84.0
+ * Code version: v2.85.0
+ * - Changed: Holdings Last price and Unrealized P&L change badges render only while the ticker's market is in a live session; closed markets no longer show muted 0.00 badges.
  * - Fixed: Validated HSBC position snapshots now attest complete open tax-lot replay, including same-day email execution chronology, so realized P&L contributes to Holdings and Metrics.
  * - Fixed: Same-day authoritative cash snapshots retain chronological trade debits instead of being reordered behind trades and restoring pre-trade cash.
  * - Fixed: Equity replay aligns imported pre-split share counts with split-adjusted historical closes for affected tickers such as TQQQ and NVDA.
@@ -172,7 +173,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.84.0',
+    entry: 'v2.85.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1100,6 +1101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 investmentMarketSessionStateRequest = null;
                 investmentMarketSessionStateRequestDayCount = 0;
             }
+            syncInvestmentHoldingsLiveBadgeVisibility();
             return investmentMarketSessionState;
         })();
         investmentMarketSessionStateRequestDayCount = requestedDayCount;
@@ -1365,6 +1367,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (totalMinutes >= morningOpenMinutes && totalMinutes < morningCloseMinutes) return 'intraday';
         if (totalMinutes >= afternoonOpenMinutes && totalMinutes < afternoonCloseMinutes) return 'intraday';
         return 'off';
+    }
+
+    function shouldShowInvestmentHoldingLiveBadge(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return false;
+        if (isInvestmentHongKongTicker(normalizedTicker)) {
+            return shouldShowInvestmentRealtimePulse(getInvestmentHongKongClockSession());
+        }
+        return Boolean(getCachedInvestmentMarketSessionState()?.is_realtime_allowed);
+    }
+
+    function hasInvestmentHoldingLiveBadgeSession(summaries = investmentTickerSummariesCache) {
+        return (Array.isArray(summaries) ? summaries : []).some((summary) => (
+            summary?.hasOpenPosition
+            && shouldShowInvestmentHoldingLiveBadge(summary.ticker)
+        ));
     }
 
     function shiftInvestmentCalendarDateKey(dateKey, dayDelta = 0) {
@@ -12246,6 +12264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastClass = resolveInvestmentLastPriceToneClass(summary.lastPrice, summary.ticker);
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
             const dailyLastPriceChange = resolveInvestmentHoldingDailyPriceChange(summary);
+            const liveBadgeEligible = shouldShowInvestmentHoldingLiveBadge(summary.ticker);
 
             return `
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
@@ -12286,6 +12305,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             nextValue,
                                             summary.quoteCurrency,
                                         ),
+                                        liveEligible: liveBadgeEligible,
                                     },
                                 )
                                 : ''}
@@ -12333,6 +12353,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     'daily_unrealized_pnl',
                                     summary.ticker,
                                     dailyPnl.unrealized,
+                                    { liveEligible: liveBadgeEligible },
                                 )
                                 : ''}
                         </span>
@@ -12388,6 +12409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalEquityClass = Number.isFinite(TOTAL_EQUITY) && TOTAL_EQUITY >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
+        const hasLiveBadgeSession = hasInvestmentHoldingLiveBadgeSession(summarySummaries);
 
         const summaryRowHtml = `
             <tr class="investment-holdings-summary-row" data-table-summary-row data-summary-scope="${normalizedSummaryScope}" data-summary-all-count="${summaries.length}" data-summary-filtered-count="${filteredSummaries.length}">
@@ -12466,6 +12488,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             'summary_daily_unrealized_pnl',
                             '',
                             totalDailyPnl.unrealized,
+                            { liveEligible: hasLiveBadgeSession },
                         ) : ''}
                     </span>
                 </td>
@@ -12815,12 +12838,13 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             formatter = formatSignedHoldingsMoney,
             hideZeroValue = false,
+            liveEligible = true,
             ariaLabel = '',
         } = {},
     ) {
         const numericValue = Number(value);
         const hasNumericValue = Number.isFinite(numericValue);
-        const isVisible = hasNumericValue && !(
+        const isVisible = liveEligible && hasNumericValue && !(
             hideZeroValue && Math.abs(numericValue) < INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
         );
         const displayText = hasNumericValue ? formatter(numericValue) : formatHoldingsMoney(0);
@@ -12846,12 +12870,13 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             formatter = formatSignedHoldingsMoney,
             hideZeroValue = false,
+            liveEligible = true,
         } = {},
     ) {
         if (!(node instanceof HTMLElement)) return;
         const numericValue = Number(value);
         const hasNumericValue = Number.isFinite(numericValue);
-        const isVisible = hasNumericValue && !(
+        const isVisible = liveEligible && hasNumericValue && !(
             hideZeroValue && Math.abs(numericValue) < INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
         );
         const displayText = hasNumericValue ? formatter(numericValue) : formatHoldingsMoney(0);
@@ -12867,6 +12892,39 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         badge.classList.toggle('investment-holdings-daily-pnl-badge-positive', isVisible && numericValue > 0);
         badge.classList.toggle('investment-holdings-daily-pnl-badge-negative', isVisible && numericValue < 0);
+    }
+
+    function syncInvestmentHoldingsLiveBadgeVisibility() {
+        const holdingRows = Array.from(document.querySelectorAll(
+            '#investment_holdings_panel tr[data-investment-holdings-ticker]'
+        ));
+        holdingRows.forEach((row) => {
+            if (!(row instanceof HTMLTableRowElement)) return;
+            const liveEligible = shouldShowInvestmentHoldingLiveBadge(
+                row.dataset.investmentHoldingsTicker,
+            );
+            for (const field of ['daily_last_price', 'daily_unrealized_pnl']) {
+                const node = row.querySelector(`[data-investment-live-field="${field}"]`);
+                if (!(node instanceof HTMLElement)) continue;
+                const numericValue = Number(node.dataset.investmentLiveNumber);
+                const badge = node.closest('.investment-holdings-daily-pnl-badge');
+                if (badge instanceof HTMLElement) {
+                    badge.hidden = !liveEligible || !Number.isFinite(numericValue);
+                }
+            }
+        });
+
+        const summaryUnrealizedNode = document.querySelector(
+            '#investment_holdings_panel [data-investment-live-field="summary_daily_unrealized_pnl"]'
+        );
+        if (summaryUnrealizedNode instanceof HTMLElement) {
+            const numericValue = Number(summaryUnrealizedNode.dataset.investmentLiveNumber);
+            const badge = summaryUnrealizedNode.closest('.investment-holdings-daily-pnl-badge');
+            if (badge instanceof HTMLElement) {
+                badge.hidden = !hasInvestmentHoldingLiveBadgeSession()
+                    || !Number.isFinite(numericValue);
+            }
+        }
     }
 
     function renderInvestmentHoldingsAllocationBadge(field, value, toneValue = value) {
@@ -13194,6 +13252,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             nextValue,
                             summary.quoteCurrency,
                         ),
+                        liveEligible: shouldShowInvestmentHoldingLiveBadge(summary.ticker),
                     },
                 );
                 updateInvestmentHoldingsDailyPnlBadge(
@@ -13205,6 +13264,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateInvestmentHoldingsDailyPnlBadge(
                         dailyUnrealizedNode,
                         resolveInvestmentHoldingDailyPnl(summary).unrealized,
+                        { liveEligible: shouldShowInvestmentHoldingLiveBadge(summary.ticker) },
                     );
                 }
                 updateInvestmentLiveValueNode(
@@ -13317,7 +13377,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalDailyPnl.realized,
                 { hideZeroValue: true },
             );
-            updateInvestmentHoldingsDailyPnlBadge(summaryDailyUnrealizedNode, totalDailyPnl.unrealized);
+            updateInvestmentHoldingsDailyPnlBadge(
+                summaryDailyUnrealizedNode,
+                totalDailyPnl.unrealized,
+                { liveEligible: hasInvestmentHoldingLiveBadgeSession(summaries) },
+            );
         }
         updateInvestmentLiveValueNode(summaryWeightNode, formatHoldingsPercent(totalWeight), totalWeight);
         if (!hasPnlUnavailable) {
