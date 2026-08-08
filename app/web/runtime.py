@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.69.0
+Code version: v0.70.0
+- Added: Longbridge paired-file imports preserve the exact uploaded Fund
+  Details and History Orders bytes as immutable source evidence.
 - Fixed: Investment intraday history responses exclude non-positive and malformed OHLC bars without rewriting local stores.
 - Added: Settings -> Investment persists one shared buy/sell lot-matching preference and exposes it in every Investment payload.
 - Added: Settings URL state uses canonical section paths, language tabs, and pagination with legacy query aliases readable during migration.
@@ -6343,7 +6345,8 @@ def build_web_runtime() -> WebRuntime:
                         "error": "Please upload both the Fund Details text file and the History Orders spreadsheet.",
                     }), 400
 
-                hk_fund_details_text = hk_fund_details_file.read().decode("utf-8", errors="replace")
+                hk_fund_details_bytes = hk_fund_details_file.read()
+                hk_fund_details_text = hk_fund_details_bytes.decode("utf-8", errors="replace")
                 hk_history_orders_bytes = hk_history_orders_file.read()
                 if not hk_fund_details_text.strip() or not hk_history_orders_bytes:
                     return jsonify({
@@ -6355,13 +6358,15 @@ def build_web_runtime() -> WebRuntime:
                     "longbridge_hk",
                     "paired_files",
                     fund_details_text=hk_fund_details_text,
+                    fund_details_bytes=hk_fund_details_bytes,
                     history_orders_xlsx_bytes=hk_history_orders_bytes,
                     fund_details_filename=str(getattr(hk_fund_details_file, "filename", "") or "").strip(),
                     history_orders_filename=str(getattr(hk_history_orders_file, "filename", "") or "").strip(),
                 )
                 success_message = (
                     "Longbridge (HK) import complete. Fund Details and History Orders files were parsed in memory and "
-                    "merged incrementally into the local investment store without clearing older data first."
+                    "merged incrementally into the local investment store without clearing older data first. Exact "
+                    "uploaded files were retained locally as SHA-256-verified immutable evidence."
                 )
             elif broker == "longbridge_sg":
                 fund_details_file = request.files.get("longbridge_sg_fund_details_txt")
@@ -6372,7 +6377,8 @@ def build_web_runtime() -> WebRuntime:
                         "error": "Please upload both the Fund Details text file and the History Orders spreadsheet.",
                     }), 400
 
-                fund_details_text = fund_details_file.read().decode("utf-8", errors="replace")
+                fund_details_bytes = fund_details_file.read()
+                fund_details_text = fund_details_bytes.decode("utf-8", errors="replace")
                 history_orders_bytes = history_orders_file.read()
                 if not fund_details_text.strip() or not history_orders_bytes:
                     return jsonify({
@@ -6384,13 +6390,15 @@ def build_web_runtime() -> WebRuntime:
                     "longbridge_sg",
                     "paired_files",
                     fund_details_text=fund_details_text,
+                    fund_details_bytes=fund_details_bytes,
                     history_orders_xlsx_bytes=history_orders_bytes,
                     fund_details_filename=str(getattr(fund_details_file, "filename", "") or "").strip(),
                     history_orders_filename=str(getattr(history_orders_file, "filename", "") or "").strip(),
                 )
                 success_message = (
                     "Longbridge (SG) import complete. Fund Details and History Orders files were parsed in memory and "
-                    "merged incrementally into the local investment store without clearing older data first."
+                    "merged incrementally into the local investment store without clearing older data first. Exact "
+                    "uploaded files were retained locally as SHA-256-verified immutable evidence."
                 )
             elif broker == "futuhk":
                 statement_pdf_files = request.files.getlist("futuhk_statement_pdfs")

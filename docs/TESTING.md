@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.20.5`
+Documentation version: `v1.20.6`
 
 ## Supported commands
 
@@ -118,6 +118,10 @@ Current suite inventory remeasured on 1 Aug 2026:
   snapshots, same-day execution chronology, the default lowest-cost lot matcher,
   the FIFO, LIFO, and moving-average alternatives, zero-cost grant retention,
   cross-account cost aggregation, and P&L conservation.
+- `tests/test_longbridge_import.py` and `tests/test_longbridge_sg_import.py`:
+  account-scoped Longbridge performance calibrations, including the HK
+  31-item `2,740.09 USD` and SG two-item `116.02 USD` user-confirmed sets,
+  plus exact paired-file source-artifact bundle identities.
 - Investment replay coverage also asserts booking-date-first ordering when
   execution metadata crosses a ledger day, history-only internal-transfer
   continuity, dated ending-cash boundaries, and equality between the final

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.29.0`
+Documentation version: `v1.30.0`
 
 ## Holdings P&L display contract
 
@@ -170,6 +170,25 @@ second broker balance ledger. Its accounting boundaries are explicit:
 The implementation lives in `app/web/static/assets/js/investment.js` and
 `app/web/static/assets/js/investment/data-utils.js`; regression coverage must
 assert both historical continuity and current-endpoint equality.
+
+## Longbridge performance-calibration contract
+
+Longbridge HK and SG may supply an account-scoped, cumulative closed-position
+P&L value when the local tax-lot history is incomplete. The value is explicitly
+labelled `user_confirmed_broker_performance_calibration`; it is authoritative
+only for that broker/account/ticker scope and does not imply an independently
+reconstructed lot history or an account-balance snapshot. The current HK
+calibration contains 31 USD entries totaling `2,740.09`; the SG calibration
+contains two USD entries totaling `116.02`. Shared tickers remain separate
+broker/account scopes before any all-broker aggregation.
+
+The Longbridge paired-file importer retains both exact uploaded Fund Details
+and History Orders files as SHA-256-addressed source artifacts in one bundle.
+Those files prove the imported ledger and replay context, not the calibrated
+P&L value. The broker P&L calibration itself has no invented as-of date or raw
+report artifact. A future broker-native performance report must carry its own
+source and replaces the complete fallback scope rather than blending the two
+sets of values.
 
 ## High-risk invariants
 
