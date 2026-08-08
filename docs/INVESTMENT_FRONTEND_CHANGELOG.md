@@ -1,6 +1,10 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.71`
+Documentation version: `v1.11.72`
+
+- Fixed: Cash-equivalent tickers such as SGOV now use the money-market identity
+  formatter for dividend and other cash-flow descriptions, so HSBC corporate
+  event payments remain visibly linked to SGOV in Transaction History.
 
 - Fixed: Ticker-level split-factor consensus now repairs an isolated noisy
   1.5× inference on a pre-split TQQQ fill, preventing a phantom 12.50-share

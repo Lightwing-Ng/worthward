@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.86.0
+ * Code version: v1.87.0
+ * - Fixed: Cash-equivalent tickers such as SGOV now use the money-market identity formatter for dividend and other cash-flow descriptions.
  * - Fixed: Ticker-level split-factor consensus now repairs isolated noisy 1.5× inferences on pre-split fills, preventing phantom residual positions such as the historical TQQQ 12.50-share balance.
  * - Fixed: Daily equity replay now uses ledger-date order independently of execution timestamps, so booking-date corrections cannot carry a stale position into the wrong day.
  * - Added: Internal-transfer cash bridges are exposed as history-only chart fields while current account cash remains tied to broker balances.
@@ -2663,8 +2664,12 @@ export function createInvestmentDataUtils({
         const sourceTickers = Array.isArray(configuredTickers)
             ? configuredTickers
             : Object.keys(INVESTMENT_MONEY_MARKET_STANDARD_NAMES);
+        const cashEquivalentTickers = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
         return new Set(
-            sourceTickers
+            [
+                ...sourceTickers,
+                ...(Array.isArray(cashEquivalentTickers) ? cashEquivalentTickers : []),
+            ]
                 .map((ticker) => String(ticker || '').trim().toUpperCase())
                 .filter(Boolean)
         );
