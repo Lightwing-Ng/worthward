@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.87.0
+ * Code version: v1.88.0
+ * - Changed: HSBC SEC settlement evidence now produces non-transaction cash
+ *   boundaries for equity replay instead of derived transaction rows.
+ * - Fixed: Future-dated HSBC settlement cash now replays on its settlement ledger date, while execution-day holdings remain unchanged.
  * - Fixed: Cash-equivalent tickers such as SGOV now use the money-market identity formatter for dividend and other cash-flow descriptions.
  * - Fixed: Ticker-level split-factor consensus now repairs isolated noisy 1.5× inferences on pre-split fills, preventing phantom residual positions such as the historical TQQQ 12.50-share balance.
  * - Fixed: Daily equity replay now uses ledger-date order independently of execution timestamps, so booking-date corrections cannot carry a stale position into the wrong day.
@@ -1607,6 +1610,15 @@ export function createInvestmentDataUtils({
         ]).has(String(txn?.source?.file_kind || '').trim().toLowerCase());
     }
 
+    function getHsbcUsdSavingsCsvLedgerSequence(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        if (String(source.file_kind || '').trim().toLowerCase() !== 'hsbc_usd_savings_csv') {
+            return null;
+        }
+        const sequence = Number(source.ledger_sequence ?? source.row_number);
+        return Number.isFinite(sequence) ? sequence : null;
+    }
+
     function compareInvestmentTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
         const leftDatetime = String(leftTxn?.datetime || leftTxn?.date || '');
         const rightDatetime = String(rightTxn?.datetime || rightTxn?.date || '');
@@ -1617,6 +1629,17 @@ export function createInvestmentDataUtils({
         const rightDate = String(rightTxn?.date || '');
         if (leftDate !== rightDate) {
             return leftDate.localeCompare(rightDate);
+        }
+        const leftSavingsSequence = getHsbcUsdSavingsCsvLedgerSequence(leftTxn);
+        const rightSavingsSequence = getHsbcUsdSavingsCsvLedgerSequence(rightTxn);
+        if (
+            leftSavingsSequence !== null
+            && rightSavingsSequence !== null
+            && leftSavingsSequence !== rightSavingsSequence
+        ) {
+            // HSBC's downloaded USD Savings CSV is newest-first. Larger source
+            // rows therefore belong earlier in the chronological replay.
+            return rightSavingsSequence - leftSavingsSequence;
         }
         const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
         const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
@@ -1662,6 +1685,18 @@ export function createInvestmentDataUtils({
             return leftDatetime.localeCompare(rightDatetime);
         }
         return compareInvestmentTransactions(leftTxn, rightTxn, leftIndex, rightIndex);
+    }
+
+    function compareInvestmentReplaySnapshots(leftSnapshot, rightSnapshot, leftIndex = 0, rightIndex = 0) {
+        const leftDate = String(leftSnapshot?.date || '').slice(0, 10);
+        const rightDate = String(rightSnapshot?.date || '').slice(0, 10);
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        const leftOrder = Number(leftSnapshot?.replay_snapshot_order);
+        const rightOrder = Number(rightSnapshot?.replay_snapshot_order);
+        if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+        }
+        return compareInvestmentTransactionsForReplay(leftSnapshot, rightSnapshot, leftIndex, rightIndex);
     }
 
     function getInvestmentTaxLotOrderDatetime(txn) {
@@ -2712,6 +2747,86 @@ export function createInvestmentDataUtils({
         return match ? match[1] : '';
     }
 
+    function buildHsbcCashSettlementBoundaryPlan(transactions = []) {
+        const boundaries = [];
+        (Array.isArray(transactions) ? transactions : []).forEach((txn, ownerTransactionIndex) => {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const broker = String(txn?.broker || source.broker || '').trim().toLowerCase();
+            const normalizedType = String(txn?.type || '').trim().toLowerCase();
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            if (
+                broker !== 'hsbc'
+                || !['buy', 'sell'].includes(normalizedType)
+                || !transactionDate
+            ) return;
+
+            const rawPostings = Array.isArray(source.cash_settlement_postings)
+                ? source.cash_settlement_postings
+                : [];
+            const candidatePostings = rawPostings.length
+                ? rawPostings
+                : [{
+                    date: source.cash_settlement_date,
+                    amount_raw: source.cash_settlement_amount_raw,
+                    balance_after_raw: source.cash_settlement_balance_after_raw,
+                    reference: source.cash_settlement_reference,
+                    row_number: source.cash_settlement_source_row_number,
+                    ledger_sequence: source.cash_settlement_source_row_number,
+                    currency: txn?.currency,
+                    role: 'legacy_order_summary',
+                }];
+
+            candidatePostings.forEach((posting, postingIndex) => {
+                const settlementDate = normalizeLedgerDate(posting?.date || source.cash_settlement_date);
+                if (!settlementDate || settlementDate <= transactionDate) return;
+                const settlementAmount = Number(posting?.amount_raw ?? posting?.amount);
+                const settlementBalance = Number(posting?.balance_after_raw);
+                if (!Number.isFinite(settlementAmount) && !Number.isFinite(settlementBalance)) return;
+                const sourceRowSequence = Number(
+                    posting?.ledger_sequence
+                    ?? posting?.row_number
+                    ?? source.cash_settlement_source_row_number
+                    ?? 0,
+                );
+                const sourceRowNumber = Number(
+                    posting?.row_number
+                    ?? source.cash_settlement_source_row_number
+                    ?? 0,
+                );
+                boundaries.push({
+                    ownerTransactionIndex,
+                    broker: txn?.broker || source.broker || 'hsbc',
+                    account: txn?.account || source.account || source.account_number || '',
+                    date: settlementDate,
+                    currency: String(posting?.currency || txn?.currency || 'USD').trim().toUpperCase() || 'USD',
+                    settlementAmount: Number.isFinite(settlementAmount) ? settlementAmount : null,
+                    settlementBalanceAfter: Number.isFinite(settlementBalance) ? settlementBalance : null,
+                    sourceRowSequence: Number.isFinite(sourceRowSequence) ? sourceRowSequence : 0,
+                    sourceRowNumber: Number.isFinite(sourceRowNumber) ? sourceRowNumber : 0,
+                    sourceFileKind: String(
+                        posting?.source_file_kind || source.file_kind || '',
+                    ).trim().toLowerCase(),
+                    sourceIndex: ownerTransactionIndex,
+                    postingIndex,
+                    role: String(posting?.role || 'principal').trim() || 'principal',
+                    reference: String(
+                        posting?.reference
+                        || source.cash_settlement_reference
+                        || source.statement_order_id
+                        || '',
+                    ).trim(),
+                });
+            });
+        });
+        return boundaries.sort((left, right) => (
+            left.date.localeCompare(right.date)
+            || left.sourceRowSequence - right.sourceRowSequence
+            || left.sourceRowNumber - right.sourceRowNumber
+            || left.sourceIndex - right.sourceIndex
+            || left.postingIndex - right.postingIndex
+        ));
+    }
+
     function parseInvestmentChartDate(value) {
         const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!match) return null;
@@ -3192,7 +3307,7 @@ export function createInvestmentDataUtils({
         processedTransactions,
         tickerClosePrices,
         moneyMarketTickers,
-        {includeCalendarDays = false} = {},
+        {includeCalendarDays = false, replaySnapshots = []} = {},
     ) {
         if (!Array.isArray(processedTransactions) || !processedTransactions.length) {
             return [];
@@ -3201,15 +3316,22 @@ export function createInvestmentDataUtils({
         // Chart replay is keyed by the ledger booking date.  Do not trust the
         // execution timestamp to establish day order: broker imports may carry
         // a later booking date with an earlier history timestamp.
-        const chartTransactions = [...processedTransactions].sort(
+        const canonicalTransactions = [...processedTransactions].sort(
             (left, right) => compareInvestmentTransactionsForReplay(left, right),
+        );
+        const chartTransactions = (
+            Array.isArray(replaySnapshots) && replaySnapshots.length
+                ? replaySnapshots
+                : canonicalTransactions
+        ).slice().sort(
+            (left, right) => compareInvestmentReplaySnapshots(left, right),
         );
         const firstLedgerDate = normalizeLedgerDate(chartTransactions[0]?.date);
         if (!firstLedgerDate) return [];
 
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const baseCurrency = getInvestmentBaseCurrency();
-        const fxTimeline = buildInvestmentFxRateTimeline(processedTransactions, baseCurrency);
+        const fxTimeline = buildInvestmentFxRateTimeline(canonicalTransactions, baseCurrency);
         const tradingDateSet = new Set();
         Object.values(tickerPriceIndex).forEach((entry) => {
             (entry?.dates || []).forEach((date) => {
@@ -3220,7 +3342,7 @@ export function createInvestmentDataUtils({
         });
 
         const ledgerDateMap = new Map();
-        chartTransactions.forEach((txn) => {
+        canonicalTransactions.forEach((txn) => {
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return;
             if (!ledgerDateMap.has(ledgerDate)) {
@@ -3262,9 +3384,13 @@ export function createInvestmentDataUtils({
             }
         });
 
+        const replayLedgerDates = chartTransactions
+            .map((snapshot) => normalizeLedgerDate(snapshot?.date))
+            .filter(Boolean);
         const observedCandidateDates = Array.from(new Set([
             ...Array.from(tradingDateSet),
             ...Array.from(ledgerDateMap.keys()),
+            ...replayLedgerDates,
         ])).sort();
         const observedCandidateDateSet = new Set(observedCandidateDates);
 
@@ -3979,6 +4105,7 @@ export function createInvestmentDataUtils({
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
         compareInvestmentTransactionsForReplay,
+        buildHsbcCashSettlementBoundaryPlan,
         compareInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
@@ -4057,4 +4184,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.86.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.88.0';

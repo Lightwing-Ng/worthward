@@ -1,10 +1,10 @@
 /**
  * Investment split-layout and resizer helpers.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.0.0';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.0.1';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -77,9 +77,52 @@ export function bindInvestmentSectionResizer({
         const value = readPixelProperty(workspaceHeader, '--investment-section-min-height', 132);
         return Number.isFinite(value) ? value : 132;
     };
+    const isVisibleElement = (element) => (
+        isElement(element)
+        && element.getClientRects().length > 0
+        && windowRef.getComputedStyle(element).display !== 'none'
+        && windowRef.getComputedStyle(element).visibility !== 'hidden'
+    );
+    const getHoldingsMinimumHeight = (baselineMinimum) => {
+        const tableShell = reportCard.querySelector(
+            '#investment_holdings_panel:not([hidden]) .investment-holdings-table-shell',
+        );
+        if (!isVisibleElement(tableShell)) return baselineMinimum;
+
+        const headerTable = tableShell.querySelector('[data-table-header]');
+        const rows = Array.from(tableShell.querySelectorAll(
+            '.investment-holdings-table-scroll tbody > tr:not([data-table-empty-row])',
+        ));
+        const firstDataRow = rows.find((row) => row.matches('[data-investment-holdings-ticker]'))
+            || rows[0];
+        if (!isVisibleElement(headerTable) || !isVisibleElement(firstDataRow)) {
+            return baselineMinimum;
+        }
+
+        const reportHeight = reportCard.getBoundingClientRect().height;
+        const shellHeight = tableShell.getBoundingClientRect().height;
+        const reportChromeHeight = reportHeight > 0 && shellHeight > 0
+            ? Math.max(0, reportHeight - shellHeight)
+            : 0;
+        const headerHeight = Math.max(0, headerTable.getBoundingClientRect().height);
+        const fallbackRowHeight = readPixelProperty(
+            workspaceHeader,
+            '--investment-history-row-min-height',
+            40,
+        );
+        const firstDataRowHeight = Math.max(
+            firstDataRow.getBoundingClientRect().height,
+            fallbackRowHeight,
+        );
+        return Math.max(
+            baselineMinimum,
+            reportChromeHeight + headerHeight + firstDataRowHeight + 1,
+        );
+    };
     const getOverviewMinimumHeight = (baselineMinimum) => {
+        const holdingsMinimumHeight = getHoldingsMinimumHeight(baselineMinimum);
         const stage = reportCard.querySelector('.investment-equity-chart-stage');
-        if (!isElement(stage)) return baselineMinimum;
+        if (!isVisibleElement(stage)) return holdingsMinimumHeight;
         const reportHeight = reportCard.getBoundingClientRect().height;
         const stageHeight = stage.getBoundingClientRect().height;
         if (reportHeight > 0 && stageHeight > 0 && reportHeight >= stageHeight) {
@@ -90,19 +133,14 @@ export function bindInvestmentSectionResizer({
             'min-height',
             readPixelProperty(workspaceHeader, '--investment-equity-stage-min-height', 180),
         );
-        return Math.max(baselineMinimum, overviewChromeHeight + stageMinimum);
+        return Math.max(holdingsMinimumHeight, overviewChromeHeight + stageMinimum);
     };
     const getHistoryMinimumHeight = (baselineMinimum) => {
         const primaryTableShell = historySurface.querySelector('#history_table_wrap');
         const stockDetailsTableShell = historySurface.querySelector(
             '#investment_stock_details_table_host:not([hidden]) .investment-stock-details-table-shell',
         );
-        const isVisibleTableShell = (tableShell) => (
-            isElement(tableShell)
-            && tableShell.getClientRects().length > 0
-            && windowRef.getComputedStyle(tableShell).display !== 'none'
-        );
-        const tableShells = [primaryTableShell, stockDetailsTableShell].filter(isVisibleTableShell);
+        const tableShells = [primaryTableShell, stockDetailsTableShell].filter(isVisibleElement);
         const fallbackRowHeight = readPixelProperty(
             workspaceHeader,
             '--investment-history-row-min-height',
@@ -244,7 +282,12 @@ export function bindInvestmentSectionResizer({
     const mutationObserver = typeof MutationObserverClass === 'function'
         ? new MutationObserverClass(scheduleRatioReflow)
         : null;
-    mutationObserver?.observe(reportCard, {childList: true, subtree: true});
+    mutationObserver?.observe(reportCard, {
+        attributes: true,
+        attributeFilter: ['hidden'],
+        childList: true,
+        subtree: true,
+    });
     mutationObserver?.observe(historySurface, {childList: true, subtree: true});
     scheduleRatioReflow();
     windowRef.addEventListener('resize', scheduleRatioReflow, {passive: true});

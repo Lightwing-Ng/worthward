@@ -1,6 +1,10 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.72`
+Documentation version: `v1.11.73`
+
+- Fixed: Moving the Investment split fully upward now preserves the Holdings
+  column-and-summary layer plus the first real holding row, so a position such
+  as DRAM cannot be clipped beneath the fixed header.
 
 - Fixed: Cash-equivalent tickers such as SGOV now use the money-market identity
   formatter for dividend and other cash-flow descriptions, so HSBC corporate

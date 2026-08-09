@@ -1,7 +1,13 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.87.0
+ * Code version: v2.90.2
+ * - Changed: HSBC SEC settlement cash replays through non-transaction
+ *   boundaries, while History marks provisional Cash and Equity with `*`.
+ * - Fixed: stale HSBC pending flags cannot override matched SEC settlement
+ *   evidence when projecting Cash and Equity.
+ * - Fixed: HSBC future settlement cash now replays on the settlement ledger date instead of being deducted on execution day and restored by a later bank balance.
+ * - Changed: Metrics summary and Transaction history broker controls now share one Metrics-only single-broker-or-All scope.
  * - Fixed: Ticker-level split-factor consensus repairs isolated noisy pre-split fills, preventing a phantom 12.50-share TQQQ position after a flat Longbridge HK sequence.
  * - Fixed: Investment replay now follows ledger booking dates before execution timestamps, preventing cross-day position carry-forward spikes.
  * - Fixed: Future-dated HSBC settlement balances no longer overwrite execution-day cash, and internal-transfer bridges remain history-only.
@@ -107,7 +113,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.87.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.88.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -132,7 +138,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.12.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.12.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -156,7 +162,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.0.0';
+} from './investment/layout.js?v=investment-layout-v1.0.1';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     buildInvestmentHistoryPage,
@@ -169,7 +175,7 @@ import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
     parseInvestmentUrlState,
-} from './investment/url-state.js?v=investment-url-state-v1.1.0';
+} from './investment/url-state.js?v=investment-url-state-v1.2.0';
 import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
@@ -177,7 +183,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.87.0',
+    entry: 'v2.90.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -904,6 +910,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyInvestmentTransactionToState,
         aggregateInvestmentScopedPositionStates,
         buildDailyEquityChartPoints,
+        buildHsbcCashSettlementBoundaryPlan,
         buildInvestmentFxRateTimeline,
         buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
@@ -5016,7 +5023,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function getInvestmentUrlStateForCurrentView({view = activeInvestmentView || 'chart', ticker = selectedInvestmentStockTicker} = {}) {
         const normalizedView = normalizeInvestmentView(view);
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes({view: normalizedView});
         const allBrokersSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
         return {
             view: normalizedView,
@@ -5210,6 +5217,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const previousInvestmentView = activeInvestmentView;
+        const isMetricsHistoryScopeChanging = previousInvestmentView === 'metrics'
+            || normalizedNextView === 'metrics';
+
         lockInvestmentSurfaceHeight();
 
         if (segmentedControl) {
@@ -5236,6 +5247,18 @@ document.addEventListener('DOMContentLoaded', () => {
         syncInvestmentStockDetailsTableVisibility();
         if (syncHash) {
             syncInvestmentUrl({historyMode: 'push', view: normalizedNextView});
+        }
+        if (
+            !investmentUrlStateApplying
+            && isMetricsHistoryScopeChanging
+            && investmentProcessedTransactionsCache.length
+        ) {
+            syncAllInvestmentBrokerFilterUi();
+            renderInvestmentHistoryTableRows(
+                investmentProcessedTransactionsCache,
+                investmentChartPointsCache,
+                {resetPage: false, scrollToTop: false},
+            );
         }
         rememberInvestmentPageState({ view: normalizedNextView });
         animateInvestmentSurfaceHeight();
@@ -6478,9 +6501,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return investmentAvailableBrokerCodesCache;
     }
 
-    function getInvestmentBrokerFilterSelectedCodes() {
+    function getInvestmentBrokerFilterSelectedCodes({view = activeInvestmentView} = {}) {
+        const normalizedView = normalizeInvestmentView(view);
+        const sourceBrokerCodes = normalizedView === 'metrics'
+            ? (() => {
+                const selectedBrokerCode = getInvestmentBrokerSummarySelectedCode();
+                return selectedBrokerCode === 'all'
+                    ? getAvailableInvestmentBrokerCodes()
+                    : [selectedBrokerCode];
+            })()
+            : Array.from(investmentBrokerFilterSelectedCodes);
         return new Set(
-            Array.from(investmentBrokerFilterSelectedCodes)
+            sourceBrokerCodes
                 .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
                 .filter((brokerCode) => investmentAvailableBrokerCodesSet.has(brokerCode)),
         );
@@ -6602,6 +6634,13 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'investment_history_broker_filter';
     }
 
+    function getInvestmentBrokerFilterViewForField(field) {
+        if (field instanceof HTMLElement && field.closest('.investment-stock-details-table-shell')) {
+            return 'stock_details';
+        }
+        return activeInvestmentView || 'chart';
+    }
+
     function syncInvestmentBrokerFilterTrigger(field) {
         if (!(field instanceof HTMLElement)) return;
         const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
@@ -6679,7 +6718,9 @@ document.addEventListener('DOMContentLoaded', () => {
             triggerLabel.hidden = true;
             triggerLabel.setAttribute('aria-hidden', 'true');
         }
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes({
+            view: getInvestmentBrokerFilterViewForField(field),
+        });
         const selectedBrokerList = availableBrokerCodes.filter((brokerCode) => selectedBrokerCodes.has(brokerCode));
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
 
@@ -6922,11 +6963,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setInvestmentBrokerFilterDropdownOpen(field, false);
         }
         rememberInvestmentPageState({metricsBroker: investmentBrokerSummarySelectedCode});
+        if (activeInvestmentView === 'metrics') {
+            applyInvestmentBrokerFilterChange();
+            return;
+        }
         syncInvestmentUrl({historyMode: 'replace'});
         syncAllInvestmentBrokerFilterUi();
-        if (activeInvestmentView === 'metrics') {
-            renderInvestmentMetricsPanel();
-        }
     }
 
     function renderInvestmentBrokerFilterDropdown(field) {
@@ -6935,7 +6977,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(dropdown instanceof HTMLElement)) return;
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const brokerFilterView = getInvestmentBrokerFilterViewForField(field);
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes({view: brokerFilterView});
         if (isInvestmentBrokerSummaryFilterField(field)) {
             const selectedCode = getInvestmentBrokerSummarySelectedCode();
             dropdown.innerHTML = '';
@@ -6974,6 +7017,10 @@ document.addEventListener('DOMContentLoaded', () => {
             isSelected: allSelected,
             isActive: allSelected,
             onClick: () => {
+                if (singleSelect) {
+                    applyInvestmentBrokerSummarySelection('__all__', field);
+                    return;
+                }
                 investmentBrokerFilterSelectedCodes = new Set(availableBrokerCodes);
                 applyInvestmentBrokerFilterChange();
             },
@@ -6995,11 +7042,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 isActive: !allSelected && selectedBrokerCodes.has(brokerCode),
                 onClick: () => {
                     if (singleSelect) {
-                        investmentBrokerFilterSelectedCodes = new Set([brokerCode]);
-                        applyInvestmentBrokerFilterChange();
+                        applyInvestmentBrokerSummarySelection(brokerCode, field);
                         return;
                     }
-                    const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes());
+                    const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes({view: brokerFilterView}));
                     if (allSelected) {
                         nextSelection.delete(brokerCode);
                     } else if (nextSelection.has(brokerCode)) {
@@ -8827,6 +8873,34 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function hasHsbcCashSettlementEvidence(source) {
+        if (!source || typeof source !== 'object') return false;
+        const hasFiniteValue = (value) => {
+            const normalized = String(value ?? '').trim().replace(/,/g, '');
+            return normalized !== '' && Number.isFinite(Number(normalized));
+        };
+        if (
+            hasFiniteValue(source.cash_settlement_amount_raw)
+            || hasFiniteValue(source.cash_settlement_balance_after_raw)
+        ) {
+            return true;
+        }
+        return Array.isArray(source.cash_settlement_postings)
+            && source.cash_settlement_postings.some((posting) => (
+                posting
+                && typeof posting === 'object'
+                && (
+                    hasFiniteValue(posting.amount_raw ?? posting.amount)
+                    || hasFiniteValue(posting.balance_after_raw)
+                )
+            ));
+    }
+
+    function isHsbcSettlementActuallyPending(source) {
+        return source?.cash_replay_pending_settlement === true
+            && !hasHsbcCashSettlementEvidence(source);
+    }
+
     function renderInvestmentBrokerCell(txn) {
         const brokerMeta = getInvestmentBrokerMeta(getTransactionBrokerCode(txn));
         const logoMarkup = brokerMeta.logoUrl
@@ -9180,17 +9254,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="trade-metric-value investment-history-metric-value${classMarkup}"${titleMarkup}>${renderWorkspaceMetricValueContent(value)}</span>`;
     }
 
-    function renderInvestmentHistoryRowMarkup(txn) {
+    function formatInvestmentHistoryCashProjection(value, isProvisional = false) {
+        const formatted = formatAmount(value);
+        if (!isProvisional) return formatted;
+        return formatted.startsWith('-')
+            ? `-*${formatted.slice(1)}`
+            : `*${formatted}`;
+    }
+
+    function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true} = {}) {
         const description = formatTransactionDescription(txn);
         const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
         const brokerRunningCash = Number(txn?.broker_running_cash ?? txn?.running_cash) || 0;
         const brokerPendingSettlementCash = Number(txn?.broker_pending_settlement_cash) || 0;
         const brokerDisplayCash = Number(txn?.broker_display_cash);
         const brokerTotalEquity = Number(txn?.broker_total_equity ?? txn?.total_equity) || 0;
+        const historyBrokerCash = Number(txn?.history_broker_cash);
+        const historyBrokerEquity = Number(txn?.history_broker_equity);
         const brokerCode = normalizeInvestmentBroker(txn?.broker || getTransactionBrokerCode(txn));
         const shouldShowPendingSettlementCash = (
             brokerCode === 'hsbc'
-            && txn?.source?.cash_replay_pending_settlement === true
+            && isHsbcSettlementActuallyPending(txn?.source)
             && Math.abs(brokerPendingSettlementCash) > 1e-9
         );
         const brokerCashForDisplay = Number.isFinite(brokerDisplayCash)
@@ -9198,9 +9282,21 @@ document.addEventListener('DOMContentLoaded', () => {
             : (shouldShowPendingSettlementCash
                 ? brokerRunningCash + brokerPendingSettlementCash
                 : brokerRunningCash);
+        const brokerCashProjection = Number.isFinite(historyBrokerCash)
+            ? historyBrokerCash
+            : brokerCashForDisplay;
+        const brokerEquityProjection = Number.isFinite(historyBrokerEquity)
+            ? historyBrokerEquity
+            : brokerTotalEquity;
+        const cashIsProvisional = includeProvisionalMarker
+            && txn?.history_cash_is_provisional === true;
+        const equityIsProvisional = includeProvisionalMarker
+            && txn?.history_equity_is_provisional === true;
         const balanceSourceNote = txn?.broker_balance_source === 'hsbc_authoritative_position_snapshot_pending_projection'
             ? 'Current HSBC Portfolio market value; Cash is a provisional projection of authoritative transferable USD Savings cash plus positive unsettled sell proceeds. Unknown fees and settlement adjustments are not included.'
             : '';
+        const provisionalBalanceNote = String(txn?.history_balance_provisional_reason || '').trim();
+        const balanceNote = [balanceSourceNote, provisionalBalanceNote].filter(Boolean).join(' ');
         const sourceKey = String(txn?.manual_internal_transfer_source_key || '').trim();
         const transferOptions = sourceKey ? (investmentInternalTransferSourceOptionsByKey.get(sourceKey) || []) : [];
         const isIgnoredSource = txn?.manual_internal_transfer_ignored === true;
@@ -9320,8 +9416,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(txn.display_amount))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatTransactionCommissionDisplay(txn))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(brokerMarketValue), balanceSourceNote)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(brokerCashForDisplay), balanceSourceNote)}</td>
-                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${renderInvestmentHistoryMetricValue(formatAmount(brokerTotalEquity), balanceSourceNote)}</strong></td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatInvestmentHistoryCashProjection(brokerCashProjection, cashIsProvisional), balanceNote)}</td>
+                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${renderInvestmentHistoryMetricValue(formatInvestmentHistoryCashProjection(brokerEquityProjection, equityIsProvisional), balanceNote)}</strong></td>
             </tr>
         `;
     }
@@ -9482,14 +9578,16 @@ document.addEventListener('DOMContentLoaded', () => {
             table.appendChild(thead.cloneNode(true));
         }
         const tbody = document.createElement('tbody');
-        tbody.innerHTML = [...visibleTransactions].reverse().map((txn) => renderInvestmentHistoryRowMarkup(txn)).join('');
+        tbody.innerHTML = [...visibleTransactions].reverse().map((txn) => (
+            renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker: false})
+        )).join('');
         table.appendChild(tbody);
         return table;
     }
 
     function getVisibleInvestmentStockDetailTransactions(detailRows = []) {
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes({view: 'stock_details'});
         const allBrokersSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
         return (Array.isArray(detailRows) ? detailRows : []).filter((txn) => (
             (allBrokersSelected || selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn))))
@@ -13961,7 +14059,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-            if (urlState.brokerSelection.all) {
+            if (urlState.view === 'metrics') {
+                const requestedMetricsBroker = String(urlState.metricsBroker || 'all').trim().toLowerCase();
+                const normalizedMetricsBroker = requestedMetricsBroker === 'all'
+                    ? 'all'
+                    : normalizeInvestmentBroker(requestedMetricsBroker);
+                investmentBrokerSummarySelectedCode = normalizedMetricsBroker === 'all'
+                    || !availableBrokerCodes.length
+                    || availableBrokerCodes.includes(normalizedMetricsBroker)
+                    ? normalizedMetricsBroker
+                    : 'all';
+                investmentBrokerSummarySelectionInitialized = true;
+                rememberInvestmentPageState({
+                    metricsBroker: investmentBrokerSummarySelectedCode,
+                });
+            } else if (urlState.brokerSelection.all) {
                 investmentBrokerFilterSelectedCodes = new Set(availableBrokerCodes);
             } else {
                 const selectedBrokerCodes = urlState.brokerSelection.codes
@@ -13971,18 +14083,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? selectedBrokerCodes
                     : availableBrokerCodes);
             }
-
-            const requestedMetricsBroker = String(urlState.metricsBroker || 'all').trim().toLowerCase();
-            const normalizedMetricsBroker = requestedMetricsBroker === 'all'
-                ? 'all'
-                : normalizeInvestmentBroker(requestedMetricsBroker);
-            investmentBrokerSummarySelectedCode = normalizedMetricsBroker === 'all'
-                || !availableBrokerCodes.length
-                || availableBrokerCodes.includes(normalizedMetricsBroker)
-                ? normalizedMetricsBroker
-                : 'all';
-            investmentBrokerSummarySelectionInitialized = true;
-            rememberInvestmentPageState({metricsBroker: investmentBrokerSummarySelectedCode});
             investmentSideFilter = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(urlState.typeFilter) || 'all';
             investmentCurrencyFilter = normalizeInvestmentCurrencyFilter(urlState.currencyFilter);
             investmentDescriptionBindingFilter = normalizeInvestmentDescriptionBindingFilter(urlState.descriptionFilter);
@@ -14266,6 +14366,10 @@ document.addEventListener('DOMContentLoaded', () => {
             orderedTransactions,
             transferContext,
         );
+        // Settlement boundaries carry broker-native SEC evidence through the
+        // cash replay only. They never become transactions, history rows, or
+        // ledger numbers.
+        const hsbcCashSettlementBoundaryPlan = buildHsbcCashSettlementBoundaryPlan(orderedTransactions);
         const aggregateSecurityTransferState = refreshInvestmentAggregateSecurityTransferState(
             orderedTransactions,
         );
@@ -14440,15 +14544,10 @@ document.addEventListener('DOMContentLoaded', () => {
         function calculatePendingSettlementCashDelta(txn) {
             const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
             const normalizedType = getNormalizedTransactionType(txn);
-            const hasCashSettlement = (
-                txn?.source?.cash_settlement_amount_raw !== undefined
-                || txn?.source?.cash_settlement_balance_after_raw !== undefined
-            );
             if (
                 brokerCode !== 'hsbc'
                 || !['buy', 'sell'].includes(normalizedType)
-                || txn?.source?.cash_replay_pending_settlement !== true
-                || hasCashSettlement
+                || !isHsbcSettlementActuallyPending(txn?.source)
             ) {
                 return 0;
             }
@@ -14473,9 +14572,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (
                 brokerCode === 'hsbc'
                 && ['buy', 'sell'].includes(normalizedType)
-                && txn?.source?.cash_replay_pending_settlement === true
-                && txn?.source?.cash_settlement_amount_raw === undefined
-                && txn?.source?.cash_settlement_balance_after_raw === undefined
+                && normalizeLedgerDate(txn?.source?.cash_settlement_date) > normalizeLedgerDate(txn?.date)
+                && txn?.source?.cash_settlement_amount_raw !== undefined
+                && txn?.source?.cash_settlement_amount_raw !== null
             ) {
                 return 0;
             }
@@ -14581,7 +14680,7 @@ document.addEventListener('DOMContentLoaded', () => {
         orderedTransactions.forEach((txn) => {
             const normalizedBrokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
             const authoritativeSnapshot = authoritativeBrokerPositionSnapshots.get(normalizedBrokerCode);
-            const isPendingSettlementRow = txn?.source?.cash_replay_pending_settlement === true;
+            const isPendingSettlementRow = isHsbcSettlementActuallyPending(txn?.source);
             if (!authoritativeSnapshot || (
                 txn !== latestBrokerTransactionByCode.get(normalizedBrokerCode)
                 && !isPendingSettlementRow
@@ -14681,9 +14780,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : brokerLedgerState.pendingSettlementCash;
             const shouldReplayPendingSettlement = (
                 normalizedBrokerCode === 'hsbc'
-                && txn?.source?.cash_replay_pending_settlement === true
-                && txn?.source?.cash_settlement_amount_raw === undefined
-                && txn?.source?.cash_settlement_balance_after_raw === undefined
+                && isHsbcSettlementActuallyPending(txn?.source)
             );
             const transactionDate = normalizeLedgerDate(txn?.date);
             const cashSettlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
@@ -14969,7 +15066,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const txn = brokerRows[rowIndex];
                     const isPendingSettlementRow = (
                         brokerCode === 'hsbc'
-                        && txn?.source?.cash_replay_pending_settlement === true
+                        && isHsbcSettlementActuallyPending(txn?.source)
                     );
                     if (txn === latestBrokerRow || isPendingSettlementRow) {
                         const virtualHoldings = { ...holdings };
@@ -15044,6 +15141,419 @@ document.addEventListener('DOMContentLoaded', () => {
 
         applyInvestmentInternalTransferBindings(processed);
 
+        function getHsbcSettlementScopeKey(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const brokerCode = normalizeInvestmentBroker(
+                txn?.broker || source.broker || getTransactionBrokerCode(txn),
+            );
+            const account = String(
+                txn?.account || source.account || source.account_number || '',
+            ).trim();
+            return `${brokerCode}|${account}`;
+        }
+
+        function isAuthoritativeHsbcCashTransaction(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+            const normalizedType = getNormalizedTransactionType(txn);
+            const balanceAfter = Number(source.balance_after_raw);
+            return (
+                brokerCode === 'hsbc'
+                && !['buy', 'sell'].includes(normalizedType)
+                && Number.isFinite(balanceAfter)
+                && (
+                    source.cash_balance_authoritative === true
+                    || String(source.file_kind || '').trim().toLowerCase() === 'hsbc_usd_account_text'
+                )
+            );
+        }
+
+        function addCashBalanceCorrection(targetBalances, correctionBalances) {
+            const nextBalances = cloneCashLedgerBalances(targetBalances || {});
+            Object.entries(correctionBalances || {}).forEach(([currency, value]) => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return;
+                const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+                const nextValue = (Number(nextBalances[normalizedCurrency]) || 0) + numericValue;
+                if (Math.abs(nextValue) <= 1e-9) {
+                    delete nextBalances[normalizedCurrency];
+                } else {
+                    nextBalances[normalizedCurrency] = nextValue;
+                }
+            });
+            return nextBalances;
+        }
+
+        function applyCashBalanceCorrection(targetBalances, currency, amount) {
+            const numericAmount = Number(amount);
+            if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) <= 1e-9) return;
+            const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+            const nextValue = (Number(targetBalances[normalizedCurrency]) || 0) + numericAmount;
+            if (Math.abs(nextValue) <= 1e-9) {
+                delete targetBalances[normalizedCurrency];
+            } else {
+                targetBalances[normalizedCurrency] = nextValue;
+            }
+        }
+
+        function getCashCorrectionInBaseCurrency(correctionBalances, ledgerDate) {
+            return sumCashLedgerInBaseCurrency(
+                correctionBalances || {},
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+        }
+
+        function getAdjustedReplayCash(
+            rawCash,
+            rawBalances,
+            correctionBalances,
+            ledgerDate,
+        ) {
+            const normalizedRawCash = Number(rawCash) || 0;
+            const balances = rawBalances && typeof rawBalances === 'object'
+                ? rawBalances
+                : {};
+            if (Object.keys(balances).length) {
+                return sumCashLedgerInBaseCurrency(
+                    addCashBalanceCorrection(balances, correctionBalances),
+                    ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+            }
+            return normalizedRawCash + getCashCorrectionInBaseCurrency(correctionBalances, ledgerDate);
+        }
+
+        function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBoundaries) {
+            const transactionsForReplay = Array.isArray(canonicalTransactions)
+                ? canonicalTransactions
+                : [];
+            const boundariesForReplay = Array.isArray(settlementBoundaries)
+                ? settlementBoundaries
+                : [];
+            if (!boundariesForReplay.length) return transactionsForReplay;
+
+            const brokerCorrectionsByCode = new Map();
+            const aggregateCorrectionsByCurrency = {};
+            const latestRawBrokerBalances = new Map();
+            let latestRawAggregateBalances = {};
+            let activeTransaction = null;
+            let replaySnapshotOrder = 0;
+            const snapshots = [];
+
+            const getBrokerCorrections = (brokerCode) => {
+                const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+                if (!brokerCorrectionsByCode.has(normalizedBrokerCode)) {
+                    brokerCorrectionsByCode.set(normalizedBrokerCode, {});
+                }
+                return brokerCorrectionsByCode.get(normalizedBrokerCode);
+            };
+            const applyCorrection = (balances, currency, amount) => {
+                const numericAmount = Number(amount);
+                if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) <= 1e-9) return;
+                const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+                const nextValue = (Number(balances[normalizedCurrency]) || 0) + numericAmount;
+                if (Math.abs(nextValue) <= 1e-9) {
+                    delete balances[normalizedCurrency];
+                } else {
+                    balances[normalizedCurrency] = nextValue;
+                }
+            };
+            const resetBrokerCurrencyCorrection = (brokerCode, currency) => {
+                const corrections = getBrokerCorrections(brokerCode);
+                const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+                const existingCorrection = Number(corrections[normalizedCurrency]) || 0;
+                if (Math.abs(existingCorrection) <= 1e-9) return;
+                delete corrections[normalizedCurrency];
+                applyCorrection(aggregateCorrectionsByCurrency, normalizedCurrency, -existingCorrection);
+            };
+            const buildSnapshotFromTransaction = (
+                txn,
+                ledgerDate,
+                {isSettlementBoundary = false} = {},
+            ) => {
+                const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                const brokerCorrections = getBrokerCorrections(brokerCode);
+                const rawAggregateBalances = latestRawAggregateBalances;
+                const rawBrokerBalances = latestRawBrokerBalances.get(brokerCode)
+                    || txn?.broker_cash_by_currency
+                    || {};
+                const rawAggregateRunningCash = Number(
+                    txn?.aggregate_running_cash ?? txn?.running_cash,
+                ) || 0;
+                const rawAggregateDisplayCash = Number.isFinite(Number(txn?.aggregate_display_cash))
+                    ? Number(txn.aggregate_display_cash)
+                    : rawAggregateRunningCash + (Number(txn?.aggregate_pending_settlement_cash) || 0);
+                const rawBrokerRunningCash = Number(txn?.broker_running_cash) || 0;
+                const rawBrokerDisplayCash = Number.isFinite(Number(txn?.broker_display_cash))
+                    ? Number(txn.broker_display_cash)
+                    : rawBrokerRunningCash + (Number(txn?.broker_pending_settlement_cash) || 0);
+                const adjustedAggregateRunningCash = getAdjustedReplayCash(
+                    rawAggregateRunningCash,
+                    rawAggregateBalances,
+                    aggregateCorrectionsByCurrency,
+                    ledgerDate,
+                );
+                const adjustedBrokerRunningCash = getAdjustedReplayCash(
+                    rawBrokerRunningCash,
+                    rawBrokerBalances,
+                    brokerCorrections,
+                    ledgerDate,
+                );
+                const aggregateCashAdjustment = adjustedAggregateRunningCash - rawAggregateRunningCash;
+                const brokerCashAdjustment = adjustedBrokerRunningCash - rawBrokerRunningCash;
+                const aggregateHistoryRunningCash = Number.isFinite(Number(txn?.aggregate_history_running_cash))
+                    ? adjustedAggregateRunningCash
+                        + (Number(txn.aggregate_history_running_cash) - rawAggregateRunningCash)
+                    : adjustedAggregateRunningCash;
+                const aggregateHistoryDisplayCash = Number.isFinite(Number(txn?.aggregate_history_display_cash))
+                    ? (rawAggregateDisplayCash + aggregateCashAdjustment)
+                        + (Number(txn.aggregate_history_display_cash) - rawAggregateDisplayCash)
+                    : rawAggregateDisplayCash + aggregateCashAdjustment;
+                const sharedSnapshotFields = {
+                    date: ledgerDate,
+                    datetime: isSettlementBoundary
+                        ? `${ledgerDate} 23:59:00.${String(replaySnapshotOrder).padStart(4, '0')}`
+                        : txn?.datetime,
+                    replay_snapshot_order: replaySnapshotOrder,
+                    aggregate_running_cash: adjustedAggregateRunningCash,
+                    aggregate_display_cash: rawAggregateDisplayCash + aggregateCashAdjustment,
+                    aggregate_history_running_cash: aggregateHistoryRunningCash,
+                    aggregate_history_display_cash: aggregateHistoryDisplayCash,
+                    aggregate_cash_by_currency: addCashBalanceCorrection(
+                        rawAggregateBalances,
+                        aggregateCorrectionsByCurrency,
+                    ),
+                    aggregate_pending_settlement_cash: Number(txn?.aggregate_pending_settlement_cash) || 0,
+                    aggregate_holdings: { ...(txn?.aggregate_holdings || txn?.holdings || {}) },
+                    aggregate_money_market_anchors: {
+                        ...(txn?.aggregate_money_market_anchors || txn?.money_market_anchors || {}),
+                    },
+                    running_cash: adjustedAggregateRunningCash,
+                    cash_by_currency: addCashBalanceCorrection(
+                        rawAggregateBalances,
+                        aggregateCorrectionsByCurrency,
+                    ),
+                    holdings: { ...(txn?.aggregate_holdings || txn?.holdings || {}) },
+                    money_market_anchors: {
+                        ...(txn?.aggregate_money_market_anchors || txn?.money_market_anchors || {}),
+                    },
+                    broker_running_cash: adjustedBrokerRunningCash,
+                    broker_display_cash: rawBrokerDisplayCash + brokerCashAdjustment,
+                    broker_cash_by_currency: addCashBalanceCorrection(rawBrokerBalances, brokerCorrections),
+                    broker_pending_settlement_cash: Number(txn?.broker_pending_settlement_cash) || 0,
+                    broker_holdings: { ...(txn?.broker_holdings || {}) },
+                    broker_money_market_anchors: { ...(txn?.broker_money_market_anchors || {}) },
+                };
+                if (isSettlementBoundary) {
+                    return {
+                        ...sharedSnapshotFields,
+                        replay_snapshot_kind: 'hsbc_cash_settlement_boundary',
+                    };
+                }
+                return {
+                    ...txn,
+                    ...sharedSnapshotFields,
+                };
+            };
+
+            const replayEvents = [
+                ...transactionsForReplay.map((txn, index) => ({
+                    kind: 'transaction',
+                    date: normalizeLedgerDate(txn?.date),
+                    index,
+                    txn,
+                })),
+                ...boundariesForReplay.map((boundary, index) => ({
+                    kind: 'boundary',
+                    date: normalizeLedgerDate(boundary?.date),
+                    index,
+                    boundary,
+                })),
+            ].filter((event) => event.date).sort((left, right) => {
+                if (left.date !== right.date) return left.date.localeCompare(right.date);
+                const getCashEvidenceSequence = (event) => {
+                    if (event.kind === 'boundary') {
+                        const boundary = event.boundary || {};
+                        const sequence = Number(boundary.sourceRowSequence);
+                        return {
+                            broker: normalizeInvestmentBroker(boundary.broker || 'hsbc'),
+                            account: String(boundary.account || '').trim(),
+                            sequence: Number.isFinite(sequence) && sequence > 0 ? sequence : null,
+                            sourceFileKind: String(boundary.sourceFileKind || '').trim().toLowerCase(),
+                        };
+                    }
+                    const txn = event.txn || {};
+                    const source = txn.source && typeof txn.source === 'object' ? txn.source : {};
+                    const sourceFileKind = String(source.file_kind || '').trim().toLowerCase();
+                    const sequence = Number(source.ledger_sequence ?? source.row_number);
+                    const isHsbcCashEvidence = (
+                        normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === 'hsbc'
+                        && !['buy', 'sell'].includes(getNormalizedTransactionType(txn))
+                        && sourceFileKind.startsWith('hsbc_')
+                        && sourceFileKind.includes('cash')
+                    );
+                    return {
+                        broker: normalizeInvestmentBroker(getTransactionBrokerCode(txn)),
+                        account: String(txn.account || source.account || source.account_number || '').trim(),
+                        sequence: isHsbcCashEvidence && Number.isFinite(sequence) && sequence > 0
+                            ? sequence
+                            : null,
+                        sourceFileKind,
+                    };
+                };
+                const leftEvidence = getCashEvidenceSequence(left);
+                const rightEvidence = getCashEvidenceSequence(right);
+                if (
+                    leftEvidence.broker === 'hsbc'
+                    && rightEvidence.broker === 'hsbc'
+                    && leftEvidence.account === rightEvidence.account
+                    && leftEvidence.sequence !== null
+                    && rightEvidence.sequence !== null
+                    && leftEvidence.sequence !== rightEvidence.sequence
+                ) {
+                    const bothCsv = (
+                        leftEvidence.sourceFileKind === 'hsbc_usd_savings_csv'
+                        && rightEvidence.sourceFileKind === 'hsbc_usd_savings_csv'
+                    );
+                    return bothCsv
+                        ? rightEvidence.sequence - leftEvidence.sequence
+                        : leftEvidence.sequence - rightEvidence.sequence;
+                }
+                if (left.kind !== right.kind) return left.kind === 'transaction' ? -1 : 1;
+                return left.index - right.index;
+            });
+
+            replayEvents.forEach((event) => {
+                replaySnapshotOrder += 1;
+                if (event.kind === 'transaction') {
+                    const txn = event.txn;
+                    const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                    const transactionCurrency = formatTransactionCurrency(txn)
+                        || getTickerQuoteCurrency(txn?.ticker)
+                        || baseCurrency;
+                    if (isAuthoritativeHsbcCashTransaction(txn)) {
+                        resetBrokerCurrencyCorrection(brokerCode, transactionCurrency);
+                    }
+                    latestRawAggregateBalances = cloneCashLedgerBalances(
+                        txn?.aggregate_cash_by_currency || txn?.cash_by_currency || {},
+                    );
+                    latestRawBrokerBalances.set(
+                        brokerCode,
+                        cloneCashLedgerBalances(txn?.broker_cash_by_currency || {}),
+                    );
+                    activeTransaction = txn;
+                    snapshots.push(buildSnapshotFromTransaction(txn, event.date));
+                    return;
+                }
+
+                if (!activeTransaction) return;
+                const boundary = event.boundary;
+                const brokerCode = normalizeInvestmentBroker(boundary?.broker || 'hsbc');
+                const currency = String(boundary?.currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+                const brokerCorrections = getBrokerCorrections(brokerCode);
+                const rawBrokerBalances = latestRawBrokerBalances.get(brokerCode) || {};
+                const currentBrokerBalance = (Number(rawBrokerBalances[currency]) || 0)
+                    + (Number(brokerCorrections[currency]) || 0);
+                const settlementBalanceAfter = Number(boundary?.settlementBalanceAfter);
+                const settlementAmount = Number(boundary?.settlementAmount);
+                const boundaryCorrection = Number.isFinite(settlementBalanceAfter)
+                    ? settlementBalanceAfter - currentBrokerBalance
+                    : settlementAmount;
+                if (!Number.isFinite(boundaryCorrection)) return;
+                applyCorrection(brokerCorrections, currency, boundaryCorrection);
+                applyCorrection(aggregateCorrectionsByCurrency, currency, boundaryCorrection);
+                snapshots.push(buildSnapshotFromTransaction(
+                    activeTransaction,
+                    event.date,
+                    {isSettlementBoundary: true},
+                ));
+            });
+            return snapshots;
+        }
+
+        function getHsbcHistorySettlementCashDeltas(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            const settlementDate = normalizeLedgerDate(source.cash_settlement_date);
+            if (!transactionDate || !settlementDate || settlementDate <= transactionDate) return [];
+            const postings = Array.isArray(source.cash_settlement_postings)
+                ? source.cash_settlement_postings
+                : [];
+            if (postings.length) {
+                return postings.map((posting) => ({
+                    currency: String(posting?.currency || txn?.currency || baseCurrency).trim().toUpperCase() || baseCurrency,
+                    amount: Number(posting?.amount_raw ?? posting?.amount),
+                })).filter((posting) => Number.isFinite(posting.amount));
+            }
+            const principal = Number(source.cash_settlement_amount_raw);
+            if (!Number.isFinite(principal)) return [];
+            const fee = Number(source.cash_flow_fee_amount_raw);
+            return [{
+                currency: String(txn?.currency || baseCurrency).trim().toUpperCase() || baseCurrency,
+                amount: principal,
+            }, ...(Number.isFinite(fee) && fee > 0 ? [{
+                currency: String(txn?.currency || baseCurrency).trim().toUpperCase() || baseCurrency,
+                amount: -fee,
+            }] : [])];
+        }
+
+        function applyHsbcHistoryPresentationProjection(processedTransactions) {
+            const historyCorrectionsByScope = new Map();
+            const pendingScopes = new Set();
+            const getHistoryCorrections = (scopeKey) => {
+                if (!historyCorrectionsByScope.has(scopeKey)) {
+                    historyCorrectionsByScope.set(scopeKey, {});
+                }
+                return historyCorrectionsByScope.get(scopeKey);
+            };
+            (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
+                const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                if (brokerCode !== 'hsbc') return;
+                const scopeKey = getHsbcSettlementScopeKey(txn);
+                const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+                const corrections = getHistoryCorrections(scopeKey);
+                if (isHsbcSettlementActuallyPending(source)) {
+                    pendingScopes.add(scopeKey);
+                }
+                getHsbcHistorySettlementCashDeltas(txn).forEach((posting) => {
+                    applyCashBalanceCorrection(corrections, posting.currency, posting.amount);
+                });
+
+                const transactionCurrency = formatTransactionCurrency(txn)
+                    || getTickerQuoteCurrency(txn?.ticker)
+                    || baseCurrency;
+                if (isAuthoritativeHsbcCashTransaction(txn)) {
+                    const normalizedCurrency = String(transactionCurrency).trim().toUpperCase() || baseCurrency;
+                    delete corrections[normalizedCurrency];
+                }
+                const baseCash = Number.isFinite(Number(txn?.broker_display_cash))
+                    ? Number(txn.broker_display_cash)
+                    : (Number(txn?.broker_running_cash) || 0);
+                const historyCash = baseCash + getCashCorrectionInBaseCurrency(
+                    corrections,
+                    normalizeLedgerDate(txn?.date),
+                );
+                const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
+                const isProvisional = pendingScopes.has(scopeKey);
+                txn.history_broker_cash = historyCash;
+                txn.history_broker_equity = historyCash + brokerMarketValue;
+                txn.history_cash_is_provisional = isProvisional;
+                txn.history_equity_is_provisional = isProvisional;
+                txn.history_balance_provisional_reason = isProvisional
+                    ? 'An earlier or current HSBC order in this account has not reached a matched SEC cash settlement. Cash and Equity are provisional until HSBC posts every settlement leg.'
+                    : '';
+            });
+        }
+
+        const hsbcSettlementReplaySnapshots = buildHsbcSettlementReplaySnapshots(
+            processed,
+            hsbcCashSettlementBoundaryPlan,
+        );
+        applyHsbcHistoryPresentationProjection(processed);
+
         Object.keys(latestPrices).forEach((ticker) => {
             if (moneyMarketTickers.has(String(ticker).trim().toUpperCase())) {
                 const lastProcessedWithAnchor = [...processed].reverse().find((txn) => (
@@ -15062,7 +15572,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 processed,
                 tickerClosePrices,
                 moneyMarketTickers,
-                {includeCalendarDays: isInvestmentDailyEquityLiveRange()},
+                {
+                    includeCalendarDays: isInvestmentDailyEquityLiveRange(),
+                    replaySnapshots: hsbcSettlementReplaySnapshots,
+                },
             );
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()

@@ -1,4 +1,4 @@
-/* Tests for the canonical Investment URL state contract. Code version: v1.1.0 */
+/* Tests for the canonical Investment URL state contract. Code version: v1.2.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,13 +37,45 @@ test('parses the user-facing view slug and every Investment table control', () =
     assert.equal(state.metricsBroker, 'longbridge_hk');
     assert.deepEqual(state.brokerSelection, {
         all: false,
-        codes: ['ibkr', 'longbridge_hk'],
+        codes: ['longbridge_hk'],
     });
     assert.deepEqual(state.typeFilter, ['buy', 'sell']);
     assert.equal(state.currencyFilter, 'HKD');
     assert.equal(state.descriptionFilter, 'unbound');
     assert.deepEqual(state.dateFilter, {mode: 'day', value: '2026-08-04'});
     assert.equal(state.page, 3);
+});
+
+test('normalizes Metrics broker links to one authoritative single-broker-or-All scope', () => {
+    const topBrokerWins = parseInvestmentUrlState(
+        'http://localhost:8688/trade/investment?view=metrics&metrics-broker=hsbc&broker=ibkr',
+    );
+    assert.equal(topBrokerWins.metricsBroker, 'hsbc');
+    assert.deepEqual(topBrokerWins.brokerSelection, {all: false, codes: ['hsbc']});
+    assert.equal(
+        buildInvestmentUrl('http://localhost:8688/trade/investment', topBrokerWins),
+        '/trade/investment?view=metrics&metrics-broker=hsbc&broker=hsbc',
+    );
+
+    const historyBrokerFallback = parseInvestmentUrlState(
+        'http://localhost:8688/trade/investment?view=metrics&broker=ibkr',
+    );
+    assert.equal(historyBrokerFallback.metricsBroker, 'ibkr');
+    assert.deepEqual(historyBrokerFallback.brokerSelection, {all: false, codes: ['ibkr']});
+    assert.equal(
+        buildInvestmentUrl('http://localhost:8688/trade/investment', historyBrokerFallback),
+        '/trade/investment?view=metrics&metrics-broker=ibkr&broker=ibkr',
+    );
+
+    const explicitAllWins = parseInvestmentUrlState(
+        'http://localhost:8688/trade/investment?view=metrics&metrics-broker=all&broker=hsbc',
+    );
+    assert.equal(explicitAllWins.metricsBroker, 'all');
+    assert.deepEqual(explicitAllWins.brokerSelection, {all: true, codes: []});
+    assert.equal(
+        buildInvestmentUrl('http://localhost:8688/trade/investment', explicitAllWins),
+        '/trade/investment?view=metrics',
+    );
 });
 
 test('serializes a compact canonical URL and uses the stock range for Stock details', () => {
@@ -90,7 +122,7 @@ test('omits default values while retaining the explicit Overview view', () => {
     );
 });
 
-test('keeps range and Metrics broker state scoped to the active view', () => {
+test('keeps range and the shared Metrics broker scope scoped to the active view', () => {
     assert.equal(
         buildInvestmentUrl('http://localhost:8688/trade/investment', {
             view: 'metrics',
@@ -99,7 +131,7 @@ test('keeps range and Metrics broker state scoped to the active view', () => {
             metricsBroker: 'schwab',
             brokerSelection: {all: true, codes: []},
         }),
-        '/trade/investment?view=metrics&metrics-broker=schwab',
+        '/trade/investment?view=metrics&metrics-broker=schwab&broker=schwab',
     );
     assert.equal(
         buildInvestmentUrl('http://localhost:8688/trade/investment', {

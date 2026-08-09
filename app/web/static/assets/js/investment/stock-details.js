@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.12.0
+ * Code version: v0.12.2
+ * - Fixed: Stock details now imports the current Investment data-utilities revision after the HSBC settlement replay presentation fix.
  * - Fixed: Stock-details tax-lot replay uses source execution timestamps for same-day HSBC trades and attested open-position history.
  * - Fixed: Stock-details intraday charts ignore non-positive or structurally invalid OHLC bars.
  * - Changed: Stock-details hover guides reuse the shared soft muted gray token.
@@ -39,11 +40,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.86.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.88.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.12.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.12.2';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',

@@ -1,12 +1,13 @@
 /**
  * Investment URL state parsing and serialization.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  * - Changed: Overview and Stock-details ranges stay scoped to their own tabs.
- * - Changed: Metrics broker state is serialized only while Metrics is active.
+ * - Changed: Metrics uses one shared single-broker-or-All scope for its
+ *   summary and Transaction history controls.
  */
 
-export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.1.0';
+export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.2.0';
 
 const INVESTMENT_URL_VIEW_SLUGS = Object.freeze({
     chart: 'overview',
@@ -120,7 +121,20 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
         params.get('view') || (legacyStockDetailsHash ? 'stock-details' : 'overview'),
     );
     const range = normalizeRange(params.get('range'));
-    const metricsBroker = String(params.get('metrics-broker') || 'all').trim().toLowerCase() || 'all';
+    const requestedMetricsBroker = String(params.get('metrics-broker') || 'all').trim().toLowerCase() || 'all';
+    const brokerSelection = parseBrokerSelection(params);
+    const metricsBroker = view === 'metrics'
+        ? (params.has('metrics-broker')
+            ? requestedMetricsBroker
+            : (!brokerSelection.all && brokerSelection.codes.length === 1
+                ? brokerSelection.codes[0]
+                : 'all'))
+        : requestedMetricsBroker;
+    const effectiveBrokerSelection = view === 'metrics'
+        ? (metricsBroker === 'all'
+            ? {all: true, codes: []}
+            : {all: false, codes: [metricsBroker]})
+        : brokerSelection;
     const currency = String(params.get('currency') || 'all').trim().toUpperCase() || 'all';
     const description = String(params.get('description') || 'all').trim().toLowerCase() === 'unbound'
         ? 'unbound'
@@ -134,7 +148,7 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
         ticker: tickerNormalizer(params.get('ticker') || ''),
         range,
         metricsBroker,
-        brokerSelection: parseBrokerSelection(params),
+        brokerSelection: effectiveBrokerSelection,
         typeFilter: parseTypeSelection(params),
         currencyFilter: currency === 'ALL' ? 'all' : currency,
         descriptionFilter: description,
@@ -188,15 +202,21 @@ export function buildInvestmentUrl(input, state = {}) {
         );
     }
 
-    const metricsBroker = String(state.metricsBroker || 'all').trim().toLowerCase();
+    const brokerSelection = state.brokerSelection || {};
+    const requestedMetricsBroker = state.metricsBroker === undefined
+        ? ''
+        : String(state.metricsBroker || 'all').trim().toLowerCase();
+    const selectedBrokerCodes = serializeDelimitedSelection(brokerSelection.codes);
+    const metricsBroker = requestedMetricsBroker || (
+        !brokerSelection.all && selectedBrokerCodes.length === 1
+            ? selectedBrokerCodes[0]
+            : 'all'
+    );
     if (view === 'metrics') {
         setIfNonDefault(params, 'metrics-broker', metricsBroker, 'all');
-    }
-
-    const brokerSelection = state.brokerSelection || {};
-    if (!brokerSelection.all) {
-        const brokerCodes = serializeDelimitedSelection(brokerSelection.codes);
-        if (brokerCodes.length) params.set('broker', brokerCodes.join(','));
+        if (metricsBroker !== 'all') params.set('broker', metricsBroker);
+    } else if (!brokerSelection.all) {
+        if (selectedBrokerCodes.length) params.set('broker', selectedBrokerCodes.join(','));
     }
 
     const typeFilter = state.typeFilter;
