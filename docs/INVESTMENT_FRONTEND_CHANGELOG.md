@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.16.0`
+Documentation version: `v1.16.1`
+
+- Fixed: HSBC Transaction History rows with an evidenced future SEC
+  settlement balance now anchor displayed Cash to that source balance. The
+  presentation repair prevents an incomplete replay baseline from turning a
+  roughly $20,976 cash row into a $13k value; the Overview accounting path
+  still applies the settlement only on its own ledger date.
 
 - Fixed: Historical equity valuation now aligns split-only daily closes with
   dynamic end-of-day holdings for both ordinary and reverse splits. Dividend

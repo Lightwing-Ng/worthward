@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.96.0
+ * Code version: v2.96.1
+ * - Fixed: HSBC History rows with an evidenced future SEC settlement balance
+ *   now anchor display cash to that balance instead of adding the settlement
+ *   delta to an incomplete replay baseline.
  * - Fixed: Historical valuation gaps remain unavailable in the chart tooltip
  *   and Transaction History instead of being coerced to a zero balance.
  * - Fixed: HSBC statement balance boundaries clear stale unscoped replay cash,
@@ -15894,6 +15897,63 @@ document.addEventListener('DOMContentLoaded', () => {
             return snapshots;
         }
 
+        function getHsbcHistorySettlementCashBoundary(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            const transactionType = getNormalizedTransactionType(txn);
+            if (!['buy', 'sell'].includes(transactionType)) return null;
+            const postings = Array.isArray(source.cash_settlement_postings)
+                ? source.cash_settlement_postings
+                : [];
+            const settlementDate = normalizeLedgerDate(source.cash_settlement_date)
+                || normalizeLedgerDate(postings.find((posting) => posting?.date)?.date);
+            if (!transactionDate || !settlementDate || settlementDate <= transactionDate) return null;
+
+            const postingWithBoundary = [...postings].reverse().find((posting) => (
+                Number.isFinite(Number(posting?.balance_after_raw ?? posting?.balance_after))
+            ));
+            const balanceAfter = Number(
+                postingWithBoundary?.balance_after_raw
+                ?? postingWithBoundary?.balance_after
+                ?? source.cash_settlement_balance_after_raw,
+            );
+            if (!Number.isFinite(balanceAfter)) return null;
+            return {
+                currency: String(
+                    postingWithBoundary?.currency
+                    || txn?.currency
+                    || baseCurrency,
+                ).trim().toUpperCase() || baseCurrency,
+                balanceAfter,
+            };
+        }
+
+        function setHsbcHistoryCashBoundary(
+            corrections,
+            currency,
+            balanceAfter,
+            baseCash,
+            ledgerDate,
+        ) {
+            const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
+            delete corrections[normalizedCurrency];
+            const otherCurrencyCorrection = getCashCorrectionInBaseCurrency(corrections, ledgerDate);
+            const targetCorrectionInBase = Number(balanceAfter) - Number(baseCash) - otherCurrencyCorrection;
+            if (!Number.isFinite(targetCorrectionInBase)) return;
+            const oneUnitInBase = convertAmountToBaseCurrency(
+                1,
+                normalizedCurrency,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            const targetCorrection = Math.abs(oneUnitInBase) > 1e-9
+                ? targetCorrectionInBase / oneUnitInBase
+                : targetCorrectionInBase;
+            if (!Number.isFinite(targetCorrection)) return;
+            applyCashBalanceCorrection(corrections, normalizedCurrency, targetCorrection);
+        }
+
         function getHsbcHistorySettlementCashDeltas(txn) {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
             const transactionDate = normalizeLedgerDate(txn?.date);
@@ -15938,9 +15998,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isHsbcSettlementActuallyPending(source)) {
                     pendingScopes.add(scopeKey);
                 }
-                getHsbcHistorySettlementCashDeltas(txn).forEach((posting) => {
-                    applyCashBalanceCorrection(corrections, posting.currency, posting.amount);
-                });
+
+                const baseCash = Number.isFinite(Number(txn?.broker_display_cash))
+                    ? Number(txn.broker_display_cash)
+                    : (Number(txn?.broker_running_cash) || 0);
+                const ledgerDate = normalizeLedgerDate(txn?.date);
+                const settlementBoundary = getHsbcHistorySettlementCashBoundary(txn);
+                if (settlementBoundary) {
+                    setHsbcHistoryCashBoundary(
+                        corrections,
+                        settlementBoundary.currency,
+                        settlementBoundary.balanceAfter,
+                        baseCash,
+                        ledgerDate,
+                    );
+                } else {
+                    getHsbcHistorySettlementCashDeltas(txn).forEach((posting) => {
+                        applyCashBalanceCorrection(corrections, posting.currency, posting.amount);
+                    });
+                }
 
                 const transactionCurrency = formatTransactionCurrency(txn)
                     || getTickerQuoteCurrency(txn?.ticker)
@@ -15949,12 +16025,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const normalizedCurrency = String(transactionCurrency).trim().toUpperCase() || baseCurrency;
                     delete corrections[normalizedCurrency];
                 }
-                const baseCash = Number.isFinite(Number(txn?.broker_display_cash))
-                    ? Number(txn.broker_display_cash)
-                    : (Number(txn?.broker_running_cash) || 0);
                 const historyCash = baseCash + getCashCorrectionInBaseCurrency(
                     corrections,
-                    normalizeLedgerDate(txn?.date),
+                    ledgerDate,
                 );
                 const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
                 const isProvisional = pendingScopes.has(scopeKey);
