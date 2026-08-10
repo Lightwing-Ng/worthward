@@ -1,6 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.73`
+Documentation version: `v1.12.0`
+
+- Changed: Overview `1W` and `1M` now replay trusted regular-session fills into the
+  following one-minute state, so dynamic holdings and display cash change with
+  the completed bar. Date-only and off-hours trades still enter at the next
+  trading-day opening state.
+
+- Fixed: Historical Overview and Transaction History valuation now accepts only
+  one-minute closes, daily closes, or designated money-market anchors. Missing
+  close evidence remains unavailable instead of falling back to a transaction
+  price or remembered quote.
 
 - Fixed: Moving the Investment split fully upward now preserves the Holdings
   column-and-summary layer plus the first real holding row, so a position such

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.30.0`
+Documentation version: `v1.31.0`
 
 ## Holdings P&L display contract
 
@@ -170,6 +170,29 @@ second broker balance ledger. Its accounting boundaries are explicit:
 The implementation lives in `app/web/static/assets/js/investment.js` and
 `app/web/static/assets/js/investment/data-utils.js`; regression coverage must
 assert both historical continuity and current-endpoint equality.
+
+## High-precision Overview intraday equity valuation contract
+
+The high-precision Overview curve (`1W` and `1M`) is a historical minute-close projection. It must
+not interpolate prices or use a remembered transaction quote as a substitute
+for market-close evidence.
+
+- Each visible minute uses the latest replay snapshot that is effective at that
+  minute. Holdings and display cash therefore change together when a trade
+  becomes effective.
+- A trusted normalized regular-session execution time becomes effective on the
+  following one-minute point, after the source bar's close is observable. A
+  date-only transaction, the project convention time `20:00:00`, and any
+  pre-market, post-market, or final-minute record become part of the next
+  trading-day opening state.
+- For every held ticker, price is the latest positive one-minute close observed
+  at or before the visible minute. The price is carried across sparse minute
+  gaps. If the ticker has no usable one-minute row for that trading day, the
+  latest available daily close on or before the valuation date is used. If
+  neither price exists, the point is unavailable rather than valued at zero.
+- Transaction prices, cached last-known prices, and broker snapshot prices are
+  not historical closing-price fallbacks. Money-market anchors remain valid
+  for their designated cash-equivalent positions.
 
 ## Longbridge performance-calibration contract
 

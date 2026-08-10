@@ -1,7 +1,19 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.88.0
+ * Code version: v1.90.0
+ * - Changed: Historical equity valuations now fail closed when neither a
+ *   daily close nor a money-market anchor exists; transaction prices and
+ *   remembered quotes are not closing-price evidence.
+ * - Fixed: Daily valuation rejects non-positive closes, deduplicates price
+ *   rows deterministically, and uses ledger trade prices only as degraded
+ *   evidence instead of valuing missing holdings at zero.
+ * - Fixed: Historical chart cash falls back to the cumulative internal-transfer
+ *   bridge only on history points; the current endpoint remains broker cash.
+ * - Fixed: A broker starting boundary is valid only when an explicit cash
+ *   balance is present; an absent boundary no longer becomes USD 0.
+ * - Fixed: Replay identities and same-day funding scopes include account IDs
+ *   from normalized and source records.
  * - Changed: HSBC SEC settlement evidence now produces non-transaction cash
  *   boundaries for equity replay instead of derived transaction rows.
  * - Fixed: Future-dated HSBC settlement cash now replays on its settlement ledger date, while execution-day holdings remain unchanged.
@@ -502,7 +514,55 @@ export function createInvestmentDataUtils({
             const normalizedBalances = cloneCashLedgerBalances(rawBalances);
             if (Object.keys(normalizedBalances).length) return normalizedBalances;
         }
+        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const aggregateBrokerBalances = {};
+        let hasBrokerStartingBalances = false;
+        if (brokerSummaries && typeof brokerSummaries === 'object') {
+            Object.keys(brokerSummaries).forEach((brokerCode) => {
+                const brokerBalances = getInvestmentBrokerStartingCashBalances(brokerCode);
+                Object.entries(brokerBalances).forEach(([currency, value]) => {
+                    const numericValue = Number(value);
+                    if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
+                    hasBrokerStartingBalances = true;
+                    aggregateBrokerBalances[currency] = (
+                        Number(aggregateBrokerBalances[currency]) || 0
+                    ) + numericValue;
+                });
+            });
+        }
+        if (hasBrokerStartingBalances) return aggregateBrokerBalances;
         return createCashLedger(getInvestmentStartingCash(), getInvestmentBaseCurrency());
+    }
+
+    function getInvestmentBrokerStartingCash(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return 0;
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return 0;
+        const rawValue = summary.starting_cash
+            ?? summary.starting_cash_raw
+            ?? summary.starting_cash_base_currency;
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : 0;
+    }
+
+    function getInvestmentBrokerStartingCashBalances(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return {};
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return {};
+        const rawBalances = summary.starting_cash_by_currency;
+        if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            if (Object.keys(normalizedBalances).length) return normalizedBalances;
+        }
+        const rawValue = summary.starting_cash
+            ?? summary.starting_cash_raw
+            ?? summary.starting_cash_base_currency;
+        if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') return {};
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue)) return {};
+        return createCashLedger(numericValue, getInvestmentBaseCurrency());
     }
 
     function getInvestmentEndingCash() {
@@ -1619,6 +1679,31 @@ export function createInvestmentDataUtils({
         return Number.isFinite(sequence) ? sequence : null;
     }
 
+    function getInvestmentReplayIdentity(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        return JSON.stringify([
+            String(txn?.broker || source.broker || '').trim().toLowerCase(),
+            String(
+                txn?.account_id
+                ?? txn?.account
+                ?? source.account_id
+                ?? source.account
+                ?? source.account_number
+                ?? '',
+            ).trim(),
+            String(txn?.date || '').trim(),
+            String(txn?.datetime || '').trim(),
+            String(getNormalizedTransactionType(txn) || '').trim(),
+            String(getInvestmentCanonicalTicker(txn?.ticker) || '').trim(),
+            String(formatTransactionCurrency(txn) || '').trim().toUpperCase(),
+            String(txn?.quantity_raw ?? txn?.quantity ?? source.quantity_raw ?? '').trim(),
+            String(txn?.price_raw ?? txn?.price ?? source.price_raw ?? '').trim(),
+            String(txn?.net_amount_raw ?? txn?.amount ?? txn?.cash ?? '').trim(),
+            String(source.order_id ?? source.execution_id ?? source.message_id ?? source.row_number ?? '').trim(),
+            String(txn?.ledger_no ?? source.ledger_no ?? '').trim(),
+        ]);
+    }
+
     function compareInvestmentTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
         const leftDatetime = String(leftTxn?.datetime || leftTxn?.date || '');
         const rightDatetime = String(rightTxn?.datetime || rightTxn?.date || '');
@@ -1668,9 +1753,15 @@ export function createInvestmentDataUtils({
         if (leftCashCategory === 2 && leftCashAmount !== rightCashAmount) {
             return rightCashAmount - leftCashAmount;
         }
-        const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
-        const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);
-        return leftRow - rightRow;
+        const leftRow = Number(leftTxn?.source?.row_number);
+        const rightRow = Number(rightTxn?.source?.row_number);
+        if (Number.isFinite(leftRow) && Number.isFinite(rightRow) && leftRow !== rightRow) {
+            return leftRow - rightRow;
+        }
+        const leftIdentity = getInvestmentReplayIdentity(leftTxn);
+        const rightIdentity = getInvestmentReplayIdentity(rightTxn);
+        if (leftIdentity !== rightIdentity) return leftIdentity.localeCompare(rightIdentity);
+        return leftIndex - rightIndex;
     }
 
     function compareInvestmentTransactionsForReplay(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
@@ -2998,27 +3089,39 @@ export function createInvestmentDataUtils({
 
     function normalizePriceHistoryPayload(priceHistoryByTicker) {
         const rawMaps = {};
-        Object.entries(priceHistoryByTicker || {}).forEach(([ticker, rows]) => {
+        Object.entries(priceHistoryByTicker || {}).sort(([left], [right]) => left.localeCompare(right)).forEach(([ticker, rows]) => {
             const normalizedTicker = normalizeInvestmentTicker(ticker);
             if (!normalizedTicker || !Array.isArray(rows)) return;
             rawMaps[normalizedTicker] = rawMaps[normalizedTicker] || {};
+            const candidatesByDate = {};
             rows.forEach((row) => {
                 const date = normalizeLedgerDate(row?.date);
                 const close = Number(row?.close);
-                if (!date || !Number.isFinite(close)) return;
-                rawMaps[normalizedTicker][date] = close;
+                if (!date || !Number.isFinite(close) || close <= 0) return;
+                if (!candidatesByDate[date]) candidatesByDate[date] = [];
+                candidatesByDate[date].push({
+                    close,
+                    signature: JSON.stringify(row),
+                });
+            });
+            Object.entries(candidatesByDate).forEach(([date, candidates]) => {
+                candidates.sort((left, right) => (
+                    left.signature.localeCompare(right.signature)
+                    || left.close - right.close
+                ));
+                rawMaps[normalizedTicker][date] = candidates[0].close;
             });
         });
         const normalized = {};
-        Object.entries(rawMaps).forEach(([ticker, dateMap]) => {
+        Object.entries(rawMaps).sort(([left], [right]) => left.localeCompare(right)).forEach(([ticker, dateMap]) => {
             normalized[ticker] = { ...(normalized[ticker] || {}), ...dateMap };
         });
-        Object.entries(rawMaps).forEach(([ticker, dateMap]) => {
+        Object.entries(rawMaps).sort(([left], [right]) => left.localeCompare(right)).forEach(([ticker, dateMap]) => {
             if (INVESTMENT_LINEAGE_PROXY_TICKERS.has(ticker)) return;
             const canonicalTicker = getInvestmentCanonicalTicker(ticker);
             if (!canonicalTicker || canonicalTicker === ticker) return;
             normalized[canonicalTicker] = normalized[canonicalTicker] || {};
-            Object.entries(dateMap || {}).forEach(([date, close]) => {
+            Object.entries(dateMap || {}).sort(([left], [right]) => left.localeCompare(right)).forEach(([date, close]) => {
                 if (normalized[canonicalTicker][date] === undefined) {
                     normalized[canonicalTicker][date] = close;
                 }
@@ -3032,7 +3135,8 @@ export function createInvestmentDataUtils({
         const dates = Array.isArray(priceEntry.dates) ? priceEntry.dates : [];
         for (let index = dates.length - 1; index >= 0; index -= 1) {
             if (dates[index] <= targetDate) {
-                return Number(priceEntry.closes?.[dates[index]]);
+                const close = Number(priceEntry.closes?.[dates[index]]);
+                if (Number.isFinite(close) && close > 0) return close;
             }
         }
         return null;
@@ -3257,9 +3361,19 @@ export function createInvestmentDataUtils({
         fxTimeline = null,
         baseCurrency = INVESTMENT_BASE_CURRENCY,
     ) {
-        if (!snapshot || !valuationDate) return { marketValue: 0, holdingsMarketValues: {} };
+        if (!snapshot || !valuationDate) {
+            return {
+                marketValue: 0,
+                holdingsMarketValues: {},
+                missingPriceTickers: [],
+                degradedPriceTickers: [],
+                isComplete: false,
+            };
+        }
         let marketValue = 0;
         const holdingsMarketValues = {};
+        const missingPriceTickers = new Set();
+        const degradedPriceTickers = new Set();
 
         Object.entries(snapshot.holdings || {}).forEach(([ticker, quantity]) => {
             const numericQuantity = Number(quantity);
@@ -3277,15 +3391,12 @@ export function createInvestmentDataUtils({
                 closePrice = anchoredPrice ?? closePrice;
             }
 
-            if ((!Number.isFinite(closePrice) || closePrice === 0) && String(snapshot.ticker || '').trim().toUpperCase() === normalizedTicker) {
-                const fallbackPrice = getTransactionPrice(snapshot);
-                if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
-                    closePrice = fallbackPrice;
-                }
+            if (!Number.isFinite(closePrice) || closePrice <= 0) {
+                missingPriceTickers.add(normalizedTicker);
+                return;
             }
 
-            const safeClosePrice = Number.isFinite(closePrice) ? closePrice : 0;
-            const holdingMarketValue = numericQuantity * safeClosePrice;
+            const holdingMarketValue = numericQuantity * closePrice;
             const quoteCurrency = getTickerQuoteCurrency(ticker);
             const holdingMarketValueBase = convertAmountToBaseCurrency(
                 holdingMarketValue,
@@ -3300,7 +3411,13 @@ export function createInvestmentDataUtils({
             }
         });
 
-        return { marketValue, holdingsMarketValues };
+        return {
+            marketValue,
+            holdingsMarketValues,
+            missingPriceTickers: Array.from(missingPriceTickers).sort(),
+            degradedPriceTickers: Array.from(degradedPriceTickers).sort(),
+            isComplete: missingPriceTickers.size === 0,
+        };
     }
 
     function buildDailyEquityChartPoints(
@@ -3467,29 +3584,33 @@ export function createInvestmentDataUtils({
                 ?? currentRunningCash + aggregatePendingSettlementCash,
             );
             const isCurrentReplayBoundary = activeSnapshot === chartTransactions[chartTransactions.length - 1];
+            const aggregateBridgeAdjustment = Number(activeSnapshot?.aggregate_bridge_adjustment) || 0;
+            const historicalRunningCash = Number(activeSnapshot?.aggregate_history_running_cash);
             const aggregateRunningCash = Number(
                 isCurrentReplayBoundary
                     ? currentRunningCash
-                    : (
-                        activeSnapshot?.aggregate_history_running_cash
-                        ?? activeSnapshot?.aggregate_running_cash
-                        ?? activeSnapshot?.running_cash
-                    ),
+                    : Number.isFinite(historicalRunningCash)
+                        ? historicalRunningCash
+                        : Number(activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash) + aggregateBridgeAdjustment,
             ) || 0;
+            const historicalDisplayCash = Number(activeSnapshot?.aggregate_history_display_cash);
             const rawAggregateDisplayCash = Number(
                 isCurrentReplayBoundary
                     ? currentDisplayCash
-                    : (
-                        activeSnapshot?.aggregate_history_display_cash
-                        ?? activeSnapshot?.aggregate_display_cash
-                    ),
+                    : Number.isFinite(historicalDisplayCash)
+                        ? historicalDisplayCash
+                        : Number(activeSnapshot?.aggregate_display_cash) + aggregateBridgeAdjustment,
             );
             const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
                 ? rawAggregateDisplayCash
                 : aggregateRunningCash + aggregatePendingSettlementCash;
             const aggregateMarketValue = valuation.marketValue;
-            const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
-            const currentTotalEquity = currentDisplayCash + aggregateMarketValue;
+            const aggregateTotalEquity = valuation.isComplete
+                ? aggregateDisplayCash + aggregateMarketValue
+                : null;
+            const currentTotalEquity = valuation.isComplete
+                ? currentDisplayCash + aggregateMarketValue
+                : null;
             const ledgerEntry = ledgerDateMap.get(date);
             const isCalendarCarryForward = includeCalendarDays && !observedCandidateDateSet.has(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
@@ -3507,13 +3628,16 @@ export function createInvestmentDataUtils({
                 aggregate_running_cash: aggregateRunningCash,
                 aggregate_display_cash: aggregateDisplayCash,
                 aggregate_current_display_cash: currentDisplayCash,
-                market_value: aggregateMarketValue,
-                aggregate_market_value: aggregateMarketValue,
+                market_value: valuation.isComplete ? aggregateMarketValue : null,
+                aggregate_market_value: valuation.isComplete ? aggregateMarketValue : null,
                 holdings_market_values: valuation.holdingsMarketValues,
                 aggregate_holdings_market_values: valuation.holdingsMarketValues,
                 total_equity: aggregateTotalEquity,
                 aggregate_total_equity: aggregateTotalEquity,
                 aggregate_current_total_equity: currentTotalEquity,
+                valuation_complete: valuation.isComplete,
+                missing_price_tickers: valuation.missingPriceTickers,
+                degraded_price_tickers: valuation.degradedPriceTickers,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
                 anchor_ledger_nos: anchorLedgerNos,
                 cash_in_amount: cashInAmount,
@@ -4105,6 +4229,7 @@ export function createInvestmentDataUtils({
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
         compareInvestmentTransactionsForReplay,
+        getInvestmentReplayIdentity,
         buildHsbcCashSettlementBoundaryPlan,
         compareInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
@@ -4126,6 +4251,8 @@ export function createInvestmentDataUtils({
         getInvestmentEquityRangeLabels,
         getInvestmentBrokerEndingCash,
         getInvestmentBrokerEndingCashBalances,
+        getInvestmentBrokerStartingCash,
+        getInvestmentBrokerStartingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentEndingCash,
@@ -4184,4 +4311,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.88.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.90.0';

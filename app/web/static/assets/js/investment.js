@@ -1,7 +1,24 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.90.2
+ * Code version: v2.92.0
+ * - Changed: The one-week equity curve now values each minute with the
+ *   holdings and cash state effective at that completed minute. Trusted
+ *   regular-session fills apply on the following bar; date-only and off-hours
+ *   rows apply with the next trading-day opening state.
+ * - Fixed: Historical transaction and Overview valuations no longer use a
+ *   transaction price or remembered quote when auditable close evidence is
+ *   unavailable.
+ * - Fixed: Equity replay keeps ledger booking dates monotonic; confirmed
+ *   transfer bindings can refine same-day order but cannot move state across dates.
+ * - Fixed: Cash-funding reconciliation is limited to the same broker/account/
+ *   currency and ledger date, so future proceeds never pre-fund older equity.
+ * - Fixed: HSBC pending buy/sell cash is signed and settlement evidence is
+ *   applied only from its own ledger date.
+ * - Fixed: Mixed-broker ending cash is not rebuilt from zero when a broker has
+ *   no explicit starting boundary.
+ * - Fixed: Same-day funding reconciliation keeps normalized account IDs in its
+ *   broker/account/currency scope.
  * - Changed: HSBC SEC settlement cash replays through non-transaction
  *   boundaries, while History marks provisional Cash and Equity with `*`.
  * - Fixed: stale HSBC pending flags cannot override matched SEC settlement
@@ -113,7 +130,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.88.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.90.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -134,11 +151,12 @@ import {
     buildInvestmentIntradayDayFallbackIndex as buildInvestmentIntradayDayFallbackIndexCore,
     createInvestmentStockDetailsUtils,
     getInvestmentTradeSessionType as getInvestmentTradeSessionTypeCore,
+    isInvestmentTransactionDateOnly,
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.12.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.12.5';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -183,7 +201,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.90.2',
+    entry: 'v2.92.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -648,6 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentDummyTickerProfiles = {};
     let selectedInvestmentStockTicker = '';
     let investmentProcessedTransactionsCache = [];
+    let investmentReplaySnapshotsCache = [];
     let investmentTickerSummariesCache = [];
     let investmentAvailableBrokerCodesCache = [];
     let investmentAvailableBrokerCodesSet = new Set();
@@ -946,6 +965,8 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentBrokerEndingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerEndingCashAsOf,
+        getInvestmentBrokerStartingCash,
+        getInvestmentBrokerStartingCashBalances,
         getInvestmentEndingCash,
         getInvestmentEndingCashBalances,
         getInvestmentEndingCashInBaseCurrency,
@@ -2868,12 +2889,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ambiguousTargetKeys.has(sourceKey)) return;
             const direction = getInvestmentInternalTransferDirection(sourceTxn);
             if (!direction) return;
-            if (ignoredSourceKeys.has(sourceKey)) {
+            // A persisted binding is stronger evidence than an old ignore
+            // marker.  Imports can regenerate a stable source key after a
+            // candidate was previously dismissed; do not discard the user's
+            // later explicit binding before validating it.
+            const selectedTargetKey = String(storedBindings[sourceKey] || '').trim();
+            if (ignoredSourceKeys.has(sourceKey) && !selectedTargetKey) {
                 sourceOptionsByKey.set(sourceKey, []);
                 return;
             }
             const transferKind = getInvestmentInternalTransferKind(sourceTxn);
-            const selectedTargetKey = String(storedBindings[sourceKey] || '').trim();
             const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
             const sourceQuantity = Math.abs(Number(getTransactionQuantity(sourceTxn)) || 0);
             const sourceDate = normalizeLedgerDate(sourceTxn?.date);
@@ -3083,6 +3108,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceType = getNormalizedTransactionType(sourceTxn);
             const targetType = getNormalizedTransactionType(targetTxn);
             const transferDirection = getInvestmentInternalTransferDirection(sourceTxn);
+            const sourceLedgerDate = normalizeLedgerDate(sourceTxn?.date);
+            const targetLedgerDate = normalizeLedgerDate(targetTxn?.date);
+            // Booking date is the accounting axis.  A confirmed transfer may
+            // refine chronology only within one ledger date; moving a leg
+            // across dates would mutate the state used to value earlier days.
+            if (!sourceLedgerDate || !targetLedgerDate || sourceLedgerDate !== targetLedgerDate) {
+                return;
+            }
             let predecessorTxn = null;
             let successorTxn = null;
             if (
@@ -3097,8 +3130,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 && sourceType === 'deposit'
                 && targetType === 'withdrawal'
             ) {
-                const sourceLedgerDate = normalizeLedgerDate(sourceTxn?.date);
-                const targetLedgerDate = normalizeLedgerDate(targetTxn?.date);
                 const sourceFileKind = String(sourceTxn?.source?.file_kind || '').trim().toLowerCase();
                 const hasAuthoritativeCashSnapshot = (
                     sourceTxn?.source?.cash_balance_authoritative === true
@@ -3299,7 +3330,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? Math.max(0, Number(authBaseCash))
                 : Number(lastBrokerTxn?.broker_running_cash) || 0;
         });
-        if (!isSingleBroker || hasAuthoritativeAggregateCash) {
+        const allBrokerStartingBoundariesPresent = brokerCodes.every((brokerCode) => (
+            Object.keys(getInvestmentBrokerStartingCashBalances(brokerCode) || {}).length > 0
+        ));
+        // A mixed portfolio with no broker-level starting boundary cannot be
+        // rebuilt by summing zero-initialized broker ledgers. Preserve the
+        // aggregate replay (or its explicit authoritative ending boundary)
+        // until each broker has an auditable starting balance.
+        if (
+            hasAuthoritativeAggregateCash
+            || (!isSingleBroker && allBrokerStartingBoundariesPresent)
+        ) {
             latestProcessed.running_cash = finalAggregateCash;
             latestProcessed.aggregate_running_cash = finalAggregateCash;
             latestProcessed.cash_by_currency = cloneCashLedgerBalances(finalAggregateBalances);
@@ -3339,15 +3380,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawDisplayCash = Number.isFinite(Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash))
                 ? Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash)
                 : rawRunningCash + rawPendingSettlementCash;
-            const rawMarketValue = Number(txn?.aggregate_raw_market_value ?? txn?.aggregate_market_value ?? txn?.market_value) || 0;
+            const rawMarketValueValue = txn?.aggregate_raw_market_value !== undefined
+                ? txn.aggregate_raw_market_value
+                : (txn?.aggregate_market_value !== undefined ? txn.aggregate_market_value : txn?.market_value);
+            const rawMarketValueCandidate = Number(rawMarketValueValue);
+            const rawMarketValue = rawMarketValueValue !== null
+                && rawMarketValueValue !== ''
+                && Number.isFinite(rawMarketValueCandidate)
+                ? rawMarketValueCandidate
+                : null;
             txn.aggregate_raw_running_cash = rawRunningCash;
             txn.aggregate_raw_display_cash = rawDisplayCash;
             txn.aggregate_raw_market_value = rawMarketValue;
-            txn.aggregate_raw_total_equity = rawDisplayCash + rawMarketValue;
+            txn.aggregate_raw_total_equity = Number.isFinite(rawMarketValue)
+                ? rawDisplayCash + rawMarketValue
+                : null;
             txn.aggregate_running_cash = rawRunningCash;
             txn.aggregate_display_cash = rawDisplayCash;
             txn.aggregate_market_value = rawMarketValue;
-            txn.aggregate_total_equity = rawDisplayCash + rawMarketValue;
+            txn.aggregate_total_equity = Number.isFinite(rawMarketValue)
+                ? rawDisplayCash + rawMarketValue
+                : null;
             txn.running_cash = txn.aggregate_running_cash;
             txn.market_value = txn.aggregate_market_value;
             txn.total_equity = txn.aggregate_total_equity;
@@ -3389,7 +3442,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (!sourceKey || (!options.length && !isIgnoredSource)) return;
             txn.manual_internal_transfer_source_key = sourceKey;
-            if (isIgnoredSource) {
+            if (isIgnoredSource && !resolvedBinding) {
                 txn.manual_internal_transfer_ignored = true;
                 return;
             }
@@ -3451,12 +3504,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 internalTransferFxTimeline,
                 aggregateBaseCurrency,
             );
-            const targetBridgeAmount = getInvestmentInternalTransferAggregateBridgeAmount(
-                targetPairAmount,
-                targetTxn,
-                internalTransferFxTimeline,
-                aggregateBaseCurrency,
-            );
+            // The source receipt is the canonical principal for the bridge.
+            // Revaluing the target leg at its own FX/date (or including a
+            // target-side transfer fee) would leave a residual adjustment
+            // after posting and would make a pure internal transfer alter
+            // aggregate equity.  Any amount above the source principal stays
+            // in the ledger as the real transfer fee.
+            const targetBridgeAmount = sourceBridgeAmount;
             if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex < targetIndex) {
                 addBridgeDelta(sourceIndex, -sourceBridgeAmount);
                 addBridgeDelta(targetIndex, targetBridgeAmount);
@@ -3486,11 +3540,19 @@ document.addEventListener('DOMContentLoaded', () => {
             cumulativeBridgeAdjustment += Number(bridgeDeltasByIndex.get(index)) || 0;
             const rawRunningCash = Number(txn?.aggregate_raw_running_cash) || 0;
             const rawDisplayCash = Number(txn?.aggregate_raw_display_cash) || rawRunningCash;
-            const rawMarketValue = Number(txn?.aggregate_raw_market_value) || 0;
+            const rawMarketValueValue = txn?.aggregate_raw_market_value;
+            const rawMarketValueCandidate = Number(rawMarketValueValue);
+            const rawMarketValue = rawMarketValueValue !== null
+                && rawMarketValueValue !== ''
+                && Number.isFinite(rawMarketValueCandidate)
+                ? rawMarketValueCandidate
+                : null;
             txn.aggregate_bridge_adjustment = cumulativeBridgeAdjustment;
             txn.aggregate_history_running_cash = rawRunningCash + cumulativeBridgeAdjustment;
             txn.aggregate_history_display_cash = rawDisplayCash + cumulativeBridgeAdjustment;
-            txn.aggregate_history_total_equity = txn.aggregate_history_display_cash + rawMarketValue;
+            txn.aggregate_history_total_equity = Number.isFinite(rawMarketValue)
+                ? txn.aggregate_history_display_cash + rawMarketValue
+                : null;
             // The aggregate cash fields are account balances, not external-flow
             // adjusted funding metrics. Keep them tied to the actual broker
             // ledgers so an internal-transfer bridge cannot make current Cash,
@@ -3500,7 +3562,9 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.aggregate_running_cash = rawRunningCash;
             txn.aggregate_display_cash = rawDisplayCash;
             txn.aggregate_market_value = rawMarketValue;
-            txn.aggregate_total_equity = txn.aggregate_display_cash + rawMarketValue;
+            txn.aggregate_total_equity = Number.isFinite(rawMarketValue)
+                ? txn.aggregate_display_cash + rawMarketValue
+                : null;
             txn.running_cash = txn.aggregate_running_cash;
             txn.market_value = txn.aggregate_market_value;
             txn.total_equity = txn.aggregate_total_equity;
@@ -4064,7 +4128,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const high = Number(row?.high);
             const low = Number(row?.low);
             const close = Number(row?.close);
-            if (![open, high, low, close].every(Number.isFinite)) return;
+            if (![open, high, low, close].every((value) => Number.isFinite(value) && value > 0)) return;
             minuteMap.set(minuteKey, { open, high, low, close });
         });
         return minuteMap;
@@ -4181,11 +4245,105 @@ document.addEventListener('DOMContentLoaded', () => {
         return keys;
     }
 
+    function getInvestmentOverviewNewYorkMinutePartsFromUtc(dateParts) {
+        if (!dateParts || dateParts.hours === null || dateParts.minutes === null) return null;
+        const instant = new Date(Date.UTC(
+            dateParts.year,
+            dateParts.monthIndex,
+            dateParts.day,
+            dateParts.hours,
+            dateParts.minutes,
+            dateParts.seconds || 0,
+        ));
+        if (Number.isNaN(instant.getTime())) return null;
+        const fields = Object.fromEntries(
+            new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'America/New_York',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23',
+            }).formatToParts(instant)
+                .filter((part) => part.type !== 'literal')
+                .map((part) => [part.type, part.value]),
+        );
+        const year = Number(fields.year);
+        const month = Number(fields.month);
+        const day = Number(fields.day);
+        const hours = Number(fields.hour);
+        const minutes = Number(fields.minute);
+        if (![year, month, day, hours, minutes].every(Number.isFinite)) return null;
+        return {year, monthIndex: month - 1, day, hours, minutes};
+    }
+
+    function getInvestmentOverviewSnapshotEffectiveMinuteKey(snapshot, dayKey) {
+        const normalizedDayKey = normalizeLedgerDate(dayKey);
+        if (!normalizedDayKey || !snapshot || isInvestmentTransactionDateOnly(snapshot)) return '';
+        const rawDatetime = String(snapshot?.datetime || '').trim();
+        const parsedDatetime = parseInvestmentDateParts(rawDatetime);
+        if (!parsedDatetime || parsedDatetime.hours === null || parsedDatetime.minutes === null) return '';
+
+        // `20:00:00` is the project's date-only ledger convention. It orders
+        // rows but is never broker evidence of an intraday execution.
+        if (
+            parsedDatetime.hours === 20
+            && parsedDatetime.minutes === 0
+            && (!parsedDatetime.seconds || parsedDatetime.seconds === 0)
+        ) {
+            return '';
+        }
+
+        const fileKind = String(snapshot?.source?.file_kind || '').trim().toLowerCase();
+        const minuteParts = fileKind.startsWith('longbridge_history_')
+            ? getInvestmentOverviewNewYorkMinutePartsFromUtc(parsedDatetime)
+            : parsedDatetime;
+        if (!minuteParts) return '';
+        const executionDayKey = `${minuteParts.year}-${String(minuteParts.monthIndex + 1).padStart(2, '0')}-${String(minuteParts.day).padStart(2, '0')}`;
+        if (executionDayKey !== normalizedDayKey) return '';
+
+        const executionMinute = (minuteParts.hours * 60) + minuteParts.minutes;
+        const regularSessionOpenMinute = (9 * 60) + 30;
+        const finalVisibleMinute = (15 * 60) + 59;
+        // A one-minute OHLC close is only observable after its minute has
+        // completed. Apply a fill to the following visible minute; a fill in
+        // the final bar rolls into the next trading-day opening state.
+        if (executionMinute < regularSessionOpenMinute || executionMinute >= finalVisibleMinute) return '';
+        const effectiveMinute = executionMinute + 1;
+        const hours = String(Math.floor(effectiveMinute / 60)).padStart(2, '0');
+        const minutes = String(effectiveMinute % 60).padStart(2, '0');
+        return `${normalizedDayKey} ${hours}:${minutes}`;
+    }
+
+    function getInvestmentOverviewIntradaySnapshotsForTradingDay(dayKey) {
+        const normalizedDayKey = normalizeLedgerDate(dayKey);
+        if (!normalizedDayKey || !Array.isArray(investmentReplaySnapshotsCache)) return [];
+        return investmentReplaySnapshotsCache
+            .map((snapshot, index) => ({
+                snapshot,
+                index,
+                effectiveMinuteKey: getInvestmentOverviewSnapshotEffectiveMinuteKey(snapshot, normalizedDayKey),
+            }))
+            .filter((entry) => entry.effectiveMinuteKey)
+            .sort((left, right) => {
+                if (left.effectiveMinuteKey !== right.effectiveMinuteKey) {
+                    return left.effectiveMinuteKey.localeCompare(right.effectiveMinuteKey);
+                }
+                const leftOrder = Number(left.snapshot?.replay_snapshot_order);
+                const rightOrder = Number(right.snapshot?.replay_snapshot_order);
+                if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+                    return leftOrder - rightOrder;
+                }
+                return left.index - right.index;
+            });
+    }
+
     function getInvestmentOverviewEffectiveSnapshotForTradingDay(dayKey) {
         const normalizedDayKey = normalizeLedgerDate(dayKey);
-        if (!normalizedDayKey || !Array.isArray(investmentProcessedTransactionsCache)) return null;
+        if (!normalizedDayKey || !Array.isArray(investmentReplaySnapshotsCache)) return null;
         let effectiveSnapshot = null;
-        investmentProcessedTransactionsCache.forEach((snapshot) => {
+        investmentReplaySnapshotsCache.forEach((snapshot) => {
             const snapshotDate = normalizeLedgerDate(snapshot?.date);
             if (snapshotDate && snapshotDate < normalizedDayKey) {
                 effectiveSnapshot = snapshot;
@@ -4224,8 +4382,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const effectiveSnapshotsByDay = new Map(
             dayKeys.map((dayKey) => [dayKey, getInvestmentOverviewEffectiveSnapshotForTradingDay(dayKey)]),
         );
+        const intradaySnapshotsByDay = new Map(
+            dayKeys.map((dayKey) => [dayKey, getInvestmentOverviewIntradaySnapshotsForTradingDay(dayKey)]),
+        );
         const activeTickers = buildInvestmentOverviewActiveTickerSetForSnapshots(
-            Array.from(effectiveSnapshotsByDay.values()).filter(Boolean),
+            [
+                ...Array.from(effectiveSnapshotsByDay.values()).filter(Boolean),
+                ...Array.from(intradaySnapshotsByDay.values()).flatMap((entries) => (
+                    entries.map((entry) => entry.snapshot)
+                )),
+            ],
         );
         if (!activeTickers.length) return [];
 
@@ -4243,113 +4409,152 @@ document.addEventListener('DOMContentLoaded', () => {
             const closeMap = new Map();
             buildInvestmentOverviewIntradayMinuteMap(rows).forEach((bar, minuteKey) => {
                 const close = Number(bar?.close);
-                if (Number.isFinite(close)) closeMap.set(minuteKey, close);
+                if (Number.isFinite(close) && close > 0) closeMap.set(minuteKey, close);
             });
             return [ticker, closeMap];
         }));
-        const availableMinuteKeys = new Set(
-            Array.from(minuteMapByTicker.values()).flatMap((minuteMap) => [...minuteMap.keys()]),
-        );
+        const intradayTickersByDay = new Map();
+        minuteMapByTicker.forEach((minuteMap, ticker) => {
+            minuteMap.forEach((_close, minuteKey) => {
+                const dayKey = normalizeLedgerDate(minuteKey);
+                if (!dayKey) return;
+                if (!intradayTickersByDay.has(dayKey)) intradayTickersByDay.set(dayKey, new Set());
+                intradayTickersByDay.get(dayKey).add(ticker);
+            });
+        });
         const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(investmentProcessedTransactionsCache, baseCurrency);
-        const fallbackValueCache = new Map();
-        const getFallbackValue = (snapshot, ticker, quantity, valuationDate) => {
-            const cacheKey = `${ticker}:${quantity}:${valuationDate}`;
-            if (fallbackValueCache.has(cacheKey)) return fallbackValueCache.get(cacheKey);
-            const value = getInvestmentSnapshotFixedHoldingValue(
-                snapshot,
-                ticker,
-                quantity,
+        const getSessionFallbackPrice = (snapshot, ticker, valuationDate, {hasIntradayRowsForDay = false} = {}) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            const moneyMarketTickers = getMoneyMarketTickerSet();
+            if (moneyMarketTickers.has(normalizedTicker)) {
+                const anchoredPrice = Number(
+                    snapshot?.aggregate_money_market_anchors?.[normalizedTicker]
+                    ?? snapshot?.money_market_anchors?.[normalizedTicker],
+                );
+                if (Number.isFinite(anchoredPrice) && anchoredPrice > 0) return anchoredPrice;
+            }
+            // A daily close is only a fallback for a ticker with no one-minute
+            // observations on this trading day. Otherwise, using it before
+            // the first observed minute would leak a later price backward.
+            if (hasIntradayRowsForDay) return null;
+            const dailyClose = getIndexedClosePriceOnOrBefore(
+                tickerPriceIndex?.[normalizedTicker],
                 valuationDate,
-                fxTimeline,
-                baseCurrency,
-                tickerPriceIndex,
             );
-            fallbackValueCache.set(cacheKey, value);
-            return value;
+            if (Number.isFinite(dailyClose) && dailyClose > 0) return dailyClose;
+            return null;
         };
 
         return dayKeys.flatMap((dayKey) => {
-            const snapshot = effectiveSnapshotsByDay.get(dayKey);
             const minuteKeys = buildInvestmentOverviewRegularSessionMinuteKeys(dayKey);
-            if (!snapshot) {
+            const intradaySnapshots = intradaySnapshotsByDay.get(dayKey) || [];
+            let activeSnapshot = effectiveSnapshotsByDay.get(dayKey);
+            if (!activeSnapshot && intradaySnapshots.length) {
+                const startingCash = Number(getInvestmentStartingCash()) || 0;
+                activeSnapshot = {
+                    aggregate_holdings: {},
+                    aggregate_money_market_anchors: {},
+                    aggregate_running_cash: startingCash,
+                    aggregate_display_cash: startingCash,
+                };
+            }
+            if (!activeSnapshot) {
                 return minuteKeys.map((minuteKey) => ({
                     date: minuteKey,
                     equity: null,
                     point: null,
                 }));
             }
-            const hasAnyIntradayCloseForDay = minuteKeys.some((minuteKey) => availableMinuteKeys.has(minuteKey));
-            if (!hasAnyIntradayCloseForDay) {
-                return minuteKeys.map((minuteKey) => ({
-                    date: minuteKey,
-                    equity: null,
-                    point: null,
-                }));
-            }
-            const holdings = snapshot?.aggregate_holdings || snapshot?.holdings || {};
-            const aggregateRunningCash = Number(snapshot?.aggregate_running_cash ?? snapshot?.running_cash) || 0;
-            const rawAggregateDisplayCash = Number(snapshot?.aggregate_display_cash);
-            const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
-                ? rawAggregateDisplayCash
-                : aggregateRunningCash + (Number(snapshot?.aggregate_pending_settlement_cash) || 0);
+
+            const sessionCloseByTicker = new Map();
+            const intradayTickers = intradayTickersByDay.get(dayKey) || new Set();
+            let intradaySnapshotCursor = 0;
             return minuteKeys.map((minuteKey) => {
-                if (!availableMinuteKeys.has(minuteKey)) {
-                    return {
-                        date: minuteKey,
-                        equity: null,
-                        point: null,
-                    };
+                activeTickers.forEach((ticker) => {
+                    const minuteClose = minuteMapByTicker.get(ticker)?.get(minuteKey);
+                    if (Number.isFinite(minuteClose) && minuteClose > 0) {
+                        sessionCloseByTicker.set(ticker, minuteClose);
+                    }
+                });
+                while (
+                    intradaySnapshotCursor < intradaySnapshots.length
+                    && intradaySnapshots[intradaySnapshotCursor].effectiveMinuteKey <= minuteKey
+                ) {
+                    activeSnapshot = intradaySnapshots[intradaySnapshotCursor].snapshot;
+                    intradaySnapshotCursor += 1;
                 }
+
+                const holdings = activeSnapshot?.aggregate_holdings || activeSnapshot?.holdings || {};
+                const aggregateRunningCash = Number(
+                    activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash,
+                ) || 0;
+                const aggregateBridgeAdjustment = Number(activeSnapshot?.aggregate_bridge_adjustment) || 0;
+                const historyDisplayCash = Number(activeSnapshot?.aggregate_history_display_cash);
+                const rawAggregateDisplayCash = Number(activeSnapshot?.aggregate_display_cash);
+                const fallbackAggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
+                    ? rawAggregateDisplayCash
+                    : aggregateRunningCash + (Number(activeSnapshot?.aggregate_pending_settlement_cash) || 0);
+                const aggregateDisplayCash = Number.isFinite(historyDisplayCash)
+                    ? historyDisplayCash
+                    : fallbackAggregateDisplayCash + aggregateBridgeAdjustment;
                 let aggregateMarketValue = 0;
                 const holdingsMarketValues = {};
+                let valuationComplete = true;
                 Object.entries(holdings).forEach(([ticker, quantity]) => {
                     const normalizedTicker = normalizeInvestmentTicker(ticker);
                     const numericQuantity = Number(quantity);
                     if (!normalizedTicker || isForexPairTicker(normalizedTicker) || !Number.isFinite(numericQuantity) || Math.abs(numericQuantity) < 1e-9) return;
-                    const close = minuteMapByTicker.get(normalizedTicker)?.get(minuteKey);
-                    let marketValue = 0;
-                    if (Number.isFinite(close) && close > 0) {
-                        marketValue = convertAmountToBaseCurrency(
-                            numericQuantity * close,
-                            getTickerQuoteCurrency(normalizedTicker),
-                            dayKey,
-                            fxTimeline,
-                            baseCurrency,
-                        );
-                    } else {
-                        marketValue = getFallbackValue(snapshot, normalizedTicker, numericQuantity, dayKey);
+                    const close = sessionCloseByTicker.get(normalizedTicker)
+                        ?? getSessionFallbackPrice(activeSnapshot, normalizedTicker, dayKey, {
+                            hasIntradayRowsForDay: intradayTickers.has(normalizedTicker),
+                        });
+                    if (!Number.isFinite(close) || close <= 0) {
+                        valuationComplete = false;
+                        return;
                     }
+                    const marketValue = convertAmountToBaseCurrency(
+                        numericQuantity * close,
+                        getTickerQuoteCurrency(normalizedTicker),
+                        dayKey,
+                        fxTimeline,
+                        baseCurrency,
+                    );
                     aggregateMarketValue += marketValue;
                     if (Math.abs(marketValue) > 1e-9) {
                         holdingsMarketValues[normalizedTicker] = marketValue;
                     }
                 });
-                const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
+                const aggregateTotalEquity = valuationComplete
+                    ? aggregateDisplayCash + aggregateMarketValue
+                    : null;
                 const point = {
                     date: minuteKey,
                     running_cash: aggregateRunningCash,
                     aggregate_running_cash: aggregateRunningCash,
                     aggregate_display_cash: aggregateDisplayCash,
-                    market_value: aggregateMarketValue,
-                    aggregate_market_value: aggregateMarketValue,
+                    market_value: valuationComplete ? aggregateMarketValue : null,
+                    aggregate_market_value: valuationComplete ? aggregateMarketValue : null,
                     holdings_market_values: holdingsMarketValues,
                     aggregate_holdings_market_values: holdingsMarketValues,
                     total_equity: aggregateTotalEquity,
                     aggregate_total_equity: aggregateTotalEquity,
+                    valuation_complete: valuationComplete,
                     anchor_ledger_date: '',
                     anchor_ledger_nos: [],
                     cash_in_amount: 0,
                     cash_out_amount: 0,
                     net_transfer_amount: 0,
-                    cumulative_net_transfer_amount: Number(snapshot?.cumulative_net_transfer_amount) || 0,
+                    cumulative_net_transfer_amount: Number(activeSnapshot?.cumulative_net_transfer_amount) || 0,
                     is_trading_day: true,
                     is_intraday_equity: true,
                 };
                 return {
                     date: minuteKey,
-                    equity: roundInvestmentChartCurrencyValue(aggregateTotalEquity),
+                    equity: Number.isFinite(aggregateTotalEquity)
+                        ? roundInvestmentChartCurrencyValue(aggregateTotalEquity)
+                        : null,
                     point,
                 };
             });
@@ -4382,9 +4587,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const finiteEntries = (Array.isArray(linePoints) ? linePoints : [])
             .map((entry) => ({
                 date: String(entry?.date || ''),
-                equity: Number(entry?.equity),
+                equity: entry?.equity,
             }))
-            .filter((entry) => entry.date && Number.isFinite(entry.equity));
+            .filter((entry) => (
+                entry.date
+                && entry.equity !== null
+                && entry.equity !== undefined
+                && Number.isFinite(Number(entry.equity))
+            ))
+            .map((entry) => ({...entry, equity: Number(entry.equity)}));
         if (!finiteEntries.length) {
             return {
                 finiteCount: 0,
@@ -4405,10 +4616,10 @@ document.addEventListener('DOMContentLoaded', () => {
             finiteDayCount,
             distinctCount,
             valueRange,
-            isHealthy: finiteEntries.length >= 390
-                && finiteDayCount >= 2
-                && distinctCount >= 12
-                && valueRange > 10,
+            // Sparse but auditable sessions can legitimately carry one close
+            // for most of the day. Coverage, not price volatility, decides
+            // whether a historical minute-close line is usable.
+            isHealthy: finiteEntries.length >= 390 && finiteDayCount >= 2,
         };
     }
 
@@ -4418,8 +4629,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!cachedQuality.isHealthy) return nextQuality.isHealthy;
         if (!nextQuality.isHealthy) return false;
         if (nextQuality.finiteDayCount < cachedQuality.finiteDayCount) return false;
-        if (nextQuality.valueRange < cachedQuality.valueRange * 0.08) return false;
-        if (nextQuality.distinctCount < Math.max(12, Math.floor(cachedQuality.distinctCount * 0.4))) return false;
         return true;
     }
 
@@ -9570,7 +9779,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildInvestmentHistoryExportTable(processedTransactions = [], chartPoints = []) {
         const headerTable = document.querySelector('#history_table_wrap table[data-table-header]');
         if (!(headerTable instanceof HTMLTableElement)) return null;
-        const visibleTransactions = getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints);
+        const visibleTransactions = getInvestmentHistoryDisplayTransactions(processedTransactions, chartPoints);
         if (!visibleTransactions.length) return null;
         const table = document.createElement('table');
         const thead = headerTable.querySelector('thead');
@@ -11377,6 +11586,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedInvestmentStockTicker = '';
         investmentRawTransactionsCache = [];
         investmentProcessedTransactionsCache = [];
+        investmentReplaySnapshotsCache = [];
         investmentTickerSummariesCache = [];
         investmentBrokerSummarySelectedCode = 'all';
         investmentBrokerSummarySelectionInitialized = false;
@@ -14171,6 +14381,13 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function getInvestmentHistoryDisplayTransactions(processedTransactions = [], chartPoints = []) {
+        return getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints)
+            .map((txn, index) => ({txn, index}))
+            .sort((left, right) => compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
+            .map(({txn}) => txn);
+    }
+
     function mountInvestmentHistoryPagination() {
         if (!(historyTable instanceof HTMLElement) || !(investmentHistoryPagination instanceof HTMLElement)) return false;
         if (investmentHistoryPagination.parentElement !== historyTable) {
@@ -14261,7 +14478,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = getInvestmentHistoryTableBody();
         if (!(tbody instanceof HTMLElement)) return;
         clearInvestmentHistoryHighlights();
-        const visibleTransactions = getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints);
+        const visibleTransactions = getInvestmentHistoryDisplayTransactions(processedTransactions, chartPoints);
         if (!visibleTransactions.length) {
             investmentHistoryVisibleTransactionsCache = [];
             investmentHistoryCurrentPage = 1;
@@ -14410,12 +14627,21 @@ document.addEventListener('DOMContentLoaded', () => {
         function getBrokerLedgerState(brokerCode) {
             const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
             if (!brokerLedgerStates.has(normalizedBrokerCode)) {
-                const brokerStartingCash = isSingleBrokerPortfolio && normalizedBrokerCode === singleBrokerCode
-                    ? aggregateStartingCash
-                    : 0;
                 const brokerStartingBalances = isSingleBrokerPortfolio && normalizedBrokerCode === singleBrokerCode
                     ? aggregateStartingCashBalances
-                    : null;
+                    : getInvestmentBrokerStartingCashBalances(normalizedBrokerCode);
+                const brokerStartingCash = Object.keys(brokerStartingBalances).length
+                    ? sumCashLedgerInBaseCurrency(
+                        brokerStartingBalances,
+                        normalizeLedgerDate(orderedTransactions[0]?.date) || getTodayLedgerDate(),
+                        fxTimeline,
+                        baseCurrency,
+                    )
+                    : (
+                        isSingleBrokerPortfolio && normalizedBrokerCode === singleBrokerCode
+                            ? aggregateStartingCash
+                            : getInvestmentBrokerStartingCash(normalizedBrokerCode)
+                    );
                 brokerLedgerStates.set(normalizedBrokerCode, createLedgerState(
                     brokerStartingCash,
                     brokerStartingBalances,
@@ -14544,10 +14770,19 @@ document.addEventListener('DOMContentLoaded', () => {
         function calculatePendingSettlementCashDelta(txn) {
             const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
             const normalizedType = getNormalizedTransactionType(txn);
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            const settlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
+            const settlementIsFuture = Boolean(
+                transactionDate
+                && settlementDate
+                && settlementDate > transactionDate
+            );
+            const hasCashSettlement = hasHsbcCashSettlementEvidence(txn?.source);
             if (
                 brokerCode !== 'hsbc'
                 || !['buy', 'sell'].includes(normalizedType)
-                || !isHsbcSettlementActuallyPending(txn?.source)
+                || txn?.source?.cash_replay_pending_settlement !== true
+                || (hasCashSettlement && !settlementIsFuture)
             ) {
                 return 0;
             }
@@ -14555,9 +14790,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 txn?.normalized?.net_amount
                 ?? txn?.net_amount_raw
                 ?? txn?.gross_amount_raw
+                ?? getTransactionAmount(txn)
+                ?? txn?.source?.cash_settlement_amount_raw
                 ?? 0
             );
-            return Number.isFinite(amount) && amount > 0 ? amount : 0;
+            return Number.isFinite(amount) ? amount : 0;
         }
 
         function calculateInvestmentCashDelta(txn) {
@@ -14572,9 +14809,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (
                 brokerCode === 'hsbc'
                 && ['buy', 'sell'].includes(normalizedType)
-                && normalizeLedgerDate(txn?.source?.cash_settlement_date) > normalizeLedgerDate(txn?.date)
-                && txn?.source?.cash_settlement_amount_raw !== undefined
-                && txn?.source?.cash_settlement_amount_raw !== null
+                && txn?.source?.cash_replay_pending_settlement === true
+                && (
+                    !normalizeLedgerDate(txn?.source?.cash_settlement_date)
+                    || normalizeLedgerDate(txn?.source?.cash_settlement_date) > normalizeLedgerDate(txn?.date)
+                    || !hasHsbcCashSettlementEvidence(txn?.source)
+                )
             ) {
                 return 0;
             }
@@ -14615,10 +14855,44 @@ document.addEventListener('DOMContentLoaded', () => {
         // the replay ledger's pending total here: that total can inherit
         // unrelated historical drift after the current cash snapshot.
         const pendingSettlementCashByIndex = [];
-        let sourceBoundedPendingSettlementCash = 0;
+        const pendingSettlementEntries = [];
         orderedTransactions.forEach((candidate) => {
-            sourceBoundedPendingSettlementCash += calculatePendingSettlementCashDelta(candidate);
-            pendingSettlementCashByIndex.push(sourceBoundedPendingSettlementCash);
+            const transactionDate = normalizeLedgerDate(candidate?.date);
+            if (transactionDate) {
+                for (let entryIndex = pendingSettlementEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+                    const entry = pendingSettlementEntries[entryIndex];
+                    if (entry.settlementDate && entry.settlementDate <= transactionDate) {
+                        pendingSettlementEntries.splice(entryIndex, 1);
+                    }
+                }
+            }
+            const pendingAmount = calculatePendingSettlementCashDelta(candidate);
+            const settlementDate = normalizeLedgerDate(candidate?.source?.cash_settlement_date);
+            if (
+                Number.isFinite(pendingAmount)
+                && Math.abs(pendingAmount) > 1e-9
+                && (!settlementDate || !transactionDate || settlementDate > transactionDate)
+            ) {
+                const currency = formatTransactionCurrency(candidate)
+                    || getTickerQuoteCurrency(candidate?.ticker)
+                    || baseCurrency;
+                const pendingAmountBase = convertAmountToBaseCurrency(
+                    pendingAmount,
+                    currency,
+                    transactionDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+                if (Number.isFinite(pendingAmountBase) && Math.abs(pendingAmountBase) > 1e-9) {
+                    pendingSettlementEntries.push({
+                        settlementDate,
+                        amountBase: pendingAmountBase,
+                    });
+                }
+            }
+            pendingSettlementCashByIndex.push(
+                pendingSettlementEntries.reduce((total, entry) => total + entry.amountBase, 0),
+            );
         });
 
         function buildInvestmentCashFundingAdjustments(transactionsForReplay) {
@@ -14626,14 +14900,39 @@ document.addEventListener('DOMContentLoaded', () => {
             const simulatedBalances = new Map();
             const cashDeltas = transactionsForReplay.map((txn) => calculateInvestmentCashDelta(txn));
             const simulationKeyFor = (txn) => {
-                const brokerCode = getTransactionBrokerCode(txn);
+                const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                const account = String(
+                    txn?.account_id
+                    ?? txn?.account
+                    ?? txn?.source?.account_id
+                    ?? txn?.source?.account
+                    ?? txn?.source?.account_number
+                    ?? '',
+                ).trim();
                 const currency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
-                return `${brokerCode}|${currency}`;
+                return `${brokerCode}|${account}|${currency}`;
             };
             const getAdjustment = (index) => Number(adjustments.get(index)) || 0;
+            const getSimulationStartingBalance = (txn) => {
+                const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                const currency = formatTransactionCurrency(txn)
+                    || getTickerQuoteCurrency(txn?.ticker)
+                    || baseCurrency;
+                const startingBalances = isSingleBrokerPortfolio && brokerCode === singleBrokerCode
+                    ? aggregateStartingCashBalances
+                    : getInvestmentBrokerStartingCashBalances(brokerCode);
+                const explicitBalance = Number(startingBalances?.[currency]);
+                if (Number.isFinite(explicitBalance)) return explicitBalance;
+                return currency === baseCurrency
+                    ? getInvestmentBrokerStartingCash(brokerCode)
+                    : 0;
+            };
             transactionsForReplay.forEach((txn, index) => {
                 const key = simulationKeyFor(txn);
-                const currentBalance = Number(simulatedBalances.get(key)) || 0;
+                const ledgerDate = normalizeLedgerDate(txn?.date);
+                const currentBalance = simulatedBalances.has(key)
+                    ? Number(simulatedBalances.get(key)) || 0
+                    : getSimulationStartingBalance(txn);
                 let effectiveDelta = cashDeltas[index] + getAdjustment(index);
                 let projectedBalance = currentBalance + effectiveDelta;
                 if (projectedBalance < -1e-9) {
@@ -14641,6 +14940,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     for (let futureIndex = index + 1; futureIndex < transactionsForReplay.length && deficit > 1e-9; futureIndex += 1) {
                         const futureTxn = transactionsForReplay[futureIndex];
                         if (simulationKeyFor(futureTxn) !== key) continue;
+                        if (normalizeLedgerDate(futureTxn?.date) !== ledgerDate) continue;
                         const availableFutureCash = cashDeltas[futureIndex] + getAdjustment(futureIndex);
                         if (availableFutureCash <= 1e-9) continue;
                         const allocation = Math.min(availableFutureCash, deficit);
@@ -14657,6 +14957,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
+        const hsbcSettlementDatesWithSameDayPosting = new Set();
+        orderedTransactions.forEach((txn) => {
+            if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) !== 'hsbc') return;
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            const settlementDate = normalizeLedgerDate(source.cash_settlement_date);
+            if (!transactionDate || !settlementDate || settlementDate <= transactionDate) return;
+            const rawSourceDatetime = String(source.source_datetime_raw || '');
+            const compactDatetimeMatch = rawSourceDatetime.match(/^(\d{4})(\d{2})(\d{2})/);
+            const sourceDatetimeDate = compactDatetimeMatch
+                ? `${compactDatetimeMatch[1]}-${compactDatetimeMatch[2]}-${compactDatetimeMatch[3]}`
+                : normalizeLedgerDate(rawSourceDatetime);
+            if (sourceDatetimeDate === settlementDate) {
+                hsbcSettlementDatesWithSameDayPosting.add(settlementDate);
+            }
+        });
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const authoritativeBrokerPositionSnapshots = new Map();
         effectiveBrokerCodes.forEach((brokerCode) => {
@@ -14784,44 +15100,44 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             const transactionDate = normalizeLedgerDate(txn?.date);
             const cashSettlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
-            const settlementBoundaryAppliesOnLedgerDate = (
-                !cashSettlementDate
-                || !transactionDate
-                || cashSettlementDate === transactionDate
-            );
-            // A settlement balance is a dated cash boundary, not an
-            // execution-time balance.  Applying a future settlement posting
-            // here would replace the cash path with a later statement row and
-            // make a sale disappear until the next import day.
             const hasWindowedAvailableCash = (
                 txn?.source?.available_cash_after_raw !== undefined
                 && txn?.source?.available_cash_after_raw !== null
-                && settlementBoundaryAppliesOnLedgerDate
                 && (
                     !hsbcAvailableCashWindowStartDate
                     || !transactionDate
                     || transactionDate >= hsbcAvailableCashWindowStartDate
                 )
             );
+            const hasReachedCashSettlementDate = (
+                !cashSettlementDate
+                || !transactionDate
+                || transactionDate >= cashSettlementDate
+            );
+            const settlementBalanceAfter = hasReachedCashSettlementDate
+                ? txn?.source?.cash_settlement_balance_after_raw
+                : undefined;
+            const shouldSkipSavingsBalanceAfter = (
+                normalizeInvestmentBroker(brokerCode) === 'hsbc'
+                && String(txn?.source?.file_kind || '').trim().toLowerCase() === 'hsbc_usd_savings_csv'
+                && hsbcSettlementDatesWithSameDayPosting.has(transactionDate)
+            );
+            const bankBalanceAfter = shouldSkipSavingsBalanceAfter
+                ? undefined
+                : (
+                    txn?.source?.cash_balance_authoritative === true
+                    || txn?.source?.file_kind === 'hsbc_usd_account_text'
+                )
+                    ? txn?.source?.balance_after_raw
+                    : undefined;
             const authoritativeHsbcCashAfter = Number(
                 (
                     hasWindowedAvailableCash
                         ? txn?.source?.available_cash_after_raw
                         : undefined
                 )
-                ?? (
-                    settlementBoundaryAppliesOnLedgerDate
-                        ? txn?.source?.cash_settlement_balance_after_raw
-                        : undefined
-                )
-                ?? (
-                    (
-                        txn?.source?.cash_balance_authoritative === true
-                        || txn?.source?.file_kind === 'hsbc_usd_account_text'
-                    )
-                        ? txn?.source?.balance_after_raw
-                        : undefined
-                )
+                ?? settlementBalanceAfter
+                ?? bankBalanceAfter
             );
             if (
                 normalizeInvestmentBroker(brokerCode) === 'hsbc'
@@ -14855,11 +15171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? authoritativeBrokerCash
                 : brokerLedgerState.runningCash;
             const normalizedBrokerCashForDisplay = normalizeInvestmentBroker(brokerCode) === 'hsbc'
-                ? (
-                    brokerPendingSettlementCashForRow > 1e-9
-                        ? brokerRunningCashForRow + brokerPendingSettlementCashForRow
-                        : brokerRunningCashForRow
-                )
+                ? brokerRunningCashForRow + brokerPendingSettlementCashForRow
                 : Number(brokerRunningCashForRow);
             const aggregateDisplayCash = aggregateLedgerState.runningCash + sourceBoundedPendingSettlementCashForRow;
             const aggregateCashByCurrency = cloneCashLedgerBalances(aggregateLedgerState.cashBalances);
@@ -14938,10 +15250,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. For each transaction, get the closest available close price on or before the transaction date
         //    and calculate total equity = cash + sum(holdings * historical close price)
-        const fallbackTickers = new Set();
         const missingTickers = new Set();
         function calculateTransactionMarketValue(txn, holdingsSnapshot, moneyMarketAnchorSnapshot) {
             let marketValue = 0;
+            let isComplete = true;
+            const valuationMissingTickers = new Set();
             Object.entries(holdingsSnapshot || {}).forEach(([ticker, quantity]) => {
                 const normalizedTicker = String(ticker).trim().toUpperCase();
                 if (isForexPairTicker(normalizedTicker)) return;
@@ -14966,15 +15279,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!isMoneyMarketTicker && Number.isFinite(intradayClose) && intradayClose > 0) {
                     closePrice = intradayClose;
                 }
-                if (!Number.isFinite(closePrice) || Math.abs(closePrice) < 1e-9) {
-                    const fallbackPrice = lastKnownTickerPrices[normalizedTicker];
-                    if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
-                        closePrice = fallbackPrice;
-                        fallbackTickers.add(normalizedTicker);
-                    } else {
-                        closePrice = 0;
-                        missingTickers.add(normalizedTicker);
-                    }
+                if (!Number.isFinite(closePrice) || closePrice <= 0) {
+                    isComplete = false;
+                    valuationMissingTickers.add(normalizedTicker);
+                    missingTickers.add(normalizedTicker);
+                    return;
                 }
                 const quoteCurrency = getTickerQuoteCurrency(ticker);
                 marketValue += convertAmountToBaseCurrency(
@@ -14985,7 +15294,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     baseCurrency,
                 );
             });
-            return marketValue;
+            return {
+                marketValue,
+                isComplete,
+                missingTickers: Array.from(valuationMissingTickers).sort(),
+            };
         }
 
         processed.forEach((txn) => {
@@ -15003,16 +15316,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const brokerDisplayCash = Number.isFinite(Number(txn.broker_display_cash))
                 ? Number(txn.broker_display_cash)
                 : brokerRunningCash + brokerPendingSettlementCash;
-            const aggregateMarketValue = calculateTransactionMarketValue(txn, aggregateHoldings, aggregateMoneyMarketAnchors);
-            const brokerMarketValue = calculateTransactionMarketValue(txn, brokerHoldings, brokerMoneyMarketAnchors);
+            const aggregateValuation = calculateTransactionMarketValue(txn, aggregateHoldings, aggregateMoneyMarketAnchors);
+            const brokerValuation = calculateTransactionMarketValue(txn, brokerHoldings, brokerMoneyMarketAnchors);
+            const aggregateMarketValue = aggregateValuation.isComplete ? aggregateValuation.marketValue : null;
+            const brokerMarketValue = brokerValuation.isComplete ? brokerValuation.marketValue : null;
 
             txn.aggregate_market_value = aggregateMarketValue;
-            txn.aggregate_total_equity = aggregateDisplayCash + aggregateMarketValue;
+            txn.aggregate_total_equity = Number.isFinite(aggregateMarketValue)
+                ? aggregateDisplayCash + aggregateMarketValue
+                : null;
             txn.broker_market_value = brokerMarketValue;
-            txn.broker_total_equity = brokerDisplayCash + brokerMarketValue;
+            txn.broker_total_equity = Number.isFinite(brokerMarketValue)
+                ? brokerDisplayCash + brokerMarketValue
+                : null;
 
             txn.market_value = aggregateMarketValue;
             txn.total_equity = txn.aggregate_total_equity;
+            txn.valuation_complete = aggregateValuation.isComplete && brokerValuation.isComplete;
+            txn.missing_price_tickers = Array.from(new Set([
+                ...aggregateValuation.missingTickers,
+                ...brokerValuation.missingTickers,
+            ])).sort();
         });
         function reverseBrokerPositionForTransaction(holdings, txn) {
             const normalizedType = getNormalizedTransactionType(txn);
@@ -15070,18 +15394,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     );
                     if (txn === latestBrokerRow || isPendingSettlementRow) {
                         const virtualHoldings = { ...holdings };
-                        const marketValue = calculateTransactionMarketValue(
+                        const valuation = calculateTransactionMarketValue(
                             txn,
                             virtualHoldings,
                             txn.broker_money_market_anchors || {},
                         );
+                        const marketValue = valuation.isComplete ? valuation.marketValue : null;
                         txn.broker_holdings = virtualHoldings;
                         txn.broker_market_value = marketValue;
                         const displayCash = Number(
                             txn.broker_display_cash
                             ?? txn.broker_running_cash,
                         );
-                        if (Number.isFinite(displayCash)) {
+                        if (Number.isFinite(displayCash) && Number.isFinite(marketValue)) {
                             txn.broker_total_equity = displayCash + marketValue;
                         }
                         txn.broker_balance_source = isPendingSettlementRow
@@ -15272,7 +15597,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const buildSnapshotFromTransaction = (
                 txn,
                 ledgerDate,
-                {isSettlementBoundary = false} = {},
+                {isSettlementBoundary = false, settlementPendingAdjustment = 0} = {},
             ) => {
                 const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
                 const brokerCorrections = getBrokerCorrections(brokerCode);
@@ -15290,6 +15615,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rawBrokerDisplayCash = Number.isFinite(Number(txn?.broker_display_cash))
                     ? Number(txn.broker_display_cash)
                     : rawBrokerRunningCash + (Number(txn?.broker_pending_settlement_cash) || 0);
+                const rawAggregatePendingSettlementCash = Number(txn?.aggregate_pending_settlement_cash) || 0;
+                const rawBrokerPendingSettlementCash = Number(txn?.broker_pending_settlement_cash) || 0;
+                const settlePendingAmount = (rawPendingAmount) => {
+                    const normalizedPendingAmount = Number(rawPendingAmount) || 0;
+                    const normalizedSettlementAmount = Number(settlementPendingAdjustment) || 0;
+                    if (
+                        !isSettlementBoundary
+                        || Math.abs(normalizedPendingAmount) <= 1e-9
+                        || Math.abs(normalizedSettlementAmount) <= 1e-9
+                        || Math.sign(normalizedPendingAmount) !== Math.sign(normalizedSettlementAmount)
+                    ) {
+                        return normalizedPendingAmount;
+                    }
+                    return normalizedPendingAmount
+                        - Math.sign(normalizedSettlementAmount) * Math.min(
+                            Math.abs(normalizedPendingAmount),
+                            Math.abs(normalizedSettlementAmount),
+                        );
+                };
+                const adjustedAggregatePendingSettlementCash = settlePendingAmount(rawAggregatePendingSettlementCash);
+                const adjustedBrokerPendingSettlementCash = settlePendingAmount(rawBrokerPendingSettlementCash);
                 const adjustedAggregateRunningCash = getAdjustedReplayCash(
                     rawAggregateRunningCash,
                     rawAggregateBalances,
@@ -15309,9 +15655,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         + (Number(txn.aggregate_history_running_cash) - rawAggregateRunningCash)
                     : adjustedAggregateRunningCash;
                 const aggregateHistoryDisplayCash = Number.isFinite(Number(txn?.aggregate_history_display_cash))
-                    ? (rawAggregateDisplayCash + aggregateCashAdjustment)
+                    ? (
+                        (isSettlementBoundary
+                            ? adjustedAggregateRunningCash + adjustedAggregatePendingSettlementCash
+                            : rawAggregateDisplayCash + aggregateCashAdjustment)
                         + (Number(txn.aggregate_history_display_cash) - rawAggregateDisplayCash)
+                    )
+                    : (isSettlementBoundary
+                        ? adjustedAggregateRunningCash + adjustedAggregatePendingSettlementCash
+                        : rawAggregateDisplayCash + aggregateCashAdjustment);
+                const aggregateDisplayCash = isSettlementBoundary
+                    ? adjustedAggregateRunningCash + adjustedAggregatePendingSettlementCash
                     : rawAggregateDisplayCash + aggregateCashAdjustment;
+                const brokerDisplayCash = isSettlementBoundary
+                    ? adjustedBrokerRunningCash + adjustedBrokerPendingSettlementCash
+                    : rawBrokerDisplayCash + brokerCashAdjustment;
                 const sharedSnapshotFields = {
                     date: ledgerDate,
                     datetime: isSettlementBoundary
@@ -15319,14 +15677,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         : txn?.datetime,
                     replay_snapshot_order: replaySnapshotOrder,
                     aggregate_running_cash: adjustedAggregateRunningCash,
-                    aggregate_display_cash: rawAggregateDisplayCash + aggregateCashAdjustment,
+                    aggregate_display_cash: aggregateDisplayCash,
                     aggregate_history_running_cash: aggregateHistoryRunningCash,
                     aggregate_history_display_cash: aggregateHistoryDisplayCash,
                     aggregate_cash_by_currency: addCashBalanceCorrection(
                         rawAggregateBalances,
                         aggregateCorrectionsByCurrency,
                     ),
-                    aggregate_pending_settlement_cash: Number(txn?.aggregate_pending_settlement_cash) || 0,
+                    aggregate_pending_settlement_cash: adjustedAggregatePendingSettlementCash,
                     aggregate_holdings: { ...(txn?.aggregate_holdings || txn?.holdings || {}) },
                     aggregate_money_market_anchors: {
                         ...(txn?.aggregate_money_market_anchors || txn?.money_market_anchors || {}),
@@ -15341,9 +15699,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...(txn?.aggregate_money_market_anchors || txn?.money_market_anchors || {}),
                     },
                     broker_running_cash: adjustedBrokerRunningCash,
-                    broker_display_cash: rawBrokerDisplayCash + brokerCashAdjustment,
+                    broker_display_cash: brokerDisplayCash,
                     broker_cash_by_currency: addCashBalanceCorrection(rawBrokerBalances, brokerCorrections),
-                    broker_pending_settlement_cash: Number(txn?.broker_pending_settlement_cash) || 0,
+                    broker_pending_settlement_cash: adjustedBrokerPendingSettlementCash,
                     broker_holdings: { ...(txn?.broker_holdings || {}) },
                     broker_money_market_anchors: { ...(txn?.broker_money_market_anchors || {}) },
                 };
@@ -15468,7 +15826,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 snapshots.push(buildSnapshotFromTransaction(
                     activeTransaction,
                     event.date,
-                    {isSettlementBoundary: true},
+                    {
+                        isSettlementBoundary: true,
+                        settlementPendingAdjustment: Number(boundary?.settlementAmount) || 0,
+                    },
                 ));
             });
             return snapshots;
@@ -15582,6 +15943,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
         investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
+        investmentReplaySnapshotsCache = Array.isArray(hsbcSettlementReplaySnapshots)
+            ? hsbcSettlementReplaySnapshots
+            : investmentProcessedTransactionsCache;
         refreshInvestmentAvailableBrokerCodes();
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
@@ -15637,7 +16001,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,
-            fallbackTickers: Array.from(fallbackTickers),
+            fallbackTickers: [],
             missingTickers: Array.from(missingTickers),
             openTickers: window.ANTIGRAVITY_INVESTMENT_DATA?.section_freshness?.open_tickers || [],
         });

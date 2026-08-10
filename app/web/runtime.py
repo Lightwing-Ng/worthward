@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.70.0
+Code version: v0.70.1
+- Fixed: Daily investment close payloads reject non-finite and non-positive
+  values and deterministically collapse duplicate ticker/date rows before the
+  frontend builds its valuation index.
 - Added: Longbridge paired-file imports preserve the exact uploaded Fund
   Details and History Orders bytes as immutable source evidence.
 - Fixed: Investment intraday history responses exclude non-positive and malformed OHLC bars without rewriting local stores.
@@ -1292,19 +1295,29 @@ def build_web_runtime() -> WebRuntime:
         return None
 
     def load_price_history_series(path: Path) -> list[dict[str, Any]]:
-        dataset = pd.read_parquet(path, columns=["Date", "Close"]).sort_values("Date")
-        prices: list[dict[str, Any]] = []
-        for _, row in dataset.iterrows():
-            date_val = row["Date"]
-            if isinstance(date_val, pd.Timestamp):
-                date_str = date_val.strftime("%Y-%m-%d")
-            else:
-                date_str = str(pd.to_datetime(date_val).date())
-            prices.append({
-                "date": date_str,
-                "close": float(row["Close"]),
-            })
-        return prices
+        dataset = pd.read_parquet(path, columns=["Date", "Close"])
+        dataset = dataset.assign(
+            _parsed_date=pd.to_datetime(dataset["Date"], errors="coerce"),
+            _parsed_close=pd.to_numeric(dataset["Close"], errors="coerce"),
+        )
+        dataset = dataset.loc[
+            dataset["_parsed_date"].notna()
+            & dataset["_parsed_close"].notna()
+            & (dataset["_parsed_close"] > 0)
+        ].sort_values(["_parsed_date", "_parsed_close"], kind="mergesort")
+        prices_by_date: dict[str, float] = {}
+        for date_val, close_val in dataset[["_parsed_date", "_parsed_close"]].itertuples(
+                index=False, name=None):
+            if pd.isna(date_val) or pd.isna(close_val) or not float(close_val) > 0:
+                continue
+            date_str = pd.Timestamp(date_val).date().isoformat()
+            # The lowest valid close is a deterministic tie-breaker for
+            # duplicate provider prints, independent of parquet row order.
+            prices_by_date.setdefault(date_str, float(close_val))
+        return [
+            {"date": date_str, "close": prices_by_date[date_str]}
+            for date_str in sorted(prices_by_date)
+        ]
 
     def load_investment_price_histories(
             transactions: list[dict[str, Any]],
