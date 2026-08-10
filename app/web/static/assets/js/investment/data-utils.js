@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.93.0
+ * Code version: v1.94.0
+ * - Fixed: Date-only HSBC Order Status executions now retain their evidenced
+ *   newest-first page rank for same-day trade and tax-lot replay. SEC cash
+ *   posting order remains isolated to cash settlement boundaries and cannot
+ *   reverse a buy and sell or manufacture a transient short position.
  * - Fixed: Daily equity replay now preserves reverse-split share factors, so
  *   a split-only closing-price series and imported pre-split quantities remain
  *   in the same valuation basis.
@@ -91,7 +95,8 @@
  * - Fixed: Holdings and stock-details aggregation now canonicalizes market-store tickers so MSFT.US rolls into MSFT and legacy SPLG.US rolls into SPYM without mutating the imported ledger.
  * - Fixed: Broker statements without intraday timestamps now replay same-time funding rows before trades and withdrawals so cash/equity does not dip negative from row order alone.
  * - Fixed: Investment ticker lineage now prefers current successor/base market stores before stale legacy `.US` caches, including SPLG to SPYM.
- * - Changed: HSBC same-day history now sorts funding cash rows ahead of trade executions, while executions still follow ascending reference codes and can reuse hidden settlement rows only as internal cash-after calibration
+ * - Changed: HSBC same-day history sorts funding cash rows ahead of trade
+ *   executions, while date-only executions retain their source-page sequence.
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
@@ -1541,14 +1546,12 @@ export function createInvestmentDataUtils({
         return Array.from(new Set(rawCodes)).join(', ');
     }
 
-    function getHsbcOrderSequenceNumber(txn) {
-        const rawCashSettlementRow = Number(txn?.source?.cash_settlement_source_row_number);
-        if (Number.isFinite(rawCashSettlementRow) && rawCashSettlementRow > 0) {
-            return rawCashSettlementRow;
-        }
-        const rawReference = String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim().toUpperCase();
-        const match = rawReference.match(/^[PS]-(\d+)$/);
-        return match ? Number(match[1]) : Number.NaN;
+    function getHsbcOrderExecutionSequence(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const sourceRank = Number(source.order_status_source_row_number ?? source.row_number);
+        if (!Number.isFinite(sourceRank) || sourceRank <= 0) return Number.NaN;
+        const pageOrder = String(source.order_status_page_order || 'newest_first').trim().toLowerCase();
+        return pageOrder === 'oldest_first' ? sourceRank : -sourceRank;
     }
 
     function getHsbcSortCategory(txn) {
@@ -1854,8 +1857,8 @@ export function createInvestmentDataUtils({
             if (leftCategory !== rightCategory) {
                 return leftCategory - rightCategory;
             }
-            const leftSequence = getHsbcOrderSequenceNumber(leftTxn);
-            const rightSequence = getHsbcOrderSequenceNumber(rightTxn);
+            const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
+            const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
             if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
                 return leftSequence - rightSequence;
             }
@@ -1938,8 +1941,8 @@ export function createInvestmentDataUtils({
         const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
         const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
         if (leftBroker === 'hsbc' && rightBroker === 'hsbc') {
-            const leftSequence = getHsbcOrderSequenceNumber(leftTxn);
-            const rightSequence = getHsbcOrderSequenceNumber(rightTxn);
+            const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
+            const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
             if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
                 return leftSequence - rightSequence;
             }
@@ -4474,4 +4477,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.93.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.94.0';

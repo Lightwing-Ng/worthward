@@ -1,6 +1,11 @@
 # Investment frontend changelog
 
-Documentation version: `v1.16.1`
+Documentation version: `v1.17.0`
+
+- Fixed: HSBC orders that provide a date but no fill timestamp now replay in
+  their evidenced Order Status page sequence. The cash-account `SEC` posting
+  rank remains dedicated to settlement cash, so a later settlement import
+  cannot reverse a same-day buy and sell or create a transient short lot.
 
 - Fixed: HSBC Transaction History rows with an evidenced future SEC
   settlement balance now anchor displayed Cash to that source balance. The

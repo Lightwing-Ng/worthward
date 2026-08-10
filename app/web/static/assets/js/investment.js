@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.96.1
+ * Code version: v2.97.0
+ * - Fixed: HSBC date-only Order Status buys and sells now retain their
+ *   source-page execution sequence throughout History, Holdings, and tax-lot
+ *   replay. SEC settlement posting order can no longer reverse a trade pair.
  * - Fixed: HSBC History rows with an evidenced future SEC settlement balance
  *   now anchor display cash to that balance instead of adding the settlement
  *   delta to an incomplete replay baseline.
@@ -139,7 +142,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.93.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.94.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -210,7 +213,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.96.0',
+    entry: 'v2.97.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
