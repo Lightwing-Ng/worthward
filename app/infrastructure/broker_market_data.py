@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -263,6 +263,20 @@ def _resolve_longbridge_adjust_type(adjust_type_enum: Any) -> Any:
     distort return calculations when Longbridge becomes the active data source.
     """
     return getattr(adjust_type_enum, "ForwardAdjust", adjust_type_enum.NoAdjust)
+
+
+def _resolve_longbridge_daily_adjust_type(adjust_type_enum: Any) -> Any:
+    """
+    Preserve raw daily closes for historical position valuation.
+
+    The canonical history normalizer applies a split-only basis afterwards.
+    Total-return forward adjustment would also move prices for dividends, while
+    the cash ledger already records those distributions separately.
+    """
+    raw_adjustment = getattr(adjust_type_enum, "NoAdjust", None)
+    if raw_adjustment is not None:
+        return raw_adjustment
+    return _resolve_longbridge_adjust_type(adjust_type_enum)
 
 
 def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
@@ -1204,7 +1218,7 @@ def fetch_longbridge_daily_history(
                 "--period",
                 "day",
                 "--adjust",
-                "forward",
+                "none",
                 "--start",
                 start_date,
                 "--end",
@@ -1226,7 +1240,7 @@ def fetch_longbridge_daily_history(
         return dataset.reset_index(drop=True)
 
     _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
-    adjust_type = _resolve_longbridge_adjust_type(adjust_type_enum)
+    adjust_type = _resolve_longbridge_daily_adjust_type(adjust_type_enum)
     period_day = _resolve_daily_period(period_enum)
     quote_context = get_longbridge_quote_context(settings)
 

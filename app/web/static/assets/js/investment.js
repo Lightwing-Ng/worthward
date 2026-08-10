@@ -1,7 +1,13 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.92.0
+ * Code version: v2.96.0
+ * - Fixed: Historical valuation gaps remain unavailable in the chart tooltip
+ *   and Transaction History instead of being coerced to a zero balance.
+ * - Fixed: HSBC statement balance boundaries clear stale unscoped replay cash,
+ *   so historic trade deltas cannot offset verified USD Savings cash.
+ * - Fixed: HSBC cash rows keep account-type and currency boundaries separate,
+ *   so stale HKD or CNH statement balances cannot inflate USD cash history.
  * - Changed: The one-week equity curve now values each minute with the
  *   holdings and cash state effective at that completed minute. Trusted
  *   regular-session fills apply on the following bar; date-only and off-hours
@@ -130,7 +136,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.90.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.93.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -201,7 +207,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.92.0',
+    entry: 'v2.96.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -935,6 +941,10 @@ document.addEventListener('DOMContentLoaded', () => {
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        addInvestmentCashScopeDelta,
+        createInvestmentCashScopeLedger,
+        getInvestmentCashBalanceBoundary,
+        getInvestmentCashScopeBalances,
         getInvestmentCanonicalTicker,
         getFxRateForDate,
         getInvestmentTickerProfileLookupCandidates,
@@ -1004,6 +1014,8 @@ document.addEventListener('DOMContentLoaded', () => {
         normalizePriceHistoryPayload,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
+        setInvestmentCashScopeAggregateBalance,
+        setInvestmentCashScopeBoundary,
         isKolRewardTransaction,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
         LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
@@ -3285,10 +3297,12 @@ document.addEventListener('DOMContentLoaded', () => {
             lastBrokerTxn.broker_cash_by_currency = hasAuthoritativeBalances
                 ? { ...authoritativeEndingCashBalances }
                 : createCashLedger(normalizedEndingCash, getInvestmentBaseCurrency());
-            const brokerMarketValue = Number(lastBrokerTxn.broker_market_value) || 0;
+            const brokerMarketValue = getOptionalInvestmentNumber(lastBrokerTxn.broker_market_value);
             const brokerPendingSettlementCash = Number(lastBrokerTxn.broker_pending_settlement_cash) || 0;
             lastBrokerTxn.broker_display_cash = normalizedEndingCash + brokerPendingSettlementCash;
-            lastBrokerTxn.broker_total_equity = normalizedEndingCash + brokerMarketValue + brokerPendingSettlementCash;
+            lastBrokerTxn.broker_total_equity = Number.isFinite(brokerMarketValue)
+                ? normalizedEndingCash + brokerMarketValue + brokerPendingSettlementCash
+                : null;
         });
 
         const isSingleBroker = brokerCodes.length <= 1;
@@ -3345,10 +3359,12 @@ document.addEventListener('DOMContentLoaded', () => {
             latestProcessed.aggregate_running_cash = finalAggregateCash;
             latestProcessed.cash_by_currency = cloneCashLedgerBalances(finalAggregateBalances);
             latestProcessed.aggregate_cash_by_currency = latestProcessed.cash_by_currency;
-            const marketVal = Number(latestProcessed.market_value) || 0;
+            const marketVal = getOptionalInvestmentNumber(latestProcessed.market_value);
             const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
             latestProcessed.aggregate_display_cash = finalAggregateCash + aggregatePendingSettlementCash;
-            latestProcessed.total_equity = finalAggregateCash + marketVal + aggregatePendingSettlementCash;
+            latestProcessed.total_equity = Number.isFinite(marketVal)
+                ? finalAggregateCash + marketVal + aggregatePendingSettlementCash
+                : null;
             latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
             if (isSingleBroker && brokerCodes.length === 1) {
                 latestProcessed.broker_running_cash = finalAggregateCash;
@@ -9465,7 +9481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatInvestmentHistoryCashProjection(value, isProvisional = false) {
         const formatted = formatAmount(value);
-        if (!isProvisional) return formatted;
+        if (!isProvisional || formatted === '--') return formatted;
         return formatted.startsWith('-')
             ? `-*${formatted.slice(1)}`
             : `*${formatted}`;
@@ -9473,11 +9489,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true} = {}) {
         const description = formatTransactionDescription(txn);
-        const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
+        const brokerMarketValue = getOptionalInvestmentNumber(
+            txn?.broker_market_value ?? txn?.market_value,
+        );
         const brokerRunningCash = Number(txn?.broker_running_cash ?? txn?.running_cash) || 0;
         const brokerPendingSettlementCash = Number(txn?.broker_pending_settlement_cash) || 0;
         const brokerDisplayCash = Number(txn?.broker_display_cash);
-        const brokerTotalEquity = Number(txn?.broker_total_equity ?? txn?.total_equity) || 0;
+        const brokerTotalEquity = getOptionalInvestmentNumber(
+            txn?.broker_total_equity ?? txn?.total_equity,
+        );
         const historyBrokerCash = Number(txn?.history_broker_cash);
         const historyBrokerEquity = Number(txn?.history_broker_equity);
         const brokerCode = normalizeInvestmentBroker(txn?.broker || getTransactionBrokerCode(txn));
@@ -9496,7 +9516,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : brokerCashForDisplay;
         const brokerEquityProjection = Number.isFinite(historyBrokerEquity)
             ? historyBrokerEquity
-            : brokerTotalEquity;
+            : (Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : null);
         const cashIsProvisional = includeProvisionalMarker
             && txn?.history_cash_is_provisional === true;
         const equityIsProvisional = includeProvisionalMarker
@@ -9624,7 +9644,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-center">${escapeHtml(currencyDisplay)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(txn.display_amount))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatTransactionCommissionDisplay(txn))}</td>
-                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(brokerMarketValue), balanceSourceNote)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatAmount(Number.isFinite(brokerMarketValue) ? brokerMarketValue : null), balanceSourceNote)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${renderInvestmentHistoryMetricValue(formatInvestmentHistoryCashProjection(brokerCashProjection, cashIsProvisional), balanceNote)}</td>
                 <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${renderInvestmentHistoryMetricValue(formatInvestmentHistoryCashProjection(brokerEquityProjection, equityIsProvisional), balanceNote)}</strong></td>
             </tr>
@@ -14567,6 +14587,9 @@ document.addEventListener('DOMContentLoaded', () => {
             holdings: {},
             moneyMarketAnchors: {},
         };
+        aggregateLedgerState.cashScopeLedger = createInvestmentCashScopeLedger(
+            aggregateLedgerState.cashBalances,
+        );
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const priceHistoryFailures = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_failures || [];
@@ -14611,12 +14634,14 @@ document.addEventListener('DOMContentLoaded', () => {
         function createLedgerState(startingCash = 0, startingBalances = null) {
             const numericStartingCash = Number(startingCash);
             const safeStartingCash = Number.isFinite(numericStartingCash) ? numericStartingCash : 0;
+            const cashBalances = createCashLedgerFromBalances(
+                startingBalances,
+                safeStartingCash,
+                baseCurrency,
+            );
             return {
-                cashBalances: createCashLedgerFromBalances(
-                    startingBalances,
-                    safeStartingCash,
-                    baseCurrency,
-                ),
+                cashBalances,
+                cashScopeLedger: createInvestmentCashScopeLedger(cashBalances),
                 runningCash: safeStartingCash,
                 pendingSettlementCash: 0,
                 holdings: {},
@@ -14727,26 +14752,45 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        function applyCashStateUpdate(state, transactionCurrency, cashDelta, ledgerDate) {
-            addCashLedgerDelta(state.cashBalances, transactionCurrency, cashDelta, baseCurrency);
+        function refreshCashState(state, ledgerDate) {
+            state.cashBalances = getInvestmentCashScopeBalances(state.cashScopeLedger);
             state.runningCash = sumCashLedgerInBaseCurrency(state.cashBalances, ledgerDate, fxTimeline, baseCurrency);
         }
 
-        function applyAuthoritativeCashBalance(state, authoritativeCash, currency = baseCurrency, ledgerDate = '') {
+        function applyCashStateUpdate(state, transactionCurrency, cashDelta, ledgerDate, txn = null) {
+            const boundary = getInvestmentCashBalanceBoundary(txn);
+            if (boundary) {
+                setInvestmentCashScopeBoundary(state.cashScopeLedger, boundary);
+            } else {
+                addInvestmentCashScopeDelta(state.cashScopeLedger, transactionCurrency, cashDelta);
+            }
+            refreshCashState(state, ledgerDate);
+        }
+
+        function applyAuthoritativeCashBalance(
+            state,
+            authoritativeCash,
+            currency = baseCurrency,
+            ledgerDate = '',
+            txn = null,
+        ) {
             const normalizedCash = Number(authoritativeCash);
             if (!Number.isFinite(normalizedCash)) return;
             const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
-            if (Math.abs(normalizedCash) < 1e-9) {
-                delete state.cashBalances[normalizedCurrency];
+            const boundary = getInvestmentCashBalanceBoundary(txn);
+            if (boundary) {
+                setInvestmentCashScopeBoundary(state.cashScopeLedger, {
+                    ...boundary,
+                    balance: Math.max(0, normalizedCash),
+                });
             } else {
-                state.cashBalances[normalizedCurrency] = normalizedCash;
+                setInvestmentCashScopeAggregateBalance(
+                    state.cashScopeLedger,
+                    normalizedCurrency,
+                    normalizedCash,
+                );
             }
-            state.runningCash = sumCashLedgerInBaseCurrency(
-                state.cashBalances,
-                ledgerDate,
-                fxTimeline,
-                baseCurrency,
-            );
+            refreshCashState(state, ledgerDate);
         }
 
         function rebuildAggregateCashState(ledgerDate) {
@@ -14758,9 +14802,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     mergedBalances[currency] = (Number(mergedBalances[currency]) || 0) + numericValue;
                 });
             });
-            aggregateLedgerState.cashBalances = mergedBalances;
+            aggregateLedgerState.cashScopeLedger = createInvestmentCashScopeLedger(mergedBalances);
+            aggregateLedgerState.cashBalances = getInvestmentCashScopeBalances(
+                aggregateLedgerState.cashScopeLedger,
+            );
             aggregateLedgerState.runningCash = sumCashLedgerInBaseCurrency(
-                mergedBalances,
+                aggregateLedgerState.cashBalances,
                 ledgerDate,
                 fxTimeline,
                 baseCurrency,
@@ -15086,8 +15133,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceBoundedPendingSettlementCashForRow = Number(
                 pendingSettlementCashByIndex[processedIndex],
             ) || 0;
-            applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
-            applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
+            const cashBoundary = getInvestmentCashBalanceBoundary(txn);
+            applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate, txn);
+            if (cashBoundary) {
+                rebuildAggregateCashState(ledgerDate);
+            } else {
+                applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate, txn);
+            }
             aggregateLedgerState.pendingSettlementCash += pendingSettlementDelta;
             brokerLedgerState.pendingSettlementCash += pendingSettlementDelta;
             const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
@@ -15149,13 +15201,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     Math.max(0, authoritativeHsbcCashAfter),
                     transactionCurrency,
                     ledgerDate,
+                    txn,
                 );
-                if (isSingleBrokerPortfolio) {
+                if (cashBoundary) {
+                    rebuildAggregateCashState(ledgerDate);
+                } else if (isSingleBrokerPortfolio) {
                     applyAuthoritativeCashBalance(
                         aggregateLedgerState,
                         Math.max(0, authoritativeHsbcCashAfter),
                         transactionCurrency,
                         ledgerDate,
+                        txn,
                     );
                 } else {
                     rebuildAggregateCashState(ledgerDate);
@@ -15453,7 +15509,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
             latestProcessed.aggregate_display_cash = latestProcessed.running_cash + aggregatePendingSettlementCash;
-            latestProcessed.total_equity = latestProcessed.aggregate_display_cash + latestProcessed.market_value;
+            const latestAggregateMarketValue = getOptionalInvestmentNumber(latestProcessed.market_value);
+            latestProcessed.total_equity = Number.isFinite(latestAggregateMarketValue)
+                ? latestProcessed.aggregate_display_cash + latestAggregateMarketValue
+                : null;
             latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
             if (isSingleBrokerPortfolio) {
                 latestProcessed.broker_running_cash = latestProcessed.aggregate_running_cash ?? latestProcessed.running_cash;
@@ -16136,8 +16195,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function roundInvestmentChartCurrencyValue(value) {
-        const normalizedValue = Number(value);
-        if (!Number.isFinite(normalizedValue)) return null;
+        const normalizedValue = getOptionalInvestmentNumber(value);
+        if (normalizedValue === null) return null;
         return Math.round(normalizedValue * 100) / 100;
     }
 
@@ -16581,7 +16640,14 @@ document.addEventListener('DOMContentLoaded', () => {
         let activeChartHoverDate = "";
         const getRuntimeState = () => investmentEquityChartRuntimeState || chartState;
 
-        const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+        const formatMoney = (value) => {
+            const numericValue = getOptionalInvestmentNumber(value);
+            if (numericValue === null) return '--';
+            return new Intl.NumberFormat("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }).format(numericValue);
+        };
 
         const parseRawDate = (value) => {
             if (typeof value !== "string") return null;
@@ -16897,15 +16963,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 const transferSincePreviousTradingDay = previousTradingPoint
                     ? cumulativeTransferAmount - previousTradingCumulativeTransferAmount
                     : 0;
-                const pointEquity = Number(pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity) || 0;
-                const previousPointEquity = Number(previousTradingPoint?.aggregate_total_equity ?? previousTradingPoint?.total_equity) || 0;
-                const pointMarketValue = Number(pointRecord?.aggregate_market_value ?? pointRecord?.market_value) || 0;
+                const pointEquity = getOptionalInvestmentNumber(
+                    pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity,
+                );
+                const previousPointEquity = getOptionalInvestmentNumber(
+                    previousTradingPoint?.aggregate_total_equity ?? previousTradingPoint?.total_equity,
+                );
+                const pointMarketValue = getOptionalInvestmentNumber(
+                    pointRecord?.aggregate_market_value ?? pointRecord?.market_value,
+                );
                 const pointRunningCash = Number(pointRecord?.aggregate_display_cash ?? pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0;
                 const pnlVsPreviousTradingDay = previousTradingPoint
+                    && Number.isFinite(pointEquity)
+                    && Number.isFinite(previousPointEquity)
                     ? pointEquity - previousPointEquity - transferSincePreviousTradingDay
                     : null;
                 const cashInAmount = Number(pointRecord?.cash_in_amount);
                 const cashOutAmount = Number(pointRecord?.cash_out_amount);
+                const missingPriceTickers = Array.from(new Set(
+                    Array.isArray(pointRecord?.missing_price_tickers)
+                        ? pointRecord.missing_price_tickers
+                            .map((ticker) => String(ticker || '').trim().toUpperCase())
+                            .filter(Boolean)
+                        : [],
+                )).sort();
                 tooltipRows.push({
                     label: "Equity",
                     formattedValue: formatMoney(pointEquity),
@@ -16921,6 +17002,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     formattedValue: formatMoney(pointRunningCash),
                     color: resolvedTheme.accentPositive,
                 });
+                if (!Number.isFinite(pointEquity) && missingPriceTickers.length) {
+                    tooltipRows.push({
+                        label: "Close unavailable",
+                        formattedValue: missingPriceTickers.join(', '),
+                        color: resolvedTheme.muted,
+                    });
+                }
                 if (Number.isFinite(pnlVsPreviousTradingDay)) {
                     tooltipRows.push({
                         label: "P&L",
@@ -17127,6 +17215,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatAmount(value) {
         if (value === undefined || value === null || isNaN(value)) return '--';
         return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function getOptionalInvestmentNumber(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const numericValue = Number(value);
+        return Number.isFinite(numericValue) ? numericValue : null;
     }
 
     function formatMetricLossAmount(value) {

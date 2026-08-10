@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.31.0`
+Documentation version: `v1.34.0`
 
 ## Holdings P&L display contract
 
@@ -166,6 +166,14 @@ second broker balance ledger. Its accounting boundaries are explicit:
   may calibrate a replay row only when that row's booking date is on or after
   the snapshot's explicit as-of date. The final chart point must reconcile to
   the current Holdings endpoint.
+- Daily security valuation uses an end-of-day close on a split-only basis and
+  a dynamic end-of-day position converted to that same split basis. Reverse
+  splits use a factor below one. Dividend cash stays in the cash ledger and
+  must not be embedded in a total-return-adjusted price series.
+- When local close history starts after a split, the earliest verified
+  non-trivial factor applies backward to earlier position trades that lack a
+  same-day close. This preserves a flat historical position as flat rather
+  than creating phantom shares from mixed share bases.
 
 The implementation lives in `app/web/static/assets/js/investment.js` and
 `app/web/static/assets/js/investment/data-utils.js`; regression coverage must
@@ -276,7 +284,7 @@ sets of values.
   source-bounded pending sell proceeds. Internal-transfer bridges are an
   external-flow attribution layer only; they must not subtract from the cash or
   equity balance displayed by Holdings.
-- HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
+- HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
 - HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
 - BOCHK imports accept one or more full Consolidated Statement PDFs per batch. The customer number is the parent account, while full deposit-account numbers and short subaccount identifiers remain source-scoped. HKD Savings and HKD Current remain distinct subaccounts; `0079` printed CNY/RMB (canonical CNH) and USD sections are separate cash ledgers, with the printed marker retained as raw provenance. The parser anchors the rightmost amount as the balance, reconciles each subaccount's running balance, rejects composite page-header continuations, and fails closed on non-zero securities cash activity because this adapter is cash-only. Its period/count/balance metadata is broker-scoped so it survives a mixed ledger.

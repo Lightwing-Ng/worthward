@@ -1,6 +1,24 @@
 # Investment frontend changelog
 
-Documentation version: `v1.12.0`
+Documentation version: `v1.16.0`
+
+- Fixed: Historical equity valuation now aligns split-only daily closes with
+  dynamic end-of-day holdings for both ordinary and reverse splits. Dividend
+  cash remains ledgered separately, so a total-return forward-adjusted price
+  cannot create a phantom market-value increase.
+
+- Fixed: Transaction History and Overview chart tooltips now show `--` for an
+  incomplete historical valuation rather than coercing it to `0.00`. The
+  tooltip identifies the ticker or tickers whose daily closing price is absent.
+
+- Fixed: HSBC Transaction History and Overview cash replay now keep balance
+  boundaries separated by account type and currency. A RMB Savings withdrawal
+  to CNH 0.00 no longer turns the independent USD Savings balance negative or
+  creates a false equity-curve cliff.
+
+- Fixed: A later HSBC statement balance now removes stale, unscoped cash replay
+  deltas in that currency. Historic trade cash can no longer be added a second
+  time beside verified USD Savings cash or collapse earlier daily equity points.
 
 - Changed: Overview `1W` and `1M` now replay trusted regular-session fills into the
   following one-minute state, so dynamic holdings and display cash change with

@@ -1,7 +1,14 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.90.0
+ * Code version: v1.93.0
+ * - Fixed: Daily equity replay now preserves reverse-split share factors, so
+ *   a split-only closing-price series and imported pre-split quantities remain
+ *   in the same valuation basis.
+ * - Fixed: Every HSBC cash balance boundary now clears stale unscoped replay
+ *   cash in its currency before account-type balances are aggregated.
+ * - Fixed: HSBC cash statement balances now remain scoped by broker, account,
+ *   account type, and currency before they are aggregated into workspace cash.
  * - Changed: Historical equity valuations now fail closed when neither a
  *   daily close nor a money-market anchor exists; transaction prices and
  *   remembered quotes are not closing-price evidence.
@@ -771,6 +778,119 @@ export function createInvestmentDataUtils({
             snapshot[normalizedCurrency] = numericValue;
             return snapshot;
         }, {});
+    }
+
+    function normalizeInvestmentCashScopeToken(value) {
+        return String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    }
+
+    function getInvestmentCashBalanceScope(txn) {
+        if (String(txn?.broker || '').trim().toLowerCase() !== 'hsbc') return '';
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const account = normalizeInvestmentCashScopeToken(
+            txn?.account
+            ?? source.account
+            ?? source.account_number,
+        );
+        const accountType = normalizeInvestmentCashScopeToken(
+            txn?.account_type
+            ?? source.account_type,
+        );
+        const currency = normalizeCurrencyCode(
+            formatTransactionCurrency(txn) || source.statement_currency_raw,
+        );
+        if (!account || !accountType || !currency) return '';
+        return ['HSBC', account, accountType, currency].join('|');
+    }
+
+    function getInvestmentCashBalanceBoundary(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const fileKind = String(source.file_kind || '').trim().toLowerCase();
+        if (
+            !fileKind.startsWith('hsbc_')
+            || !/(cash|savings|account)/.test(fileKind)
+        ) {
+            return null;
+        }
+        const scopeKey = getInvestmentCashBalanceScope(txn);
+        const currency = normalizeCurrencyCode(
+            formatTransactionCurrency(txn) || source.statement_currency_raw,
+        );
+        const balance = Number(source.balance_after_raw);
+        if (!scopeKey || !currency || !Number.isFinite(balance)) return null;
+        return { scopeKey, currency, balance };
+    }
+
+    function createInvestmentCashScopeLedger(startingBalances = {}) {
+        return {
+            unscopedBalances: cloneCashLedgerBalances(startingBalances),
+            scopedBalances: {},
+            scopedCurrencies: {},
+        };
+    }
+
+    function addInvestmentCashScopeDelta(ledger, currency, amount) {
+        if (!ledger || typeof ledger !== 'object') return;
+        addCashLedgerDelta(
+            ledger.unscopedBalances || (ledger.unscopedBalances = {}),
+            currency,
+            amount,
+        );
+    }
+
+    function setInvestmentCashScopeBoundary(ledger, boundary) {
+        if (!ledger || typeof ledger !== 'object') return false;
+        const normalizedCurrency = normalizeCurrencyCode(boundary?.currency);
+        const scopeKey = String(boundary?.scopeKey || '').trim();
+        const numericBalance = Number(boundary?.balance);
+        if (!normalizedCurrency || !scopeKey || !Number.isFinite(numericBalance)) return false;
+        if (!ledger.unscopedBalances || typeof ledger.unscopedBalances !== 'object') {
+            ledger.unscopedBalances = {};
+        }
+        if (!ledger.scopedBalances || typeof ledger.scopedBalances !== 'object') {
+            ledger.scopedBalances = {};
+        }
+        if (!ledger.scopedCurrencies || typeof ledger.scopedCurrencies !== 'object') {
+            ledger.scopedCurrencies = {};
+        }
+        // A statement balance is a complete boundary for its currency. Normal
+        // replay deltas before it cannot be assigned to a verified subaccount,
+        // so retaining them beside the boundary would double count cash.
+        delete ledger.unscopedBalances[normalizedCurrency];
+        ledger.scopedCurrencies[normalizedCurrency] = true;
+        ledger.scopedBalances[scopeKey] = numericBalance;
+        return true;
+    }
+
+    function setInvestmentCashScopeAggregateBalance(ledger, currency, amount) {
+        if (!ledger || typeof ledger !== 'object') return;
+        const normalizedCurrency = normalizeCurrencyCode(currency);
+        const numericAmount = Number(amount);
+        if (!normalizedCurrency || !Number.isFinite(numericAmount)) return;
+        const scopedTotal = Object.entries(ledger.scopedBalances || {}).reduce(
+            (total, [scopeKey, value]) => (
+                scopeKey.endsWith(`|${normalizedCurrency}`)
+                    ? total + (Number(value) || 0)
+                    : total
+            ),
+            0,
+        );
+        addCashLedgerDelta(
+            ledger.unscopedBalances || (ledger.unscopedBalances = {}),
+            normalizedCurrency,
+            numericAmount - scopedTotal - (Number(ledger.unscopedBalances?.[normalizedCurrency]) || 0),
+        );
+    }
+
+    function getInvestmentCashScopeBalances(ledger) {
+        const balances = cloneCashLedgerBalances(ledger?.unscopedBalances || {});
+        Object.entries(ledger?.scopedBalances || {}).forEach(([scopeKey, value]) => {
+            const currency = normalizeCurrencyCode(scopeKey.split('|').pop());
+            const numericValue = Number(value);
+            if (!currency || !Number.isFinite(numericValue)) return;
+            addCashLedgerDelta(balances, currency, numericValue);
+        });
+        return balances;
     }
 
     function addCashLedgerDelta(balances, currency, amount, baseCurrency = INVESTMENT_BASE_CURRENCY) {
@@ -2399,9 +2519,21 @@ export function createInvestmentDataUtils({
     }
 
     function normalizeRenderedSplitFactor(factor) {
-        if (!Number.isFinite(factor) || factor <= 0 || factor < 1) return 1;
+        if (!Number.isFinite(factor) || factor <= 0) return 1;
         const roundedFactor = Math.round(factor);
-        return Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2 ? roundedFactor : factor;
+        if (factor >= 1 && Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2) {
+            return roundedFactor;
+        }
+        const reciprocalFactor = 1 / factor;
+        const roundedReciprocalFactor = Math.round(reciprocalFactor);
+        if (
+            factor < 1
+            && Math.abs(reciprocalFactor - roundedReciprocalFactor) < 0.08
+            && roundedReciprocalFactor >= 2
+        ) {
+            return 1 / roundedReciprocalFactor;
+        }
+        return factor;
     }
 
     function getTransactionRenderedSplitFactor(txn, tickerPriceIndex) {
@@ -2425,6 +2557,7 @@ export function createInvestmentDataUtils({
     function buildRenderedSplitFactorHints(transactions, tickerPriceIndex) {
         const buckets = new Map();
         const factorEvidenceByTicker = new Map();
+        const earliestFactorEvidenceByTicker = new Map();
         (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
             if (!shouldTrackHoldingTicker(txn)) return;
             const normalizedType = getNormalizedTransactionType(txn);
@@ -2432,13 +2565,18 @@ export function createInvestmentDataUtils({
             const key = getRenderedSplitFactorHintKey(txn);
             if (!key) return;
             const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
-            if (!Number.isFinite(factor) || factor < 1 || Math.abs(factor - 1) < 1e-9) return;
+            if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
             const ticker = getInvestmentCanonicalTicker(txn?.ticker);
             if (ticker) {
                 if (!factorEvidenceByTicker.has(ticker)) {
                     factorEvidenceByTicker.set(ticker, []);
                 }
                 factorEvidenceByTicker.get(ticker).push(factor);
+                const date = normalizeLedgerDate(txn?.date);
+                const earliestEvidence = earliestFactorEvidenceByTicker.get(ticker);
+                if (date && (!earliestEvidence || date < earliestEvidence.date)) {
+                    earliestFactorEvidenceByTicker.set(ticker, {date, factor});
+                }
             }
             if (!buckets.has(key)) {
                 buckets.set(key, []);
@@ -2459,7 +2597,8 @@ export function createInvestmentDataUtils({
             const numericFactor = Number(bestFactor);
             if (
                 Number.isFinite(numericFactor)
-                && numericFactor > 1
+                && numericFactor > 0
+                && Math.abs(Math.log(numericFactor)) >= Math.log(1.5)
                 && bestCount >= 3
                 && (secondCount === 0 || bestCount >= secondCount * 2)
             ) {
@@ -2480,7 +2619,7 @@ export function createInvestmentDataUtils({
             const [bestFactor] = Array.from(roundedCounts.entries())
                 .sort((left, right) => right[1] - left[1] || Number(left[0]) - Number(right[0]))[0] || [];
             const numericFactor = Number(bestFactor);
-            if (Number.isFinite(numericFactor) && numericFactor >= 1) {
+            if (Number.isFinite(numericFactor) && numericFactor > 0) {
                 hints.set(key, numericFactor);
             }
         });
@@ -2512,11 +2651,28 @@ export function createInvestmentDataUtils({
                 ), {factor: 1, distance: Number.POSITIVE_INFINITY});
             if (
                 Number.isFinite(bestFactor.factor)
-                && bestFactor.factor > 1
+                && bestFactor.factor > 0
                 && bestFactor.distance <= Math.log(1.35)
             ) {
                 hints.set(key, bestFactor.factor);
             }
+        });
+
+        // Local daily history can begin after an earlier split. A transaction
+        // before the first observed close has no row-level price ratio, but it
+        // is still on the same pre-split basis as the first proven trade.
+        // Carry that earliest non-trivial factor backward only for rows without
+        // close evidence, preserving normal factor-one rows thereafter.
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const key = getRenderedSplitFactorHintKey(txn);
+            const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+            const date = normalizeLedgerDate(txn?.date);
+            if (!key || !ticker || !date || hints.has(key)) return;
+            const earliestEvidence = earliestFactorEvidenceByTicker.get(ticker);
+            if (!earliestEvidence || date >= earliestEvidence.date) return;
+            const renderedClose = getIndexedClosePriceForTransaction(txn, tickerPriceIndex);
+            if (Number.isFinite(renderedClose) && renderedClose > 0) return;
+            hints.set(key, earliestEvidence.factor);
         });
 
         // A single fill can produce a plausible but wrong common split factor
@@ -2587,19 +2743,19 @@ export function createInvestmentDataUtils({
             const dominantHintedFactor = renderedSplitFactorHints.dominantFactorCorrections instanceof Map
                 ? renderedSplitFactorHints.dominantFactorCorrections.get(hintKey)
                 : null;
-            if (Number.isFinite(dominantHintedFactor) && dominantHintedFactor >= 1) {
+            if (Number.isFinite(dominantHintedFactor) && dominantHintedFactor > 0) {
                 factor = dominantHintedFactor;
             } else if (
-                (!Number.isFinite(factor) || factor <= 1)
+                (!Number.isFinite(factor) || Math.abs(Math.log(factor)) < 1e-9)
                 && Number.isFinite(hintedFactor)
-                && hintedFactor >= 1
+                && hintedFactor > 0
             ) {
                 factor = hintedFactor;
             }
         }
         if (
             hasAuthoritativeImportedPositionQuantity(txn)
-            && (!Number.isFinite(factor) || factor <= 1)
+            && (!Number.isFinite(factor) || Math.abs(Math.log(factor)) < 1e-9)
         ) {
             return quantity;
         }
@@ -4223,6 +4379,7 @@ export function createInvestmentDataUtils({
         getInvestmentTickerProfileLookupCandidates,
         getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
+        createInvestmentCashScopeLedger,
         convertAmountToBaseCurrency,
         convertAmountToBaseCurrencyAtLatestRate,
         createCashLedger,
@@ -4231,6 +4388,9 @@ export function createInvestmentDataUtils({
         compareInvestmentTransactionsForReplay,
         getInvestmentReplayIdentity,
         buildHsbcCashSettlementBoundaryPlan,
+        getInvestmentCashBalanceBoundary,
+        getInvestmentCashBalanceScope,
+        getInvestmentCashScopeBalances,
         compareInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
@@ -4306,9 +4466,12 @@ export function createInvestmentDataUtils({
         sumKolRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         addCashLedgerDelta,
+        addInvestmentCashScopeDelta,
+        setInvestmentCashScopeAggregateBalance,
+        setInvestmentCashScopeBoundary,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
         LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.90.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.93.0';
