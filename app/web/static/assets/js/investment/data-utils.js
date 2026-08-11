@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.97.0
+ * Code version: v1.97.1
+ * - Fixed: Money-market classification no longer absorbs configured
+ *   cash-equivalent securities. Money-market funds remain cash equivalents,
+ *   while ETFs such as SGOV and BOXX retain their own quotes and identities.
  * - Fixed: A stale backend process can no longer hide the exact user-verified
  *   HSBC DRAM and EUV tax-lot attestations from a refreshed browser. The
  *   client compatibility fallback is account-scoped and remains fail-closed
@@ -1692,6 +1695,15 @@ export function createInvestmentDataUtils({
         return null;
     }
 
+    function resolveInvestmentCashEquivalentSecurityIdentity(txn) {
+        const canonicalTicker = String(getInvestmentCanonicalTicker(txn?.ticker) || txn?.ticker || '')
+            .trim()
+            .toUpperCase();
+        if (!canonicalTicker || !getCashEquivalentTickerSet().has(canonicalTicker)) return null;
+        const displayName = getInvestmentMoneyMarketDisplayName(canonicalTicker);
+        return displayName ? {ticker: canonicalTicker, name: displayName} : null;
+    }
+
     function getInvestmentMoneyMarketActionLabel(txn) {
         const rawAction = String(
             txn?.normalized?.cash_equivalent_action
@@ -1832,6 +1844,15 @@ export function createInvestmentDataUtils({
                 moneyMarketIdentity,
                 description,
             );
+        } else {
+            const cashEquivalentSecurityIdentity = resolveInvestmentCashEquivalentSecurityIdentity(txn);
+            if (cashEquivalentSecurityIdentity) {
+                description = formatInvestmentMoneyMarketTransactionDescription(
+                    txn,
+                    cashEquivalentSecurityIdentity,
+                    description,
+                );
+            }
         }
 
         if (isKolRewardTransaction(txn)) {
@@ -3293,24 +3314,20 @@ export function createInvestmentDataUtils({
         const sourceTickers = Array.isArray(configuredTickers)
             ? configuredTickers
             : Object.keys(INVESTMENT_MONEY_MARKET_STANDARD_NAMES);
-        const cashEquivalentTickers = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
         return new Set(
-            [
-                ...sourceTickers,
-                ...(Array.isArray(cashEquivalentTickers) ? cashEquivalentTickers : []),
-            ]
+            sourceTickers
                 .map((ticker) => String(ticker || '').trim().toUpperCase())
                 .filter(Boolean)
         );
     }
 
     function getCashEquivalentTickerSet() {
-        let configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
-        if (!Array.isArray(configuredTickers)) {
-            configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
-        }
+        const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
         return new Set(
-            (configuredTickers || [])
+            [
+                ...(Array.isArray(configuredTickers) ? configuredTickers : []),
+                ...getMoneyMarketTickerSet(),
+            ]
                 .map((ticker) => String(ticker || '').trim().toUpperCase())
                 .filter(Boolean)
         );
@@ -4826,4 +4843,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.1';

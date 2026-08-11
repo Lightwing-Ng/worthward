@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.13.0
+ * Code version: v0.13.1
+ * - Changed: Stock details imports the corrected money-market and
+ *   cash-equivalent classification contract.
  * - Added: Realized P&L breakdowns retain broker attribution so multi-broker
  *   tickers can show the HSBC and IBKR contributions separately.
  * - Changed: Stock details imports the settlement-boundary-aware Investment
@@ -48,11 +50,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.97.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.97.1';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.13.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.13.1';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',

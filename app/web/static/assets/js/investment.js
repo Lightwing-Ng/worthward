@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.101.0
+ * Code version: v2.101.1
+ * - Fixed: Configured cash-equivalent ETFs retain their security logos and
+ *   realtime quote path instead of inheriting money-market token identities.
  * - Fixed: Refreshed pages restore exact account-scoped HSBC DRAM and EUV
  *   tax-lot attestations even while an already-running backend process still
  *   serves its older derived cache. Stock details now identify each broker's
@@ -164,7 +166,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.97.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.97.1';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -190,7 +192,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.13.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.13.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -235,7 +237,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.101.0',
+    entry: 'v2.101.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
