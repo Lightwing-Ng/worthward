@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.2
+Code version: v0.20.3
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from app.services.market_data import (
     infer_ticker_market,
     refresh_history_store,
     refresh_one_minute_store,
+    refresh_one_minute_store_with_longbridge,
     resolve_compare_overnight_tickers,
     supports_compare_overnight,
     yfinance_lookup_symbol,
@@ -992,6 +993,33 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(result.source, "yfinance_7d")
         yfinance_mock.assert_called_once_with("QQQ", days=7)
 
+    def test_explicit_longbridge_minute_refresh_bypasses_yahoo(self) -> None:
+        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+        settings = object()
+
+        with (
+            patch("app.services.market_data.is_remote_market_access_disabled", return_value=False),
+            patch("app.services.market_data._supports_longbridge_history_fallback", return_value=True),
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=settings),
+            patch(
+                "app.services.market_data.intraday_history_store_path_for",
+                return_value=expected_path,
+            ),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance"
+            ) as yfinance_mock,
+            patch(
+                "app.services.market_data.refresh_longbridge_one_minute_store"
+            ) as longbridge_mock,
+        ):
+            result = refresh_one_minute_store_with_longbridge("QQQ")
+
+        self.assertEqual(result.path, expected_path)
+        self.assertEqual(result.source, "longbridge_fallback")
+        self.assertEqual(result.fetched_days, 180)
+        yfinance_mock.assert_not_called()
+        longbridge_mock.assert_called_once_with("QQQ", settings)
+
     def test_realtime_quote_batch_rotates_one_individual_recovery_after_batch_failure(self) -> None:
         def fake_download(tickers, **kwargs):
             del kwargs
@@ -1401,6 +1429,116 @@ class MarketDataFreshnessTests(unittest.TestCase):
             "low": 23.0,
             "close": 24.5,
         }])
+
+    def test_intraday_endpoint_uses_market_fallback_for_a_missing_active_day(self) -> None:
+        prior_dataset = ohlc_frame_for_dates("DRAM", ["2026-08-10 15:59"])
+        current_dataset = ohlc_frame_for_dates(
+            "DRAM",
+            ["2026-08-10 15:59", "2026-08-11 09:30"],
+        )
+
+        with TemporaryDirectory() as tempdir:
+            store_path = Path(tempdir) / "DRAM_1m.parquet"
+            prior_dataset.to_parquet(store_path, index=False)
+
+            def refresh_with_fallback(_ticker):
+                current_dataset.to_parquet(store_path, index=False)
+                return SimpleNamespace(source="longbridge_fallback")
+
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    return_value=store_path,
+                ),
+                patch("app.web.runtime.is_one_minute_store_fresh", return_value=True),
+                patch(
+                    "app.web.runtime.refresh_recent_one_minute_store_with_yfinance",
+                    return_value=SimpleNamespace(source="yfinance_30d"),
+                ) as yahoo_refresh_mock,
+                patch(
+                    "app.web.runtime.refresh_one_minute_store_with_longbridge",
+                    side_effect=refresh_with_fallback,
+                ) as fallback_refresh_mock,
+                patch(
+                    "app.web.runtime.nyse_market_session_state",
+                    return_value={
+                        "session": "intraday",
+                        "session_date": "2026-08-11",
+                        "is_realtime_allowed": True,
+                        "as_of": "2026-08-11T09:42:00-04:00",
+                    },
+                ),
+                patch(
+                    "app.web.runtime.nyse_recent_trading_days",
+                    return_value=[
+                        "2026-08-05",
+                        "2026-08-06",
+                        "2026-08-07",
+                        "2026-08-10",
+                        "2026-08-11",
+                    ],
+                ),
+            ):
+                response = create_app().test_client().get(
+                    "/api/investment/intraday?ticker=DRAM&range=1w&ensure_store=1"
+                    "&days=2026-08-10,2026-08-11"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["source"], "longbridge_fallback")
+        self.assertEqual(response.get_json()["count"], 2)
+        self.assertEqual(response.get_json()["rows"][-1]["date"], "2026-08-11 09:30")
+        yahoo_refresh_mock.assert_called_once_with("DRAM", days=30)
+        fallback_refresh_mock.assert_called_once_with("DRAM")
+
+    def test_intraday_endpoint_does_not_refresh_an_ineligible_requested_day(self) -> None:
+        dataset = ohlc_frame_for_dates("DRAM", ["2026-08-10 15:59"])
+
+        with TemporaryDirectory() as tempdir:
+            store_path = Path(tempdir) / "DRAM_1m.parquet"
+            dataset.to_parquet(store_path, index=False)
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    return_value=store_path,
+                ),
+                patch("app.web.runtime.is_one_minute_store_fresh", return_value=True),
+                patch(
+                    "app.web.runtime.nyse_market_session_state",
+                    return_value={
+                        "session": "intraday",
+                        "session_date": "2026-08-11",
+                        "is_realtime_allowed": True,
+                        "as_of": "2026-08-11T09:42:00-04:00",
+                    },
+                ),
+                patch(
+                    "app.web.runtime.nyse_recent_trading_days",
+                    return_value=[
+                        "2026-08-05",
+                        "2026-08-06",
+                        "2026-08-07",
+                        "2026-08-10",
+                        "2026-08-11",
+                    ],
+                ),
+                patch(
+                    "app.web.runtime.refresh_recent_one_minute_store_with_yfinance"
+                ) as yahoo_refresh_mock,
+                patch(
+                    "app.web.runtime.refresh_one_minute_store_with_longbridge"
+                ) as fallback_refresh_mock,
+            ):
+                response = create_app().test_client().get(
+                    "/api/investment/intraday?ticker=DRAM&range=1w&ensure_store=1"
+                    "&days=2026-08-15"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["count"], 0)
+        self.assertEqual(response.get_json()["source"], "local")
+        yahoo_refresh_mock.assert_not_called()
+        fallback_refresh_mock.assert_not_called()
 
     def test_realtime_quote_endpoint_reuses_a_complete_batch_for_one_minute(self) -> None:
         qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}

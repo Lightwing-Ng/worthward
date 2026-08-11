@@ -1,14 +1,17 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.2.2
+ * Code version: v1.3.0
+ * - Changed: Every quote poll now awaits the market-session refresh before
+ *   deciding eligibility or applying quotes, so minute placement cannot lag
+ *   behind a slower session-state request.
  * - Added: Realtime quote scheduling, cancellation, and active/idle cadence are encapsulated behind a tested poller.
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.0.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.2';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.0';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -55,33 +58,35 @@ export function createInvestmentRealtimeQuotePoller({
 
     async function poll() {
         if (isDisposed() || inflight) return;
-        const tickers = getTickers();
-        if (!Array.isArray(tickers) || !tickers.length) return;
-        if (!shouldRun()) {
-            resetState();
-            schedule();
-            return;
-        }
         inflight = true;
-        abortController = new AbortControllerClass();
+        const activeAbortController = new AbortControllerClass();
+        abortController = activeAbortController;
         try {
-            const quotes = await requestQuotes(tickers, {signal: abortController.signal});
+            await Promise.resolve(refreshSession()).catch(() => null);
+            if (isDisposed() || activeAbortController.signal.aborted) return;
+            const tickers = getTickers();
+            if (!Array.isArray(tickers) || !tickers.length) return;
+            if (!shouldRun()) {
+                resetState();
+                return;
+            }
+            const quotes = await requestQuotes(tickers, {signal: activeAbortController.signal});
             if (quotes.length) applyQuotes(quotes);
             else if (shouldRun()) resetState();
         } catch (error) {
             if (!isLifecycleInterrupted(error)) onError(error);
         } finally {
-            inflight = false;
-            abortController = null;
-            schedule();
+            if (abortController === activeAbortController) {
+                inflight = false;
+                abortController = null;
+                schedule();
+            }
         }
     }
 
     function restart() {
         stop();
-        return Promise.resolve(refreshSession())
-            .catch(() => null)
-            .then(() => poll());
+        return poll();
     }
 
     return {

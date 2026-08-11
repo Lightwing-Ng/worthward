@@ -1,4 +1,4 @@
-/* Tests for Investment realtime polling and value transitions. Code version: v1.1.0 */
+/* Tests for Investment realtime polling and value transitions. Code version: v1.2.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -99,6 +99,37 @@ test('poller uses active and idle cadences without overlapping requests', async 
     assert.equal(scheduled.at(-1).delay, 60_000);
 });
 
+test('poller awaits refreshed session state before requesting quotes', async () => {
+    let releaseSession;
+    let sessionReady = false;
+    let requestCount = 0;
+    const sessionRefresh = new Promise((resolve) => {
+        releaseSession = () => {
+            sessionReady = true;
+            resolve();
+        };
+    });
+    const poller = createInvestmentRealtimeQuotePoller({
+        hasData: () => true,
+        getTickers: () => ['META'],
+        shouldRun: () => sessionReady,
+        refreshSession: () => sessionRefresh,
+        requestQuotes: async () => {
+            requestCount += 1;
+            return [{ticker: 'META', price: 700}];
+        },
+        setTimeoutFn: () => 1,
+        clearTimeoutFn: () => {},
+    });
+
+    const pending = poller.poll();
+    await Promise.resolve();
+    assert.equal(requestCount, 0);
+    releaseSession();
+    await pending;
+    assert.equal(requestCount, 1);
+});
+
 test('stopping the poller aborts an in-flight request', async () => {
     let capturedSignal = null;
     let releaseRequest;
@@ -117,7 +148,10 @@ test('stopping the poller aborts an in-flight request', async () => {
         clearTimeoutFn: () => {},
     });
     const pending = poller.poll();
-    await Promise.resolve();
+    for (let attempt = 0; attempt < 5 && !capturedSignal; attempt += 1) {
+        await Promise.resolve();
+    }
+    assert.notEqual(capturedSignal, null);
     poller.stop();
     assert.equal(capturedSignal.aborted, true);
     releaseRequest([]);

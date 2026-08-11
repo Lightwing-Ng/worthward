@@ -1,7 +1,9 @@
 """
 Market data retrieval services.
 
-Code version: v0.22.1
+Code version: v0.23.0
+- Added: Callers can explicitly refresh a one-minute store from the configured
+  Longbridge source after validating that Yahoo omitted a required session.
 """
 
 from __future__ import annotations
@@ -1771,19 +1773,9 @@ def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
                 break
 
     longbridge_error: Exception | None = None
-    settings = (
-        _load_longbridge_market_settings()
-        if _supports_longbridge_history_fallback(normalized_ticker)
-        else None
-    )
-    if settings is not None:
+    if _supports_longbridge_history_fallback(normalized_ticker):
         try:
-            refresh_longbridge_one_minute_store(normalized_ticker, settings)
-            return OneMinuteRefreshResult(
-                path=intraday_history_store_path_for(normalized_ticker, "1m"),
-                source="longbridge_fallback",
-                fetched_days=180,
-            )
+            return refresh_one_minute_store_with_longbridge(normalized_ticker)
         except Exception as exc:
             longbridge_error = exc
 
@@ -1801,6 +1793,29 @@ def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
     raise ValueError(
         f"Unable to refresh 1-minute market data for {normalized_ticker}. {detail}."
     ) from (longbridge_error or yfinance_errors[-1][1])
+
+
+def refresh_one_minute_store_with_longbridge(ticker: str) -> OneMinuteRefreshResult:
+    """Refresh one-minute history directly from the configured Longbridge source."""
+    normalized_ticker = normalize_ticker(ticker)
+    if is_remote_market_access_disabled():
+        raise ValueError(
+            "Remote market access is disabled for this process; "
+            "using the existing local 1-minute store."
+        )
+    if not _supports_longbridge_history_fallback(normalized_ticker):
+        raise ValueError(
+            f"Longbridge one-minute history is not supported for {normalized_ticker}."
+        )
+    settings = _load_longbridge_market_settings()
+    if settings is None:
+        raise ValueError("Longbridge market data is not configured.")
+    refresh_longbridge_one_minute_store(normalized_ticker, settings)
+    return OneMinuteRefreshResult(
+        path=intraday_history_store_path_for(normalized_ticker, "1m"),
+        source="longbridge_fallback",
+        fetched_days=180,
+    )
 
 
 def refresh_recent_one_minute_store_with_yfinance(

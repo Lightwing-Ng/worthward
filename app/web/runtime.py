@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.71.0
+Code version: v0.71.1
+- Fixed: Investment intraday requests fall back to the configured Longbridge
+  one-minute source when Yahoo cannot fill a requested active trading day.
 - Fixed: The Investment transactions cache schema now invalidates payloads
   generated before the verified HSBC DRAM and EUV tax-lot conventions were
   added, preventing a backend restart from retaining the stale summary.
@@ -206,6 +208,7 @@ from app.services.market_data import (
     list_available_market_intervals,
     refresh_history_store,
     refresh_one_minute_store,
+    refresh_one_minute_store_with_longbridge,
     refresh_recent_one_minute_store_with_yfinance,
     resolve_compare_overnight_tickers,
     select_price_series,
@@ -7091,7 +7094,7 @@ def build_web_runtime() -> WebRuntime:
         return normalized.loc[positive_prices & valid_structure].sort_values("Date")
 
     def investment_get_intraday_history():
-        """Get local 1-minute OHLC history for Investment stock details charts."""
+        """Get local 1-minute OHLC history for Investment charts."""
         ticker = request.args.get("ticker", "").strip().upper()
         requested_range = request.args.get("range", "").strip().lower() or "1w"
         ensure_store = request.args.get("ensure_store", "").strip() == "1"
@@ -7142,7 +7145,18 @@ def build_web_runtime() -> WebRuntime:
                 return apply_no_store_headers(response)
             if ensure_store and requested_days:
                 available_days = set(intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist())
-                missing_days = [day for day in requested_days if day not in available_days]
+                session_state = nyse_market_session_state(include_overnight=True)
+                recent_day_count = 23 if requested_range == "1m" else 5
+                refreshable_days = set(nyse_recent_trading_days(
+                    session_state.get("as_of"),
+                    day_count=recent_day_count,
+                ))
+                eligible_requested_days = [
+                    day for day in requested_days if day in refreshable_days
+                ]
+                missing_days = [
+                    day for day in eligible_requested_days if day not in available_days
+                ]
                 if missing_days:
                     try:
                         refresh_result = refresh_recent_one_minute_store_with_yfinance(
@@ -7152,8 +7166,54 @@ def build_web_runtime() -> WebRuntime:
                         intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
                         dataset = pd.read_parquet(intraday_path) if intraday_path is not None else dataset
                         intraday = normalize_investment_intraday_ohlc(dataset)
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        LOGGER.debug(
+                            "Unable to fill requested Investment intraday days for %s with Yahoo: %s",
+                            normalized_ticker,
+                            exc,
+                        )
+                    available_days = set(
+                        intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
+                    )
+                    active_session_day = (
+                        str(session_state.get("session_date") or "")
+                        if session_state.get("is_realtime_allowed")
+                        and session_state.get("session") == "intraday"
+                        else ""
+                    )
+                    missing_active_days = [
+                        day
+                        for day in eligible_requested_days
+                        if day == active_session_day and day not in available_days
+                    ]
+                    if missing_active_days:
+                        try:
+                            longbridge_refresh_result = refresh_one_minute_store_with_longbridge(
+                                normalized_ticker
+                            )
+                            intraday_path = resolve_investment_history_store_path(
+                                normalized_ticker,
+                                interval="1m",
+                            )
+                            dataset = pd.read_parquet(intraday_path) if intraday_path is not None else dataset
+                            intraday = normalize_investment_intraday_ohlc(dataset)
+                            available_days = set(
+                                intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
+                            )
+                            if all(day in available_days for day in missing_active_days):
+                                refresh_result = longbridge_refresh_result
+                            else:
+                                LOGGER.debug(
+                                    "Longbridge Investment intraday refresh for %s did not fill %s",
+                                    normalized_ticker,
+                                    ", ".join(missing_active_days),
+                                )
+                        except Exception as exc:  # noqa: BLE001
+                            LOGGER.debug(
+                                "Unable to fill requested Investment intraday days for %s with fallback data: %s",
+                                normalized_ticker,
+                                exc,
+                            )
 
             latest_timestamp = intraday["Date"].max()
             if requested_days:
