@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.34.0`
+Documentation version: `v1.35.0`
 
 ## Holdings P&L display contract
 
@@ -155,6 +155,16 @@ second broker balance ledger. Its accounting boundaries are explicit:
 - A cash settlement or available-cash boundary is valid only on its own ledger
   date. A source row may retain a future settlement date as evidence, but its
   balance must not replace cash on the execution or booking day.
+- Historical equity is settled bank cash plus signed pending-settlement cash.
+  When an HSBC buy or sell has matched future SEC postings, each exact posting
+  accrues as a payable or receivable on the trade's booking date while the
+  position changes on that same date. The posting clears only at its own
+  settlement boundary; settlement therefore transfers value between pending
+  and settled cash without changing equity.
+- Overlapping settlements are tracked by owner transaction and posting amount,
+  not by sign. Settling one buy cannot clear a later buy's payable merely
+  because both amounts are negative. An unmatched order uses the existing
+  source-bounded provisional pending amount until evidence is available.
 - A confirmed internal cash-transfer pair is cash in transit between its two
   legs. The history-only bridge may keep the curve continuous until the receipt
   is posted, including a documented currency conversion or fee difference.
@@ -165,7 +175,9 @@ second broker balance ledger. Its accounting boundaries are explicit:
 - Authoritative ending-cash and position snapshots are dated boundaries. They
   may calibrate a replay row only when that row's booking date is on or after
   the snapshot's explicit as-of date. The final chart point must reconcile to
-  the current Holdings endpoint.
+  the current Holdings endpoint. If a current cash-equivalent quote is valid,
+  both surfaces use that quote; the historical money-market anchor is only a
+  fallback when no usable live price exists.
 - Daily security valuation uses an end-of-day close on a split-only basis and
   a dynamic end-of-day position converted to that same split basis. Reverse
   splits use a factor below one. Dividend cash stays in the cash ledger and

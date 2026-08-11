@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.3."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.4."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ def test_neutral_holdings_badge_and_investment_hover_guides_share_soft_muted_gra
         maxsplit=1,
     )[1].split("}", maxsplit=1)[0]
     assert "background: var(--theme-muted-soft);" in neutral_rule
-    assert "color: var(--theme-text);" in neutral_rule
+    assert "color: var(--theme-background);" in neutral_rule
     assert "mutedSoft: computed.getPropertyValue(\"--theme-muted-soft\").trim()" in investment_js
     assert "ctx.strokeStyle = resolvedTheme.mutedSoft;" in investment_js
     assert "ctx.strokeStyle = resolvedTheme.mutedSoft;" in stock_details_js

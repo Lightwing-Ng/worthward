@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.8.0 */
+/* Tests for Investment import-feedback markup. Code version: v1.8.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -178,6 +178,21 @@ test('HSBC feedback distinguishes transferable cash from pending-sell display ca
     assert.match(message, /transferable cash remains <strong>\$20,444\.97<\/strong>/);
     assert.match(message, /show <strong>\$20,926\.17<\/strong>/);
     assert.match(message, /incomplete replay as a historical balance/);
+});
+
+test('HSBC feedback omits transferable-cash copy without a provisional marker', () => {
+    const message = buildHsbcImportFeedbackMessage({
+        importSummary: {
+            hsbc_final_settled_execution_count: 11,
+            hsbc_pending_settlement_cash: '0.00',
+            hsbc_broker_cash_estimate: '21111.36',
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /authoritative position source/);
+    assert.match(message, /<strong>11<\/strong> execution prices were finalized/);
+    assert.doesNotMatch(message, /transferable cash remains/);
+    assert.equal((message.match(/<li>/g) || []).length, 2);
 });
 
 test('HSBC feedback explains when settled cash finalizes execution price', () => {

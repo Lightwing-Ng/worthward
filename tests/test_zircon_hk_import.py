@@ -1,6 +1,6 @@
 """Tests for the generic typed manual-workbook import.
 
-Code version: v0.11.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -298,6 +298,8 @@ class ZirconHkImportTests(unittest.TestCase):
                 net_amount_raw="12",
                 source={"reference_id": "xlsx-health-fx"},
             ),
+            transaction(21, "virtual_deposit", net_amount_raw="25"),
+            transaction(22, "virtual_withdrawal", net_amount_raw="-25"),
         ]
 
         workbook_bytes = build_standard_investment_xlsx(transactions)
@@ -345,6 +347,15 @@ class ZirconHkImportTests(unittest.TestCase):
             payload["summary"]["transaction_count"],
             len(ZIRCON_HK_BROKER_ENTRIES),
         )
+
+    def test_parser_accepts_legacy_zircon_hk_label_without_parentheses(self) -> None:
+        payload = build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=self._completed_workbook(overrides={"A2": "Zircon HK"}),
+            filename="Zircon_manual_investment_import.xlsx",
+        )
+
+        self.assertEqual(payload["broker"], "zircon_hk")
+        self.assertEqual(payload["transactions"][0]["broker"], "zircon_hk")
 
     def test_standard_export_shares_fx_execution_identity_across_currency_legs(self) -> None:
         transactions = [

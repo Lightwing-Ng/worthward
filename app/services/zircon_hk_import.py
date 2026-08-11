@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.11.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from app.services.investment_record_basics import (
 )
 
 
-ZIRCON_HK_IMPORTER_VERSION = "0.8.0"
+ZIRCON_HK_IMPORTER_VERSION = "0.9.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
 ZIRCON_HK_BROKER_LABEL = "Zircon (HK)"
 ZIRCON_HK_TEMPLATE_FILENAME = "Manual_investment_import.xlsx"
@@ -105,6 +105,7 @@ _BROKER_LOOKUP = {
     for entry in ZIRCON_HK_BROKER_ENTRIES
     for alias in (entry.code, entry.label)
 }
+_BROKER_LOOKUP["zircon hk".casefold()] = ZIRCON_HK_BROKER_CODE
 _SECURITY_TYPES = {
     "buy",
     "sell",

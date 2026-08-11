@@ -1,12 +1,13 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.8.0
+ * Code version: v1.8.1
+ * - Fixed: HSBC transferable-cash feedback is shown only when positive unsettled sell proceeds produce the provisional `*` marker.
  * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
  * - Added: HSBC feedback states the authoritative transferable cash and the pending-sell display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.0';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.1';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -205,7 +206,11 @@ export function buildHsbcImportFeedbackMessage({
     }
     const pendingSettlementCash = Number(summary.hsbc_pending_settlement_cash);
     const brokerCashEstimate = Number(summary.hsbc_broker_cash_estimate);
-    if (Number.isFinite(pendingSettlementCash) && Number.isFinite(brokerCashEstimate)) {
+    if (
+        Number.isFinite(pendingSettlementCash)
+        && pendingSettlementCash > 1e-9
+        && Number.isFinite(brokerCashEstimate)
+    ) {
         const bankAvailableCash = brokerCashEstimate - pendingSettlementCash;
         items.push(
             `HSBC transferable cash remains <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>; the transaction table may show <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> after adding <strong>$${pendingSettlementCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> of positive unsettled sell proceeds.`,

@@ -1,7 +1,21 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.94.0
+ * Code version: v1.97.0
+ * - Fixed: A stale backend process can no longer hide the exact user-verified
+ *   HSBC DRAM and EUV tax-lot attestations from a refreshed browser. The
+ *   client compatibility fallback is account-scoped and remains fail-closed
+ *   against the verified date, trade counts, quantities, and ending shares.
+ * - Added: HSBC settlement boundaries retain their source transaction date so
+ *   trade-date accruals and settlement-date clearing remain independently
+ *   auditable.
+ * - Fixed: Explicit tax-lot attestations can verify an open position by its
+ *   exact ending-share quantity, restoring HSBC DRAM and EUV realized P&L
+ *   without weakening the fail-closed rule for unmatched histories.
+ * - Fixed: Authoritative cash and position snapshots are dated replay anchors,
+ *   so later trades remain reflected in current cash, holdings, and equity.
+ * - Added: Cash and position snapshots expose independent as-of dates; stale
+ *   cash metadata can no longer stand in for a holdings boundary.
  * - Fixed: Date-only HSBC Order Status executions now retain their evidenced
  *   newest-first page rank for same-day trade and tax-lot replay. SEC cash
  *   posting order remains isolated to cash settlement boundaries and cannot
@@ -100,6 +114,71 @@
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
+
+const INVESTMENT_VERIFIED_TAX_LOT_COMPATIBILITY_FALLBACKS = Object.freeze({
+    hsbc: Object.freeze({
+        '103-555700-329': Object.freeze({
+            DRAM: Object.freeze({
+                currency: 'USD',
+                verified_through: '2026-08-07',
+                expected_shares: '200',
+                buy_count: 57,
+                sell_count: 4,
+                buy_quantity: '211',
+                sell_quantity: '11',
+                calculation_method: 'settled_net_amount_and_configured_lot_method',
+                verification_source: 'user_verified_hsbc_history_and_position_snapshot',
+            }),
+            EUV: Object.freeze({
+                currency: 'USD',
+                verified_through: '2026-08-07',
+                expected_shares: '80',
+                buy_count: 27,
+                sell_count: 4,
+                buy_quantity: '123',
+                sell_quantity: '43',
+                calculation_method: 'settled_net_amount_and_configured_lot_method',
+                verification_source: 'user_verified_hsbc_history_and_position_snapshot',
+            }),
+        }),
+    }),
+});
+
+export function applyInvestmentVerifiedTaxLotCompatibilityFallbacks(payload) {
+    if (!payload || typeof payload !== 'object') return [];
+    const brokerSummaries = payload.broker_summaries;
+    if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
+
+    const appliedFallbacks = [];
+    Object.entries(INVESTMENT_VERIFIED_TAX_LOT_COMPATIBILITY_FALLBACKS).forEach(([
+        broker,
+        accountFallbacks,
+    ]) => {
+        const summary = brokerSummaries[broker];
+        if (!summary || typeof summary !== 'object') return;
+        const account = String(summary.account_id ?? summary.account ?? '').trim();
+        const tickerFallbacks = accountFallbacks[account];
+        if (!tickerFallbacks) return;
+
+        const existingVerifications = (
+            summary.tax_lot_history_verifications
+            && typeof summary.tax_lot_history_verifications === 'object'
+        ) ? summary.tax_lot_history_verifications : {};
+        Object.entries(tickerFallbacks).forEach(([ticker, verification]) => {
+            if (
+                existingVerifications[ticker]
+                && typeof existingVerifications[ticker] === 'object'
+            ) return;
+            existingVerifications[ticker] = {
+                ...verification,
+                delivery_source: 'client_compatibility_fallback_for_stale_backend_process',
+            };
+            appliedFallbacks.push(`${broker}:${account}:${ticker}`);
+        });
+        summary.tax_lot_history_verifications = existingVerifications;
+    });
+    return appliedFallbacks;
+}
 
 export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
     const normalizedFiles = Array.from(files || []);
@@ -686,6 +765,156 @@ export function createInvestmentDataUtils({
             return Object.values(postDates).map(normalizeLedgerDate).filter(Boolean).sort().pop() || '';
         }
         return '';
+    }
+
+    function getInvestmentPositionSnapshotAsOf() {
+        const data = window.ANTIGRAVITY_INVESTMENT_DATA || {};
+        const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+        const explicitDate = normalizeLedgerDate(
+            data.position_snapshot_as_of
+            ?? summary.position_snapshot_as_of,
+        );
+        if (explicitDate) return explicitDate;
+        const rawSnapshot = data.position_snapshot;
+        if (!rawSnapshot || typeof rawSnapshot !== 'object' || Array.isArray(rawSnapshot)) {
+            return '';
+        }
+        return Object.values(rawSnapshot)
+            .map((entry) => normalizeLedgerDate(entry?.as_of ?? entry?.asOf))
+            .filter(Boolean)
+            .sort()
+            .pop() || '';
+    }
+
+    function getInvestmentBrokerPositionSnapshotAsOf(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return '';
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return '';
+        const explicitDate = normalizeLedgerDate(summary.position_snapshot_as_of);
+        if (explicitDate) return explicitDate;
+        const rawSnapshot = summary.position_snapshot;
+        if (!rawSnapshot || typeof rawSnapshot !== 'object' || Array.isArray(rawSnapshot)) {
+            return '';
+        }
+        return Object.values(rawSnapshot)
+            .map((entry) => normalizeLedgerDate(entry?.as_of ?? entry?.asOf))
+            .filter(Boolean)
+            .sort()
+            .pop() || '';
+    }
+
+    function buildDatedCashSnapshotProjection(
+        rows,
+        {
+            asOf = '',
+            authoritativeBaseCash = null,
+            authoritativeBalances = null,
+            baseCurrency = INVESTMENT_BASE_CURRENCY,
+            getRowDate = (row) => row?.date,
+            getRunningCash = (row) => row?.broker_running_cash,
+            getBalances = (row) => row?.broker_cash_by_currency,
+            getBoundaryCurrencies = () => [],
+        } = {},
+    ) {
+        const orderedRows = Array.isArray(rows) ? rows : [];
+        const snapshotDate = normalizeLedgerDate(asOf);
+        if (!orderedRows.length || !snapshotDate) {
+            return {applied: false, boundaryIndex: -1, projections: []};
+        }
+        const rowDates = orderedRows.map((row) => normalizeLedgerDate(getRowDate(row)));
+        const latestDate = rowDates.filter(Boolean).sort().pop() || '';
+        if (!latestDate || latestDate < snapshotDate) {
+            return {applied: false, boundaryIndex: -1, projections: []};
+        }
+
+        let boundaryIndex = -1;
+        let hasExactBoundaryDate = false;
+        rowDates.forEach((rowDate, index) => {
+            if (!rowDate || rowDate > snapshotDate) return;
+            if (rowDate === snapshotDate) hasExactBoundaryDate = true;
+            boundaryIndex = index;
+        });
+        if (boundaryIndex < 0) {
+            return {applied: false, boundaryIndex: -1, projections: []};
+        }
+
+        const rawBoundaryCash = Number(getRunningCash(orderedRows[boundaryIndex]));
+        const numericAuthoritativeCash = Number(authoritativeBaseCash);
+        let baseAdjustment = (
+            Number.isFinite(rawBoundaryCash)
+            && Number.isFinite(numericAuthoritativeCash)
+        )
+            ? numericAuthoritativeCash - rawBoundaryCash
+            : null;
+        const rawBoundaryBalances = cloneCashLedgerBalances(
+            getBalances(orderedRows[boundaryIndex]) || {},
+        );
+        const normalizedAuthoritativeBalances = (
+            authoritativeBalances
+            && typeof authoritativeBalances === 'object'
+            && !Array.isArray(authoritativeBalances)
+        )
+            ? cloneCashLedgerBalances(authoritativeBalances)
+            : {};
+        const balanceAdjustments = {};
+        Object.entries(normalizedAuthoritativeBalances).forEach(([currency, value]) => {
+            const normalizedCurrency = normalizeCurrencyCode(currency);
+            const numericValue = Number(value);
+            const rawValue = Number(rawBoundaryBalances[normalizedCurrency] ?? 0);
+            if (!normalizedCurrency || !Number.isFinite(numericValue) || !Number.isFinite(rawValue)) return;
+            balanceAdjustments[normalizedCurrency] = numericValue - rawValue;
+        });
+        if (baseAdjustment === null && !Object.keys(balanceAdjustments).length) {
+            return {applied: false, boundaryIndex, projections: []};
+        }
+
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const applyFromIndex = hasExactBoundaryDate ? boundaryIndex : boundaryIndex + 1;
+        const projections = [];
+        for (let index = applyFromIndex; index < orderedRows.length; index += 1) {
+            const row = orderedRows[index];
+            const rowDate = rowDates[index];
+            if (!rowDate || rowDate < snapshotDate) continue;
+            if (index > boundaryIndex && rowDate > snapshotDate) {
+                const boundaryCurrencies = new Set(
+                    (Array.isArray(getBoundaryCurrencies(row)) ? getBoundaryCurrencies(row) : [])
+                        .map(normalizeCurrencyCode)
+                        .filter(Boolean),
+                );
+                if (boundaryCurrencies.has(normalizedBaseCurrency)) {
+                    baseAdjustment = 0;
+                    Object.keys(balanceAdjustments).forEach((currency) => {
+                        delete balanceAdjustments[currency];
+                    });
+                } else {
+                    boundaryCurrencies.forEach((currency) => {
+                        delete balanceAdjustments[currency];
+                    });
+                }
+            }
+
+            const rawCash = Number(getRunningCash(row));
+            const projectedCash = Number.isFinite(rawCash) && baseAdjustment !== null
+                ? rawCash + baseAdjustment
+                : rawCash;
+            const projectedBalances = cloneCashLedgerBalances(getBalances(row) || {});
+            Object.entries(balanceAdjustments).forEach(([currency, adjustment]) => {
+                const nextValue = (Number(projectedBalances[currency]) || 0) + Number(adjustment);
+                if (Math.abs(nextValue) < 1e-9) delete projectedBalances[currency];
+                else projectedBalances[currency] = nextValue;
+            });
+            projections.push({
+                index,
+                runningCash: projectedCash,
+                balances: projectedBalances,
+            });
+        }
+        return {
+            applied: projections.length > 0,
+            boundaryIndex,
+            projections,
+        };
     }
 
     function normalizeCurrencyCode(value) {
@@ -2039,6 +2268,7 @@ export function createInvestmentDataUtils({
             snapshots.push({
                 broker: normalizedBroker,
                 accountId: String(summary.account_id ?? summary.account ?? '').trim(),
+                positionSnapshotAsOf: getInvestmentBrokerPositionSnapshotAsOf(normalizedBroker),
                 positionSnapshot: normalizeAuthoritativePositionSnapshot(rawSnapshot),
                 holdingsValidation: summary.holdings_validation && typeof summary.holdings_validation === 'object'
                     ? summary.holdings_validation
@@ -2048,10 +2278,109 @@ export function createInvestmentDataUtils({
         return snapshots;
     }
 
+    function projectAuthoritativePositionSnapshot(rawSnapshot, transactions = [], snapshotAsOf = '') {
+        const projectedSnapshot = {};
+        Object.entries(rawSnapshot || {}).forEach(([ticker, snapshot]) => {
+            if (!snapshot || typeof snapshot !== 'object') return;
+            projectedSnapshot[ticker] = {...snapshot};
+        });
+        const boundaryDate = normalizeLedgerDate(snapshotAsOf);
+        if (!boundaryDate) return projectedSnapshot;
+
+        const laterTransactions = (Array.isArray(transactions) ? transactions : [])
+            .filter((txn) => {
+                const ledgerDate = normalizeLedgerDate(txn?.date);
+                return ledgerDate && ledgerDate > boundaryDate;
+            })
+            .sort((left, right) => compareInvestmentTransactionsForReplay(left, right));
+        laterTransactions.forEach((txn) => {
+            if (txn?.exclude_from_holdings_replay === true) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            const isSyntheticFractional = isUsmartHkFractionalSharesTransaction(txn);
+            const rawTicker = isSyntheticFractional
+                ? USMART_HK_FRACTIONAL_SYNTHETIC_TICKER
+                : txn?.ticker;
+            const ticker = getInvestmentCanonicalTicker(rawTicker);
+            if (!ticker || isForexPairTicker(ticker)) return;
+            const quantity = Math.abs(Number(getTransactionQuantity(txn)));
+            if (!Number.isFinite(quantity) || quantity < 1e-9) return;
+            const isIncrease = ['buy', 'dividend_reinvestment', 'grant', 'transfer_in'].includes(normalizedType);
+            const isDecrease = ['sell', 'transfer_out'].includes(normalizedType);
+            if (!isIncrease && !isDecrease) return;
+
+            const existing = projectedSnapshot[ticker] || {
+                quantity: 0,
+                costBasisStatus: 'unknown',
+                costPrice: null,
+                marketValue: null,
+                lastPrice: null,
+            };
+            const previousQuantity = Number(existing.quantity) || 0;
+            const nextQuantity = previousQuantity + (isIncrease ? quantity : -quantity);
+            let costBasisStatus = existing.costBasisStatus;
+            let costPrice = Number(existing.costPrice);
+            if (isIncrease) {
+                let incomingCostPrice = null;
+                if (normalizedType === 'grant') {
+                    incomingCostPrice = 0;
+                } else if (normalizedType === 'transfer_in') {
+                    const carriedBasis = getTransactionDerivedCostBasis(txn, 'carried');
+                    incomingCostPrice = carriedBasis === null ? null : carriedBasis / quantity;
+                } else {
+                    const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
+                    incomingCostPrice = Number.isFinite(effectiveUnitPrice) && effectiveUnitPrice >= 0
+                        ? effectiveUnitPrice
+                        : null;
+                }
+                if (
+                    existing.costBasisStatus === 'known'
+                    && Number.isFinite(costPrice)
+                    && incomingCostPrice !== null
+                    && previousQuantity >= -1e-9
+                    && nextQuantity > 1e-9
+                ) {
+                    costPrice = (
+                        Math.abs(previousQuantity) * costPrice
+                        + quantity * incomingCostPrice
+                    ) / Math.abs(nextQuantity);
+                    costBasisStatus = 'known';
+                } else if (Math.abs(previousQuantity) < 1e-9 && incomingCostPrice !== null) {
+                    costPrice = incomingCostPrice;
+                    costBasisStatus = 'known';
+                } else {
+                    costPrice = null;
+                    costBasisStatus = 'unknown';
+                }
+            } else if (previousQuantity > 1e-9 && nextQuantity < -1e-9) {
+                costPrice = null;
+                costBasisStatus = 'unknown';
+            }
+            if (Math.abs(nextQuantity) < 1e-9) {
+                costPrice = null;
+                costBasisStatus = 'known';
+            }
+            projectedSnapshot[ticker] = {
+                ...existing,
+                quantity: Math.abs(nextQuantity) < 1e-9 ? 0 : nextQuantity,
+                costBasisStatus,
+                costPrice: Number.isFinite(costPrice) ? costPrice : null,
+                marketValue: null,
+                lastPrice: null,
+            };
+        });
+        return projectedSnapshot;
+    }
+
     function getAuthoritativePositionSnapshotForTransactions(transactions = []) {
         const globalSnapshot = getAuthoritativePositionSnapshot();
-        if (globalSnapshot !== null) return globalSnapshot;
         const scopedTransactions = Array.isArray(transactions) ? transactions : [];
+        if (globalSnapshot !== null) {
+            return projectAuthoritativePositionSnapshot(
+                globalSnapshot,
+                scopedTransactions,
+                getInvestmentPositionSnapshotAsOf(),
+            );
+        }
         const brokerCodes = new Set(
             scopedTransactions
                 .map((txn) => String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase())
@@ -2069,7 +2398,11 @@ export function createInvestmentDataUtils({
             && (!accountIds.size || !entry.accountId || accountIds.has(entry.accountId))
         ));
         if (candidates.length !== 1) return null;
-        return candidates[0].positionSnapshot;
+        return projectAuthoritativePositionSnapshot(
+            candidates[0].positionSnapshot,
+            scopedTransactions,
+            candidates[0].positionSnapshotAsOf,
+        );
     }
 
     function normalizeAuthoritativePerformanceSnapshot(rawSnapshot) {
@@ -2143,6 +2476,15 @@ export function createInvestmentDataUtils({
                 const sellCount = Number(rawVerification.sell_count);
                 const buyQuantity = Number(rawVerification.buy_quantity);
                 const sellQuantity = Number(rawVerification.sell_quantity);
+                const rawExpectedShares = rawVerification.expected_shares;
+                const hasExpectedShares = (
+                    rawExpectedShares !== undefined
+                    && rawExpectedShares !== null
+                    && String(rawExpectedShares).trim() !== ''
+                );
+                const expectedShares = hasExpectedShares
+                    ? Number(rawExpectedShares)
+                    : null;
                 if (
                     !normalizedTicker
                     || !currency
@@ -2155,6 +2497,7 @@ export function createInvestmentDataUtils({
                     || buyQuantity < 0
                     || !Number.isFinite(sellQuantity)
                     || sellQuantity < 0
+                    || (hasExpectedShares && !Number.isFinite(expectedShares))
                 ) return;
                 scopes.set([
                     normalizedBroker,
@@ -2167,6 +2510,7 @@ export function createInvestmentDataUtils({
                     sellCount,
                     buyQuantity,
                     sellQuantity,
+                    ...(hasExpectedShares ? {expectedShares} : {}),
                     calculationMethod: String(rawVerification.calculation_method || '').trim(),
                     verificationSource: String(rawVerification.verification_source || '').trim(),
                 });
@@ -3047,6 +3391,7 @@ export function createInvestmentDataUtils({
                     ownerTransactionIndex,
                     broker: txn?.broker || source.broker || 'hsbc',
                     account: txn?.account || source.account || source.account_number || '',
+                    transactionDate,
                     date: settlementDate,
                     currency: String(posting?.currency || txn?.currency || 'USD').trim().toUpperCase() || 'USD',
                     settlementAmount: Number.isFinite(settlementAmount) ? settlementAmount : null,
@@ -4418,10 +4763,13 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerStartingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerEndingCashAsOf,
+        getInvestmentBrokerPositionSnapshotAsOf,
         getInvestmentEndingCash,
         getInvestmentEndingCashBalances,
         getInvestmentEndingCashInBaseCurrency,
         getInvestmentEndingCashInBaseCurrencyAsOf,
+        getInvestmentPositionSnapshotAsOf,
+        buildDatedCashSnapshotProjection,
         getAuthoritativePerformanceSnapshot,
         getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
@@ -4431,6 +4779,7 @@ export function createInvestmentDataUtils({
         getAuthoritativePositionSnapshot,
         getAuthoritativeBrokerPositionSnapshots,
         getAuthoritativePositionSnapshotForTransactions,
+        projectAuthoritativePositionSnapshot,
         getFxRateForDate,
         getLatestFxRateForCurrency,
         getInvestmentBaseCurrency,
@@ -4477,4 +4826,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.94.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.0';

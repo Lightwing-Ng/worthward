@@ -1,6 +1,6 @@
 """Regression tests for uSMART (HK) statement descriptions.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from app.services.investment_import import (
 )
 
 
-def test_fractional_share_descriptions_use_the_short_form() -> None:
+def test_fractional_share_descriptions_disclose_missing_statement_symbols() -> None:
     records = _usmart_hk_cash_records(
         "\n".join([
             "資⾦出⼊",
@@ -23,12 +23,12 @@ def test_fractional_share_descriptions_use_the_short_form() -> None:
     )
 
     assert [record["description"] for record in records] == [
-        "Fractional Shares Purchase",
-        "Fractional Shares Sale",
+        "Fractional Shares Purchase (symbol unavailable in statement)",
+        "Fractional Shares Sale (symbol unavailable in statement)",
     ]
 
 
-def test_legacy_fractional_share_descriptions_are_normalized_for_usmart_hk() -> None:
+def test_fractional_share_evidence_annotation_survives_payload_normalization() -> None:
     payload = {
         "broker": "usmart_hk",
         "transactions": [
@@ -50,6 +50,6 @@ def test_legacy_fractional_share_descriptions_are_normalized_for_usmart_hk() -> 
     normalize_investment_payload_tickers(payload)
 
     assert [record["description"] for record in payload["transactions"]] == [
-        "Fractional Shares Purchase",
-        "Fractional Shares Sale",
+        "Fractional Shares Purchase (symbol unavailable in statement)",
+        "Fractional Shares Sale (symbol unavailable in statement)",
     ]

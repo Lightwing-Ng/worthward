@@ -1,4 +1,4 @@
-/* Code version: v1.75.22 */
+/* Code version: v1.75.24 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2788,6 +2788,12 @@
     display: block;
 }
 
+.chart-tooltip[data-investment-chart-tooltip="1"] {
+    contain: layout style;
+    isolation: isolate;
+    will-change: transform, opacity;
+}
+
 .investment-stock-details-price-chart-empty {
     width: 100%;
     min-height: 0;
@@ -3400,7 +3406,7 @@
 
 .investment-holdings-daily-pnl-badge.investment-holdings-daily-pnl-badge-neutral {
     background: var(--theme-muted-soft);
-    color: var(--theme-text);
+    color: var(--theme-background);
 }
 
 #investment_holdings_panel .investment-holdings-daily-pnl-badge-value.trade-metric-value {

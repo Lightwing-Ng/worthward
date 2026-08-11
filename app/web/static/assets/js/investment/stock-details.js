@@ -1,7 +1,13 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.12.5
+ * Code version: v0.13.0
+ * - Added: Realized P&L breakdowns retain broker attribution so multi-broker
+ *   tickers can show the HSBC and IBKR contributions separately.
+ * - Changed: Stock details imports the settlement-boundary-aware Investment
+ *   data-utilities revision used by the Overview replay.
+ * - Fixed: Stock details imports open-position tax-lot attestation support from
+ *   the current Investment data-utilities revision.
  * - Fixed: Stock details now imports the current Investment data-utilities
  *   revision used by the dated Overview replay and valuation guards.
  * - Fixed: Stock details now imports the current Investment data-utilities revision after the HSBC settlement replay presentation fix.
@@ -42,11 +48,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.89.2';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.97.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.12.5';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.13.0';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -422,6 +428,22 @@ export function createInvestmentStockDetailsUtils({
         let paymentInLieuIncome = 0;
         let dividendWithholding = 0;
         let tradingSpreadIncome = 0;
+        const brokerBreakdowns = new Map();
+
+        const addBrokerAmount = (txn, field, amount) => {
+            const brokerCode = getTransactionBrokerCode(txn);
+            if (!brokerBreakdowns.has(brokerCode)) {
+                brokerBreakdowns.set(brokerCode, {
+                    brokerCode,
+                    brokerLabel: getInvestmentBrokerMeta(brokerCode).label,
+                    dividendIncome: 0,
+                    paymentInLieuIncome: 0,
+                    dividendWithholding: 0,
+                    tradingSpreadIncome: 0,
+                });
+            }
+            brokerBreakdowns.get(brokerCode)[field] += amount;
+        };
 
         (Array.isArray(detailRows) ? detailRows : []).forEach((txn) => {
             const realizedPnl = Number(txn?.rowRealizedPnl);
@@ -430,19 +452,36 @@ export function createInvestmentStockDetailsUtils({
             const normalizedType = getNormalizedTransactionType(txn);
             if (normalizedType === 'dividend') {
                 dividendIncome += realizedPnl;
+                addBrokerAmount(txn, 'dividendIncome', realizedPnl);
                 return;
             }
             if (normalizedType === 'payment_in_lieu') {
                 paymentInLieuIncome += realizedPnl;
+                addBrokerAmount(txn, 'paymentInLieuIncome', realizedPnl);
                 return;
             }
             if (normalizedType === 'foreign_tax_withholding') {
                 dividendWithholding += realizedPnl;
+                addBrokerAmount(txn, 'dividendWithholding', realizedPnl);
                 return;
             }
 
             tradingSpreadIncome += realizedPnl;
+            addBrokerAmount(txn, 'tradingSpreadIncome', realizedPnl);
         });
+
+        const brokerBreakdown = Array.from(brokerBreakdowns.values())
+            .map((entry) => ({
+                ...entry,
+                realizedPnl: (
+                    entry.dividendIncome
+                    + entry.paymentInLieuIncome
+                    + entry.dividendWithholding
+                    + entry.tradingSpreadIncome
+                ),
+            }))
+            .filter((entry) => Math.abs(entry.realizedPnl) > 1e-9)
+            .sort((left, right) => left.brokerLabel.localeCompare(right.brokerLabel));
 
         return {
             dividendIncome,
@@ -450,6 +489,7 @@ export function createInvestmentStockDetailsUtils({
             dividendWithholding,
             tradingSpreadIncome,
             realizedPnl: dividendIncome + paymentInLieuIncome + dividendWithholding + tradingSpreadIncome,
+            brokerBreakdown,
         };
     }
 

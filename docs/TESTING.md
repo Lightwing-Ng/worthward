@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.20.6`
+Documentation version: `v1.21.0`
 
 ## Supported commands
 
@@ -124,8 +124,12 @@ Current suite inventory remeasured on 1 Aug 2026:
   plus exact paired-file source-artifact bundle identities.
 - Investment replay coverage also asserts booking-date-first ordering when
   execution metadata crosses a ledger day, history-only internal-transfer
-  continuity, dated ending-cash boundaries, and equality between the final
-  chart point and the current Holdings endpoint.
+  continuity, dated ending-cash boundaries, exact signed HSBC settlement
+  accruals, and equality between the final chart point and the current Holdings
+  endpoint. The 22–24 Jun 2026 overlap regression keeps the 23 Jun USD 1,844.80
+  payable active after the 22 Jun payable settles, and the cash-equivalent
+  endpoint regression verifies that Overview and Holdings use the same valid
+  live quote.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
@@ -200,8 +204,10 @@ Current suite inventory remeasured on 1 Aug 2026:
   Holdings coverage also verifies that an internal subaccount bridge cannot
   reduce the actual aggregate Cash, Cash equivalents, or Total equity.
   HSBC pending-sell coverage verifies that dated cash boundaries do not create
-  a false one-day equity loss, and internal-transfer coverage verifies both
-  historical bridge continuity and current Holdings equality.
+  a false one-day equity loss; overlapping matched buy settlements verify that
+  one boundary cannot clear another transaction's payable. Internal-transfer
+  coverage verifies both historical bridge continuity and current Holdings
+  equality.
   It also verifies that the fixed summary's realtime Today's net P&L can be
   positive while Cumulative P&L remains negative, and that both update after
   a quote poll; the same assertion covers all duplicated fixed and scrollable

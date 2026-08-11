@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.71.0`
+Documentation version: `v2.72.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -324,7 +324,7 @@ profile name.
 
 ## HSBC import convention (snapshot confirmed at 1 Jul 2026, 21:30 America/New_York)
 
-This record keeps the operational convention for the current HSBC paste-import and statement-import paths. The app continues to run the current pending-cash replay flow for U.S. equity activity, and small differences from the HSBC web "unsettled transferable cash" display can still appear in rare edge cases.
+This record keeps the operational convention for the current HSBC paste-import and statement-import paths. Historical equity uses settled bank cash plus exact signed pending-settlement receivables or payables. Each matched SEC posting enters pending cash on the trade's booking date, clears only on its own settlement date, and therefore cannot change equity merely by moving between pending and settled cash. Unmatched orders remain explicitly provisional.
 
 - The pasted cash-account field accepts the same HSBC account's USD Savings, HKD Savings or Current, and offshore-RMB Savings pages. HSBC may label offshore RMB as `CNY`; the canonical ledger currency is `CNH`, while the raw statement label remains in source metadata. Supplementary pages can be pasted as additional chunks, and duplicate chunks are deduplicated. HKD Current and HKD Savings are retained as separate balance components before their visible HKD total is calculated.
 
@@ -336,7 +336,7 @@ This record keeps the operational convention for the current HSBC paste-import a
   - Treat `1.txt`, `2.txt`, and `3.txt` as a single pasted batch.
   - The current locally reproducible available-cash figure is `28,397.90` USD.
   - HSBC's displayed `28,397.94` is a UI-level value and is tracked as a display baseline only; it is not enforced as the local booking rule.
-  - HSBC settlement matching, unsettled identification, and cash calculation paths are not changed. If HSBC later revises its page conventions, only the manual reconciliation note should be updated.
+  - HSBC settlement matching remains evidence-driven. Equity replay recognizes each exact signed matched posting on the booking date and clears that specific posting only on its settlement date; it never clears a later obligation merely because both amounts have the same sign.
 
 - 11 pending/replay orders captured by the current algorithm:
   - `P-983469` / `1 Jul 2026` / `DRAM` / BUY / `-132.000` USD

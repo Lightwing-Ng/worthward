@@ -1,6 +1,39 @@
 # Investment frontend changelog
 
-Documentation version: `v1.17.0`
+Documentation version: `v1.21.0`
+
+- Fixed: Matched future HSBC SEC postings now accrue as exact signed
+  trade-date receivables or payables and clear only at their own settlement
+  boundaries. Overlapping 22–24 Jun 2026 buys can no longer create a false
+  one-day equity cliff by omitting or prematurely clearing the later payable.
+
+- Fixed: The realtime Overview endpoint now uses the same valid live quote as
+  Holdings for cash-equivalent securities. A historical money-market anchor
+  remains a fallback only when no live price is available.
+
+- Fixed: SGOV realized P&L includes both attributed HSBC corporate-event
+  dividends. A later generic cash merge can no longer downgrade an evidenced
+  HSBC dividend to a deposit and silently remove it from ticker-level income.
+
+- Fixed: Holdings and Stock details accept an explicit expected-share
+  attestation for a user-verified open tax-lot history. HSBC DRAM and EUV
+  realized P&L again aggregate with IBKR while every broker and account retains
+  an independent lot inventory.
+
+- Fixed: Neutral Holdings daily-change badges again use the active theme
+  background for text, rendering white in light mode and black in dark mode.
+
+- Improved: Overview chart and Transaction History hover restore the recovered
+  Tooltip reuse path, replace full linked-chart updates with lightweight draws,
+  skip hidden Stock details Donut work, coalesce visible work per animation
+  frame, and avoid forced row layout. The chart Tooltip remains a
+  compositor-backed Frosted Glass surface, while provisional HSBC `*` values
+  retain their existing disclosure text.
+
+- Fixed: HSBC sync feedback now explains the transferable-cash projection only
+  when positive unsettled sell proceeds produce a provisional `*` marker in
+  Transaction History. Fully settled imports no longer show a `$0.00`
+  unsettled-proceeds warning.
 
 - Fixed: HSBC orders that provide a date but no fill timestamp now replay in
   their evidenced Order Status page sequence. The cash-account `SEC` posting

@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.70.1
+Code version: v0.71.0
+- Fixed: The Investment transactions cache schema now invalidates payloads
+  generated before the verified HSBC DRAM and EUV tax-lot conventions were
+  added, preventing a backend restart from retaining the stale summary.
 - Fixed: Daily investment close payloads reject non-finite and non-positive
   values and deterministically collapse duplicate ticker/date rows before the
   frontend builds its valuation index.
@@ -340,7 +343,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v10"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v11"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
