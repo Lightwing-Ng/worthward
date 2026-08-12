@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.35.2`
+Documentation version: `v1.36.1`
 
 ## Holdings P&L display contract
 
@@ -29,6 +29,15 @@ main.py
 ```
 
 `app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; live account and order APIs authorize either that signed browser session or a valid strong access token at the request boundary.
+
+### Console logging
+
+`main.py` configures process-wide console logging before runtime bootstrap. Every
+record uses the shared schema
+`UTC timestamp | level | logger | job_id | message`, so Werkzeug startup
+messages and application diagnostics use the same spaced delimiters. The
+default `job_id=-` remains explicit until a background operation binds a job
+context.
 
 ## Layers
 
@@ -225,6 +234,12 @@ for market-close evidence.
 - Transaction prices, cached last-known prices, and broker snapshot prices are
   not historical closing-price fallbacks. Money-market anchors remain valid
   for their designated cash-equivalent positions.
+
+During US overnight, pre-market, and post-market sessions, the high-precision
+Overview ranges retain the completed regular-session minute curve. The current
+extended-hours valuation is a separate far-right live point, and its total
+equity must equal the immediate Holdings Total equity snapshot. A future
+regular-session minute remains unavailable until that regular session starts.
 
 ## Longbridge performance-calibration contract
 

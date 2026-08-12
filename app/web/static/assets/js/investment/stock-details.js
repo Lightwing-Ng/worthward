@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.14.0
+ * Code version: v0.15.0
+ * - Changed: IBKR stock grants contribute to Stock-details buy counts and
+ *   average-cost replay as buy-equivalent lots at their evidenced value.
  * - Refactored: Stock-details and Overview charts now share the same blue
  *   rounded y-axis value badge renderer.
  * - Changed: Stock details imports the current data-utilities revision so its
@@ -54,11 +56,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.97.2';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.99.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.14.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.0';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -412,6 +414,7 @@ export function createInvestmentStockDetailsUtils({
     getTransactionLotScopeKey,
     getTransactionValuationQuantity,
     incrementInvestmentStockDetailsPriceChartRequestSerial,
+    isInvestmentGrantBuyEquivalent = () => false,
     isFlatPosition,
     isInvestmentStockDetailsIntradayRange,
     loadInvestmentStockDetailsIntradayRows,
@@ -685,7 +688,13 @@ export function createInvestmentStockDetailsUtils({
                     unitPriceOverride: getTransactionEffectiveUnitPrice(txn, valuationQuantity),
                 },
             );
-            if (['buy', 'sell'].includes(normalizedType)) metric.totalTrades += 1;
+            if (
+                normalizedType === 'sell'
+                || normalizedType === 'buy'
+                || isInvestmentGrantBuyEquivalent(txn)
+            ) {
+                metric.totalTrades += 1;
+            }
         });
 
         return Array.from(brokerMetrics.values()).map((metric) => {

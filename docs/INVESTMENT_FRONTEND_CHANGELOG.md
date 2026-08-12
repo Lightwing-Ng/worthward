@@ -1,6 +1,25 @@
 # Investment frontend changelog
 
-Documentation version: `v1.24.0`
+Documentation version: `v1.28.0`
+
+- Fixed: DRAM Stock details and ticker replay now have regression coverage for
+  the three-account holding structure: IBKR 105 shares, Charles Schwab 195
+  transfer-in shares, and HSBC 200 shares. Broker-scoped realized P&L remains
+  independent before the USD 471.53 aggregate is displayed.
+
+- Fixed: During US overnight, pre-market, and post-market sessions, Overview
+  `1W` and `1M` now retain the completed regular-session equity curve and place
+  the extended-hours valuation at the far-right live marker. The marker uses
+  the same immediate Total equity snapshot as Holdings.
+
+- Fixed: Stock details now displays the sum of complete broker-account
+  realized-P&L scopes. An incremental IBKR summary limited to the latest CSV
+  window can no longer hide historical closed-trade P&L from the aggregate.
+
+- Changed: IBKR stock grants now replay as buy-equivalent lots at their
+  evidenced grant value across Holdings, Overview, Metrics, and Stock details.
+  They remain non-cash ledger events, while grants from other brokers retain
+  their existing zero-cost behavior.
 
 - Added: Hovering any Overview equity range now paints the hovered point's
   total equity in the same solid blue rounded y-axis badge used by Stock

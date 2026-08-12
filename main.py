@@ -1,13 +1,15 @@
 """
 Project entrypoint.
 
-Code version: v0.5.0
+Code version: v0.5.2
 """
 
 from json import JSONDecodeError
+import logging
 import os
 import sys
 
+from app.core.logging_setup import configure_logging
 from app.core.runtime import require_supported_python
 
 try:
@@ -24,14 +26,14 @@ from app.core.settings import get_settings  # noqa: E402
 from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context  # noqa: E402
 from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance  # noqa: E402
 
-LOG_PREFIX = "[compareStocks]"
 DEFAULT_DEBUG = False
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8688
+LOGGER = logging.getLogger("app.bootstrap")
 
 
 def _log_startup(message: str) -> None:
-    print(f"{LOG_PREFIX} {message}")
+    LOGGER.info(message)
 
 
 def _should_manage_longbridge_as_long_lived() -> bool:
@@ -80,6 +82,7 @@ def _build_run_options(config: dict) -> dict:
 
 
 def _initialize_runtime():
+    configure_logging()
     runtime_settings = get_settings()
     debug_enabled = runtime_settings["app"].get("debug", DEFAULT_DEBUG)
     network_settings = runtime_settings.get("network", {})

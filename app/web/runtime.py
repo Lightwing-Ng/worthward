@@ -1,7 +1,14 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.73.0
+Code version: v0.73.2
+- Fixed: Investment intraday requests refresh a completed requested trading
+  day when its regular-session bar set is incomplete, instead of treating a
+  partial but date-current store as fresh and carrying one close across the
+  rest of the equity curve.
+- Fixed: When Yahoo does not provide a complete completed trading day,
+  Investment intraday requests use the configured Longbridge one-minute
+  fallback instead of carrying the partial day's last close.
 - Added: Shared local pagination ellipses now carry grouped hidden-page ranges
   for the accessible range picker rendered on every pagination surface.
 - Fixed: All configured money-market funds use the same standard MMF token in
@@ -156,6 +163,7 @@ from app.core.upload_limits import MAX_INVESTMENT_IMPORT_REQUEST_MIB
 from app.services.date_constraints import (
     build_date_constraint_payload,
     build_date_constraint_availability,
+    is_nyse_early_close,
     latest_completed_nyse_trading_day,
     nyse_market_session_state,
     nyse_recent_trading_days,
@@ -7189,7 +7197,6 @@ def build_web_runtime() -> WebRuntime:
                 response.status_code = 404
                 return apply_no_store_headers(response)
             if ensure_store and requested_days:
-                available_days = set(intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist())
                 session_state = nyse_market_session_state(include_overnight=True)
                 recent_day_count = 23 if requested_range == "1m" else 5
                 refreshable_days = set(nyse_recent_trading_days(
@@ -7199,10 +7206,31 @@ def build_web_runtime() -> WebRuntime:
                 eligible_requested_days = [
                     day for day in requested_days if day in refreshable_days
                 ]
+                intraday_day_keys = intraday["Date"].dt.strftime("%Y-%m-%d")
+                available_days = set(intraday_day_keys.drop_duplicates().tolist())
+                available_bar_counts = intraday_day_keys.value_counts()
+                active_session_day = (
+                    str(session_state.get("session_date") or "")
+                    if session_state.get("is_realtime_allowed")
+                    and session_state.get("session") == "intraday"
+                    else ""
+                )
+
+                def expected_regular_bar_count(day_key: str) -> int:
+                    regular_close_minute = (13 * 60) if is_nyse_early_close(day_key) else (16 * 60)
+                    return regular_close_minute - ((9 * 60) + 30)
+
                 missing_days = [
                     day for day in eligible_requested_days if day not in available_days
                 ]
-                if missing_days:
+                incomplete_days = [
+                    day
+                    for day in eligible_requested_days
+                    if day != active_session_day
+                    and int(available_bar_counts.get(day, 0)) < expected_regular_bar_count(day)
+                ]
+                refresh_days = set(missing_days).union(incomplete_days)
+                if refresh_days:
                     try:
                         refresh_result = refresh_recent_one_minute_store_with_yfinance(
                             normalized_ticker,
@@ -7220,18 +7248,17 @@ def build_web_runtime() -> WebRuntime:
                     available_days = set(
                         intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
                     )
-                    active_session_day = (
-                        str(session_state.get("session_date") or "")
-                        if session_state.get("is_realtime_allowed")
-                        and session_state.get("session") == "intraday"
-                        else ""
-                    )
-                    missing_active_days = [
+                    available_bar_counts = intraday["Date"].dt.strftime("%Y-%m-%d").value_counts()
+                    fallback_days = [
                         day
-                        for day in eligible_requested_days
-                        if day == active_session_day and day not in available_days
+                        for day in refresh_days
+                        if (
+                            day != active_session_day
+                            and int(available_bar_counts.get(day, 0)) < expected_regular_bar_count(day)
+                        )
+                        or (day == active_session_day and day not in available_days)
                     ]
-                    if missing_active_days:
+                    if fallback_days:
                         try:
                             longbridge_refresh_result = refresh_one_minute_store_with_longbridge(
                                 normalized_ticker
@@ -7245,13 +7272,21 @@ def build_web_runtime() -> WebRuntime:
                             available_days = set(
                                 intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
                             )
-                            if all(day in available_days for day in missing_active_days):
+                            available_bar_counts = intraday["Date"].dt.strftime("%Y-%m-%d").value_counts()
+                            if all(
+                                day in available_days
+                                and (
+                                    day == active_session_day
+                                    or int(available_bar_counts.get(day, 0)) >= expected_regular_bar_count(day)
+                                )
+                                for day in fallback_days
+                            ):
                                 refresh_result = longbridge_refresh_result
                             else:
                                 LOGGER.debug(
                                     "Longbridge Investment intraday refresh for %s did not fill %s",
                                     normalized_ticker,
-                                    ", ".join(missing_active_days),
+                                    ", ".join(fallback_days),
                                 )
                         except Exception as exc:  # noqa: BLE001
                             LOGGER.debug(

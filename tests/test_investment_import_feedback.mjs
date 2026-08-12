@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.8.1 */
+/* Tests for Investment import-feedback markup. Code version: v1.8.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,8 +47,11 @@ test('IBKR feedback preserves verified source-evidence copy and singular transfe
 
     assert.match(message, /This run parsed <strong>12,345<\/strong> records, added <strong>1,234<\/strong>, and treated <strong>11,111<\/strong> as already present\./);
     assert.match(message, /SHA-256-verified immutable evidence/);
-    assert.match(message, /1 possible internal-transfer match<\/strong>/);
-    assert.doesNotMatch(message, /1 possible internal-transfer matches<\/strong>/);
+    assert.match(message, /Transfer review/);
+    assert.match(message, /1 possible internal-transfer match was detected during this import/);
+    assert.match(message, /already-bound transfers require no further action/);
+    assert.doesNotMatch(message, /Immediate action/);
+    assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
 });
 
 test('IBKR feedback escapes refresh and valuation notices while pluralizing transfer review', () => {
@@ -58,11 +61,23 @@ test('IBKR feedback escapes refresh and valuation notices while pluralizing tran
         pendingTransferCount: 2,
     }, {escapeHtml});
 
-    assert.match(message, /2 possible internal-transfer matches<\/strong>/);
+    assert.match(message, /2 possible internal-transfer matches were detected during this import/);
+    assert.match(message, /Review only rows still marked <strong>Unbound<\/strong>/);
+    assert.doesNotMatch(message, /Immediate action/);
+    assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
     assert.match(message, /&lt;rebuild&gt;&amp; retry/);
     assert.match(message, /&quot;quoted&quot; &lt;value&gt;/);
     assert.doesNotMatch(message, /<rebuild>/);
     assert.doesNotMatch(message, /"quoted" <value>/);
+});
+
+test('IBKR feedback omits transfer review when no candidates remain unbound', () => {
+    const message = buildIbkrImportFeedbackMessage({
+        pendingTransferCount: 0,
+    }, {escapeHtml});
+
+    assert.doesNotMatch(message, /Transfer review/);
+    assert.doesNotMatch(message, /Immediate action/);
 });
 
 test('IBKR feedback requires the composition root HTML escaper', () => {

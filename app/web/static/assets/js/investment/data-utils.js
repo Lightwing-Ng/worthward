@@ -1,7 +1,12 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.97.2
+ * Code version: v1.99.0
+ * - Fixed: IBKR cash replay uses the last available transaction date when a
+ *   statement cash snapshot is reported one day after the last trade.
+ * - Changed: IBKR stock-grant rows now replay as buy-equivalent lots at their
+ *   evidenced grant value, without creating a cash flow; other broker grants
+ *   retain their zero-cost lot semantics.
  * - Added: Historical Overview Tooltip P&L can replay a point without applying
  *   a current broker position or performance snapshot. The caller supplies the
  *   point valuation date and observed close, so historical P&L cannot inherit
@@ -424,6 +429,13 @@ export function createInvestmentDataUtils({
         return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
     }
 
+    function isInvestmentGrantBuyEquivalent(txn) {
+        return (
+            getNormalizedTransactionType(txn) === 'grant'
+            && String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase() === 'ibkr'
+        );
+    }
+
     const CASH_DEPOSIT_TYPES = new Set(['deposit', 'virtual_deposit']);
     const CASH_WITHDRAWAL_TYPES = new Set(['withdrawal', 'virtual_withdrawal', 'virtual_balance_reset']);
 
@@ -756,7 +768,8 @@ export function createInvestmentDataUtils({
         const summary = summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return '';
         const explicitDate = normalizeLedgerDate(
-            summary.ending_cash_base_currency_as_of
+            summary.ending_cash_replay_as_of
+            ?? summary.ending_cash_base_currency_as_of
             ?? summary.ending_cash_as_of
             ?? summary.cash_snapshot_as_of,
         );
@@ -2346,7 +2359,7 @@ export function createInvestmentDataUtils({
             let costPrice = Number(existing.costPrice);
             if (isIncrease) {
                 let incomingCostPrice = null;
-                if (normalizedType === 'grant') {
+                if (normalizedType === 'grant' && !isInvestmentGrantBuyEquivalent(txn)) {
                     incomingCostPrice = 0;
                 } else if (normalizedType === 'transfer_in') {
                     const carriedBasis = getTransactionDerivedCostBasis(txn, 'carried');
@@ -2727,7 +2740,11 @@ export function createInvestmentDataUtils({
                 ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
                 : getTransactionEffectiveUnitPrice(txn, quantity);
         };
-        if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
+        if (
+            (normalizedType === 'buy' || isInvestmentGrantBuyEquivalent(txn))
+            && quantity !== null
+            && !Number.isNaN(quantity)
+        ) {
             summary.buyCount += 1;
             summary.buyQuantity += quantity;
             summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
@@ -4851,6 +4868,7 @@ export function createInvestmentDataUtils({
         getTransactionValuationQuantity,
         getTransactionPrice,
         getTransactionQuantity,
+        isInvestmentGrantBuyEquivalent,
         isFlatPosition,
         isForexPairTicker,
         getTickerQuoteCurrency,
@@ -4872,4 +4890,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.2';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.99.0';

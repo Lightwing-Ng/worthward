@@ -1,7 +1,16 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.106.0
+ * Code version: v2.109.1
+ * - Fixed: High-precision Overview ranges now keep the completed regular
+ *   session curve during US overnight, pre-market, and post-market sessions
+ *   while projecting the current extended-hours equity as a far-right live
+ *   marker aligned to the Holdings Total equity value.
+ * - Fixed: IBKR CSV cash snapshots reported one day after the last trade now
+ *   anchor current cash through their explicit replay boundary.
+ * - Changed: IBKR stock grants now use their evidenced grant value as buy
+ *   cost basis throughout Holdings, Overview, Metrics, and Stock details;
+ *   the grant remains non-cash and other broker grants are unchanged.
  * - Added: Every Overview range now reuses the Stock-details blue rounded
  *   y-axis badge to show the hovered point's total equity, with dynamically
  *   measured axis width so the badge cannot be clipped.
@@ -197,13 +206,13 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.97.2';
+} from './investment/data-utils.js?v=investment-data-utils-v1.99.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildSchwabImportFeedbackMessage,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.8.1';
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.8.2';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     animateLocalStorePaginationIndicator,
@@ -224,7 +233,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.14.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.15.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -269,7 +278,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.106.0',
+    entry: 'v2.109.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1072,6 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getTransactionLotScope,
         getTransactionLotScopeKey,
         getInvestmentBaseCurrency,
+        isInvestmentGrantBuyEquivalent,
         getTransactionPrice,
         getTransactionQuantity,
         getTransactionValuationQuantity,
@@ -4796,7 +4806,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionState = getSafeInvestmentMarketSessionState();
         if (
             !sessionState?.is_realtime_allowed
-            || sessionState.session !== 'intraday'
+            || !shouldShowInvestmentRealtimePulse(sessionState.session)
         ) {
             return '';
         }
@@ -4818,12 +4828,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ) {
             return '';
         }
-        const regularOpenMinute = (9 * 60) + 30;
-        const finalVisibleMinute = (16 * 60) - 1;
-        const totalMinutes = Math.max(
-            regularOpenMinute,
-            Math.min(finalVisibleMinute, (clockParts.hour * 60) + clockParts.minute),
-        );
+        const totalMinutes = (clockParts.hour * 60) + clockParts.minute;
+        if (sessionState.session === 'intraday') {
+            const regularOpenMinute = (9 * 60) + 30;
+            const finalVisibleMinute = (16 * 60) - 1;
+            if (totalMinutes < regularOpenMinute || totalMinutes > finalVisibleMinute) return '';
+        }
         const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
         const minutes = String(totalMinutes % 60).padStart(2, '0');
         return `${sessionDate} ${hours}:${minutes}`;
@@ -4872,7 +4882,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentMinuteKey = getInvestmentOverviewRealtimeMinuteKey();
         if (!currentMinuteKey) return sourcePoints;
         const currentSessionDate = normalizeLedgerDate(currentMinuteKey);
-        return sourcePoints.map((entry) => {
+        const mergedPoints = sourcePoints.map((entry) => {
             const entryDate = String(entry?.date || '');
             if (normalizeLedgerDate(entryDate) !== currentSessionDate) return entry;
             const realtimeEntry = investmentOverviewRealtimeLinePointsByMinute.get(entryDate);
@@ -4886,6 +4896,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return entry;
         });
+        const realtimeEntry = investmentOverviewRealtimeLinePointsByMinute.get(currentMinuteKey);
+        if (realtimeEntry && !mergedPoints.some((entry) => String(entry?.date || '') === currentMinuteKey)) {
+            mergedPoints.push(realtimeEntry);
+        }
+        return mergedPoints;
     }
 
     function resolveInvestmentEquityRealtimeMarkerTarget(runtimeState) {
@@ -5347,6 +5362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentStockDetailsPriceChartRequestSerial += 1;
             return investmentStockDetailsPriceChartRequestSerial;
         },
+        isInvestmentGrantBuyEquivalent,
         isFlatPosition,
         isInvestmentStockDetailsIntradayRange,
         loadInvestmentStockDetailsIntradayRows,
@@ -10009,12 +10025,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     investmentRawTransactionsCache,
                     { preserveHistoryPage: true, scrollToTop: false },
                 );
+                const remainingPendingTransferCount = countInvestmentPendingInternalTransferBindings();
                 const feedbackMessage = action === 'ignore'
                     ? 'Marked this internal-transfer candidate as incorrectly identified and ignored. Ledger cash remains unchanged.'
                     : (action === 'restore'
                         ? 'Restored this candidate to binding review.'
                         : (targetKey
-                            ? 'Linked the selected internal-transfer counterpart. Aggregate equity now treats that bridge as internal.'
+                            ? (remainingPendingTransferCount > 0
+                                ? `Linked the selected internal-transfer counterpart. ${remainingPendingTransferCount.toLocaleString('en-US')} possible internal-transfer ${remainingPendingTransferCount === 1 ? 'match remains' : 'matches remain'} marked Unbound.`
+                                : 'Linked the selected internal-transfer counterpart. No internal-transfer candidates remain marked Unbound; no further action is required.')
                             : 'Removed the manual internal-transfer link. The aggregate curve now shows the raw transfer path again.'));
                 const feedbackVariant = action === 'ignore' || action === 'restore' || targetKey
                     ? 'success'
@@ -14288,7 +14307,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalCommissionClass = getNegativeMetricClass(totalCommission);
         const totalTradeCount = detailRows.filter((txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
-            return normalizedType === 'buy' || normalizedType === 'sell';
+            return (
+                normalizedType === 'buy'
+                || normalizedType === 'sell'
+                || isInvestmentGrantBuyEquivalent(txn)
+            );
         }).length;
         const averagePriceDisplay = tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice);
         const totalTradeCountDisplay = new Intl.NumberFormat('en-US', {
@@ -16439,6 +16462,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     chartPoints = liveChartPoints;
                     investmentChartPointsCache = [...liveChartPoints];
                 }
+            } else {
+                const liveChartPoints = buildInvestmentRealtimeChartPoints(bootstrapSessionQuotes);
+                const latestRealtimePoint = [...liveChartPoints]
+                    .reverse()
+                    .find((point) => point?.is_realtime === true) || null;
+                rememberInvestmentOverviewRealtimeLinePoint(latestRealtimePoint);
             }
         }
 
@@ -16461,6 +16490,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (livePoints.length) {
                         investmentChartPointsCache = [...livePoints];
                     }
+                } else {
+                    const livePoints = buildInvestmentRealtimeChartPoints(sessionQuotes);
+                    const latestRealtimePoint = [...livePoints]
+                        .reverse()
+                        .find((point) => point?.is_realtime === true) || null;
+                    rememberInvestmentOverviewRealtimeLinePoint(latestRealtimePoint);
                 }
             }
         }).catch((err) => {
@@ -18148,7 +18183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? rawPrice
                         : getTransactionEffectiveUnitPrice(txn, quantity);
 
-                    if (normalizedType === 'buy') {
+                    if (normalizedType === 'buy' || isInvestmentGrantBuyEquivalent(txn)) {
                         applyDirectionalTrade(lotState, 'long', quantity, unitPrice);
                     } else if (normalizedType === 'grant' || normalizedType === 'dividend_reinvestment' || normalizedType === 'transfer_in') {
                         lotState.shares += quantity;
@@ -18485,7 +18520,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (['buy', 'grant', 'dividend_reinvestment'].includes(normalizedType)) {
                 lots.push({
                     remainingQuantity: quantity,
-                    isGrant: normalizedType === 'grant',
+                    isGrant: normalizedType === 'grant' && !isInvestmentGrantBuyEquivalent(txn),
                     rowNo: ledgerNo,
                     ticker: getInvestmentCanonicalTicker(txn?.ticker),
                     currency,

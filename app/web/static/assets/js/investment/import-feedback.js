@@ -1,13 +1,16 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.8.1
+ * Code version: v1.8.2
+ * - Changed: IBKR transfer feedback no longer uses an alarming immediate-action
+ *   warning; it distinguishes import-time candidates from rows that remain
+ *   marked `Unbound`, so already-bound transfers require no further action.
  * - Fixed: HSBC transferable-cash feedback is shown only when positive unsettled sell proceeds produce the provisional `*` marker.
  * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
  * - Added: HSBC feedback states the authoritative transferable cash and the pending-sell display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.1';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.2';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -54,7 +57,7 @@ export function buildIbkrImportFeedbackMessage({
     }
     if (pendingTransferCount > 0) {
         items.push(
-            `<span class="notice-floating-banner-emphasis-danger"><u>Immediate action</u>:</span> Review and bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} possible internal-transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history to remove duplicate-equity spikes.`
+            `<u>Transfer review</u>: <strong>${pendingTransferCount.toLocaleString('en-US')} possible internal-transfer ${pendingTransferCount === 1 ? 'match was' : 'matches were'} detected during this import.</strong> Review only rows still marked <strong>Unbound</strong> in Transaction history; already-bound transfers require no further action.`
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();
