@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.35.0`
+Documentation version: `v1.35.1`
 
 ## Holdings P&L display contract
 
@@ -190,6 +190,17 @@ second broker balance ledger. Its accounting boundaries are explicit:
 The implementation lives in `app/web/static/assets/js/investment.js` and
 `app/web/static/assets/js/investment/data-utils.js`; regression coverage must
 assert both historical continuity and current-endpoint equality.
+
+## Overview Tooltip P&L contract
+
+Overview Tooltip P&L is a point-in-time tax-lot replay, not Equity less
+funding flows. Each historical hover uses only ledger entries effective at that
+point and its observed historical close. Current broker position and
+performance snapshots have no historical as-of guarantee and must not alter a
+historical point. The one live endpoint may reuse the current Holdings summary
+so the two current surfaces reconcile. In every case, Total P&L is calculated
+as realized P&L plus unrealized P&L; incomplete basis or valuation evidence is
+shown as unavailable rather than fabricated.
 
 ## High-precision Overview intraday equity valuation contract
 

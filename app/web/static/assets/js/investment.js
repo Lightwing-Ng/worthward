@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.102.3
+ * Code version: v2.102.5
+ * - Fixed: Overview Tooltip P&L now replays the hovered historical point's
+ *   effective lots and observed close. Only the current realtime endpoint
+ *   reads the live Holdings summary, while Total P&L always remains realized
+ *   P&L plus unrealized P&L.
  * - Fixed: Realtime session refreshes retain the selected high-precision
  *   range's full trading calendar, so 1M cannot be downgraded to 1W after a
  *   60-second poll.
@@ -11,10 +15,8 @@
  *   through the closing bell.
  * - Changed: Overview equity-chart Tooltips remove the superseded one-day P&L
  *   row now that the realized, unrealized, and total P&L breakdown is present.
- * - Added: Every Overview equity-range Tooltip now ends with Holdings-aligned
- *   Realized P&L, Unrealized P&L, and Total P&L rows. Historical points use
- *   dated realized-income replay, while each range endpoint reuses the current
- *   Holdings summary exactly.
+ * - Added: Every Overview equity-range Tooltip now ends with the Holdings
+ *   Realized P&L, Unrealized P&L, and Total P&L row structure.
  * - Fixed: Configured cash-equivalent ETFs retain their security logos and
  *   realtime quote path instead of inheriting money-market token identities.
  * - Fixed: Refreshed pages restore exact account-scoped HSBC DRAM and EUV
@@ -179,7 +181,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.97.1';
+} from './investment/data-utils.js?v=investment-data-utils-v1.97.2';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -205,7 +207,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.13.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.13.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -250,7 +252,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.102.3',
+    entry: 'v2.102.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -717,8 +719,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentProcessedTransactionsCache = [];
     let investmentReplaySnapshotsCache = [];
     let investmentTickerSummariesCache = [];
-    let investmentChartRealizedPnlTimeline = [];
     let investmentCurrentChartPnlMetrics = null;
+    let investmentCurrentChartPnlMetricsRevision = 0;
+    let investmentChartPnlMetricsByPoint = new WeakMap();
     let investmentAvailableBrokerCodesCache = [];
     let investmentAvailableBrokerCodesSet = new Set();
     let animatedHoldingsMarkerPoint = null;
@@ -1875,6 +1878,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const moneyMarketTickers = getMoneyMarketTickerSet();
         let aggregateMarketValue = 0;
         const holdingsMarketValues = {};
+        const holdingsQuotePrices = {};
 
         Object.entries(holdings).forEach(([ticker, quantity]) => {
             const normalizedTicker = normalizeInvestmentTicker(ticker);
@@ -1901,6 +1905,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 baseCurrency,
             );
             holdingsMarketValues[normalizedTicker] = marketValue;
+            holdingsQuotePrices[normalizedTicker] = price;
             aggregateMarketValue += marketValue;
         });
 
@@ -1912,10 +1917,15 @@ document.addEventListener('DOMContentLoaded', () => {
             : aggregateRunningCash + aggregatePendingSettlementCash;
         const holdingsRealtimeState = getInvestmentHoldingsRealtimeState();
         const realtimeHoldingsMarketValues = {};
+        const realtimeHoldingsQuotePrices = { ...holdingsQuotePrices };
         (holdingsRealtimeState?.summaries || []).forEach((summary) => {
             const marketValue = Number(summary?.marketValue);
             if (!summary?.hasOpenPosition || !Number.isFinite(marketValue)) return;
             realtimeHoldingsMarketValues[summary.ticker] = marketValue;
+            const lastPrice = Number(summary?.lastPrice);
+            if (Number.isFinite(lastPrice) && lastPrice > 0) {
+                realtimeHoldingsQuotePrices[summary.ticker] = lastPrice;
+            }
         });
         const resolvedMarketValue = holdingsRealtimeState
             ? Object.values(realtimeHoldingsMarketValues).reduce(
@@ -1932,6 +1942,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolvedHoldingsMarketValues = holdingsRealtimeState
             ? realtimeHoldingsMarketValues
             : holdingsMarketValues;
+        const resolvedHoldingsQuotePrices = holdingsRealtimeState
+            ? realtimeHoldingsQuotePrices
+            : holdingsQuotePrices;
         const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
         const realtimeDateKey = getInvestmentLiveSessionDateKey()
             || normalizeLedgerDate(realtimeTimestamp)
@@ -1951,6 +1964,8 @@ document.addEventListener('DOMContentLoaded', () => {
             aggregate_market_value: resolvedMarketValue,
             holdings_market_values: resolvedHoldingsMarketValues,
             aggregate_holdings_market_values: resolvedHoldingsMarketValues,
+            holdings_quote_prices: resolvedHoldingsQuotePrices,
+            aggregate_holdings_quote_prices: resolvedHoldingsQuotePrices,
             total_equity: resolvedTotalEquity,
             aggregate_total_equity: resolvedTotalEquity,
             anchor_ledger_date: '',
@@ -4610,6 +4625,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : fallbackAggregateDisplayCash + aggregateBridgeAdjustment;
                 let aggregateMarketValue = 0;
                 const holdingsMarketValues = {};
+                const holdingsQuotePrices = {};
                 let valuationComplete = true;
                 Object.entries(holdings).forEach(([ticker, quantity]) => {
                     const normalizedTicker = normalizeInvestmentTicker(ticker);
@@ -4634,6 +4650,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (Math.abs(marketValue) > 1e-9) {
                         holdingsMarketValues[normalizedTicker] = marketValue;
                     }
+                    holdingsQuotePrices[normalizedTicker] = close;
                 });
                 const aggregateTotalEquity = valuationComplete
                     ? aggregateDisplayCash + aggregateMarketValue
@@ -4647,6 +4664,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     aggregate_market_value: valuationComplete ? aggregateMarketValue : null,
                     holdings_market_values: holdingsMarketValues,
                     aggregate_holdings_market_values: holdingsMarketValues,
+                    holdings_quote_prices: holdingsQuotePrices,
+                    aggregate_holdings_quote_prices: holdingsQuotePrices,
                     total_equity: aggregateTotalEquity,
                     aggregate_total_equity: aggregateTotalEquity,
                     valuation_complete: valuationComplete,
@@ -13890,13 +13909,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return totals;
         }, { realized: 0, unrealized: 0 });
         const cumulativePnl = hasPnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
-        investmentCurrentChartPnlMetrics = hasPnlUnavailable
-            ? { realizedPnl: null, unrealizedPnl: null, totalPnl: null }
-            : {
-                realizedPnl: totalRealizedPnl,
-                unrealizedPnl: totalUnrealizedPnl,
-                totalPnl: cumulativePnl,
-            };
+        setInvestmentCurrentChartPnlMetrics(
+            hasPnlUnavailable ? null : totalRealizedPnl,
+            hasPnlUnavailable ? null : totalUnrealizedPnl,
+        );
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
         const hasUnavailableOpenMarketValue = openSummaries.some(
             (summary) => !Number.isFinite(summary.marketValue),
@@ -16366,6 +16382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentRealtimeQuotesByTicker.clear();
         investmentOverviewRealtimeLinePointsByMinute.clear();
+        investmentChartPnlMetricsByPoint = new WeakMap();
         investmentOverviewIntradayLinePointsCache = {
             key: '',
             points: [],
@@ -16502,11 +16519,7 @@ document.addEventListener('DOMContentLoaded', () => {
             AGGREGATE_TOTAL_EQUITY,
             brokerBenefitMetrics,
         );
-        refreshInvestmentChartPnlState(
-            aggregateTransactions,
-            tickerSummaries,
-            holdingsSummaryMetrics,
-        );
+        refreshInvestmentChartPnlState(holdingsSummaryMetrics);
         if (investmentProcessedTransactionsCache !== processed) {
             investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
             refreshInvestmentAvailableBrokerCodes();
@@ -16568,116 +16581,158 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.round(normalizedValue * 100) / 100;
     }
 
-    function refreshInvestmentChartPnlState(
-        transactions = [],
-        tickerSummaries = [],
-        holdingsSummaryMetrics = null,
-    ) {
-        const dailyRealizedPnl = new Map();
-        const addDailyRealizedPnl = (rawDate, rawValue) => {
-            const ledgerDate = normalizeLedgerDate(rawDate);
-            const value = Number(rawValue);
-            if (!ledgerDate || !Number.isFinite(value) || Math.abs(value) <= 1e-9) return;
-            dailyRealizedPnl.set(
-                ledgerDate,
-                (Number(dailyRealizedPnl.get(ledgerDate)) || 0) + value,
-            );
+    function buildInvestmentChartPnlMetrics(realizedValue, unrealizedValue) {
+        const realizedPnl = getOptionalInvestmentNumber(realizedValue);
+        const unrealizedPnl = getOptionalInvestmentNumber(unrealizedValue);
+        if (realizedPnl === null || unrealizedPnl === null) {
+            return { realizedPnl, unrealizedPnl, totalPnl: null };
+        }
+        return {
+            realizedPnl,
+            unrealizedPnl,
+            totalPnl: Number((realizedPnl + unrealizedPnl).toFixed(12)),
         };
+    }
 
-        (Array.isArray(tickerSummaries) ? tickerSummaries : []).forEach((summary) => {
-            Object.entries(summary?.realizedPnlByDate || {}).forEach(([ledgerDate, value]) => {
-                addDailyRealizedPnl(ledgerDate, value);
-            });
-        });
+    function setInvestmentCurrentChartPnlMetrics(realizedValue, unrealizedValue) {
+        const nextMetrics = buildInvestmentChartPnlMetrics(realizedValue, unrealizedValue);
+        const previousMetrics = investmentCurrentChartPnlMetrics;
+        const hasChanged = (
+            previousMetrics?.realizedPnl !== nextMetrics.realizedPnl
+            || previousMetrics?.unrealizedPnl !== nextMetrics.unrealizedPnl
+            || previousMetrics?.totalPnl !== nextMetrics.totalPnl
+        );
+        investmentCurrentChartPnlMetrics = nextMetrics;
+        if (hasChanged) investmentCurrentChartPnlMetricsRevision += 1;
+    }
 
-        const safeTransactions = Array.isArray(transactions) ? transactions : [];
-        const baseCurrency = getInvestmentBaseCurrency();
-        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
-        safeTransactions.forEach((txn) => {
-            if (shouldTrackHoldingTicker(txn)) return;
-            const ledgerDate = normalizeLedgerDate(txn?.date);
-            if (!ledgerDate) return;
-            const benefitType = classifyBrokerBenefitTransaction(txn);
-            if (benefitType) {
-                const transactionAmount = Math.abs(getTransactionAmount(txn));
-                if (!(transactionAmount > 1e-9)) return;
-                const transactionCurrency = formatTransactionCurrency(txn) || baseCurrency;
-                const sourceAmount = benefitType === 'coupon_hkd_notional' ? 100 : transactionAmount;
-                const sourceCurrency = benefitType === 'coupon_hkd_notional' ? 'HKD' : transactionCurrency;
-                addDailyRealizedPnl(
-                    ledgerDate,
-                    convertAmountToBaseCurrency(
-                        sourceAmount,
-                        sourceCurrency,
-                        ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    ),
-                );
-                return;
-            }
-            if (!classifyInvestmentRealizedCashFlow(txn)) return;
-            addDailyRealizedPnl(
-                ledgerDate,
-                getInvestmentMetricBaseAmount(
-                    getTransactionAmount(txn),
-                    txn,
-                    fxTimeline,
-                    baseCurrency,
-                ),
-            );
-        });
-
-        let cumulativeRealizedPnl = 0;
-        investmentChartRealizedPnlTimeline = Array.from(dailyRealizedPnl.entries())
-            .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
-            .map(([ledgerDate, dailyValue]) => {
-                cumulativeRealizedPnl += Number(dailyValue) || 0;
-                return {
-                    ledgerDate,
-                    realizedPnl: Number(cumulativeRealizedPnl.toFixed(12)),
-                };
-            });
-
+    function refreshInvestmentChartPnlState(holdingsSummaryMetrics = null) {
         const pnlUnavailable = holdingsSummaryMetrics?.pnlUnavailable === true;
         const realizedPnl = getOptionalInvestmentNumber(holdingsSummaryMetrics?.totalRealizedPnl);
         const unrealizedPnl = getOptionalInvestmentNumber(holdingsSummaryMetrics?.totalUnrealizedPnl);
-        const totalPnl = getOptionalInvestmentNumber(holdingsSummaryMetrics?.cumulativePnl);
-        investmentCurrentChartPnlMetrics = pnlUnavailable
-            ? { realizedPnl: null, unrealizedPnl: null, totalPnl: null }
-            : { realizedPnl, unrealizedPnl, totalPnl };
+        setInvestmentCurrentChartPnlMetrics(
+            pnlUnavailable ? null : realizedPnl,
+            pnlUnavailable ? null : unrealizedPnl,
+        );
     }
 
-    function getInvestmentChartRealizedPnlAtDate(rawDate) {
-        const ledgerDate = normalizeLedgerDate(rawDate);
-        if (!ledgerDate) return 0;
-        let realizedPnl = 0;
-        for (const entry of investmentChartRealizedPnlTimeline) {
-            if (entry.ledgerDate > ledgerDate) break;
-            realizedPnl = Number(entry.realizedPnl) || 0;
-        }
-        return realizedPnl;
+    function getInvestmentChartPnlPointTransactions(pointRecord) {
+        const pointDate = normalizeLedgerDate(pointRecord?.date);
+        if (!pointDate) return [];
+        const pointMinuteKey = String(pointRecord?.date || '').trim();
+        const isIntradayPoint = (
+            pointRecord?.is_intraday_equity === true
+            && pointMinuteKey.startsWith(`${pointDate} `)
+        );
+        return getInvestmentAggregateOnlyTransactions(investmentRawTransactionsCache)
+            .filter((txn) => {
+                const transactionDate = normalizeLedgerDate(txn?.date);
+                if (!transactionDate) return false;
+                if (transactionDate < pointDate) return true;
+                if (transactionDate > pointDate) return false;
+                if (!isIntradayPoint) return true;
+                const effectiveMinuteKey = getInvestmentOverviewSnapshotEffectiveMinuteKey(
+                    txn,
+                    pointDate,
+                );
+                return Boolean(effectiveMinuteKey && effectiveMinuteKey <= pointMinuteKey);
+            });
     }
 
-    function resolveInvestmentChartPnlMetrics(pointRecord, { useCurrentMetrics = false } = {}) {
-        if (useCurrentMetrics && investmentCurrentChartPnlMetrics) {
-            return investmentCurrentChartPnlMetrics;
-        }
+    function getInvestmentChartPnlPointPrices(pointRecord) {
+        const pointDate = normalizeLedgerDate(pointRecord?.date);
+        if (!pointDate) return {};
+        const observedPointPrices = (
+            pointRecord?.aggregate_holdings_quote_prices
+            || pointRecord?.holdings_quote_prices
+            || {}
+        );
+        const pointPrices = {};
+        Object.entries(observedPointPrices).forEach(([ticker, value]) => {
+            const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+            const price = Number(value);
+            if (!normalizedTicker || !Number.isFinite(price) || price <= 0) return;
+            pointPrices[normalizedTicker] = price;
+        });
+        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        Object.entries(tickerPriceIndex).forEach(([ticker, priceIndex]) => {
+            const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+            if (!normalizedTicker || Number.isFinite(pointPrices[normalizedTicker])) return;
+            const close = getIndexedClosePriceOnOrBefore(priceIndex, pointDate);
+            if (Number.isFinite(close) && close > 0) {
+                pointPrices[normalizedTicker] = close;
+            }
+        });
+        return pointPrices;
+    }
+
+    function buildInvestmentHistoricalChartPnlMetrics(pointRecord) {
+        const unavailableMetrics = {
+            realizedPnl: null,
+            unrealizedPnl: null,
+            totalPnl: null,
+        };
+        if (!pointRecord || typeof pointRecord !== 'object') return unavailableMetrics;
+        const cachedMetrics = investmentChartPnlMetricsByPoint.get(pointRecord);
+        if (cachedMetrics) return cachedMetrics;
+
         const pointEquity = getOptionalInvestmentNumber(
             pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity,
         );
-        if (pointEquity === null) {
-            return { realizedPnl: null, unrealizedPnl: null, totalPnl: null };
+        if (pointRecord?.valuation_complete === false || pointEquity === null) {
+            investmentChartPnlMetricsByPoint.set(pointRecord, unavailableMetrics);
+            return unavailableMetrics;
         }
-        const realizedPnl = getInvestmentChartRealizedPnlAtDate(pointRecord?.date);
-        const startingCash = Number(getInvestmentStartingCash()) || 0;
-        const cumulativeNetTransferAmount = Number(pointRecord?.cumulative_net_transfer_amount) || 0;
-        const totalPnl = pointEquity - startingCash - cumulativeNetTransferAmount;
-        return {
-            realizedPnl,
-            unrealizedPnl: totalPnl - realizedPnl,
-            totalPnl,
-        };
+
+        const pointTransactions = getInvestmentChartPnlPointTransactions(pointRecord);
+        const pointPrices = getInvestmentChartPnlPointPrices(pointRecord);
+        const pointDate = normalizeLedgerDate(pointRecord?.date);
+        const tickerSummaries = applyInvestmentAggregatePnlAvailability(
+            buildTickerSummaries(
+                pointTransactions,
+                pointPrices,
+                pointEquity,
+                investmentTickerClosePricesCache,
+                {
+                    useAuthoritativePositionSnapshot: false,
+                    useAuthoritativePerformanceSnapshot: false,
+                    valuationDate: pointDate,
+                },
+            ),
+        );
+        if (isInvestmentAggregatePnlUnavailable(tickerSummaries)) {
+            investmentChartPnlMetricsByPoint.set(pointRecord, unavailableMetrics);
+            return unavailableMetrics;
+        }
+
+        const brokerBenefitMetrics = getBrokerBenefitMetrics(
+            pointTransactions,
+            pointPrices,
+            pointEquity,
+        );
+        const realizedPnl = getRealizedPnlAttribution(
+            pointTransactions,
+            tickerSummaries,
+            brokerBenefitMetrics,
+        ).totalRealizedPnl;
+        const unrealizedPnl = tickerSummaries.reduce(
+            (sum, summary) => sum + (Number(summary?.unrealizedPnl) || 0),
+            0,
+        );
+        const metrics = buildInvestmentChartPnlMetrics(realizedPnl, unrealizedPnl);
+        investmentChartPnlMetricsByPoint.set(pointRecord, metrics);
+        return metrics;
+    }
+
+    function resolveInvestmentChartPnlMetrics(pointRecord, {useCurrentHoldings = false} = {}) {
+        if (useCurrentHoldings) {
+            return investmentCurrentChartPnlMetrics || {
+                realizedPnl: null,
+                unrealizedPnl: null,
+                totalPnl: null,
+            };
+        }
+        return buildInvestmentHistoricalChartPnlMetrics(pointRecord);
     }
 
     function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntradayLinePoints = []) {
@@ -17126,6 +17181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let activeChartHoverDate = "";
         let activeTooltipDataIndex = -1;
         let activeTooltipPointRecord = null;
+        let activeTooltipPnlMetricsRevision = -1;
         let tooltipElement = null;
         let tooltipWidth = 0;
         let tooltipHeight = 0;
@@ -17420,6 +17476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeChartHoverDate = "";
                 activeTooltipDataIndex = -1;
                 activeTooltipPointRecord = null;
+                activeTooltipPnlMetricsRevision = -1;
                 activeChartTooltipPointIndex = -1;
                 activeChartTooltipPointRecord = null;
                 clearInvestmentHistoryHighlights();
@@ -17438,8 +17495,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
             const pointRecord = visibleChartPoints[pointIndex];
             const pointChanged = pointIndex !== activeTooltipDataIndex || pointRecord !== activeTooltipPointRecord;
+            const realtimeMarkerTarget = resolveInvestmentEquityRealtimeMarkerTarget(runtimeState);
+            const useCurrentHoldingsPnl = realtimeMarkerTarget?.index === pointIndex;
+            const pnlMetricsChanged = (
+                useCurrentHoldingsPnl
+                && activeTooltipPnlMetricsRevision !== investmentCurrentChartPnlMetricsRevision
+            );
+            const tooltipContentChanged = pointChanged || pnlMetricsChanged;
             activeTooltipDataIndex = pointIndex;
             activeTooltipPointRecord = pointRecord || null;
+            activeTooltipPnlMetricsRevision = useCurrentHoldingsPnl
+                ? investmentCurrentChartPnlMetricsRevision
+                : -1;
             const tooltipDateSource = String(pointRecord?.realtime_timestamp || rawDates[pointIndex] || '');
             const parsedDate = parseRawDate(tooltipDateSource);
             const sourcePointIndex = Number.isFinite(pointIndex) && pointIndex >= 0
@@ -17447,7 +17514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : -1;
             activeChartTooltipPointIndex = Number.isFinite(sourcePointIndex) && sourcePointIndex >= 0 ? sourcePointIndex : -1;
             activeChartTooltipPointRecord = pointRecord && typeof pointRecord === 'object' ? pointRecord : null;
-            if (pointChanged) {
+            if (tooltipContentChanged) {
                 scheduleInvestmentDummyDonutSync();
                 scheduleInvestmentStockDetailsDonutSync();
                 const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
@@ -17527,8 +17594,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
                     const pnlMetrics = resolveInvestmentChartPnlMetrics(pointRecord, {
-                        useCurrentMetrics: pointRecord?.is_realtime === true
-                            || pointIndex === visibleChartPoints.length - 1,
+                        useCurrentHoldings: useCurrentHoldingsPnl,
                     });
                     [
                         ['Realized P&L', pnlMetrics.realizedPnl],
@@ -17573,14 +17639,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const anchorKey = `${pointIndex}:${Number(tooltip.caretX).toFixed(2)}:${Number(tooltip.caretY).toFixed(2)}`;
             const layoutChanged = viewportKey !== tooltipLayoutViewportKey;
             const anchorChanged = anchorKey !== tooltipAnchorKey;
-            if (!pointChanged && !layoutChanged && !anchorChanged) return;
+            if (!tooltipContentChanged && !layoutChanged && !anchorChanged) return;
             if (layoutChanged || !tooltipCanvasRect) {
                 tooltipCanvasRect = chart.canvas.getBoundingClientRect();
                 tooltipDonutRect = investmentDummyChart instanceof HTMLElement
                     ? investmentDummyChart.getBoundingClientRect()
                     : null;
             }
-            if (pointChanged || layoutChanged || !tooltipWidth || !tooltipHeight) {
+            if (tooltipContentChanged || layoutChanged || !tooltipWidth || !tooltipHeight) {
                 const tooltipRect = tooltipEl.getBoundingClientRect();
                 tooltipWidth = tooltipRect.width;
                 tooltipHeight = tooltipRect.height;

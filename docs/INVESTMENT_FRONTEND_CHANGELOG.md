@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.23.1`
+Documentation version: `v1.23.3`
+
+- Fixed: Overview Tooltip P&L now replays the hovered point's effective tax
+  lots and observed close. An earlier minute retains its own P&L after a later
+  realtime quote arrives; only the live end marker uses the current Holdings
+  summary. Total P&L is always realized P&L plus unrealized P&L, never Equity
+  less funding flows.
 
 - Fixed: During an active US regular session, Overview 1W and 1M preserve the
   complete current-day axis while ending the visible equity line at the current
@@ -10,18 +16,16 @@ Documentation version: `v1.23.1`
 
 - Fixed: Realtime quote polls now await a fresh market-session clock before
   placing the next minute. Empty Longbridge timestamps use the authoritative
-  New York minute, the latest Tooltip P&L follows Holdings, and earlier captured
-  minutes retain their own historical P&L. Polls preserve the selected range's
-  full trading calendar, including all 23 trading days in 1M.
+  New York minute, and the live Tooltip endpoint refreshes with Holdings.
+  Polls preserve the selected range's full trading calendar, including all 23
+  trading days in 1M.
 
 - Changed: Overview equity-chart Tooltips remove the superseded daily `P&L`
   row and retain the Holdings-aligned realized, unrealized, and total P&L
   breakdown.
 
 - Added: Every Overview equity-chart range now appends Realized P&L,
-  Unrealized P&L, and Total P&L to its hover Tooltip. Historical values use
-  dated realized-income replay, and the latest endpoint matches the current
-  Holdings summary.
+  Unrealized P&L, and Total P&L to its hover Tooltip.
 
 - Fixed: Matched future HSBC SEC postings now accrue as exact signed
   trade-date receivables or payables and clear only at their own settlement

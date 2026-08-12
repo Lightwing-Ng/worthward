@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.97.1
+ * Code version: v1.97.2
+ * - Added: Historical Overview Tooltip P&L can replay a point without applying
+ *   a current broker position or performance snapshot. The caller supplies the
+ *   point valuation date and observed close, so historical P&L cannot inherit
+ *   today's holdings or broker calibration.
  * - Fixed: Money-market classification no longer absorbs configured
  *   cash-equivalent securities. Money-market funds remain cash equivalents,
  *   while ETFs such as SGOV and BOXX retain their own quotes and identities.
@@ -3886,6 +3890,7 @@ export function createInvestmentDataUtils({
             return {
                 marketValue: 0,
                 holdingsMarketValues: {},
+                holdingPrices: {},
                 missingPriceTickers: [],
                 degradedPriceTickers: [],
                 isComplete: false,
@@ -3893,6 +3898,7 @@ export function createInvestmentDataUtils({
         }
         let marketValue = 0;
         const holdingsMarketValues = {};
+        const holdingPrices = {};
         const missingPriceTickers = new Set();
         const degradedPriceTickers = new Set();
 
@@ -3930,11 +3936,13 @@ export function createInvestmentDataUtils({
             if (Math.abs(holdingMarketValueBase) > 1e-9) {
                 holdingsMarketValues[ticker] = holdingMarketValueBase;
             }
+            holdingPrices[normalizedTicker] = closePrice;
         });
 
         return {
             marketValue,
             holdingsMarketValues,
+            holdingPrices,
             missingPriceTickers: Array.from(missingPriceTickers).sort(),
             degradedPriceTickers: Array.from(degradedPriceTickers).sort(),
             isComplete: missingPriceTickers.size === 0,
@@ -4055,6 +4063,8 @@ export function createInvestmentDataUtils({
                 aggregate_market_value: 0,
                 holdings_market_values: {},
                 aggregate_holdings_market_values: {},
+                holdings_quote_prices: {},
+                aggregate_holdings_quote_prices: {},
                 total_equity: startingCash,
                 aggregate_total_equity: startingCash,
                 aggregate_current_display_cash: startingCash,
@@ -4153,6 +4163,8 @@ export function createInvestmentDataUtils({
                 aggregate_market_value: valuation.isComplete ? aggregateMarketValue : null,
                 holdings_market_values: valuation.holdingsMarketValues,
                 aggregate_holdings_market_values: valuation.holdingsMarketValues,
+                holdings_quote_prices: valuation.holdingPrices,
+                aggregate_holdings_quote_prices: valuation.holdingPrices,
                 total_equity: aggregateTotalEquity,
                 aggregate_total_equity: aggregateTotalEquity,
                 aggregate_current_total_equity: currentTotalEquity,
@@ -4177,7 +4189,17 @@ export function createInvestmentDataUtils({
         return points;
     }
 
-    function buildTickerSummaries(transactions, latestPrices, totalEquity, tickerClosePrices = {}) {
+    function buildTickerSummaries(
+        transactions,
+        latestPrices,
+        totalEquity,
+        tickerClosePrices = {},
+        {
+            useAuthoritativePositionSnapshot: allowAuthoritativePositionSnapshot = true,
+            useAuthoritativePerformanceSnapshot: allowAuthoritativePerformanceSnapshot = true,
+            valuationDate = '',
+        } = {},
+    ) {
         const tickerMap = new Map();
         const lotScopeMap = new Map();
         const orderedTransactions = [...transactions].sort((left, right) => (
@@ -4187,9 +4209,15 @@ export function createInvestmentDataUtils({
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
-        const authoritativePositionSnapshot = getAuthoritativePositionSnapshotForTransactions(orderedTransactions);
-        const authoritativePerformanceSnapshot = getAuthoritativePerformanceSnapshot();
-        const authoritativeBrokerPerformanceSnapshots = getAuthoritativeBrokerPerformanceSnapshots();
+        const authoritativePositionSnapshot = allowAuthoritativePositionSnapshot
+            ? getAuthoritativePositionSnapshotForTransactions(orderedTransactions)
+            : null;
+        const authoritativePerformanceSnapshot = allowAuthoritativePerformanceSnapshot
+            ? getAuthoritativePerformanceSnapshot()
+            : null;
+        const authoritativeBrokerPerformanceSnapshots = allowAuthoritativePerformanceSnapshot
+            ? getAuthoritativeBrokerPerformanceSnapshots()
+            : [];
         const verifiedTaxLotHistoryScopes = getVerifiedTaxLotHistoryScopes();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
         const canonicalAuthoritativePositionSnapshot = {};
@@ -4532,6 +4560,7 @@ export function createInvestmentDataUtils({
                         : null));
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
+            const resolvedValuationDate = normalizeLedgerDate(valuationDate) || lastLedgerDate;
             const completeRealizedPnlAccounts = realizedPnlAccounts.filter((result) => result.realizedPnl !== null);
             const hasOnlyUnavailableRealizedAccounts = (
                 realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
@@ -4588,7 +4617,7 @@ export function createInvestmentDataUtils({
                 : convertAmountToBaseCurrency(
                     marketValueLocal,
                     quoteCurrency,
-                    lastLedgerDate,
+                    resolvedValuationDate,
                     fxTimeline,
                     baseCurrency,
                 );
@@ -4602,7 +4631,7 @@ export function createInvestmentDataUtils({
                 : convertAmountToBaseCurrency(
                     unrealizedPnlLocal,
                     quoteCurrency,
-                    lastLedgerDate,
+                    resolvedValuationDate,
                     fxTimeline,
                     baseCurrency,
                 );
@@ -4843,4 +4872,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.97.2';
