@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.4."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.5."""
 
 from __future__ import annotations
 
@@ -44,6 +44,50 @@ def test_shared_select_option_highlights_use_pill_geometry() -> None:
     )[1].split("}", maxsplit=1)[0]
 
     assert "border-radius: var(--shared-select-option-radius);" in option_rule
+
+
+def test_investment_pagination_menu_uses_opaque_frosted_material() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+
+    assert "--frosted-glass-opaque-background:" in tokens_css
+    menu_rule = settings_css.split(
+        ".local-store-pagination-range-menu {", maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+    assert (
+        "background: var(--frosted-glass-opaque-background, "
+        "var(--glass-popover-background));"
+    ) in menu_rule
+
+
+def test_investment_history_scroll_shell_keeps_rounded_bottom_corners() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+
+    scroll_rule = investment_css.split(
+        ".investment-history-table-shell > .investment-history-table-scroll {",
+        maxsplit=1,
+    )[1].split("}", maxsplit=1)[0]
+    first_corner_rule = investment_css.split(
+        ".investment-history-table-shell > .investment-history-table-scroll > "
+        ".investment-history-table tbody tr:last-child > :first-child {",
+        maxsplit=1,
+    )[1].split("}", maxsplit=1)[0]
+    last_corner_rule = investment_css.split(
+        ".investment-history-table-shell > .investment-history-table-scroll > "
+        ".investment-history-table tbody tr:last-child > :last-child {",
+        maxsplit=1,
+    )[1].split("}", maxsplit=1)[0]
+    assert "border-radius: 0 0 10px 10px;" in scroll_rule
+    assert "border-bottom-left-radius: 10px;" in first_corner_rule
+    assert "border-bottom-right-radius: 10px;" in last_corner_rule
 
 
 def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:

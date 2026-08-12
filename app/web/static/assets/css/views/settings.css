@@ -1,4 +1,4 @@
-/* Code version: v0.22.0 */
+/* Code version: v0.22.1 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -2835,7 +2835,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     scrollbar-width: thin;
     border: var(--frosted-glass-border);
     border-radius: var(--radius-soft);
-    background: var(--glass-popover-background);
+    background: var(--frosted-glass-opaque-background, var(--glass-popover-background));
     background-clip: padding-box;
     box-shadow: var(--glass-popover-shadow);
     backdrop-filter: var(--glass-popover-blur);

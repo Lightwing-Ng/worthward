@@ -1,4 +1,4 @@
-/* Code version: v1.75.27 */
+/* Code version: v1.75.28 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -3319,6 +3319,10 @@
     border-radius: 0;
 }
 
+.investment-history-table-shell > .investment-history-table-scroll {
+    border-radius: 0 0 10px 10px;
+}
+
 .investment-holdings-cell {
     font-variant-numeric: tabular-nums;
     vertical-align: top;
@@ -4728,6 +4732,14 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     flex: 0 0 auto;
     height: auto;
     border-radius: 0 0 10px 10px;
+}
+
+.investment-history-table-shell > .investment-history-table-scroll > .investment-history-table tbody tr:last-child > :first-child {
+    border-bottom-left-radius: 10px;
+}
+
+.investment-history-table-shell > .investment-history-table-scroll > .investment-history-table tbody tr:last-child > :last-child {
+    border-bottom-right-radius: 10px;
 }
 
 .investment-history-table-scroll > .investment-history-table {
