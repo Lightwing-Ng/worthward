@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.1.0."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.0."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ UNLOCK_HTML = PROJECT_ROOT / "app/web/templates/live_trading_unlock.html"
 
 EXPECTED_REGISTRY = {
     "layout-switch-min": 768,
-    "sidebar-overlay-max": 600,
+    "compact-layout-max": 600,
+    "sidebar-overlay-max": 900,
     "settings-density-max": 980,
     "investment-form-density-max": 1080,
     "trade-layout-min": 1024,
@@ -101,3 +102,9 @@ def test_javascript_reads_width_media_queries_from_shared_responsive_api() -> No
 def test_safe_area_viewports_use_cover_layout() -> None:
     assert "viewport-fit=cover" in _read(BASE_HTML)
     assert "viewport-fit=cover" in _read(UNLOCK_HTML)
+
+
+def test_hidden_elements_cannot_be_reactivated_by_responsive_display_rules() -> None:
+    token_source = _read(TOKENS_CSS)
+
+    assert "[hidden] { display: none !important; }" in token_source

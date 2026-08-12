@@ -1,4 +1,4 @@
-{# Code version: v0.8.0 #}
+{# Code version: v0.12.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -96,7 +96,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.19.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.20.0') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -451,6 +451,7 @@
                                     class="font-token-sample-text font-token-sample-numeric-fraction"
                                     aria-label="{{ sample.sample_text }}"
                                     data-numeric-display-value="{{ sample.sample_text }}"
+                                    data-inline-font-size-token="{{ sample.preview_font_size_token or sample.token_name }}"
                                 >
                                     {{ sample.sample_text }}
                                 </p>
@@ -786,7 +787,37 @@
                 <span class="local-store-pagination-indicator" aria-hidden="true"></span>
                 {% for item in local_store_pagination_items %}
                 {% if item.kind == 'ellipsis' %}
-                <span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="{{ item.position }}"><span class="local-store-page-ellipsis-dots"></span></span>
+                {% set range_direction = 'earlier' if item.position == 'leading' else 'later' %}
+                <span class="local-store-page-ellipsis local-store-pagination-range-picker"
+                      data-pagination-ellipsis="{{ item.position }}">
+                    <button type="button"
+                            class="local-store-pagination-range-trigger"
+                            aria-label="Show {{ range_direction }} pages"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            aria-controls="local_store_pagination_ranges_{{ item.position }}"
+                            data-pagination-range-trigger>
+                        <span class="local-store-page-ellipsis-dots" aria-hidden="true"></span>
+                    </button>
+                    <span id="local_store_pagination_ranges_{{ item.position }}"
+                          class="local-store-pagination-range-menu"
+                          role="menu"
+                          aria-label="{{ range_direction|capitalize }} pages"
+                          aria-hidden="true"
+                          data-pagination-range-menu>
+                        <span class="local-store-pagination-range-grid">
+                            {% for range_start, range_end in item.ranges %}
+                            <a href="{{ local_store_page_urls[range_start] }}"
+                               class="local-store-pagination-range-option"
+                               role="menuitem"
+                               data-pagination-target="{{ range_start }}"
+                               data-pagination-range-start="{{ range_start }}"
+                               data-pagination-range-end="{{ range_end }}"
+                               aria-label="Pages {{ range_start }} through {{ range_end }}">{{ range_start }}-{{ range_end }}</a>
+                            {% endfor %}
+                        </span>
+                    </span>
+                </span>
                 {% elif item.kind == 'previous' or item.kind == 'next' %}
                 <a href="{{ local_store_page_urls[item.page] }}"
                    class="local-store-page-button local-store-page-nav"
@@ -985,34 +1016,64 @@
             </div>
     </section>
     {% elif settings_section == "cash-equivalents" %}
-    <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
-        <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
-    </div>
     <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
-        <p class="settings-service-note">{{ translate_ui('Tickers in this list are treated as cash in the investment donut chart (at /trade/investment) and use the standard green token instead of the gradient.') }}</p>
-        <div class="cash-equivalents-list" id="cash_equivalents_list" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
-            {% for row in cash_equivalent_rows %}
-            <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">
-                <div class="ticker-identity-item">
-                    <div class="ticker-identity-row">
-                        {% if row.logo_url %}
-                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
-                        {% else %}
-                        <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
-                        {% endif %}
-                        <span class="ticker-identity-copy">
-                            <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
-                            <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
-                        </span>
+        <div class="cash-equivalent-category" data-cash-equivalent-category="stocks">
+            <div class="cash-equivalent-category-heading">
+                <h2 id="cash_equivalent_stocks_heading">{{ translate_ui('Stocks') }}</h2>
+                <p class="settings-service-note">{{ translate_ui('Configurable exchange-traded securities') }}</p>
+            </div>
+            <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
+                <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
+            </div>
+            <div class="cash-equivalents-list" id="cash_equivalents_list" aria-labelledby="cash_equivalent_stocks_heading" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
+                {% for row in cash_equivalent_rows %}
+                <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">
+                    <div class="ticker-identity-item">
+                        <div class="ticker-identity-row">
+                            {% if row.logo_url %}
+                            <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
+                            {% else %}
+                            <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                            {% endif %}
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button" class="ticker-remove cash-equiv-remove" aria-label="{{ translate_ui('Remove') }} {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                </div>
+                {% else %}
+                <div class="cash-equivalents-empty">{{ translate_ui('No stock cash equivalents configured.') }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="cash-equivalent-category" data-cash-equivalent-category="funds">
+            <div class="cash-equivalent-category-heading">
+                <h2 id="cash_equivalent_funds_heading">{{ translate_ui('Funds') }}</h2>
+                <p class="settings-service-note">{{ translate_ui('Configured money-market funds') }}</p>
+            </div>
+            <div class="cash-equivalents-list cash-equivalent-funds-list" aria-labelledby="cash_equivalent_funds_heading">
+                {% for row in cash_equivalent_fund_rows %}
+                <div class="cash-equivalent-row ticker-input-row cash-equivalent-fund-row" data-fund-ticker="{{ row.ticker }}">
+                    <div class="ticker-identity-item">
+                        <div class="ticker-identity-row">
+                            <span class="ticker-identity-logo {{ row.token_logo_class }}" aria-hidden="true"></span>
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                            </span>
+                            {% if row.quote_currency %}
+                            <span class="cash-equivalent-currency-badge">{{ row.quote_currency }}</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
-                <button type="button" class="ticker-remove cash-equiv-remove" aria-label="{{ translate_ui('Remove') }} {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                {% else %}
+                <div class="cash-equivalents-empty">{{ translate_ui('No money-market funds configured.') }}</div>
+                {% endfor %}
             </div>
-            {% else %}
-            <div class="cash-equivalents-empty">{{ translate_ui('No cash equivalents configured.') }}</div>
-            {% endfor %}
         </div>
-        <p class="settings-service-note cash-equiv-note">{{ translate_ui('Defaults: BOXX, SGOV. Added tickers use green in the donut.') }}</p>
         <form id="cash_equiv_form" method="post" action="/settings/cash-equivalents/action" style="display:none;">
             <input type="hidden" name="action" value="set">
         </form>
@@ -1094,6 +1155,7 @@
     </section>
     {% elif settings_section == "style-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
+            <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-style-token-copy-status></p>
             <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
@@ -1385,6 +1447,15 @@
                 <div class="style-token-meta">
                     <div class="style-token-title-row">
                         <p class="style-token-title">{{ row.name }}</p>
+                        <button
+                            type="button"
+                            class="settings-round-icon-button style-token-copy-button"
+                            data-style-token-copy="{{ row.name }}"
+                            aria-label="{{ translate_ui('Copy style name') }}"
+                            title="{{ translate_ui('Copy style name') }}"
+                        >
+                            <span class="icon icon-style-token-copy" aria-hidden="true"></span>
+                        </button>
                     </div>
                     <div class="style-token-table-wrap">
                         <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">

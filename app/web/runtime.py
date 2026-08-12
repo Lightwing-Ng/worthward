@@ -1,7 +1,14 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.71.1
+Code version: v0.73.0
+- Added: Shared local pagination ellipses now carry grouped hidden-page ranges
+  for the accessible range picker rendered on every pagination surface.
+- Fixed: All configured money-market funds use the same standard MMF token in
+  Cash-equivalent Settings; quote currency remains a separate text badge.
+- Added: Cash-equivalent Settings separates configurable listed securities
+  from the configured money-market funds and exposes the latter with their
+  standard token identities.
 - Fixed: Investment intraday requests fall back to the configured Longbridge
   one-minute source when Yahoo cannot fill a requested active trading day.
 - Fixed: The Investment transactions cache schema now invalidates payloads
@@ -2521,14 +2528,30 @@ def build_web_runtime() -> WebRuntime:
             strategy_factory=instantiate_strategy,
         )
 
+    def build_local_store_pagination_ranges(
+            first_page: int,
+            last_page: int,
+            chunk_size: int = 5,
+    ) -> list[tuple[int, int]]:
+        if first_page > last_page:
+            return []
+        ranges = [
+            (range_start, min(range_start + chunk_size - 1, last_page))
+            for range_start in range(first_page, last_page + 1, chunk_size)
+        ]
+        if len(ranges) > 1 and ranges[-1][1] - ranges[-1][0] + 1 < chunk_size:
+            ranges[-2] = (ranges[-2][0], ranges[-1][1])
+            ranges.pop()
+        return ranges
+
     def build_local_store_pagination_items(
             current_page: int,
             total_pages: int,
-    ) -> list[dict[str, int | str | bool]]:
+    ) -> list[dict[str, Any]]:
         page_group_index = (current_page - 1) // 5
         page_start = (page_group_index * 5) + 1
         page_end = min(page_start + 4, total_pages)
-        items: list[dict[str, int | str | bool]] = []
+        items: list[dict[str, Any]] = []
 
         if total_pages <= 1:
             return items
@@ -2546,7 +2569,11 @@ def build_web_runtime() -> WebRuntime:
             items.extend((
                 {"kind": "previous", "page": page_start - 1},
                 {"kind": "page", "page": 1, "is_active": current_page == 1},
-                {"kind": "ellipsis", "position": "leading"},
+                {
+                    "kind": "ellipsis",
+                    "position": "leading",
+                    "ranges": build_local_store_pagination_ranges(1, page_start - 1),
+                },
             ))
 
         items.extend(
@@ -2560,7 +2587,11 @@ def build_web_runtime() -> WebRuntime:
 
         if page_end < total_pages:
             items.extend((
-                {"kind": "ellipsis", "position": "trailing"},
+                {
+                    "kind": "ellipsis",
+                    "position": "trailing",
+                    "ranges": build_local_store_pagination_ranges(page_end + 1, total_pages),
+                },
                 {"kind": "page", "page": total_pages, "is_active": current_page == total_pages},
                 {"kind": "next", "page": page_end + 1},
             ))
@@ -3250,13 +3281,14 @@ def build_web_runtime() -> WebRuntime:
         export_image_rows: list[dict[str, object]] = []
         material_token_rows: list[dict[str, object]] = []
         cash_equivalent_rows: list[dict[str, object]] = []
+        cash_equivalent_fund_rows: list[dict[str, object]] = []
         font_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
         local_market_rows: list[dict[str, Any]] = []
         local_store_total_pages = 1
         local_store_current_page = 1
-        local_store_pagination_items: list[dict[str, int | str | bool]] = []
+        local_store_pagination_items: list[dict[str, Any]] = []
         settings_tab = "current"
         settings_page_number = 1
         backtest_periods_by_interval: dict[str, list[str]] = {
@@ -4356,6 +4388,18 @@ def build_web_runtime() -> WebRuntime:
                     "company_name": company,
                     "logo_url": logo,
                 })
+            cash_equivalent_fund_rows = []
+            for raw_ticker in money_market_settings.get("tickers", []):
+                ticker = canonicalize_money_market_ticker(raw_ticker)
+                if not ticker:
+                    continue
+                quote_currency = configured_money_market_quote_currencies.get(ticker, "")
+                cash_equivalent_fund_rows.append({
+                    "ticker": ticker,
+                    "company_name": resolve_known_ticker_company_name(ticker) or ticker,
+                    "quote_currency": quote_currency,
+                    "token_logo_class": "investment-cash-equivalent-token-logo",
+                })
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
@@ -4474,6 +4518,7 @@ def build_web_runtime() -> WebRuntime:
             export_image_rows=export_image_rows,
             material_token_rows=material_token_rows,
             cash_equivalent_rows=cash_equivalent_rows,
+            cash_equivalent_fund_rows=cash_equivalent_fund_rows,
             backtest_execution_mode=backtest_execution_mode,
             investment_cost_basis_method=investment_cost_basis_method,
             date_display_full_format=date_display_settings.full_date_format,

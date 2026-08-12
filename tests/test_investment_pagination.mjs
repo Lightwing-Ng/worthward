@@ -1,4 +1,4 @@
-/* Tests for shared fixed-chunk pagination. Code version: v1.3.0 */
+/* Tests for shared fixed-chunk pagination. Code version: v1.4.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +9,7 @@ import {
 } from '../app/web/static/assets/js/investment/pagination.js';
 import {
     buildLocalStorePagination,
+    buildLocalStorePaginationRanges,
     renderLocalStorePaginationItem,
 } from '../app/web/static/assets/js/local-store-pagination.js';
 
@@ -71,6 +72,42 @@ test('renders fixed middle chunks instead of a rolling centered window', () => {
         summarizeItems(pageSeventyEight.items),
         ['<', '1', '...', '76', '77', '78', '79', '80', '...', '109', '>'],
     );
+});
+
+test('ellipses expose fixed ranges and merge a short final fragment', () => {
+    const state = buildLocalStorePagination(457, 53);
+    const [leading, trailing] = state.items.filter((item) => item.kind === 'ellipsis');
+
+    assert.equal(leading.position, 'leading');
+    assert.deepEqual(leading.ranges, buildLocalStorePaginationRanges(1, 50));
+    assert.deepEqual(leading.ranges.at(-1), [46, 50]);
+    assert.equal(trailing.position, 'trailing');
+    assert.deepEqual(trailing.ranges[0], [56, 60]);
+    assert.deepEqual(trailing.ranges.at(-1), [451, 457]);
+    assert.deepEqual(buildLocalStorePaginationRanges(6, 7), [[6, 7]]);
+    assert.deepEqual(buildLocalStorePaginationRanges(6, 12), [[6, 12]]);
+});
+
+test('renders accessible range menus with canonical navigation targets', () => {
+    const markup = renderLocalStorePaginationItem(
+        {
+            kind: 'ellipsis',
+            position: 'trailing',
+            ranges: [[6, 10], [11, 17]],
+        },
+        {
+            hrefForPage: (page) => `/trade/investment?page=${page}`,
+            rangeMenuIdPrefix: 'investment_history_ranges',
+        },
+    );
+
+    assert.match(markup, /aria-label="Show later pages"/);
+    assert.match(markup, /aria-haspopup="menu"/);
+    assert.match(markup, /aria-controls="investment_history_ranges_trailing"/);
+    assert.match(markup, /role="menuitem"/);
+    assert.match(markup, /data-pagination-target="6"/);
+    assert.match(markup, /data-pagination-range-end="17"/);
+    assert.match(markup, />11-17<\/a>/);
 });
 
 test('renders the final boundary-aligned chunk without trailing duplicates', () => {

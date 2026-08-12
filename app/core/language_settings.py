@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.4.3
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -296,9 +296,12 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Local store pagination demo", "本機資料庫分頁示範", "本地数据库分页示范"),
         ("Add a ticker", "加入股票代號", "添加股票代码"),
         ("Remove", "移除", "移除"),
-        ("No cash equivalents configured.", "未設定現金等價物。", "未设置现金等价物。"),
-        ("Tickers in this list are treated as cash in the investment donut chart (at /trade/investment) and use the standard green token instead of the gradient.", "此清單中的股票代號會在投資圓環圖（/trade/investment）中視為現金，並使用標準綠色權杖而非漸變色。", "此列表中的股票代码会在投资环形图（/trade/investment）中视为现金，并使用标准绿色令牌而非渐变色。"),
-        ("Defaults: BOXX, SGOV. Added tickers use green in the donut.", "預設值：BOXX、SGOV。新增股票代號會在圓環圖中使用綠色。", "默认值：BOXX、SGOV。新增股票代码会在环形图中使用绿色。"),
+        ("Stocks", "股票類", "股票类"),
+        ("Configurable exchange-traded securities", "可設定的交易所交易證券", "可配置的交易所交易证券"),
+        ("No stock cash equivalents configured.", "未設定股票類現金等價物。", "未配置股票类现金等价物。"),
+        ("Funds", "基金類", "基金类"),
+        ("Configured money-market funds", "已設定的貨幣市場基金", "已配置的货币市场基金"),
+        ("No money-market funds configured.", "未設定貨幣市場基金。", "未配置货币市场基金。"),
         ("Resize export image previews", "調整匯出圖片預覽大小", "调整导出图片预览大小"),
         ("Investment share preview", "投資分享預覽", "投资分享预览"),
         ("Workspace share preview", "工作區分享預覽", "工作区分享预览"),

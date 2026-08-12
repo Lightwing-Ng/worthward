@@ -1,4 +1,4 @@
-/* Code version: v3.27.5 */
+/* Code version: v3.27.6 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -855,8 +855,8 @@
 }
 
 .icon-trade-live-trading {
-    mask: url("/static/images/waveform.and.person.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/waveform.and.person.svg") center/contain no-repeat;
+    mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
 }
 
 .icon-settings-about {

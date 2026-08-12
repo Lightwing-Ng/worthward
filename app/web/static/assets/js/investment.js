@@ -1,11 +1,27 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.102.5
+ * Code version: v2.106.0
+ * - Added: Every Overview range now reuses the Stock-details blue rounded
+ *   y-axis badge to show the hovered point's total equity, with dynamically
+ *   measured axis width so the badge cannot be clipped.
+ * - Added: Transaction History pagination exposes grouped hidden-page ranges
+ *   through the shared accessible range picker.
+ * - Fixed: Overview chart pointer movement no longer replays the full
+ *   historical P&L ledger synchronously for every newly crossed point.
+ * - Fixed: Transaction History hover now places the linked chart marker in a
+ *   single draw instead of restarting a multi-frame full-chart animation.
+ * - Fixed: Holdings realtime numbers now remain inside column-sized slots so
+ *   changes in sign or digit count cannot resize the table.
+ * - Changed: Every Overview Tooltip labels its point-in-time realized plus
+ *   unrealized result as Cumulative P&L and derives it from the two displayed
+ *   currency values at the hovered instant.
+ * - Added: Metrics Unrealized P&L now expands into position-level ticker
+ *   contributions while retaining the live aggregate value.
  * - Fixed: Overview Tooltip P&L now replays the hovered historical point's
  *   effective lots and observed close. Only the current realtime endpoint
- *   reads the live Holdings summary, while Total P&L always remains realized
- *   P&L plus unrealized P&L.
+ *   reads the live Holdings summary, while Cumulative P&L always remains
+ *   realized P&L plus unrealized P&L.
  * - Fixed: Realtime session refreshes retain the selected high-precision
  *   range's full trading calendar, so 1M cannot be downgraded to 1W after a
  *   60-second poll.
@@ -16,7 +32,7 @@
  * - Changed: Overview equity-chart Tooltips remove the superseded one-day P&L
  *   row now that the realized, unrealized, and total P&L breakdown is present.
  * - Added: Every Overview equity-range Tooltip now ends with the Holdings
- *   Realized P&L, Unrealized P&L, and Total P&L row structure.
+ *   Realized P&L, Unrealized P&L, and Cumulative P&L row structure.
  * - Fixed: Configured cash-equivalent ETFs retain their security logos and
  *   realtime quote path instead of inheriting money-market token identities.
  * - Fixed: Refreshed pages restore exact account-scoped HSBC DRAM and EUV
@@ -195,24 +211,25 @@ import {
     buildInvestmentHistoryPagination,
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
-} from './investment/pagination.js?v=investment-pagination-v1.3.1';
+} from './investment/pagination.js?v=investment-pagination-v1.4.0';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
     buildInvestmentIntradayDayFallbackIndex as buildInvestmentIntradayDayFallbackIndexCore,
     createInvestmentStockDetailsUtils,
+    drawInvestmentYAxisValueBadge,
     getInvestmentTradeSessionType as getInvestmentTradeSessionTypeCore,
     isInvestmentTransactionDateOnly,
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.13.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.14.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.0';
+} from './investment/realtime.js?v=investment-realtime-v1.3.1';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -252,7 +269,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.102.5',
+    entry: 'v2.106.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -639,9 +656,11 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'unrealized-pnl',
             label: 'Unrealized P&L',
-            summary: 'Mark-to-market P&L for positions that remain open. It is calculated from current value less the replayed cost basis.',
+            summary: 'Mark-to-market P&L for positions that remain open. It is calculated from current value less the replayed cost basis. Expand for position-level ticker contributions.',
             valueKey: 'totalUnrealizedPnl',
             rowsKey: 'unrealizedPnlRows',
+            detailsKey: 'unrealizedPnlDetails',
+            renderMode: 'breakdown',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalUnrealizedPnl),
             valueClass: (metrics) => getSignedMetricClass(metrics?.totalUnrealizedPnl),
             liveField: 'metrics_unrealized_pnl',
@@ -722,11 +741,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentCurrentChartPnlMetrics = null;
     let investmentCurrentChartPnlMetricsRevision = 0;
     let investmentChartPnlMetricsByPoint = new WeakMap();
+    let investmentChartPnlTickerPriceIndex = null;
+    let investmentChartPnlResolveTimer = 0;
+    let investmentChartPnlResolveSerial = 0;
     let investmentAvailableBrokerCodesCache = [];
     let investmentAvailableBrokerCodesSet = new Set();
     let animatedHoldingsMarkerPoint = null;
-    let animatedHoldingsMarkerTarget = null;
-    let animatedHoldingsMarkerCancel = null;
     let investmentEquityChartRuntimeState = null;
     let stockDetailsDonutAnimationCancel = null;
     let stockDetailsDonutAnimatedState = null;
@@ -11621,10 +11641,19 @@ document.addEventListener('DOMContentLoaded', () => {
             : (typeof definition?.valueClass === 'function'
             ? definition.valueClass(metricValues)
             : (definition?.valueClass || ''));
-        const valueMarkup = `
-            <span class="trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}"
-                  data-workspace-mask="trade-metric">${renderWorkspaceMetricValueContent(value)}</span>
-        `;
+        const liveNumber = definition?.liveNumberKey
+            ? metricValues?.[definition.liveNumberKey]
+            : metricValues?.[definition?.valueKey];
+        const valueMarkup = definition?.liveField && !pnlUnavailable
+            ? renderInvestmentLiveValue(definition.liveField, liveNumber, {
+                className: `trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}`,
+                formatter: () => value,
+                useSplitValue: true,
+            })
+            : `
+                <span class="trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}"
+                      data-workspace-mask="trade-metric">${renderWorkspaceMetricValueContent(value)}</span>
+            `;
         const valueRowMarkup = hasBreakdown
             ? `
                 <div class="investment-metric-value-row">
@@ -16383,6 +16412,8 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentRealtimeQuotesByTicker.clear();
         investmentOverviewRealtimeLinePointsByMinute.clear();
         investmentChartPnlMetricsByPoint = new WeakMap();
+        investmentChartPnlTickerPriceIndex = null;
+        cancelInvestmentChartPnlResolution();
         investmentOverviewIntradayLinePointsCache = {
             key: '',
             points: [],
@@ -16582,15 +16613,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentChartPnlMetrics(realizedValue, unrealizedValue) {
-        const realizedPnl = getOptionalInvestmentNumber(realizedValue);
-        const unrealizedPnl = getOptionalInvestmentNumber(unrealizedValue);
+        const realizedPnl = roundInvestmentChartCurrencyValue(realizedValue);
+        const unrealizedPnl = roundInvestmentChartCurrencyValue(unrealizedValue);
         if (realizedPnl === null || unrealizedPnl === null) {
-            return { realizedPnl, unrealizedPnl, totalPnl: null };
+            return { realizedPnl, unrealizedPnl, cumulativePnl: null };
         }
         return {
             realizedPnl,
             unrealizedPnl,
-            totalPnl: Number((realizedPnl + unrealizedPnl).toFixed(12)),
+            cumulativePnl: roundInvestmentChartCurrencyValue(realizedPnl + unrealizedPnl),
         };
     }
 
@@ -16600,7 +16631,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasChanged = (
             previousMetrics?.realizedPnl !== nextMetrics.realizedPnl
             || previousMetrics?.unrealizedPnl !== nextMetrics.unrealizedPnl
-            || previousMetrics?.totalPnl !== nextMetrics.totalPnl
+            || previousMetrics?.cumulativePnl !== nextMetrics.cumulativePnl
         );
         investmentCurrentChartPnlMetrics = nextMetrics;
         if (hasChanged) investmentCurrentChartPnlMetricsRevision += 1;
@@ -16654,7 +16685,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!normalizedTicker || !Number.isFinite(price) || price <= 0) return;
             pointPrices[normalizedTicker] = price;
         });
-        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        if (!investmentChartPnlTickerPriceIndex) {
+            investmentChartPnlTickerPriceIndex = buildTickerPriceIndex(
+                investmentTickerClosePricesCache,
+            );
+        }
+        const tickerPriceIndex = investmentChartPnlTickerPriceIndex;
         Object.entries(tickerPriceIndex).forEach(([ticker, priceIndex]) => {
             const normalizedTicker = getInvestmentCanonicalTicker(ticker);
             if (!normalizedTicker || Number.isFinite(pointPrices[normalizedTicker])) return;
@@ -16670,7 +16706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const unavailableMetrics = {
             realizedPnl: null,
             unrealizedPnl: null,
-            totalPnl: null,
+            cumulativePnl: null,
         };
         if (!pointRecord || typeof pointRecord !== 'object') return unavailableMetrics;
         const cachedMetrics = investmentChartPnlMetricsByPoint.get(pointRecord);
@@ -16705,16 +16741,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return unavailableMetrics;
         }
 
-        const brokerBenefitMetrics = getBrokerBenefitMetrics(
-            pointTransactions,
-            pointPrices,
-            pointEquity,
-        );
-        const realizedPnl = getRealizedPnlAttribution(
+        const realizedPnl = getInvestmentHistoricalRealizedPnl(
             pointTransactions,
             tickerSummaries,
-            brokerBenefitMetrics,
-        ).totalRealizedPnl;
+        );
         const unrealizedPnl = tickerSummaries.reduce(
             (sum, summary) => sum + (Number(summary?.unrealizedPnl) || 0),
             0,
@@ -16729,10 +16759,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return investmentCurrentChartPnlMetrics || {
                 realizedPnl: null,
                 unrealizedPnl: null,
-                totalPnl: null,
+                cumulativePnl: null,
             };
         }
         return buildInvestmentHistoricalChartPnlMetrics(pointRecord);
+    }
+
+    function cancelInvestmentChartPnlResolution() {
+        if (investmentChartPnlResolveTimer) {
+            window.clearTimeout(investmentChartPnlResolveTimer);
+            investmentChartPnlResolveTimer = 0;
+        }
+        investmentChartPnlResolveSerial += 1;
     }
 
     function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntradayLinePoints = []) {
@@ -17173,11 +17211,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const chartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
         syncInvestmentEquityChartCaches(chartState);
 
+        const getOverviewYAxisWidth = (scale) => {
+            const axisMeasurementContext = scale?.ctx || canvas.getContext('2d');
+            if (!axisMeasurementContext) return 52;
+            axisMeasurementContext.save();
+            axisMeasurementContext.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+            const chartValues = scale?.chart?.data?.datasets?.[0]?.data || chartState.equity;
+            const widestEquityLabelWidth = chartValues.reduce((widestWidth, value) => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue)) return widestWidth;
+                return Math.max(
+                    widestWidth,
+                    axisMeasurementContext.measureText(formatHoldingsMoney(numericValue)).width,
+                );
+            }, 0);
+            axisMeasurementContext.restore();
+            return Math.max(52, Math.ceil(widestEquityLabelWidth + 16));
+        };
+
         // Read theme tokens
         const resolvedTheme = resolveInvestmentTheme();
         const equitySeriesColor = "#0055cc";
 
-        const fixedYAxisWidth = 52;
         let activeChartHoverDate = "";
         let activeTooltipDataIndex = -1;
         let activeTooltipPointRecord = null;
@@ -17190,6 +17245,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let tooltipLayoutViewportKey = "";
         let tooltipAnchorKey = "";
         const getRuntimeState = () => investmentEquityChartRuntimeState || chartState;
+
+        cancelInvestmentChartPnlResolution();
 
         const formatMoney = (value) => {
             const numericValue = getOptionalInvestmentNumber(value);
@@ -17223,7 +17280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hoverGuidePlugin = {
             id: "investmentHoverGuidePlugin",
             afterDatasetsDraw(chartInstance) {
-                const { ctx, chartArea, tooltip } = chartInstance;
+                const {ctx, chartArea, scales, tooltip} = chartInstance;
                 if (!chartArea || !tooltip || tooltip.opacity === 0) return;
                 const x = tooltip.caretX;
                 if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
@@ -17235,15 +17292,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.lineTo(x, chartArea.bottom);
                 ctx.stroke();
                 ctx.restore();
+
+                const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
+                const pointEquity = Number(chartInstance.data?.datasets?.[0]?.data?.[pointIndex]);
+                const yScale = scales?.y;
+                const y = Number(yScale?.getPixelForValue(pointEquity));
+                if (
+                    !yScale
+                    || !Number.isFinite(pointEquity)
+                    || !Number.isFinite(y)
+                    || y < chartArea.top
+                    || y > chartArea.bottom
+                ) {
+                    chartInstance._activeInvestmentEquityGuideBounds = null;
+                    return;
+                }
+                const formattedEquity = investmentShareMaskEnabled
+                    ? '***'
+                    : formatHoldingsMoney(pointEquity);
+                drawInvestmentYAxisValueBadge(chartInstance, {
+                    y,
+                    value: pointEquity,
+                    formattedValue: formattedEquity,
+                    formatTickLabel: (tickValue) => new Intl.NumberFormat('en-US', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                    }).format(Number(tickValue)),
+                    fillColor: resolvedTheme.accentPrimary,
+                    boundsProperty: '_activeInvestmentEquityGuideBounds',
+                    boundsAliases: {formattedEquity, equity: pointEquity},
+                });
             },
         };
 
-        const animateHoldingsMarkerToward = (targetPoint, chartInstance) => {
+        const syncHoldingsMarkerPoint = (targetPoint) => {
             if (!targetPoint) {
                 animatedHoldingsMarkerPoint = null;
-                animatedHoldingsMarkerTarget = null;
-                animatedHoldingsMarkerCancel?.();
-                animatedHoldingsMarkerCancel = null;
                 return;
             }
             const normalizedTarget = {
@@ -17251,54 +17335,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y: Number(targetPoint.y),
             };
             if (!Number.isFinite(normalizedTarget.x) || !Number.isFinite(normalizedTarget.y)) return;
-            const sameTarget = animatedHoldingsMarkerTarget
-                && Math.abs(animatedHoldingsMarkerTarget.x - normalizedTarget.x) < 0.25
-                && Math.abs(animatedHoldingsMarkerTarget.y - normalizedTarget.y) < 0.25;
-            animatedHoldingsMarkerTarget = normalizedTarget;
-            if (!animatedHoldingsMarkerPoint) {
-                animatedHoldingsMarkerPoint = { ...normalizedTarget };
-                return;
-            }
-            if (sameTarget) return;
-            const startPoint = { ...animatedHoldingsMarkerPoint };
-            animatedHoldingsMarkerCancel?.();
-            const applyProgress = (progress) => {
-                const eased = easeOutCubic(progress);
-                animatedHoldingsMarkerPoint = {
-                    x: startPoint.x + ((normalizedTarget.x - startPoint.x) * eased),
-                    y: startPoint.y + ((normalizedTarget.y - startPoint.y) * eased),
-                };
-                chartInstance.draw();
-            };
-            const scheduler = window.AntigravityMotion?.scheduler;
-            if (scheduler?.animate) {
-                animatedHoldingsMarkerCancel = scheduler.animate({
-                    key: 'investment-holdings-hover-marker',
-                    duration: window.AntigravityMotion?.durations?.standard ?? 240,
-                    ease: easeOutCubic,
-                    update: (_eased, progress) => applyProgress(progress),
-                    complete: () => {
-                        animatedHoldingsMarkerPoint = { ...normalizedTarget };
-                        chartInstance.draw();
-                        animatedHoldingsMarkerCancel = null;
-                    },
-                });
-                return;
-            }
-            const startedAt = performance.now();
-            let frameId = 0;
-            const step = (now) => {
-                const progress = Math.min(1, (now - startedAt) / 300);
-                applyProgress(progress);
-                if (progress < 1) {
-                    frameId = window.requestAnimationFrame(step);
-                    return;
-                }
-                animatedHoldingsMarkerPoint = { ...normalizedTarget };
-                animatedHoldingsMarkerCancel = null;
-            };
-            frameId = window.requestAnimationFrame(step);
-            animatedHoldingsMarkerCancel = () => window.cancelAnimationFrame(frameId);
+            animatedHoldingsMarkerPoint = normalizedTarget;
         };
 
         const holdingsHoverMarkerPlugin = {
@@ -17306,7 +17343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             afterDatasetsDraw(chartInstance) {
                 const ledgerNo = Number(activeHoldingsHoverLedgerNo);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) {
-                    animateHoldingsMarkerToward(null, chartInstance);
+                    syncHoldingsMarkerPoint(null);
                     return;
                 }
                 const runtimeState = getRuntimeState();
@@ -17323,7 +17360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const y = yScale.getPixelForValue(pointValue);
                 if (!Number.isFinite(x) || !Number.isFinite(y)) return;
                 if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
-                animateHoldingsMarkerToward({ x, y }, chartInstance);
+                syncHoldingsMarkerPoint({ x, y });
                 const animatedPoint = animatedHoldingsMarkerPoint || { x, y };
                 const markerStroke = resolvedTheme.accentPositive || "#16a34a";
                 const markerGlow = resolvedTheme.accentPositive || "rgba(22, 163, 74, 0.85)";
@@ -17462,6 +17499,70 @@ document.addEventListener('DOMContentLoaded', () => {
             includeTime: Number.isFinite(dateParts?.hours) && Number.isFinite(dateParts?.minutes),
         });
 
+        const updateTooltipPnlRows = (tooltipEl, pnlMetrics) => {
+            const metricEntries = [
+                ['realizedPnl', pnlMetrics?.realizedPnl],
+                ['unrealizedPnl', pnlMetrics?.unrealizedPnl],
+                ['cumulativePnl', pnlMetrics?.cumulativePnl],
+            ];
+            metricEntries.forEach(([key, value]) => {
+                const row = tooltipEl.querySelector(`[data-investment-tooltip-pnl="${key}"]`);
+                const dot = row?.querySelector('.chart-tooltip-dot');
+                const valueElement = row?.querySelector('.chart-tooltip-value');
+                if (!(valueElement instanceof HTMLElement)) return;
+                const numericValue = getOptionalInvestmentNumber(value);
+                valueElement.textContent = numericValue === null
+                    ? '--'
+                    : formatHoldingsMoney(numericValue);
+                valueElement.classList.remove(
+                    'investment-holdings-value-positive',
+                    'investment-holdings-value-negative',
+                );
+                const valueClass = numericValue === null ? '' : getSignedMetricClass(numericValue);
+                if (valueClass) valueElement.classList.add(valueClass);
+                if (dot instanceof HTMLElement) {
+                    dot.style.background = numericValue === null
+                        ? resolvedTheme.muted
+                        : (numericValue >= 0
+                            ? resolvedTheme.accentPositive
+                            : resolvedTheme.accentSecondary);
+                }
+            });
+        };
+
+        const scheduleTooltipPnlResolution = (tooltipEl, pointRecord) => {
+            cancelInvestmentChartPnlResolution();
+            const resolveSerial = investmentChartPnlResolveSerial;
+            tooltipEl.dataset.investmentPnlState = 'pending';
+            investmentChartPnlResolveTimer = window.setTimeout(() => {
+                investmentChartPnlResolveTimer = 0;
+                if (
+                    resolveSerial !== investmentChartPnlResolveSerial
+                    || activeChartTooltipPointRecord !== pointRecord
+                    || !tooltipEl.classList.contains('is-visible')
+                ) {
+                    return;
+                }
+                const pnlMetrics = buildInvestmentHistoricalChartPnlMetrics(pointRecord);
+                if (
+                    resolveSerial !== investmentChartPnlResolveSerial
+                    || activeChartTooltipPointRecord !== pointRecord
+                    || !tooltipEl.classList.contains('is-visible')
+                ) {
+                    return;
+                }
+                updateTooltipPnlRows(tooltipEl, pnlMetrics);
+                tooltipEl.dataset.investmentPnlState = 'ready';
+                tooltipWidth = 0;
+                tooltipHeight = 0;
+                tooltipAnchorKey = '';
+                window.requestAnimationFrame(() => {
+                    if (activeChartTooltipPointRecord !== pointRecord) return;
+                    investmentEquityChartInstance?.draw();
+                });
+            }, 48);
+        };
+
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
             const runtimeState = getRuntimeState();
@@ -17477,6 +17578,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeTooltipDataIndex = -1;
                 activeTooltipPointRecord = null;
                 activeTooltipPnlMetricsRevision = -1;
+                cancelInvestmentChartPnlResolution();
+                tooltipEl.dataset.investmentPnlState = 'idle';
                 activeChartTooltipPointIndex = -1;
                 activeChartTooltipPointRecord = null;
                 clearInvestmentHistoryHighlights();
@@ -17593,17 +17696,27 @@ document.addEventListener('DOMContentLoaded', () => {
                             valueClass: 'investment-holdings-value-negative',
                         });
                     }
-                    const pnlMetrics = resolveInvestmentChartPnlMetrics(pointRecord, {
-                        useCurrentHoldings: useCurrentHoldingsPnl,
-                    });
+                    const cachedHistoricalPnl = useCurrentHoldingsPnl
+                        ? null
+                        : investmentChartPnlMetricsByPoint.get(pointRecord);
+                    const pnlMetrics = useCurrentHoldingsPnl
+                        ? resolveInvestmentChartPnlMetrics(pointRecord, {useCurrentHoldings: true})
+                        : (cachedHistoricalPnl || buildInvestmentChartPnlMetrics(null, null));
+                    if (useCurrentHoldingsPnl || cachedHistoricalPnl) {
+                        cancelInvestmentChartPnlResolution();
+                        tooltipEl.dataset.investmentPnlState = 'ready';
+                    } else {
+                        scheduleTooltipPnlResolution(tooltipEl, pointRecord);
+                    }
                     [
-                        ['Realized P&L', pnlMetrics.realizedPnl],
-                        ['Unrealized P&L', pnlMetrics.unrealizedPnl],
-                        ['Total P&L', pnlMetrics.totalPnl],
-                    ].forEach(([label, value]) => {
+                        ['Realized P&L', 'realizedPnl', pnlMetrics.realizedPnl],
+                        ['Unrealized P&L', 'unrealizedPnl', pnlMetrics.unrealizedPnl],
+                        ['Cumulative P&L', 'cumulativePnl', pnlMetrics.cumulativePnl],
+                    ].forEach(([label, pnlKey, value]) => {
                         const numericValue = getOptionalInvestmentNumber(value);
                         tooltipRows.push({
                             label,
+                            pnlKey,
                             formattedValue: numericValue === null ? '--' : formatHoldingsMoney(numericValue),
                             color: numericValue === null
                                 ? resolvedTheme.muted
@@ -17621,7 +17734,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (listEl instanceof HTMLElement) {
                     listEl.innerHTML = tooltipRows.map((row) => `
-                        <div class="chart-tooltip-row">
+                        <div class="chart-tooltip-row"${row.pnlKey ? ` data-investment-tooltip-pnl="${row.pnlKey}"` : ''}>
                             <span class="chart-tooltip-dot" style="background:${row.color}"></span>
                             <span></span>
                             <span class="chart-tooltip-label">${row.label}</span>
@@ -17723,7 +17836,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     grid: { display: false, drawTicks: false },
                     border: { display: false },
                     afterFit: (scale) => {
-                        scale.width = fixedYAxisWidth;
+                        scale.width = getOverviewYAxisWidth(scale);
                     },
                     ticks: {
                         color: resolvedTheme.muted,
@@ -17890,6 +18003,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (/\b(commission|trade fee|bank charges?|fee)\b/.test(description)) return 'fee';
         return '';
+    }
+
+    function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
+        const pnlUnavailableTickers = new Set(
+            safeTickerSummaries
+                .filter((summary) => summary?.pnlUnavailable === true)
+                .map((summary) => getInvestmentCanonicalTicker(summary?.ticker))
+                .filter(Boolean),
+        );
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
+        let brokerRewardRealizedPnl = 0;
+        let standaloneCashRealizedPnl = 0;
+
+        safeTransactions.forEach((txn) => {
+            const benefitType = classifyBrokerBenefitTransaction(txn);
+            if (benefitType) {
+                const amount = Math.abs(getTransactionAmount(txn));
+                if (amount > 1e-9) {
+                    const currency = formatTransactionCurrency(txn) || baseCurrency;
+                    const sourceAmount = benefitType === 'coupon_hkd_notional' ? 100 : amount;
+                    const sourceCurrency = benefitType === 'coupon_hkd_notional' ? 'HKD' : currency;
+                    brokerRewardRealizedPnl += convertAmountToBaseCurrency(
+                        sourceAmount,
+                        sourceCurrency,
+                        normalizeLedgerDate(txn?.date),
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                }
+            }
+
+            const tracksHolding = shouldTrackHoldingTicker(txn);
+            const canonicalTicker = tracksHolding
+                ? getInvestmentCanonicalTicker(txn?.ticker)
+                : '';
+            if (canonicalTicker && pnlUnavailableTickers.has(canonicalTicker)) return;
+            const cashFlowCategory = classifyInvestmentRealizedCashFlow(txn);
+            const normalizedType = getNormalizedTransactionType(txn);
+            const isStandaloneCashFlow = (
+                cashFlowCategory === 'interest_credit'
+                || cashFlowCategory === 'interest_charge'
+                || (
+                    cashFlowCategory === 'fee'
+                    && !(tracksHolding && normalizedType === 'adjustment')
+                )
+            );
+            if (!isStandaloneCashFlow) return;
+            standaloneCashRealizedPnl += getInvestmentMetricBaseAmount(
+                getTransactionAmount(txn),
+                txn,
+                fxTimeline,
+                baseCurrency,
+            );
+        });
+
+        const holdingsRealizedPnl = safeTickerSummaries.reduce(
+            (sum, summary) => sum + (Number(summary?.realizedPnl) || 0),
+            0,
+        );
+        return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl;
     }
 
     function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitMetrics) {
@@ -18130,6 +18306,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }));
         const realizedPnlRows = [...realizedPnlAttribution.realizedPnlRows];
         const unrealizedPnlRows = [];
+        const unrealizedPnlDetails = tickerSummaries
+            .filter((summary) => (
+                summary?.hasOpenPosition === true
+                && summary?.pnlUnavailable !== true
+                && Number.isFinite(Number(summary?.unrealizedPnl))
+            ))
+            .map((summary) => ({
+                label: formatInvestmentTickerForDisplay(summary.ticker),
+                value: formatSignedHoldingsMoney(summary.unrealizedPnl),
+                valueClass: getSignedMetricClass(summary.unrealizedPnl),
+            }));
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             if (!shouldTrackHoldingTicker(txn)) return;
@@ -18151,6 +18338,7 @@ document.addEventListener('DOMContentLoaded', () => {
             realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
             realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
             unrealizedPnlRows: pnlUnavailable ? [] : unrealizedPnlRows,
+            unrealizedPnlDetails: pnlUnavailable ? [] : unrealizedPnlDetails,
             cumulativePnlRows: pnlUnavailable ? [] : Array.from(new Set([
                 ...realizedPnlRows,
                 ...unrealizedPnlRows,

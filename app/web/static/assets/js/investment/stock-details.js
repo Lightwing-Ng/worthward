@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.13.2
+ * Code version: v0.14.0
+ * - Refactored: Stock-details and Overview charts now share the same blue
+ *   rounded y-axis value badge renderer.
  * - Changed: Stock details imports the current data-utilities revision so its
  *   shared scoped-position aggregation cannot retain a stale module cache.
  * - Changed: Stock details imports the corrected money-market and
@@ -56,7 +58,7 @@ import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investmen
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.13.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.14.0';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -219,6 +221,135 @@ export function getInvestmentTradeSessionType(value, parseDateParts) {
 export {
     aggregateInvestmentScopedPositionStates as aggregateInvestmentStockDetailPositionStates,
 };
+
+export function drawInvestmentYAxisValueBadge(chartInstance, {
+    y,
+    value,
+    formattedValue,
+    formatTickLabel = (tickValue) => String(tickValue ?? ''),
+    fillColor = '#0055cc',
+    boundsProperty = '',
+    boundsAliases = {},
+} = {}) {
+    const {ctx, chartArea, scales} = chartInstance || {};
+    const yScale = scales?.y;
+    const numericY = Number(y);
+    const numericValue = Number(value);
+    const valueCopy = String(formattedValue ?? '').trim();
+    if (
+        !ctx
+        || !chartArea
+        || !yScale
+        || !Number.isFinite(numericY)
+        || numericY < chartArea.top
+        || numericY > chartArea.bottom
+        || !Number.isFinite(numericValue)
+        || !valueCopy
+    ) {
+        return null;
+    }
+
+    const decimalIndex = valueCopy.lastIndexOf('.');
+    const integerCopy = decimalIndex >= 0 ? valueCopy.slice(0, decimalIndex) : valueCopy;
+    const fractionCopy = decimalIndex >= 0 ? valueCopy.slice(decimalIndex) : '';
+
+    ctx.save();
+    const visibleAxisLabelItems = (Array.isArray(yScale._labelItems) ? yScale._labelItems : [])
+        .filter((item) => String(item?.label ?? '').trim());
+    const visibleAxisLabelItem = visibleAxisLabelItems
+        .find((item) => String(item?.label ?? '').includes('.'))
+        || visibleAxisLabelItems[0];
+    const axisLabelOptions = visibleAxisLabelItem?.options || {};
+    const axisTickCopy = String(visibleAxisLabelItem?.label ?? '');
+    ctx.font = String(
+        visibleAxisLabelItem?.font?.string
+        || '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif'
+    );
+    ctx.textBaseline = 'middle';
+    const axisLabelTranslationX = Number(axisLabelOptions?.translation?.[0]);
+    const axisTickWidth = ctx.measureText(axisTickCopy).width;
+    const axisTextAlign = String(axisLabelOptions?.textAlign || 'right');
+    const axisLabelRight = Number.isFinite(axisLabelTranslationX)
+        ? axisLabelTranslationX + (
+            axisTextAlign === 'center'
+                ? axisTickWidth / 2
+                : (axisTextAlign === 'left' || axisTextAlign === 'start' ? axisTickWidth : 0)
+        )
+        : Number(yScale.right ?? chartArea.left);
+    const axisTickDecimalIndex = axisTickCopy.lastIndexOf('.');
+    const axisFractionCopy = axisTickDecimalIndex >= 0
+        ? axisTickCopy.slice(axisTickDecimalIndex)
+        : '';
+    const axisFractionWidth = axisFractionCopy
+        ? ctx.measureText(axisFractionCopy).width
+        : 0;
+    const decimalAnchor = axisLabelRight - axisFractionWidth;
+    const integerWidth = ctx.measureText(integerCopy).width;
+    const fractionWidth = ctx.measureText(fractionCopy).width;
+    const widestAxisTickWidth = (Array.isArray(yScale.ticks) ? yScale.ticks : []).reduce((width, tick) => (
+        Math.max(width, ctx.measureText(formatTickLabel(tick?.value, yScale.ticks)).width)
+    ), 0);
+    const horizontalPadding = 5;
+    const badgeLeft = Math.min(
+        decimalAnchor - integerWidth - horizontalPadding,
+        axisLabelRight - widestAxisTickWidth - horizontalPadding,
+    );
+    const badgeRight = decimalAnchor + fractionWidth + horizontalPadding;
+    const badgeHeight = 20;
+    const allocationBadgeRadius = Number.parseFloat(
+        getComputedStyle(chartInstance.canvas)
+            .getPropertyValue('--investment-holdings-allocation-badge-radius'),
+    );
+    const badgeRadius = Math.min(
+        Number.isFinite(allocationBadgeRadius) ? allocationBadgeRadius : 0,
+        (badgeRight - badgeLeft) / 2,
+        badgeHeight / 2,
+    );
+    const badgeTop = numericY - (badgeHeight / 2);
+    const badgeWidth = badgeRight - badgeLeft;
+    const bounds = {
+        badgeBottom: numericY + (badgeHeight / 2),
+        badgeLeft,
+        badgeRight,
+        badgeTop,
+        axisLabelRight,
+        axisTickCopy,
+        decimalAnchor,
+        formattedValue: valueCopy,
+        value: numericValue,
+        y: numericY,
+        ...(boundsAliases && typeof boundsAliases === 'object' ? boundsAliases : {}),
+    };
+    if (boundsProperty) {
+        chartInstance[boundsProperty] = {
+            ...(chartInstance[boundsProperty] || {}),
+            ...bounds,
+        };
+    }
+
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(badgeLeft, badgeTop, badgeWidth, badgeHeight, badgeRadius);
+    } else {
+        ctx.moveTo(badgeLeft + badgeRadius, badgeTop);
+        ctx.arcTo(badgeRight, badgeTop, badgeRight, badgeTop + badgeHeight, badgeRadius);
+        ctx.arcTo(badgeRight, badgeTop + badgeHeight, badgeLeft, badgeTop + badgeHeight, badgeRadius);
+        ctx.arcTo(badgeLeft, badgeTop + badgeHeight, badgeLeft, badgeTop, badgeRadius);
+        ctx.arcTo(badgeLeft, badgeTop, badgeRight, badgeTop, badgeRadius);
+        ctx.closePath();
+    }
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'right';
+    ctx.fillText(integerCopy, decimalAnchor, numericY);
+    if (fractionCopy) {
+        ctx.textAlign = 'left';
+        ctx.fillText(fractionCopy, decimalAnchor, numericY);
+    }
+    ctx.restore();
+    return bounds;
+}
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -1349,94 +1480,15 @@ export function createInvestmentStockDetailsUtils({
                     minimumFractionDigits: priceFractionDigits,
                     maximumFractionDigits: priceFractionDigits,
                 }).format(price);
-                const decimalIndex = formattedPrice.lastIndexOf('.');
-                const integerCopy = decimalIndex >= 0 ? formattedPrice.slice(0, decimalIndex) : formattedPrice;
-                const fractionCopy = decimalIndex >= 0 ? formattedPrice.slice(decimalIndex) : '';
-
-                ctx.save();
-                const visibleAxisLabelItems = (Array.isArray(yScale._labelItems) ? yScale._labelItems : [])
-                    .filter((item) => String(item?.label ?? '').trim());
-                const visibleAxisLabelItem = visibleAxisLabelItems
-                    .find((item) => String(item?.label ?? '').includes('.'))
-                    || visibleAxisLabelItems[0];
-                const axisLabelOptions = visibleAxisLabelItem?.options || {};
-                const axisTickCopy = String(visibleAxisLabelItem?.label ?? '');
-                ctx.font = String(visibleAxisLabelItem?.font?.string || '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif');
-                ctx.textBaseline = 'middle';
-                const axisLabelTranslationX = Number(axisLabelOptions?.translation?.[0]);
-                const axisTickWidth = ctx.measureText(axisTickCopy).width;
-                const axisTextAlign = String(axisLabelOptions?.textAlign || 'right');
-                const axisLabelRight = Number.isFinite(axisLabelTranslationX)
-                    ? axisLabelTranslationX + (
-                        axisTextAlign === 'center'
-                            ? axisTickWidth / 2
-                            : (axisTextAlign === 'left' || axisTextAlign === 'start' ? axisTickWidth : 0)
-                    )
-                    : Number(yScale.right ?? chartArea.left);
-                const axisTickDecimalIndex = axisTickCopy.lastIndexOf('.');
-                const axisFractionCopy = axisTickDecimalIndex >= 0
-                    ? axisTickCopy.slice(axisTickDecimalIndex)
-                    : '';
-                const axisFractionWidth = axisFractionCopy
-                    ? ctx.measureText(axisFractionCopy).width
-                    : 0;
-                const decimalAnchor = axisLabelRight - axisFractionWidth;
-                const integerWidth = ctx.measureText(integerCopy).width;
-                const fractionWidth = ctx.measureText(fractionCopy).width;
-                const widestAxisTickWidth = (Array.isArray(yScale.ticks) ? yScale.ticks : []).reduce((width, tick) => (
-                    Math.max(width, ctx.measureText(formatStockDetailsYAxisTickLabel(tick?.value, yScale.ticks)).width)
-                ), 0);
-                const horizontalPadding = 5;
-                const badgeLeft = Math.min(
-                    decimalAnchor - integerWidth - horizontalPadding,
-                    axisLabelRight - widestAxisTickWidth - horizontalPadding,
-                );
-                const badgeRight = decimalAnchor + fractionWidth + horizontalPadding;
-                const badgeHeight = 20;
-                const allocationBadgeRadius = Number.parseFloat(
-                    getComputedStyle(chartInstance.canvas)
-                        .getPropertyValue('--investment-holdings-allocation-badge-radius'),
-                );
-                const badgeRadius = Math.min(
-                    Number.isFinite(allocationBadgeRadius) ? allocationBadgeRadius : 0,
-                    (badgeRight - badgeLeft) / 2,
-                    badgeHeight / 2,
-                );
-                chartInstance._activeInvestmentStockDetailsGuideBounds = {
-                    ...(chartInstance._activeInvestmentStockDetailsGuideBounds || {}),
-                    badgeBottom: y + (badgeHeight / 2),
-                    badgeLeft,
-                    badgeRight,
-                    badgeTop: y - (badgeHeight / 2),
-                    axisLabelRight,
-                    axisTickCopy,
-                    decimalAnchor,
-                    formattedPrice,
-                    price,
-                };
-                ctx.fillStyle = resolvedTheme.accentPrimary;
-                const badgeTop = y - (badgeHeight / 2);
-                const badgeWidth = badgeRight - badgeLeft;
-                ctx.beginPath();
-                if (typeof ctx.roundRect === 'function') {
-                    ctx.roundRect(badgeLeft, badgeTop, badgeWidth, badgeHeight, badgeRadius);
-                } else {
-                    ctx.moveTo(badgeLeft + badgeRadius, badgeTop);
-                    ctx.arcTo(badgeRight, badgeTop, badgeRight, badgeTop + badgeHeight, badgeRadius);
-                    ctx.arcTo(badgeRight, badgeTop + badgeHeight, badgeLeft, badgeTop + badgeHeight, badgeRadius);
-                    ctx.arcTo(badgeLeft, badgeTop + badgeHeight, badgeLeft, badgeTop, badgeRadius);
-                    ctx.arcTo(badgeLeft, badgeTop, badgeRight, badgeTop, badgeRadius);
-                    ctx.closePath();
-                }
-                ctx.fill();
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'right';
-                ctx.fillText(integerCopy, decimalAnchor, y);
-                if (fractionCopy) {
-                    ctx.textAlign = 'left';
-                    ctx.fillText(fractionCopy, decimalAnchor, y);
-                }
-                ctx.restore();
+                drawInvestmentYAxisValueBadge(chartInstance, {
+                    y,
+                    value: price,
+                    formattedValue: formattedPrice,
+                    formatTickLabel: formatStockDetailsYAxisTickLabel,
+                    fillColor: resolvedTheme.accentPrimary,
+                    boundsProperty: '_activeInvestmentStockDetailsGuideBounds',
+                    boundsAliases: {formattedPrice, price},
+                });
             },
         };
         const drawTradeMarker = (ctx, { x, y, type, color }) => {

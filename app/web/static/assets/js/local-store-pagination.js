@@ -1,16 +1,24 @@
 /**
  * Shared Local store pagination primitives.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
+ *   viewport-aware menu shared by every pagination surface.
  * - Added: Fixed five-page chunks, canonical button markup, and the shared
  *   active-indicator motion used by every local pagination surface.
  * - Added: Link rendering keeps server-backed pagination on the same builder
  *   and control contract as client-only pagination.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.1.0';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.0';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
+const LOCAL_STORE_PAGINATION_RANGE_CLOSE_DELAY_MS = 140;
+
+let localStorePaginationRangeMenuId = 0;
+let pinnedLocalStorePaginationRangePicker = null;
+let localStorePaginationRangeCloseTimer = 0;
+let didBindLocalStorePaginationRangeGlobals = false;
 
 function normalizePositiveInteger(value, fallback = 1) {
     const numericValue = Number(value);
@@ -24,6 +32,40 @@ function createPageItem(page, currentPage) {
         page,
         isActive: page === currentPage,
     };
+}
+
+/**
+ * Group hidden pages and merge a short final fragment into its preceding range.
+ */
+export function buildLocalStorePaginationRanges(
+    firstPage,
+    lastPage,
+    chunkSize = LOCAL_STORE_PAGINATION_CHUNK_SIZE,
+) {
+    const normalizedFirstPage = normalizePositiveInteger(firstPage);
+    const normalizedLastPage = normalizePositiveInteger(lastPage);
+    const normalizedChunkSize = normalizePositiveInteger(chunkSize, LOCAL_STORE_PAGINATION_CHUNK_SIZE);
+    if (normalizedFirstPage > normalizedLastPage) return [];
+    const ranges = [];
+    for (
+        let rangeStart = normalizedFirstPage;
+        rangeStart <= normalizedLastPage;
+        rangeStart += normalizedChunkSize
+    ) {
+        ranges.push([
+            rangeStart,
+            Math.min(rangeStart + normalizedChunkSize - 1, normalizedLastPage),
+        ]);
+    }
+    const finalRange = ranges.at(-1);
+    if (
+        ranges.length > 1
+        && finalRange[1] - finalRange[0] + 1 < normalizedChunkSize
+    ) {
+        ranges[ranges.length - 2][1] = finalRange[1];
+        ranges.pop();
+    }
+    return ranges;
 }
 
 /**
@@ -69,7 +111,11 @@ export function buildLocalStorePagination(totalPages = 1, currentPage = 1) {
         if (!isFirstChunk) {
             items.push({kind: 'previous', page: startPage - 1});
             items.push(createPageItem(1, normalizedCurrentPage));
-            items.push({kind: 'ellipsis', position: 'leading'});
+            items.push({
+                kind: 'ellipsis',
+                position: 'leading',
+                ranges: buildLocalStorePaginationRanges(1, startPage - 1),
+            });
         }
 
         for (let page = startPage; page <= endPage; page += 1) {
@@ -77,7 +123,11 @@ export function buildLocalStorePagination(totalPages = 1, currentPage = 1) {
         }
 
         if (!isLastChunk) {
-            items.push({kind: 'ellipsis', position: 'trailing'});
+            items.push({
+                kind: 'ellipsis',
+                position: 'trailing',
+                ranges: buildLocalStorePaginationRanges(endPage + 1, normalizedTotalPages),
+            });
             items.push(createPageItem(normalizedTotalPages, normalizedCurrentPage));
             items.push({kind: 'next', page: endPage + 1});
         }
@@ -127,8 +177,40 @@ function buildPaginationControlMarkup({
 
 export function renderLocalStorePaginationItem(item, options = {}) {
     if (item?.kind === 'ellipsis') {
-        return '<span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="'
-            + `${item.position}"><span class="local-store-page-ellipsis-dots"></span></span>`;
+        const position = item.position === 'leading' ? 'leading' : 'trailing';
+        const direction = position === 'leading' ? 'earlier' : 'later';
+        const ranges = Array.isArray(item.ranges) ? item.ranges : [];
+        const rangeUnit = escapeHtmlAttribute(options.rangeUnit || 'pages');
+        const rangeUnitLabel = rangeUnit.charAt(0).toUpperCase() + rangeUnit.slice(1);
+        const menuIdPrefix = escapeHtmlAttribute(
+            options.rangeMenuIdPrefix || 'local_store_pagination_ranges',
+        );
+        const menuId = `${menuIdPrefix}_${position}`;
+        const rangeMarkup = ranges.map((range) => {
+            const rangeStart = Number(range?.[0]);
+            const rangeEnd = Number(range?.[1]);
+            if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) return '';
+            const targetAttributes = buildPageTargetAttributes(rangeStart, options);
+            const href = typeof options.hrefForPage === 'function'
+                ? String(options.hrefForPage(rangeStart) || '')
+                : '';
+            return buildPaginationControlMarkup({
+                className: 'local-store-pagination-range-option',
+                content: `${rangeStart}-${rangeEnd}`,
+                href,
+                attributes: `role="menuitem" ${targetAttributes} data-pagination-range-start="${rangeStart}" data-pagination-range-end="${rangeEnd}" aria-label="${rangeUnitLabel} ${rangeStart} through ${rangeEnd}"`,
+            });
+        }).join('');
+        return '<span class="local-store-page-ellipsis local-store-pagination-range-picker" '
+            + `data-pagination-ellipsis="${position}">`
+            + '<button type="button" class="local-store-pagination-range-trigger" '
+            + `aria-label="Show ${direction} ${rangeUnit}" aria-haspopup="menu" aria-expanded="false" `
+            + `aria-controls="${menuId}" data-pagination-range-trigger>`
+            + '<span class="local-store-page-ellipsis-dots" aria-hidden="true"></span></button>'
+            + `<span id="${menuId}" class="local-store-pagination-range-menu" role="menu" `
+            + `aria-label="${direction.charAt(0).toUpperCase() + direction.slice(1)} ${rangeUnit}" `
+            + 'aria-hidden="true" data-pagination-range-menu>'
+            + `<span class="local-store-pagination-range-grid">${rangeMarkup}</span></span></span>`;
     }
 
     const targetPage = Number(item?.page);
@@ -316,10 +398,210 @@ export function animateLocalStorePaginationIndicator(
     }, getLocalStorePaginationMotionDurationMs(pagination));
 }
 
+function getLocalStorePaginationRangeElements(picker) {
+    return {
+        trigger: picker?.querySelector('[data-pagination-range-trigger]') || null,
+        menu: picker?.querySelector('[data-pagination-range-menu]') || null,
+    };
+}
+
+function getLocalStorePaginationRangeMenuContentHeight(menu) {
+    const grid = menu?.querySelector('.local-store-pagination-range-grid');
+    if (!menu || !grid) return 0;
+    const style = window.getComputedStyle(menu);
+    const paddingTop = Number.parseFloat(style.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(style.paddingBottom) || 0;
+    return grid.scrollHeight + paddingTop + paddingBottom;
+}
+
+function positionLocalStorePaginationRangeMenu(picker) {
+    const {menu} = getLocalStorePaginationRangeElements(picker);
+    if (!menu || !picker.classList.contains('is-open')) return;
+    menu.classList.remove('is-below', 'is-scrollable');
+    menu.style.removeProperty('--pagination-range-menu-shift-x');
+    menu.style.removeProperty('--pagination-range-menu-max-height');
+    const pickerRect = picker.getBoundingClientRect();
+    const viewportInset = 12;
+    const menuGap = 8;
+    const spaceAbove = Math.max(96, pickerRect.top - viewportInset - menuGap);
+    const spaceBelow = Math.max(
+        96,
+        window.innerHeight - pickerRect.bottom - viewportInset - menuGap,
+    );
+    const naturalMenuHeight = getLocalStorePaginationRangeMenuContentHeight(menu);
+    if (naturalMenuHeight > spaceAbove && spaceBelow > spaceAbove) {
+        menu.classList.add('is-below');
+    }
+    const availableHeight = menu.classList.contains('is-below') ? spaceBelow : spaceAbove;
+    menu.style.setProperty('--pagination-range-menu-max-height', `${availableHeight}px`);
+    menu.classList.toggle('is-scrollable', naturalMenuHeight > menu.clientHeight + 1);
+    const menuWidth = menu.offsetWidth;
+    const idealMenuLeft = pickerRect.left + (pickerRect.width / 2) - (menuWidth / 2);
+    let horizontalShift = 0;
+    if (idealMenuLeft < viewportInset) {
+        horizontalShift = viewportInset - idealMenuLeft;
+    } else if (idealMenuLeft + menuWidth > window.innerWidth - viewportInset) {
+        horizontalShift = window.innerWidth - viewportInset - idealMenuLeft - menuWidth;
+    }
+    menu.style.setProperty('--pagination-range-menu-shift-x', `${horizontalShift}px`);
+}
+
+function setLocalStorePaginationRangePickerOpen(
+    picker,
+    shouldOpen,
+    {focusFirst = false} = {},
+) {
+    if (!picker) return;
+    const {trigger, menu} = getLocalStorePaginationRangeElements(picker);
+    if (shouldOpen) {
+        document.querySelectorAll('.local-store-pagination-range-picker.is-open')
+            .forEach((otherPicker) => {
+                if (otherPicker !== picker) {
+                    setLocalStorePaginationRangePickerOpen(otherPicker, false);
+                }
+            });
+    }
+    picker.classList.toggle('is-open', shouldOpen);
+    picker.closest('.local-store-pagination')?.classList.toggle('has-open-range', shouldOpen);
+    trigger?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    menu?.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+    if (!shouldOpen) {
+        menu?.classList.remove('is-below', 'is-scrollable');
+        menu?.style.removeProperty('--pagination-range-menu-shift-x');
+        menu?.style.removeProperty('--pagination-range-menu-max-height');
+        return;
+    }
+    window.requestAnimationFrame(() => {
+        positionLocalStorePaginationRangeMenu(picker);
+        if (focusFirst) {
+            menu?.querySelector('.local-store-pagination-range-option')?.focus();
+        }
+    });
+}
+
+function cancelLocalStorePaginationRangeClose() {
+    if (!localStorePaginationRangeCloseTimer) return;
+    window.clearTimeout(localStorePaginationRangeCloseTimer);
+    localStorePaginationRangeCloseTimer = 0;
+}
+
+function scheduleLocalStorePaginationRangeClose(picker) {
+    cancelLocalStorePaginationRangeClose();
+    if (pinnedLocalStorePaginationRangePicker === picker) return;
+    localStorePaginationRangeCloseTimer = window.setTimeout(() => {
+        localStorePaginationRangeCloseTimer = 0;
+        if (!picker.matches(':hover') && !picker.contains(document.activeElement)) {
+            setLocalStorePaginationRangePickerOpen(picker, false);
+        }
+    }, LOCAL_STORE_PAGINATION_RANGE_CLOSE_DELAY_MS);
+}
+
+function closeAllLocalStorePaginationRangePickers() {
+    cancelLocalStorePaginationRangeClose();
+    pinnedLocalStorePaginationRangePicker = null;
+    document.querySelectorAll('.local-store-pagination-range-picker.is-open')
+        .forEach((picker) => setLocalStorePaginationRangePickerOpen(picker, false));
+}
+
+function ensureLocalStorePaginationRangeGlobalBindings() {
+    if (didBindLocalStorePaginationRangeGlobals) return;
+    didBindLocalStorePaginationRangeGlobals = true;
+    document.addEventListener('pointerdown', (event) => {
+        if (event.target?.closest?.('.local-store-pagination-range-picker')) return;
+        closeAllLocalStorePaginationRangePickers();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const openPicker = document.querySelector('.local-store-pagination-range-picker.is-open');
+        if (!openPicker) return;
+        event.preventDefault();
+        const {trigger} = getLocalStorePaginationRangeElements(openPicker);
+        trigger?.focus();
+        closeAllLocalStorePaginationRangePickers();
+    });
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.local-store-pagination-range-picker.is-open')
+            .forEach(positionLocalStorePaginationRangeMenu);
+    }, {passive: true});
+}
+
+export function bindLocalStorePaginationRangePickers(pagination) {
+    if (!pagination) return;
+    const pickers = Array.from(
+        pagination.querySelectorAll('.local-store-pagination-range-picker'),
+    );
+    if (!pickers.length) return;
+    ensureLocalStorePaginationRangeGlobalBindings();
+    pickers.forEach((picker) => {
+        if (picker.dataset.paginationRangeBound === '1') return;
+        picker.dataset.paginationRangeBound = '1';
+        const {trigger, menu} = getLocalStorePaginationRangeElements(picker);
+        picker.addEventListener('pointerenter', () => {
+            cancelLocalStorePaginationRangeClose();
+            setLocalStorePaginationRangePickerOpen(picker, true);
+        });
+        picker.addEventListener('pointerleave', () => scheduleLocalStorePaginationRangeClose(picker));
+        picker.addEventListener('focusin', () => {
+            cancelLocalStorePaginationRangeClose();
+            setLocalStorePaginationRangePickerOpen(picker, true);
+        });
+        picker.addEventListener('focusout', () => scheduleLocalStorePaginationRangeClose(picker));
+        trigger?.addEventListener('click', () => {
+            cancelLocalStorePaginationRangeClose();
+            const shouldPin = pinnedLocalStorePaginationRangePicker !== picker;
+            if (pinnedLocalStorePaginationRangePicker && pinnedLocalStorePaginationRangePicker !== picker) {
+                setLocalStorePaginationRangePickerOpen(
+                    pinnedLocalStorePaginationRangePicker,
+                    false,
+                );
+            }
+            pinnedLocalStorePaginationRangePicker = shouldPin ? picker : null;
+            setLocalStorePaginationRangePickerOpen(
+                picker,
+                shouldPin || picker.matches(':hover'),
+            );
+        });
+        trigger?.addEventListener('keydown', (event) => {
+            if (event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            pinnedLocalStorePaginationRangePicker = picker;
+            setLocalStorePaginationRangePickerOpen(picker, true, {focusFirst: true});
+        });
+        menu?.addEventListener('keydown', (event) => {
+            const rangeOptions = Array.from(
+                menu.querySelectorAll('.local-store-pagination-range-option'),
+            );
+            const currentIndex = rangeOptions.indexOf(document.activeElement);
+            let nextIndex = currentIndex;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                nextIndex = Math.min(rangeOptions.length - 1, currentIndex + 1);
+            } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                nextIndex = Math.max(0, currentIndex - 1);
+            } else if (event.key === 'Home') {
+                nextIndex = 0;
+            } else if (event.key === 'End') {
+                nextIndex = rangeOptions.length - 1;
+            } else {
+                return;
+            }
+            event.preventDefault();
+            rangeOptions[nextIndex]?.focus();
+        });
+        menu?.addEventListener('click', (event) => {
+            if (!event.target?.closest?.('.local-store-pagination-range-option')) return;
+            closeAllLocalStorePaginationRangePickers();
+        });
+    });
+}
+
 export function renderLocalStorePagination(pagination, state, options = {}) {
     if (!pagination) return;
+    cancelLocalStorePaginationRangeClose();
+    if (pinnedLocalStorePaginationRangePicker && pagination.contains(pinnedLocalStorePaginationRangePicker)) {
+        pinnedLocalStorePaginationRangePicker = null;
+    }
     clearPaginationAnimationTimer(pagination);
-    pagination.classList.remove('is-animated', 'is-animating');
+    pagination.classList.remove('is-animated', 'is-animating', 'has-open-range');
     if (!state?.shouldRender) {
         pagination.innerHTML = '';
         pagination.style.removeProperty('--local-store-pagination-slots');
@@ -333,7 +615,14 @@ export function renderLocalStorePagination(pagination, state, options = {}) {
     pagination.dataset.paginationPageCount = String(state.totalPages);
     pagination.dataset.paginationCurrentPage = String(state.currentPage);
     pagination.dataset.paginationCompact = state.isCompact ? '1' : '0';
-    pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${items.map((item) => renderLocalStorePaginationItem(item, options)).join('')}`;
+    const rangeMenuIdPrefix = options.rangeMenuIdPrefix
+        || pagination.dataset.paginationRangeMenuIdPrefix
+        || pagination.id
+        || `local_store_pagination_${++localStorePaginationRangeMenuId}`;
+    pagination.dataset.paginationRangeMenuIdPrefix = rangeMenuIdPrefix;
+    const renderOptions = {...options, rangeMenuIdPrefix};
+    pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${items.map((item) => renderLocalStorePaginationItem(item, renderOptions)).join('')}`;
+    bindLocalStorePaginationRangePickers(pagination);
     positionLocalStorePaginationIndicator(
         pagination,
         pagination.querySelector('.local-store-page-button.is-active'),
@@ -397,7 +686,9 @@ if (typeof window !== 'undefined') {
         LOCAL_STORE_PAGINATION_MODULE_VERSION,
         animateLocalStorePaginationIndicator,
         bindLocalStorePagination,
+        bindLocalStorePaginationRangePickers,
         buildLocalStorePagination,
+        buildLocalStorePaginationRanges,
         captureLocalStorePaginationAnimation,
         ensureLocalStorePaginationIndicator,
         getLocalStorePaginationMotionDurationMs,

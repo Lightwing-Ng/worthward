@@ -1,4 +1,4 @@
-/* Browser contract for shared numeric typography. Code version: v1.0.0 */
+/* Browser contract for shared numeric typography. Code version: v1.0.1 */
 
 import {test, expect} from '@playwright/test';
 
@@ -49,4 +49,43 @@ test('Style tokens and Font tokens use the shared integer/fraction display', asy
     await expect(fontSamples).toHaveCount(7);
     await expect(fontSamples.first().locator('.workspace-metric-value-major')).toHaveCount(1);
     await expect(fontSamples.first().locator('.workspace-metric-value-minor')).toHaveCount(1);
+
+    const fontSampleState = await page.locator('.font-token-sample-text').evaluateAll((elements) => Object.fromEntries(
+        elements.map((element) => [
+            element.closest('.font-token-sample-row')?.querySelector('.font-token-sample-name')?.textContent.trim(),
+            {
+                previewToken: element.getAttribute('data-inline-font-size-token'),
+                computedSize: getComputedStyle(element).fontSize,
+            },
+        ]),
+    ));
+
+    expect(fontSampleState['--font-size-7']).toEqual({
+        previewToken: '--font-size-7',
+        computedSize: '32px',
+    });
+    expect(fontSampleState['--font-size-8']).toEqual({
+        previewToken: '--font-size-8',
+        computedSize: '36px',
+    });
+    expect(fontSampleState['--font-metric-md']).toEqual({
+        previewToken: '--font-metric-md',
+        computedSize: '24px',
+    });
+    expect(fontSampleState['--font-metric-lg']).toEqual({
+        previewToken: '--font-metric-lg',
+        computedSize: '32px',
+    });
+    expect(fontSampleState['--font-metric-xl']).toEqual({
+        previewToken: '--font-metric-xl',
+        computedSize: '36px',
+    });
+    expect(fontSampleState['--font-metric-value']).toEqual({
+        previewToken: '--font-metric-value',
+        computedSize: '24px',
+    });
+    expect(fontSampleState['--font-numeric-fraction-scale']).toEqual({
+        previewToken: '--font-metric-value',
+        computedSize: '24px',
+    });
 });

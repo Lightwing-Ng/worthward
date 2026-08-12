@@ -1,12 +1,52 @@
 # Investment frontend changelog
 
-Documentation version: `v1.23.3`
+Documentation version: `v1.24.0`
+
+- Added: Hovering any Overview equity range now paints the hovered point's
+  total equity in the same solid blue rounded y-axis badge used by Stock
+  details. Both charts share one canvas renderer, including axis-font reuse,
+  decimal alignment, white text, and the Holdings allocation corner radius.
+  Overview measures the widest equity label before layout so the complete
+  badge and both rounded corners remain inside the canvas.
+
+- Fixed: Moving across the Overview equity chart no longer runs a full
+  point-in-time transaction and tax-lot replay inside every pointer event.
+  Historical P&L resolves after a short pointer-settle window, stale work is
+  cancelled, exact results are cached per chart point, and the Tooltip never
+  carries a prior point's P&L into the pending point.
+
+- Fixed: Transaction History hover places its linked equity-chart marker with
+  one coalesced draw. It no longer restarts a 240–300 ms full-canvas animation
+  for every crossed row, and the former paint-heavy row pulse is removed.
+
+- Improved: Historical Tooltip replay reuses the close-price index and avoids
+  rebuilding detailed realized-P&L attribution that is not rendered there.
+  `Cumulative P&L` remains the rounded sum of the hovered point's exact
+  Realized P&L and Unrealized P&L.
+
+- Fixed: Live Holdings values now render inside stable, column-sized slots.
+  Changes in digit count, sign, or magnitude no longer resize the table rows,
+  body, or summary grid while realtime quotes update.
+
+- Fixed: Transaction History pagination now paints its indicator shadow,
+  hover lift, and motion outside the table host without ancestor clipping.
+  Table rows remain clipped by their dedicated scrolling layer, and the fixed
+  header and scrolling body retain their rounded outer corners.
+
+- Changed: Every Overview hover Tooltip now names its third P&L row
+  `Cumulative P&L`. At each historical or realtime point, it is recalculated
+  from that point's displayed Realized P&L plus Unrealized P&L, including after
+  the live endpoint advances.
+
+- Added: Metrics Unrealized P&L now uses the same collapsed disclosure pattern
+  as Realized P&L. Expanding it lists each open ticker's signed contribution
+  while the card retains its live aggregate value and accessible toggle state.
 
 - Fixed: Overview Tooltip P&L now replays the hovered point's effective tax
   lots and observed close. An earlier minute retains its own P&L after a later
   realtime quote arrives; only the live end marker uses the current Holdings
-  summary. Total P&L is always realized P&L plus unrealized P&L, never Equity
-  less funding flows.
+  summary. Cumulative P&L is always realized P&L plus unrealized P&L, never
+  Equity less funding flows.
 
 - Fixed: During an active US regular session, Overview 1W and 1M preserve the
   complete current-day axis while ending the visible equity line at the current
@@ -21,11 +61,11 @@ Documentation version: `v1.23.3`
   trading days in 1M.
 
 - Changed: Overview equity-chart Tooltips remove the superseded daily `P&L`
-  row and retain the Holdings-aligned realized, unrealized, and total P&L
+  row and retain the Holdings-aligned realized, unrealized, and cumulative P&L
   breakdown.
 
 - Added: Every Overview equity-chart range now appends Realized P&L,
-  Unrealized P&L, and Total P&L to its hover Tooltip.
+  Unrealized P&L, and Cumulative P&L to its hover Tooltip.
 
 - Fixed: Matched future HSBC SEC postings now accrue as exact signed
   trade-date receivables or payables and clear only at their own settlement

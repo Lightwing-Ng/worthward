@@ -1,4 +1,4 @@
-/* Code version: v0.13.13 */
+/* Code version: v0.14.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -8,7 +8,8 @@
 	 * assets/js/responsive.js.
 	 */
 	--responsive-breakpoint-layout-switch-min: 768px;
-	--responsive-breakpoint-sidebar-overlay-max: 600px;
+	--responsive-breakpoint-compact-layout-max: 600px;
+	--responsive-breakpoint-sidebar-overlay-max: 900px;
 	--responsive-breakpoint-settings-density-max: 980px;
 	--responsive-breakpoint-investment-form-density-max: 1080px;
 	--responsive-breakpoint-trade-layout-min: 1024px;

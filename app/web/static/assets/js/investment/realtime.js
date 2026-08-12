@@ -1,7 +1,9 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.1
+ * - Fixed: Holdings live values retain their CSS-owned geometry instead of
+ *   adding content-measured minimum dimensions during quote updates.
  * - Changed: Every quote poll now awaits the market-session refresh before
  *   deciding eligibility or applying quotes, so minute placement cannot lag
  *   behind a slower session-state request.
@@ -11,7 +13,7 @@
 
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.0.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.0';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.1';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -412,6 +414,7 @@ export function createInvestmentLiveValueAnimator({
 
     function reserveValueLayout(node, previousDisplay, nextDisplay, useSplit) {
         if (!isElement(node)) return;
+        if (node.closest('#investment_holdings_panel')) return;
         const currentRect = node.getBoundingClientRect();
         const previousSize = measureStaticContent(node, previousDisplay, useSplit);
         const nextSize = measureStaticContent(node, nextDisplay, useSplit);

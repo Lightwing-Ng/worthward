@@ -1,9 +1,10 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
     const root = document.documentElement;
     const fallbackValues = Object.freeze({
         layoutSwitchMin: 768,
-        sidebarOverlayMax: 600,
+        compactLayoutMax: 600,
+        sidebarOverlayMax: 900,
         settingsDensityMax: 980,
         investmentFormDensityMax: 1080,
         tradeLayoutMin: 1024,
@@ -29,6 +30,10 @@
     const breakpoints = Object.freeze({
         layoutSwitchMin,
         contentStackMax: layoutSwitchMin - 1,
+        compactLayoutMax: readCssPixel(
+            "--responsive-breakpoint-compact-layout-max",
+            fallbackValues.compactLayoutMax,
+        ),
         sidebarOverlayMax: readCssPixel(
             "--responsive-breakpoint-sidebar-overlay-max",
             fallbackValues.sidebarOverlayMax,

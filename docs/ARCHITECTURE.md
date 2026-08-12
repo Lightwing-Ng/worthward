@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.35.1`
+Documentation version: `v1.35.2`
 
 ## Holdings P&L display contract
 
@@ -198,9 +198,10 @@ funding flows. Each historical hover uses only ledger entries effective at that
 point and its observed historical close. Current broker position and
 performance snapshots have no historical as-of guarantee and must not alter a
 historical point. The one live endpoint may reuse the current Holdings summary
-so the two current surfaces reconcile. In every case, Total P&L is calculated
-as realized P&L plus unrealized P&L; incomplete basis or valuation evidence is
-shown as unavailable rather than fabricated.
+so the two current surfaces reconcile. In every case, the Tooltip's Cumulative
+P&L is recalculated from the realized P&L plus unrealized P&L displayed at that
+point; incomplete basis or valuation evidence is shown as unavailable rather
+than fabricated.
 
 ## High-precision Overview intraday equity valuation contract
 

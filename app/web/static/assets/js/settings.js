@@ -1,4 +1,4 @@
-/* Code version: v0.19.0 */
+/* Code version: v0.20.0 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
 import {
@@ -794,6 +794,7 @@ import {
     };
 
     const attachStyleTokenCopyButtons = () => {
+        const feedback = document.querySelector("[data-style-token-copy-status]");
         document.querySelectorAll("[data-style-token-copy]").forEach((button) => {
             if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
             button.dataset.bound = "1";
@@ -802,11 +803,15 @@ import {
                 button.classList.add("is-copied");
                 button.setAttribute("aria-label", translateUi("Copied"));
                 button.setAttribute("title", translateUi("Copied"));
+                if (feedback instanceof HTMLElement) {
+                    feedback.textContent = `${translateUi("Copied")}: ${button.dataset.styleTokenCopy || ""}`;
+                }
                 window.clearTimeout(Number(button.dataset.copyResetTimer || "0"));
                 const timer = window.setTimeout(() => {
                     button.classList.remove("is-copied");
                     button.setAttribute("aria-label", defaultLabel);
                     button.setAttribute("title", translateUi("Copy style name"));
+                    if (feedback instanceof HTMLElement) feedback.textContent = "";
                     delete button.dataset.copyResetTimer;
                 }, 1200);
                 button.dataset.copyResetTimer = String(timer);

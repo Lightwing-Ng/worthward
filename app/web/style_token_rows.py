@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.6.2
+Code version: v1.6.3
 """
 
 from __future__ import annotations
@@ -890,7 +890,8 @@ def build_font_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
                  "sample_value": "15px"},
                 {"token_name": "--font-metric-value", "usage_label": "Metric value", "sample_text": "67.01%", "sample_value": "24px", "sample_kind": "numeric-fraction"},
                 {"token_name": "--font-numeric-fraction-scale", "usage_label": "Numeric fraction",
-                 "sample_text": "62.76", "sample_value": "0.76x", "sample_kind": "numeric-fraction"},
+                 "sample_text": "62.76", "sample_value": "0.76x", "sample_kind": "numeric-fraction",
+                 "preview_font_size_token": "--font-metric-value"},
             ],
             "tokens": [
                 raw_token("--font-form-label", "var(--font-ui-md)"),
