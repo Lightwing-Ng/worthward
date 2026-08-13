@@ -1,4 +1,4 @@
-{# Code version: v0.16.11 #}
+{# Code version: v0.16.12 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.38.11') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.38.13') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -167,10 +167,10 @@
         {{ notice }}
     {% endcall %}
     {% endif %}
+    <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
+        <span class="icon icon-sidebar-left" aria-hidden="true"></span>
+    </button>
     <div class="app-shell is-sidebar-open">
-        <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
-            <span class="icon icon-sidebar-left" aria-hidden="true"></span>
-        </button>
         <div class="global-quick-actions" id="global_quick_actions" aria-label="{{ translate_ui('Global quick actions') }}">
             <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>

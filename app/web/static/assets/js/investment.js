@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.109.1
+ * Code version: v2.109.2
+ * - Fixed: Investment and Stock-details entry points now request the current
+ *   HSBC tax-lot verification helper instead of retaining the prior module
+ *   cache key.
  * - Fixed: High-precision Overview ranges now keep the completed regular
  *   session curve during US overnight, pre-market, and post-market sessions
  *   while projecting the current extended-hours equity as a far-right live
@@ -206,7 +209,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.99.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.100.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -233,7 +236,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.15.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.15.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -278,7 +281,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.109.1',
+    entry: 'v2.109.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

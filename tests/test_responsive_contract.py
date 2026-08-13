@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.0."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.2."""
 
 from __future__ import annotations
 
@@ -96,6 +96,48 @@ def test_javascript_reads_width_media_queries_from_shared_responsive_api() -> No
     assert 'assets/js/responsive.js' in base_source
     assert base_source.index('assets/js/responsive.js') < base_source.index(
         'window.sessionStorage.getItem("antigravity:sidebar-open")'
+    )
+
+
+def test_sidebar_overlay_keeps_touch_toggle_above_its_backdrop() -> None:
+    token_source = _read(TOKENS_CSS)
+    responsive_source = _read(PROJECT_ROOT / "app/web/static/assets/css/utilities/responsive.css")
+    overlay_block = responsive_source.split("@media (max-width: 900px)", maxsplit=1)[1].split(
+        "@media (max-width: 600px)", maxsplit=1
+    )[0]
+
+    for token in (
+        "--sidebar-overlay-inset-top",
+        "--sidebar-overlay-inset-right",
+        "--sidebar-overlay-inset-bottom",
+        "--sidebar-overlay-inset-left",
+        "--sidebar-overlay-available-inline-size",
+        "--layer-sidebar-toggle: 220",
+    ):
+        assert token in token_source
+
+    for fragment in (
+        ".sidebar-backdrop {\n\t\tdisplay: none;\n\t\tvisibility: hidden;\n\t\tpointer-events: none;",
+        ".sidebar-backdrop:not([hidden]) {",
+        "display: block;",
+        "visibility: visible;",
+        "pointer-events: auto;",
+        "width: 44px;",
+        "height: 44px;",
+        "z-index: var(--layer-sidebar-toggle);",
+        "touch-action: manipulation;",
+    ):
+        assert fragment in overlay_block
+
+
+def test_sidebar_toggle_is_outside_the_shell_stacking_context() -> None:
+    template_source = _read(BASE_HTML)
+    toggle_index = template_source.index('id="sidebar_toggle"')
+    shell_index = template_source.index('<div class="app-shell')
+
+    assert toggle_index < shell_index
+    assert ".page > .sidebar-toggle" in _read(
+        PROJECT_ROOT / "app/web/static/assets/css/utilities/responsive.css"
     )
 
 

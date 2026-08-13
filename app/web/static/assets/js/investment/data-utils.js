@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.99.0
+ * Code version: v1.100.0
+ * - Fixed: A newer authoritative HSBC position snapshot can supersede an
+ *   older verified tax-lot boundary after an incremental Order Status import.
  * - Fixed: IBKR cash replay uses the last available transaction date when a
  *   statement cash snapshot is reported one day after the last trade.
  * - Changed: IBKR stock-grant rows now replay as buy-equivalent lots at their
@@ -2636,6 +2638,30 @@ export function createInvestmentDataUtils({
         return scopes;
     }
 
+    function shouldPreferDynamicTaxLotHistoryVerification(existing, dynamic) {
+        if (!existing) return true;
+        const dynamicThrough = normalizeLedgerDate(dynamic?.verifiedThrough);
+        const existingThrough = normalizeLedgerDate(existing?.verifiedThrough);
+        if (!dynamicThrough) return false;
+        if (!existingThrough || dynamicThrough > existingThrough) return true;
+        if (dynamicThrough < existingThrough) return false;
+
+        const closeEnough = (left, right) => Math.abs(Number(left) - Number(right)) < 1e-9;
+        const sameExpectedShares = (
+            existing.expectedShares !== undefined
+            && existing.expectedShares !== null
+        )
+            ? closeEnough(existing.expectedShares, dynamic.expectedShares)
+            : dynamic.expectedShares === undefined || dynamic.expectedShares === null;
+        return !(
+            sameExpectedShares
+            && existing.buyCount === dynamic.buyCount
+            && existing.sellCount === dynamic.sellCount
+            && closeEnough(existing.buyQuantity, dynamic.buyQuantity)
+            && closeEnough(existing.sellQuantity, dynamic.sellQuantity)
+        );
+    }
+
     function matchesVerifiedTaxLotHistory(scopeState, verification) {
         if (!verification) return false;
         const hasExpectedShares = (
@@ -4371,7 +4397,8 @@ export function createInvestmentDataUtils({
         });
 
         getDynamicallyVerifiedTaxLotHistoryScopes(lotScopeMap).forEach((verification, key) => {
-            if (!verifiedTaxLotHistoryScopes.has(key)) {
+            const existingVerification = verifiedTaxLotHistoryScopes.get(key);
+            if (shouldPreferDynamicTaxLotHistoryVerification(existingVerification, verification)) {
                 verifiedTaxLotHistoryScopes.set(key, verification);
             }
         });
@@ -4890,4 +4917,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.99.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.100.0';

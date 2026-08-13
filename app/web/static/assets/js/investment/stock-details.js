@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.0
+ * Code version: v0.15.1
+ * - Fixed: Stock-details now requests the current shared data-utilities
+ *   module so HSBC realized P&L cannot regress through a stale browser cache.
  * - Changed: IBKR stock grants contribute to Stock-details buy counts and
  *   average-cost replay as buy-equivalent lots at their evidenced value.
  * - Refactored: Stock-details and Overview charts now share the same blue
@@ -56,11 +58,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.99.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.100.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.1';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',

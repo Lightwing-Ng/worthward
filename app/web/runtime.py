@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.73.2
+Code version: v0.73.3
+- Fixed: Investment transaction caches now invalidate payloads generated
+  before monotonic HSBC snapshot and tax-lot verification merges, so an old
+  derived cache cannot reintroduce the 7 Aug 2026 HSBC boundary.
 - Fixed: Investment intraday requests refresh a completed requested trading
   day when its regular-session bar set is incomplete, instead of treating a
   partial but date-current store as fresh and carrying one close across the
@@ -361,7 +364,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v11"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v12"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30

@@ -1,6 +1,6 @@
 """NYSE trading-calendar primitives shared across application layers.
 
-Code version: v1.1.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
@@ -201,14 +201,14 @@ def nyse_recent_trading_days(
         day_count: int = 5,
 ) -> list[str]:
     requested_count = max(1, min(365, int(day_count)))
-    session_state = nyse_market_session_state(reference)
+    session_state = nyse_market_session_state(reference, include_overnight=True)
     session_date = str(session_state.get("session_date", ""))
     try:
         anchor = pd.Timestamp(session_date).date()
     except (TypeError, ValueError):
         anchor = pd.Timestamp.now(tz=_NYSE_SESSION_TIMEZONE).date()
 
-    if str(session_state.get("session", "")) != "intraday":
+    if str(session_state.get("session", "")) in {"pre", "overnight"}:
         anchor -= timedelta(days=1)
     while not is_nyse_trading_day(anchor):
         anchor -= timedelta(days=1)
