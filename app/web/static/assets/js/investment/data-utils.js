@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.100.1
+ * Code version: v1.102.0
+ * - Added: Authoritative cash snapshots can retain an intraday as-of datetime
+ *   for same-day replay boundaries.
+ * - Fixed: Exact-time cash boundaries no longer rewrite earlier transactions
+ *   from the same calendar day.
  * - Fixed: Once the frontend has established a bound-transfer replay order,
  *   later history, chart, and Metrics sorting cannot fall back to broker
  *   timestamps or source row numbers and reverse the source-before-receipt
@@ -13,6 +17,9 @@
  * - Changed: IBKR stock-grant rows now replay as buy-equivalent lots at their
  *   evidenced grant value, without creating a cash flow; other broker grants
  *   retain their zero-cost lot semantics.
+ * - Fixed: Broker realized-P&L snapshots now replay later evidenced trades
+ *   from the authoritative position boundary instead of hiding them behind
+ *   the stale snapshot total.
  * - Added: Historical Overview Tooltip P&L can replay a point without applying
  *   a current broker position or performance snapshot. The caller supplies the
  *   point valuation date and observed close, so historical P&L cannot inherit
@@ -795,6 +802,21 @@ export function createInvestmentDataUtils({
         return '';
     }
 
+    function getInvestmentBrokerEndingCashAsOfDateTime(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return '';
+        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summary = summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return '';
+        const rawValue = String(
+            summary.ending_cash_replay_as_of_datetime
+            ?? summary.ending_cash_as_of_datetime
+            ?? '',
+        ).trim().replace('T', ' ');
+        const match = rawValue.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+        return match ? `${match[1]} ${match[2]}` : '';
+    }
+
     function getInvestmentPositionSnapshotAsOf() {
         const data = window.ANTIGRAVITY_INVESTMENT_DATA || {};
         const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
@@ -836,10 +858,12 @@ export function createInvestmentDataUtils({
         rows,
         {
             asOf = '',
+            asOfDateTime = '',
             authoritativeBaseCash = null,
             authoritativeBalances = null,
             baseCurrency = INVESTMENT_BASE_CURRENCY,
             getRowDate = (row) => row?.date,
+            getRowDateTime = (row) => row?.datetime,
             getRunningCash = (row) => row?.broker_running_cash,
             getBalances = (row) => row?.broker_cash_by_currency,
             getBoundaryCurrencies = () => [],
@@ -847,20 +871,38 @@ export function createInvestmentDataUtils({
     ) {
         const orderedRows = Array.isArray(rows) ? rows : [];
         const snapshotDate = normalizeLedgerDate(asOf);
-        if (!orderedRows.length || !snapshotDate) {
+        const normalizedSnapshotDateTime = String(asOfDateTime || '')
+            .trim()
+            .replace('T', ' ')
+            .match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+        const snapshotDateTime = normalizedSnapshotDateTime
+            ? `${normalizedSnapshotDateTime[1]} ${normalizedSnapshotDateTime[2]}`
+            : '';
+        const useDateTimeBoundary = Boolean(snapshotDateTime);
+        if (!orderedRows.length || (!snapshotDate && !snapshotDateTime)) {
             return {applied: false, boundaryIndex: -1, projections: []};
         }
-        const rowDates = orderedRows.map((row) => normalizeLedgerDate(getRowDate(row)));
-        const latestDate = rowDates.filter(Boolean).sort().pop() || '';
-        if (!latestDate || latestDate < snapshotDate) {
+        const rowKeys = orderedRows.map((row) => {
+            if (!useDateTimeBoundary) return normalizeLedgerDate(getRowDate(row));
+            const rawDateTime = String(getRowDateTime(row) ?? '').trim().replace('T', ' ');
+            const dateTimeMatch = rawDateTime.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+            if (dateTimeMatch) return `${dateTimeMatch[1]} ${dateTimeMatch[2]}`;
+            const rowDate = normalizeLedgerDate(getRowDate(row));
+            return rowDate ? `${rowDate} 00:00:00` : '';
+        });
+        const snapshotKey = useDateTimeBoundary
+            ? snapshotDateTime
+            : snapshotDate;
+        const latestKey = rowKeys.filter(Boolean).sort().pop() || '';
+        if (!latestKey || latestKey < snapshotKey) {
             return {applied: false, boundaryIndex: -1, projections: []};
         }
 
         let boundaryIndex = -1;
-        let hasExactBoundaryDate = false;
-        rowDates.forEach((rowDate, index) => {
-            if (!rowDate || rowDate > snapshotDate) return;
-            if (rowDate === snapshotDate) hasExactBoundaryDate = true;
+        let hasExactBoundary = false;
+        rowKeys.forEach((rowKey, index) => {
+            if (!rowKey || rowKey > snapshotKey) return;
+            if (rowKey === snapshotKey) hasExactBoundary = true;
             boundaryIndex = index;
         });
         if (boundaryIndex < 0) {
@@ -898,13 +940,13 @@ export function createInvestmentDataUtils({
         }
 
         const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
-        const applyFromIndex = hasExactBoundaryDate ? boundaryIndex : boundaryIndex + 1;
+        const applyFromIndex = hasExactBoundary ? boundaryIndex : boundaryIndex + 1;
         const projections = [];
         for (let index = applyFromIndex; index < orderedRows.length; index += 1) {
             const row = orderedRows[index];
-            const rowDate = rowDates[index];
-            if (!rowDate || rowDate < snapshotDate) continue;
-            if (index > boundaryIndex && rowDate > snapshotDate) {
+            const rowKey = rowKeys[index];
+            if (!rowKey || rowKey < snapshotKey) continue;
+            if (index > boundaryIndex && rowKey > snapshotKey) {
                 const boundaryCurrencies = new Set(
                     (Array.isArray(getBoundaryCurrencies(row)) ? getBoundaryCurrencies(row) : [])
                         .map(normalizeCurrencyCode)
@@ -2341,14 +2383,168 @@ export function createInvestmentDataUtils({
             snapshots.push({
                 broker: normalizedBroker,
                 accountId: String(summary.account_id ?? summary.account ?? '').trim(),
+                accountToken: normalizeInvestmentLotScopeAccount(
+                    normalizedBroker,
+                    summary.account_id ?? summary.account ?? '',
+                ),
                 positionSnapshotAsOf: getInvestmentBrokerPositionSnapshotAsOf(normalizedBroker),
                 positionSnapshot: normalizeAuthoritativePositionSnapshot(rawSnapshot),
+                positionSnapshotRaw: rawSnapshot,
                 holdingsValidation: summary.holdings_validation && typeof summary.holdings_validation === 'object'
                     ? summary.holdings_validation
                     : null,
             });
         });
         return snapshots;
+    }
+
+    function normalizeLedgerDateTime(value, fallbackDate = '') {
+        const rawValue = String(value || '').trim().replace('T', ' ');
+        const dateTimeMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+        if (dateTimeMatch) return `${dateTimeMatch[1]} ${dateTimeMatch[2]}`;
+        const dateMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) return `${dateMatch[1]} 00:00:00`;
+        const normalizedFallbackDate = normalizeLedgerDate(fallbackDate);
+        return normalizedFallbackDate ? `${normalizedFallbackDate} 00:00:00` : '';
+    }
+
+    function getInvestmentTransactionDateTime(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        for (const candidate of [
+            txn?.datetime,
+            source.execution_datetime,
+            source.trade_datetime,
+            source.history_order_datetime,
+            txn?.date,
+        ]) {
+            const normalized = normalizeLedgerDateTime(candidate, txn?.date);
+            if (normalized) return normalized;
+        }
+        return '';
+    }
+
+    function getAuthoritativeBrokerPositionBoundary(
+        brokerPositionSnapshot,
+        ticker,
+    ) {
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+        if (!normalizedTicker || !brokerPositionSnapshot) return null;
+        const normalizedEntry = brokerPositionSnapshot.positionSnapshot?.[normalizedTicker];
+        const rawEntry = brokerPositionSnapshot.positionSnapshotRaw?.[normalizedTicker]
+            ?? brokerPositionSnapshot.positionSnapshotRaw?.[ticker];
+        if (!normalizedEntry || !rawEntry || typeof rawEntry !== 'object') return null;
+        const quantity = getAuthoritativeSnapshotFiniteNumber(normalizedEntry.quantity);
+        const costPrice = normalizedEntry.costBasisStatus === 'known'
+            ? getAuthoritativeSnapshotFiniteNumber(normalizedEntry.costPrice)
+            : null;
+        if (quantity === null || quantity < 0 || costPrice === null || costPrice < 0) return null;
+        const rawAsOf = rawEntry.as_of ?? rawEntry.asOf;
+        const exactBoundaryMatch = String(rawAsOf || '')
+            .trim()
+            .replace('T', ' ')
+            .match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+        const fallbackBoundaryDate = normalizeLedgerDate(
+            brokerPositionSnapshot.positionSnapshotAsOf,
+        );
+        const boundaryDateTime = exactBoundaryMatch
+            ? `${exactBoundaryMatch[1]} ${exactBoundaryMatch[2]}`
+            : (fallbackBoundaryDate ? `${fallbackBoundaryDate} 23:59:59` : '');
+        if (!boundaryDateTime) return null;
+        return {
+            quantity,
+            totalCost: quantity * costPrice,
+            boundaryDateTime,
+        };
+    }
+
+    function buildSupplementalBrokerRealizedPnl(
+        brokerPositionSnapshot,
+        scope,
+        transactions,
+    ) {
+        const boundary = getAuthoritativeBrokerPositionBoundary(
+            brokerPositionSnapshot,
+            scope?.ticker,
+        );
+        if (!boundary) return null;
+        let shares = boundary.quantity;
+        let totalCost = boundary.totalCost;
+        let realizedPnl = 0;
+        const realizedPnlByDate = {};
+        let hasLaterTransaction = false;
+
+        for (const txn of transactions) {
+            const txnScope = getTransactionLotScope(txn);
+            if (
+                txnScope.broker !== scope.broker
+                || txnScope.accountToken !== scope.accountToken
+                || txnScope.ticker !== scope.ticker
+                || txnScope.currency !== scope.currency
+            ) continue;
+            const txnDateTime = getInvestmentTransactionDateTime(txn);
+            if (!txnDateTime || txnDateTime <= boundary.boundaryDateTime) continue;
+            const normalizedType = getNormalizedTransactionType(txn);
+            const quantity = getTransactionQuantity(txn);
+            if (
+                !Number.isFinite(quantity)
+                || quantity <= 0
+                || !['buy', 'sell', 'grant', 'dividend_reinvestment', 'transfer_in', 'transfer_out']
+                    .includes(normalizedType)
+            ) continue;
+            hasLaterTransaction = true;
+
+            if (['buy', 'grant', 'dividend_reinvestment'].includes(normalizedType)) {
+                const unitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
+                if (!Number.isFinite(unitPrice) || unitPrice < 0) return {status: 'incomplete'};
+                shares += quantity;
+                totalCost += quantity * unitPrice;
+                continue;
+            }
+
+            if (normalizedType === 'transfer_in') {
+                const carriedCostBasis = getTransactionDerivedCostBasis(txn, 'carried');
+                if (carriedCostBasis === null) return {status: 'incomplete'};
+                shares += quantity;
+                totalCost += carriedCostBasis;
+                continue;
+            }
+
+            if (shares < quantity - 1e-9 || !Number.isFinite(totalCost)) {
+                return {status: 'incomplete'};
+            }
+            const averageCost = shares > 1e-9 ? totalCost / shares : 0;
+            const costBasis = quantity * averageCost;
+            if (normalizedType === 'transfer_out') {
+                const transferredCostBasis = getTransactionDerivedCostBasis(txn, 'transfer_out');
+                if (transferredCostBasis === null) return {status: 'incomplete'};
+                totalCost = Math.max(0, totalCost - transferredCostBasis);
+                shares -= quantity;
+                continue;
+            }
+
+            const brokerRealizedPnl = getTransactionBrokerRealizedPnl(txn);
+            const proceeds = getTransactionAmount(txn);
+            const delta = brokerRealizedPnl === null
+                ? proceeds - costBasis
+                : brokerRealizedPnl;
+            if (!Number.isFinite(delta)) return {status: 'incomplete'};
+            realizedPnl += delta;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (ledgerDate) {
+                realizedPnlByDate[ledgerDate] = (Number(realizedPnlByDate[ledgerDate]) || 0) + delta;
+            }
+            totalCost = Math.max(0, totalCost - costBasis);
+            shares -= quantity;
+        }
+
+        return {
+            status: 'complete',
+            realizedPnl: hasLaterTransaction ? realizedPnl : 0,
+            realizedPnlByDate,
+            source: hasLaterTransaction
+                ? 'authoritative_position_snapshot_boundary_replay'
+                : 'authoritative_position_snapshot_boundary_replay_empty',
+        };
     }
 
     function projectAuthoritativePositionSnapshot(rawSnapshot, transactions = [], snapshotAsOf = '') {
@@ -4294,6 +4490,10 @@ export function createInvestmentDataUtils({
         const authoritativeBrokerPerformanceSnapshots = allowAuthoritativePerformanceSnapshot
             ? getAuthoritativeBrokerPerformanceSnapshots()
             : [];
+        const authoritativeBrokerPositionSnapshots = allowAuthoritativePerformanceSnapshot
+            ? getAuthoritativeBrokerPositionSnapshots()
+            : [];
+        const supplementalBrokerRealizedPnlCache = new Map();
         const verifiedTaxLotHistoryScopes = getVerifiedTaxLotHistoryScopes();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
         const canonicalAuthoritativePositionSnapshot = {};
@@ -4489,6 +4689,30 @@ export function createInvestmentDataUtils({
                 && entry.accountToken === scope.accountToken
             ));
             const performanceEntry = authoritativeSnapshot?.performanceSnapshot?.[scope.ticker] ?? null;
+            const authoritativePositionSnapshot = authoritativeBrokerPositionSnapshots.find((entry) => (
+                entry.broker === scope.broker
+                && entry.accountId
+                && entry.accountToken === scope.accountToken
+            ));
+            const supplementalCacheKey = [
+                scope.broker,
+                scope.accountToken,
+                scope.ticker,
+                scope.currency,
+            ].join('|');
+            if (performanceEntry && !supplementalBrokerRealizedPnlCache.has(supplementalCacheKey)) {
+                supplementalBrokerRealizedPnlCache.set(
+                    supplementalCacheKey,
+                    buildSupplementalBrokerRealizedPnl(
+                        authoritativePositionSnapshot,
+                        scope,
+                        orderedTransactions,
+                    ),
+                );
+            }
+            const supplementalRealizedPnl = performanceEntry
+                ? supplementalBrokerRealizedPnlCache.get(supplementalCacheKey)
+                : null;
             const taxLotHistoryVerification = verifiedTaxLotHistoryScopes.get([
                 scope.broker,
                 scope.accountToken,
@@ -4506,13 +4730,26 @@ export function createInvestmentDataUtils({
                 ? 'broker_closed_trades'
                 : 'account_tax_lot_reconstruction';
             let sourceCurrency = scope.currency;
+            let realizedPnlByDateLocal = {...scopeState.realizedPnlByDate};
 
             if (performanceEntry && Number.isFinite(performanceEntry.realizedTotal)) {
                 realizedPnlLocal = performanceEntry.realizedTotal + (
                     performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal
+                ) + (
+                    supplementalRealizedPnl?.status === 'complete'
+                        ? Number(supplementalRealizedPnl.realizedPnl) || 0
+                        : 0
                 );
+                if (supplementalRealizedPnl?.status === 'complete') {
+                    realizedPnlByDateLocal = {
+                        ...supplementalRealizedPnl.realizedPnlByDate,
+                    };
+                }
                 sourceCurrency = performanceEntry.currency;
-                source = 'broker_performance_snapshot';
+                source = supplementalRealizedPnl?.status === 'complete'
+                    && Math.abs(Number(supplementalRealizedPnl.realizedPnl) || 0) > 1e-9
+                    ? 'broker_performance_snapshot_plus_boundary_replay'
+                    : 'broker_performance_snapshot';
             } else if (scopeState.realizedPnlStatus === 'incomplete') {
                 status = 'incomplete';
                 realizedPnlLocal = null;
@@ -4544,8 +4781,9 @@ export function createInvestmentDataUtils({
                 status,
                 source,
                 realizedPnlByDateLocal: (
-                    status === 'complete' && source !== 'broker_performance_snapshot'
-                ) ? {...scopeState.realizedPnlByDate} : {},
+                    status === 'complete'
+                    && source !== 'broker_performance_snapshot'
+                ) ? realizedPnlByDateLocal : {},
                 sellCount: scopeState.sellCount,
                 brokerRealizedSellCount: scopeState.brokerRealizedSellCount,
                 taxLotHistoryVerification: verifiedTaxLotHistory
@@ -4588,7 +4826,7 @@ export function createInvestmentDataUtils({
             const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
             const realizedPnlAccounts = realizedAccountResultsByTicker.get(summary.ticker) || [];
             const hasAuthoritativeBrokerRealizedPnl = realizedPnlAccounts.some((result) => (
-                result.source === 'broker_performance_snapshot'
+                String(result.source || '').startsWith('broker_performance_snapshot')
                 && result.realizedPnl !== null
             ));
             const hasMixedPositionCurrencies = !snapshotEntry && summary.hasMixedPositionCurrencies === true;
@@ -4886,6 +5124,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerStartingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerEndingCashAsOf,
+        getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
         getInvestmentEndingCash,
         getInvestmentEndingCashBalances,
@@ -4950,4 +5189,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.100.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.102.0';

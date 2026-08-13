@@ -1,7 +1,16 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.109.5
+ * Code version: v2.111.0
+ * - Fixed: Dated authoritative broker realized-P&L snapshots now replay
+ *   later evidenced fills from the snapshot's open-position cost boundary,
+ *   so a stale IBKR file cannot hide subsequent realized DRAM or EUV P&L.
+ * - Added: IBKR web-paste imports can optionally retain the exact app cash shown
+ *   after the captured fills as a dated intraday cash boundary.
+ * - Fixed: Authoritative IBKR cash replay can anchor a same-day boundary to the
+ *   exact filled-trade datetime instead of rewriting earlier same-day rows.
+ * - Added: Compact IBKR Orders captures now collect the Hong Kong page date
+ *   and reconcile same-page split Trades fees before a provisional row is stored.
  * - Fixed: Bound security-transfer replay order now remains authoritative
  *   through later history, chart, and Metrics sorting instead of falling back
  *   to source timestamps and row numbers.
@@ -220,7 +229,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.100.1';
+} from './investment/data-utils.js?v=investment-data-utils-v1.102.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -293,7 +302,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.109.5',
+    entry: 'v2.111.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -368,6 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const gainskeeperFilesInput = document.getElementById('gainskeeper_files');
     const gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
     const ibkrTradeNotificationsTextInput = document.getElementById('ibkr_trade_notifications_text');
+    const ibkrTradeNotificationsDateInput = document.getElementById('ibkr_trade_notifications_date');
+    const ibkrTradeNotificationsCashInput = document.getElementById('ibkr_trade_notifications_cash');
     const ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
     const ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
     const ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
@@ -1070,6 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentBrokerEndingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerEndingCashAsOf,
+        getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
         getInvestmentBrokerStartingCash,
         getInvestmentBrokerStartingCashBalances,
@@ -3395,6 +3407,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const authoritativeEndingCashBalances = getInvestmentBrokerEndingCashBalances(brokerCode);
             if (authoritativeEndingCash === null && authoritativeEndingCashBalances === null) return;
             const endingCashAsOf = getInvestmentBrokerEndingCashAsOf(brokerCode);
+            const endingCashAsOfDateTime = getInvestmentBrokerEndingCashAsOfDateTime(brokerCode);
             if (!endingCashAsOf) return;
             const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
             if (brokerSummary?.cash_snapshot_authoritative === false) return;
@@ -3444,11 +3457,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const numericEndingCash = Number(endingCashCandidate);
             const projection = buildDatedCashSnapshotProjection(brokerRows, {
                 asOf: endingCashAsOf,
+                asOfDateTime: endingCashAsOfDateTime,
                 authoritativeBaseCash: Number.isFinite(numericEndingCash) ? numericEndingCash : null,
                 authoritativeBalances: hasAuthoritativeBalances
                     ? authoritativeEndingCashBalances
                     : null,
                 baseCurrency: getInvestmentBaseCurrency(),
+                getRowDateTime: (txn) => txn?.datetime,
                 getBoundaryCurrencies: (txn) => {
                     const boundary = getInvestmentCashBalanceBoundary(txn);
                     return boundary?.currency ? [boundary.currency] : [];
@@ -8692,17 +8707,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalized ? normalized.split('\n').length : 0;
     }
 
+    function hasIbkrCompactOrderCapture(text) {
+        return /^(?:Buy|Sold)\s+[\d,]+(?:\.\d+)?\s+[A-Z0-9][A-Z0-9.-]*\s+Limit\s+[\d,]+(?:\.\d+)?\s*,\s*[A-Z0-9._-]+$/im.test(text);
+    }
+
     function isLikelyIbkrTradeNotificationsText(rawText) {
         const text = normalizeClipboardText(rawText);
+        const hasCompactOrder = hasIbkrCompactOrderCapture(text);
+        const hasDisplayedDate = /\d{1,2}\/\d{1,2}\/20\d{2},\s+\d{1,2}:\d{2}\s+[AP]M/i.test(text);
+        const hasPageDate = Boolean(String(ibkrTradeNotificationsDateInput?.value || '').trim());
         return Boolean(
             text
             && /Orders\s*&\s*Trades/i.test(text)
             && /Trade Notifications/i.test(text)
             && /\bU\d{6,12}\b/i.test(text)
-            && /(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/i.test(text)
+            && (/(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/i.test(text) || hasCompactOrder)
             && /\bFilled\b/i.test(text)
-            && /\d{1,2}\/\d{1,2}\/20\d{2},\s+\d{1,2}:\d{2}\s+[AP]M/i.test(text)
-            && /Fees:\s*[\d,]+(?:\.\d+)?/i.test(text)
+            && (hasDisplayedDate || (hasCompactOrder && hasPageDate))
+            && (/Fees:\s*[\d,]+(?:\.\d+)?/i.test(text) || hasCompactOrder)
         );
     }
 
@@ -12384,6 +12406,18 @@ document.addEventListener('DOMContentLoaded', () => {
             syncImportValidationState();
         });
     }
+    if (ibkrTradeNotificationsDateInput) {
+        ibkrTradeNotificationsDateInput.addEventListener('input', () => {
+            clearImportFeedback();
+            syncIbkrTradeNotificationsDisplay();
+            syncImportValidationState();
+        });
+    }
+    if (ibkrTradeNotificationsCashInput) {
+        ibkrTradeNotificationsCashInput.addEventListener('input', () => {
+            clearImportFeedback();
+        });
+    }
     if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
         ibkrTradeNotificationsPasteButton.addEventListener('click', () => {
             pasteIbkrTradeNotificationsFromClipboard();
@@ -12506,6 +12540,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         'ibkr_trade_notifications_text',
                         tradeNotificationsText,
                     );
+                    formData.append(
+                        'ibkr_trade_notifications_date',
+                        String(ibkrTradeNotificationsDateInput?.value || '').trim(),
+                    );
+                    const tradeNotificationsCash = String(
+                        ibkrTradeNotificationsCashInput?.value || ''
+                    ).trim();
+                    if (tradeNotificationsCash) {
+                        formData.append(
+                            'ibkr_trade_notifications_cash',
+                            tradeNotificationsCash,
+                        );
+                    }
                 } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                     return;

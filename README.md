@@ -379,11 +379,22 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 
 - Import source rule:
   - Use official IBKR CSV exports or GainsKeeper files as the source of truth.
-  - Use pasted Trade Notifications only as a provisional current-moment capture
-    while the prior-day files are not yet available. Displayed Beijing times are
-    converted to New York ledger times.
+  - Use pasted Trade Notifications as supplemental transaction evidence after
+    the available file-snapshot cutoff, especially while the prior-day files are
+    stale or not yet available. Unique filled trades are added to the ledger;
+    the paste is not treated as a replacement holdings or cash snapshot.
+    Displayed Beijing times are converted to New York ledger times.
   - A later matching CSV or GainsKeeper row replaces the web row's rounded fee,
     net amount, and timestamp precision without creating a duplicate trade.
+  - If the IBKR app supplies a user-verified post-fill cash value with the
+    paste, it is anchored to the latest captured fill. An older CSV or
+    GainsKeeper cash snapshot cannot roll that boundary back.
+  - A broker realized-P&L snapshot is likewise treated as valid only through
+    its dated file boundary. Later evidenced fills are replayed from the
+    authoritative open-position cost boundary; they are not discarded merely
+    because the older snapshot already reports a ticker total. If the boundary
+    file exposes only aggregate cost basis, the incremental replay uses that
+    reported average cost and does not fabricate individual tax lots.
   - Do not apply HSBC pending logic to IBKR data.
 - Booking and reconciliation:
   - Record each row using imported fields for gross amount, commission, taxes, and cash movement.

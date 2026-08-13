@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.73.3
+Code version: v0.74.0
+- Changed: IBKR Trade Notifications feedback now identifies pasted fills as
+  supplemental records after the available file-snapshot cutoff.
 - Fixed: Investment transaction caches now invalidate payloads generated
   before monotonic HSBC snapshot and tax-lot verification merges, so an old
   derived cache cannot reintroduce the 7 Aug 2026 HSBC boundary.
@@ -6362,6 +6364,18 @@ def build_web_runtime() -> WebRuntime:
                     trade_notifications_text = str(
                         request.form.get("ibkr_trade_notifications_text", "")
                     ).strip()
+                    trade_notifications_date = str(
+                        request.form.get("ibkr_trade_notifications_date", "")
+                    ).strip()
+                    trade_notifications_cash = str(
+                        request.form.get("ibkr_trade_notifications_cash", "")
+                    ).strip()
+                    trade_notifications_cash_as_of_datetime = str(
+                        request.form.get(
+                            "ibkr_trade_notifications_cash_as_of_datetime",
+                            "",
+                        )
+                    ).strip()
                     if not trade_notifications_text:
                         return jsonify({
                             "success": False,
@@ -6371,13 +6385,20 @@ def build_web_runtime() -> WebRuntime:
                         "ibkr",
                         "web_pasted_text",
                         trade_notifications_text=trade_notifications_text,
+                        trade_date=trade_notifications_date or None,
+                        ending_cash=trade_notifications_cash or None,
+                        ending_cash_as_of_datetime=(
+                            trade_notifications_cash_as_of_datetime or None
+                        ),
                     )
                     success_message = (
                         "IBKR web trade notification sync complete. Filled trades were merged "
-                        "idempotently as a provisional current-moment capture; later matching "
-                        "Transaction History CSV or GainsKeeper records replace their rounded "
-                        "web values with authoritative file precision. Exact pasted text is retained "
-                        "locally as SHA-256-verified immutable evidence."
+                        "idempotently as supplemental records after the available file-snapshot "
+                        "cutoff; unique fills remain additive. Later matching Transaction History "
+                        "CSV or GainsKeeper records replace rounded web values with authoritative "
+                        "file precision. An optional user-verified post-fill cash value is retained "
+                        "as an intraday boundary after the latest pasted fill. Exact pasted text is "
+                        "retained locally as SHA-256-verified immutable evidence."
                     )
                 else:
                     if transactions_file is None or positions_file is None:

@@ -1,6 +1,27 @@
 # Investment frontend changelog
 
-Documentation version: `v1.28.2`
+Documentation version: `v1.30.0`
+
+- Fixed: Broker-scoped realized-P&L snapshots now act as dated cutoffs. Later
+  evidenced trades are replayed from the authoritative open-position boundary,
+  so an old IBKR closed-trade snapshot cannot hide a supplemental web fill.
+  For the current DRAM evidence, the IBKR total is `463.0328456 USD` and the
+  all-broker total after HSBC is `586.5928456 USD`.
+
+- Fixed: IBKR Trade Notifications are now documented and reported as
+  supplemental transaction records after the available file-snapshot cutoff.
+  Unique fills remain additive, matching file rows refine them, and a stale
+  GKX cash snapshot cannot displace a user-verified post-fill boundary such as
+  `826.17 USD` after the DRAM fill.
+
+- Added: IBKR web-paste imports can optionally retain the exact cash shown in
+  the IBKR app after the captured fills. The value is a dated intraday cash
+  boundary, not a synthetic transaction, and exact-time replay leaves earlier
+  same-day trades unchanged.
+
+- Added: IBKR web-paste import now accepts the compact Orders page by collecting
+  its Hong Kong page date, allowing same-page split Trades fees to reconcile
+  into one filled order without a duplicate provisional row.
 
 - Fixed: Bound security-transfer replay order is now carried through every
   later history, chart, and Metrics sort. A fallback to broker timestamps or
