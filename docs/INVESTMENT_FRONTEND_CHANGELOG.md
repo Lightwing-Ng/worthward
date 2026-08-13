@@ -1,6 +1,21 @@
 # Investment frontend changelog
 
-Documentation version: `v1.28.0`
+Documentation version: `v1.28.2`
+
+- Fixed: Bound security-transfer replay order is now carried through every
+  later history, chart, and Metrics sort. A fallback to broker timestamps or
+  source row numbers can no longer move a Schwab receipt ahead of its IBKR
+  transfer-out after the manual binding has been confirmed.
+
+- Fixed: Completed-import feedback now uses the freshly reloaded merged ledger
+  summary. Re-importing an already reconciled Schwab snapshot therefore cannot
+  revive stale receipt-review, carried-basis, or manual-review warnings.
+
+- Changed: Transfer review feedback now describes the current rows that remain
+  marked `Unbound`, so a message cannot imply that already-bound historical
+  transfers were rediscovered by the latest import. Initial large-ledger
+  hydration also keeps its loading modal locked until Holdings, Overview,
+  Metrics, and Transaction history finish rendering.
 
 - Fixed: DRAM Stock details and ticker replay now have regression coverage for
   the three-account holding structure: IBKR 105 shares, Charles Schwab 195

@@ -1,4 +1,4 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.3."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.4."""
 
 from pathlib import Path
 
@@ -39,7 +39,8 @@ def test_ibkr_feedback_contains_plain_title_rich_emphasis_and_numbered_list() ->
     assert "from './investment/import-feedback.js?" in entry_javascript
     assert '<p class="notice-floating-banner-heading">IBKR import complete</p>' in javascript
     assert "<strong>incrementally</strong>" in javascript
-    assert "<u>Immediate action</u>" in javascript
+    assert "<u>Transfer review</u>" in javascript
+    assert "marked Unbound in Transaction history" in javascript
     assert "notice-floating-banner-emphasis-danger" in javascript
     assert 'class="notice-floating-banner-list investment-import-feedback-list"' in javascript
     assert "IBKR import complete.</p>" not in javascript

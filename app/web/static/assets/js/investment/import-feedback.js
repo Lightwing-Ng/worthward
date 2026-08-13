@@ -1,16 +1,34 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.8.2
+ * Code version: v1.8.4
+ * - Fixed: Completed-import feedback now prefers the freshly reloaded merged
+ *   ledger summary, so stale pre-merge Schwab receipt and P&L warnings cannot
+ *   reappear after an idempotent import.
+ * - Changed: IBKR and Schwab transfer review feedback now reports the current
+ *   number of rows that remain marked `Unbound`, rather than describing the
+ *   count as newly detected during the latest import.
  * - Changed: IBKR transfer feedback no longer uses an alarming immediate-action
- *   warning; it distinguishes import-time candidates from rows that remain
- *   marked `Unbound`, so already-bound transfers require no further action.
+ *   warning; it distinguishes current rows that remain marked `Unbound`, so
+ *   already-bound transfers require no further action.
  * - Fixed: HSBC transferable-cash feedback is shown only when positive unsettled sell proceeds produce the provisional `*` marker.
  * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
  * - Added: HSBC feedback states the authoritative transferable cash and the pending-sell display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.2';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.4';
+
+export function resolveInvestmentImportFeedbackSummary({
+    refreshedSummary = null,
+    importSummary = null,
+} = {}) {
+    const preferredSummary = refreshedSummary && typeof refreshedSummary === 'object'
+        ? refreshedSummary
+        : importSummary;
+    return preferredSummary && typeof preferredSummary === 'object'
+        ? preferredSummary
+        : {};
+}
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -57,7 +75,7 @@ export function buildIbkrImportFeedbackMessage({
     }
     if (pendingTransferCount > 0) {
         items.push(
-            `<u>Transfer review</u>: <strong>${pendingTransferCount.toLocaleString('en-US')} possible internal-transfer ${pendingTransferCount === 1 ? 'match was' : 'matches were'} detected during this import.</strong> Review only rows still marked <strong>Unbound</strong> in Transaction history; already-bound transfers require no further action.`
+            `<u>Transfer review</u>: <strong>${pendingTransferCount.toLocaleString('en-US')} internal-transfer ${pendingTransferCount === 1 ? 'row remains' : 'rows remain'} marked Unbound in Transaction history.</strong> Review only those rows; already-bound transfers require no further action.`
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();

@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.100.0
+ * Code version: v1.100.1
+ * - Fixed: Once the frontend has established a bound-transfer replay order,
+ *   later history, chart, and Metrics sorting cannot fall back to broker
+ *   timestamps or source row numbers and reverse the source-before-receipt
+ *   constraint.
  * - Fixed: A newer authoritative HSBC position snapshot can supersede an
  *   older verified tax-lot boundary after an incremental Order Status import.
  * - Fixed: IBKR cash replay uses the last available transaction date when a
@@ -128,6 +132,8 @@
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
+
+export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
 const INVESTMENT_VERIFIED_TAX_LOT_COMPATIBILITY_FALLBACKS = Object.freeze({
     hsbc: Object.freeze({
@@ -2097,6 +2103,15 @@ export function createInvestmentDataUtils({
     }
 
     function compareInvestmentTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftReplayOrder = Number(leftTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        const rightReplayOrder = Number(rightTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        if (
+            Number.isInteger(leftReplayOrder)
+            && Number.isInteger(rightReplayOrder)
+            && leftReplayOrder !== rightReplayOrder
+        ) {
+            return leftReplayOrder - rightReplayOrder;
+        }
         const leftDatetime = String(leftTxn?.datetime || leftTxn?.date || '');
         const rightDatetime = String(rightTxn?.datetime || rightTxn?.date || '');
         if (leftDatetime !== rightDatetime) {
@@ -2157,6 +2172,15 @@ export function createInvestmentDataUtils({
     }
 
     function compareInvestmentTransactionsForReplay(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftReplayOrder = Number(leftTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        const rightReplayOrder = Number(rightTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        if (
+            Number.isInteger(leftReplayOrder)
+            && Number.isInteger(rightReplayOrder)
+            && leftReplayOrder !== rightReplayOrder
+        ) {
+            return leftReplayOrder - rightReplayOrder;
+        }
         const leftDate = String(leftTxn?.date || '').slice(0, 10);
         const rightDate = String(rightTxn?.date || '').slice(0, 10);
         if (leftDate !== rightDate) {
@@ -2197,6 +2221,15 @@ export function createInvestmentDataUtils({
     }
 
     function compareInvestmentTaxLotTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftReplayOrder = Number(leftTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        const rightReplayOrder = Number(rightTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        if (
+            Number.isInteger(leftReplayOrder)
+            && Number.isInteger(rightReplayOrder)
+            && leftReplayOrder !== rightReplayOrder
+        ) {
+            return leftReplayOrder - rightReplayOrder;
+        }
         const leftDatetime = getInvestmentTaxLotOrderDatetime(leftTxn);
         const rightDatetime = getInvestmentTaxLotOrderDatetime(rightTxn);
         if (leftDatetime !== rightDatetime) {
@@ -4917,4 +4950,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.100.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.100.1';

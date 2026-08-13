@@ -1,7 +1,17 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.109.2
+ * Code version: v2.109.5
+ * - Fixed: Bound security-transfer replay order now remains authoritative
+ *   through later history, chart, and Metrics sorting instead of falling back
+ *   to source timestamps and row numbers.
+ * - Fixed: Completed-import feedback now uses the freshly reloaded merged
+ *   ledger summary, preventing stale Schwab receipt, carried-basis, and
+ *   manual-review warnings from surviving an idempotent import.
+ * - Fixed: Initial investment hydration now keeps its loading modal locked
+ *   until the large local ledger has finished rebuilding Holdings, Overview,
+ *   Metrics, and Transaction history, preventing an empty intermediate view
+ *   from being mistaken for missing data.
  * - Fixed: Investment and Stock-details entry points now request the current
  *   HSBC tax-lot verification helper instead of retaining the prior module
  *   cache key.
@@ -202,6 +212,7 @@ import {
 } from './investment/chart-orbit.js?v=investment-chart-orbit-v1.38.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    INVESTMENT_REPLAY_ORDER_SYMBOL,
     applyInvestmentVerifiedTaxLotCompatibilityFallbacks,
     classifyInvestmentUsRealtimeSession,
     createInvestmentDataUtils,
@@ -209,13 +220,14 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.100.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.100.1';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildSchwabImportFeedbackMessage,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.8.2';
+    resolveInvestmentImportFeedbackSummary,
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.8.4';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     animateLocalStorePaginationIndicator,
@@ -281,7 +293,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.109.2',
+    entry: 'v2.109.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -6498,6 +6510,7 @@ document.addEventListener('DOMContentLoaded', () => {
             title: INVESTMENT_LOADING_MODAL_TITLE,
             copy: INVESTMENT_LOADING_MODAL_COPY,
             iconClass: INVESTMENT_LOADING_MODAL_ICON_CLASS,
+            lockClose: true,
         });
     }
 
@@ -12678,8 +12691,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     closeInvestmentImportForm();
                     setImportFeedback('Import committed. Refreshing the transaction table…', 'loading');
                     try {
-                        const { valuationStatus } = await fetchInvestmentData({
+                        const { data: refreshedInvestmentData, valuationStatus } = await fetchInvestmentData({
                             expectedStoreVersion: result.investment_store_version,
+                        });
+                        const feedbackImportSummary = resolveInvestmentImportFeedbackSummary({
+                            refreshedSummary: refreshedInvestmentData?.summary,
+                            importSummary: result.summary,
                         });
                         const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
                         const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
@@ -12691,7 +12708,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else if (selectedBroker === 'ibkr') {
                             setImportFeedback(
                                 buildIbkrImportFeedbackMessage({
-                                    importSummary: result.summary,
+                                    importSummary: feedbackImportSummary,
                                     refreshNotice,
                                     valuationNotice: '',
                                     pendingTransferCount,
@@ -12702,7 +12719,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else if (selectedBroker === 'hsbc') {
                             setImportFeedback(
                                 buildHsbcImportFeedbackMessage({
-                                    importSummary: result.summary,
+                                    importSummary: feedbackImportSummary,
                                     refreshNotice,
                                 }, { escapeHtml }),
                                 'success',
@@ -12711,7 +12728,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else if (selectedBroker === 'schwab') {
                             setImportFeedback(
                                 buildSchwabImportFeedbackMessage({
-                                    importSummary: result.summary,
+                                    importSummary: feedbackImportSummary,
                                     refreshNotice,
                                     pendingTransferCount,
                                 }, { escapeHtml }),
@@ -15585,6 +15602,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 broker_holdings: { ...brokerLedgerState.holdings },
                 broker_money_market_anchors: { ...brokerLedgerState.moneyMarketAnchors },
             };
+        });
+        processed.forEach((txn, processedIndex) => {
+            Object.defineProperty(txn, INVESTMENT_REPLAY_ORDER_SYMBOL, {
+                configurable: true,
+                enumerable: false,
+                value: processedIndex,
+                writable: false,
+            });
         });
 
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshotForTransactions(

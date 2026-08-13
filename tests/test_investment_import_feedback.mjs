@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.8.2 */
+/* Tests for Investment import-feedback markup. Code version: v1.8.4 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,6 +8,7 @@ import {
     buildIbkrImportFeedbackMessage,
     buildInvestmentImportFeedbackListHtml,
     buildSchwabImportFeedbackMessage,
+    resolveInvestmentImportFeedbackSummary,
 } from '../app/web/static/assets/js/investment/import-feedback.js';
 
 function escapeHtml(value) {
@@ -20,7 +21,24 @@ function escapeHtml(value) {
 }
 
 test('module exposes a semantic cache-busting version', () => {
-    assert.match(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, /^v\d+\.\d+\.\d+$/);
+    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.8.4');
+});
+
+test('feedback summary prefers the freshly reloaded merged ledger', () => {
+    const refreshedSummary = { security_transfer_reconciliation: { pnl_status: 'available' } };
+    const staleImportSummary = { security_transfer_reconciliation: { pnl_unavailable_tickers: ['DRAM', 'QQQI'] } };
+
+    assert.equal(
+        resolveInvestmentImportFeedbackSummary({
+            refreshedSummary,
+            importSummary: staleImportSummary,
+        }),
+        refreshedSummary,
+    );
+    assert.deepEqual(
+        resolveInvestmentImportFeedbackSummary({ importSummary: staleImportSummary }),
+        staleImportSummary,
+    );
 });
 
 test('feedback list removes blank values without altering trusted rich markup', () => {
@@ -48,7 +66,7 @@ test('IBKR feedback preserves verified source-evidence copy and singular transfe
     assert.match(message, /This run parsed <strong>12,345<\/strong> records, added <strong>1,234<\/strong>, and treated <strong>11,111<\/strong> as already present\./);
     assert.match(message, /SHA-256-verified immutable evidence/);
     assert.match(message, /Transfer review/);
-    assert.match(message, /1 possible internal-transfer match was detected during this import/);
+    assert.match(message, /<strong>1 internal-transfer row remains marked Unbound in Transaction history\.<\/strong>/);
     assert.match(message, /already-bound transfers require no further action/);
     assert.doesNotMatch(message, /Immediate action/);
     assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
@@ -61,8 +79,8 @@ test('IBKR feedback escapes refresh and valuation notices while pluralizing tran
         pendingTransferCount: 2,
     }, {escapeHtml});
 
-    assert.match(message, /2 possible internal-transfer matches were detected during this import/);
-    assert.match(message, /Review only rows still marked <strong>Unbound<\/strong>/);
+    assert.match(message, /<strong>2 internal-transfer rows remain marked Unbound in Transaction history\.<\/strong>/);
+    assert.match(message, /Review only those rows/);
     assert.doesNotMatch(message, /Immediate action/);
     assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
     assert.match(message, /&lt;rebuild&gt;&amp; retry/);
@@ -146,6 +164,29 @@ test('Schwab feedback explains an aggregate-only source-account overlay', () => 
     assert.match(message, /Aggregate-only confirmation/);
     assert.match(message, /user-attested net-neutral overlay/);
     assert.match(message, /automatically superseded when exact source evidence is imported/);
+});
+
+test('Schwab feedback omits stale unavailable warnings after all receipts reconcile', () => {
+    const message = buildSchwabImportFeedbackMessage({
+        importSummary: {
+            schwab_positions_validation: {status: 'matched'},
+            holdings_validation: {mismatch_count: 0},
+            security_transfer_reconciliation: {
+                aggregate_holdings_available: true,
+                matched_count: 5,
+                manual_match_count: 5,
+                pnl_status: 'available',
+                pnl_unavailable_tickers: [],
+                unreconciled_inbound_count: 0,
+                unreconciled_outbound_count: 0,
+            },
+        },
+        pendingTransferCount: 0,
+    }, {escapeHtml});
+
+    assert.doesNotMatch(message, /Receipt review required/);
+    assert.doesNotMatch(message, /P&amp;L unavailable/);
+    assert.doesNotMatch(message, /Manual review required/);
 });
 
 test('Schwab feedback requires the composition root HTML escaper', () => {
