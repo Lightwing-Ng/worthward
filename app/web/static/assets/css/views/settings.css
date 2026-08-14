@@ -1,4 +1,4 @@
-/* Code version: v0.22.3 */
+/* Code version: v0.22.4 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -287,9 +287,10 @@
     column-gap: var(--settings-action-package-column-gap);
     row-gap: var(--settings-action-package-row-gap);
     align-items: start;
+    width: min(100%, var(--settings-action-package-max-width));
     padding: var(--settings-action-package-pad-block) var(--settings-action-package-pad-inline);
     border-radius: var(--settings-action-package-radius);
-    background: var(--panel-strong);
+    background: var(--settings-action-package-background);
     border: var(--settings-action-package-border);
     box-shadow: var(--shadow);
     backdrop-filter: none;
@@ -298,13 +299,18 @@
 }
 
 .settings-action-package-icon-shell {
-    flex: 0 0 auto;
     grid-column: 1;
     grid-row: 1;
-    align-self: start;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 36px;
     height: 36px;
-    border-radius: 12px;
+    border-radius: 10px;
+    background: var(--settings-icon-surface, var(--accent-surface-icon));
+    color: var(--settings-icon-tint, var(--accent-text));
+    box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
 }
 
 .settings-action-package-icon-shell .icon {

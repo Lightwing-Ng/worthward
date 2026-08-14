@@ -1,7 +1,15 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.112.4
+ * Code version: v2.113.7
+ * - Changed: IBKR web-paste current-position calibration now uses the shared
+ *   standard table with prefilled holdings, optional blank rows, and grouped
+ *   cash/quantity formatting while preserving the existing payload boundary.
+ * - Fixed: The import close control now sits below the global theme toggle so
+ *   the two controls remain vertically separated while the modal is open.
+ * - Changed: The Investment importer now opens as a centered frosted modal
+ *   over a Gaussian-blurred page. A separate close control remains active while
+ *   the original add control is disabled, and only the field stack scrolls.
  * - Fixed: The active cost-method resolver now ignores malformed refreshed
  *   payload values and preserves the valid Settings value.
  * - Changed: Stock-details tooltip and chart labels now expose the same global
@@ -239,7 +247,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.104.3';
+} from './investment/data-utils.js?v=investment-data-utils-v1.104.5';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -313,7 +321,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.112.4',
+    entry: 'v2.113.7',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -368,6 +376,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const toggleBtn = document.getElementById('toggle_form_button');
+    const investmentImportCloseButton = document.getElementById('investment_import_close_button');
+    const sidebarToggle = document.getElementById('sidebar_toggle');
+    const sidebarDock = document.querySelector('.sidebar-dock');
+    const globalQuickActions = document.getElementById('global_quick_actions');
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
     const investmentHistorySurface = document.getElementById('investment_history_surface');
@@ -391,6 +403,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const ibkrTradeNotificationsDateInput = document.getElementById('ibkr_trade_notifications_date');
     const ibkrTradeNotificationsCashInput = document.getElementById('ibkr_trade_notifications_cash');
     const ibkrTradeNotificationsPositionsInput = document.getElementById('ibkr_trade_notifications_positions');
+    const ibkrPositionCalibrationTable = document.getElementById('investment_import_calibration_table');
+    const ibkrPositionCalibrationTableBody = document.getElementById('investment_import_calibration_table_body');
     const ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
     const ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
     const ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
@@ -742,7 +756,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentSegmentedMeasureTimer = 0;
     let investmentIbkrModeMeasureRaf = 0;
     let investmentHsbcModeMeasureRaf = 0;
-    let investmentImportStableHeight = 0;
     let activeInvestmentHistoryRowIds = [];
     let activeInvestmentStockDetailRowIds = [];
     let activeInvestmentMetricTooltipState = null;
@@ -8683,6 +8696,178 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(panel instanceof HTMLElement)) return;
             panel.hidden = panel.dataset.ibkrImportModePanel !== selectedMode;
         });
+        if (selectedMode === 'web_paste') {
+            renderIbkrPositionCalibrationTable();
+        }
+    }
+
+    function parseCalibrationNumericText(value) {
+        const normalized = String(value ?? '').trim().replace(/,/g, '');
+        if (!normalized || !/^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))$/.test(normalized)) {
+            return null;
+        }
+        const sign = normalized.startsWith('-') ? '-' : '';
+        const unsigned = normalized.replace(/^[+-]/, '');
+        const [integerPart = '0', fractionPart = ''] = unsigned.split('.');
+        return {
+            normalized,
+            sign,
+            integerPart: integerPart.replace(/^0+(?=\d)/, '') || '0',
+            fractionPart,
+        };
+    }
+
+    function groupCalibrationInteger(value) {
+        return String(value || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    function formatCalibrationCashValue(value) {
+        const parsed = parseCalibrationNumericText(value);
+        if (!parsed) return String(value ?? '').trim() ? String(value).trim() : '';
+        return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}.${parsed.fractionPart.slice(0, 2).padEnd(2, '0')}`;
+    }
+
+    function formatCalibrationQuantityValue(value) {
+        const parsed = parseCalibrationNumericText(value);
+        if (!parsed) return String(value ?? '').trim() ? String(value).trim() : '';
+        if (!parsed.fractionPart) {
+            return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}`;
+        }
+        const fractionDigits = Math.max(4, parsed.fractionPart.length);
+        return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}.${parsed.fractionPart.padEnd(fractionDigits, '0')}`;
+    }
+
+    function normalizeCalibrationSubmissionValue(value) {
+        const parsed = parseCalibrationNumericText(value);
+        if (!parsed || parsed.sign === '-') return '';
+        const fraction = parsed.fractionPart.replace(/0+$/, '');
+        return `${parsed.integerPart}${fraction ? `.${fraction}` : ''}`;
+    }
+
+    function parseIbkrPositionCalibrationSnapshot(value) {
+        const snapshot = new Map();
+        String(value || '').split(/\r?\n/).forEach((line) => {
+            const match = /^\s*([A-Za-z][A-Za-z0-9._-]*)\s+([+,\d.]+)\s*$/.exec(line);
+            if (!match) return;
+            const ticker = normalizeInvestmentTicker(match[1]);
+            const quantity = normalizeCalibrationSubmissionValue(match[2]);
+            if (ticker && quantity) snapshot.set(ticker, quantity);
+        });
+        return snapshot;
+    }
+
+    function getExistingIbkrPositionCalibrationRows() {
+        const rowsByTicker = new Map();
+        document.querySelectorAll('#investment_holdings_panel tr[data-investment-holdings-ticker]').forEach((row) => {
+            if (!(row instanceof HTMLTableRowElement)) return;
+            const ticker = normalizeInvestmentTicker(row.dataset.investmentHoldingsTicker);
+            if (!ticker || rowsByTicker.has(ticker)) return;
+            const cells = Array.from(row.querySelectorAll('td'));
+            const displayedQuantity = String(cells[4]?.textContent || '').trim();
+            const quantity = normalizeCalibrationSubmissionValue(displayedQuantity === '-' ? '' : displayedQuantity);
+            rowsByTicker.set(ticker, { ticker, quantity });
+        });
+        return Array.from(rowsByTicker.values());
+    }
+
+    function syncIbkrPositionCalibrationInputs() {
+        if (!(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
+        const cashField = ibkrPositionCalibrationTableBody.querySelector('[data-ibkr-calibration-cash]');
+        if (ibkrTradeNotificationsCashInput instanceof HTMLInputElement) {
+            ibkrTradeNotificationsCashInput.value = normalizeCalibrationSubmissionValue(cashField?.value || '');
+        }
+        if (ibkrTradeNotificationsPositionsInput instanceof HTMLTextAreaElement) {
+            const positionLines = Array.from(
+                ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]:not([data-asset="Cash"])')
+            ).map((row) => {
+                const ticker = normalizeInvestmentTicker(row.dataset.asset);
+                const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
+                const quantity = normalizeCalibrationSubmissionValue(quantityField?.value || '');
+                return ticker && quantity ? `${ticker} ${quantity}` : '';
+            }).filter(Boolean);
+            ibkrTradeNotificationsPositionsInput.value = positionLines.join('\n');
+        }
+    }
+
+    function renderIbkrPositionCalibrationTable() {
+        if (!(ibkrPositionCalibrationTable instanceof HTMLElement)
+            || !(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
+        const existingValues = new Map();
+        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]').forEach((row) => {
+            const asset = normalizeInvestmentTicker(row.dataset.asset);
+            const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
+            if (asset && quantityField instanceof HTMLInputElement) {
+                existingValues.set(asset, quantityField.value);
+            }
+        });
+        const snapshotValues = parseIbkrPositionCalibrationSnapshot(
+            ibkrTradeNotificationsPositionsInput?.value || '',
+        );
+        const cashValue = existingValues.has('CASH')
+            ? existingValues.get('CASH')
+            : (ibkrTradeNotificationsCashInput?.value || '');
+        const holdings = getExistingIbkrPositionCalibrationRows();
+        const rows = [{
+            asset: 'Cash',
+            quantity: cashValue,
+            currency: 'USD',
+            isCash: true,
+        }, ...holdings.map((holding) => ({
+            asset: holding.ticker,
+            quantity: existingValues.has(holding.ticker)
+                ? existingValues.get(holding.ticker)
+                : (snapshotValues.get(holding.ticker) || holding.quantity),
+            currency: 'USD',
+            isCash: false,
+        }))];
+
+        ibkrPositionCalibrationTableBody.innerHTML = rows.map((row, index) => {
+            const quantityValue = row.isCash
+                ? formatCalibrationCashValue(row.quantity)
+                : formatCalibrationQuantityValue(row.quantity);
+            const quantityAttribute = row.isCash
+                ? 'data-ibkr-calibration-cash'
+                : 'data-ibkr-calibration-quantity';
+            return `
+                <tr data-ibkr-calibration-row data-asset="${escapeHtml(row.asset)}">
+                    <td class="investment-import-calibration-cell investment-import-calibration-cell-number">${index + 1}</td>
+                    <td class="investment-import-calibration-cell investment-import-calibration-cell-asset">${escapeHtml(row.asset)}</td>
+                    <td class="investment-import-calibration-cell investment-import-calibration-cell-quantity">
+                        <input class="settings-form-control investment-import-calibration-input"
+                               type="text"
+                               inputmode="decimal"
+                               autocomplete="off"
+                               ${quantityAttribute}
+                               aria-label="${escapeHtml(row.asset)} quantity"
+                               value="${escapeHtml(quantityValue)}"
+                               placeholder="Optional">
+                    </td>
+                    <td class="investment-import-calibration-cell investment-import-calibration-cell-currency">${escapeHtml(row.currency)}</td>
+                </tr>
+            `;
+        }).join('');
+        if (ibkrPositionCalibrationTableBody.dataset.bound !== '1') {
+            ibkrPositionCalibrationTableBody.dataset.bound = '1';
+            ibkrPositionCalibrationTableBody.addEventListener('input', (event) => {
+                const field = event.target;
+                if (!(field instanceof HTMLInputElement) || !field.matches('[data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]')) return;
+                clearImportFeedback();
+                syncIbkrPositionCalibrationInputs();
+            });
+            ibkrPositionCalibrationTableBody.addEventListener('blur', (event) => {
+                const field = event.target;
+                if (!(field instanceof HTMLInputElement)) return;
+                if (field.matches('[data-ibkr-calibration-cash]')) {
+                    field.value = formatCalibrationCashValue(field.value);
+                } else if (field.matches('[data-ibkr-calibration-quantity]')) {
+                    field.value = formatCalibrationQuantityValue(field.value);
+                } else {
+                    return;
+                }
+                syncIbkrPositionCalibrationInputs();
+            }, true);
+        }
+        syncIbkrPositionCalibrationInputs();
     }
 
     function syncHsbcImportModePanels() {
@@ -12131,63 +12316,62 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function syncInvestmentImportContainerHeight({ preserveVertical = false } = {}) {
-        if (!(formContainer instanceof HTMLElement) || formContainer.style.display === 'none' || !investmentHistorySurface) {
+    function syncInvestmentImportContainerHeight() {
+        if (!(formContainer instanceof HTMLElement) || formContainer.style.display === 'none') {
             return;
         }
-        const surfaceRect = investmentHistorySurface.getBoundingClientRect();
-        const toggleRect = toggleBtn instanceof HTMLElement ? toggleBtn.getBoundingClientRect() : null;
-        const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
         const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
-        if (!Number.isFinite(surfaceRect.width) || surfaceRect.width <= 0 || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-            formContainer.style.removeProperty('top');
-            formContainer.style.removeProperty('left');
-            formContainer.style.removeProperty('right');
-            formContainer.style.removeProperty('max-height');
-            formContainer.style.removeProperty('height');
+        if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
             return;
         }
-        const edgeGap = window.innerWidth <= 767 ? 8 : 10;
-        // Compute left/right from the surface rect so the form width always obeys the mother container (responds to sidebar etc.)
-        const leftInset = Math.max(edgeGap, Math.floor(surfaceRect.left) + edgeGap);
-        const rightInset = Math.max(edgeGap, Math.floor(viewportWidth - surfaceRect.right) + edgeGap);
-        const existingTopInset = Number.parseFloat(formContainer.style.top);
-        const existingMaxHeight = Number.parseFloat(formContainer.style.maxHeight);
-        let topInset = edgeGap;
-        let availableHeight = 0;
-        if (preserveVertical && Number.isFinite(existingTopInset) && Number.isFinite(existingMaxHeight)) {
-            topInset = existingTopInset;
-            availableHeight = existingMaxHeight;
-        } else {
-            if (toggleRect) {
-                topInset = Math.max(topInset, Math.floor(toggleRect.bottom) + edgeGap);
-            } else {
-                topInset = Math.max(topInset, 42);
-            }
-            availableHeight = Math.max(80, viewportHeight - topInset - edgeGap);
-            formContainer.style.top = `${topInset}px`;
-            formContainer.style.maxHeight = `${availableHeight}px`;
+        const verticalInset = window.innerWidth <= 767 ? 16 : 32;
+        const availableHeight = Math.max(240, viewportHeight - (verticalInset * 2));
+        formContainer.style.setProperty(
+            '--investment-import-modal-height',
+            `${Math.min(480, availableHeight)}px`,
+        );
+        const quickActionsRect = globalQuickActions?.getBoundingClientRect();
+        if (quickActionsRect && quickActionsRect.width > 0 && quickActionsRect.height > 0) {
+            document.body.style.setProperty('--investment-import-control-rail-top', `${quickActionsRect.top}px`);
         }
-        formContainer.style.left = `${leftInset}px`;
-        formContainer.style.right = `${rightInset}px`;
-        if (investmentImportStableHeight > 0) {
-            formContainer.style.height = `${Math.min(investmentImportStableHeight, availableHeight)}px`;
-        } else {
-            formContainer.style.removeProperty('height');
+    }
+
+    function setInvestmentImportControlState({ isOpen, isClosing = false }) {
+        document.body.classList.toggle('is-investment-import-modal-open', isOpen);
+        if (toggleBtn instanceof HTMLButtonElement) {
+            toggleBtn.disabled = isOpen;
+            toggleBtn.hidden = isOpen;
+            toggleBtn.setAttribute('aria-disabled', String(isOpen));
+        }
+        if (sidebarToggle instanceof HTMLButtonElement) {
+            sidebarToggle.disabled = isOpen;
+            sidebarToggle.hidden = isOpen;
+            sidebarToggle.setAttribute('aria-disabled', String(isOpen));
+        }
+        if (sidebarDock instanceof HTMLElement) {
+            sidebarDock.hidden = isOpen;
+        }
+        if (investmentSectionResizer instanceof HTMLButtonElement) {
+            investmentSectionResizer.disabled = isOpen;
+            investmentSectionResizer.setAttribute('aria-disabled', String(isOpen));
+        }
+        if (investmentImportCloseButton instanceof HTMLButtonElement) {
+            investmentImportCloseButton.hidden = !isOpen;
+            investmentImportCloseButton.disabled = !isOpen || isClosing;
         }
     }
 
     function openInvestmentImportForm() {
-        if (!toggleBtn || !formContainer || !toggleIcon) return;
+        if (!toggleBtn || !formContainer) return;
         if (investmentFormHideTimer) {
             window.clearTimeout(investmentFormHideTimer);
             investmentFormHideTimer = null;
         }
         clearImportFeedback();
-        investmentImportStableHeight = 0;
-        formContainer.style.removeProperty('height');
+        formContainer.style.removeProperty('--investment-import-modal-height');
         formContainer.style.display = 'flex';
         formContainer.scrollTop = 0;
+        setInvestmentImportControlState({ isOpen: true });
         syncInvestmentFormLayout();
         syncInvestmentImportContainerHeight();
         // Re-ensure the broker dropdown shared select is fully bound and labels synced
@@ -12199,26 +12383,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentImportBrokerSelect) {
             investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
         }
-        investmentImportStableHeight = formContainer.offsetHeight;
-        syncInvestmentImportContainerHeight();
         setTimeout(() => {
             formContainer.style.opacity = '1';
-            formContainer.style.transform = 'scale(1)';
+            renderIbkrPositionCalibrationTable();
             window.setTimeout(syncInvestmentImportContainerHeight, 180);
+            window.setTimeout(renderIbkrPositionCalibrationTable, 180);
             window.setTimeout(syncInvestmentImportContainerHeight, 360);
+            window.setTimeout(renderIbkrPositionCalibrationTable, 360);
         }, 50);
-        toggleIcon.classList.add('is-minus');
-        toggleBtn.setAttribute('aria-label', 'Hide broker import or sync form');
     }
 
     function closeInvestmentImportForm() {
-        if (!toggleBtn || !formContainer || !toggleIcon) return;
+        if (!toggleBtn || !formContainer) return;
         if (investmentFormHideTimer) {
             window.clearTimeout(investmentFormHideTimer);
             investmentFormHideTimer = null;
         }
         formContainer.style.opacity = '0';
-        formContainer.style.transform = 'scale(0.98)';
+        setInvestmentImportControlState({ isOpen: true, isClosing: true });
         // Ensure the page-level portalled broker menu is closed before the form hide transition.
         const importBrokerField = formContainer.querySelector('[data-shared-select-field]');
         if (importBrokerField instanceof HTMLElement) {
@@ -12244,17 +12426,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         investmentFormHideTimer = window.setTimeout(() => {
             formContainer.style.display = 'none';
-            formContainer.style.removeProperty('top');
-            formContainer.style.removeProperty('left');
-            formContainer.style.removeProperty('right');
-            formContainer.style.removeProperty('max-height');
-            formContainer.style.removeProperty('height');
-            investmentImportStableHeight = 0;
+            formContainer.style.removeProperty('--investment-import-modal-height');
+            document.body.style.removeProperty('--investment-import-control-rail-top');
             syncInvestmentFormLayout();
+            setInvestmentImportControlState({ isOpen: false });
             investmentFormHideTimer = null;
         }, 400);
-        toggleIcon.classList.remove('is-minus');
-        toggleBtn.setAttribute('aria-label', 'Import or sync broker activity');
     }
 
     function buildInvestmentRequestOptions(overrides = {}) {
@@ -12464,7 +12641,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.addEventListener('resize', syncInvestmentImportContainerHeight);
     window.visualViewport?.addEventListener('resize', syncInvestmentImportContainerHeight);
-    window.addEventListener('scroll', syncInvestmentImportContainerHeight, { passive: true });
 
     function syncInvestmentFormLayout() {
         if (!formContainer || !historyTable || !parentSection) return;
@@ -12474,15 +12650,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Toggle form visibility
     const parentSection = formContainer.closest('.chart-surface');
-    const toggleIcon = document.getElementById('toggle_form_icon');
-    if (toggleBtn && formContainer && parentSection && toggleIcon) {
+    if (toggleBtn && formContainer) {
         toggleBtn.addEventListener('click', () => {
-            const isVisible = formContainer.style.display === 'flex';
-            if (isVisible) {
-                closeInvestmentImportForm();
-            } else {
-                openInvestmentImportForm();
-            }
+            openInvestmentImportForm();
+        });
+
+        investmentImportCloseButton?.addEventListener('click', () => {
+            closeInvestmentImportForm();
         });
 
         const handleInvestmentLayoutChange = () => {
@@ -12494,16 +12668,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.ResizeObserver) {
             const investmentFormResizeObserver = new ResizeObserver(handleInvestmentLayoutChange);
             investmentFormResizeObserver.observe(formContainer);
-            if (investmentHistorySurface) {
-                const surfaceResizeObserver = new ResizeObserver(() => {
-                    requestAnimationFrame(() => {
-                        if (formContainer && formContainer.style.display === 'flex') {
-                            syncInvestmentImportContainerHeight({ preserveVertical: true });
-                        }
-                    });
-                });
-                surfaceResizeObserver.observe(investmentHistorySurface);
-            }
         }
     }
 

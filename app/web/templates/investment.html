@@ -1,4 +1,4 @@
-{# Code version: v1.59.3 #}
+{# Code version: v1.59.12 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -136,10 +136,24 @@
             <div class="chart-heading-row investment-history-heading-row">
                 <p class="chart-heading">Transaction history</p>
             </div>
-            <button type="button" class="settings-round-icon-button" id="toggle_form_button"
-                    aria-label="Import or sync broker activity">
-                <span class="icon investment-toggle-form-icon" id="toggle_form_icon"></span>
+        <div class="investment-import-control-rail" aria-label="Investment import controls">
+            <button type="button"
+                    class="settings-round-icon-button"
+                    id="investment_import_close_button"
+                    aria-label="Close broker import or sync form"
+                    title="Close import"
+                    disabled
+                    hidden>
+                <span class="icon investment-import-close-icon" aria-hidden="true"></span>
             </button>
+            <button type="button"
+                    class="settings-round-icon-button"
+                    id="toggle_form_button"
+                    aria-label="Import or sync broker activity"
+                    title="Import or sync broker activity">
+                <span class="icon investment-toggle-form-icon" id="toggle_form_icon" aria-hidden="true"></span>
+            </button>
+        </div>
             <section id="transaction_form_container" class="investment-form-container">
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
                       data-card-shadow="false"
@@ -334,52 +348,50 @@
                                 </div>
                             </div>
                             <div class="investment-import-field investment-import-bridge-field">
-                                <label class="trade-strategy-param-label" for="ibkr_trade_notifications_cash">
-                                    <span class="investment-import-label-trigger"
-                                          tabindex="0">
-                                        <span class="investment-import-label-step" aria-hidden="true">➌</span>
-                                        <span class="investment-import-label-text">Cash after captured fills (USD)</span>
-                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
-                                              role="tooltip">
-                                            <span class="investment-import-help-title">Optional IBKR app cash boundary</span>
-                                            <span class="investment-import-help-step">Enter the exact USD cash shown in IBKR after the last filled trade in this capture.</span>
-                                            <span class="investment-import-help-step">This records a dated cash boundary at the last filled trade time; it does not create a synthetic transaction.</span>
-                                            <span class="investment-import-help-step">Leave blank when the app cash has not been independently verified.</span>
-                                        </span>
-                                    </span>
-                                </label>
-                                <div class="investment-import-plain-control-row">
-                                    <input id="ibkr_trade_notifications_cash"
-                                           name="ibkr_trade_notifications_cash"
-                                           type="number"
-                                           min="-999999999999"
-                                           step="0.01"
-                                           inputmode="decimal"
-                                           class="settings-form-control"
-                                           placeholder="Optional">
-                                </div>
-                            </div>
-                            <div class="investment-import-field investment-import-bridge-field">
-                                <label class="trade-strategy-param-label" for="ibkr_trade_notifications_positions">
+                                <div class="trade-strategy-param-label">
                                     <span class="investment-import-label-trigger"
                                           tabindex="0">
                                         <span class="investment-import-label-step" aria-hidden="true">➍</span>
-                                        <span class="investment-import-label-text">Current positions (optional)</span>
+                                        <span class="investment-import-label-text">Current holdings calibration (optional)</span>
                                         <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
                                             <span class="investment-import-help-title">User-verified position boundary</span>
-                                            <span class="investment-import-help-step">Enter one ticker and quantity per line, for example: TICKER 10</span>
-                                            <span class="investment-import-help-step">This is used only with the optional cash boundary and does not create synthetic transactions.</span>
+                                            <span class="investment-import-help-step">Cash is shown in USD. Existing holdings are prefilled from the Holdings table.</span>
+                                            <span class="investment-import-help-step">Leave cash or any individual holding blank when it is not applicable.</span>
+                                            <span class="investment-import-help-step">Only completed rows are sent to the existing calibration boundary; this does not create synthetic transactions.</span>
                                         </span>
                                     </span>
-                                </label>
+                                </div>
                                 <div class="investment-import-plain-control-row">
+                                    <div id="investment_import_calibration_table"
+                                         class="investment-import-calibration-table-shell"
+                                         data-ibkr-calibration-table>
+                                        <table class="settings-table trade-transactions-table scrollable-data-table investment-import-calibration-table"
+                                               aria-label="Current holdings calibration">
+                                            <colgroup>
+                                                <col class="investment-import-calibration-column-number">
+                                                <col class="investment-import-calibration-column-asset">
+                                                <col class="investment-import-calibration-column-quantity">
+                                                <col class="investment-import-calibration-column-currency">
+                                            </colgroup>
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">No.</th>
+                                                    <th scope="col">Asset</th>
+                                                    <th scope="col">Quantity</th>
+                                                    <th scope="col">Currency</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="investment_import_calibration_table_body"></tbody>
+                                        </table>
+                                    </div>
+                                    <input id="ibkr_trade_notifications_cash"
+                                           name="ibkr_trade_notifications_cash"
+                                           type="hidden">
                                     <textarea id="ibkr_trade_notifications_positions"
                                               name="ibkr_trade_notifications_positions"
-                                              class="settings-form-control investment-import-position-snapshot-input"
-                                              rows="3"
-                                              spellcheck="false"
-                                              placeholder="Optional&#10;TICKER 10"></textarea>
+                                              hidden
+                                              spellcheck="false"></textarea>
                                 </div>
                             </div>
                             </div>
@@ -834,11 +846,12 @@
                             </div>
                         </div>
                     </div>
-                    <section class="settings-action-package investment-import-action-package">
-                            <span class="settings-nav-icon-shell settings-action-package-icon-shell" aria-hidden="true">
+                    <section class="settings-action-package settings-callout-card-primary investment-import-action-package">
+                            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true">
                                 <span class="icon investment-import-action-icon"></span>
                             </span>
-                            <div class="settings-action-package-copy">
+                            <div class="settings-action-package-copy settings-callout-text">
+                                <p class="settings-service-name">Investment import</p>
                                 <p class="settings-service-note" id="investment_import_note">Imports into <code>settings_store/investment.parquet</code> without clearing existing records.</p>
                             </div>
                             <div class="settings-action-package-form">
@@ -922,5 +935,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.112.4') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.113.7') }}"></script>
 {% endblock %}

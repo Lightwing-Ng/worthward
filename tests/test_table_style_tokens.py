@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.7."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.9."""
 
 from __future__ import annotations
 
@@ -269,7 +269,7 @@ def test_investment_equity_range_uses_the_compact_segmented_control_contract() -
         assert declaration in range_rule
 
 
-def test_investment_import_cards_use_the_parent_shadow_switch() -> None:
+def test_investment_import_modal_uses_page_blur_and_standard_action_package() -> None:
     project_root = Path(__file__).resolve().parents[1]
     investment_css = (
         project_root / "app/web/static/assets/css/views/investment.css"
@@ -282,10 +282,29 @@ def test_investment_import_cards_use_the_parent_shadow_switch() -> None:
     assert response.status_code == 200
     assert 'id="investment_form"' in html
     assert 'data-card-shadow="false"' in html
+    assert 'id="investment_import_close_button"' in html
+    assert 'data-ibkr-calibration-table' in html
+    assert 'id="ibkr_trade_notifications_cash"' in html
+    assert 'class="settings-action-package settings-callout-card-primary investment-import-action-package"' in html
+    assert 'class="settings-action-package-copy settings-callout-text"' in html
+    assert '<p class="settings-service-name">Investment import</p>' in html
     assert '.investment-import-form[data-card-shadow="true"] {' in investment_css
     assert '.investment-import-form[data-card-shadow="false"] {' in investment_css
     assert "--investment-import-bridge-shadow: none;" in investment_css
-    assert "--investment-import-action-package-shadow: none;" in investment_css
+    assert "--investment-import-action-package-shadow" not in investment_css
+    assert ".investment-import-close-icon" in investment_css
+    assert "body.is-investment-import-modal-open #toggle_form_button" in investment_css
+    assert "body.is-investment-import-modal-open #sidebar_toggle" in investment_css
+    assert "body.is-investment-import-modal-open #investment_section_resizer" in investment_css
+    assert "body.is-investment-import-modal-open #global_quick_actions" in investment_css
+    assert "position: sticky;" in investment_css
+    assert "pointer-events: none;" in investment_css
+    assert "border-radius: 10px;" in investment_css
+    assert "inset: 0;" in investment_css
+    assert "backdrop-filter: saturate(84%) blur(18px);" in investment_css
+    assert "body.is-investment-import-modal-open" in investment_css
+    assert ".investment-import-calibration-table" in investment_css
+    assert "width: min(780px, calc(100vw - (var(--page-edge-pad) * 2)));" in investment_css
 
 
 def test_investment_table_header_is_interactive_and_body_is_measurable() -> None:

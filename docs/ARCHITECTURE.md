@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.3`
+Documentation version: `v1.39.4`
 
 ## Holdings P&L display contract
 
@@ -40,6 +40,12 @@ the latest captured fill time without an account-specific calibration record or
 synthetic transactions; because the pasted page is not a complete ledger
 history, the resulting snapshot remains partial-history evidence for P&L
 validation.
+
+One Trade Notifications capture may include current-day rows that show only a
+time and older rows with a full displayed date. The required Hong Kong page
+date is applied only to those time-only current-day rows; full-date rows retain
+their own broker-provided calendar date before each timestamp is converted to
+the New York ledger timezone.
 
 When immutable IBKR GainsKeeper evidence supplies the split fills for a
 provisional compact web aggregate, GainsKeeper becomes canonical even if its

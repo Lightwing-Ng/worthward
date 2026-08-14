@@ -1,6 +1,37 @@
 # Investment frontend changelog
 
-Documentation version: `v1.34.0`
+Documentation version: `v1.38.6`
+
+- Changed: IBKR web-paste current-position calibration now reuses the standard
+  Settings table format. Cash is a USD row with two-decimal grouping, existing
+  holdings such as DRAM, EUV, and IBKR are prefilled from Holdings, fractional
+  quantities retain at least four decimal places, and blank cash or holding
+  rows remain valid optional input without exposing the legacy textarea.
+
+- Fixed: While the investment import modal is open, the light/dark toggle stays
+  above the dedicated close control. The two controls share a stable vertical
+  column and no longer collide with the drawer.
+
+- Fixed: A validated HSBC snapshot now verifies a fully covered closed ticker
+  when replay reaches exactly zero shares and the open-position list omits it,
+  allowing closed round-trip realized P&L to appear without trusting partial
+  history.
+
+- Fixed: Tax-lot replay now normalizes transaction datetimes before comparing
+  source evidence, so mixed-format IBKR Trade Notifications cannot move a
+  current fill ahead of older history or omit its realized P&L.
+
+- Changed: The Investment importer is now a centered, rounded frosted modal
+  over a full-page Gaussian blur. The dedicated `×` close control remains the
+  only active entry control while the original `+` is disabled, and only the
+  field stack scrolls. Its final action section reuses the standard Settings
+  action-package structure without a page-specific visual override. The close
+  control is kept above the modal edge, the disabled `+` is removed from the
+  pointer hit path, the `+` is hidden while expanded, the sidebar toggle is
+  locked, the investment section resizer is locked, the global theme toggle
+  remains available, and long text inputs use a 10px rectangular radius. The
+  modal keeps the import-method segmented control sticky during field-stack
+  scrolling and uses the full Settings action-package title/copy/action slot.
 
 - Fixed: All four sell-matching methods now resolve through one shared browser
   helper. An invalid refreshed API value cannot override the valid Settings

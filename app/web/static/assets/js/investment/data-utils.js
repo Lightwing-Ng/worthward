@@ -1,7 +1,14 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.104.3
+ * Code version: v1.104.5
+ * - Fixed: A validated HSBC snapshot can now attest a fully covered ticker
+ *   that is absent from the open-position list when replay proves the position
+ *   is flat, so closed round trips contribute realized P&L without trusting an
+ *   incomplete history.
+ * - Fixed: Tax-lot replay now compares normalized transaction datetimes before
+ *   falling back to raw source timestamp text, so mixed IBKR display formats
+ *   cannot place a current fill before older history.
  * - Fixed: Cost-method resolution now skips an invalid API value and uses the
  *   valid server-rendered setting instead of silently falling back to the
  *   default method.
@@ -2223,16 +2230,20 @@ export function createInvestmentDataUtils({
 
     function getInvestmentTaxLotOrderDatetime(txn) {
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-        return String(
-            source.history_order_datetime
-            ?? source.execution_datetime
-            ?? source.trade_datetime
-            ?? source.email_datetime
-            ?? source.source_datetime_raw
-            ?? txn?.datetime
-            ?? txn?.date
-            ?? '',
-        ).trim();
+        const candidates = [
+            source.history_order_datetime,
+            source.execution_datetime,
+            source.trade_datetime,
+            source.email_datetime,
+            txn?.datetime,
+            source.source_datetime_raw,
+            txn?.date,
+        ];
+        for (const candidate of candidates) {
+            const normalized = normalizeLedgerDateTime(candidate, '');
+            if (normalized) return normalized;
+        }
+        return '';
     }
 
     function compareInvestmentTaxLotTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
@@ -2985,12 +2996,15 @@ export function createInvestmentDataUtils({
 
             const positionSnapshotEntry = Object.entries(summary.position_snapshot || {})
                 .find(([ticker]) => getInvestmentCanonicalTicker(ticker) === scope.ticker)?.[1];
-            const expectedShares = Number(positionSnapshotEntry?.quantity);
+            const snapshotHasTicker = Boolean(positionSnapshotEntry);
+            const expectedShares = snapshotHasTicker
+                ? Number(positionSnapshotEntry?.quantity)
+                : 0;
             const verifiedThrough = normalizeLedgerDate(summary.position_snapshot_as_of)
                 || normalizeLedgerDate(snapshot.portfolio_market_data_updated_at?.date);
             const coverageEndDate = getCoverageEndDate(summary, snapshot);
             if (
-                !positionSnapshotEntry
+                (!snapshotHasTicker && !isFlatPosition(scopeState.shares))
                 || !Number.isFinite(expectedShares)
                 || !verifiedThrough
                 || !coverageEndDate
@@ -5368,4 +5382,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.3';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.5';
