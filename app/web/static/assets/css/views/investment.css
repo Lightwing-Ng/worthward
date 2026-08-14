@@ -1,4 +1,4 @@
-/* Code version: v1.75.38 */
+/* Code version: v1.75.39 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4605,6 +4605,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-width: 0;
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+.investment-import-calibration-asset {
+    width: 100%;
+    min-width: 0;
 }
 
 .investment-import-calibration-table tbody tr:first-child {

@@ -285,6 +285,7 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert 'id="investment_import_close_button"' in html
     assert 'data-ibkr-calibration-table' in html
     assert 'id="ibkr_trade_notifications_cash"' in html
+    assert 'id="investment_import_calibration_table_body"' in html
     assert 'class="settings-action-package settings-callout-card-primary investment-import-action-package"' in html
     assert 'class="settings-action-package-copy settings-callout-text"' in html
     assert '<p class="settings-service-name">Investment import</p>' in html

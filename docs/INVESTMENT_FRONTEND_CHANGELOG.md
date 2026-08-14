@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.6`
+Documentation version: `v1.38.7`
+
+- Changed: IBKR web-paste current-position calibration now shows exactly three
+  blank asset selector rows beside the blank USD cash row. Existing holdings
+  remain available as choices, but neither symbols nor quantities are selected
+  or entered automatically, preventing an unrelated holding from being
+  mistaken for this capture.
 
 - Changed: IBKR web-paste current-position calibration now reuses the standard
   Settings table format. Cash is a USD row with two-decimal grouping, existing
