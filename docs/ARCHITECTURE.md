@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.2`
+Documentation version: `v1.39.3`
 
 ## Holdings P&L display contract
 
@@ -113,9 +113,9 @@ Settings uses the same contract: the section is always the path in `/settings/<s
 
 All client-side pagination surfaces reuse the five-page chunk builder and shared
 active-page indicator. A single-page result omits the pagination shell entirely.
-Hidden-page range menus remain keyboard accessible and use a stable scrollbar
-gutter with an inset rounded scrollbar so the popover's right edge keeps its
-rounded silhouette when the range list exceeds the available viewport height.
+Hidden-page range menus remain keyboard accessible and keep vertical scrolling
+available within the calculated viewport range while delegating scrollbar
+painting to the native browser surface.
 
 Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates. The market-cap workspace accepts up to 10 user-selected tickers; other comparison workspaces retain the shared 5-ticker limit.
 

@@ -1,4 +1,4 @@
-/* Code version: v0.22.2 */
+/* Code version: v0.22.3 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -2833,8 +2833,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
-    scrollbar-gutter: stable;
-    scrollbar-color: var(--accent-scrollbar-strong) color-mix(in srgb, var(--theme-muted) 18%, transparent);
     border: var(--frosted-glass-border);
     border-radius: var(--radius-soft);
     background: var(--frosted-glass-opaque-background, var(--glass-popover-background));
@@ -2848,29 +2846,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     transform: translate3d(calc(-50% + var(--pagination-range-menu-shift-x)), 8px, 0) scale(0.955);
     transform-origin: bottom center;
     transition: opacity var(--motion-duration-fast) var(--motion-standard), visibility var(--motion-duration-fast) var(--motion-standard), transform var(--motion-duration-emphasized) var(--motion-emphasized);
-}
-
-.local-store-pagination-range-menu::-webkit-scrollbar {
-    width: 10px;
-}
-
-.local-store-pagination-range-menu::-webkit-scrollbar-track {
-    margin: 10px 0;
-    border-radius: var(--radius-pill);
-    background: color-mix(in srgb, var(--theme-muted) 18%, transparent);
-}
-
-.local-store-pagination-range-menu::-webkit-scrollbar-thumb {
-    min-height: 44px;
-    border: 2px solid transparent;
-    border-radius: var(--radius-pill);
-    background: var(--accent-scrollbar-strong);
-    background-clip: padding-box;
-}
-
-.local-store-pagination-range-menu::-webkit-scrollbar-thumb:hover {
-    background: var(--accent-scrollbar-hover);
-    background-clip: padding-box;
 }
 
 .local-store-pagination-range-menu.is-scrollable {

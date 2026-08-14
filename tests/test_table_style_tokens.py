@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.6."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.7."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_investment_pagination_menu_uses_opaque_frosted_material() -> None:
     ) in menu_rule
 
 
-def test_pagination_range_menu_uses_an_inset_rounded_scrollbar() -> None:
+def test_pagination_range_menu_keeps_native_scrollbar_visuals() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings_css = (
         project_root / "app/web/static/assets/css/views/settings.css"
@@ -74,27 +74,11 @@ def test_pagination_range_menu_uses_an_inset_rounded_scrollbar() -> None:
     menu_rule = settings_css.split(
         ".local-store-pagination-range-menu {", maxsplit=1
     )[1].split("}", maxsplit=1)[0]
-    for token in (
-        "overflow-y: auto;",
-        "scrollbar-gutter: stable;",
-        "scrollbar-color: var(--accent-scrollbar-strong) color-mix(in srgb, var(--theme-muted) 18%, transparent);",
-    ):
-        assert token in menu_rule
-
-    for token in (
-        ".local-store-pagination-range-menu::-webkit-scrollbar {",
-        "width: 10px;",
-        ".local-store-pagination-range-menu::-webkit-scrollbar-track {",
-        "margin: 10px 0;",
-        "border-radius: var(--radius-pill);",
-        ".local-store-pagination-range-menu::-webkit-scrollbar-thumb {",
-        "min-height: 44px;",
-        "background: var(--accent-scrollbar-strong);",
-        "background-clip: padding-box;",
-        ".local-store-pagination-range-menu::-webkit-scrollbar-thumb:hover {",
-        "background: var(--accent-scrollbar-hover);",
-    ):
-        assert token in settings_css
+    assert "overflow-y: auto;" in menu_rule
+    assert "scrollbar-width: thin;" in menu_rule
+    assert "scrollbar-gutter:" not in menu_rule
+    assert "scrollbar-color:" not in menu_rule
+    assert ".local-store-pagination-range-menu::-webkit-scrollbar" not in settings_css
 
 
 def test_investment_history_scroll_shell_keeps_rounded_bottom_corners() -> None:
