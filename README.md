@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.72.0`
+Documentation version: `v2.73.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -295,6 +295,10 @@ profile name.
 - The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
 - `Settings -> Investment` controls the shared buy-lot matching method used by Holdings, Stock details, and local realized P&L. The default is `Lowest-cost lots first`, which attributes a sale to the cheapest open lots first; FIFO, LIFO, and moving-average alternatives remain available.
 - Holdings remaining shares, cost basis, and unrealized P&L are aggregated only after each broker/account/ticker/currency scope has replayed its own transactions, so one account's sale cannot consume another account's lots.
+- A stock `grant`, including an IBKR stock grant, adds a zero-cost lot. Its
+  imported per-share value remains immutable source evidence, not paid cost
+  basis; any separately imported purchase continues to contribute its own net
+  acquisition cost to the aggregate average price.
 - If one canonical ticker has open lots in multiple currencies, Holdings preserves shares but leaves combined cost basis, market value, average price, and local unrealized P&L unavailable rather than adding incompatible raw currency units; an authoritative broker performance snapshot still supplies realized P&L. Unknown carried basis on an in-kind `transfer_in` remains explicitly disclosed as a reconstruction limitation.
 - Broker-reported closed-trade P&L remains authoritative when present. Security-transfer basis reconstruction is a separate FIFO-reconstructed path and does not inherit the buy/sell display preference.
 - The Overview and Transaction history surfaces share a responsive horizontal separator that appears on hover or focus and supports pointer, touch, and keyboard resizing
@@ -391,10 +395,11 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
     GainsKeeper cash snapshot cannot roll that boundary back.
   - A broker realized-P&L snapshot is likewise treated as valid only through
     its dated file boundary. Later evidenced fills are replayed from the
-    authoritative open-position cost boundary; they are not discarded merely
-    because the older snapshot already reports a ticker total. If the boundary
-    file exposes only aggregate cost basis, the incremental replay uses that
-    reported average cost and does not fabricate individual tax lots.
+    complete transaction-history inventory in broker-consistent FIFO order;
+    they are not discarded merely because the older snapshot already reports
+    a ticker total. If the history cannot establish an exact FIFO inventory,
+    the supplemental P&L fails closed instead of silently using a stale
+    aggregate average cost.
   - Do not apply HSBC pending logic to IBKR data.
 - Booking and reconciliation:
   - Record each row using imported fields for gross amount, commission, taxes, and cash movement.

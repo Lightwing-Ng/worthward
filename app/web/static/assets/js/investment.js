@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.111.0
+ * Code version: v2.112.0
  * - Fixed: Dated authoritative broker realized-P&L snapshots now replay
  *   later evidenced fills from the snapshot's open-position cost boundary,
  *   so a stale IBKR file cannot hide subsequent realized DRAM or EUV P&L.
@@ -30,9 +30,9 @@
  *   marker aligned to the Holdings Total equity value.
  * - Fixed: IBKR CSV cash snapshots reported one day after the last trade now
  *   anchor current cash through their explicit replay boundary.
- * - Changed: IBKR stock grants now use their evidenced grant value as buy
- *   cost basis throughout Holdings, Overview, Metrics, and Stock details;
- *   the grant remains non-cash and other broker grants are unchanged.
+ * - Fixed: IBKR stock grants retain zero cost basis throughout Holdings,
+ *   Overview, Metrics, and Stock details. Their source per-share value is
+ *   preserved as evidence and never treated as a paid purchase.
  * - Added: Every Overview range now reuses the Stock-details blue rounded
  *   y-axis badge to show the hovered point's total equity, with dynamically
  *   measured axis width so the badge cannot be clipped.
@@ -229,7 +229,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.102.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.104.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -257,7 +257,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.15.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.15.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -302,7 +302,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.111.0',
+    entry: 'v2.112.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1108,7 +1108,6 @@ document.addEventListener('DOMContentLoaded', () => {
         getTransactionLotScope,
         getTransactionLotScopeKey,
         getInvestmentBaseCurrency,
-        isInvestmentGrantBuyEquivalent,
         getTransactionPrice,
         getTransactionQuantity,
         getTransactionValuationQuantity,
@@ -5392,7 +5391,6 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentStockDetailsPriceChartRequestSerial += 1;
             return investmentStockDetailsPriceChartRequestSerial;
         },
-        isInvestmentGrantBuyEquivalent,
         isFlatPosition,
         isInvestmentStockDetailsIntradayRange,
         loadInvestmentStockDetailsIntradayRows,
@@ -14377,7 +14375,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return (
                 normalizedType === 'buy'
                 || normalizedType === 'sell'
-                || isInvestmentGrantBuyEquivalent(txn)
             );
         }).length;
         const averagePriceDisplay = tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice);
@@ -18258,7 +18255,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? rawPrice
                         : getTransactionEffectiveUnitPrice(txn, quantity);
 
-                    if (normalizedType === 'buy' || isInvestmentGrantBuyEquivalent(txn)) {
+                    if (normalizedType === 'buy') {
                         applyDirectionalTrade(lotState, 'long', quantity, unitPrice);
                     } else if (normalizedType === 'grant' || normalizedType === 'dividend_reinvestment' || normalizedType === 'transfer_in') {
                         lotState.shares += quantity;
@@ -18595,7 +18592,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (['buy', 'grant', 'dividend_reinvestment'].includes(normalizedType)) {
                 lots.push({
                     remainingQuantity: quantity,
-                    isGrant: normalizedType === 'grant' && !isInvestmentGrantBuyEquivalent(txn),
+                    isGrant: normalizedType === 'grant',
                     rowNo: ledgerNo,
                     ticker: getInvestmentCanonicalTicker(txn?.ticker),
                     currency,

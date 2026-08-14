@@ -1,11 +1,11 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.1
+ * Code version: v0.15.2
  * - Fixed: Stock-details now requests the current shared data-utilities
  *   module so HSBC realized P&L cannot regress through a stale browser cache.
- * - Changed: IBKR stock grants contribute to Stock-details buy counts and
- *   average-cost replay as buy-equivalent lots at their evidenced value.
+ * - Fixed: Stock grants, including IBKR grants, remain zero-cost lots and do
+ *   not contribute to Stock-details trade counts.
  * - Refactored: Stock-details and Overview charts now share the same blue
  *   rounded y-axis value badge renderer.
  * - Changed: Stock details imports the current data-utilities revision so its
@@ -58,11 +58,11 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.102.0';
+import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.104.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.1';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.2';
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',
@@ -416,7 +416,6 @@ export function createInvestmentStockDetailsUtils({
     getTransactionLotScopeKey,
     getTransactionValuationQuantity,
     incrementInvestmentStockDetailsPriceChartRequestSerial,
-    isInvestmentGrantBuyEquivalent = () => false,
     isFlatPosition,
     isInvestmentStockDetailsIntradayRange,
     loadInvestmentStockDetailsIntradayRows,
@@ -693,7 +692,6 @@ export function createInvestmentStockDetailsUtils({
             if (
                 normalizedType === 'sell'
                 || normalizedType === 'buy'
-                || isInvestmentGrantBuyEquivalent(txn)
             ) {
                 metric.totalTrades += 1;
             }

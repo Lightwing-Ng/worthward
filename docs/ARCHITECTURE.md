@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.36.1`
+Documentation version: `v1.37.0`
 
 ## Holdings P&L display contract
 
@@ -111,6 +111,10 @@ When a broker provides a validated current-position snapshot, explicit order
 history coverage, and a quantity-reconciling complete replay, the same engine
 may attest realized P&L for open lots; rolling or incomplete histories remain
 unverified.
+A `grant` always opens a zero-cost lot, regardless of broker. A source-reported
+grant value remains immutable transaction evidence and cannot be replayed as a
+purchase cost basis. This includes IBKR stock grants; separately evidenced paid
+purchases retain their own net acquisition cost.
 The shared `aggregateInvestmentScopedPositionStates` helper owns the common
 scope-to-ticker aggregation contract. Stock details replays the same scopes
 independently at every visible chart point before calculating the aggregate

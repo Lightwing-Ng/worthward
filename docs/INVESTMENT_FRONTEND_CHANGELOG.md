@@ -1,12 +1,23 @@
 # Investment frontend changelog
 
-Documentation version: `v1.30.0`
+Documentation version: `v1.32.0`
+
+- Fixed: Supplemental IBKR fills now replay from the complete broker-scoped
+  transaction inventory in FIFO order. A stale aggregate position cost can no
+  longer be applied as the pasted fill's average cost. For the current DRAM
+  evidence, the 10-share fill contributes `25.81371275 USD`; IBKR totals
+  `434.76575375 USD` and all brokers total `558.32575375 USD`.
+
+- Fixed: Every stock grant, including an IBKR grant, now replays as a zero-cost
+  lot across Holdings, Overview, Metrics, Stock details, and dated snapshot
+  projection. Its reported per-share value remains source evidence only and is
+  never converted into a paid purchase cost. A separately evidenced buy retains
+  its exact net acquisition cost.
 
 - Fixed: Broker-scoped realized-P&L snapshots now act as dated cutoffs. Later
-  evidenced trades are replayed from the authoritative open-position boundary,
-  so an old IBKR closed-trade snapshot cannot hide a supplemental web fill.
-  For the current DRAM evidence, the IBKR total is `463.0328456 USD` and the
-  all-broker total after HSBC is `586.5928456 USD`.
+  evidenced trades are replayed from the exact FIFO transaction-history
+  inventory, so an old IBKR closed-trade snapshot cannot hide or mis-cost a
+  supplemental web fill.
 
 - Fixed: IBKR Trade Notifications are now documented and reported as
   supplemental transaction records after the available file-snapshot cutoff.
@@ -51,11 +62,6 @@ Documentation version: `v1.30.0`
 - Fixed: Stock details now displays the sum of complete broker-account
   realized-P&L scopes. An incremental IBKR summary limited to the latest CSV
   window can no longer hide historical closed-trade P&L from the aggregate.
-
-- Changed: IBKR stock grants now replay as buy-equivalent lots at their
-  evidenced grant value across Holdings, Overview, Metrics, and Stock details.
-  They remain non-cash ledger events, while grants from other brokers retain
-  their existing zero-cost behavior.
 
 - Added: Hovering any Overview equity range now paints the hovered point's
   total equity in the same solid blue rounded y-axis badge used by Stock
