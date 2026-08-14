@@ -537,7 +537,7 @@ class ZirconHkImportTests(unittest.TestCase):
             {
                 "ledger_no": 42,
                 "broker": "ibkr",
-                "account": "U1234567",
+                "account": "U00000002",
                 "datetime": "2026-07-30 09:15:00",
                 "type": "buy",
                 "currency": "USD",
@@ -566,7 +566,7 @@ class ZirconHkImportTests(unittest.TestCase):
         )
         transaction = payload["transactions"][0]
         self.assertEqual(transaction["broker"], "ibkr")
-        self.assertEqual(transaction["account"], "U1234567")
+        self.assertEqual(transaction["account"], "U00000002")
         self.assertEqual(transaction["datetime"], "2026-07-30 09:15:00")
         self.assertEqual(transaction["quantity_raw"], "2")
         self.assertEqual(transaction["price_raw"], "210.25")
@@ -690,7 +690,7 @@ class ZirconHkImportTests(unittest.TestCase):
             {
                 "ledger_no": 4601,
                 "broker": "ibkr",
-                "account": "U32281328",
+                "account": "U00000001",
                 "datetime": "2026-01-01 20:00:00",
                 "type": "deposit",
                 "currency": "",
@@ -723,7 +723,7 @@ class ZirconHkImportTests(unittest.TestCase):
                 {
                     "ledger_no": 4601,
                     "broker": "ibkr",
-                    "account": "U32281328",
+                    "account": "U00000001",
                     "datetime": "2026-01-01 20:00:00",
                     "type": "deposit",
                     "currency": "",
@@ -740,7 +740,7 @@ class ZirconHkImportTests(unittest.TestCase):
             {
                 "ledger_no": 5096,
                 "broker": "ibkr",
-                "account": "U32281328",
+                "account": "U00000001",
                 "datetime": "2026-07-31 23:00:00",
                 "type": "transfer_out",
                 "currency": "USD",
@@ -756,7 +756,7 @@ class ZirconHkImportTests(unittest.TestCase):
             {
                 "ledger_no": 5097,
                 "broker": "schwab",
-                "account": "Individual ...103",
+                "account": "Individual ...001",
                 "datetime": "2026-07-31 23:00:00",
                 "type": "transfer_in",
                 "currency": "USD",

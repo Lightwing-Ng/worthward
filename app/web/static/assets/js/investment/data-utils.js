@@ -1,7 +1,12 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.104.0
+ * Code version: v1.104.2
+ * - Fixed: Cost-method resolution now skips an invalid API value and uses the
+ *   valid server-rendered setting instead of silently falling back to the
+ *   default method.
+ * - Changed: Browser compatibility no longer synthesizes broker/account-specific
+ *   tax-lot evidence when a stale backend payload omits verification metadata.
  * - Added: Authoritative cash snapshots can retain an intraday as-of datetime
  *   for same-day replay boundaries.
  * - Fixed: Exact-time cash boundaries no longer rewrite earlier transactions
@@ -143,69 +148,36 @@
 
 export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
-const INVESTMENT_VERIFIED_TAX_LOT_COMPATIBILITY_FALLBACKS = Object.freeze({
-    hsbc: Object.freeze({
-        '103-555700-329': Object.freeze({
-            DRAM: Object.freeze({
-                currency: 'USD',
-                verified_through: '2026-08-07',
-                expected_shares: '200',
-                buy_count: 57,
-                sell_count: 4,
-                buy_quantity: '211',
-                sell_quantity: '11',
-                calculation_method: 'settled_net_amount_and_configured_lot_method',
-                verification_source: 'user_verified_hsbc_history_and_position_snapshot',
-            }),
-            EUV: Object.freeze({
-                currency: 'USD',
-                verified_through: '2026-08-07',
-                expected_shares: '80',
-                buy_count: 27,
-                sell_count: 4,
-                buy_quantity: '123',
-                sell_quantity: '43',
-                calculation_method: 'settled_net_amount_and_configured_lot_method',
-                verification_source: 'user_verified_hsbc_history_and_position_snapshot',
-            }),
-        }),
-    }),
-});
+const INVESTMENT_COST_BASIS_METHODS = new Set([
+    'lowest_cost_first',
+    'fifo',
+    'lifo',
+    'moving_average',
+]);
+
+export function normalizeInvestmentCostBasisMethod(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return INVESTMENT_COST_BASIS_METHODS.has(normalized)
+        ? normalized
+        : 'lowest_cost_first';
+}
+
+export function getInvestmentCostBasisMethod() {
+    const configuredValues = [
+        globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.investment_cost_basis_method,
+        globalThis.window?.ANTIGRAVITY_APP?.investmentCostBasisMethod,
+    ];
+    for (const value of configuredValues) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (INVESTMENT_COST_BASIS_METHODS.has(normalized)) return normalized;
+    }
+    return normalizeInvestmentCostBasisMethod(null);
+}
 
 export function applyInvestmentVerifiedTaxLotCompatibilityFallbacks(payload) {
-    if (!payload || typeof payload !== 'object') return [];
-    const brokerSummaries = payload.broker_summaries;
-    if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
-
-    const appliedFallbacks = [];
-    Object.entries(INVESTMENT_VERIFIED_TAX_LOT_COMPATIBILITY_FALLBACKS).forEach(([
-        broker,
-        accountFallbacks,
-    ]) => {
-        const summary = brokerSummaries[broker];
-        if (!summary || typeof summary !== 'object') return;
-        const account = String(summary.account_id ?? summary.account ?? '').trim();
-        const tickerFallbacks = accountFallbacks[account];
-        if (!tickerFallbacks) return;
-
-        const existingVerifications = (
-            summary.tax_lot_history_verifications
-            && typeof summary.tax_lot_history_verifications === 'object'
-        ) ? summary.tax_lot_history_verifications : {};
-        Object.entries(tickerFallbacks).forEach(([ticker, verification]) => {
-            if (
-                existingVerifications[ticker]
-                && typeof existingVerifications[ticker] === 'object'
-            ) return;
-            existingVerifications[ticker] = {
-                ...verification,
-                delivery_source: 'client_compatibility_fallback_for_stale_backend_process',
-            };
-            appliedFallbacks.push(`${broker}:${account}:${ticker}`);
-        });
-        summary.tax_lot_history_verifications = existingVerifications;
-    });
-    return appliedFallbacks;
+    // Compatibility data must come from the current payload. Never synthesize
+    // broker/account-specific tax-lot evidence in the browser.
+    return [];
 }
 
 export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
@@ -3216,27 +3188,6 @@ export function createInvestmentDataUtils({
             : price + commissionPerShare;
     }
 
-    const INVESTMENT_COST_BASIS_METHODS = new Set([
-        'lowest_cost_first',
-        'fifo',
-        'lifo',
-        'moving_average',
-    ]);
-
-    function normalizeInvestmentCostBasisMethod(value) {
-        const normalized = String(value || '').trim().toLowerCase();
-        return INVESTMENT_COST_BASIS_METHODS.has(normalized)
-            ? normalized
-            : 'lowest_cost_first';
-    }
-
-    function getInvestmentCostBasisMethod() {
-        return normalizeInvestmentCostBasisMethod(
-            globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.investment_cost_basis_method
-            ?? globalThis.window?.ANTIGRAVITY_APP?.investmentCostBasisMethod,
-        );
-    }
-
     const INVESTMENT_LINEAGE_PROXY_TICKERS = new Set(['SPY', 'SPY.US']);
 
     function getInvestmentIdentityStoreAliasCandidates(ticker) {
@@ -5339,4 +5290,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.2';

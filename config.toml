@@ -11,7 +11,7 @@ port = 8688
 [security]
 # Temporary browser gate for the Live trading workspace. Override with the
 # ANTIGRAVITY_LIVE_TRADING_PIN environment variable when needed.
-live_trading_pin = "195135"
+live_trading_pin = ""
 
 [network]
 # Optional corporate CA PEM for Yahoo Finance. The ANTIGRAVITY_YAHOO_CA_PEM

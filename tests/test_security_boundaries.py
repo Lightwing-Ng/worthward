@@ -191,7 +191,7 @@ class DefaultServerSecurityTests(unittest.TestCase):
         self.assertIs(config["app"]["debug"], False)
         self.assertEqual(config["server"]["host"], "0.0.0.0")
         self.assertEqual(config["server"]["port"], 8688)
-        self.assertEqual(config["security"]["live_trading_pin"], "195135")
+        self.assertEqual(config["security"]["live_trading_pin"], "")
 
 
 class BaselineResponseSecurityHeaderTests(unittest.TestCase):

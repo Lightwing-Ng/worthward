@@ -1,15 +1,22 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.112.1
+ * Code version: v2.112.3
+ * - Fixed: The active cost-method resolver now ignores malformed refreshed
+ *   payload values and preserves the valid Settings value.
+ * - Changed: Stock-details tooltip and chart labels now expose the same global
+ *   sell-matching method as the Average price metric.
  * - Fixed: Stock-details average-price labels now read the global sell-matching
  *   method instead of displaying FIFO reconstructed transfer-basis metadata as
  *   though it were the active matcher.
  * - Fixed: Dated authoritative broker realized-P&L snapshots now replay
  *   later evidenced fills from the snapshot's open-position cost boundary,
  *   so a stale IBKR file cannot hide subsequent realized DRAM or EUV P&L.
- * - Added: IBKR web-paste imports can optionally retain the exact app cash shown
- *   after the captured fills as a dated intraday cash boundary.
+ * - Added: IBKR web-paste imports can optionally retain user-entered cash and
+ *   position boundaries without embedding account-specific calibration data.
+ * - Changed: Successful IBKR clipboard capture is shown by a persistent green
+ *   check on the paste control; routine capture no longer opens the feedback banner.
+ * - Changed: IBKR web-paste page date now reuses the shared date picker.
  * - Fixed: Authoritative IBKR cash replay can anchor a same-day boundary to the
  *   exact filled-trade datetime instead of rewriting earlier same-day rows.
  * - Added: Compact IBKR Orders captures now collect the Hong Kong page date
@@ -232,7 +239,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.104.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.104.2';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -261,7 +268,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.15.3';
+} from './investment/stock-details.js?v=investment-stock-details-v0.15.4';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -306,7 +313,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.112.1',
+    entry: 'v2.112.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -383,6 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ibkrTradeNotificationsTextInput = document.getElementById('ibkr_trade_notifications_text');
     const ibkrTradeNotificationsDateInput = document.getElementById('ibkr_trade_notifications_date');
     const ibkrTradeNotificationsCashInput = document.getElementById('ibkr_trade_notifications_cash');
+    const ibkrTradeNotificationsPositionsInput = document.getElementById('ibkr_trade_notifications_positions');
     const ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
     const ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
     const ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
@@ -8736,6 +8744,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const text = normalizeClipboardText(ibkrTradeNotificationsTextInput?.value || '');
+        if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
+            const isPasted = Boolean(text);
+            ibkrTradeNotificationsPasteButton.classList.toggle('is-pasted', isPasted);
+            ibkrTradeNotificationsPasteButton.setAttribute(
+                'aria-label',
+                isPasted
+                    ? 'IBKR Trade Notifications page text pasted'
+                    : 'Paste IBKR Trade Notifications page text from clipboard',
+            );
+            ibkrTradeNotificationsPasteButton.setAttribute(
+                'title',
+                isPasted ? 'IBKR Trade Notifications text pasted' : 'Paste from clipboard',
+            );
+        }
         if (!text) {
             ibkrTradeNotificationsDisplay.value = '';
             ibkrTradeNotificationsDisplay.title = '';
@@ -8769,18 +8791,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ibkrTradeNotificationsTextInput.value = text;
             syncIbkrTradeNotificationsDisplay();
             syncImportValidationState();
-            if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
-                ibkrTradeNotificationsPasteButton.classList.add('is-pasted');
-                window.setTimeout(() => {
-                    ibkrTradeNotificationsPasteButton.classList.remove('is-pasted');
-                }, 1200);
-            }
-            setImportFeedback(
-                isLikelyIbkrTradeNotificationsText(text)
-                    ? 'IBKR Trade Notifications clipboard capture is ready to sync.'
-                    : 'Clipboard text was pasted, but the IBKR Trade Notifications format could not be verified.',
-                isLikelyIbkrTradeNotificationsText(text) ? 'success' : 'warning',
-            );
+            clearImportFeedback();
         } catch (_error) {
             setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
         }
@@ -12410,10 +12421,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (ibkrTradeNotificationsDateInput) {
-        ibkrTradeNotificationsDateInput.addEventListener('input', () => {
-            clearImportFeedback();
-            syncIbkrTradeNotificationsDisplay();
-            syncImportValidationState();
+        ['input', 'change'].forEach((eventType) => {
+            ibkrTradeNotificationsDateInput.addEventListener(eventType, () => {
+                clearImportFeedback();
+                syncIbkrTradeNotificationsDisplay();
+                syncImportValidationState();
+            });
         });
     }
     if (ibkrTradeNotificationsCashInput) {
@@ -12554,6 +12567,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         formData.append(
                             'ibkr_trade_notifications_cash',
                             tradeNotificationsCash,
+                        );
+                    }
+                    const tradeNotificationsPositions = String(
+                        ibkrTradeNotificationsPositionsInput?.value || ''
+                    ).trim();
+                    if (tradeNotificationsPositions) {
+                        formData.append(
+                            'ibkr_trade_notifications_positions',
+                            tradeNotificationsPositions,
                         );
                     }
                 } else if (!transactionsFile || !positionsFile) {
@@ -14383,9 +14405,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }).length;
         const averagePriceDisplay = tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice);
-        const averagePriceLabel = getInvestmentStockDetailsAveragePriceLabel(
-            getInvestmentCostBasisMethod(),
-        );
+        const averagePriceLabel = getInvestmentStockDetailsAveragePriceLabel();
         const averagePriceDetails = tickerSummary.costBasisMethod === 'FIFO reconstructed'
             ? [{label: 'Transfer basis', value: 'FIFO reconstructed', valueClass: ''}]
             : [];

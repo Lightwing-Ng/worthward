@@ -5,6 +5,7 @@ Code version: v0.3.0
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -71,6 +72,26 @@ class SettingsUrlStateRouteTests(unittest.TestCase):
             '<option value="lowest_cost_first" data-description="Match sells against the lowest-cost open lots first. This is the default strategy-attribution method." selected>',
             body,
         )
+
+    def test_investment_settings_selects_each_supported_method_without_mixing_labels(self) -> None:
+        methods = {
+            "lowest_cost_first": "Lowest-cost lots first",
+            "fifo": "First in, first out (FIFO)",
+            "lifo": "Last in, first out (LIFO)",
+            "moving_average": "Moving average cost",
+        }
+        for method, label in methods.items():
+            with patch(
+                "app.web.runtime.load_investment_cost_basis_method",
+                return_value=method,
+            ):
+                response = create_app().test_client().get("/settings/investment")
+
+            self.assertEqual(response.status_code, 200)
+            body = response.get_data(as_text=True)
+            self.assertRegex(body, rf'<option value="{method}"[^>]*selected>')
+            self.assertIn(label, body)
+            self.assertEqual(len(re.findall(r'<option value="[^"]+"[^>]*selected>', body)), 1)
 
     def test_cash_equivalent_settings_separates_listed_securities_and_money_market_funds(self) -> None:
         with patch(

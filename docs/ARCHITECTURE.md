@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.37.0`
+Documentation version: `v1.39.0`
 
 ## Holdings P&L display contract
 
@@ -29,6 +29,25 @@ main.py
 ```
 
 `app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; live account and order APIs authorize either that signed browser session or a valid strong access token at the request boundary.
+
+IBKR Trade Notifications web paste keeps every full-page filled row, including
+same-minute split fills that share an account, ticker, quantity, price, side,
+and venue. The only exception is a compact Orders aggregate that declares the
+same number of same-page fill details and closes exactly on quantity, gross,
+commission, and net amount; the aggregate is the canonical representation and
+the alternate full-page rows are removed. An optional user-entered cash and position boundary is accepted at
+the latest captured fill time without an account-specific calibration record or
+synthetic transactions; because the pasted page is not a complete ledger
+history, the resulting snapshot remains partial-history evidence for P&L
+validation.
+
+When immutable IBKR GainsKeeper evidence supplies the split fills for a
+provisional compact web aggregate, GainsKeeper becomes canonical even if its
+commission and net-cash precision differs. This replacement requires one
+compact aggregate, unique GKX FITIDs, the declared split count, and exact
+agreement on account, side, ticker, currency, trading date, minute, price,
+signed quantity, and gross trade value. It never synthesizes a trade or
+removes a web aggregate from an incomplete or ambiguous match.
 
 ### Console logging
 
@@ -253,10 +272,9 @@ Longbridge HK and SG may supply an account-scoped, cumulative closed-position
 P&L value when the local tax-lot history is incomplete. The value is explicitly
 labelled `user_confirmed_broker_performance_calibration`; it is authoritative
 only for that broker/account/ticker scope and does not imply an independently
-reconstructed lot history or an account-balance snapshot. The current HK
-calibration contains 31 USD entries totaling `2,740.09`; the SG calibration
-contains two USD entries totaling `116.02`. Shared tickers remain separate
-broker/account scopes before any all-broker aggregation.
+reconstructed lot history or an account-balance snapshot. Calibration fixtures
+remain synthetic and are kept out of user-facing documentation. Shared tickers
+remain separate broker/account scopes before any all-broker aggregation.
 
 The Longbridge paired-file importer retains both exact uploaded Fund Details
 and History Orders files as SHA-256-addressed source artifacts in one bundle.

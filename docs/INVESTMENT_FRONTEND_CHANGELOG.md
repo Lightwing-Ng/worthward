@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.33.0`
+Documentation version: `v1.34.0`
+
+- Fixed: All four sell-matching methods now resolve through one shared browser
+  helper. An invalid refreshed API value cannot override the valid Settings
+  value or silently mix with the default. Stock-details Average price, chart
+  tooltip, and chart-series labels use that same resolver; `FIFO reconstructed`
+  remains transfer-basis metadata only.
 
 - Fixed: Stock details now displays the configured global sell-matching method
   beside Average price. A bound transfer's `FIFO reconstructed` basis remains a
@@ -9,9 +15,8 @@ Documentation version: `v1.33.0`
 
 - Fixed: Supplemental IBKR fills now replay from the complete broker-scoped
   transaction inventory in FIFO order. A stale aggregate position cost can no
-  longer be applied as the pasted fill's average cost. For the current DRAM
-  evidence, the 10-share fill contributes `25.81371275 USD`; IBKR totals
-  `434.76575375 USD` and all brokers total `558.32575375 USD`.
+  longer be applied as the pasted fill's average cost. The changelog retains
+  only the rule, not the private source amounts.
 
 - Fixed: Every stock grant, including an IBKR grant, now replays as a zero-cost
   lot across Holdings, Overview, Metrics, Stock details, and dated snapshot
@@ -27,8 +32,7 @@ Documentation version: `v1.33.0`
 - Fixed: IBKR Trade Notifications are now documented and reported as
   supplemental transaction records after the available file-snapshot cutoff.
   Unique fills remain additive, matching file rows refine them, and a stale
-  GKX cash snapshot cannot displace a user-verified post-fill boundary such as
-  `826.17 USD` after the DRAM fill.
+  GKX cash snapshot cannot displace a user-verified post-fill boundary.
 
 - Added: IBKR web-paste imports can optionally retain the exact cash shown in
   the IBKR app after the captured fills. The value is a dated intraday cash
@@ -54,10 +58,10 @@ Documentation version: `v1.33.0`
   hydration also keeps its loading modal locked until Holdings, Overview,
   Metrics, and Transaction history finish rendering.
 
-- Fixed: DRAM Stock details and ticker replay now have regression coverage for
-  the three-account holding structure: IBKR 105 shares, Charles Schwab 195
-  transfer-in shares, and HSBC 200 shares. Broker-scoped realized P&L remains
-  independent before the USD 471.53 aggregate is displayed.
+- Fixed: Stock details and ticker replay now have regression coverage for
+  multi-broker holding structures. Broker-scoped realized P&L remains
+  independent before aggregation; private quantities and totals are kept in
+  local test fixtures only.
 
 - Fixed: During US overnight, pre-market, and post-market sessions, Overview
   `1W` and `1M` now retain the completed regular-session equity curve and place
@@ -173,9 +177,9 @@ Documentation version: `v1.33.0`
 
 - Fixed: HSBC Transaction History rows with an evidenced future SEC
   settlement balance now anchor displayed Cash to that source balance. The
-  presentation repair prevents an incomplete replay baseline from turning a
-  roughly $20,976 cash row into a $13k value; the Overview accounting path
-  still applies the settlement only on its own ledger date.
+  presentation repair prevents an incomplete replay baseline from producing a
+  misleading cash value; the Overview accounting path still applies the
+  settlement only on its own ledger date.
 
 - Fixed: Historical equity valuation now aligns split-only daily closes with
   dynamic end-of-day holdings for both ordinary and reverse splits. Dividend
@@ -214,8 +218,8 @@ Documentation version: `v1.33.0`
   event payments remain visibly linked to SGOV in Transaction History.
 
 - Fixed: Ticker-level split-factor consensus now repairs an isolated noisy
-  1.5× inference on a pre-split TQQQ fill, preventing a phantom 12.50-share
-  Longbridge HK position after the position is flat.
+  inference on a pre-split fill, preventing a phantom Longbridge HK position
+  after the position is flat.
 
 - Fixed: Investment equity replay now follows ledger booking dates before
   execution timestamps, so the 10 May 2023 SPYM position is not carried into
@@ -314,13 +318,12 @@ Documentation version: `v1.33.0`
 - Fixed: Negative Longbridge (HK) cash reversals, including the 17 Apr 2024
   returned-cheque record, no longer appear as internal-transfer deposit sources.
 
-- Fixed: The 31 Mar 2023 Longbridge (HK) `1,632.14 USD` deposit can bind to
-  the 30 Mar 2023 BOCHK `1,633.44 USD` withdrawal, with the `1.30 USD`
-  difference shown as a transfer fee.
+- Fixed: A dated Longbridge (HK) deposit can bind to the matching BOCHK
+  withdrawal, with any difference shown as a transfer fee.
 
-- Fixed: The July 2025 Longbridge (HK) `4.94 USD` deposit can be bound to
-  the matching BOCHK withdrawal after an earlier `4.93 USD` HSBC-to-BOCHK
-  leg. Binding failures now also surface the server's actionable error text.
+- Fixed: A Longbridge (HK) deposit can be bound to the matching BOCHK
+  withdrawal after an earlier HSBC-to-BOCHK leg. Binding failures now also
+  surface the server's actionable error text.
 
 - Changed: Unresolved internal-transfer binding selects now use the standard
   control border instead of a magenta emphasis border, and their surrounding
@@ -448,9 +451,9 @@ architectural boundary summary so code navigation begins at the imports.
   adapter.
 
 - Changed: Transaction history descriptions now canonicalize spaced hyphen, en dash,
-  em dash, vertical-bar, and bullet clause separators to ` · `. Identifiers such as
-  `P-484843` and ticker hyphens remain unchanged. New imports apply the same rule
-  during payload normalization.
+  em dash, vertical-bar, and bullet clause separators to ` · `. Identifiers and
+  ticker hyphens remain unchanged. New imports apply the same rule during
+  payload normalization.
 
 - Fixed: Re-uploading the exact same manual XLSX cannot duplicate a transaction
   merely because a user-confirmed description or virtual-balance-reset category
@@ -458,11 +461,10 @@ architectural boundary summary so code navigation begins at the imports.
   row now form a conservative duplicate anchor; meaningful existing descriptions
   and the explicit virtual-reset marker remain intact.
 
-- Verified: China Merchants Bank's seven Longbridge KOL reward records remain
-  CNY source income totaling `21,511.90 CNY`, plus one separately marked virtual
-  balance reset. Metrics and Holdings value the rewards through the same dated
-  CNY-to-USD conversion path used for other non-USD currencies; they are never
-  relabeled as HKD or an equal USD amount.
+- Verified: Longbridge KOL reward records remain source-currency income plus
+  separately marked virtual balance resets. Metrics and Holdings value the
+  rewards through the same dated CNY-to-USD conversion path used for other
+  non-USD currencies; they are never relabeled as HKD or an equal USD amount.
 
 - Fixed: Funding Metrics now preserve a deposit's actual USD, HKD, CNH, or CNY
   currency and pair each supported non-USD FX source leg with its matching USD
@@ -570,10 +572,9 @@ architectural boundary summary so code navigation begins at the imports.
   rows confirms that Holdings, Stock details, and the calculation engine agree
   at two decimal places. The audited fourth Stock-details action is Export
   Transactions; Realized P&L remains a persistent metric card.
-- Tested: The accepted GOOGL total remains `414.81 USD`, including the
-  user-confirmed CMB Wing Lung five-share round trip and verified HSBC
-  `15.96 USD`. AAPL remains `220.95 USD` across its CMB Wing Lung, Longbridge HK,
-  and Tiger Trade account contributions.
+- Tested: Synthetic multi-account round trips remain consistent across the
+  calculation engine and the Holdings and Stock details surfaces. Broker
+  contributions stay scoped before aggregation.
 - Documented: DRAM, BOXX, and EUV retain `partial` calculation status because
   rolling HSBC Order Status history cannot supply a verified account result.
   Their displayed values therefore include complete accounts only; no local
@@ -597,9 +598,8 @@ architectural boundary summary so code navigation begins at the imports.
 
 - Fixed: Explicit, evidence-backed account history attestations allow otherwise
   rolling broker sources to reconstruct realized P&L only while broker, account,
-  ticker, currency, cutoff date, trade counts, and quantities all match. HSBC
-  GOOGL now contributes its independently reconstructed `15.96 USD` before the
-  cross-broker display total is formed.
+  ticker, currency, cutoff date, trade counts, and quantities all match. The
+  cross-broker display total is formed only after each scope is validated.
 - Fixed: The final Holdings broker-rewards row now keeps its label and description
   on one compact line, so a table without pagination no longer ends in an
   oversized visual chin.

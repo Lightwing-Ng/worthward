@@ -207,7 +207,7 @@ test('HSBC feedback explains rolling order coverage and pending cash settlement'
                 cash_posting_status: 'awaiting_settlement',
                 cash_latest_post_date: '2026-07-21',
                 execution_price_reconciliation: {
-                    pending_order_ids: ['P-725710'],
+                    pending_order_ids: ['P-900009'],
                 },
             },
             hsbc_portfolio_calibrated_order_count: 1,

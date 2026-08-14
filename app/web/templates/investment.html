@@ -1,6 +1,6 @@
-{# Code version: v1.59.0 #}
+{# Code version: v1.59.2 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
 
 {% block sidebar_content %}
@@ -321,25 +321,18 @@
                                           spellcheck="false"></textarea>
                             </div>
                             <div class="investment-import-field investment-import-bridge-field">
-                                <label class="trade-strategy-param-label" for="ibkr_trade_notifications_date">
-                                    <span class="investment-import-label-trigger"
-                                          tabindex="0">
-                                        <span class="investment-import-label-step" aria-hidden="true">➋</span>
-                                        <span class="investment-import-label-text">Page date (Hong Kong)</span>
-                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
-                                              role="tooltip">
-                                            <span class="investment-import-help-title">Date for compact Orders cards</span>
-                                            <span class="investment-import-help-step">Compact Orders cards show only a time. Enter the Hong Kong date shown by the page so the fill can be placed on the correct New York ledger date.</span>
-                                        </span>
-                                    </span>
-                                </label>
                                 <div class="investment-import-plain-control-row">
-                                    <input id="ibkr_trade_notifications_date"
-                                           name="ibkr_trade_notifications_date"
-                                           type="date"
-                                           class="settings-form-control">
-                                    </div>
+                                    {{ render_date_picker_field(
+                                        "single",
+                                        "ibkr_trade_notifications_date",
+                                        "ibkr_trade_notifications_date",
+                                        "",
+                                        "Page date (Hong Kong)",
+                                        "Type page date",
+                                        "ibkr_trade_notifications_date_feedback"
+                                    ) }}
                                 </div>
+                            </div>
                             <div class="investment-import-field investment-import-bridge-field">
                                 <label class="trade-strategy-param-label" for="ibkr_trade_notifications_cash">
                                     <span class="investment-import-label-trigger"
@@ -364,6 +357,29 @@
                                            inputmode="decimal"
                                            class="settings-form-control"
                                            placeholder="Optional">
+                                </div>
+                            </div>
+                            <div class="investment-import-field investment-import-bridge-field">
+                                <label class="trade-strategy-param-label" for="ibkr_trade_notifications_positions">
+                                    <span class="investment-import-label-trigger"
+                                          tabindex="0">
+                                        <span class="investment-import-label-step" aria-hidden="true">➍</span>
+                                        <span class="investment-import-label-text">Current positions (optional)</span>
+                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
+                                              role="tooltip">
+                                            <span class="investment-import-help-title">User-verified position boundary</span>
+                                            <span class="investment-import-help-step">Enter one ticker and quantity per line, for example: TICKER 10</span>
+                                            <span class="investment-import-help-step">This is used only with the optional cash boundary and does not create synthetic transactions.</span>
+                                        </span>
+                                    </span>
+                                </label>
+                                <div class="investment-import-plain-control-row">
+                                    <textarea id="ibkr_trade_notifications_positions"
+                                              name="ibkr_trade_notifications_positions"
+                                              class="settings-form-control investment-import-position-snapshot-input"
+                                              rows="3"
+                                              spellcheck="false"
+                                              placeholder="Optional&#10;TICKER 10"></textarea>
                                 </div>
                             </div>
                             </div>
@@ -906,5 +922,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.112.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.112.3') }}"></script>
 {% endblock %}

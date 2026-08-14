@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.74.0
+Code version: v0.75.1
+- Added: IBKR web-paste imports can accept a user-entered position snapshot at
+  the matching cash boundary without embedding account-specific data.
 - Changed: IBKR Trade Notifications feedback now identifies pasted fills as
   supplemental records after the available file-snapshot cutoff.
 - Fixed: Investment transaction caches now invalidate payloads generated
@@ -6370,6 +6372,9 @@ def build_web_runtime() -> WebRuntime:
                     trade_notifications_cash = str(
                         request.form.get("ibkr_trade_notifications_cash", "")
                     ).strip()
+                    trade_notifications_positions = str(
+                        request.form.get("ibkr_trade_notifications_positions", "")
+                    ).strip()
                     trade_notifications_cash_as_of_datetime = str(
                         request.form.get(
                             "ibkr_trade_notifications_cash_as_of_datetime",
@@ -6387,6 +6392,7 @@ def build_web_runtime() -> WebRuntime:
                         trade_notifications_text=trade_notifications_text,
                         trade_date=trade_notifications_date or None,
                         ending_cash=trade_notifications_cash or None,
+                        position_snapshot_text=trade_notifications_positions or None,
                         ending_cash_as_of_datetime=(
                             trade_notifications_cash_as_of_datetime or None
                         ),
@@ -6400,6 +6406,16 @@ def build_web_runtime() -> WebRuntime:
                         "as an intraday boundary after the latest pasted fill. Exact pasted text is "
                         "retained locally as SHA-256-verified immutable evidence."
                     )
+                    imported_summary = imported_payload.get("summary")
+                    if isinstance(imported_summary, dict) and imported_summary.get(
+                        "position_snapshot_authoritative"
+                    ) is True and imported_summary.get("position_snapshot_source") == (
+                        "ibkr_user_verified_app_positions"
+                    ):
+                        success_message += (
+                            " A user-confirmed current IBKR position snapshot was retained "
+                            "at the same cash boundary."
+                        )
                 else:
                     if transactions_file is None or positions_file is None:
                         return jsonify({

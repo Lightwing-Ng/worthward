@@ -326,36 +326,21 @@ profile name.
 
 `config.toml` contains an `investment.money_market_funds` rule family for cash-like instruments whose valuation should not depend on normal daily mark-to-market history.
 
-## HSBC import convention (snapshot confirmed at 1 Jul 2026, 21:30 America/New_York)
+## HSBC import convention
 
-This record keeps the operational convention for the current HSBC paste-import and statement-import paths. Historical equity uses settled bank cash plus exact signed pending-settlement receivables or payables. Each matched SEC posting enters pending cash on the trade's booking date, clears only on its own settlement date, and therefore cannot change equity merely by moving between pending and settled cash. Unmatched orders remain explicitly provisional.
+This section documents the privacy-safe import contract rather than a personal
+account snapshot. Historical equity uses settled bank cash plus exact signed
+pending-settlement receivables or payables. Each matched posting enters pending
+cash on its booking date and clears on its own settlement date; unmatched orders
+remain explicitly provisional.
 
-- The pasted cash-account field accepts the same HSBC account's USD Savings, HKD Savings or Current, and offshore-RMB Savings pages. HSBC may label offshore RMB as `CNY`; the canonical ledger currency is `CNH`, while the raw statement label remains in source metadata. Supplementary pages can be pasted as additional chunks, and duplicate chunks are deduplicated. HKD Current and HKD Savings are retained as separate balance components before their visible HKD total is calculated.
-
-- Every HSBC clipboard update receives a read-only server preflight before Sync is enabled. A valid HKD and/or CNH cash-only capture in ❶ can sync with ❷ Portfolio and ❸ Order Status blank; any invalid supplementary clip blocks Sync. If USD Savings appears in ❶, the matching ❷ and ❸ pages remain mandatory and are checked as one composite snapshot. The green status icon represents a passed preflight, and the blue spinner represents the short pending state.
-
-- When USD Savings is present, the three pasted pages are one snapshot bundle, not three independent imports. The server records a SHA-256 bundle fingerprint and observable date boundaries, rejects explicit boundary contradictions before changing the store, and marks missing boundaries for review instead of silently treating them as one exact moment. A cash-only HKD/CNH sync has no position snapshot and merges only its account-kind cash components, so it cannot replace the current USD Portfolio or available-cash snapshot.
-
-- Snapshot convention:
-  - Treat `1.txt`, `2.txt`, and `3.txt` as a single pasted batch.
-  - The current locally reproducible available-cash figure is `28,397.90` USD.
-  - HSBC's displayed `28,397.94` is a UI-level value and is tracked as a display baseline only; it is not enforced as the local booking rule.
-  - HSBC settlement matching remains evidence-driven. Equity replay recognizes each exact signed matched posting on the booking date and clears that specific posting only on its settlement date; it never clears a later obligation merely because both amounts have the same sign.
-
-- 11 pending/replay orders captured by the current algorithm:
-  - `P-983469` / `1 Jul 2026` / `DRAM` / BUY / `-132.000` USD
-  - `P-711443` / `1 Jul 2026` / `DRAM` / BUY / `-66.500` USD
-  - `P-998857` / `1 Jul 2026` / `DRAM` / BUY / `-67.000` USD
-  - `P-121505` / `1 Jul 2026` / `DRAM` / BUY / `-67.500` USD
-  - `P-024754` / `1 Jul 2026` / `DRAM` / BUY / `-67.680` USD
-  - `P-336384` / `1 Jul 2026` / `SGOV` / BUY / `-1,004.000` USD
-  - `P-505250` / `1 Jul 2026` / `SGOV` / BUY / `-1,004.000` USD
-  - `P-085064` / `1 Jul 2026` / `DRAM` / BUY / `-68.000` USD
-  - `P-534771` / `1 Jul 2026` / `DRAM` / BUY / `-67.250` USD
-  - `P-623481` / `1 Jul 2026` / `DRAM` / BUY / `-68.000` USD
-  - `S-534157` / `1 Jul 2026` / `BOXX` / SELL / `12,885.400` USD
-
-  - Total unsettled replay amount: `10,273.470` USD
+- HSBC clipboard pages are validated as one composite snapshot when the source
+  requires multiple pages. Duplicate chunks are deduplicated and conflicting
+  boundaries fail closed before the local store changes.
+- Cash-only non-USD captures remain separate by source account kind and
+  currency; they cannot replace an unrelated portfolio snapshot.
+- Account validation is opt-in through local environment variables. No account
+  number, balance, position quantity, or order reference is documented here.
 
 ### HSBC statement import
 

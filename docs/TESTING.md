@@ -111,31 +111,26 @@ Current suite inventory remeasured on 1 Aug 2026:
 - `tests/test_runtime_error_redaction.py`: stable client failures that retain
   full unexpected-error diagnostics only in local logs.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment
-  calculations, including the user-confirmed CMB Wing Lung five-share GOOGL
-  round trip, the four-account `414.80816032` GOOGL total, the account-scoped
-  `220.95` AAPL total, and fail-closed handling for incomplete HSBC DRAM,
-  BOXX, and EUV histories. The suite also verifies validated HSBC open-position
-  snapshots, same-day execution chronology, the default lowest-cost lot matcher,
-  the FIFO, LIFO, and moving-average alternatives, zero-cost grant retention,
-  cross-account cost aggregation, and P&L conservation.
+  calculations, including synthetic multi-account round trips, fail-closed
+  handling for incomplete histories, validated open-position snapshots,
+  same-day execution chronology, cost-method alternatives, zero-cost grant
+  retention, cross-account cost aggregation, and P&L conservation.
 - `tests/test_longbridge_import.py` and `tests/test_longbridge_sg_import.py`:
-  account-scoped Longbridge performance calibrations, including the HK
-  31-item `2,740.09 USD` and SG two-item `116.02 USD` user-confirmed sets,
-  plus exact paired-file source-artifact bundle identities.
+  account-scoped synthetic performance calibrations and exact paired-file
+  source-artifact bundle identities. No broker account data is required.
 - Investment replay coverage also asserts booking-date-first ordering when
   execution metadata crosses a ledger day, history-only internal-transfer
   continuity, dated ending-cash boundaries, exact signed HSBC settlement
   accruals, and equality between the final chart point and the current Holdings
-  endpoint. The 22–24 Jun 2026 overlap regression keeps the 23 Jun USD 1,844.80
-  payable active after the 22 Jun payable settles, and the cash-equivalent
-  endpoint regression verifies that Overview and Holdings use the same valid
-  live quote.
+  endpoint. The overlap regression keeps a payable active until its own
+  settlement date, and the cash-equivalent endpoint regression verifies that
+  Overview and Holdings use the same valid live quote.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
-  Notifications paste parsing, Beijing-to-New York conversion, exact 15-share
-  DRAM and one-share GOOGL gap validation, exact `408.952041` DRAM closed-trade
-  aggregation, closed-lot metadata retention across CSV/GainsKeeper deduplication,
+  Notifications paste parsing, Beijing-to-New York conversion, synthetic
+  position-gap validation, closed-trade aggregation, closed-lot metadata
+  retention across CSV/GainsKeeper deduplication,
   authoritative GainsKeeper correction,
   provisional-source pruning, GKX statement metadata, same-origin and CSRF
   rejection, route persistence, and immutable evidence materialization.

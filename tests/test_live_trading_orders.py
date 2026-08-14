@@ -22,6 +22,7 @@ from app.services.live_trading import (
 )
 
 LIVE_TRADING_TEST_TOKEN = "audit-live-trading-token-32-chars"
+LIVE_TRADING_TEST_PIN = "123456"
 
 
 class _FakeConfig:
@@ -485,11 +486,16 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertNotIn('class="live-trading-pin-back"', locked_body)
         self.assertNotIn('id="live_trading_broker"', locked_body)
 
-        response = client.post(
-            "/trade/live-trading/unlock",
-            data={"pin": "195135"},
-            follow_redirects=True,
-        )
+        with patch.dict(
+            "os.environ",
+            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            clear=True,
+        ):
+            response = client.post(
+                "/trade/live-trading/unlock",
+                data={"pin": LIVE_TRADING_TEST_PIN},
+                follow_redirects=True,
+            )
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
@@ -507,18 +513,27 @@ class LiveTradingOrderApiTests(unittest.TestCase):
     def test_live_trading_page_rejects_incorrect_pin(self) -> None:
         client = create_app().test_client()
 
-        response = client.post(
-            "/trade/live-trading/unlock",
-            data={"pin": "000000"},
-        )
+        with patch.dict(
+            "os.environ",
+            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            clear=True,
+        ):
+            response = client.post(
+                "/trade/live-trading/unlock",
+                data={"pin": "000000"},
+            )
 
         self.assertEqual(response.status_code, 401)
         self.assertIn("The PIN is incorrect.", response.get_data(as_text=True))
 
     def test_live_trading_pin_session_authorizes_positions_api(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            clear=True,
+        ):
             client = create_app().test_client()
-            client.post("/trade/live-trading/unlock", data={"pin": "195135"})
+            client.post("/trade/live-trading/unlock", data={"pin": LIVE_TRADING_TEST_PIN})
 
             with (
                 patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
@@ -536,7 +551,13 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict(
+                "os.environ",
+                {
+                    "ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
+                    "ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
+                },
+            ),
             patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
             patch("app.web.runtime.load_longbridge_account_balances", return_value=[]) as mocked_balances,
             patch("app.web.runtime.load_longbridge_stock_positions", return_value=[]) as mocked_positions,
@@ -555,7 +576,13 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict(
+                "os.environ",
+                {
+                    "ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
+                    "ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
+                },
+            ),
             patch(
                 "app.web.runtime.submit_longbridge_limit_order",
                 return_value=LiveOrderResult(
@@ -571,7 +598,10 @@ class LiveTradingOrderApiTests(unittest.TestCase):
                 ),
             ) as mocked_submit_order,
         ):
-            unlock_response = client.post("/trade/live-trading/unlock", data={"pin": "195135"})
+            unlock_response = client.post(
+                "/trade/live-trading/unlock",
+                data={"pin": LIVE_TRADING_TEST_PIN},
+            )
             response = client.post(
                 "/api/live-trading/orders",
                 headers={"X-Antigravity-Live-Trading-Token": "wrong-token"},

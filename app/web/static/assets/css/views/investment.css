@@ -1,4 +1,4 @@
-/* Code version: v1.75.28 */
+/* Code version: v1.75.29 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4455,6 +4455,23 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     background-color: currentColor;
     mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
+}
+
+.investment-import-paste-button.is-pasted {
+    background: color-mix(in srgb, var(--theme-accent-positive) 16%, transparent);
+    color: var(--theme-accent-positive);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent-positive) 42%, transparent);
+}
+
+.investment-import-paste-button.is-pasted .investment-import-paste-button-icon {
+    mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+    -webkit-mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+}
+
+.investment-import-position-snapshot-input {
+    min-height: 78px;
+    resize: vertical;
+    line-height: 1.35;
 }
 
 .investment-import-code-textarea {

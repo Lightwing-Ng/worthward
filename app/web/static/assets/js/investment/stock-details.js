@@ -1,7 +1,12 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.3
+ * Code version: v0.15.4
+ * - Fixed: Stock-details labels now read the shared global cost-method
+ *   resolver directly, so transfer-basis metadata cannot be passed as the
+ *   active matcher by a caller.
+ * - Changed: The Stock-details tooltip and chart dataset expose the same
+ *   selected matcher label as the Average price metric.
  * - Fixed: Stock-details average-price labels now follow the configured global
  *   sell-matching method; FIFO reconstructed remains a separate transfer-basis
  *   detail instead of replacing the selected method.
@@ -61,11 +66,14 @@
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investment-data-utils-v1.104.0';
+import {
+    aggregateInvestmentScopedPositionStates,
+    getInvestmentCostBasisMethod,
+} from './data-utils.js?v=investment-data-utils-v1.104.2';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.4';
 
 const INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS = Object.freeze({
     lowest_cost_first: 'Lowest-cost lots first',
@@ -74,8 +82,8 @@ const INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS = Object.freeze({
     moving_average: 'Moving average cost',
 });
 
-export function getInvestmentStockDetailsAveragePriceLabel(method) {
-    const normalizedMethod = String(method || '').trim().toLowerCase();
+export function getInvestmentStockDetailsAveragePriceLabel() {
+    const normalizedMethod = getInvestmentCostBasisMethod();
     const methodLabel = INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS[normalizedMethod]
         || INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS.lowest_cost_first;
     return `Average price · ${methodLabel}`;
@@ -1717,7 +1725,7 @@ export function createInvestmentStockDetailsUtils({
                     bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
                 {
-                    label: 'Average price',
+                    label: getInvestmentStockDetailsAveragePriceLabel(),
                     value: Number.isFinite(averagePrice) ? formatMoney(averagePrice) : '--',
                     color: resolvedTheme.muted,
                     bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
@@ -1809,7 +1817,7 @@ export function createInvestmentStockDetailsUtils({
                         borderCapStyle: 'round',
                     },
                     {
-                        label: `${normalizedTicker} average price`,
+                        label: `${normalizedTicker} ${getInvestmentStockDetailsAveragePriceLabel()}`,
                         data: averagePriceSeries,
                         order: 1,
                         borderColor: applyCanvasAlpha(resolvedTheme.muted, useIntradayCandles ? 0.78 : 0.5),
