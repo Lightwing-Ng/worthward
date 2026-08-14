@@ -1,7 +1,10 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.2
+ * Code version: v0.15.3
+ * - Fixed: Stock-details average-price labels now follow the configured global
+ *   sell-matching method; FIFO reconstructed remains a separate transfer-basis
+ *   detail instead of replacing the selected method.
  * - Fixed: Stock-details now requests the current shared data-utilities
  *   module so HSBC realized P&L cannot regress through a stale browser cache.
  * - Fixed: Stock grants, including IBKR grants, remain zero-cost lots and do
@@ -62,7 +65,21 @@ import {aggregateInvestmentScopedPositionStates} from './data-utils.js?investmen
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.3';
+
+const INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS = Object.freeze({
+    lowest_cost_first: 'Lowest-cost lots first',
+    fifo: 'FIFO',
+    lifo: 'LIFO',
+    moving_average: 'Moving average cost',
+});
+
+export function getInvestmentStockDetailsAveragePriceLabel(method) {
+    const normalizedMethod = String(method || '').trim().toLowerCase();
+    const methodLabel = INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS[normalizedMethod]
+        || INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS.lowest_cost_first;
+    return `Average price · ${methodLabel}`;
+}
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([
     'hsbc_order_status_capture',

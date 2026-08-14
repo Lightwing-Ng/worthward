@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.112.0
+ * Code version: v2.112.1
+ * - Fixed: Stock-details average-price labels now read the global sell-matching
+ *   method instead of displaying FIFO reconstructed transfer-basis metadata as
+ *   though it were the active matcher.
  * - Fixed: Dated authoritative broker realized-P&L snapshots now replay
  *   later evidenced fills from the snapshot's open-position cost boundary,
  *   so a stale IBKR file cannot hide subsequent realized DRAM or EUV P&L.
@@ -252,12 +255,13 @@ import {
     createInvestmentStockDetailsUtils,
     drawInvestmentYAxisValueBadge,
     getInvestmentTradeSessionType as getInvestmentTradeSessionTypeCore,
+    getInvestmentStockDetailsAveragePriceLabel,
     isInvestmentTransactionDateOnly,
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.15.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.15.3';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -302,7 +306,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.112.0',
+    entry: 'v2.112.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1108,6 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getTransactionLotScope,
         getTransactionLotScopeKey,
         getInvestmentBaseCurrency,
+        getInvestmentCostBasisMethod,
         getTransactionPrice,
         getTransactionQuantity,
         getTransactionValuationQuantity,
@@ -14378,6 +14383,12 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }).length;
         const averagePriceDisplay = tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice);
+        const averagePriceLabel = getInvestmentStockDetailsAveragePriceLabel(
+            getInvestmentCostBasisMethod(),
+        );
+        const averagePriceDetails = tickerSummary.costBasisMethod === 'FIFO reconstructed'
+            ? [{label: 'Transfer basis', value: 'FIFO reconstructed', valueClass: ''}]
+            : [];
         const totalTradeCountDisplay = new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
@@ -14480,11 +14491,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     : [],
             },
             {
-                label: tickerSummary.costBasisMethod === 'FIFO reconstructed'
-                    ? 'Average price · FIFO reconstructed'
-                    : 'Average price',
+                label: averagePriceLabel,
                 value: averagePriceDisplay,
                 valueClass: '',
+                details: averagePriceDetails,
             },
             {
                 label: 'Last price',

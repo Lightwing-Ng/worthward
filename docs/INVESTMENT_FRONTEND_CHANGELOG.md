@@ -1,6 +1,11 @@
 # Investment frontend changelog
 
-Documentation version: `v1.32.0`
+Documentation version: `v1.33.0`
+
+- Fixed: Stock details now displays the configured global sell-matching method
+  beside Average price. A bound transfer's `FIFO reconstructed` basis remains a
+  separate Transfer basis detail and cannot masquerade as a global FIFO
+  fallback.
 
 - Fixed: Supplemental IBKR fills now replay from the complete broker-scoped
   transaction inventory in FIFO order. A stale aggregate position cost can no

@@ -300,7 +300,7 @@ profile name.
   basis; any separately imported purchase continues to contribute its own net
   acquisition cost to the aggregate average price.
 - If one canonical ticker has open lots in multiple currencies, Holdings preserves shares but leaves combined cost basis, market value, average price, and local unrealized P&L unavailable rather than adding incompatible raw currency units; an authoritative broker performance snapshot still supplies realized P&L. Unknown carried basis on an in-kind `transfer_in` remains explicitly disclosed as a reconstruction limitation.
-- Broker-reported closed-trade P&L remains authoritative when present. Security-transfer basis reconstruction is a separate FIFO-reconstructed path and does not inherit the buy/sell display preference.
+- Broker-reported closed-trade P&L remains authoritative when present. Stock details displays the selected buy/sell matcher beside Average price; security-transfer basis reconstruction remains a separate FIFO-reconstructed detail and does not inherit or replace that preference.
 - The Overview and Transaction history surfaces share a responsive horizontal separator that appears on hover or focus and supports pointer, touch, and keyboard resizing
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists

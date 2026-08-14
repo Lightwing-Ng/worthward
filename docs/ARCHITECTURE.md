@@ -106,7 +106,9 @@ account, ticker, and currency scope, then aggregates the scoped results for
 display. The persisted `Settings -> Investment` preference selects the matcher
 (`lowest_cost_first` by default, with FIFO, LIFO, and moving-average options).
 Broker-reported closed-trade P&L remains authoritative; security-transfer basis
-reconstruction is explicitly labelled FIFO reconstructed and remains separate.
+reconstruction is explicitly labelled FIFO reconstructed in its transfer-basis
+detail and remains separate from the selected buy/sell matcher shown in Stock
+details.
 When a broker provides a validated current-position snapshot, explicit order
 history coverage, and a quantity-reconciling complete replay, the same engine
 may attest realized P&L for open lots; rolling or incomplete histories remain
