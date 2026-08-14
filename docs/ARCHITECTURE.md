@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.1`
+Documentation version: `v1.39.2`
 
 ## Holdings P&L display contract
 
@@ -110,6 +110,12 @@ Backtest and Grid trading share result presentation and market-range components,
 All `/workspaces/*` pages use the `Canonical URL State Contract`: semantic query names, repeated values whose order carries meaning, omitted defaults, and one stable serialization order. Relative windows use `range=<period>`; custom windows use `range=custom` with `period` and either `date` or `from` / `to`. Workspace tabs and result pagination use `tab` and `page`. Legacy aliases remain readable and are normalized to the canonical form on page hydration or the next state-changing interaction.
 
 Settings uses the same contract: the section is always the path in `/settings/<section>`, General language mapping uses `tab=history` when History is active, and General or Local Market Store pagination uses `page=<n>`. Current and page one are defaults and are omitted. Legacy `section`, `settings_section`, `language_tab`, `settings_tab`, `local_page`, and `language_page` aliases remain readable and redirect or hydrate into the canonical form. The container deployment uses these same Flask routes; there is no Docker-specific URL dialect.
+
+All client-side pagination surfaces reuse the five-page chunk builder and shared
+active-page indicator. A single-page result omits the pagination shell entirely.
+Hidden-page range menus remain keyboard accessible and use a stable scrollbar
+gutter with an inset rounded scrollbar so the popover's right edge keeps its
+rounded silhouette when the range list exceeds the available viewport height.
 
 Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates. The market-cap workspace accepts up to 10 user-selected tickers; other comparison workspaces retain the shared 5-ticker limit.
 

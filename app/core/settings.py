@@ -1,17 +1,13 @@
 """
 Application settings loader.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
+import tomllib
 from typing import Any
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.11+ uses tomllib.
-    import tomli as tomllib
 
 from app.core.config import BASE_DIR
 

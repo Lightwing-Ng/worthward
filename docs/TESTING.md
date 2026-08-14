@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.21.0`
+Documentation version: `v1.22.0`
 
 ## Supported commands
 
@@ -49,11 +49,11 @@ artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 1 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
+Baseline remeasured on 14 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `64.90%` (`coverage.json`
-  reports `13,791` covered lines of `19,976` statements and `4,340` covered
-  branches of `7,962`).
+- Total combined statement-and-branch coverage: `69.94%` (`coverage.json`
+  reports `18,497` covered lines of `25,067` statements and `6,280` covered
+  branches of `10,360`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -62,26 +62,26 @@ Baseline remeasured on 1 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and cove
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- The next project target is `63%`, followed by measured module-level improvements.
+- The next project target is `70%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
-- `app/services/investment_import.py`: `56.4%`, with broker-specific
+- `app/services/investment_import.py`: `69.4%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 Recently strengthened coverage:
 
-- `app/services/live_trading.py`: `73.8%`, with offline CLI OAuth, legacy SDK,
+- `app/services/live_trading.py`: `73.9%`, with offline CLI OAuth, legacy SDK,
   order-validation, and API authorization-contract paths covered without a
   real account request or order.
-- `app/infrastructure/broker_market_data.py`: `53.7%`, with offline Longbridge
+- `app/infrastructure/broker_market_data.py`: `53.9%`, with offline Longbridge
   CLI normalization, candlestick adapters, one-minute cache freshness, and
   fail-closed refresh/status paths covered without live network or production
   store writes.
 
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
-`53.65%` lines, `68.42%` branches, and `73.62%` functions. The gate enforces
+`47.02%` lines, `71.62%` branches, and `83.73%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -91,13 +91,13 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 1 Aug 2026:
+Current suite inventory remeasured on 14 Aug 2026:
 
-- 546 Python tests collected; the latest full Python run reports 540 passed,
-  6 skipped, and 107 subtests passed.
-- 106 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 744 Python tests collected; the latest full Python run reports 738 passed,
+  6 skipped, and 126 subtests passed.
+- 216 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 92 Playwright test cases passed through `./scripts/check.sh` on 1 Aug 2026,
+- 167 Playwright test cases passed through `./scripts/check.sh` on 14 Aug 2026,
   including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
