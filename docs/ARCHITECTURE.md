@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.0`
+Documentation version: `v1.39.1`
 
 ## Holdings P&L display contract
 
@@ -128,6 +128,12 @@ Broker-reported closed-trade P&L remains authoritative; security-transfer basis
 reconstruction is explicitly labelled FIFO reconstructed in its transfer-basis
 detail and remains separate from the selected buy/sell matcher shown in Stock
 details.
+When a broker performance snapshot is older than its position snapshot, the
+browser reads the performance snapshot's own canonical broker-snapshot as-of
+date to determine which later trades supplement realized P&L. The position
+snapshot remains an inventory-validation boundary only. A newer position
+snapshot must never suppress a trade that is later than the performance
+snapshot.
 When a broker provides a validated current-position snapshot, explicit order
 history coverage, and a quantity-reconciling complete replay, the same engine
 may attest realized P&L for open lots; rolling or incomplete histories remain

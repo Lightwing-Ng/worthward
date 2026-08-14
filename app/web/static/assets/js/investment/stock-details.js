@@ -69,7 +69,7 @@
 import {
     aggregateInvestmentScopedPositionStates,
     getInvestmentCostBasisMethod,
-} from './data-utils.js?v=investment-data-utils-v1.104.2';
+} from './data-utils.js?v=investment-data-utils-v1.104.3';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 

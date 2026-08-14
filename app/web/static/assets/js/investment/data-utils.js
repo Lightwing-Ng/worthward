@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.104.2
+ * Code version: v1.104.3
  * - Fixed: Cost-method resolution now skips an invalid API value and uses the
  *   valid server-rendered setting instead of silently falling back to the
  *   default method.
@@ -26,6 +26,13 @@
  *   from a FIFO transaction-history inventory, instead of treating a stale
  *   aggregate position cost as the supplemental fill's average cost. An old
  *   file snapshot can no longer change the tax-lot method of a pasted fill.
+ * - Fixed: A newer position snapshot no longer suppresses trades that occurred
+ *   after an older broker realized-P&L snapshot. Position validation and
+ *   realized-P&L supplementation now use their own authoritative as-of dates
+ *   from the canonical broker snapshot instead of stale presentation metadata.
+ * - Fixed: Supplemental broker realized P&L now uses the same scoped
+ *   configured lot-matching result as transaction rows. FIFO remains an
+ *   inventory-boundary verifier and cannot make summary and row P&L diverge.
  * - Added: Historical Overview Tooltip P&L can replay a point without applying
  *   a current broker position or performance snapshot. The caller supplies the
  *   point valuation date and observed close, so historical P&L cannot inherit
@@ -2467,11 +2474,12 @@ export function createInvestmentDataUtils({
     }
 
     function buildAuthoritativeBrokerFifoReplay(
-        boundary,
+        positionBoundary,
+        performanceBoundary,
         scope,
         transactions,
     ) {
-        if (!boundary || !scope || !Array.isArray(transactions)) return null;
+        if (!positionBoundary || !scope || !Array.isArray(transactions)) return null;
         const supportedTypes = new Set([
             'buy',
             'sell',
@@ -2519,11 +2527,11 @@ export function createInvestmentDataUtils({
             shares -= consumption.removedQuantity;
             return consumption;
         };
-        const applyTransaction = (txn, isAfterBoundary) => {
+        const applyTransaction = (txn, isAfterPerformanceBoundary) => {
             const normalizedType = getNormalizedTransactionType(txn);
             const quantity = getInvestmentReplayTransactionQuantity(txn);
             if (!quantity) return false;
-            if (isAfterBoundary) hasLaterTransaction = true;
+            if (isAfterPerformanceBoundary) hasLaterTransaction = true;
 
             if (normalizedType === 'grant') return addLot(quantity, 0);
             if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
@@ -2549,7 +2557,7 @@ export function createInvestmentDataUtils({
                 return true;
             }
 
-            if (!isAfterBoundary) return true;
+            if (!isAfterPerformanceBoundary) return true;
             const brokerRealizedPnl = getTransactionBrokerRealizedPnl(txn);
             const proceeds = getTransactionAmount(txn);
             const delta = brokerRealizedPnl === null
@@ -2569,15 +2577,18 @@ export function createInvestmentDataUtils({
         for (const txn of scopedTransactions) {
             const txnDateTime = getInvestmentTransactionDateTime(txn);
             if (!txnDateTime) continue;
-            const isAfterBoundary = txnDateTime > boundary.boundaryDateTime;
-            if (isAfterBoundary && boundaryShares === null) {
+            const isAfterPositionBoundary = txnDateTime > positionBoundary.boundaryDateTime;
+            const isAfterPerformanceBoundary = txnDateTime > (
+                performanceBoundary?.boundaryDateTime ?? positionBoundary.boundaryDateTime
+            );
+            if (isAfterPositionBoundary && boundaryShares === null) {
                 boundaryShares = shares;
                 boundaryTotalCost = lots.reduce(
                     (total, lot) => total + (Number(lot.quantity) || 0) * (Number(lot.unitCost) || 0),
                     0,
                 );
             }
-            if (!applyTransaction(txn, isAfterBoundary)) {
+            if (!applyTransaction(txn, isAfterPerformanceBoundary)) {
                 return {status: 'incomplete', reason: 'fifo_inventory_replay_failed'};
             }
         }
@@ -2588,7 +2599,7 @@ export function createInvestmentDataUtils({
                 0,
             );
         }
-        if (Math.abs(boundaryShares - boundary.quantity) > 1e-7) {
+        if (Math.abs(boundaryShares - positionBoundary.quantity) > 1e-7) {
             return {status: 'incomplete', reason: 'fifo_boundary_quantity_mismatch'};
         }
         const endingTotalCost = lots.reduce(
@@ -2603,7 +2614,7 @@ export function createInvestmentDataUtils({
             costBasisMethod: 'FIFO reconstructed',
             boundaryQuantity: boundaryShares,
             boundaryTotalCost,
-            boundarySnapshotTotalCost: boundary.totalCost,
+            boundarySnapshotTotalCost: positionBoundary.totalCost,
             endingShares: shares,
             endingTotalCost,
             endingLots: lots,
@@ -2612,15 +2623,54 @@ export function createInvestmentDataUtils({
 
     function buildSupplementalBrokerRealizedPnl(
         brokerPositionSnapshot,
+        brokerPerformanceSnapshot,
         scope,
+        scopeState,
         transactions,
     ) {
-        const boundary = getAuthoritativeBrokerPositionBoundary(
+        const positionBoundary = getAuthoritativeBrokerPositionBoundary(
             brokerPositionSnapshot,
             scope?.ticker,
         );
-        if (!boundary) return null;
-        return buildAuthoritativeBrokerFifoReplay(boundary, scope, transactions);
+        if (!positionBoundary) return null;
+        const performanceAsOf = normalizeLedgerDate(
+            brokerPerformanceSnapshot?.performanceSnapshotAsOf,
+        );
+        const performanceBoundary = performanceAsOf
+            ? {boundaryDateTime: `${performanceAsOf} 23:59:59`}
+            : null;
+        const fifoReplay = buildAuthoritativeBrokerFifoReplay(
+            positionBoundary,
+            performanceBoundary,
+            scope,
+            transactions,
+        );
+        if (
+            fifoReplay?.status !== 'complete'
+            || !performanceAsOf
+            || !scopeState
+            || typeof scopeState !== 'object'
+        ) {
+            return fifoReplay;
+        }
+        const realizedPnlByDate = {};
+        Object.entries(scopeState.realizedPnlByDate || {}).forEach(([rawDate, rawAmount]) => {
+            const ledgerDate = normalizeLedgerDate(rawDate);
+            const amount = Number(rawAmount);
+            if (!ledgerDate || ledgerDate <= performanceAsOf || !Number.isFinite(amount)) return;
+            realizedPnlByDate[ledgerDate] = (Number(realizedPnlByDate[ledgerDate]) || 0) + amount;
+        });
+        const realizedPnl = Object.values(realizedPnlByDate).reduce(
+            (total, amount) => total + (Number(amount) || 0),
+            0,
+        );
+        return {
+            ...fifoReplay,
+            realizedPnl,
+            realizedPnlByDate,
+            source: 'authoritative_position_snapshot_scoped_transaction_history_replay',
+            costBasisMethod: getInvestmentCostBasisMethod(),
+        };
     }
 
     function projectAuthoritativePositionSnapshot(rawSnapshot, transactions = [], snapshotAsOf = '') {
@@ -2780,24 +2830,50 @@ export function createInvestmentDataUtils({
 
     function getAuthoritativeBrokerPerformanceSnapshots() {
         const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
-        if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
-        const snapshots = [];
+        const brokerSnapshots = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_snapshots;
+        const snapshotsByAccount = new Map();
+        if (brokerSnapshots && typeof brokerSnapshots === 'object') {
+            Object.values(brokerSnapshots).forEach((snapshot) => {
+                if (!snapshot || typeof snapshot !== 'object') return;
+                if (snapshot.performance_snapshot_authoritative !== true) return;
+                const normalizedBroker = String(snapshot.broker || '').trim().toLowerCase();
+                if (!normalizedBroker) return;
+                const accountId = String(snapshot.account_id ?? snapshot.account ?? '').trim();
+                const accountToken = normalizeInvestmentLotScopeAccount(normalizedBroker, accountId);
+                snapshotsByAccount.set([normalizedBroker, accountToken].join('|'), {
+                    broker: normalizedBroker,
+                    accountId,
+                    accountToken,
+                    performanceSnapshotAsOf: normalizeLedgerDate(snapshot.performance_snapshot_as_of),
+                    performanceSnapshot: normalizeAuthoritativePerformanceSnapshot(
+                        snapshot.performance_snapshot,
+                    ),
+                });
+            });
+        }
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') {
+            return [...snapshotsByAccount.values()];
+        }
         Object.entries(brokerSummaries).forEach(([broker, summary]) => {
             if (!summary || typeof summary !== 'object') return;
             if (summary.performance_snapshot_authoritative !== true) return;
             const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
             if (!normalizedBroker) return;
             const accountId = String(summary.account_id ?? summary.account ?? '').trim();
-            snapshots.push({
+            const accountToken = normalizeInvestmentLotScopeAccount(normalizedBroker, accountId);
+            const key = [normalizedBroker, accountToken].join('|');
+            if (snapshotsByAccount.has(key)) return;
+            snapshotsByAccount.set(key, {
                 broker: normalizedBroker,
                 accountId,
-                accountToken: normalizeInvestmentLotScopeAccount(normalizedBroker, accountId),
+                accountToken,
+                performanceSnapshotAsOf: normalizeLedgerDate(summary.performance_snapshot_as_of),
                 performanceSnapshot: normalizeAuthoritativePerformanceSnapshot(
                     summary.performance_snapshot,
                 ),
             });
         });
-        return snapshots;
+        return [...snapshotsByAccount.values()];
     }
 
     function getVerifiedTaxLotHistoryScopes() {
@@ -4763,7 +4839,9 @@ export function createInvestmentDataUtils({
                     supplementalCacheKey,
                     buildSupplementalBrokerRealizedPnl(
                         authoritativePositionSnapshot,
+                        authoritativeSnapshot,
                         scope,
+                        scopeState,
                         orderedTransactions,
                     ),
                 );
@@ -5290,4 +5368,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.2';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.3';
