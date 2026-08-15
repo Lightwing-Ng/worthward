@@ -1,4 +1,4 @@
-{# Code version: v1.59.13 #}
+{# Code version: v1.59.14 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -356,8 +356,9 @@
                                         <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
                                             <span class="investment-import-help-title">User-verified position boundary</span>
-                                            <span class="investment-import-help-step">Cash is shown in USD. Choose only the holdings that belong to this capture.</span>
-                                            <span class="investment-import-help-step">Nothing is prefilled; leave cash or any holding row blank when it is not applicable.</span>
+                                            <span class="investment-import-help-step">Cash is shown in USD. Current open IBKR holdings are listed automatically for this capture.</span>
+                                            <span class="investment-import-help-step">Ticker symbols are prefilled from the current calculation; quantities remain blank until you verify them.</span>
+                                            <span class="investment-import-help-step">Leave cash or any quantity blank when it is not applicable.</span>
                                             <span class="investment-import-help-step">Only completed rows are sent to the existing calibration boundary; this does not create synthetic transactions.</span>
                                         </span>
                                     </span>
@@ -935,5 +936,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.113.8') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.113.9') }}"></script>
 {% endblock %}

@@ -1,10 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.113.8
- * - Changed: IBKR web-paste current-position calibration now presents three
- *   blank asset selectors instead of copying the full Holdings table, while
- *   preserving grouped numeric formatting and the existing payload boundary.
+ * Code version: v2.113.9
+ * - Changed: IBKR web-paste current-position calibration now derives a
+ *   broker-scoped dynamic ticker list from the current position snapshot or
+ *   calculated holdings, pre-filling ticker labels while leaving quantities
+ *   blank for manual verification.
  * - Fixed: The import close control now sits below the global theme toggle so
  *   the two controls remain vertically separated while the modal is open.
  * - Changed: The Investment importer now opens as a centered frosted modal
@@ -321,7 +322,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.113.8',
+    entry: 'v2.113.9',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -8744,15 +8745,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parsed.integerPart}${fraction ? `.${fraction}` : ''}`;
     }
 
-    function getExistingIbkrPositionCalibrationRows() {
-        const rowsByTicker = new Map();
-        document.querySelectorAll('#investment_holdings_panel tr[data-investment-holdings-ticker]').forEach((row) => {
-            if (!(row instanceof HTMLTableRowElement)) return;
-            const ticker = normalizeInvestmentTicker(row.dataset.investmentHoldingsTicker);
-            if (!ticker || rowsByTicker.has(ticker)) return;
-            rowsByTicker.set(ticker, ticker);
-        });
-        return Array.from(rowsByTicker.keys());
+    function getCurrentIbkrOpenHoldingTickers() {
+        const selectedBroker = getSelectedInvestmentImportBroker();
+        const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[selectedBroker];
+        const readHoldingTickers = (holdings) => {
+            if (!holdings || typeof holdings !== 'object' || Array.isArray(holdings)) return [];
+            const seenTickers = new Set();
+            return Object.entries(holdings).map(([rawTicker, position]) => {
+                const ticker = getInvestmentCanonicalTicker(rawTicker);
+                const rawQuantity = position && typeof position === 'object'
+                    ? position.quantity
+                    : position;
+                const quantity = Number(String(rawQuantity ?? '').replace(/,/g, '').trim());
+                return {ticker, quantity};
+            }).filter(({ticker, quantity}) => (
+                Boolean(ticker)
+                && Number.isFinite(quantity)
+                && Math.abs(quantity) > 1e-9
+                && !seenTickers.has(ticker)
+                && seenTickers.add(ticker)
+            )).map(({ticker}) => ticker);
+        };
+
+        const positionSnapshot = brokerSummary?.position_snapshot;
+        if (
+            positionSnapshot
+            && typeof positionSnapshot === 'object'
+            && !Array.isArray(positionSnapshot)
+            && (
+                brokerSummary?.position_snapshot_authoritative === true
+                || Object.keys(positionSnapshot).length > 0
+            )
+        ) {
+            return readHoldingTickers(positionSnapshot);
+        }
+
+        const latestProcessed = [...investmentProcessedTransactionsCache].reverse().find((txn) => (
+            normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === selectedBroker
+        ));
+        return readHoldingTickers(latestProcessed?.broker_holdings);
     }
 
     function syncIbkrPositionCalibrationInputs() {
@@ -8774,55 +8805,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function syncIbkrPositionCalibrationAssetOptions() {
-        if (!(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const selectedAssets = new Set(
-            Array.from(ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-asset]'))
-                .map((field) => normalizeInvestmentTicker(field.value))
-                .filter(Boolean),
-        );
-        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-asset]').forEach((field) => {
-            const selectedValue = normalizeInvestmentTicker(field.value);
-            field.querySelectorAll('option').forEach((option) => {
-                const optionValue = normalizeInvestmentTicker(option.value);
-                option.disabled = Boolean(optionValue && optionValue !== selectedValue && selectedAssets.has(optionValue));
-            });
-        });
-    }
-
-    const IBKR_POSITION_CALIBRATION_ASSET_ROW_COUNT = 3;
-
     function renderIbkrPositionCalibrationTable() {
         if (!(ibkrPositionCalibrationTable instanceof HTMLElement)
             || !(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const existingRows = [];
+        const existingQuantitiesByTicker = new Map();
         ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]:not([data-asset="Cash"])').forEach((row) => {
-            const assetField = row.querySelector('[data-ibkr-calibration-asset]');
             const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
-            if (assetField instanceof HTMLSelectElement && quantityField instanceof HTMLInputElement) {
-                existingRows.push({
-                    asset: normalizeInvestmentTicker(assetField.value),
-                    quantity: quantityField.value,
-                });
+            const ticker = normalizeInvestmentTicker(row.dataset.asset);
+            if (ticker && quantityField instanceof HTMLInputElement) {
+                existingQuantitiesByTicker.set(ticker, quantityField.value);
             }
         });
         const cashField = ibkrPositionCalibrationTableBody.querySelector('[data-ibkr-calibration-cash]');
         const cashValue = cashField instanceof HTMLInputElement
             ? cashField.value
             : '';
-        const holdings = getExistingIbkrPositionCalibrationRows();
-        const assetOptions = [
-            '<option value="">Select asset</option>',
-            ...holdings.map((ticker) => `<option value="${escapeHtml(ticker)}">${escapeHtml(formatInvestmentTickerForDisplay(ticker))}</option>`),
-        ].join('');
+        const holdings = getCurrentIbkrOpenHoldingTickers();
         const rows = [{
             asset: 'Cash',
             quantity: cashValue,
             currency: 'USD',
             isCash: true,
-        }, ...Array.from({length: IBKR_POSITION_CALIBRATION_ASSET_ROW_COUNT}, (_, index) => ({
-            asset: existingRows[index]?.asset || '',
-            quantity: existingRows[index]?.quantity || '',
+        }, ...holdings.map((ticker) => ({
+            asset: ticker,
+            quantity: existingQuantitiesByTicker.get(ticker) || '',
             currency: 'USD',
             isCash: false,
         }))];
@@ -8837,13 +8843,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-import-calibration-cell investment-import-calibration-cell-asset">
                         ${row.isCash
                             ? '<span>Cash</span>'
-                            : `<select class="settings-form-control investment-import-calibration-asset"
-                                       data-ibkr-calibration-asset
-                                       aria-label="Asset row ${index}"
-                                       autocomplete="off">${assetOptions.replace(
-                                `value="${escapeHtml(row.asset)}"`,
-                                `value="${escapeHtml(row.asset)}" selected`,
-                            )}</select>`}
+                            : `<span class="investment-import-calibration-asset"
+                                      data-ibkr-calibration-asset
+                                      aria-label="Asset row ${index}">${escapeHtml(formatInvestmentTickerForDisplay(row.asset))}</span>`}
                     </td>
                     <td class="investment-import-calibration-cell investment-import-calibration-cell-quantity">
                         <input class="settings-form-control investment-import-calibration-input"
@@ -8879,19 +8881,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 syncIbkrPositionCalibrationInputs();
             }, true);
-            ibkrPositionCalibrationTableBody.addEventListener('change', (event) => {
-                const field = event.target;
-                if (!(field instanceof HTMLSelectElement) || !field.matches('[data-ibkr-calibration-asset]')) return;
-                const row = field.closest('[data-ibkr-calibration-row]');
-                if (row instanceof HTMLTableRowElement) {
-                    row.dataset.asset = normalizeInvestmentTicker(field.value);
-                }
-                clearImportFeedback();
-                syncIbkrPositionCalibrationAssetOptions();
-                syncIbkrPositionCalibrationInputs();
-            });
         }
-        syncIbkrPositionCalibrationAssetOptions();
         syncIbkrPositionCalibrationInputs();
     }
 

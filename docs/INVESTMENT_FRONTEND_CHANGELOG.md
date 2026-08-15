@@ -1,18 +1,17 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.7`
+Documentation version: `v1.38.8`
 
-- Changed: IBKR web-paste current-position calibration now shows exactly three
-  blank asset selector rows beside the blank USD cash row. Existing holdings
-  remain available as choices, but neither symbols nor quantities are selected
-  or entered automatically, preventing an unrelated holding from being
-  mistaken for this capture.
+- Changed: IBKR web-paste current-position calibration now derives a dynamic
+  broker-scoped row set from the current IBKR position snapshot or calculated
+  holdings. Ticker symbols are prefilled as read-only labels, while quantities
+  remain blank for manual verification instead of copying stale snapshot values.
 
 - Changed: IBKR web-paste current-position calibration now reuses the standard
-  Settings table format. Cash is a USD row with two-decimal grouping, existing
-  holdings such as DRAM, EUV, and IBKR are prefilled from Holdings, fractional
-  quantities retain at least four decimal places, and blank cash or holding
-  rows remain valid optional input without exposing the legacy textarea.
+  Settings table format. Cash is a USD row with two-decimal grouping, the
+  broker-scoped current tickers are prefilled as labels, fractional quantities
+  retain at least four decimal places, and blank cash or holding quantities
+  remain valid optional input without exposing the legacy textarea.
 
 - Fixed: While the investment import modal is open, the light/dark toggle stays
   above the dedicated close control. The two controls share a stable vertical
