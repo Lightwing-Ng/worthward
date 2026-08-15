@@ -286,6 +286,9 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert 'data-ibkr-calibration-table' in html
     assert 'id="ibkr_trade_notifications_cash"' in html
     assert 'id="investment_import_calibration_table_body"' in html
+    assert 'class="investment-import-date-row"' in html
+    assert 'aria-hidden="true">➋</span>' in html
+    assert 'aria-hidden="true">➌</span>' in html
     assert 'class="settings-action-package settings-callout-card-primary investment-import-action-package"' in html
     assert 'class="settings-action-package-copy settings-callout-text"' in html
     assert '<p class="settings-service-name">Investment import</p>' in html
@@ -306,6 +309,8 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert "body.is-investment-import-modal-open" in investment_css
     assert ".investment-import-calibration-table" in investment_css
     assert "width: min(780px, calc(100vw - (var(--page-edge-pad) * 2)));" in investment_css
+    assert ".investment-import-date-row" in investment_css
+    assert ".investment-import-method-segmented[data-segmented-pill=\"measured\"]::before" in investment_css
 
 
 def test_investment_table_header_is_interactive_and_body_is_measurable() -> None:

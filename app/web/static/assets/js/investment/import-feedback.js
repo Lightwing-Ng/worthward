@@ -1,7 +1,10 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.8.4
+ * Code version: v1.8.5
+ * - Changed: HSBC cash feedback now describes the signed net amount of visible
+ *   unsettled buy and sell orders, while explicitly excluding unposted sell
+ *   clearing fees and other settlement adjustments.
  * - Fixed: Completed-import feedback now prefers the freshly reloaded merged
  *   ledger summary, so stale pre-merge Schwab receipt and P&L warnings cannot
  *   reappear after an idempotent import.
@@ -11,12 +14,12 @@
  * - Changed: IBKR transfer feedback no longer uses an alarming immediate-action
  *   warning; it distinguishes current rows that remain marked `Unbound`, so
  *   already-bound transfers require no further action.
- * - Fixed: HSBC transferable-cash feedback is shown only when positive unsettled sell proceeds produce the provisional `*` marker.
+ * - Fixed: HSBC transferable-cash feedback is shown only when visible unsettled buy or sell orders produce the provisional `*` marker.
  * - Fixed: Schwab in-kind receipt feedback now scopes incomplete All brokers valuation to unresolved receipt rows and affected tickers.
- * - Added: HSBC feedback states the authoritative transferable cash and the pending-sell display estimate when current order rows are not yet settled.
+ * - Added: HSBC feedback states the authoritative transferable cash and the net pending-order display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.4';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.5';
 
 export function resolveInvestmentImportFeedbackSummary({
     refreshedSummary = null,
@@ -229,12 +232,17 @@ export function buildHsbcImportFeedbackMessage({
     const brokerCashEstimate = Number(summary.hsbc_broker_cash_estimate);
     if (
         Number.isFinite(pendingSettlementCash)
-        && pendingSettlementCash > 1e-9
+        && Math.abs(pendingSettlementCash) > 1e-9
         && Number.isFinite(brokerCashEstimate)
     ) {
         const bankAvailableCash = brokerCashEstimate - pendingSettlementCash;
+        const signedPendingCash = pendingSettlementCash.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            signDisplay: 'always',
+        });
         items.push(
-            `HSBC transferable cash remains <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>; the transaction table may show <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> after adding <strong>$${pendingSettlementCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> of positive unsettled sell proceeds.`,
+            `HSBC transferable cash remains <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>; the transaction table may show <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> after applying the signed net unsettled buy/sell amount <strong>$${signedPendingCash}</strong>. Unposted sell clearing fees and other settlement adjustments are not included.`,
         );
     }
     const holdingsMismatchCount = Number(summary.holdings_validation?.mismatch_count);

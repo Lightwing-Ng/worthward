@@ -1,6 +1,32 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.8`
+Documentation version: `v1.38.13`
+
+- Fixed: Schwab Transaction history no longer renders balanced internal
+  processing Journal pairs when the same account and ticker have matching
+  Security Transfer evidence. Incremental re-imports also remove stale rows
+  left by the earlier date-specific cleanup rule while retaining the original
+  CSV files as immutable source evidence.
+
+- Fixed: IBKR Web paste now labels Page date as step ➋ and current holdings
+  calibration as step ➌. Its method control keeps a stable grid position while
+  pill geometry is measured, so opening or switching modes does not flash the
+  control.
+
+- Changed: The centered investment import modal now grows until its upper edge
+  aligns with the close control's upper tangent when the viewport allows it.
+
+- Fixed: Initial aggregate Holdings, Metrics, and Overview now share one
+  current valuation snapshot. Total equity is confirmed aggregate cash plus
+  the current market value of every open holding, so a stale chart replay
+  point cannot understate the current portfolio equity. Historical transaction
+  rows and genuinely historical charts continue to use their own valuation
+  points.
+
+- Changed: HSBC's provisional current balance now applies the signed net of
+  visible unsettled buy and sell orders, aligning the import summary, feedback,
+  and Transaction History projection. Unposted sell clearing fees and other
+  settlement adjustments remain excluded until HSBC evidence is available.
 
 - Changed: IBKR web-paste current-position calibration now derives a dynamic
   broker-scoped row set from the current IBKR position snapshot or calculated

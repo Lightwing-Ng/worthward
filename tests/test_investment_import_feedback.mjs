@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.8.4 */
+/* Tests for Investment import-feedback markup. Code version: v1.8.5 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +21,7 @@ function escapeHtml(value) {
 }
 
 test('module exposes a semantic cache-busting version', () => {
-    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.8.4');
+    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.8.5');
 });
 
 test('feedback summary prefers the freshly reloaded merged ledger', () => {
@@ -234,6 +234,20 @@ test('HSBC feedback distinguishes transferable cash from pending-sell display ca
     assert.match(message, /transferable cash remains <strong>\$20,444\.97<\/strong>/);
     assert.match(message, /show <strong>\$20,926\.17<\/strong>/);
     assert.match(message, /incomplete replay as a historical balance/);
+});
+
+test('HSBC feedback renders the signed net pending-order estimate without unposted sell fees', () => {
+    const message = buildHsbcImportFeedbackMessage({
+        importSummary: {
+            hsbc_pending_settlement_cash: '1576.750',
+            hsbc_broker_cash_estimate: '22685.810',
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /transferable cash remains <strong>\$21,109\.06<\/strong>/);
+    assert.match(message, /show <strong>\$22,685\.81<\/strong>/);
+    assert.match(message, /signed net unsettled buy\/sell amount <strong>\$\+1,576\.75<\/strong>/);
+    assert.match(message, /Unposted sell clearing fees and other settlement adjustments are not included/);
 });
 
 test('HSBC feedback omits transferable-cash copy without a provisional marker', () => {

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.4`
+Documentation version: `v1.39.7`
 
 ## Holdings P&L display contract
 
@@ -315,6 +315,11 @@ sets of values.
   supersede their rounded values. Flex Web Service, Client Portal, Gateway,
   credentials, sessions, market data, and order-routing must not be reintroduced
   without an explicit user-approved architecture and security decision.
+- For one IBKR account and trading day, authoritative file snapshots are selected
+  by exact observed time before row completeness, so a later CSV or GainsKeeper
+  observation cannot be replaced by an older manual app capture. The compatibility
+  broker summary must mirror the same cumulative, non-overlapping CSV performance
+  snapshot; it must not expose a separate closed-trade subset.
 - Zircon (HK) exposes the offline generic fallback-workbook integration. The
   downloadable XLSX provides controlled broker, transaction-type, and currency
   lists plus typed date/date-time and numeric validation. Date-only entries
@@ -359,10 +364,12 @@ sets of values.
   a scoped HSBC Holdings view may use its Portfolio snapshot even when the global
   portfolio intentionally disables a single top-level snapshot.
 - HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
-  Pending sell proceeds are a separate display projection, while the transferable
-  bank balance remains the authoritative cash fact.
+  The current display projection applies the source-bounded signed net of visible
+  unsettled buy and sell orders, while the transferable bank balance remains the
+  authoritative cash fact. Unposted sell clearing-fee evidence is retained as
+  unapplied metadata and remains excluded until a settled cash posting confirms it.
 - All-brokers account-balance fields retain the aggregate broker cash ledgers and
-  source-bounded pending sell proceeds. Internal-transfer bridges are an
+  source-bounded pending buy/sell settlement amounts. Internal-transfer bridges are an
   external-flow attribution layer only; they must not subtract from the cash or
   equity balance displayed by Holdings.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.

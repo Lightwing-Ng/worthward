@@ -1,4 +1,4 @@
-{# Code version: v1.59.14 #}
+{# Code version: v1.59.16 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -335,7 +335,9 @@
                                           spellcheck="false"></textarea>
                             </div>
                             <div class="investment-import-field investment-import-bridge-field">
-                                <div class="investment-import-plain-control-row">
+                                <div class="investment-import-date-row">
+                                    <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                    <div class="investment-import-plain-control-row investment-import-date-control-row">
                                     {{ render_date_picker_field(
                                         "single",
                                         "ibkr_trade_notifications_date",
@@ -345,13 +347,14 @@
                                         "Type page date",
                                         "ibkr_trade_notifications_date_feedback"
                                     ) }}
+                                    </div>
                                 </div>
                             </div>
                             <div class="investment-import-field investment-import-bridge-field">
                                 <div class="trade-strategy-param-label">
                                     <span class="investment-import-label-trigger"
                                           tabindex="0">
-                                        <span class="investment-import-label-step" aria-hidden="true">➍</span>
+                                        <span class="investment-import-label-step" aria-hidden="true">➌</span>
                                         <span class="investment-import-label-text">Current holdings calibration (optional)</span>
                                         <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
@@ -867,7 +870,14 @@
                 </form>
             </section>
 
-            <div id="investment_stock_details_table_host" class="investment-stock-details-table-host" hidden></div>
+            <div id="investment_stock_details_table_host" class="investment-stock-details-table-host" hidden>
+                <nav class="settings-pagination local-store-pagination local-store-pagination--floating investment-history-pagination"
+                     id="investment_history_pagination"
+                     aria-label="Transaction history pages"
+                     aria-controls="investment_history"
+                     data-pagination-scroll-target="investment_history_table_scroll"
+                     hidden></nav>
+            </div>
 
             <div class="scrollable-data-table-shell local-store-pagination-host investment-history-table-shell" id="history_table_wrap">
                 <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-ledger-table"
@@ -923,12 +933,6 @@
                         </tbody>
                     </table>
                 </div>
-                <nav class="settings-pagination local-store-pagination local-store-pagination--floating investment-history-pagination"
-                     id="investment_history_pagination"
-                     aria-label="Transaction history pages"
-                     aria-controls="investment_history"
-                     data-pagination-scroll-target="investment_history_table_scroll"
-                     hidden></nav>
             </div>
         </article>
     </section>
@@ -936,5 +940,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.113.9') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.113.19') }}"></script>
 {% endblock %}

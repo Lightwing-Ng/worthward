@@ -1,7 +1,13 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.104.5
+ * Code version: v1.104.7
+ * - Added: Current broker cash aggregation can use the broker's authoritative
+ *   display boundary, including HSBC pending-settlement adjustments, without
+ *   confusing it with the raw replay balance.
+ * - Added: Current Holdings equity can be derived from one cash snapshot and
+ *   the market value of every open holding, with fail-closed handling for
+ *   missing valuation inputs.
  * - Fixed: A validated HSBC snapshot can now attest a fully covered ticker
  *   that is absent from the open-position list when replay proves the position
  *   is flat, so closed round trips contribute realized P&L without trusting an
@@ -754,6 +760,37 @@ export function createInvestmentDataUtils({
             if (Number.isFinite(numericValue)) return numericValue;
         }
         return getInvestmentBrokerEndingCash(normalizedBroker);
+    }
+
+    function getInvestmentBrokerCurrentPendingSettlementCash(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (normalizedBroker !== 'hsbc') return 0;
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const pendingCash = Number(summary?.hsbc_pending_settlement_cash);
+        if (Number.isFinite(pendingCash)) return pendingCash;
+        const estimate = Number(summary?.hsbc_broker_cash_estimate);
+        const baseCash = getInvestmentBrokerEndingCashInBaseCurrency(normalizedBroker);
+        return Number.isFinite(estimate) && baseCash !== null
+            ? estimate - baseCash
+            : 0;
+    }
+
+    function getInvestmentBrokerCurrentDisplayCash(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return null;
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object' || summary.cash_snapshot_authoritative === false) {
+            return null;
+        }
+        if (normalizedBroker === 'hsbc') {
+            const estimate = Number(summary.hsbc_broker_cash_estimate);
+            if (Number.isFinite(estimate)) return estimate;
+            const baseCash = getInvestmentBrokerEndingCashInBaseCurrency(normalizedBroker);
+            if (baseCash === null) return null;
+            return baseCash + getInvestmentBrokerCurrentPendingSettlementCash(normalizedBroker);
+        }
+        const baseCash = getInvestmentBrokerEndingCashInBaseCurrency(normalizedBroker);
+        return baseCash === null ? null : baseCash;
     }
 
     function getInvestmentBrokerEndingCashAsOf(brokerCode) {
@@ -3774,6 +3811,26 @@ export function createInvestmentDataUtils({
         return Number.isFinite(totalEquity) ? totalEquity : 0;
     }
 
+    function computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash) {
+        const safeCash = Number(aggregateCash);
+        if (!Number.isFinite(safeCash)) return null;
+        const openSummaries = (Array.isArray(summaries) ? summaries : [])
+            .filter((summary) => summary?.hasOpenPosition);
+        if (openSummaries.some((summary) => (
+            summary?.marketValue === null
+            || summary?.marketValue === undefined
+            || summary?.marketValue === ''
+            || !Number.isFinite(Number(summary.marketValue))
+        ))) {
+            return null;
+        }
+        const openMarketValue = openSummaries.reduce(
+            (sum, summary) => sum + Number(summary.marketValue),
+            0,
+        );
+        return safeCash + openMarketValue;
+    }
+
     function normalizeLedgerDate(value) {
         const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})/);
         return match ? match[1] : '';
@@ -5317,6 +5374,8 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerStartingCash,
         getInvestmentBrokerStartingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
+        getInvestmentBrokerCurrentPendingSettlementCash,
+        getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
@@ -5332,6 +5391,7 @@ export function createInvestmentDataUtils({
         getInvestmentStartingCashBalances,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
+        computeInvestmentLiveHoldingsTotalEquity,
         getAuthoritativePositionSnapshot,
         getAuthoritativeBrokerPositionSnapshots,
         getAuthoritativePositionSnapshotForTransactions,
@@ -5382,4 +5442,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.5';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.7';

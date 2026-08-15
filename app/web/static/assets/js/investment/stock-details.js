@@ -1,7 +1,10 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.4
+ * Code version: v0.15.5
+ * - Changed: Stock-details Average price labels stay presentation-neutral;
+ *   cost-method details remain internal calculation metadata and are omitted
+ *   from the metric, chart dataset, and tooltip.
  * - Fixed: Stock-details labels now read the shared global cost-method
  *   resolver directly, so transfer-basis metadata cannot be passed as the
  *   active matcher by a caller.
@@ -68,25 +71,14 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-    getInvestmentCostBasisMethod,
-} from './data-utils.js?v=investment-data-utils-v1.104.5';
+} from './data-utils.js?v=investment-data-utils-v1.104.7';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.4';
-
-const INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS = Object.freeze({
-    lowest_cost_first: 'Lowest-cost lots first',
-    fifo: 'FIFO',
-    lifo: 'LIFO',
-    moving_average: 'Moving average cost',
-});
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.5';
 
 export function getInvestmentStockDetailsAveragePriceLabel() {
-    const normalizedMethod = getInvestmentCostBasisMethod();
-    const methodLabel = INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS[normalizedMethod]
-        || INVESTMENT_STOCK_DETAILS_COST_BASIS_METHOD_LABELS.lowest_cost_first;
-    return `Average price · ${methodLabel}`;
+    return 'Average price';
 }
 
 const INVESTMENT_DATE_ONLY_TRANSACTION_FILE_KINDS = new Set([

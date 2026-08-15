@@ -1,4 +1,4 @@
-/* Code version: v1.75.39 */
+/* Code version: v1.75.41 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4177,12 +4177,23 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-form {
+    --investment-import-modal-edge: calc(
+        var(--investment-import-control-rail-top, var(--page-edge-pad))
+        + var(--settings-round-icon-button-size)
+        + 10px
+    );
     display: flex;
     flex-direction: column;
     flex: 0 1 auto;
     gap: 0;
     width: min(780px, calc(100vw - (var(--page-edge-pad) * 2)));
-    height: var(--investment-import-modal-height, min(480px, calc(100dvh - 32px)));
+    height: var(
+        --investment-import-modal-height,
+        min(
+            calc(100dvh - var(--investment-import-modal-edge) - var(--investment-import-modal-edge)),
+            calc(100dvh - 32px)
+        )
+    );
     max-height: calc(100dvh - 32px);
     min-height: 0;
     box-sizing: border-box;
@@ -4242,6 +4253,10 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.investment-import-stack > .investment-import-field-group {
+    align-content: start;
+}
+
 .investment-import-stack > .investment-import-field-group > .investment-import-field-group {
     grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr);
@@ -4290,9 +4305,26 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     top: 0;
     z-index: 4;
     isolation: isolate;
-    width: fit-content;
-    max-width: min(100%, 440px);
+    width: 100%;
+    max-width: 100%;
     margin-inline: 0;
+}
+
+.investment-import-method-segmented[data-segmented-pill="measured"]::before {
+    opacity: 1;
+}
+
+.investment-import-date-row {
+    display: grid;
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr);
+    column-gap: var(--investment-import-step-gap);
+    align-items: start;
+    width: 100%;
+    min-width: 0;
+}
+
+.investment-import-date-row > .investment-import-date-control-row {
+    padding-left: 0;
 }
 #investment_import_ibkr_fields > .investment-import-mode-field,
 #investment_import_hsbc_fields > .investment-import-mode-field {
@@ -4591,8 +4623,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     vertical-align: middle;
 }
 
-.investment-import-calibration-cell-number,
-.investment-import-calibration-cell-currency {
+.settings-table.investment-import-calibration-table .investment-import-calibration-cell-number,
+.settings-table.investment-import-calibration-table .investment-import-calibration-cell-currency {
     text-align: center;
 }
 
