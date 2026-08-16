@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.113.19
+ * Code version: v2.114.0
+ * - Fixed: Current aggregate cash now retains every authoritative broker
+ *   currency balance and converts HSBC combined-account foreign cash into the
+ *   workspace base currency before adding pending settlement cash.
  * - Changed: Stock details now owns the visible transaction table in its
  *   dedicated view; the shared pagination control follows that table while
  *   the full transaction-history table remains available in other views.
@@ -340,7 +343,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.113.19',
+    entry: 'v2.114.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -3802,7 +3805,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function applyAuthoritativeCurrentAggregateCash(processedTransactions = []) {
+    function applyAuthoritativeCurrentAggregateCash(
+        processedTransactions = [],
+        fxTimeline = null,
+        valuationDate = '',
+    ) {
         const transactions = Array.isArray(processedTransactions) ? processedTransactions : [];
         const latestProcessed = transactions[transactions.length - 1];
         if (!latestProcessed) return;
@@ -3848,11 +3855,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const pendingSettlementCash = getInvestmentBrokerCurrentPendingSettlementCash(brokerCode);
+            const runningCash = currentDisplayCash - pendingSettlementCash;
+            const authoritativeBalances = getInvestmentBrokerEndingCashBalances(brokerCode);
+            const runningBalances = authoritativeBalances && Object.keys(authoritativeBalances).length
+                ? {
+                    ...authoritativeBalances,
+                    [getInvestmentBaseCurrency()]: runningCash,
+                }
+                : {
+                    [getInvestmentBaseCurrency()]: runningCash,
+                };
             currentCashSnapshots.push({
                 brokerCode,
                 displayCash: currentDisplayCash,
                 pendingSettlementCash,
-                runningCash: currentDisplayCash - pendingSettlementCash,
+                runningCash,
+                runningBalances,
             });
         });
         if (
@@ -3861,26 +3879,30 @@ document.addEventListener('DOMContentLoaded', () => {
             || (!hasConfiguredCashScope && unsupportedCashBrokers.length)
         ) return;
 
-        const aggregateRunningCash = currentCashSnapshots.reduce(
-            (sum, snapshot) => sum + snapshot.runningCash,
-            0,
+        const aggregateBalances = {};
+        currentCashSnapshots.forEach((snapshot) => {
+            Object.entries(snapshot.runningBalances || {}).forEach(([currency, value]) => {
+                const numericValue = Number(value);
+                if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
+                aggregateBalances[currency] = (Number(aggregateBalances[currency]) || 0) + numericValue;
+            });
+        });
+        const aggregateRunningCash = sumCashLedgerInBaseCurrency(
+            aggregateBalances,
+            normalizeLedgerDate(valuationDate) || getTodayLedgerDate(),
+            fxTimeline,
+            getInvestmentBaseCurrency(),
         );
         const aggregatePendingSettlementCash = currentCashSnapshots.reduce(
             (sum, snapshot) => sum + snapshot.pendingSettlementCash,
             0,
         );
-        const aggregateDisplayCash = currentCashSnapshots.reduce(
-            (sum, snapshot) => sum + snapshot.displayCash,
-            0,
-        );
+        const aggregateDisplayCash = aggregateRunningCash + aggregatePendingSettlementCash;
         const marketValue = getOptionalInvestmentNumber(latestProcessed.market_value);
-        const aggregateBalances = {
-            [getInvestmentBaseCurrency()]: aggregateRunningCash,
-        };
         latestProcessed.running_cash = aggregateRunningCash;
         latestProcessed.aggregate_running_cash = aggregateRunningCash;
-        latestProcessed.cash_by_currency = {...aggregateBalances};
-        latestProcessed.aggregate_cash_by_currency = {...aggregateBalances};
+        latestProcessed.cash_by_currency = cloneCashLedgerBalances(aggregateBalances);
+        latestProcessed.aggregate_cash_by_currency = cloneCashLedgerBalances(aggregateBalances);
         latestProcessed.aggregate_pending_settlement_cash = aggregatePendingSettlementCash;
         latestProcessed.aggregate_display_cash = aggregateDisplayCash;
         latestProcessed.authoritative_current_cash_snapshot = true;
@@ -16463,7 +16485,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyAuthoritativeBrokerEndingCashBalances(processed);
         applyAuthoritativeBrokerPositionSnapshots(processed);
         applyInvestmentInternalTransferBindings(processed);
-        applyAuthoritativeCurrentAggregateCash(processed);
+        applyAuthoritativeCurrentAggregateCash(processed, fxTimeline, getTodayLedgerDate());
 
         function getHsbcSettlementScopeKey(txn) {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
