@@ -1,6 +1,11 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.16`
+Documentation version: `v1.38.17`
+
+- Fixed: Stock-details 1W now retains trusted overnight and pre-market buys
+  that occur after the latest visible regular-session candle. Their green buy
+  triangles use the established gap positions, and existing off-hours markers
+  no longer snap onto regular-session candles.
 
 - Changed: HSBC cash-account, Portfolio, and Order Status copy/paste fields now
   expose only clipboard paste controls. The debug-only local TXT upload

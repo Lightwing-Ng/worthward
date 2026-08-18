@@ -1,7 +1,12 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.5
+ * Code version: v0.15.6
+ * - Fixed: Stock-details intraday trade markers retain off-hours buys that
+ *   occur after the last visible regular-session candle, placing them in the
+ *   trailing overnight or pre-market gap.
+ * - Fixed: Stock-details off-hours markers restore the established gap
+ *   placement instead of snapping to a regular-session candle.
  * - Changed: Stock-details Average price labels stay presentation-neutral;
  *   cost-method details remain internal calculation metadata and are omitted
  *   from the metric, chart dataset, and tooltip.
@@ -75,7 +80,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.5';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.6';
 
 export function getInvestmentStockDetailsAveragePriceLabel() {
     return 'Average price';
@@ -237,6 +242,32 @@ export function getInvestmentTradeSessionType(value, parseDateParts) {
     if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
     if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
     return 'night';
+}
+
+export function resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey(
+    transaction,
+    sessionType,
+    lastVisibleDayKey,
+) {
+    const normalizedSessionType = String(sessionType || '').trim().toLowerCase();
+    const normalizedLastVisibleDayKey = String(lastVisibleDayKey || '').trim().slice(0, 10);
+    const ledgerDate = String(transaction?.date || '').trim().slice(0, 10);
+    if (
+        !['night', 'pre'].includes(normalizedSessionType)
+        || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedLastVisibleDayKey)
+        || !/^\d{4}-\d{2}-\d{2}$/.test(ledgerDate)
+    ) {
+        return '';
+    }
+    if (ledgerDate > normalizedLastVisibleDayKey) return normalizedLastVisibleDayKey;
+    if (ledgerDate !== normalizedLastVisibleDayKey || normalizedSessionType !== 'night') return '';
+    const datetimeValue = String(transaction?.datetime || transaction?.date || '').trim();
+    const datetimeMatch = datetimeValue.match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
+    const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
+    const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
+    return Number.isInteger(hour) && Number.isInteger(minute) && (hour * 60) + minute >= 20 * 60
+        ? normalizedLastVisibleDayKey
+        : '';
 }
 
 export {
@@ -960,6 +991,26 @@ export function createInvestmentStockDetailsUtils({
             }
             return intradayDayBoundaries.dayMap.get(ledgerDate) || null;
         };
+        const getTransactionTotalMinutes = (txn) => {
+            const transactionDatetimeValue = getTransactionDatetimeValue(txn);
+            const datetimeMatch = transactionDatetimeValue.match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
+            const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
+            const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
+            return Number.isInteger(hour) && Number.isInteger(minute)
+                ? (hour * 60) + minute
+                : null;
+        };
+        const resolveTrailingOffHoursDayBoundaryForTransaction = (txn, sessionType) => {
+            const lastVisibleDayBoundary = intradayDayBoundaries.orderedDays.at(-1) || null;
+            const anchorDayKey = resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey(
+                txn,
+                sessionType,
+                lastVisibleDayBoundary?.dayKey,
+            );
+            return anchorDayKey
+                ? intradayDayBoundaries.dayMap.get(anchorDayKey) || null
+                : null;
+        };
         const isTransactionBeforeVisibleRange = (txn) => {
             if (!labels.length) return false;
             const firstVisibleLedgerDate = normalizeLedgerDate(labels[0]);
@@ -976,12 +1027,7 @@ export function createInvestmentStockDetailsUtils({
             if (transactionLedgerDate < lastVisibleLedgerDate) return false;
             const transactionDatetimeValue = getTransactionDatetimeValue(txn);
             const sessionType = getTransactionSessionType(txn, transactionDatetimeValue);
-            const datetimeMatch = transactionDatetimeValue.match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
-            const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
-            const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
-            const totalMinutes = Number.isInteger(hour) && Number.isInteger(minute)
-                ? (hour * 60) + minute
-                : null;
+            const totalMinutes = getTransactionTotalMinutes(txn);
             return sessionType === 'night' && Number.isFinite(totalMinutes) && totalMinutes >= 20 * 60;
         };
         const resolveTradeMarkerPrice = (markerIndex, transactionPrice) => {
@@ -997,10 +1043,20 @@ export function createInvestmentStockDetailsUtils({
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
-            if (useIntradayCandles && (isTransactionBeforeVisibleRange(txn) || isTransactionAfterVisibleRange(txn))) {
+            const transactionDatetimeValue = getTransactionDatetimeValue(txn);
+            const transactionSessionType = getTransactionSessionType(txn, transactionDatetimeValue);
+            const trailingOffHoursDayBoundary = useIntradayCandles
+                ? resolveTrailingOffHoursDayBoundaryForTransaction(txn, transactionSessionType)
+                : null;
+            if (
+                useIntradayCandles
+                && (
+                    isTransactionBeforeVisibleRange(txn)
+                    || (isTransactionAfterVisibleRange(txn) && !trailingOffHoursDayBoundary)
+                )
+            ) {
                 return accumulator;
             }
-            const transactionDatetimeValue = getTransactionDatetimeValue(txn);
             const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue);
             const transactionPrice = getTransactionPrice(txn);
             const ledgerDate = normalizeLedgerDate(txn?.date);
@@ -1008,15 +1064,22 @@ export function createInvestmentStockDetailsUtils({
             let markerPlacement = 'bar';
             let markerSessionType = 'intraday';
             let markerPrice = null;
+            let markerAnchorDayKey = ledgerDate;
             if (useIntradayCandles) {
-                markerSessionType = getTransactionSessionType(txn, transactionDatetimeValue);
+                markerSessionType = transactionSessionType;
                 const exactMinuteIndex = dateIndex.get(exactMinuteKey);
                 if (Number.isInteger(exactMinuteIndex)) {
                     markerIndex = exactMinuteIndex;
                     markerPrice = resolveTradeMarkerPrice(exactMinuteIndex, transactionPrice);
+                } else if (trailingOffHoursDayBoundary) {
+                    markerPlacement = 'trailing-gap';
+                    markerIndex = trailingOffHoursDayBoundary.lastIndex;
+                    markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
                 } else if (markerSessionType !== 'intraday') {
                     const dayBoundary = resolveIntradayDayBoundaryForTransaction(txn, markerSessionType);
                     if (dayBoundary) {
+                        markerPlacement = 'gap';
+                        markerAnchorDayKey = dayBoundary.dayKey;
                         markerIndex = markerSessionType === 'post' ? dayBoundary.lastIndex : dayBoundary.firstIndex;
                         markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
                     }
@@ -1047,12 +1110,18 @@ export function createInvestmentStockDetailsUtils({
                 placement: markerPlacement,
                 sessionType: markerSessionType,
                 ledgerDate,
+                anchorDayKey: trailingOffHoursDayBoundary?.dayKey || markerAnchorDayKey,
                 transactionPrice: Number.isFinite(transactionPrice) ? transactionPrice : null,
             };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
         }, { buy: [], sell: [] });
+        const shouldReserveTrailingOffHoursGap = Boolean(
+            useIntradayCandles
+            && [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell]
+                .some((marker) => marker?.placement === 'trailing-gap'),
+        );
         const resolveAveragePriceSnapshotIndex = (txn) => {
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return null;
@@ -1546,10 +1615,12 @@ export function createInvestmentStockDetailsUtils({
             const fallbackX = Number(fallbackPoint?.x);
             const y = Number(yScale.getPixelForValue(marker?.y));
             if (!Number.isFinite(y)) return null;
-            if (marker?.placement !== 'gap' || !useIntradayCandles) {
+            if (!['gap', 'trailing-gap'].includes(marker?.placement) || !useIntradayCandles) {
                 return Number.isFinite(fallbackX) ? { x: fallbackX, y } : null;
             }
-            const dayBoundary = intradayDayBoundaries.dayMap.get(marker?.ledgerDate);
+            const dayBoundary = intradayDayBoundaries.dayMap.get(
+                marker?.anchorDayKey || marker?.ledgerDate,
+            );
             if (!dayBoundary) {
                 return Number.isFinite(fallbackX) ? { x: fallbackX, y } : null;
             }
@@ -1563,7 +1634,11 @@ export function createInvestmentStockDetailsUtils({
             let leftX = Number.NaN;
             let rightX = Number.NaN;
             let fraction = 0.5;
-            if (marker?.sessionType === 'post') {
+            if (marker?.placement === 'trailing-gap') {
+                leftX = getPointX(dayBoundary.lastIndex);
+                rightX = chartArea.right;
+                fraction = marker.sessionType === 'night' ? 0.5 : 0.75;
+            } else if (marker?.sessionType === 'post') {
                 leftX = getPointX(dayBoundary.lastIndex);
                 rightX = nextDay ? getPointX(nextDay.firstIndex) : chartArea.right;
                 fraction = nextDay ? 0.25 : 0.5;
@@ -1833,7 +1908,9 @@ export function createInvestmentStockDetailsUtils({
                 layout: {
                     padding: {
                         left: STOCK_DETAILS_MARKER_X_PADDING_PX,
-                        right: shouldRenderRealtimePulse ? 32 : STOCK_DETAILS_MARKER_X_PADDING_PX,
+                        right: shouldRenderRealtimePulse || shouldReserveTrailingOffHoursGap
+                            ? 32
+                            : STOCK_DETAILS_MARKER_X_PADDING_PX,
                         top: shouldRenderRealtimePulse ? 32 : STOCK_DETAILS_MARKER_Y_PADDING_PX,
                         bottom: 24,
                     },
