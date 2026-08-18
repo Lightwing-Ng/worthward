@@ -1,6 +1,8 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.13`
+Documentation version: `v1.38.14`
+
+- Added: Investment Metrics now shows Cash, Market value, and Total equity cards. They reuse the current Holdings valuation and realtime quote update path, including broker-scoped refreshes.
 
 - Fixed: Schwab Transaction history no longer renders balanced internal
   processing Journal pairs when the same account and ticker have matching

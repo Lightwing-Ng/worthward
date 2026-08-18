@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.75.1
+Code version: v0.75.2
 - Added: IBKR web-paste imports can accept a user-entered position snapshot at
   the matching cash boundary without embedding account-specific data.
 - Changed: IBKR Trade Notifications feedback now identifies pasted fills as
@@ -13,6 +13,8 @@ Code version: v0.75.1
   day when its regular-session bar set is incomplete, instead of treating a
   partial but date-current store as fresh and carrying one close across the
   rest of the equity curve.
+- Fixed: Incremental investment imports preserve known historical source-evidence
+  gaps while still verifying every newly materialized artifact.
 - Fixed: When Yahoo does not provide a complete completed trading day,
   Investment intraday requests use the configured Longbridge one-minute
   fallback instead of carrying the partial day's last close.
@@ -273,6 +275,7 @@ from app.infrastructure.storage import (
     market_ticker_store_aliases,
     market_store_file_lock,
     materialize_investment_source_artifacts,
+    investment_source_artifact_storage_keys,
     investment_ticker_identity_store_aliases,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
@@ -1031,6 +1034,10 @@ def build_web_runtime() -> WebRuntime:
                 update_investment_store_payload(updater, INVESTMENT_STORE_PATH),
             )
 
+        existing_source_artifact_storage_keys = investment_source_artifact_storage_keys(
+            load_investment_store_payload(INVESTMENT_STORE_PATH)
+        )
+
         return commit_investment_import(
             imported_payload,
             normalize_payload=normalize_payload,
@@ -1041,10 +1048,12 @@ def build_web_runtime() -> WebRuntime:
             materialize_payload=lambda payload: materialize_investment_source_artifacts(
                 payload,
                 INVESTMENT_STORE_PATH,
+                allow_missing_storage_keys=existing_source_artifact_storage_keys,
             ),
             verify_persisted_payload=lambda payload: verify_investment_source_artifacts(
                 payload,
                 INVESTMENT_STORE_PATH,
+                allow_missing_storage_keys=existing_source_artifact_storage_keys,
             ),
         )
 

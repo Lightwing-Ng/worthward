@@ -1,8 +1,8 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.18.2
-- Fixed: A malformed or empty legacy investment JSON ledger now fails closed instead of being replaced by a new Parquet ledger.
+Code version: v0.18.3
+- Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
 
 from __future__ import annotations
@@ -947,11 +947,30 @@ def _write_immutable_evidence_bytes(
                 temporary.unlink()
 
 
+def investment_source_artifact_storage_keys(payload: dict[str, Any]) -> set[str]:
+    """Return valid storage keys already referenced by an investment payload."""
+    raw_artifacts = payload.get("source_artifacts")
+    if not isinstance(raw_artifacts, list):
+        return set()
+    storage_keys: set[str] = set()
+    for raw_artifact in raw_artifacts:
+        if not isinstance(raw_artifact, dict):
+            continue
+        storage_key = str(
+            raw_artifact.get("storage_key") or raw_artifact.get("sha256") or ""
+        ).strip().lower()
+        if re.fullmatch(r"[0-9a-f]{64}", storage_key):
+            storage_keys.add(storage_key)
+    return storage_keys
+
+
 def materialize_investment_source_artifacts(
     payload: dict[str, Any],
     path: Path = INVESTMENT_STORE_PATH,
+    *,
+    allow_missing_storage_keys: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Persist exact uploaded source bytes and leave only immutable manifests in the ledger."""
+    """Persist exact source bytes while preserving verified historical manifests."""
     raw_artifacts = payload.get("source_artifacts")
     if not isinstance(raw_artifacts, list):
         return dict(payload)
@@ -1033,15 +1052,21 @@ def materialize_investment_source_artifacts(
 
         next_payload = dict(payload)
         next_payload["source_artifacts"] = materialized
-        _verify_investment_source_artifacts_locked(next_payload, path)
+        _verify_investment_source_artifacts_locked(
+            next_payload,
+            path,
+            allow_missing_storage_keys=allow_missing_storage_keys,
+        )
         return next_payload
 
 
 def verify_investment_source_artifacts(
     payload: dict[str, Any],
     path: Path = INVESTMENT_STORE_PATH,
+    *,
+    allow_missing_storage_keys: set[str] | None = None,
 ) -> None:
-    """Verify every materialized source artifact referenced by a ledger payload."""
+    """Verify materialized source artifacts, optionally retaining known historical gaps."""
     raw_artifacts = payload.get("source_artifacts")
     if raw_artifacts is None:
         return
@@ -1049,12 +1074,18 @@ def verify_investment_source_artifacts(
         raise RuntimeError("Investment source evidence manifest list is malformed.")
     parquet_path = _investment_parquet_path_for(path)
     with market_store_file_lock(parquet_path):
-        _verify_investment_source_artifacts_locked(payload, path)
+        _verify_investment_source_artifacts_locked(
+            payload,
+            path,
+            allow_missing_storage_keys=allow_missing_storage_keys,
+        )
 
 
 def _verify_investment_source_artifacts_locked(
     payload: dict[str, Any],
     path: Path,
+    *,
+    allow_missing_storage_keys: set[str] | None = None,
 ) -> int:
     raw_artifacts = payload.get("source_artifacts")
     if raw_artifacts is None:
@@ -1090,6 +1121,8 @@ def _verify_investment_source_artifacts_locked(
                 "Investment source evidence file must not be a symbolic link: "
                 f"{target}"
             )
+        if not target.exists() and expected_sha256 in (allow_missing_storage_keys or set()):
+            continue
         if not target.is_file():
             raise RuntimeError(
                 "Investment source evidence file is missing: "

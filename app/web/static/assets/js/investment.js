@@ -1,7 +1,19 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.114.0
+ * Code version: v2.115.4
+ * - Added: Investment Metrics now exposes Cash, Market value, and Total equity
+ *   cards using the same current valuation and realtime update path as Holdings.
+ * - Fixed: The latest HSBC history row now treats the authoritative current
+ *   cash snapshot as the display boundary, preventing older settlement
+ *   corrections from understating current Cash and Equity.
+ * - Fixed: HSBC's latest broker-scoped transaction row now refreshes its
+ *   authoritative current cash and Equity after the current-cash projection,
+ *   including visible pending-settlement proceeds.
+ * - Fixed: IBKR mixed-date web-paste captures now remain blocked until the
+ *   Hong Kong page date is selected when current-day rows show time only.
+ * - Added: HSBC copy/paste fields can load the corresponding local .txt page
+ *   capture directly, reusing the existing normalization and preflight path.
  * - Fixed: Current aggregate cash now retains every authoritative broker
  *   currency balance and converts HSBC combined-account foreign cash into the
  *   workspace base currency before adding pending settlement cash.
@@ -343,7 +355,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.114.0',
+    entry: 'v2.115.4',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -481,6 +493,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const hsbcPortfolioTextPasteButton = document.getElementById('hsbc_portfolio_text_paste_button');
     const hsbcOrderStatusPasteButton = document.getElementById('hsbc_order_status_paste_button');
     const hsbcCashAccountPasteButton = document.getElementById('hsbc_cash_account_paste_button');
+    const hsbcPortfolioTextFileButton = document.getElementById('hsbc_portfolio_text_file_button');
+    const hsbcOrderStatusFileButton = document.getElementById('hsbc_order_status_file_button');
+    const hsbcCashAccountFileButton = document.getElementById('hsbc_cash_account_file_button');
+    const hsbcPortfolioTextFileInput = document.getElementById('hsbc_portfolio_text_file');
+    const hsbcOrderStatusFileInput = document.getElementById('hsbc_order_status_file');
+    const hsbcCashAccountFileInput = document.getElementById('hsbc_cash_account_file');
     const hsbcPortfolioTextClearButton = document.getElementById('hsbc_portfolio_text_clear_button');
     const hsbcOrderStatusTextClearButton = document.getElementById('hsbc_order_status_text_clear_button');
     const hsbcCashAccountTextClearButton = document.getElementById('hsbc_cash_account_clear_button');
@@ -714,6 +732,36 @@ document.addEventListener('DOMContentLoaded', () => {
         },
     ];
     const HOLDINGS_SUMMARY_METRIC_DEFINITIONS = [
+        {
+            key: 'cash',
+            label: 'Cash',
+            summary: 'Current display cash in the workspace base currency, including the same broker-scoped pending-settlement presentation used by Holdings.',
+            valueKey: 'cash',
+            formatValue: (metrics) => formatHoldingsMoney(metrics?.cash),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.cash),
+            liveField: 'metrics_cash',
+            liveNumberKey: 'cash',
+        },
+        {
+            key: 'market-value',
+            label: 'Market value',
+            summary: 'Current base-currency market value of open positions at the latest available quote.',
+            valueKey: 'marketValue',
+            formatValue: (metrics) => formatHoldingsMoney(metrics?.marketValue),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.marketValue),
+            liveField: 'metrics_market_value',
+            liveNumberKey: 'marketValue',
+        },
+        {
+            key: 'total-equity',
+            label: 'Total equity',
+            summary: 'Current Cash plus Market value, using the same live portfolio valuation as Holdings.',
+            valueKey: 'totalEquity',
+            formatValue: (metrics) => formatHoldingsMoney(metrics?.totalEquity),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.totalEquity),
+            liveField: 'metrics_total_equity',
+            liveNumberKey: 'totalEquity',
+        },
         {
             key: 'cumulative-pnl',
             label: 'Cumulative P&L',
@@ -3914,6 +3962,25 @@ document.addEventListener('DOMContentLoaded', () => {
             ? aggregateDisplayCash + marketValue
             : null;
         latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
+        currentCashSnapshots.forEach((snapshot) => {
+            const latestBroker = [...transactions].reverse().find(
+                (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === snapshot.brokerCode,
+            );
+            if (!latestBroker) return;
+            latestBroker.broker_running_cash = snapshot.runningCash;
+            latestBroker.broker_cash_by_currency = {...snapshot.runningBalances};
+            latestBroker.broker_pending_settlement_cash = snapshot.pendingSettlementCash;
+            latestBroker.broker_display_cash = snapshot.displayCash;
+            const brokerMarketValue = getOptionalInvestmentNumber(
+                latestBroker.broker_market_value,
+            );
+            latestBroker.broker_total_equity = Number.isFinite(brokerMarketValue)
+                ? snapshot.displayCash + brokerMarketValue
+                : null;
+            latestBroker.broker_cash_balance_source = (
+                'authoritative_current_cash_snapshot'
+            );
+        });
     }
 
     function getActionButtonLabels(button) {
@@ -9112,21 +9179,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return /^(?:Buy|Sold)\s+[\d,]+(?:\.\d+)?\s+[A-Z0-9][A-Z0-9.-]*\s+Limit\s+[\d,]+(?:\.\d+)?\s*,\s*[A-Z0-9._-]+$/im.test(text);
     }
 
-    function isLikelyIbkrTradeNotificationsText(rawText) {
+    function getIbkrTradeNotificationsReadiness(rawText) {
         const text = normalizeClipboardText(rawText);
+        if (!text) {
+            return {ready: false, reason: 'empty'};
+        }
         const hasCompactOrder = hasIbkrCompactOrderCapture(text);
         const hasDisplayedDate = /\d{1,2}\/\d{1,2}\/20\d{2},\s+\d{1,2}:\d{2}\s+[AP]M/i.test(text);
         const hasPageDate = Boolean(String(ibkrTradeNotificationsDateInput?.value || '').trim());
-        return Boolean(
-            text
-            && /Orders\s*&\s*Trades/i.test(text)
+        const hasTimeOnlyFill = text.split('\n').some((line) => (
+            /^\d{1,2}:\d{2}\s+[AP]M$/i.test(line.trim())
+        ));
+        const hasTradeShape = Boolean(
+            /Orders\s*&\s*Trades/i.test(text)
             && /Trade Notifications/i.test(text)
             && /\bU\d{6,12}\b/i.test(text)
             && (/(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/i.test(text) || hasCompactOrder)
             && /\bFilled\b/i.test(text)
-            && (hasDisplayedDate || (hasCompactOrder && hasPageDate))
             && (/Fees:\s*[\d,]+(?:\.\d+)?/i.test(text) || hasCompactOrder)
         );
+        if (!hasTradeShape || (!hasDisplayedDate && !hasPageDate)) {
+            return {ready: false, reason: 'invalid_format'};
+        }
+        if (hasTimeOnlyFill && !hasPageDate) {
+            return {ready: false, reason: 'missing_page_date'};
+        }
+        return {ready: true, reason: 'ready'};
+    }
+
+    function isLikelyIbkrTradeNotificationsText(rawText) {
+        return getIbkrTradeNotificationsReadiness(rawText).ready;
     }
 
     function syncIbkrTradeNotificationsDisplay() {
@@ -9159,7 +9241,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tradeLabel = tradeCount === 1 ? '1 filled trade' : `${tradeCount.toLocaleString('en-US')} filled trades`;
         const lineCount = countClipboardLines(text).toLocaleString('en-US');
         const charCount = text.length.toLocaleString('en-US');
-        const readiness = isLikelyIbkrTradeNotificationsText(text) ? 'Ready' : 'Check format';
+        const validation = getIbkrTradeNotificationsReadiness(text);
+        const readiness = validation.reason === 'missing_page_date'
+            ? 'Page date required'
+            : (validation.ready ? 'Ready' : 'Check format');
         ibkrTradeNotificationsDisplay.value = `IBKR Trade Notifications · ${tradeLabel} · ${lineCount} lines · ${charCount} chars · ${readiness}`;
         ibkrTradeNotificationsDisplay.title = text;
     }
@@ -9267,6 +9352,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (kind === 'cash') return hsbcCashAccountTextInput;
         if (kind === 'portfolio') return hsbcPortfolioTextInput;
         if (kind === 'order') return hsbcOrderStatusTextInput;
+        return null;
+    }
+
+    function getHsbcTextFileInput(kind) {
+        if (kind === 'cash') return hsbcCashAccountFileInput;
+        if (kind === 'portfolio') return hsbcPortfolioTextFileInput;
+        if (kind === 'order') return hsbcOrderStatusFileInput;
         return null;
     }
 
@@ -9606,6 +9698,40 @@ document.addEventListener('DOMContentLoaded', () => {
             flashHsbcPasteButton(kind);
         } catch (_error) {
             setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
+        }
+    }
+
+    async function loadHsbcTextFileIntoField(kind) {
+        const input = getHsbcPasteInput(kind);
+        const fileInput = getHsbcTextFileInput(kind);
+        const file = fileInput?.files?.[0];
+        if (!(input instanceof HTMLTextAreaElement) || !(file instanceof File)) {
+            return;
+        }
+        const fileName = String(file.name || '').trim() || 'selected file';
+        const fileType = String(file.type || '').toLowerCase();
+        if (!fileName.toLowerCase().endsWith('.txt') && fileType !== 'text/plain') {
+            setImportFeedback('Please choose an HSBC page capture saved as a .txt file.', 'error');
+            fileInput.value = '';
+            return;
+        }
+        try {
+            const normalizedText = normalizeClipboardText(await file.text());
+            if (!normalizedText) {
+                setImportFeedback(`The selected HSBC text file is empty: ${fileName}.`, 'error');
+                return;
+            }
+            const mergeResult = mergeHsbcPastedText(input.value, normalizedText);
+            input.value = mergeResult.mergedText;
+            clearImportFeedback();
+            syncHsbcPasteDisplaySummaries();
+            syncImportValidationState();
+            requestHsbcPasteValidation({debounce: false});
+            flashHsbcPasteButton(kind);
+        } catch (_error) {
+            setImportFeedback(`Unable to read the HSBC text file: ${fileName}.`, 'error');
+        } finally {
+            fileInput.value = '';
         }
     }
 
@@ -12285,6 +12411,49 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : 0;
     }
 
+    function getInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', currentCash = null) {
+        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+        const isAllBrokers = !normalizedBrokerCode || normalizedBrokerCode === 'all';
+        const cashKeys = isAllBrokers
+            ? ['aggregate_display_cash', 'aggregate_current_display_cash', 'aggregate_running_cash', 'running_cash']
+            : ['broker_display_cash', 'broker_running_cash'];
+        const readLatestCash = (sourceTransactions) => {
+            const source = Array.isArray(sourceTransactions) ? sourceTransactions : [];
+            for (let index = source.length - 1; index >= 0; index -= 1) {
+                const transaction = source[index];
+                for (const key of cashKeys) {
+                    const value = getOptionalInvestmentNumber(transaction?.[key]);
+                    if (value !== null) return value;
+                }
+            }
+            return null;
+        };
+
+        const explicitCurrentCash = getOptionalInvestmentNumber(currentCash);
+        if (explicitCurrentCash !== null) return explicitCurrentCash;
+
+        if (!isAllBrokers) {
+            const currentBrokerCash = getOptionalInvestmentNumber(
+                getInvestmentBrokerCurrentDisplayCash(normalizedBrokerCode),
+            );
+            if (currentBrokerCash !== null) return currentBrokerCash;
+        } else {
+            const realtimeState = getInvestmentHoldingsRealtimeState();
+            const realtimeCash = getOptionalInvestmentNumber(realtimeState?.aggregateCash);
+            if (realtimeCash !== null) return realtimeCash;
+        }
+
+        const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
+            ? investmentProcessedTransactionsCache
+            : [];
+        const scopedProcessedTransactions = isAllBrokers
+            ? getInvestmentAggregateOnlyTransactions(processedTransactions)
+            : processedTransactions.filter((transaction) => (
+                normalizeInvestmentBroker(getTransactionBrokerCode(transaction)) === normalizedBrokerCode
+            ));
+        return readLatestCash(scopedProcessedTransactions) ?? readLatestCash(transactions);
+    }
+
     function renderInvestmentMetricsPanel({
         fundingMetrics = null,
         holdingsSummaryMetrics = null,
@@ -12332,6 +12501,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mergedLatestPrices,
                 resolvedTotalEquity,
                 resolvedBrokerBenefitMetrics,
+                { brokerCode: selectedBrokerCode },
             );
         const resolvedFundingMetrics = isAllBrokersSelected && fundingMetrics
             ? fundingMetrics
@@ -12873,6 +13043,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     [
+        ['cash', hsbcCashAccountFileButton, hsbcCashAccountFileInput],
+        ['portfolio', hsbcPortfolioTextFileButton, hsbcPortfolioTextFileInput],
+        ['order', hsbcOrderStatusFileButton, hsbcOrderStatusFileInput],
+    ].forEach(([kind, button, fileInput]) => {
+        if (!(button instanceof HTMLButtonElement) || !(fileInput instanceof HTMLInputElement)) return;
+        button.addEventListener('click', () => {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', () => {
+            loadHsbcTextFileIntoField(kind);
+        });
+    });
+    [
         ['cash', hsbcCashAccountTextClearButton],
         ['portfolio', hsbcPortfolioTextClearButton],
         ['order', hsbcOrderStatusTextClearButton],
@@ -12958,7 +13141,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         setImportFeedback('Please paste the IBKR Trade Notifications page text before syncing.', 'error');
                         return;
                     }
-                    if (!isLikelyIbkrTradeNotificationsText(tradeNotificationsText)) {
+                    const tradeNotificationsReadiness = getIbkrTradeNotificationsReadiness(
+                        tradeNotificationsText,
+                    );
+                    if (tradeNotificationsReadiness.reason === 'missing_page_date') {
+                        setImportFeedback(
+                            'Please select the Hong Kong page date. Current-day IBKR fills show only a time and cannot be dated from the pasted text alone.',
+                            'error',
+                        );
+                        return;
+                    }
+                    if (!tradeNotificationsReadiness.ready) {
                         setImportFeedback('The pasted text does not look like the IBKR Trade Notifications page.', 'error');
                         return;
                     }
@@ -14601,6 +14794,36 @@ document.addEventListener('DOMContentLoaded', () => {
         syncInvestmentLiveTone(cashNode, aggregateCash, { enableSignedTone: aggregateCash !== null });
         syncInvestmentLiveTone(cashEquivalentsNode, cashEquivalents, { enableSignedTone: cashEquivalents !== null });
         syncInvestmentLiveTone(totalEquityNode, totalEquity, { enableSignedTone: totalEquity !== null });
+        const metricsCashNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_cash"]');
+        const metricsMarketValueNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_market_value"]');
+        const metricsTotalEquityNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_total_equity"]');
+        const metricsCashTrigger = metricsCashNode?.closest('.investment-metric-tooltip-trigger');
+        const metricsMarketValueTrigger = metricsMarketValueNode?.closest('.investment-metric-tooltip-trigger');
+        const metricsTotalEquityTrigger = metricsTotalEquityNode?.closest('.investment-metric-tooltip-trigger');
+        if (getInvestmentBrokerSummarySelectedCode() === 'all') {
+            const liveMarketValue = hasUnavailableOpenMarketValue ? null : totalNetMarketValue;
+            updateInvestmentLiveValueNode(
+                metricsCashNode,
+                aggregateCash === null ? '-' : formatHoldingsMoney(aggregateCash),
+                aggregateCash,
+            );
+            updateInvestmentLiveValueNode(
+                metricsMarketValueNode,
+                liveMarketValue === null ? '-' : formatHoldingsMoney(liveMarketValue),
+                liveMarketValue,
+            );
+            updateInvestmentLiveValueNode(
+                metricsTotalEquityNode,
+                totalEquity === null ? '-' : formatHoldingsMoney(totalEquity),
+                totalEquity,
+            );
+            syncInvestmentLiveTone(metricsCashNode, aggregateCash, { enableSignedTone: aggregateCash !== null });
+            syncInvestmentLiveTone(metricsMarketValueNode, liveMarketValue, { enableSignedTone: liveMarketValue !== null });
+            syncInvestmentLiveTone(metricsTotalEquityNode, totalEquity, { enableSignedTone: totalEquity !== null });
+            syncInvestmentLiveTone(metricsCashTrigger, aggregateCash, { enableSignedTone: aggregateCash !== null });
+            syncInvestmentLiveTone(metricsMarketValueTrigger, liveMarketValue, { enableSignedTone: liveMarketValue !== null });
+            syncInvestmentLiveTone(metricsTotalEquityTrigger, totalEquity, { enableSignedTone: totalEquity !== null });
+        }
         const metricsCumulativeNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_cumulative_pnl"]');
         const metricsUnrealizedNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_unrealized_pnl"]');
         const metricsCumulativeTrigger = metricsCumulativeNode?.closest('.investment-metric-tooltip-trigger');
@@ -17044,11 +17267,28 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        function applyAuthoritativeCurrentBrokerHistoryBoundary(processedTransactions) {
+            const latestByBroker = new Map();
+            (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
+                const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+                if (brokerCode) latestByBroker.set(brokerCode, txn);
+            });
+            latestByBroker.forEach((txn) => {
+                if (txn?.broker_cash_balance_source !== 'authoritative_current_cash_snapshot') return;
+                const displayCash = Number(txn?.broker_display_cash);
+                const marketValue = Number(txn?.broker_market_value);
+                if (!Number.isFinite(displayCash) || !Number.isFinite(marketValue)) return;
+                txn.history_broker_cash = displayCash;
+                txn.history_broker_equity = displayCash + marketValue;
+            });
+        }
+
         const hsbcSettlementReplaySnapshots = buildHsbcSettlementReplaySnapshots(
             processed,
             hsbcCashSettlementBoundaryPlan,
         );
         applyHsbcHistoryPresentationProjection(processed);
+        applyAuthoritativeCurrentBrokerHistoryBoundary(processed);
 
         Object.keys(latestPrices).forEach((ticker) => {
             if (moneyMarketTickers.has(String(ticker).trim().toUpperCase())) {
@@ -17276,6 +17516,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mergedLatestPrices,
             AGGREGATE_TOTAL_EQUITY,
             brokerBenefitMetrics,
+            { brokerCode: 'all', currentCash: AGGREGATE_CASH },
         );
         refreshInvestmentChartPnlState(holdingsSummaryMetrics);
         if (investmentProcessedTransactionsCache !== processed) {
@@ -18984,6 +19225,7 @@ document.addEventListener('DOMContentLoaded', () => {
         latestPrices,
         TOTAL_EQUITY,
         brokerBenefitMetrics = null,
+        { brokerCode = 'all', currentCash = null } = {},
     ) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
@@ -19011,6 +19253,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ? null
             : tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = pnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
+        const openSummaries = tickerSummaries.filter((summary) => summary?.hasOpenPosition === true);
+        const hasUnavailableMarketValue = openSummaries.some(
+            (summary) => !Number.isFinite(Number(summary?.marketValue)),
+        );
+        const marketValue = hasUnavailableMarketValue
+            ? null
+            : openSummaries.reduce((sum, summary) => sum + Number(summary.marketValue), 0);
+        const cash = getInvestmentMetricsCurrentCash(safeTransactions, brokerCode, currentCash);
+        const resolvedTotalEquity = Number.isFinite(Number(cash)) && Number.isFinite(Number(marketValue))
+            ? Number(cash) + Number(marketValue)
+            : getOptionalInvestmentNumber(TOTAL_EQUITY);
         const openTickers = new Set(
             tickerSummaries
                 .filter((summary) => summary.hasOpenPosition)
@@ -19057,6 +19310,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         return {
+            cash,
+            marketValue,
+            totalEquity: resolvedTotalEquity,
             totalRealizedPnl,
             totalUnrealizedPnl,
             cumulativePnl,
