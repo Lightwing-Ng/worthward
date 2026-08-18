@@ -1,7 +1,17 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.115.4
+ * Code version: v2.116.1
+ * - Changed: HSBC copy/paste fields now expose only clipboard paste controls;
+ *   debug-only local TXT carriers are no longer rendered or read.
+ * - Changed: IBKR current holdings calibration now uses an explicit Cash /
+ *   quantity column, labels cash rows as Cash (currency), and removes the
+ *   separate currency column that mixed cash with security quantities.
+ * - Fixed: IBKR calibration rows now union the authoritative position
+ *   snapshot with the latest calculated broker holdings and cash currencies,
+ *   so later buys or newly observed currencies are not omitted.
+ * - Fixed: A refreshed ledger with zero pending transfer candidates now clears
+ *   any older Transfer review banner instead of retaining a stale assertion.
  * - Added: Investment Metrics now exposes Cash, Market value, and Total equity
  *   cards using the same current valuation and realtime update path as Holdings.
  * - Fixed: The latest HSBC history row now treats the authoritative current
@@ -12,8 +22,6 @@
  *   including visible pending-settlement proceeds.
  * - Fixed: IBKR mixed-date web-paste captures now remain blocked until the
  *   Hong Kong page date is selected when current-day rows show time only.
- * - Added: HSBC copy/paste fields can load the corresponding local .txt page
- *   capture directly, reusing the existing normalization and preflight path.
  * - Fixed: Current aggregate cash now retains every authoritative broker
  *   currency balance and converts HSBC combined-account foreign cash into the
  *   workspace base currency before adding pending settlement cash.
@@ -35,7 +43,7 @@
  *   net visible buy/sell projection while leaving unposted clearing-fee
  *   evidence unapplied until a settled cash posting confirms it.
  * - Changed: IBKR web-paste current-position calibration now derives a
- *   broker-scoped dynamic ticker list from the current position snapshot or
+ *   broker-scoped dynamic ticker list from the current position snapshot and
  *   calculated holdings, pre-filling ticker labels while leaving quantities
  *   blank for manual verification.
  * - Fixed: The import close control now sits below the global theme toggle so
@@ -355,7 +363,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.115.4',
+    entry: 'v2.116.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -493,12 +501,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const hsbcPortfolioTextPasteButton = document.getElementById('hsbc_portfolio_text_paste_button');
     const hsbcOrderStatusPasteButton = document.getElementById('hsbc_order_status_paste_button');
     const hsbcCashAccountPasteButton = document.getElementById('hsbc_cash_account_paste_button');
-    const hsbcPortfolioTextFileButton = document.getElementById('hsbc_portfolio_text_file_button');
-    const hsbcOrderStatusFileButton = document.getElementById('hsbc_order_status_file_button');
-    const hsbcCashAccountFileButton = document.getElementById('hsbc_cash_account_file_button');
-    const hsbcPortfolioTextFileInput = document.getElementById('hsbc_portfolio_text_file');
-    const hsbcOrderStatusFileInput = document.getElementById('hsbc_order_status_file');
-    const hsbcCashAccountFileInput = document.getElementById('hsbc_cash_account_file');
     const hsbcPortfolioTextClearButton = document.getElementById('hsbc_portfolio_text_clear_button');
     const hsbcOrderStatusTextClearButton = document.getElementById('hsbc_order_status_text_clear_button');
     const hsbcCashAccountTextClearButton = document.getElementById('hsbc_cash_account_clear_button');
@@ -6684,6 +6686,14 @@ document.addEventListener('DOMContentLoaded', () => {
         )).length;
     }
 
+    function clearStaleTransferReviewFeedback(processedTransactions = investmentProcessedTransactionsCache) {
+        const feedbackText = String(importFeedbackMessage?.textContent || '').trim();
+        if (!feedbackText.includes('Transfer review')) return;
+        if (countInvestmentPendingInternalTransferBindings(processedTransactions) === 0) {
+            clearImportFeedback();
+        }
+    }
+
     function setImportFeedback(message, variant = 'success', { allowHtml = false } = {}) {
         if (!importFeedback) return;
         const resolvedVariant = ['error', 'warning', 'success', 'loading'].includes(variant) ? variant : 'success';
@@ -9002,56 +9012,106 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parsed.integerPart}${fraction ? `.${fraction}` : ''}`;
     }
 
-    function getCurrentIbkrOpenHoldingTickers() {
+    function normalizeCalibrationCurrencyCode(value) {
+        const normalized = String(value ?? '').trim().toUpperCase();
+        return /^[A-Z]{3,6}$/.test(normalized) ? normalized : '';
+    }
+
+    function readIbkrCalibrationHoldings(holdings) {
+        if (!holdings || typeof holdings !== 'object' || Array.isArray(holdings)) return [];
+        const rows = [];
+        const seenTickers = new Set();
+        Object.entries(holdings).forEach(([rawTicker, position]) => {
+            const ticker = getInvestmentCanonicalTicker(rawTicker);
+            const rawQuantity = position && typeof position === 'object'
+                ? position.quantity
+                : position;
+            const quantity = Number(String(rawQuantity ?? '').replace(/,/g, '').trim());
+            if (
+                !ticker
+                || !Number.isFinite(quantity)
+                || Math.abs(quantity) <= 1e-9
+                || seenTickers.has(ticker)
+            ) return;
+            seenTickers.add(ticker);
+            rows.push(ticker);
+        });
+        return rows;
+    }
+
+    function getCurrentIbkrCalibrationRows() {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[selectedBroker];
-        const readHoldingTickers = (holdings) => {
-            if (!holdings || typeof holdings !== 'object' || Array.isArray(holdings)) return [];
-            const seenTickers = new Set();
-            return Object.entries(holdings).map(([rawTicker, position]) => {
-                const ticker = getInvestmentCanonicalTicker(rawTicker);
-                const rawQuantity = position && typeof position === 'object'
-                    ? position.quantity
-                    : position;
-                const quantity = Number(String(rawQuantity ?? '').replace(/,/g, '').trim());
-                return {ticker, quantity};
-            }).filter(({ticker, quantity}) => (
-                Boolean(ticker)
-                && Number.isFinite(quantity)
-                && Math.abs(quantity) > 1e-9
-                && !seenTickers.has(ticker)
-                && seenTickers.add(ticker)
-            )).map(({ticker}) => ticker);
-        };
-
-        const positionSnapshot = brokerSummary?.position_snapshot;
-        if (
-            positionSnapshot
-            && typeof positionSnapshot === 'object'
-            && !Array.isArray(positionSnapshot)
-            && (
-                brokerSummary?.position_snapshot_authoritative === true
-                || Object.keys(positionSnapshot).length > 0
-            )
-        ) {
-            return readHoldingTickers(positionSnapshot);
-        }
-
         const latestProcessed = [...investmentProcessedTransactionsCache].reverse().find((txn) => (
             normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === selectedBroker
         ));
-        return readHoldingTickers(latestProcessed?.broker_holdings);
+        const positionSnapshot = brokerSummary?.position_snapshot;
+        const tickers = [];
+        const seenTickers = new Set();
+        [
+            positionSnapshot,
+            latestProcessed?.broker_holdings,
+            latestProcessed?.calculated_broker_holdings,
+        ].forEach((holdings) => {
+            readIbkrCalibrationHoldings(holdings).forEach((ticker) => {
+                if (seenTickers.has(ticker)) return;
+                seenTickers.add(ticker);
+                tickers.push(ticker);
+            });
+        });
+
+        const currencies = [];
+        const seenCurrencies = new Set();
+        const addCurrency = (rawCurrency) => {
+            const currency = normalizeCalibrationCurrencyCode(rawCurrency);
+            if (!currency || seenCurrencies.has(currency)) return;
+            seenCurrencies.add(currency);
+            currencies.push(currency);
+        };
+        addCurrency('USD');
+        [
+            getInvestmentBrokerEndingCashBalances(selectedBroker),
+            latestProcessed?.broker_cash_by_currency,
+            latestProcessed?.calculated_broker_cash_by_currency,
+        ].forEach((balances) => {
+            Object.entries(cloneCashLedgerBalances(balances)).forEach(([currency]) => addCurrency(currency));
+        });
+
+        return [
+            ...currencies.map((currency) => ({
+                asset: `Cash (${currency})`,
+                currency,
+                isCash: true,
+                key: `cash:${currency}`,
+            })),
+            ...tickers.map((ticker) => ({
+                asset: ticker,
+                currency: '',
+                isCash: false,
+                key: `security:${ticker}`,
+            })),
+        ];
     }
 
     function syncIbkrPositionCalibrationInputs() {
         if (!(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const cashField = ibkrPositionCalibrationTableBody.querySelector('[data-ibkr-calibration-cash]');
+        const cashBalances = {};
+        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row][data-asset-kind="cash"]').forEach((row) => {
+            const currency = normalizeCalibrationCurrencyCode(row.dataset.currency);
+            const cashField = row.querySelector('[data-ibkr-calibration-cash]');
+            const cashValue = normalizeCalibrationSubmissionValue(cashField?.value || '');
+            if (currency && cashValue) cashBalances[currency] = cashValue;
+        });
         if (ibkrTradeNotificationsCashInput instanceof HTMLInputElement) {
-            ibkrTradeNotificationsCashInput.value = normalizeCalibrationSubmissionValue(cashField?.value || '');
+            ibkrTradeNotificationsCashInput.value = cashBalances.USD || '';
+        }
+        const cashBalancesInput = document.getElementById('ibkr_trade_notifications_cash_balances');
+        if (cashBalancesInput instanceof HTMLInputElement) {
+            cashBalancesInput.value = JSON.stringify(cashBalances);
         }
         if (ibkrTradeNotificationsPositionsInput instanceof HTMLTextAreaElement) {
             const positionLines = Array.from(
-                ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]:not([data-asset="Cash"])')
+                ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row][data-asset-kind="security"]')
             ).map((row) => {
                 const ticker = normalizeInvestmentTicker(row.dataset.asset);
                 const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
@@ -9065,41 +9125,32 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderIbkrPositionCalibrationTable() {
         if (!(ibkrPositionCalibrationTable instanceof HTMLElement)
             || !(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const existingQuantitiesByTicker = new Map();
-        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]:not([data-asset="Cash"])').forEach((row) => {
-            const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
-            const ticker = normalizeInvestmentTicker(row.dataset.asset);
-            if (ticker && quantityField instanceof HTMLInputElement) {
-                existingQuantitiesByTicker.set(ticker, quantityField.value);
-            }
+        const existingValuesByKey = new Map();
+        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]').forEach((row) => {
+            const quantityField = row.querySelector('[data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]');
+            const key = row.dataset.assetKind === 'cash'
+                ? `cash:${normalizeCalibrationCurrencyCode(row.dataset.currency)}`
+                : `security:${normalizeInvestmentTicker(row.dataset.asset)}`;
+            if (key && quantityField instanceof HTMLInputElement) existingValuesByKey.set(key, quantityField.value);
         });
-        const cashField = ibkrPositionCalibrationTableBody.querySelector('[data-ibkr-calibration-cash]');
-        const cashValue = cashField instanceof HTMLInputElement
-            ? cashField.value
-            : '';
-        const holdings = getCurrentIbkrOpenHoldingTickers();
-        const rows = [{
-            asset: 'Cash',
-            quantity: cashValue,
-            currency: 'USD',
-            isCash: true,
-        }, ...holdings.map((ticker) => ({
-            asset: ticker,
-            quantity: existingQuantitiesByTicker.get(ticker) || '',
-            currency: 'USD',
-            isCash: false,
-        }))];
+        const rows = getCurrentIbkrCalibrationRows().map((row) => ({
+            ...row,
+            quantity: existingValuesByKey.get(row.key) || '',
+        }));
 
         ibkrPositionCalibrationTableBody.innerHTML = rows.map((row, index) => {
             const quantityValue = row.isCash
                 ? formatCalibrationCashValue(row.quantity)
                 : formatCalibrationQuantityValue(row.quantity);
             return `
-                <tr data-ibkr-calibration-row data-asset="${escapeHtml(row.isCash ? 'Cash' : row.asset)}">
+                <tr data-ibkr-calibration-row
+                    data-asset-kind="${row.isCash ? 'cash' : 'security'}"
+                    data-asset="${escapeHtml(row.isCash ? row.asset : row.asset)}"
+                    ${row.isCash ? `data-currency="${escapeHtml(row.currency)}"` : ''}>
                     <td class="investment-import-calibration-cell investment-import-calibration-cell-number">${index + 1}</td>
                     <td class="investment-import-calibration-cell investment-import-calibration-cell-asset">
                         ${row.isCash
-                            ? '<span>Cash</span>'
+                            ? `<span class="investment-import-calibration-asset">${escapeHtml(row.asset)}</span>`
                             : `<span class="investment-import-calibration-asset"
                                       data-ibkr-calibration-asset
                                       aria-label="Asset row ${index}">${escapeHtml(formatInvestmentTickerForDisplay(row.asset))}</span>`}
@@ -9110,11 +9161,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                inputmode="decimal"
                                autocomplete="off"
                                ${row.isCash ? 'data-ibkr-calibration-cash' : 'data-ibkr-calibration-quantity'}
-                               aria-label="${escapeHtml(row.isCash ? 'Cash' : `Asset row ${index}`)} quantity"
+                               aria-label="${escapeHtml(row.isCash ? `${row.asset} amount` : `${row.asset} quantity`)}"
                                value="${escapeHtml(quantityValue)}"
                                placeholder="Optional">
                     </td>
-                    <td class="investment-import-calibration-cell investment-import-calibration-cell-currency">${escapeHtml(row.currency)}</td>
                 </tr>
             `;
         }).join('');
@@ -9352,13 +9402,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (kind === 'cash') return hsbcCashAccountTextInput;
         if (kind === 'portfolio') return hsbcPortfolioTextInput;
         if (kind === 'order') return hsbcOrderStatusTextInput;
-        return null;
-    }
-
-    function getHsbcTextFileInput(kind) {
-        if (kind === 'cash') return hsbcCashAccountFileInput;
-        if (kind === 'portfolio') return hsbcPortfolioTextFileInput;
-        if (kind === 'order') return hsbcOrderStatusFileInput;
         return null;
     }
 
@@ -9698,40 +9741,6 @@ document.addEventListener('DOMContentLoaded', () => {
             flashHsbcPasteButton(kind);
         } catch (_error) {
             setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
-        }
-    }
-
-    async function loadHsbcTextFileIntoField(kind) {
-        const input = getHsbcPasteInput(kind);
-        const fileInput = getHsbcTextFileInput(kind);
-        const file = fileInput?.files?.[0];
-        if (!(input instanceof HTMLTextAreaElement) || !(file instanceof File)) {
-            return;
-        }
-        const fileName = String(file.name || '').trim() || 'selected file';
-        const fileType = String(file.type || '').toLowerCase();
-        if (!fileName.toLowerCase().endsWith('.txt') && fileType !== 'text/plain') {
-            setImportFeedback('Please choose an HSBC page capture saved as a .txt file.', 'error');
-            fileInput.value = '';
-            return;
-        }
-        try {
-            const normalizedText = normalizeClipboardText(await file.text());
-            if (!normalizedText) {
-                setImportFeedback(`The selected HSBC text file is empty: ${fileName}.`, 'error');
-                return;
-            }
-            const mergeResult = mergeHsbcPastedText(input.value, normalizedText);
-            input.value = mergeResult.mergedText;
-            clearImportFeedback();
-            syncHsbcPasteDisplaySummaries();
-            syncImportValidationState();
-            requestHsbcPasteValidation({debounce: false});
-            flashHsbcPasteButton(kind);
-        } catch (_error) {
-            setImportFeedback(`Unable to read the HSBC text file: ${fileName}.`, 'error');
-        } finally {
-            fileInput.value = '';
         }
     }
 
@@ -12932,6 +12941,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             investmentUrlStateApplying = previousUrlStateApplying;
         }
+        clearStaleTransferReviewFeedback();
         applyInvestmentUrlStateFromLocation({render: true});
         scheduleInvestmentSegmentedPillUpdate();
         return { data, valuationStatus };
@@ -13040,19 +13050,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(button instanceof HTMLButtonElement)) return;
         button.addEventListener('click', () => {
             pasteHsbcClipboardIntoField(kind);
-        });
-    });
-    [
-        ['cash', hsbcCashAccountFileButton, hsbcCashAccountFileInput],
-        ['portfolio', hsbcPortfolioTextFileButton, hsbcPortfolioTextFileInput],
-        ['order', hsbcOrderStatusFileButton, hsbcOrderStatusFileInput],
-    ].forEach(([kind, button, fileInput]) => {
-        if (!(button instanceof HTMLButtonElement) || !(fileInput instanceof HTMLInputElement)) return;
-        button.addEventListener('click', () => {
-            fileInput.click();
-        });
-        fileInput.addEventListener('change', () => {
-            loadHsbcTextFileIntoField(kind);
         });
     });
     [
@@ -16456,6 +16453,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 value: processedIndex,
                 writable: false,
             });
+            Object.defineProperty(txn, 'calculated_broker_holdings', {
+                configurable: true,
+                enumerable: false,
+                value: {...(txn.broker_holdings || {})},
+                writable: true,
+            });
+            Object.defineProperty(txn, 'calculated_broker_cash_by_currency', {
+                configurable: true,
+                enumerable: false,
+                value: {...(txn.broker_cash_by_currency || {})},
+                writable: true,
+            });
         });
 
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshotForTransactions(
@@ -17318,6 +17327,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
         investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
+        if (getSelectedIbkrImportMode() === 'web_paste') {
+            renderIbkrPositionCalibrationTable();
+        }
         investmentReplaySnapshotsCache = Array.isArray(hsbcSettlementReplaySnapshots)
             ? hsbcSettlementReplaySnapshots
             : investmentProcessedTransactionsCache;
@@ -17522,6 +17534,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentProcessedTransactionsCache !== processed) {
             investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
             refreshInvestmentAvailableBrokerCodes();
+            if (getSelectedIbkrImportMode() === 'web_paste') {
+                renderIbkrPositionCalibrationTable();
+            }
         }
         if (activeInvestmentView === 'metrics') {
             ensureInvestmentMetricsBrokerScope();

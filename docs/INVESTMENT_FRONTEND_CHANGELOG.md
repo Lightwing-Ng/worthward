@@ -1,6 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.14`
+Documentation version: `v1.38.16`
+
+- Changed: HSBC cash-account, Portfolio, and Order Status copy/paste fields now
+  expose only clipboard paste controls. The debug-only local TXT upload
+  carriers and their file-reading path have been removed.
+
+- Changed: IBKR web-paste current-position calibration now removes the
+  misleading currency column, labels cash as `Cash (USD)` or another native
+  currency, and unions the authoritative snapshot with pre-snapshot calculated
+  holdings and cash currencies. A newly calculated NVDA holding or CNH balance
+  therefore receives its own verification row.
 
 - Added: Investment Metrics now shows Cash, Market value, and Total equity cards. They reuse the current Holdings valuation and realtime quote update path, including broker-scoped refreshes.
 

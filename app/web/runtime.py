@@ -6381,6 +6381,9 @@ def build_web_runtime() -> WebRuntime:
                     trade_notifications_cash = str(
                         request.form.get("ibkr_trade_notifications_cash", "")
                     ).strip()
+                    trade_notifications_cash_balances = str(
+                        request.form.get("ibkr_trade_notifications_cash_balances", "")
+                    ).strip()
                     trade_notifications_positions = str(
                         request.form.get("ibkr_trade_notifications_positions", "")
                     ).strip()
@@ -6395,12 +6398,26 @@ def build_web_runtime() -> WebRuntime:
                             "success": False,
                             "error": "Please paste the IBKR Trade Notifications page text.",
                         }), 400
+                    ending_cash_by_currency = None
+                    if trade_notifications_cash_balances:
+                        try:
+                            parsed_cash_balances = json.loads(trade_notifications_cash_balances)
+                        except json.JSONDecodeError as exc:
+                            raise ValueError(
+                                "The optional IBKR cash balances must be valid JSON."
+                            ) from exc
+                        if not isinstance(parsed_cash_balances, dict):
+                            raise ValueError(
+                                "The optional IBKR cash balances must be a currency-to-amount object."
+                            )
+                        ending_cash_by_currency = parsed_cash_balances
                     imported_payload = parse_investment_payload(
                         "ibkr",
                         "web_pasted_text",
                         trade_notifications_text=trade_notifications_text,
                         trade_date=trade_notifications_date or None,
                         ending_cash=trade_notifications_cash or None,
+                        ending_cash_by_currency=ending_cash_by_currency,
                         position_snapshot_text=trade_notifications_positions or None,
                         ending_cash_as_of_datetime=(
                             trade_notifications_cash_as_of_datetime or None

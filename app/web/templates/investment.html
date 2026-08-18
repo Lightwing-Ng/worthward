@@ -360,7 +360,7 @@
                                         <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
                                             <span class="investment-import-help-title">User-verified position boundary</span>
-                                            <span class="investment-import-help-step">Cash is shown in USD. Current open IBKR holdings are listed automatically for this capture.</span>
+                                            <span class="investment-import-help-step">Cash rows use their native currency, starting with Cash (USD). Current open IBKR holdings are listed automatically for this capture.</span>
                                             <span class="investment-import-help-step">Ticker symbols are prefilled from the current calculation; quantities remain blank until you verify them.</span>
                                             <span class="investment-import-help-step">Leave cash or any quantity blank when it is not applicable.</span>
                                             <span class="investment-import-help-step">Only completed rows are sent to the existing calibration boundary; this does not create synthetic transactions.</span>
@@ -377,14 +377,12 @@
                                                 <col class="investment-import-calibration-column-number">
                                                 <col class="investment-import-calibration-column-asset">
                                                 <col class="investment-import-calibration-column-quantity">
-                                                <col class="investment-import-calibration-column-currency">
                                             </colgroup>
                                             <thead>
                                                 <tr>
                                                     <th scope="col">No.</th>
                                                     <th scope="col">Asset</th>
-                                                    <th scope="col">Quantity</th>
-                                                    <th scope="col">Currency</th>
+                                                    <th scope="col">Cash / quantity</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="investment_import_calibration_table_body"></tbody>
@@ -392,6 +390,9 @@
                                     </div>
                                     <input id="ibkr_trade_notifications_cash"
                                            name="ibkr_trade_notifications_cash"
+                                           type="hidden">
+                                    <input id="ibkr_trade_notifications_cash_balances"
+                                           name="ibkr_trade_notifications_cash_balances"
                                            type="hidden">
                                     <textarea id="ibkr_trade_notifications_positions"
                                               name="ibkr_trade_notifications_positions"
@@ -706,8 +707,8 @@
                                                 <span class="investment-import-help-title">Copy HSBC cash-account pages</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open the USD Savings, HKD Savings or Current, and offshore RMB cash accounts as needed.</span>
-                                                <span class="investment-import-help-step">3. Copy each full page, or save it as a plain-text .txt file, including account number, available balance, transactions, and dates.</span>
-                                                <span class="investment-import-help-step">4. Paste each page here or use the document button to load its .txt file. HSBC may label offshore RMB CNY; it is stored as CNH. HKD/CNH cash-only pages can sync on their own, while USD Savings also requires Portfolio and Order Status below.</span>
+                                                <span class="investment-import-help-step">3. Copy each full page, including account number, available balance, transactions, and dates.</span>
+                                                <span class="investment-import-help-step">4. Paste each page here. HSBC may label offshore RMB CNY; it is stored as CNH. HKD/CNH cash-only pages can sync on their own, while USD Savings also requires Portfolio and Order Status below.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -733,18 +734,7 @@
                                                     title="Paste from clipboard">
                                                 <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
                                             </button>
-                                            <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button investment-import-file-button"
-                                                    id="hsbc_cash_account_file_button"
-                                                    aria-label="Load HSBC cash-account text file"
-                                                    title="Load .txt file">
-                                                <span class="icon investment-import-file-button-icon" aria-hidden="true"></span>
-                                            </button>
                                         </div>
-                                        <input id="hsbc_cash_account_file"
-                                               type="file"
-                                               accept=".txt,text/plain"
-                                               hidden>
                                     <textarea id="hsbc_cash_account_text"
                                               name="hsbc_cash_account_text"
                                               hidden
@@ -762,8 +752,8 @@
                                                 <span class="investment-import-help-title">Copy the HSBC Portfolio page</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Portfolio.</span>
-                                                <span class="investment-import-help-step">3. Copy the full page text, or save it as a plain-text .txt file, including holdings, quantities, market value, and currency.</span>
-                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Paste it or load its .txt file in the same short session as the HSBC cash-account and Order Status pages; it is the current HSBC holding snapshot.</span>
+                                                <span class="investment-import-help-step">3. Copy the full page text, including holdings, quantities, market value, and currency.</span>
+                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Paste it in the same short session as the HSBC cash-account and Order Status pages; it is the current HSBC holding snapshot.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -789,18 +779,7 @@
                                                     title="Paste from clipboard">
                                                 <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
                                             </button>
-                                            <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button investment-import-file-button"
-                                                    id="hsbc_portfolio_text_file_button"
-                                                    aria-label="Load HSBC Portfolio text file"
-                                                    title="Load .txt file">
-                                                <span class="icon investment-import-file-button-icon" aria-hidden="true"></span>
-                                            </button>
                                         </div>
-                                        <input id="hsbc_portfolio_text_file"
-                                               type="file"
-                                               accept=".txt,text/plain"
-                                               hidden>
                                     <textarea id="hsbc_portfolio_text"
                                               name="hsbc_portfolio_text"
                                               hidden
@@ -818,8 +797,8 @@
                                                 <span class="investment-import-help-title">Copy the HSBC Order Status page</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Order Status.</span>
-                                                <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import, or save it as a plain-text .txt file.</span>
-                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Use the same end date as the latest cash-account posting, then paste it or load its .txt file in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
+                                                <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import.</span>
+                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Use the same end date as the latest cash-account posting, then paste it in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -845,18 +824,7 @@
                                                     title="Paste from clipboard">
                                                 <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
                                             </button>
-                                            <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button investment-import-file-button"
-                                                    id="hsbc_order_status_file_button"
-                                                    aria-label="Load HSBC Order Status text file"
-                                                    title="Load .txt file">
-                                                <span class="icon investment-import-file-button-icon" aria-hidden="true"></span>
-                                            </button>
                                         </div>
-                                        <input id="hsbc_order_status_file"
-                                               type="file"
-                                               accept=".txt,text/plain"
-                                               hidden>
                                     <textarea id="hsbc_order_status_text"
                                               name="hsbc_order_status_text"
                                               hidden
@@ -974,5 +942,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.115.4') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.116.1') }}"></script>
 {% endblock %}

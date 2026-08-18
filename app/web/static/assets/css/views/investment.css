@@ -1,4 +1,4 @@
-/* Code version: v1.75.42 */
+/* Code version: v1.75.43 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4488,7 +4488,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-paste-row {
     display: grid;
-    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) repeat(2, var(--settings-round-icon-button-size));
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--settings-round-icon-button-size);
     column-gap: var(--investment-import-step-gap);
     align-items: center;
     margin-top: 0;
@@ -4547,10 +4547,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     transform: none;
 }
 
-.investment-import-file-button {
-    grid-column: 4;
-}
-
 .investment-import-paste-button:hover,
 .investment-import-paste-button:focus-visible,
 .investment-import-paste-button.is-pasted {
@@ -4568,12 +4564,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     background-color: currentColor;
     mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
-}
-
-.investment-import-file-button-icon {
-    background-color: currentColor;
-    mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
 }
 
 .investment-import-paste-button.is-pasted {
@@ -4607,15 +4597,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-calibration-column-asset {
-    width: 38%;
+    width: 48%;
 }
 
 .investment-import-calibration-column-quantity {
-    width: 34%;
-}
-
-.investment-import-calibration-column-currency {
-    width: 16%;
+    width: 40%;
 }
 
 .investment-import-calibration-table th,
@@ -4633,8 +4619,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     vertical-align: middle;
 }
 
-.settings-table.investment-import-calibration-table .investment-import-calibration-cell-number,
-.settings-table.investment-import-calibration-table .investment-import-calibration-cell-currency {
+.settings-table.investment-import-calibration-table .investment-import-calibration-cell-number {
     text-align: center;
 }
 
