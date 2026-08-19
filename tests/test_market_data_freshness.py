@@ -737,7 +737,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         def fake_download(**kwargs) -> pd.DataFrame:
             del kwargs
             logging.getLogger("yfinance").error(
-                "curl failed via https://user:contact@example.invalid/?crumb=secret-value"
+                "curl failed via https://user:contact@example.com/?crumb=secret-value"
             )
             return pd.DataFrame()
 
