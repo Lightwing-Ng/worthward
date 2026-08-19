@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.7`
+Documentation version: `v1.39.8`
 
 ## Holdings P&L display contract
 
@@ -194,6 +194,11 @@ projection contract:
 - Because exact execution timestamps are unavailable, this convention is a
   deterministic display approximation. It must not be presented as a precise
   fill-time or settlement-time valuation.
+- A DKIM-authenticated HSBC execution-result email may provide a second-level
+  notification-time proxy for a date-only order. The reconciliation must match
+  the order identity, direction, ticker, and total quantity; settled-order
+  price normalization may be audited separately and must not be mistaken for
+  the email's notification time.
 
 ## Investment equity replay contract
 
