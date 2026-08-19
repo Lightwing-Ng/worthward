@@ -747,7 +747,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         message = str(raised.exception)
         self.assertIn("curl failed", message)
-        self.assertIn("https://redacted@example.invalid/", message)
+        self.assertIn("https://REDACTED@example.com/", message)
         self.assertIn("crumb=REDACTED", message)
         self.assertNotIn("user:password", message)
         self.assertNotIn("secret-value", message)
