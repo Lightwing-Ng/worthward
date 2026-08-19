@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.8`
+Documentation version: `v1.39.9`
 
 ## Holdings P&L display contract
 
@@ -199,6 +199,10 @@ projection contract:
   the order identity, direction, ticker, and total quantity; settled-order
   price normalization may be audited separately and must not be mistaken for
   the email's notification time.
+- When a prior import stored that email-derived proxy in Asia/Shanghai wall
+  time, a later verified Gmail reconciliation may refresh all matching HSBC
+  orders into the canonical America/New_York wall time without changing
+  prices, settlement evidence, or booking dates.
 
 ## Investment equity replay contract
 
