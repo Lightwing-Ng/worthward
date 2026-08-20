@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.126.0
+ * Code version: v2.127.0
+ * - Changed: FX-converted cash remains unmarked after settlement. The leading
+ *   * is reserved for HSBC cash with unresolved settlement evidence.
  * - Fixed: Current HSBC Cash now uses the posted ledger boundary, converts
  *   retained foreign cash once, applies pending settlement once, and keeps
  *   its provisional marker across initial and realtime rendering.
@@ -261,7 +263,7 @@
  * - Fixed: Manual in-kind transfer selections require the same source and receipt date as server-side reconciliation.
  * - Fixed: Manually bound in-kind transfers replay the source broker's transfer-out before the destination broker's transfer-in, even when same-day source row numbers sort the receipt first.
  * - Added: Schwab in-kind receipts require server-validated source-account attribution before All brokers aggregation; overlays never fabricate a source leg or tax basis.
- * - Fixed: Holdings values with a leading non-USD marker now split their integer and decimal parts consistently.
+ * - Fixed: Holdings values with a leading HSBC settlement marker now split their integer and decimal parts consistently.
  * - Changed: Transaction History Amount, Commission, Market value, Cash, and Equity values reuse the split-number markup.
  * - Changed: Stock details Amount, Commission, Market value, and Realized P&L values reuse the Transaction History numeric typography.
  * - Changed: Stock details Realized P&L values reuse the standard positive, negative, and neutral tone tokens.
@@ -315,7 +317,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.105.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.106.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -390,7 +392,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.126.0',
+    entry: 'v2.127.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -720,16 +722,16 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'coupon-rebates-cash-rewards',
             label: 'Coupon rebates / Cash rewards',
-            summary: 'Imported coupon rebates and cash rewards converted to the workspace base currency using each ledger date’s FX rate. A leading * identifies one or more non-USD source amounts. The converted contribution is included in P&L once.',
+            summary: 'Imported coupon rebates and cash rewards converted to the workspace base currency using each ledger date’s FX rate. FX conversion does not add a provisional marker. The converted contribution is included in P&L once.',
             valueKey: 'couponAndCashRewardIncome',
             rowsKey: 'couponAndCashRewardRows',
             detailsKey: 'couponAndCashRewardDetails',
             renderMode: 'breakdown',
-            formatValue: (metrics) => `${metrics?.hasNonUsdCouponAndCashRewardSource ? '*' : ''}${formatAmountWithCurrency(
+            formatValue: (metrics) => formatAmountWithCurrency(
                 metrics?.couponAndCashRewardIncome,
                 getInvestmentBaseCurrency(),
                 { showUsdSymbol: false },
-            )}`,
+            ),
             valueClass: (metrics) => getSignedMetricClass(metrics?.couponAndCashRewardIncome),
         },
         {
@@ -13813,7 +13815,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money investment-holdings-value-positive">
-                        <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive">${renderWorkspaceMetricValueContent(`${brokerBenefitMetrics?.hasNonUsdRewardSource ? '*' : ''}${formatHoldingsMoney(brokerRewardRealizedIncome)}`)}</span>
+                        <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive">${renderWorkspaceMetricValueContent(formatHoldingsMoney(brokerRewardRealizedIncome))}</span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>

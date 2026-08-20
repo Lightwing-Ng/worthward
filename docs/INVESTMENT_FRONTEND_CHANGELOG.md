@@ -1,14 +1,15 @@
 # Investment frontend changelog
 
-Documentation version: `v1.48.0`
+Documentation version: `v1.49.0`
 
 - Fixed: HSBC current Cash now starts from the posted USD Savings ledger
   balance, applies visible pending settlements exactly once, and converts each
   retained foreign-currency balance once at the agreed workspace FX rate. The
   bank's Available balance remains separate audit evidence.
-- Changed: HSBC Cash displays a leading `*` when pending settlement or a
-  foreign-currency conversion makes the current value provisional. Initial and
-  realtime Holdings and Metrics rendering share the same marker contract.
+- Changed: HSBC Cash displays a leading `*` only while settlement evidence is
+  unresolved, such as a fee scheduled to post on the following day. FX
+  conversion alone is deterministic and does not add a marker; initial and
+  realtime Holdings and Metrics rendering share the same contract.
 - Fixed: The user-verified IBKR current Cash boundary is `$950.49`. The latest
   exact-time Transaction history row, Holdings, and Metrics now agree on that
   value while rows before the snapshot boundary keep their historical replay.
@@ -522,8 +523,8 @@ architectural boundary summary so code navigation begins at the imports.
   receiving deposit. The same deterministic rule applies when bindings are restored
   from storage or created manually.
 
-- Fixed: Holdings values with a leading non-USD marker now split integer and
-  decimal digits using the same typography as ordinary values. Transaction
+- Fixed: Holdings values with a leading HSBC settlement marker now split integer
+  and decimal digits using the same typography as ordinary values. Transaction
   History's Amount, Commission, Market value, Cash, and Equity columns reuse
   that split-number presentation.
 
@@ -628,8 +629,8 @@ architectural boundary summary so code navigation begins at the imports.
 
 - Changed: Metrics no longer renders the duplicate Total gain card. Coupon rebates and
   cash rewards now share one `Coupon rebates / Cash rewards` card, aggregated in the
-  workspace base currency. Its disclosure lists each category and original currency; a
-  leading `*` identifies a card containing one or more non-USD source amounts.
+  workspace base currency. Its disclosure lists each category and original currency;
+  FX conversion does not add the HSBC settlement marker.
 
 - Fixed: Expandable investment metrics now reserve their disclosure control as an overlay,
   so the summary amount and every detail row retain the same full-width, right-aligned

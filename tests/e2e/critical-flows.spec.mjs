@@ -1,4 +1,4 @@
-/* Code version: v1.158.0 */
+/* Code version: v1.160.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -3424,7 +3424,7 @@ test('keeps converted broker rewards as a compact final Holdings row and include
         'background-color',
         'rgb(22, 163, 74)',
     );
-    await expect(rewardRow.locator('td').nth(6)).toContainText('*15.00');
+    await expect(rewardRow.locator('td').nth(6)).toHaveText('15.00');
     await expect(rewardRow.locator('td').nth(6)).toHaveClass(/investment-holdings-value-positive/);
     await expect(rewardRow.locator('td').nth(7)).toHaveText('-');
 
@@ -3499,7 +3499,7 @@ test('keeps Investment Metrics disclosures current, readable, and viewport-safe'
         has: page.getByText('Coupon rebates / Cash rewards', {exact: true}),
     });
     await expect(rewardsCard).toHaveCount(1);
-    await expect(rewardsCard.locator('.trade-metric-value')).toHaveText('*35.00');
+    await expect(rewardsCard.locator('.trade-metric-value')).toHaveText('35.00');
     await expect(metricsPanel.getByText('Coupon rebates HKD', {exact: true})).toHaveCount(0);
     await expect(metricsPanel.getByText('Coupon rebates USD', {exact: true})).toHaveCount(0);
     await expect(metricsPanel.getByText('Cash rewards HKD', {exact: true})).toHaveCount(0);
@@ -4363,7 +4363,7 @@ test('keeps China Merchants Bank KOL income in CNY while valuing it in USD', asy
         '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll tbody [data-investment-broker-rewards-row]',
     );
     await expect(rewardRow).toBeVisible();
-    await expect(rewardRow.locator('td').nth(6)).toContainText('*3,073.13');
+    await expect(rewardRow.locator('td').nth(6)).toContainText('3,073.13');
     await expect(rewardRow).not.toContainText('21,511.90');
 });
 
@@ -5544,9 +5544,9 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.126.0',
+        entry: 'v2.127.0',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.105.0',
+        dataUtils: 'v1.106.0',
         importFeedback: 'v1.8.5',
         layout: 'v1.0.1',
         pagination: 'v1.4.0',
@@ -6836,7 +6836,7 @@ test('keeps HSBC account-type cash boundaries out of a 6457-shaped cash spike', 
     expect(cashValue).toBeLessThan(22_000);
 });
 
-test('uses HSBC ledger cash once and preserves the FX estimate marker', async ({page}) => {
+test('keeps the HSBC pending-settlement marker separate from FX conversion', async ({page}) => {
     await page.addInitScript(() => {
         const RealDate = Date;
         const fixedTimestamp = new RealDate('2026-08-20T12:00:00').valueOf();
@@ -7011,18 +7011,18 @@ test('sums HSBC, IBKR, and Schwab current cash before adding holdings equity', a
             hsbc: {
                 broker: 'hsbc',
                 cash_snapshot_authoritative: true,
-                ending_cash: '23412.54',
-                ending_cash_base_currency: '23412.54',
+                ending_cash: '23387.94',
+                ending_cash_base_currency: '23387.94',
                 ending_cash_as_of: '2026-08-19',
                 ending_cash_by_currency: {
-                    USD: '23412.54',
+                    USD: '23387.94',
                     HKD: '89.24',
                 },
                 hsbc_bank_available_cash: '23388.54',
-                cash_ledger_balance: '23412.54',
+                cash_ledger_balance: '23387.94',
                 hsbc_broker_cash_estimate: '23387.940',
-                hsbc_pending_settlement_cash: '-24.600',
-                hsbc_pending_settlement_order_count: 1,
+                hsbc_pending_settlement_cash: '0.000',
+                hsbc_pending_settlement_order_count: 0,
             },
             ibkr: {
                 broker: 'ibkr',
@@ -7053,7 +7053,7 @@ test('sums HSBC, IBKR, and Schwab current cash before adding holdings equity', a
     const totalEquity = page.locator(
         '#investment_holdings_panel [data-investment-live-field="summary_total_equity"]',
     );
-    await expect(cash).toHaveAttribute('data-investment-live-display', '*24,350.22');
+    await expect(cash).toHaveAttribute('data-investment-live-display', '24,350.22');
     await expect(totalEquity).toHaveAttribute('data-investment-live-display', '25,004.12');
 });
 

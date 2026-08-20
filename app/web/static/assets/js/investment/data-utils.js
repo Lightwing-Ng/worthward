@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.105.0
+ * Code version: v1.106.0
+ * - Changed: Foreign-currency FX conversion no longer makes a current HSBC
+ *   cash display provisional. The leading * now identifies only unresolved
+ *   HSBC settlement cash, such as a fee that posts on the following day.
  * - Added: One broker-current-cash resolver now converts every native-currency
  *   balance, applies pending settlement once, and reports provisional display
  *   state for both aggregate and broker-scoped surfaces.
@@ -835,22 +838,18 @@ export function createInvestmentDataUtils({
             normalizedBroker,
         );
         const pendingOrderCount = Number(summary.hsbc_pending_settlement_order_count) || 0;
-        const hasForeignCurrencyBalance = Object.entries(runningBalances).some(
-            ([currency, value]) => (
-                String(currency || '').trim().toUpperCase() !== baseCurrency
-                && Math.abs(Number(value) || 0) > 1e-9
-            ),
-        );
         return {
             brokerCode: normalizedBroker,
             runningBalances,
             runningCash,
             pendingSettlementCash,
             displayCash: runningCash + pendingSettlementCash,
+            // FX conversion is deterministic display arithmetic, not an
+            // unsettled-cash warning. Mark only an HSBC snapshot that still
+            // has pending settlement evidence.
             isApproximate: normalizedBroker === 'hsbc' && (
                 pendingOrderCount > 0
                 || Math.abs(pendingSettlementCash) > 1e-9
-                || hasForeignCurrencyBalance
             ),
         };
     }
@@ -5525,4 +5524,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.105.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.106.0';

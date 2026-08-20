@@ -97,7 +97,7 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.105.0';
+} from './data-utils.js?v=investment-data-utils-v1.106.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 

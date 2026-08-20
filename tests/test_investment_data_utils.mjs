@@ -1,4 +1,4 @@
-/* Code version: v1.42.0 */
+/* Code version: v1.43.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -272,6 +272,49 @@ test('current broker cash converts foreign balances and applies pending once', (
         );
         assert.equal(getInvestmentBrokerCurrentDisplayCash('schwab'), 0.41);
         assert.equal(getInvestmentBrokerCurrentDisplayCash('longbridge_hk'), null);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
+
+test('settled HSBC FX conversion does not mark current cash provisional', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        ANTIGRAVITY_INVESTMENT_DATA: {
+            broker_summaries: {
+                hsbc: {
+                    ending_cash_base_currency: '23387.94',
+                    ending_cash_by_currency: {
+                        HKD: '89.24',
+                        USD: '23387.94',
+                    },
+                    hsbc_pending_settlement_cash: '0.000',
+                    hsbc_pending_settlement_order_count: 0,
+                    cash_snapshot_authoritative: true,
+                },
+            },
+            fx_rate_history_by_currency: {
+                HKD: {
+                    dates: ['2026-08-19'],
+                    values: {'2026-08-19': 7.842899799346924},
+                },
+            },
+        },
+    };
+    try {
+        const fxTimeline = buildInvestmentFxRateTimeline([], 'USD');
+        const snapshot = getInvestmentBrokerCurrentCashSnapshot(
+            'hsbc',
+            '2026-08-20',
+            fxTimeline,
+        );
+        assert.ok(snapshot);
+        assert.ok(Math.abs(
+            snapshot.displayCash - (23387.94 + (89.24 / 7.842899799346924)),
+        ) < 1e-9);
+        assert.equal(snapshot.pendingSettlementCash, 0);
+        assert.equal(snapshot.isApproximate, false);
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;
