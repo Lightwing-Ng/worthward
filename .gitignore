@@ -57,6 +57,7 @@ market_store/logos/*
 !market_store/logos/brokers/IBKR.png
 !market_store/logos/brokers/Longbridge.png
 !market_store/logos/dollarsign.ring.svg
+!market_store/logos/money-market-fund.ring.svg
 debug-frontend-fetch-aborts.md
 Longbridge_OpenAPI_Complete_Asset_Inspection_Manual_for_Agents.md
 settings_store/

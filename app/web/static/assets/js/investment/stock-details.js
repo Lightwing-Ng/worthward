@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.22.0
+ * Code version: v0.23.0
  * - Changed: The shared investment data-utils dependency now uses the current
  *   cash-resolver cache key.
  * - Changed: Buy and sell trades now render as volume-scaled glowing zones;
@@ -18,6 +18,9 @@
  * - Changed: Individual trade origins now reuse the original center-out
  *   radial fade, with marker area scaled by the visible range's transaction
  *   amount maximum rather than a workspace-wide quantity maximum.
+ * - Changed: Connected zones now render a capped inverse-square intensity
+ *   field, summing each connected trade amount over its squared distance
+ *   instead of compositing circular blobs.
  * - Fixed: Pure-trade realized P&L breakdowns now use the shared broker-scoped
  *   summary so Stock details cannot diverge from Holdings calibration.
  * - Fixed: Stock-details intraday trade markers retain off-hours buys that
@@ -98,7 +101,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.22.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.23.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -109,6 +112,9 @@ export const INVESTMENT_TRADE_MARKER_GLOW_TREND_TOLERANCE_RATIO = 0.0015;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_MIN_STRENGTH = 0.18;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_BOUNDARY_SAMPLES = 24;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_EDGE_PADDING_PX = 2.5;
+export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_SOFTENING_PX = 2.5;
+export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD = 1;
+export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_RESOLUTION = 0.5;
 
 export function resolveInvestmentTradeMarkerRadius(
     amount,
@@ -201,6 +207,7 @@ function normalizeInvestmentTradeMarkerGlowPoints(markers) {
             x: Number(marker?.x),
             y: Number(marker?.y),
             radius: Number(marker?.radius),
+            amount: Math.abs(Number(marker?.amount)),
             type: String(marker?.type || '').trim().toLowerCase(),
         }))
         .filter((point) => (
@@ -210,6 +217,68 @@ function normalizeInvestmentTradeMarkerGlowPoints(markers) {
             && point.radius > 0
         ))
         .map((point, index) => ({...point, index}));
+}
+
+function resolveInvestmentTradeMarkerGlowPointAmount(point) {
+    const amount = Math.abs(Number(point?.amount ?? point?.marker?.amount));
+    if (Number.isFinite(amount) && amount > 0) return amount;
+    const radius = Math.abs(Number(point?.radius));
+    return Number.isFinite(radius) && radius > 0 ? radius ** 2 : 0;
+}
+
+export function resolveInvestmentTradeMarkerGlowZoneFieldIntensity(
+    x,
+    y,
+    points,
+    maxAmount,
+    {
+        softeningPx = INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_SOFTENING_PX,
+        threshold = INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD,
+    } = {},
+) {
+    const normalizedX = Number(x);
+    const normalizedY = Number(y);
+    const normalizedMaxAmount = Math.abs(Number(maxAmount));
+    const normalizedSoftening = Number(softeningPx);
+    const normalizedThreshold = Number(threshold);
+    if (
+        !Number.isFinite(normalizedX)
+        || !Number.isFinite(normalizedY)
+        || !Number.isFinite(normalizedMaxAmount)
+        || normalizedMaxAmount <= 0
+        || !Number.isFinite(normalizedSoftening)
+        || normalizedSoftening <= 0
+        || !Number.isFinite(normalizedThreshold)
+        || normalizedThreshold <= 0
+    ) {
+        return 0;
+    }
+    const softeningSquared = normalizedSoftening ** 2;
+    const sigma = (Array.isArray(points) ? points : []).reduce((sum, point) => {
+        const pointX = Number(point?.x);
+        const pointY = Number(point?.y);
+        const amount = resolveInvestmentTradeMarkerGlowPointAmount(point);
+        if (
+            !Number.isFinite(pointX)
+            || !Number.isFinite(pointY)
+            || !Number.isFinite(amount)
+            || amount <= 0
+        ) {
+            return sum;
+        }
+        const distanceSquared = Math.max(
+            softeningSquared,
+            ((normalizedX - pointX) ** 2) + ((normalizedY - pointY) ** 2),
+        );
+        return sum + (
+            (amount / normalizedMaxAmount)
+            * (softeningSquared / distanceSquared)
+        );
+    }, 0);
+    return Math.min(
+        normalizedThreshold,
+        Math.max(0, sigma / normalizedThreshold),
+    );
 }
 
 function resolveInvestmentTradeMarkerGlowPrice(point, priceValues) {
@@ -554,6 +623,169 @@ function drawInvestmentTradeMarkerGlowZoneBoundary(ctx, keyPoints) {
     return true;
 }
 
+function resolveInvestmentTradeMarkerGlowRgb(color) {
+    const normalizedColor = String(color || '').trim();
+    const hexMatch = normalizedColor.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+    if (hexMatch) {
+        const rawHex = hexMatch[1];
+        const expandedHex = rawHex.length === 3
+            ? rawHex.split('').map((char) => `${char}${char}`).join('')
+            : rawHex;
+        return [
+            parseInt(expandedHex.slice(0, 2), 16),
+            parseInt(expandedHex.slice(2, 4), 16),
+            parseInt(expandedHex.slice(4, 6), 16),
+        ];
+    }
+    const rgbMatch = normalizedColor.match(/^rgba?\(([^)]+)\)$/i);
+    if (!rgbMatch) return null;
+    const channels = rgbMatch[1]
+        .split(',')
+        .slice(0, 3)
+        .map((value) => Number(value.trim()));
+    return channels.length === 3 && channels.every((value) => Number.isFinite(value))
+        ? channels.map((value) => Math.min(255, Math.max(0, value)))
+        : null;
+}
+
+function resolveInvestmentTradeMarkerGlowBoundaryDistance(x, y, keyPoints) {
+    if (!Array.isArray(keyPoints) || keyPoints.length < 2) return Number.POSITIVE_INFINITY;
+    const normalizedX = Number(x);
+    const normalizedY = Number(y);
+    if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
+        return Number.POSITIVE_INFINITY;
+    }
+    return keyPoints.reduce((minimum, point, index) => {
+        const nextPoint = keyPoints[(index + 1) % keyPoints.length];
+        const startX = Number(point?.x);
+        const startY = Number(point?.y);
+        const endX = Number(nextPoint?.x);
+        const endY = Number(nextPoint?.y);
+        if (![startX, startY, endX, endY].every(Number.isFinite)) return minimum;
+        const segmentX = endX - startX;
+        const segmentY = endY - startY;
+        const segmentLengthSquared = (segmentX ** 2) + (segmentY ** 2);
+        const projection = segmentLengthSquared > 0
+            ? Math.min(
+                1,
+                Math.max(
+                    0,
+                    (((normalizedX - startX) * segmentX) + ((normalizedY - startY) * segmentY))
+                        / segmentLengthSquared,
+                ),
+            )
+            : 0;
+        const closestX = startX + (segmentX * projection);
+        const closestY = startY + (segmentY * projection);
+        return Math.min(
+            minimum,
+            Math.hypot(normalizedX - closestX, normalizedY - closestY),
+        );
+    }, Number.POSITIVE_INFINITY);
+}
+
+function resolveInvestmentTradeMarkerGlowEdgeFade(distance, fadeWidth) {
+    const normalizedDistance = Number(distance);
+    const normalizedFadeWidth = Number(fadeWidth);
+    if (!Number.isFinite(normalizedDistance) || normalizedDistance < 0) return 0;
+    if (!Number.isFinite(normalizedFadeWidth) || normalizedFadeWidth <= 0) return 1;
+    const progress = Math.min(1, Math.max(0, normalizedDistance / normalizedFadeWidth));
+    return progress * progress * (3 - (2 * progress));
+}
+
+function createInvestmentTradeMarkerGlowZoneField(
+    zone,
+    points,
+    maxAmount,
+    color,
+    {
+        resolution = INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_RESOLUTION,
+        softeningPx = INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_SOFTENING_PX,
+    } = {},
+) {
+    const keyPoints = Array.isArray(zone?.keyPoints) ? zone.keyPoints : [];
+    if (keyPoints.length < 3 || !Array.isArray(points) || !points.length) return null;
+    const rgb = resolveInvestmentTradeMarkerGlowRgb(color);
+    if (!rgb) return null;
+    const normalizedResolution = Number(resolution);
+    if (!Number.isFinite(normalizedResolution) || normalizedResolution <= 0) return null;
+    const fieldPoints = points.filter((point) => (
+        Number.isFinite(Number(point?.x))
+        && Number.isFinite(Number(point?.y))
+        && resolveInvestmentTradeMarkerGlowPointAmount(point) > 0
+    ));
+    if (!fieldPoints.length) return null;
+    const boundaryAndPointCoordinates = [...keyPoints, ...fieldPoints];
+    const left = Math.floor(Math.min(...boundaryAndPointCoordinates.map((point) => Number(point.x))) - 1);
+    const top = Math.floor(Math.min(...boundaryAndPointCoordinates.map((point) => Number(point.y))) - 1);
+    const right = Math.ceil(Math.max(...boundaryAndPointCoordinates.map((point) => Number(point.x))) + 1);
+    const bottom = Math.ceil(Math.max(...boundaryAndPointCoordinates.map((point) => Number(point.y))) + 1);
+    const width = Math.max(1, right - left);
+    const height = Math.max(1, bottom - top);
+    const pixelWidth = Math.max(1, Math.ceil(width * normalizedResolution));
+    const pixelHeight = Math.max(1, Math.ceil(height * normalizedResolution));
+    const globalScope = typeof globalThis === 'undefined' ? {} : globalThis;
+    let canvas = null;
+    if (typeof globalScope.OffscreenCanvas === 'function') {
+        canvas = new globalScope.OffscreenCanvas(pixelWidth, pixelHeight);
+    } else if (globalScope.document && typeof globalScope.document.createElement === 'function') {
+        canvas = globalScope.document.createElement('canvas');
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+    }
+    if (!canvas || typeof canvas.getContext !== 'function') return null;
+    const fieldContext = canvas.getContext('2d');
+    if (!fieldContext || typeof fieldContext.createImageData !== 'function') return null;
+    const imageData = fieldContext.createImageData(pixelWidth, pixelHeight);
+    const data = imageData?.data;
+    if (!data) return null;
+    const normalizedMaxAmount = Math.abs(Number(maxAmount));
+    const normalizedSoftening = Number(softeningPx);
+    const fadeWidth = Math.max(1.5, normalizedSoftening);
+    const zoneStrength = Math.min(1, Math.max(0, Number(zone?.strength) || 0));
+    const maximumAlpha = 0.16 + (0.16 * zoneStrength);
+    for (let row = 0; row < pixelHeight; row += 1) {
+        const worldY = top + ((row + 0.5) / normalizedResolution);
+        for (let column = 0; column < pixelWidth; column += 1) {
+            const worldX = left + ((column + 0.5) / normalizedResolution);
+            const fieldIntensity = resolveInvestmentTradeMarkerGlowZoneFieldIntensity(
+                worldX,
+                worldY,
+                fieldPoints,
+                normalizedMaxAmount,
+                {softeningPx: normalizedSoftening},
+            );
+            const edgeFade = resolveInvestmentTradeMarkerGlowEdgeFade(
+                resolveInvestmentTradeMarkerGlowBoundaryDistance(worldX, worldY, keyPoints),
+                fadeWidth,
+            );
+            const alpha = Math.min(1, Math.max(0, fieldIntensity * maximumAlpha * edgeFade));
+            const offset = ((row * pixelWidth) + column) * 4;
+            data[offset] = rgb[0];
+            data[offset + 1] = rgb[1];
+            data[offset + 2] = rgb[2];
+            data[offset + 3] = Math.round(alpha * 255);
+        }
+    }
+    fieldContext.putImageData(imageData, 0, 0);
+    return {canvas, left, top, width, height};
+}
+
+function drawInvestmentTradeMarkerGlowZoneField(ctx, zone, field) {
+    if (
+        !ctx
+        || !field
+        || typeof ctx.drawImage !== 'function'
+        || typeof ctx.clip !== 'function'
+        || !drawInvestmentTradeMarkerGlowZoneBoundary(ctx, zone?.keyPoints)
+    ) {
+        return false;
+    }
+    ctx.clip();
+    ctx.drawImage(field.canvas, field.left, field.top, field.width, field.height);
+    return true;
+}
+
 export function drawInvestmentTradeMarkerGlow(ctx, {
     markers = [],
     links = [],
@@ -564,37 +796,32 @@ export function drawInvestmentTradeMarkerGlow(ctx, {
     if (!ctx || !normalizedColor || !points.length) return false;
 
     const zones = resolveInvestmentTradeMarkerGlowZones(points, links);
+    const pointByIndex = new Map(points.map((point) => [point.index, point]));
+    const maxAmount = Math.max(
+        0,
+        ...points
+            .map((point) => resolveInvestmentTradeMarkerGlowPointAmount(point))
+            .filter((amount) => Number.isFinite(amount) && amount > 0),
+    );
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
     ctx.lineCap = 'round';
     zones.forEach((zone) => {
-        const strength = Math.max(0, Math.min(1, Number(zone?.strength) || 0));
-        if (!drawInvestmentTradeMarkerGlowZoneBoundary(ctx, zone?.keyPoints)) return;
-        const centerX = Number(zone?.center?.x);
-        const centerY = Number(zone?.center?.y);
-        const gradientRadius = Number(zone?.gradientRadius);
-        if (!Number.isFinite(centerX) || !Number.isFinite(centerY) || !Number.isFinite(gradientRadius)) return;
-        const gradient = ctx.createRadialGradient(
-            centerX,
-            centerY,
-            0,
-            centerX,
-            centerY,
-            Math.max(3.5, gradientRadius),
+        ctx.save();
+        const zonePoints = (Array.isArray(zone?.pointIndexes) ? zone.pointIndexes : [])
+            .map((index) => pointByIndex.get(index))
+            .filter(Boolean);
+        const field = createInvestmentTradeMarkerGlowZoneField(
+            zone,
+            zonePoints,
+            maxAmount,
+            normalizedColor,
         );
-        const centerAlpha = 0.16 + (0.16 * strength);
-        const fadeStart = 0.58 + (0.12 * (1 - strength));
-        gradient.addColorStop(0, resolveInvestmentTradeMarkerColorWithAlpha(normalizedColor, centerAlpha));
-        gradient.addColorStop(
-            Math.min(0.82, fadeStart * 0.72),
-            resolveInvestmentTradeMarkerColorWithAlpha(normalizedColor, centerAlpha * 0.56),
-        );
-        gradient.addColorStop(fadeStart, resolveInvestmentTradeMarkerColorWithAlpha(normalizedColor, centerAlpha * 0.12));
-        gradient.addColorStop(1, resolveInvestmentTradeMarkerColorWithAlpha(normalizedColor, 0));
-        ctx.shadowColor = 'rgba(0, 0, 0, 0)';
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = gradient;
-        ctx.fill();
+        if (field && drawInvestmentTradeMarkerGlowZoneField(ctx, zone, field)) {
+            ctx.restore();
+            return;
+        }
+        ctx.restore();
     });
     points.forEach((point) => {
         const radius = Number(point.radius);

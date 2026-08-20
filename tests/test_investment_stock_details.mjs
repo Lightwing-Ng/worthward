@@ -1,10 +1,11 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.11.0 */
+/* Tests for Investment Stock details boundaries. Code version: v1.12.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
+    INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD,
     INVESTMENT_TRADE_MARKER_GLOW_ZONE_MIN_STRENGTH,
     INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX,
     aggregateInvestmentStockDetailPositionStates,
@@ -24,6 +25,7 @@ import {
     resolveInvestmentStockDetailsDailySnapshotIndex,
     resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey,
     resolveInvestmentTradeMarkerGlowLinks,
+    resolveInvestmentTradeMarkerGlowZoneFieldIntensity,
     resolveInvestmentTradeMarkerGlowZones,
     resolveInvestmentTradeMarkerRadius,
 } from '../app/web/static/assets/js/investment/stock-details.js';
@@ -148,6 +150,20 @@ test('trade-marker origin uses a center-out gradient with a transparent edge', (
     assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 1 && /0\)$/.test(operation[2])), true);
 });
 
+test('connected-zone intensity sums inverse-square amount fields and caps at 100 percent', () => {
+    const points = [
+        {x: 0, y: 0, amount: 100},
+        {x: 4, y: 0, amount: 25},
+    ];
+    const centerIntensity = resolveInvestmentTradeMarkerGlowZoneFieldIntensity(0, 0, points, 100);
+    const nearbyIntensity = resolveInvestmentTradeMarkerGlowZoneFieldIntensity(2, 0, points, 100);
+    const distantIntensity = resolveInvestmentTradeMarkerGlowZoneFieldIntensity(20, 0, points, 100);
+    assert.equal(centerIntensity, INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD);
+    assert.ok(nearbyIntensity > distantIntensity);
+    assert.ok(distantIntensity >= 0);
+    assert.ok(distantIntensity <= INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD);
+});
+
 test('nearby same-side trade markers resolve into bounded fluid-adhesion links', () => {
     const links = resolveInvestmentTradeMarkerGlowLinks([
         {x: 10, y: 20, radius: 8, type: 'buy'},
@@ -209,7 +225,7 @@ test('strong links start nonlinear zones while weak and isolated points stay sep
     assert.equal(resolveInvestmentTradeMarkerGlowZones(markers, []).length, 0);
 });
 
-test('trade markers paint nonlinear zone gradients without a border stroke', () => {
+test('trade markers paint center gradients without a border stroke', () => {
     const operations = [];
     const gradient = {
         addColorStop: (offset, color) => operations.push(['addColorStop', offset, color]),
@@ -259,10 +275,10 @@ test('trade markers paint nonlinear zone gradients without a border stroke', () 
         operations.find((operation) => operation[0] === 'globalCompositeOperation'),
         ['globalCompositeOperation', 'screen'],
     );
-    assert.equal(operations.filter((operation) => operation[0] === 'createRadialGradient').length >= 3, true);
+    assert.equal(operations.filter((operation) => operation[0] === 'createRadialGradient').length, 3);
     assert.equal(operations.some((operation) => operation[0] === 'stroke'), false);
     assert.equal(operations.some((operation) => operation[0] === 'lineTo'), false);
-    assert.equal(operations.some((operation) => operation[0] === 'quadraticCurveTo'), true);
+    assert.equal(operations.some((operation) => operation[0] === 'quadraticCurveTo'), false);
     assert.equal(operations.some((operation) => operation[0] === 'arc'), true);
     assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 1 && /0\)$/.test(operation[2])), true);
 });

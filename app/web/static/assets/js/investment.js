@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.125.0
+ * Code version: v2.126.0
  * - Fixed: Current HSBC Cash now uses the posted ledger boundary, converts
  *   retained foreign cash once, applies pending settlement once, and keeps
  *   its provisional marker across initial and realtime rendering.
@@ -19,6 +19,8 @@
  *   no border stroke and a fully transparent outer edge.
  * - Changed: Individual trade origins now use the original center-out radial
  *   fade, with area-scaled transaction amounts normalized to the visible range.
+ * - Changed: Connected Glow zones now use a capped inverse-square amount field
+ *   instead of composited circular blobs; each connected zone stops at 100%.
  * - Added: HSBC USD Savings settlement-only cash refreshes can sync without
  *   requiring a new Portfolio or Order Status capture; existing holdings stay
  *   authoritative while posted cash clears matching pending buys.
@@ -342,7 +344,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.22.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.23.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -388,7 +390,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.125.0',
+    entry: 'v2.126.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

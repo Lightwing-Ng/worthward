@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.47.0`
+Documentation version: `v1.48.0`
 
 - Fixed: HSBC current Cash now starts from the posted USD Savings ledger
   balance, applies visible pending settlements exactly once, and converts each
@@ -31,6 +31,9 @@ Documentation version: `v1.47.0`
   radial fade. Their circle areas scale with transaction amounts, and the
   largest amount is normalized only against trades visible in the selected
   range.
+- Changed: Connected zones now use a capped inverse-square amount field. The
+  visible intensity is the sum of connected trade amount contributions over
+  squared distance, normalized to a 100% threshold instead of circular blobs.
 
 - Added: HSBC USD Savings settlement-only cash refreshes can be imported
   without Portfolio and Order Status text. Existing Holdings positions remain
