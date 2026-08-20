@@ -1,7 +1,13 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.34.1
+Code version: v0.36.0
+- Added: HSBC ledger and available balances remain distinct so pending orders
+  are applied exactly once, including a legacy settlement-posting migration.
+- Added: Standalone USD Savings settlement pages refresh current HSBC cash
+  without replacing the existing Portfolio snapshot.
+- Added: Hidden HSBC `REF P... SEC` cash legs reconcile matching pending
+  orders during a cash-only incremental merge.
 - Added: HSBC equal-dated incoming cash captures cannot be rolled back by an
   older current-cash scope attestation when the position snapshot winner is
   retained.
@@ -2007,6 +2013,107 @@ Fees: 0.12
             {"USD": "60.99", "HKD": "1046.10", "CNH": "12.00"},
         )
 
+    def test_hsbc_usd_cash_only_settlement_refresh_clears_existing_pending_buy(self) -> None:
+        existing_payload = {
+            "schema_version": "3.0.0",
+            "broker": "hsbc",
+            "account": "000-999999-999",
+            "summary": {
+                "hsbc_paste_import_scope": "usd_composite",
+                "cash_snapshot_source": "hsbc_usd_savings_available_balance",
+                "cash_snapshot_status": "awaiting_settlement",
+                "ending_cash_by_currency": {"USD": "121.00"},
+                "ending_cash_base_currency": "121.00",
+                "hsbc_ending_cash_components": {"USD:SAVINGS": "121.00"},
+                "hsbc_cash_component_post_dates": {"USD:SAVINGS": "2026-07-14"},
+                "position_snapshot_authoritative": True,
+                "position_snapshot_as_of": "2026-07-14",
+            },
+            "ending_cash": "121.00",
+            "ending_cash_by_currency": {"USD": "121.00"},
+            "ending_cash_base_currency": "121.00",
+            "position_snapshot": {
+                "DRAM": {
+                    "ticker": "DRAM",
+                    "quantity": "1",
+                    "currency": "USD",
+                    "cost_price": "61.000",
+                    "market_value": "61.000",
+                    "as_of": "2026-07-14",
+                },
+            },
+            "transactions": [{
+                "date": "2026-07-14",
+                "datetime": "2026-07-14 20:00:00",
+                "type": "buy",
+                "ticker": "DRAM",
+                "currency": "USD",
+                "description": "ROUNDHILL MEMORY",
+                "broker": "hsbc",
+                "account": "000-999999-999",
+                "quantity_raw": "1",
+                "quantity_abs": "1",
+                "price_raw": "61.000",
+                "gross_amount_raw": "-61.000",
+                "commission_raw": "0",
+                "net_amount_raw": "-61.000",
+                "normalized": {
+                    "position_quantity": "1",
+                    "display_quantity": "1",
+                    "unit_price": "61.000",
+                    "gross_amount": "-61.000",
+                    "commission": "0",
+                    "net_amount": "-61.000",
+                },
+                "source": {
+                    "file_kind": "hsbc_order_status_text",
+                    "statement_order_id": "P-900001",
+                    "order_id": "P-900001",
+                    "broker": "hsbc",
+                    "account": "000-999999-999",
+                    "cash_replay_pending_settlement": True,
+                },
+            }],
+        }
+        cash_only_payload = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text="",
+            order_status_text="",
+            cash_account_text="\n".join([
+                "Skip to the main content for this pageHSBC Logo-this will redirect to My accounts",
+                "USD Savings",
+                "Account number:",
+                "000-999999-999",
+                "Ledger balance:",
+                "60.00",
+                "USD",
+                "Available balance:",
+                "60.00 USD",
+                "Post date Description Amount in Amount out Balance Additional options",
+                "15 Jul 2026",
+                "REF P900001001 SEC",
+                "61.00",
+                "60.00",
+                "Download",
+            ]),
+        )
+
+        merged = merge_investment_payloads(existing_payload, cash_only_payload)
+        order = next(
+            transaction
+            for transaction in merged["transactions"]
+            if transaction.get("source", {}).get("statement_order_id") == "P-900001"
+        )
+        hsbc_summary = merged["broker_summaries"]["hsbc"]
+
+        self.assertEqual(merged["position_snapshot"]["DRAM"]["quantity"], "1")
+        self.assertEqual(hsbc_summary["ending_cash"], "60.00")
+        self.assertEqual(hsbc_summary["ending_cash_base_currency_as_of"], "2026-07-15")
+        self.assertEqual(hsbc_summary["ending_cash_by_currency"], {"USD": "60.00"})
+        self.assertEqual(hsbc_summary["hsbc_pending_settlement_cash"], "0.000000")
+        self.assertNotIn("cash_replay_pending_settlement", order["source"])
+        self.assertEqual(order["source"]["cash_settlement_amount_raw"], "-61.00")
+        self.assertEqual(order["source"]["cash_settlement_balance_after_raw"], "60.00")
+
     def test_hsbc_statement_legacy_currency_totals_do_not_double_count_pasted_subaccounts(self) -> None:
         pasted_payload = build_investment_payload_from_hsbc_pasted_text(
             portfolio_text="",
@@ -2058,7 +2165,7 @@ Fees: 0.12
                 cash_account_text=cash_account_text,
             )
 
-    def test_validate_hsbc_pasted_text_requires_the_usd_composite_but_accepts_cash_only(self) -> None:
+    def test_validate_hsbc_pasted_text_accepts_usd_settlement_refresh_and_cash_only(self) -> None:
         _, _, usd_cash_account_text = self._synthetic_hsbc_paste_snapshot()
 
         awaiting_usd_pages = validate_hsbc_pasted_text(
@@ -2072,14 +2179,14 @@ Fees: 0.12
             cash_account_text=self._synthetic_hsbc_non_usd_cash_paste(),
         )
 
-        self.assertFalse(awaiting_usd_pages["ready"])
-        self.assertEqual(awaiting_usd_pages["mode"], "usd_composite")
+        self.assertTrue(awaiting_usd_pages["ready"])
+        self.assertEqual(awaiting_usd_pages["mode"], "cash_only_usd")
         self.assertEqual(awaiting_usd_pages["field_status"], {
             "cash": True,
             "portfolio": False,
             "order_status": False,
         })
-        self.assertEqual(awaiting_usd_pages["required_fields"], ["portfolio", "order_status"])
+        self.assertNotIn("required_fields", awaiting_usd_pages)
         self.assertTrue(cash_only["ready"])
         self.assertEqual(cash_only["mode"], "cash_only_non_usd")
         self.assertEqual(cash_only["cash_currencies"], ["CNH", "HKD"])
@@ -4611,13 +4718,128 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             if txn["ticker"] == "DRAM" and txn["type"] == "buy"
         )
 
-        self.assertEqual(payload["ending_cash"], "919.50")
+        self.assertEqual(payload["ending_cash"], "1000.00")
         self.assertEqual(payload["summary"]["cash_ledger_balance"], "1000.00")
+        self.assertEqual(payload["summary"]["hsbc_bank_available_cash"], "919.50")
+        self.assertEqual(
+            payload["summary"]["hsbc_pending_settlement_cash"],
+            "-80.500",
+        )
+        self.assertEqual(payload["summary"]["hsbc_broker_cash_estimate"], "919.500")
+        self.assertEqual(
+            payload["broker_summaries"]["hsbc"]["ending_cash_by_currency"],
+            {"USD": "1000.00"},
+        )
         self.assertIn("available_cash_after_raw", deposit["source"])
         self.assertNotIn("available_cash_after_raw", buy_order["source"])
         self.assertNotIn("available_cash_calibration_source", buy_order["source"])
         self.assertEqual(buy_order["source"]["order_status_source_row_number"], 1)
         self.assertEqual(buy_order["source"]["order_status_page_order"], "newest_first")
+
+    def test_hsbc_legacy_summary_recovers_current_ledger_from_latest_posting(self) -> None:
+        payload = {
+            "schema_version": 1,
+            "broker": "multiple",
+            "account": "multiple",
+            "summary": {
+                "authoritative_current_cash_brokers": ["hsbc"],
+                "hsbc_bank_available_cash": "23388.54",
+                "hsbc_ending_cash_components": {
+                    "USD:SAVINGS": "23388.54",
+                    "HKD:SAVINGS": "89.24",
+                },
+                "hsbc_cash_component_post_dates": {
+                    "USD:SAVINGS": "2026-08-19",
+                    "HKD:SAVINGS": "2026-08-06",
+                },
+            },
+            "broker_summaries": {
+                "hsbc": {
+                    "broker": "hsbc",
+                    "account": "000-999999-999",
+                    "cash_snapshot_authoritative": True,
+                    "ending_cash": "23388.54",
+                    "ending_cash_base_currency": "23388.54",
+                    "ending_cash_base_currency_as_of": "2026-08-19",
+                    "ending_cash_by_currency": {
+                        "USD": "23388.54",
+                        "HKD": "89.24",
+                    },
+                    "hsbc_bank_available_cash": "23388.54",
+                },
+            },
+            "transactions": [
+                {
+                    "broker": "hsbc",
+                    "account": "000-999999-999",
+                    "date": "2026-08-18",
+                    "type": "buy",
+                    "currency": "USD",
+                    "net_amount_raw": "-275.70",
+                    "source": {
+                        "cash_settlement_date": "2026-08-19",
+                        "cash_settlement_balance_after_raw": "23688.24",
+                        "cash_settlement_source_row_number": 49,
+                        "cash_settlement_postings": [{
+                            "date": "2026-08-19",
+                            "currency": "USD",
+                            "ledger_sequence": 49,
+                            "row_number": 49,
+                            "balance_after_raw": "23688.24",
+                        }],
+                    },
+                },
+                {
+                    "broker": "hsbc",
+                    "account": "000-999999-999",
+                    "date": "2026-08-18",
+                    "type": "buy",
+                    "currency": "USD",
+                    "net_amount_raw": "-275.70",
+                    "source": {
+                        "cash_settlement_date": "2026-08-19",
+                        "cash_settlement_balance_after_raw": "23412.54",
+                        "cash_settlement_source_row_number": 50,
+                        "cash_settlement_postings": [{
+                            "date": "2026-08-19",
+                            "currency": "USD",
+                            "ledger_sequence": 50,
+                            "row_number": 50,
+                            "balance_after_raw": "23412.54",
+                        }],
+                    },
+                },
+                {
+                    "broker": "hsbc",
+                    "account": "000-999999-999",
+                    "date": "2026-08-19",
+                    "type": "buy",
+                    "currency": "USD",
+                    "net_amount_raw": "-24.600",
+                    "source": {
+                        "cash_replay_pending_settlement": True,
+                        "statement_order_id": "P-292231",
+                    },
+                },
+            ],
+        }
+
+        normalized = normalize_investment_payload_tickers(deepcopy(payload))
+        normalized_again = normalize_investment_payload_tickers(deepcopy(normalized))
+        hsbc_summary = normalized["broker_summaries"]["hsbc"]
+
+        self.assertEqual(hsbc_summary["cash_ledger_balance"], "23412.54")
+        self.assertEqual(hsbc_summary["hsbc_bank_available_cash"], "23388.54")
+        self.assertEqual(hsbc_summary["hsbc_pending_settlement_cash"], "-24.600")
+        self.assertEqual(hsbc_summary["hsbc_broker_cash_estimate"], "23387.940")
+        self.assertEqual(
+            hsbc_summary["ending_cash_by_currency"],
+            {"USD": "23412.54", "HKD": "89.24"},
+        )
+        self.assertEqual(
+            normalized_again["broker_summaries"]["hsbc"],
+            hsbc_summary,
+        )
 
     def test_hsbc_merge_prunes_stale_available_cash_before_settlement_window(self) -> None:
         existing_payload = {

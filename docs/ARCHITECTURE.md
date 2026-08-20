@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.39.9`
+Documentation version: `v1.40.0`
 
 ## Holdings P&L display contract
 
@@ -172,9 +172,10 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 
 ## HSBC pending-sell transaction valuation contract
 
-HSBC's transferable cash and current Portfolio position snapshot remain the
-authoritative broker facts. Pending sell proceeds remain a separate display
-projection and must not be treated as settled cash.
+HSBC's posted USD Savings Ledger balance and current Portfolio position
+snapshot remain the authoritative broker facts. The bank's Available balance
+is separate audit evidence. Pending settlements remain a display projection,
+are applied exactly once, and must not be treated as settled cash.
 
 For row-level transaction valuation, the browser applies the following explicit
 projection contract:
@@ -372,11 +373,12 @@ sets of values.
 - Mixed-broker payloads retain authoritative position snapshots per broker/account;
   a scoped HSBC Holdings view may use its Portfolio snapshot even when the global
   portfolio intentionally disables a single top-level snapshot.
-- HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
-  The current display projection applies the source-bounded signed net of visible
-  unsettled buy and sell orders, while the transferable bank balance remains the
-  authoritative cash fact. Unposted sell clearing-fee evidence is retained as
-  unapplied metadata and remains excluded until a settled cash posting confirms it.
+- HSBC Available cash calibrates cash-account rows, not individual unsettled order
+  rows, and remains separate audit evidence. The posted Ledger balance is the
+  authoritative USD cash boundary. The current display projection applies the
+  source-bounded signed net of visible unsettled buy and sell orders exactly once.
+  Unposted sell clearing-fee evidence is retained as unapplied metadata and remains
+  excluded until a settled cash posting confirms it.
 - All-brokers account-balance fields retain the aggregate broker cash ledgers and
   source-bounded pending buy/sell settlement amounts. Internal-transfer bridges are an
   external-flow attribution layer only; they must not subtract from the cash or

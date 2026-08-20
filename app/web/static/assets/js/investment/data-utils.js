@@ -1,7 +1,13 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.104.7
+ * Code version: v1.105.0
+ * - Added: One broker-current-cash resolver now converts every native-currency
+ *   balance, applies pending settlement once, and reports provisional display
+ *   state for both aggregate and broker-scoped surfaces.
+ * - Fixed: Broker position snapshots with a rounded same-day as-of time can
+ *   accept the first same-day replay state that exactly matches the
+ *   authoritative quantity, while genuine quantity mismatches remain blocked.
  * - Added: Current broker cash aggregation can use the broker's authoritative
  *   display boundary, including HSBC pending-settlement adjustments, without
  *   confusing it with the raw replay balance.
@@ -791,6 +797,62 @@ export function createInvestmentDataUtils({
         }
         const baseCash = getInvestmentBrokerEndingCashInBaseCurrency(normalizedBroker);
         return baseCash === null ? null : baseCash;
+    }
+
+    function getInvestmentBrokerCurrentCashSnapshot(
+        brokerCode,
+        targetDate = '',
+        fxTimeline = null,
+    ) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return null;
+        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        if (!summary || typeof summary !== 'object' || summary.cash_snapshot_authoritative === false) {
+            return null;
+        }
+        const baseCurrency = getInvestmentBaseCurrency();
+        const baseCash = getInvestmentBrokerEndingCashInBaseCurrency(normalizedBroker);
+        const endingBalances = getInvestmentBrokerEndingCashBalances(normalizedBroker);
+        const runningBalances = endingBalances && Object.keys(endingBalances).length
+            ? {...endingBalances}
+            : {};
+        if (baseCash !== null) {
+            runningBalances[baseCurrency] = baseCash;
+        }
+        if (!Object.keys(runningBalances).length) return null;
+        const resolvedFxTimeline = fxTimeline || buildInvestmentFxRateTimeline(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [],
+            baseCurrency,
+        );
+        const resolvedDate = normalizeLedgerDate(targetDate) || getTodayLedgerDate();
+        const runningCash = sumCashLedgerInBaseCurrency(
+            runningBalances,
+            resolvedDate,
+            resolvedFxTimeline,
+            baseCurrency,
+        );
+        const pendingSettlementCash = getInvestmentBrokerCurrentPendingSettlementCash(
+            normalizedBroker,
+        );
+        const pendingOrderCount = Number(summary.hsbc_pending_settlement_order_count) || 0;
+        const hasForeignCurrencyBalance = Object.entries(runningBalances).some(
+            ([currency, value]) => (
+                String(currency || '').trim().toUpperCase() !== baseCurrency
+                && Math.abs(Number(value) || 0) > 1e-9
+            ),
+        );
+        return {
+            brokerCode: normalizedBroker,
+            runningBalances,
+            runningCash,
+            pendingSettlementCash,
+            displayCash: runningCash + pendingSettlementCash,
+            isApproximate: normalizedBroker === 'hsbc' && (
+                pendingOrderCount > 0
+                || Math.abs(pendingSettlementCash) > 1e-9
+                || hasForeignCurrencyBalance
+            ),
+        };
     }
 
     function getInvestmentBrokerEndingCashAsOf(brokerCode) {
@@ -2560,6 +2622,7 @@ export function createInvestmentDataUtils({
         let hasLaterTransaction = false;
         let boundaryShares = null;
         let boundaryTotalCost = null;
+        const sameDayBoundaryCandidates = [];
 
         const addLot = (quantity, unitCost) => {
             if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
@@ -2639,6 +2702,18 @@ export function createInvestmentDataUtils({
             if (!applyTransaction(txn, isAfterPerformanceBoundary)) {
                 return {status: 'incomplete', reason: 'fifo_inventory_replay_failed'};
             }
+            if (
+                isAfterPositionBoundary
+                && txnDateTime.slice(0, 10) === positionBoundary.boundaryDateTime.slice(0, 10)
+            ) {
+                sameDayBoundaryCandidates.push({
+                    shares,
+                    totalCost: lots.reduce(
+                        (total, lot) => total + (Number(lot.quantity) || 0) * (Number(lot.unitCost) || 0),
+                        0,
+                    ),
+                });
+            }
         }
         if (boundaryShares === null) {
             boundaryShares = shares;
@@ -2648,7 +2723,14 @@ export function createInvestmentDataUtils({
             );
         }
         if (Math.abs(boundaryShares - positionBoundary.quantity) > 1e-7) {
-            return {status: 'incomplete', reason: 'fifo_boundary_quantity_mismatch'};
+            const matchingSameDayBoundary = sameDayBoundaryCandidates.find((candidate) => (
+                Math.abs(candidate.shares - positionBoundary.quantity) <= 1e-7
+            ));
+            if (!matchingSameDayBoundary) {
+                return {status: 'incomplete', reason: 'fifo_boundary_quantity_mismatch'};
+            }
+            boundaryShares = matchingSameDayBoundary.shares;
+            boundaryTotalCost = matchingSameDayBoundary.totalCost;
         }
         const endingTotalCost = lots.reduce(
             (total, lot) => total + (Number(lot.quantity) || 0) * (Number(lot.unitCost) || 0),
@@ -5376,6 +5458,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerEndingCashInBaseCurrency,
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
+        getInvestmentBrokerCurrentCashSnapshot,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
@@ -5442,4 +5525,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.104.7';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.105.0';

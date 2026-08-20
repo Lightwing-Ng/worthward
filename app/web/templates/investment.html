@@ -1,4 +1,4 @@
-{# Code version: v1.59.18 #}
+{# Code version: v1.62.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -708,7 +708,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open the USD Savings, HKD Savings or Current, and offshore RMB cash accounts as needed.</span>
                                                 <span class="investment-import-help-step">3. Copy each full page, including account number, available balance, transactions, and dates.</span>
-                                                <span class="investment-import-help-step">4. Paste each page here. HSBC may label offshore RMB CNY; it is stored as CNH. HKD/CNH cash-only pages can sync on their own, while USD Savings also requires Portfolio and Order Status below.</span>
+                                                <span class="investment-import-help-step">4. Paste each page here. HSBC may label offshore RMB CNY; it is stored as CNH. USD Savings settlement-only cash refreshes and HKD/CNH cash-only pages can sync on their own; use Portfolio and Order Status below when refreshing holdings too.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -753,7 +753,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Portfolio.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page text, including holdings, quantities, market value, and currency.</span>
-                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Paste it in the same short session as the HSBC cash-account and Order Status pages; it is the current HSBC holding snapshot.</span>
+                                                <span class="investment-import-help-step">4. Optional for a cash-only settlement refresh. Paste this with the cash-account and Order Status pages when you also want to refresh the current HSBC holding snapshot.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -798,7 +798,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Order Status.</span>
                                                 <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import.</span>
-                                                <span class="investment-import-help-step">4. This is required only when the cash capture includes USD Savings. Use the same end date as the latest cash-account posting, then paste it in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
+                                                <span class="investment-import-help-step">4. Optional for a cash-only settlement refresh. Use the same end date as the latest cash-account posting when refreshing the full order snapshot.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -942,5 +942,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.116.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.119.0') }}"></script>
 {% endblock %}

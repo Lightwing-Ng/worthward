@@ -1,10 +1,43 @@
 # Investment frontend changelog
 
-Documentation version: `v1.38.17`
+Documentation version: `v1.41.0`
+
+- Fixed: HSBC current Cash now starts from the posted USD Savings ledger
+  balance, applies visible pending settlements exactly once, and converts each
+  retained foreign-currency balance once at the agreed workspace FX rate. The
+  bank's Available balance remains separate audit evidence.
+- Changed: HSBC Cash displays a leading `*` when pending settlement or a
+  foreign-currency conversion makes the current value provisional. Initial and
+  realtime Holdings and Metrics rendering share the same marker contract.
+- Fixed: The user-verified IBKR current Cash boundary is `$950.49`. The latest
+  exact-time Transaction history row, Holdings, and Metrics now agree on that
+  value while rows before the snapshot boundary keep their historical replay.
+
+- Changed: Stock-details buy and sell points now render as radial-gradient
+  circles that fade from fully opaque centers to transparent circumferences.
+  The largest plotted transaction uses a 10 px radius, other circle areas are
+  proportional to transaction volume, and regular-session centers remain
+  aligned to the rendered transaction time and price across every range.
+
+- Added: HSBC USD Savings settlement-only cash refreshes can be imported
+  without Portfolio and Order Status text. Existing Holdings positions remain
+  authoritative while posted `REF P... SEC` cash legs reconcile matching buys.
+- Fixed: HSBC cash-only imports now preserve USD, HKD, and CNH per-account
+  balances without treating a settled USD cash page as an unsettled buy
+  projection.
+
+- Fixed: Current aggregate Cash now sums authoritative per-broker current
+  snapshots rather than borrowing a sequential history row. Native HSBC HKD
+  cash is retained in the aggregate and converted exactly once.
+- Fixed: IBKR history cash now replays at the displayed cent precision, so
+  sequential buy rows remain arithmetically consistent with the visible amount.
+- Changed: HSBC and IBKR Transaction history retain sequential replay before a
+  current snapshot boundary, while the latest boundary row agrees with the
+  current cash shown by Holdings and Metrics.
 
 - Fixed: Stock-details 1W now retains trusted overnight and pre-market buys
   that occur after the latest visible regular-session candle. Their green buy
-  triangles use the established gap positions, and existing off-hours markers
+  circles use the established gap positions, and existing off-hours markers
   no longer snap onto regular-session candles.
 
 - Changed: HSBC cash-account, Portfolio, and Order Status copy/paste fields now

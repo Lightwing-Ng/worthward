@@ -1,4 +1,4 @@
-/* Code version: v1.150.22 */
+/* Code version: v1.154.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -39,6 +39,7 @@ const fulfillInertPriceLiveResponse = async (route, tickers = []) => {
 
 const mockInvestmentReadApis = async (page, {
     transactions = [],
+    startingCash = 10000,
     tradingDays = [],
     intradayRows = null,
     brokers = ['ibkr'],
@@ -73,7 +74,7 @@ const mockInvestmentReadApis = async (page, {
             body: JSON.stringify({
                 success: true,
                 transactions,
-                starting_cash: 10000,
+                starting_cash: startingCash,
                 base_currency: 'USD',
                 brokers,
                 ticker_profiles: tickerProfiles,
@@ -2575,7 +2576,7 @@ test('validates the investment import flow without mutating the local store', as
     expect(multipartBody.indexOf('2026-07.pdf')).toBeLessThan(multipartBody.indexOf('2026-06.pdf'));
 });
 
-test('validates HSBC cash-only paste separately from the USD three-page snapshot', async ({page}) => {
+test('validates HSBC cash-only paste and USD settlement refresh separately from the full snapshot', async ({page}) => {
     await mockInvestmentReadApis(page);
     let releaseHkdValidation;
     const holdHkdValidation = new Promise((resolve) => {
@@ -2608,11 +2609,10 @@ test('validates HSBC cash-only paste separately from the USD three-page snapshot
                 contentType: 'application/json',
                 body: JSON.stringify({
                     success: true,
-                    ready: false,
-                    mode: 'usd_composite',
+                    ready: true,
+                    mode: 'cash_only_usd',
                     field_status: {cash: true, portfolio: false, order_status: false},
                     cash_currencies: ['USD'],
-                    required_fields: ['portfolio', 'order_status'],
                 }),
             });
             return;
@@ -2665,7 +2665,7 @@ test('validates HSBC cash-only paste separately from the USD three-page snapshot
         input.dispatchEvent(new Event('input', {bubbles: true}));
     });
     await expect(cashStatus).toBeVisible();
-    await expect(submitButton).toBeDisabled();
+    await expect(submitButton).toBeEnabled();
 
     await cashInput.evaluate((input) => {
         input.value = 'Invalid HSBC capture';
@@ -5544,15 +5544,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.116.1',
+        entry: 'v2.119.0',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.104.7',
+        dataUtils: 'v1.105.0',
         importFeedback: 'v1.8.5',
         layout: 'v1.0.1',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.0.0',
-        stockDetails: 'v0.15.6',
+        stockDetails: 'v0.16.1',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.0',
         urlState: 'v1.2.0',
@@ -5560,7 +5560,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.15.6';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.16.1';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -6465,6 +6465,178 @@ test('anchors HSBC History cash to an evidenced future SEC settlement balance', 
     await expect(sellRow.locator('td').nth(9)).not.toContainText('*');
 });
 
+test('keeps earlier HSBC buy history sequential and anchors the latest row', async ({page}) => {
+    const pendingBuys = [
+        ['DRAM', 5, 57.00, 285.00],
+        ['EUV', 1, 25.75, 25.75],
+        ['EUV', 1, 25.70, 25.70],
+        ['DRAM', 1, 55.75, 55.75],
+        ['EUV', 1, 25.50, 25.50],
+        ['DRAM', 1, 55.00, 55.00],
+        ['QQQI', 5, 55.14, 275.70],
+        ['EUV', 1, 25.50, 25.50],
+        ['DRAM', 3, 55.00, 165.00],
+    ];
+    const transactions = [
+        {
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            date: '2026-08-18',
+            datetime: '2026-08-17 08:00:00',
+            type: 'sell',
+            currency: 'USD',
+            ticker: 'DRAM',
+            quantity: 1,
+            price: 1000,
+            amount: 1000,
+            source: {
+                cash_settlement_date: '2026-08-20',
+                cash_settlement_amount_raw: '1000.00',
+                cash_settlement_balance_after_raw: '13231.60',
+                cash_settlement_postings: [{
+                    date: '2026-08-20',
+                    amount_raw: '1000.00',
+                    balance_after_raw: '13231.60',
+                    currency: 'USD',
+                    role: 'principal',
+                }],
+                order_id: 'S-TEST-1',
+            },
+        },
+        ...pendingBuys.map(([ticker, quantity, price, amount], index) => ({
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            date: '2026-08-18',
+            datetime: `2026-08-18 ${String(9 + Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00`,
+            type: 'buy',
+            ticker,
+            currency: 'USD',
+            quantity,
+            price,
+            amount: -amount,
+            source: {
+                cash_replay_pending_settlement: true,
+                order_id: `P-TEST-${index + 1}`,
+            },
+        })),
+    ];
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc'],
+        transactions,
+        summary: {
+            authoritative_current_cash_brokers: ['hsbc'],
+        },
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc',
+                account_id: 'HSBC-TEST',
+                cash_snapshot_authoritative: true,
+                ending_cash_base_currency: '23413.41',
+                ending_cash_by_currency: {USD: '23413.41'},
+                hsbc_pending_settlement_cash: '-938.900',
+                hsbc_broker_cash_estimate: '22474.510',
+                position_snapshot_as_of: '2026-08-18',
+            },
+        },
+        priceHistoryByTicker: {
+            DRAM: [
+                {date: '2026-08-17', close: 1000.00},
+                {date: '2026-08-18', close: 55.00},
+            ],
+            EUV: [{date: '2026-08-18', close: 25.50}],
+            QQQI: [{date: '2026-08-18', close: 55.14}],
+        },
+    });
+    await page.goto('/trade/investment');
+
+    const firstBuyRow = page.locator('#investment_history_row_2');
+    const latestBuyRow = page.locator('#investment_history_row_10');
+    await expect(firstBuyRow.locator('td').nth(9)).toContainText('*26,360.01');
+    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*22,474.51');
+});
+
+test('anchors the latest IBKR buy to the verified current cash snapshot', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr'],
+        startingCash: 0,
+        transactions: [
+            {
+                ledger_no: 1,
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-18',
+                datetime: '2026-08-18 03:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                // Preserve sub-cent source precision to verify the visible
+                // cent-level history replay rather than hidden-fraction drift.
+                amount: 1215.376,
+            },
+            {
+                ledger_no: 2,
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-18',
+                datetime: '2026-08-18 03:33:23',
+                type: 'buy',
+                ticker: 'DRAM',
+                currency: 'USD',
+                quantity: 5,
+                price: 58,
+                amount: -290.34827225,
+            },
+            {
+                ledger_no: 3,
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-18',
+                datetime: '2026-08-18 05:00:47',
+                type: 'buy',
+                ticker: 'DRAM',
+                currency: 'USD',
+                quantity: 5,
+                price: 57,
+                amount: -285.34327225,
+            },
+        ],
+        summary: {
+            authoritative_current_cash_brokers: ['ibkr'],
+        },
+        brokerSummaries: {
+            ibkr: {
+                broker: 'ibkr',
+                account_id: 'IBKR-TEST',
+                cash_snapshot_authoritative: true,
+                ending_cash: '950.49',
+                ending_cash_base_currency: '950.49',
+                ending_cash_as_of: '2026-08-18',
+                ending_cash_replay_as_of: '2026-08-18',
+                ending_cash_as_of_datetime: '2026-08-18 05:00:47',
+                ending_cash_replay_as_of_datetime: '2026-08-18 05:00:47',
+            },
+        },
+        priceHistoryByTicker: {
+            DRAM: [{date: '2026-08-18', close: 57.00}],
+        },
+    });
+    await page.goto('/trade/investment');
+
+    const firstBuyRow = page.locator('#investment_history_row_2');
+    const latestBuyRow = page.locator('#investment_history_row_3');
+    await expect(firstBuyRow.locator('td').nth(9)).toContainText('925.03');
+    await expect(latestBuyRow.locator('td').nth(9)).toContainText('950.49');
+
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await expect(
+        page.locator('#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]'),
+    ).toHaveAttribute('data-investment-live-display', '950.49');
+
+    await page.locator('label[for="investment_view_metrics"]').click();
+    await expect(
+        page.locator('#investment_metrics_panel [data-investment-live-field="metrics_cash"]'),
+    ).toHaveAttribute('data-investment-live-display', '950.49');
+});
+
 test('keeps HSBC buy and sell equity conserved across 30 Jun–2 Jul settlement dates', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc'],
@@ -6664,10 +6836,10 @@ test('keeps HSBC account-type cash boundaries out of a 6457-shaped cash spike', 
     expect(cashValue).toBeLessThan(22_000);
 });
 
-test('converts HSBC combined-account foreign cash in the current aggregate', async ({page}) => {
+test('uses HSBC ledger cash once and preserves the FX estimate marker', async ({page}) => {
     await page.addInitScript(() => {
         const RealDate = Date;
-        const fixedTimestamp = new RealDate('2026-08-16T12:00:00').valueOf();
+        const fixedTimestamp = new RealDate('2026-08-20T12:00:00').valueOf();
         class FixedDate extends RealDate {
             constructor(...args) {
                 super(...(args.length ? args : [fixedTimestamp]));
@@ -6706,23 +6878,26 @@ test('converts HSBC combined-account foreign cash in the current aggregate', asy
             hsbc: {
                 broker: 'hsbc',
                 cash_snapshot_authoritative: true,
-                ending_cash: '21109.06',
-                ending_cash_base_currency: '21109.06',
-                ending_cash_as_of: '2026-08-14',
+                ending_cash: '23412.54',
+                ending_cash_base_currency: '23412.54',
+                ending_cash_as_of: '2026-08-19',
                 ending_cash_by_currency: {
-                    USD: '21109.06',
+                    USD: '23412.54',
                     HKD: '89.24',
                     CNH: '0.00',
                 },
-                hsbc_broker_cash_estimate: '22685.810',
-                hsbc_pending_settlement_cash: '1576.750',
+                hsbc_bank_available_cash: '23388.54',
+                cash_ledger_balance: '23412.54',
+                hsbc_broker_cash_estimate: '23387.940',
+                hsbc_pending_settlement_cash: '-24.600',
+                hsbc_pending_settlement_order_count: 1,
             },
             ibkr: {
                 broker: 'ibkr',
                 cash_snapshot_authoritative: true,
-                ending_cash: '879.44',
-                ending_cash_base_currency: '879.44',
-                ending_cash_as_of: '2026-08-14',
+                ending_cash: '950.49',
+                ending_cash_base_currency: '950.49',
+                ending_cash_as_of: '2026-08-19',
             },
             schwab: {
                 broker: 'schwab',
@@ -6734,8 +6909,8 @@ test('converts HSBC combined-account foreign cash in the current aggregate', asy
         },
         fxRateHistoryByCurrency: {
             HKD: {
-                dates: ['2026-08-16'],
-                values: {'2026-08-16': 7.8470001220703125},
+                dates: ['2026-08-19'],
+                values: {'2026-08-19': 7.842899799346924},
             },
         },
     });
@@ -6748,15 +6923,138 @@ test('converts HSBC combined-account foreign cash in the current aggregate', asy
     const totalEquity = page.locator(
         '#investment_holdings_panel [data-investment-live-field="summary_total_equity"]',
     );
-    await expect(cash).toHaveAttribute('data-investment-live-display', '23,577.03');
+    await expect(cash).toHaveAttribute('data-investment-live-display', '*24,350.22');
     expect(Number(await cash.getAttribute('data-investment-live-number'))).toBeCloseTo(
-        22_685.81 + (89.24 / 7.8470001220703125) + 879.44 + 0.41,
+        23_387.94 + (89.24 / 7.842899799346924) + 950.49 + 0.41,
         8,
     );
     expect(Number(await totalEquity.getAttribute('data-investment-live-number'))).toBeCloseTo(
         Number(await cash.getAttribute('data-investment-live-number')) + 1,
         8,
     );
+
+    await page.locator('label[for="investment_view_metrics"]').click();
+    const brokerSelector = page.locator(
+        '#investment_metrics_panel_shell [data-investment-broker-filter-trigger]',
+    );
+    await brokerSelector.click();
+    await page.getByRole('option', {name: 'HSBC', exact: true}).click();
+    const metricsCash = page.locator(
+        '#investment_metrics_panel [data-investment-live-field="metrics_cash"]',
+    );
+    await expect(metricsCash).toHaveAttribute(
+        'data-investment-live-display',
+        '*23,399.32',
+    );
+    expect(Number(await metricsCash.getAttribute('data-investment-live-number'))).toBeCloseTo(
+        23_387.94 + (89.24 / 7.842899799346924),
+        8,
+    );
+});
+
+test('sums HSBC, IBKR, and Schwab current cash before adding holdings equity', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr', 'schwab'],
+        transactions: [
+            {
+                ledger_no: 1,
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-18',
+                datetime: '2026-08-18 10:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 26360.01,
+            },
+            {
+                ledger_no: 2,
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-18',
+                datetime: '2026-08-18 10:01:00',
+                type: 'buy',
+                ticker: 'TEST',
+                currency: 'USD',
+                quantity: 1,
+                price: 653.90,
+                amount: -653.90,
+                source: {
+                    cash_replay_pending_settlement: true,
+                },
+            },
+            {
+                ledger_no: 3,
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-18',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 0,
+            },
+            {
+                ledger_no: 4,
+                broker: 'schwab',
+                account: 'SCHWAB-TEST',
+                date: '2026-08-18',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 0,
+            },
+        ],
+        priceHistoryByTicker: {
+            TEST: [{date: '2026-08-18', close: 653.90}],
+        },
+        summary: {
+            authoritative_current_cash_brokers: ['hsbc', 'ibkr', 'schwab'],
+        },
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc',
+                cash_snapshot_authoritative: true,
+                ending_cash: '23412.54',
+                ending_cash_base_currency: '23412.54',
+                ending_cash_as_of: '2026-08-19',
+                ending_cash_by_currency: {
+                    USD: '23412.54',
+                    HKD: '89.24',
+                },
+                hsbc_bank_available_cash: '23388.54',
+                cash_ledger_balance: '23412.54',
+                hsbc_broker_cash_estimate: '23387.940',
+                hsbc_pending_settlement_cash: '-24.600',
+                hsbc_pending_settlement_order_count: 1,
+            },
+            ibkr: {
+                broker: 'ibkr',
+                cash_snapshot_authoritative: true,
+                ending_cash: '950.49',
+                ending_cash_as_of: '2026-08-19',
+            },
+            schwab: {
+                broker: 'schwab',
+                cash_snapshot_authoritative: true,
+                ending_cash: '0.41',
+                ending_cash_as_of: '2026-08-18',
+            },
+        },
+        fxRateHistoryByCurrency: {
+            HKD: {
+                dates: ['2026-08-18'],
+                values: {'2026-08-18': 7.842899799346924},
+            },
+        },
+    });
+    await page.goto('/trade/investment');
+    await page.locator('label[for="investment_view_holdings"]').click();
+
+    const cash = page.locator(
+        '#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]',
+    );
+    const totalEquity = page.locator(
+        '#investment_holdings_panel [data-investment-live-field="summary_total_equity"]',
+    );
+    await expect(cash).toHaveAttribute('data-investment-live-display', '*24,350.22');
+    await expect(totalEquity).toHaveAttribute('data-investment-live-display', '25,004.12');
 });
 
 test('keeps HSBC pending-sell cash source-bounded in history and equity', async ({page}) => {
@@ -9018,7 +9316,7 @@ test('replays trusted intraday fills by minute and carries date-only trades into
     });
 });
 
-test('renders trailing overnight and pre-market buy triangles in the stock-details gap', async ({page}) => {
+test('renders trailing overnight and pre-market buy gradient circles in the stock-details gap', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {

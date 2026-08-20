@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.75.2
+Code version: v0.76.0
+- Fixed: Investment transaction caches now invalidate payloads generated
+  before HSBC Ledger cash, pending settlement, and foreign-currency cash were
+  separated into one authoritative current-cash boundary.
 - Added: IBKR web-paste imports can accept a user-entered position snapshot at
   the matching cash boundary without embedding account-specific data.
 - Changed: IBKR Trade Notifications feedback now identifies pasted fills as
@@ -371,7 +374,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v13"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v14"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
@@ -6606,10 +6609,13 @@ def build_web_runtime() -> WebRuntime:
                         if isinstance(imported_payload.get("summary"), dict)
                         else {}
                     )
-                    if import_summary.get("hsbc_paste_import_scope") == "cash_only_non_usd":
+                    if import_summary.get("hsbc_paste_import_scope") in {
+                        "cash_only_non_usd",
+                        "cash_only_usd",
+                    }:
                         success_message = (
-                            "HSBC cash-only sync complete. The pasted HKD/CNH cash-account text was normalized and "
-                            "merged incrementally without replacing the existing USD Portfolio or cash snapshot."
+                            "HSBC cash-only sync complete. The pasted cash-account text was normalized and "
+                            "merged incrementally without replacing the existing Portfolio position snapshot."
                         )
                     else:
                         success_message = (

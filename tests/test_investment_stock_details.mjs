@@ -1,13 +1,15 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.4.2 */
+/* Tests for Investment Stock details boundaries. Code version: v1.5.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+    INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX,
     aggregateInvestmentStockDetailPositionStates,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
     createInvestmentStockDetailsUtils,
+    drawInvestmentTradeMarkerCircle,
     getInvestmentTradeSessionType,
     getInvestmentStockDetailsTransactionSessionType,
     getInvestmentStockDetailsAveragePriceLabel,
@@ -18,6 +20,7 @@ import {
     normalizeInvestmentRange,
     resolveInvestmentStockDetailsDailySnapshotIndex,
     resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey,
+    resolveInvestmentTradeMarkerRadius,
 } from '../app/web/static/assets/js/investment/stock-details.js';
 import {createInvestmentDataUtils} from '../app/web/static/assets/js/investment/data-utils.js';
 
@@ -78,8 +81,99 @@ function createBrokerMetricsBuilder(processedTransactions) {
     return utils.buildInvestmentStockDetailBrokerMetrics;
 }
 
+function createRealizedBreakdownBuilder() {
+    const utils = createInvestmentStockDetailsUtils({
+        getInvestmentBaseCurrency: () => 'USD',
+        getInvestmentBrokerMeta: (broker) => ({label: broker.toUpperCase()}),
+        getNormalizedTransactionType: (txn) => txn.type,
+        getTransactionBrokerCode: (txn) => txn.broker,
+    });
+    return utils.getStockDetailRealizedBreakdown;
+}
+
 test('module exposes a semantic cache-busting version', () => {
     assert.match(INVESTMENT_STOCK_DETAILS_MODULE_VERSION, /^v\d+\.\d+\.\d+$/);
+});
+
+test('trade-marker circle area scales directly with absolute transaction quantity', () => {
+    const maxRadius = INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX;
+    assert.equal(resolveInvestmentTradeMarkerRadius(100, 100), maxRadius);
+    assert.equal(resolveInvestmentTradeMarkerRadius(25, 100), maxRadius / 2);
+    assert.equal(resolveInvestmentTradeMarkerRadius(-4, 100), maxRadius / 5);
+    assert.equal(resolveInvestmentTradeMarkerRadius(0, 100), 0);
+    assert.equal(resolveInvestmentTradeMarkerRadius(25, 0), 0);
+
+    const largestArea = Math.PI * resolveInvestmentTradeMarkerRadius(100, 100) ** 2;
+    const smallerArea = Math.PI * resolveInvestmentTradeMarkerRadius(25, 100) ** 2;
+    assert.ok(Math.abs((smallerArea / largestArea) - 0.25) < 1e-12);
+});
+
+test('trade markers paint an opaque-to-transparent radial circle without triangle paths', () => {
+    const operations = [];
+    const colorStops = [];
+    const gradient = {
+        addColorStop(offset, color) {
+            colorStops.push([offset, color]);
+        },
+    };
+    const context = {
+        save: () => operations.push(['save']),
+        createRadialGradient: (...args) => {
+            operations.push(['createRadialGradient', ...args]);
+            return gradient;
+        },
+        beginPath: () => operations.push(['beginPath']),
+        arc: (...args) => operations.push(['arc', ...args]),
+        moveTo: (...args) => operations.push(['moveTo', ...args]),
+        lineTo: (...args) => operations.push(['lineTo', ...args]),
+        fill: () => operations.push(['fill']),
+        restore: () => operations.push(['restore']),
+        set fillStyle(value) {
+            operations.push(['fillStyle', value]);
+        },
+    };
+
+    assert.equal(drawInvestmentTradeMarkerCircle(context, {
+        x: 42,
+        y: 84,
+        radius: 10,
+        opaqueColor: 'rgba(22, 163, 74, 1)',
+        transparentColor: 'rgba(22, 163, 74, 0)',
+    }), true);
+    assert.deepEqual(colorStops, [
+        [0, 'rgba(22, 163, 74, 1)'],
+        [1, 'rgba(22, 163, 74, 0)'],
+    ]);
+    assert.deepEqual(
+        operations.find((operation) => operation[0] === 'createRadialGradient'),
+        ['createRadialGradient', 42, 84, 0, 42, 84, 10],
+    );
+    assert.deepEqual(
+        operations.find((operation) => operation[0] === 'arc'),
+        ['arc', 42, 84, 10, 0, Math.PI * 2],
+    );
+    assert.equal(operations.some((operation) => operation[0] === 'moveTo'), false);
+    assert.equal(operations.some((operation) => operation[0] === 'lineTo'), false);
+});
+
+test('pure-trade realized breakdown follows authoritative broker-scoped totals', () => {
+    const getBreakdown = createRealizedBreakdownBuilder();
+    const breakdown = getBreakdown([
+        {broker: 'hsbc', type: 'sell', rowRealizedPnl: 506.37},
+        {broker: 'ibkr', type: 'sell', rowRealizedPnl: 892.43},
+    ], [
+        {broker: 'hsbc', currency: 'USD', realizedPnl: 506.37, status: 'complete'},
+        {broker: 'ibkr', currency: 'USD', realizedPnl: 818.4783843687473, status: 'complete'},
+    ]);
+
+    assert.ok(Math.abs(breakdown.realizedPnl - 1324.8483843687473) < 1e-9);
+    assert.deepEqual(
+        breakdown.brokerBreakdown.map((entry) => [entry.brokerCode, entry.realizedPnl]),
+        [
+            ['hsbc', 506.37],
+            ['ibkr', 818.4783843687473],
+        ],
+    );
 });
 
 test('average-price labels stay presentation-neutral across cost methods', () => {

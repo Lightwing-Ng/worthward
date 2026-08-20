@@ -1,7 +1,19 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.116.1
+ * Code version: v2.119.0
+ * - Fixed: Current HSBC Cash now uses the posted ledger boundary, converts
+ *   retained foreign cash once, applies pending settlement once, and keeps
+ *   its provisional marker across initial and realtime rendering.
+ * - Fixed: The latest IBKR history row now honors the exact-time verified
+ *   current cash boundary instead of preserving an unanchored buy replay.
+ * - Changed: Stock-details buy and sell markers now use volume-scaled
+ *   radial-gradient circles centered on their rendered trade prices.
+ * - Added: HSBC USD Savings settlement-only cash refreshes can sync without
+ *   requiring a new Portfolio or Order Status capture; existing holdings stay
+ *   authoritative while posted cash clears matching pending buys.
+ * - Fixed: Stock details realized-P&L attribution now follows the shared
+ *   broker-scoped Holdings result for pure-trade tickers.
  * - Changed: HSBC copy/paste fields now expose only clipboard paste controls;
  *   debug-only local TXT carriers are no longer rendered or read.
  * - Changed: IBKR current holdings calibration now uses an explicit Cash /
@@ -14,9 +26,12 @@
  *   any older Transfer review banner instead of retaining a stale assertion.
  * - Added: Investment Metrics now exposes Cash, Market value, and Total equity
  *   cards using the same current valuation and realtime update path as Holdings.
- * - Fixed: The latest HSBC history row now treats the authoritative current
- *   cash snapshot as the display boundary, preventing older settlement
- *   corrections from understating current Cash and Equity.
+ * - Changed: HSBC unsettled-buy rows retain sequential replay before the
+ *   current boundary; the latest row agrees with Holdings and Metrics.
+ * - Fixed: IBKR history cash now follows the displayed cent-level replay so
+ *   each visible buy row subtracts the amount shown in the preceding row.
+ * - Fixed: Aggregate current Cash now sums every authoritative broker snapshot
+ *   without borrowing a sequential history value or dropping foreign cash.
  * - Fixed: HSBC's latest broker-scoped transaction row now refreshes its
  *   authoritative current cash and Equity after the current-cash projection,
  *   including visible pending-settlement proceeds.
@@ -288,7 +303,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.104.7';
+} from './investment/data-utils.js?v=investment-data-utils-v1.105.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -317,7 +332,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.15.6';
+} from './investment/stock-details.js?v=investment-stock-details-v0.16.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -363,7 +378,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.116.1',
+    entry: 'v2.119.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -739,7 +754,10 @@ document.addEventListener('DOMContentLoaded', () => {
             label: 'Cash',
             summary: 'Current display cash in the workspace base currency, including the same broker-scoped pending-settlement presentation used by Holdings.',
             valueKey: 'cash',
-            formatValue: (metrics) => formatHoldingsMoney(metrics?.cash),
+            formatValue: (metrics) => formatInvestmentCurrentCash(
+                metrics?.cash,
+                metrics?.cashIsApproximate === true,
+            ),
             valueClass: (metrics) => getSignedMetricClass(metrics?.cash),
             liveField: 'metrics_cash',
             liveNumberKey: 'cash',
@@ -951,7 +969,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentRealtimeQuotesByTicker = new Map();
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
-    const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
     const INVESTMENT_SURFACE_LAYOUT_SETTLE_MS = 520;
     const INVESTMENT_COMMON_SPLIT_FACTORS = [
         1, 1.5, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 128, 160, 200, 256,
@@ -1177,8 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentBrokerEndingCash,
         getInvestmentBrokerEndingCashBalances,
         getInvestmentBrokerEndingCashInBaseCurrency,
-        getInvestmentBrokerCurrentPendingSettlementCash,
-        getInvestmentBrokerCurrentDisplayCash,
+        getInvestmentBrokerCurrentCashSnapshot,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
@@ -3574,6 +3590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             projection.projections.forEach(({index, runningCash, balances}) => {
                 const txn = brokerRows[index];
                 if (!txn) return;
+                if (shouldPreserveSequentialBrokerBuyHistory(txn)) return;
                 if (Number.isFinite(runningCash)) txn.broker_running_cash = runningCash;
                 txn.broker_cash_by_currency = {...balances};
                 const brokerMarketValue = getOptionalInvestmentNumber(txn.broker_market_value);
@@ -3634,7 +3651,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? finalAggregateCash + marketVal + aggregatePendingSettlementCash
                 : null;
             latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
-            if (isSingleBroker && brokerCodes.length === 1) {
+            if (
+                isSingleBroker
+                && brokerCodes.length === 1
+                && !shouldPreserveSequentialBrokerBuyHistory(latestProcessed)
+            ) {
                 latestProcessed.broker_running_cash = finalAggregateCash;
                 latestProcessed.broker_display_cash = latestProcessed.aggregate_display_cash;
                 latestProcessed.broker_cash_by_currency = { ...latestProcessed.aggregate_cash_by_currency };
@@ -3885,7 +3906,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const unsupportedCashBrokers = [];
         brokerCodes.forEach((brokerCode) => {
             const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
-            const currentDisplayCash = getInvestmentBrokerCurrentDisplayCash(brokerCode);
+            const latestBrokerTxn = [...transactions].reverse().find(
+                (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode,
+            );
+            const currentCashSnapshot = getInvestmentBrokerCurrentCashSnapshot(
+                brokerCode,
+                valuationDate,
+                fxTimeline,
+            );
             const currentCashAsOf = getInvestmentBrokerEndingCashAsOf(brokerCode);
             const hasCurrentCashBoundary = Boolean(
                 brokerSummary
@@ -3895,33 +3923,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     || brokerSummary.position_snapshot_as_of
                 )
             );
-            if (!hasCurrentCashBoundary || currentDisplayCash === null) {
-                const lastBrokerTxn = [...transactions].reverse().find(
-                    (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode,
-                );
-                if (Math.abs(Number(lastBrokerTxn?.broker_running_cash) || 0) > 1e-9) {
+            if (!hasCurrentCashBoundary || !currentCashSnapshot) {
+                if (Math.abs(Number(latestBrokerTxn?.broker_running_cash) || 0) > 1e-9) {
                     unsupportedCashBrokers.push(brokerCode);
                 }
                 return;
             }
-            const pendingSettlementCash = getInvestmentBrokerCurrentPendingSettlementCash(brokerCode);
-            const runningCash = currentDisplayCash - pendingSettlementCash;
-            const authoritativeBalances = getInvestmentBrokerEndingCashBalances(brokerCode);
-            const runningBalances = authoritativeBalances && Object.keys(authoritativeBalances).length
-                ? {
-                    ...authoritativeBalances,
-                    [getInvestmentBaseCurrency()]: runningCash,
-                }
-                : {
-                    [getInvestmentBaseCurrency()]: runningCash,
-                };
-            currentCashSnapshots.push({
-                brokerCode,
-                displayCash: currentDisplayCash,
-                pendingSettlementCash,
-                runningCash,
-                runningBalances,
-            });
+            currentCashSnapshots.push(currentCashSnapshot);
         });
         if (
             !currentCashSnapshots.length
@@ -3960,6 +3968,9 @@ document.addEventListener('DOMContentLoaded', () => {
         latestProcessed.aggregate_current_cash_brokers = currentCashSnapshots.map(
             (snapshot) => snapshot.brokerCode,
         );
+        latestProcessed.aggregate_current_cash_is_approximate = currentCashSnapshots.some(
+            (snapshot) => snapshot.isApproximate === true,
+        );
         latestProcessed.total_equity = Number.isFinite(marketValue)
             ? aggregateDisplayCash + marketValue
             : null;
@@ -3973,6 +3984,9 @@ document.addEventListener('DOMContentLoaded', () => {
             latestBroker.broker_cash_by_currency = {...snapshot.runningBalances};
             latestBroker.broker_pending_settlement_cash = snapshot.pendingSettlementCash;
             latestBroker.broker_display_cash = snapshot.displayCash;
+            latestBroker.broker_current_cash_is_approximate = (
+                snapshot.isApproximate === true
+            );
             const brokerMarketValue = getOptionalInvestmentNumber(
                 latestBroker.broker_market_value,
             );
@@ -5558,7 +5572,6 @@ document.addEventListener('DOMContentLoaded', () => {
         getStockDetailRealizedBreakdown,
         renderInvestmentStockDetailsPriceChart,
     } = createInvestmentStockDetailsUtils({
-        STOCK_DETAILS_MARKER_VIEW_BOX,
         INVESTMENT_SURFACE_LAYOUT_SETTLE_MS,
         adjustTradePriceForRenderedSeries,
         applyInvestmentTransactionToState,
@@ -9872,7 +9885,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportNote.innerHTML = isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
                     ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
-                    : 'Paste HSBC cash-account pages here. HKD and CNH cash-only captures can sync on their own; USD Savings requires the matching Portfolio and Order Status pages. Supplementary captures are allowed and duplicate chunks are ignored.')
+                    : 'Paste HSBC cash-account pages here. USD Savings settlement-only cash refreshes and HKD/CNH cash-only captures can sync on their own; a full USD Portfolio and Order Status snapshot remains available when holdings also need refresh. Supplementary captures are allowed and duplicate chunks are ignored.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                     : (isLongbridgeSg
@@ -9957,6 +9970,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function isHsbcSettlementActuallyPending(source) {
         return source?.cash_replay_pending_settlement === true
             && !hasHsbcCashSettlementEvidence(source);
+    }
+
+    function isUnsettledHsbcBuyTransaction(txn) {
+        return (
+            normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === 'hsbc'
+            && getNormalizedTransactionType(txn) === 'buy'
+            && isHsbcSettlementActuallyPending(txn?.source)
+        );
+    }
+
+    function shouldPreserveSequentialBrokerBuyHistory(txn) {
+        if (getNormalizedTransactionType(txn) !== 'buy') return false;
+        return isUnsettledHsbcBuyTransaction(txn);
     }
 
     function renderInvestmentBrokerCell(txn) {
@@ -10320,6 +10346,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatInvestmentHistoryCashProjection(value, isProvisional = false) {
         const formatted = formatAmount(value);
         if (!isProvisional || formatted === '--') return formatted;
+        return formatted.startsWith('-')
+            ? `-*${formatted.slice(1)}`
+            : `*${formatted}`;
+    }
+
+    function formatInvestmentCurrentCash(value, isApproximate = false) {
+        const numericValue = getOptionalInvestmentNumber(value);
+        if (numericValue === null) return '-';
+        const formatted = formatHoldingsMoney(numericValue);
+        if (!isApproximate) return formatted;
         return formatted.startsWith('-')
             ? `-*${formatted.slice(1)}`
             : `*${formatted}`;
@@ -12420,7 +12456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : 0;
     }
 
-    function getInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', currentCash = null) {
+    function resolveInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', currentCash = null) {
         const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
         const isAllBrokers = !normalizedBrokerCode || normalizedBrokerCode === 'all';
         const cashKeys = isAllBrokers
@@ -12432,24 +12468,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 const transaction = source[index];
                 for (const key of cashKeys) {
                     const value = getOptionalInvestmentNumber(transaction?.[key]);
-                    if (value !== null) return value;
+                    if (value !== null) {
+                        return {
+                            cash: value,
+                            cashIsApproximate: isAllBrokers
+                                ? transaction?.aggregate_current_cash_is_approximate === true
+                                : transaction?.broker_current_cash_is_approximate === true,
+                        };
+                    }
                 }
             }
             return null;
         };
 
         const explicitCurrentCash = getOptionalInvestmentNumber(currentCash);
-        if (explicitCurrentCash !== null) return explicitCurrentCash;
+        if (explicitCurrentCash !== null) {
+            const latestProcessed = investmentProcessedTransactionsCache[
+                investmentProcessedTransactionsCache.length - 1
+            ];
+            return {
+                cash: explicitCurrentCash,
+                cashIsApproximate: latestProcessed?.aggregate_current_cash_is_approximate === true,
+            };
+        }
 
         if (!isAllBrokers) {
-            const currentBrokerCash = getOptionalInvestmentNumber(
-                getInvestmentBrokerCurrentDisplayCash(normalizedBrokerCode),
+            const baseCurrency = getInvestmentBaseCurrency();
+            const fxTransactions = Array.isArray(investmentRawTransactionsCache)
+                && investmentRawTransactionsCache.length
+                ? investmentRawTransactionsCache
+                : transactions;
+            const currentBrokerSnapshot = getInvestmentBrokerCurrentCashSnapshot(
+                normalizedBrokerCode,
+                getTodayLedgerDate(),
+                buildInvestmentFxRateTimeline(fxTransactions, baseCurrency),
             );
-            if (currentBrokerCash !== null) return currentBrokerCash;
+            if (currentBrokerSnapshot) {
+                return {
+                    cash: currentBrokerSnapshot.displayCash,
+                    cashIsApproximate: currentBrokerSnapshot.isApproximate === true,
+                };
+            }
         } else {
             const realtimeState = getInvestmentHoldingsRealtimeState();
             const realtimeCash = getOptionalInvestmentNumber(realtimeState?.aggregateCash);
-            if (realtimeCash !== null) return realtimeCash;
+            if (realtimeCash !== null) {
+                return {
+                    cash: realtimeCash,
+                    cashIsApproximate: realtimeState?.cashIsApproximate === true,
+                };
+            }
         }
 
         const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
@@ -12460,7 +12528,9 @@ document.addEventListener('DOMContentLoaded', () => {
             : processedTransactions.filter((transaction) => (
                 normalizeInvestmentBroker(getTransactionBrokerCode(transaction)) === normalizedBrokerCode
             ));
-        return readLatestCash(scopedProcessedTransactions) ?? readLatestCash(transactions);
+        return readLatestCash(scopedProcessedTransactions)
+            ?? readLatestCash(transactions)
+            ?? {cash: null, cashIsApproximate: false};
     }
 
     function renderInvestmentMetricsPanel({
@@ -13764,7 +13834,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span class="investment-holdings-summary-metric-label">Cash</span>
                                 ${renderInvestmentLiveValue('summary_cash_balance', Number.isFinite(AGGREGATE_CASH) ? AGGREGATE_CASH : null, {
                                     className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cashClass}`,
-                                    formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                                    formatter: (nextValue) => formatInvestmentCurrentCash(
+                                        nextValue,
+                                        holdingsSummaryMetrics?.cashIsApproximate === true,
+                                    ),
                                     useSplitValue: true,
                                 })}
                                 ${renderInvestmentHoldingsAllocationBadge('summary_cash_allocation', cashAllocation, AGGREGATE_CASH)}
@@ -14624,13 +14697,19 @@ document.addEventListener('DOMContentLoaded', () => {
             summaries,
             totalEquity: resolvedTotalEquity,
             aggregateCash: Number.isFinite(aggregateCash) ? aggregateCash : null,
+            cashIsApproximate: latestSnapshot?.aggregate_current_cash_is_approximate === true,
         };
     }
 
     function syncInvestmentHoldingsRealtimeValues() {
         const realtimeState = getInvestmentHoldingsRealtimeState();
         if (!realtimeState) return;
-        const { summaries, totalEquity, aggregateCash } = realtimeState;
+        const {
+            summaries,
+            totalEquity,
+            aggregateCash,
+            cashIsApproximate,
+        } = realtimeState;
         investmentTickerSummariesCache = Array.isArray(summaries) ? [...summaries] : [];
 
         summaries.forEach((summary) => {
@@ -14760,7 +14839,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateInvestmentLiveValueNode(
             cashNode,
-            aggregateCash === null ? '-' : formatHoldingsMoney(aggregateCash),
+            formatInvestmentCurrentCash(aggregateCash, cashIsApproximate),
             aggregateCash,
         );
         updateInvestmentLiveValueNode(
@@ -14801,7 +14880,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const liveMarketValue = hasUnavailableOpenMarketValue ? null : totalNetMarketValue;
             updateInvestmentLiveValueNode(
                 metricsCashNode,
-                aggregateCash === null ? '-' : formatHoldingsMoney(aggregateCash),
+                formatInvestmentCurrentCash(aggregateCash, cashIsApproximate),
                 aggregateCash,
             );
             updateInvestmentLiveValueNode(
@@ -15127,7 +15206,10 @@ document.addEventListener('DOMContentLoaded', () => {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(totalTradeCount);
-        const realizedBreakdown = getStockDetailRealizedBreakdown(detailRows);
+        const realizedBreakdown = getStockDetailRealizedBreakdown(
+            detailRows,
+            tickerSummary.realizedPnlAccounts,
+        );
         const realizedBreakdownDefinitions = [
             {key: 'dividendIncome', label: 'Dividend income'},
             {key: 'paymentInLieuIncome', label: 'Payment in lieu'},
@@ -16717,6 +16799,8 @@ document.addEventListener('DOMContentLoaded', () => {
         applyAuthoritativeBrokerEndingCashBalances(processed);
         applyAuthoritativeBrokerPositionSnapshots(processed);
         applyInvestmentInternalTransferBindings(processed);
+        applyHsbcHistoryPresentationProjection(processed);
+        applyIbkrHistoryPresentationProjection(processed);
         applyAuthoritativeCurrentAggregateCash(processed, fxTimeline, getTodayLedgerDate());
 
         function getHsbcSettlementScopeKey(txn) {
@@ -17276,6 +17360,73 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        function roundInvestmentHistoryCash(value) {
+            const numericValue = Number(value);
+            return Number.isFinite(numericValue)
+                ? Number(numericValue.toFixed(2))
+                : null;
+        }
+
+        function getInvestmentHistoryCashScopeKey(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const account = String(
+                txn?.account
+                ?? txn?.account_id
+                ?? source.account
+                ?? source.account_id
+                ?? source.account_number
+                ?? '',
+            ).trim();
+            return `${account}|${formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency}`;
+        }
+
+        function applyIbkrHistoryPresentationProjection(processedTransactions) {
+            const previousCashByScope = new Map();
+            (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn, processedIndex) => {
+                if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) !== 'ibkr') return;
+                const rawCash = Number(txn?.broker_running_cash);
+                if (!Number.isFinite(rawCash)) return;
+
+                const scopeKey = getInvestmentHistoryCashScopeKey(txn);
+                const transactionCurrency = String(
+                    formatTransactionCurrency(txn)
+                    || getTickerQuoteCurrency(txn?.ticker)
+                    || baseCurrency,
+                ).trim().toUpperCase() || baseCurrency;
+                const replayIndex = Number.isInteger(txn?.[INVESTMENT_REPLAY_ORDER_SYMBOL])
+                    ? txn[INVESTMENT_REPLAY_ORDER_SYMBOL]
+                    : processedIndex;
+                const cashDelta = calculateInvestmentCashDelta(txn, replayIndex)
+                    + (Number(cashFundingAdjustments.get(replayIndex)) || 0);
+                const hasCashBoundary = Boolean(getInvestmentCashBalanceBoundary(txn));
+                const previousCash = previousCashByScope.get(scopeKey);
+                const roundedRawCash = roundInvestmentHistoryCash(rawCash);
+                let historyCash = roundedRawCash;
+                const sequentialCash = transactionCurrency === baseCurrency
+                    && getNormalizedTransactionType(txn) === 'buy'
+                    && !hasCashBoundary
+                    && Number.isFinite(previousCash)
+                    ? roundInvestmentHistoryCash(
+                        previousCash + (roundInvestmentHistoryCash(cashDelta) || 0),
+                    )
+                    : null;
+                if (
+                    Number.isFinite(sequentialCash)
+                    && Number.isFinite(roundedRawCash)
+                    && Math.abs(sequentialCash - roundedRawCash) <= 0.02
+                ) {
+                    historyCash = sequentialCash;
+                }
+                if (!Number.isFinite(historyCash)) return;
+
+                previousCashByScope.set(scopeKey, historyCash);
+                if (Math.abs(historyCash - roundedRawCash) <= 1e-9) return;
+                const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
+                txn.history_broker_cash = historyCash;
+                txn.history_broker_equity = historyCash + brokerMarketValue;
+            });
+        }
+
         function applyAuthoritativeCurrentBrokerHistoryBoundary(processedTransactions) {
             const latestByBroker = new Map();
             (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
@@ -17296,7 +17447,6 @@ document.addEventListener('DOMContentLoaded', () => {
             processed,
             hsbcCashSettlementBoundaryPlan,
         );
-        applyHsbcHistoryPresentationProjection(processed);
         applyAuthoritativeCurrentBrokerHistoryBoundary(processed);
 
         Object.keys(latestPrices).forEach((ticker) => {
@@ -19275,7 +19425,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const marketValue = hasUnavailableMarketValue
             ? null
             : openSummaries.reduce((sum, summary) => sum + Number(summary.marketValue), 0);
-        const cash = getInvestmentMetricsCurrentCash(safeTransactions, brokerCode, currentCash);
+        const currentCashSnapshot = resolveInvestmentMetricsCurrentCash(
+            safeTransactions,
+            brokerCode,
+            currentCash,
+        );
+        const cash = currentCashSnapshot.cash;
         const resolvedTotalEquity = Number.isFinite(Number(cash)) && Number.isFinite(Number(marketValue))
             ? Number(cash) + Number(marketValue)
             : getOptionalInvestmentNumber(TOTAL_EQUITY);
@@ -19326,6 +19481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return {
             cash,
+            cashIsApproximate: currentCashSnapshot.cashIsApproximate === true,
             marketValue,
             totalEquity: resolvedTotalEquity,
             totalRealizedPnl,

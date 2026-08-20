@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.73.0`
+Documentation version: `v2.74.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -337,6 +337,11 @@ remain explicitly provisional.
 - HSBC clipboard pages are validated as one composite snapshot when the source
   requires multiple pages. Duplicate chunks are deduplicated and conflicting
   boundaries fail closed before the local store changes.
+- Current HSBC cash uses the posted USD Savings Ledger balance as its USD
+  boundary. The bank's Available balance remains separate audit evidence;
+  visible pending settlements are applied exactly once, and retained foreign
+  cash is converted with the dated project FX history. This estimated current
+  amount is marked as provisional in the browser.
 - Cash-only non-USD captures remain separate by source account kind and
   currency; they cannot replace an unrelated portfolio snapshot.
 - Account validation is opt-in through local environment variables. No account
@@ -349,7 +354,7 @@ remain explicitly provisional.
 - A bank statement's `CNY` label means offshore RMB in this account. It is normalized to `CNH`; `CNY` remains available only as raw source provenance and is never emitted as the HSBC ledger currency.
 - The legacy paired path keeps the investment statement authoritative for settled trades, closing holdings, transaction charges, and ticker-linked income such as cash dividends. Its HSBC One composite statement remains authoritative for the reconciled USD cash postings and closing cash.
 - Every trade, charge, and dividend in the legacy paired path must reconcile to a same-date and same-amount USD cash posting. The statement import fails closed when reconciliation is incomplete.
-- Historical statement snapshots do not replace a newer copy/paste Portfolio or available-cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
+- Historical statement snapshots do not replace a newer copy/paste Portfolio or posted-ledger cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
 - When a historical HSBC statement overlaps an existing cash-account import, the same-account event is deduplicated by date, type, currency, signed amount, and occurrence count. Existing USD cash rows remain the current snapshot, while statement-only HKD and CNH rows are added to the ledger.
 - The read-only validator can independently audit the four official account CSVs with `--official-csv-dir`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.parquet`.
 

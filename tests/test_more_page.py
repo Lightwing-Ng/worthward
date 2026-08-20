@@ -1,7 +1,9 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.24.0
+Code version: v0.25.0
+- Added: HSBC USD Savings settlement-only cash refreshes are accepted by
+  route prevalidation without requiring Portfolio and Order Status text.
 """
 
 from __future__ import annotations
@@ -1097,7 +1099,7 @@ Fees: 0.12
         self.assertFalse(self.investment_store_path.exists())
         self.assertFalse(self.investment_cache_path.exists())
 
-    def test_hsbc_paste_prevalidation_waits_for_usd_portfolio_and_order_status(self) -> None:
+    def test_hsbc_paste_prevalidation_accepts_usd_settlement_refresh(self) -> None:
         client = create_app().test_client()
 
         response = self._post_investment_import(
@@ -1113,9 +1115,9 @@ Fees: 0.12
         self.assertEqual(response.status_code, 200)
         validation = response.get_json()
         self.assertTrue(validation["success"])
-        self.assertFalse(validation["ready"])
-        self.assertEqual(validation["mode"], "usd_composite")
-        self.assertEqual(validation["required_fields"], ["portfolio", "order_status"])
+        self.assertTrue(validation["ready"])
+        self.assertEqual(validation["mode"], "cash_only_usd")
+        self.assertNotIn("required_fields", validation)
         self.assertFalse(self.investment_store_path.exists())
 
     def test_hsbc_paste_prevalidation_requires_session_csrf_proof(self) -> None:

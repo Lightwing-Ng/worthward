@@ -1,7 +1,14 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.15.6
+ * Code version: v0.16.1
+ * - Changed: The shared investment data-utils dependency now uses the current
+ *   cash-resolver cache key.
+ * - Changed: Buy and sell trades now render as radial-gradient circles whose
+ *   areas scale with plotted transaction volume and whose centers stay
+ *   anchored to the exact rendered trade price.
+ * - Fixed: Pure-trade realized P&L breakdowns now use the shared broker-scoped
+ *   summary so Stock details cannot diverge from Holdings calibration.
  * - Fixed: Stock-details intraday trade markers retain off-hours buys that
  *   occur after the last visible regular-session candle, placing them in the
  *   trailing overnight or pre-market gap.
@@ -76,11 +83,66 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.104.7';
+} from './data-utils.js?v=investment-data-utils-v1.105.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.15.6';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.16.1';
+
+export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 10;
+
+export function resolveInvestmentTradeMarkerRadius(
+    quantity,
+    maxQuantity,
+    maxRadius = INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX,
+) {
+    const normalizedQuantity = Math.abs(Number(quantity));
+    const normalizedMaxQuantity = Math.abs(Number(maxQuantity));
+    const normalizedMaxRadius = Number(maxRadius);
+    if (
+        !Number.isFinite(normalizedQuantity)
+        || normalizedQuantity <= 0
+        || !Number.isFinite(normalizedMaxQuantity)
+        || normalizedMaxQuantity <= 0
+        || !Number.isFinite(normalizedMaxRadius)
+        || normalizedMaxRadius <= 0
+    ) {
+        return 0;
+    }
+    return normalizedMaxRadius * Math.sqrt(
+        Math.min(normalizedQuantity, normalizedMaxQuantity) / normalizedMaxQuantity,
+    );
+}
+
+export function drawInvestmentTradeMarkerCircle(ctx, {
+    x,
+    y,
+    radius,
+    opaqueColor,
+    transparentColor,
+} = {}) {
+    if (
+        !ctx
+        || !Number.isFinite(x)
+        || !Number.isFinite(y)
+        || !Number.isFinite(radius)
+        || radius <= 0
+        || !opaqueColor
+        || !transparentColor
+    ) {
+        return false;
+    }
+    ctx.save();
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, opaqueColor);
+    gradient.addColorStop(1, transparentColor);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.restore();
+    return true;
+}
 
 export function getInvestmentStockDetailsAveragePriceLabel() {
     return 'Average price';
@@ -404,7 +466,6 @@ export function drawInvestmentYAxisValueBadge(chartInstance, {
 }
 
 export function createInvestmentStockDetailsUtils({
-    STOCK_DETAILS_MARKER_VIEW_BOX,
     INVESTMENT_SURFACE_LAYOUT_SETTLE_MS,
     adjustTradePriceForRenderedSeries,
     applyInvestmentTransactionToState,
@@ -610,7 +671,7 @@ export function createInvestmentStockDetailsUtils({
         };
     }
 
-    function getStockDetailRealizedBreakdown(detailRows) {
+    function getStockDetailRealizedBreakdown(detailRows, authoritativeRealizedAccounts = []) {
         let dividendIncome = 0;
         let paymentInLieuIncome = 0;
         let dividendWithholding = 0;
@@ -669,6 +730,51 @@ export function createInvestmentStockDetailsUtils({
             }))
             .filter((entry) => Math.abs(entry.realizedPnl) > 1e-9)
             .sort((left, right) => left.brokerLabel.localeCompare(right.brokerLabel));
+
+        const hasNonTradingRealizedRows = (Array.isArray(detailRows) ? detailRows : [])
+            .some((txn) => [
+                'dividend',
+                'foreign_tax_withholding',
+                'payment_in_lieu',
+                'adjustment',
+            ].includes(getNormalizedTransactionType(txn)));
+        const normalizedBaseCurrency = String(getInvestmentBaseCurrency() || '').trim().toUpperCase();
+        const authoritativeBrokerBreakdown = (
+            !hasNonTradingRealizedRows
+            && Array.isArray(authoritativeRealizedAccounts)
+            && authoritativeRealizedAccounts.length > 0
+        )
+            ? authoritativeRealizedAccounts
+                .filter((account) => (
+                    account?.status === 'complete'
+                    && String(account.currency || '').trim().toUpperCase() === normalizedBaseCurrency
+                    && Number.isFinite(Number(account.realizedPnl))
+                ))
+                .map((account) => ({
+                    brokerCode: account.broker,
+                    brokerLabel: getInvestmentBrokerMeta(account.broker).label,
+                    dividendIncome: 0,
+                    paymentInLieuIncome: 0,
+                    dividendWithholding: 0,
+                    tradingSpreadIncome: Number(account.realizedPnl),
+                    realizedPnl: Number(account.realizedPnl),
+                }))
+            : [];
+        if (authoritativeBrokerBreakdown.length === authoritativeRealizedAccounts.length) {
+            const authoritativeRealizedPnl = authoritativeBrokerBreakdown.reduce(
+                (total, entry) => total + entry.realizedPnl,
+                0,
+            );
+            return {
+                dividendIncome: 0,
+                paymentInLieuIncome: 0,
+                dividendWithholding: 0,
+                tradingSpreadIncome: authoritativeRealizedPnl,
+                realizedPnl: authoritativeRealizedPnl,
+                brokerBreakdown: authoritativeBrokerBreakdown
+                    .sort((left, right) => left.brokerLabel.localeCompare(right.brokerLabel)),
+            };
+        }
 
         return {
             dividendIncome,
@@ -1107,6 +1213,7 @@ export function createInvestmentStockDetailsUtils({
                 x: labels[markerIndex],
                 y: markerPrice,
                 type: normalizedType,
+                quantity: Math.abs(Number(getTransactionQuantity(txn))),
                 placement: markerPlacement,
                 sessionType: markerSessionType,
                 ledgerDate,
@@ -1117,6 +1224,12 @@ export function createInvestmentStockDetailsUtils({
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
         }, { buy: [], sell: [] });
+        const maxTradeMarkerQuantity = Math.max(
+            0,
+            ...[...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell]
+                .map((marker) => Number(marker?.quantity))
+                .filter((quantity) => Number.isFinite(quantity) && quantity > 0),
+        );
         const shouldReserveTrailingOffHoursGap = Boolean(
             useIntradayCandles
             && [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell]
@@ -1375,10 +1488,8 @@ export function createInvestmentStockDetailsUtils({
                     ]);
                 })()
         );
-        const STOCK_DETAILS_MARKER_HALF_WIDTH_PX = 6;
-        const STOCK_DETAILS_MARKER_HEIGHT_PX = 11;
-        const STOCK_DETAILS_MARKER_X_PADDING_PX = STOCK_DETAILS_MARKER_HALF_WIDTH_PX + 2;
-        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 2;
+        const STOCK_DETAILS_MARKER_X_PADDING_PX = INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX + 2;
+        const STOCK_DETAILS_MARKER_Y_PADDING_PX = INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX + 2;
         const getStockDetailsChartYScaleValues = () => ([
             ...openValues,
             ...highValues,
@@ -1586,25 +1697,14 @@ export function createInvestmentStockDetailsUtils({
                 });
             },
         };
-        const drawTradeMarker = (ctx, { x, y, type, color }) => {
-            if (!Number.isFinite(x) || !Number.isFinite(y) || !color) return;
-            const halfWidth = STOCK_DETAILS_MARKER_HALF_WIDTH_PX;
-            const height = STOCK_DETAILS_MARKER_HEIGHT_PX;
-            ctx.save();
-            ctx.beginPath();
-            if (type === 'sell') {
-                ctx.moveTo(x, y);
-                ctx.lineTo(x - halfWidth, y - height);
-                ctx.lineTo(x + halfWidth, y - height);
-            } else {
-                ctx.moveTo(x, y);
-                ctx.lineTo(x - halfWidth, y + height);
-                ctx.lineTo(x + halfWidth, y + height);
-            }
-            ctx.closePath();
-            ctx.fillStyle = color;
-            ctx.fill();
-            ctx.restore();
+        const drawTradeMarker = (ctx, { x, y, radius, color }) => {
+            drawInvestmentTradeMarkerCircle(ctx, {
+                x,
+                y,
+                radius,
+                opaqueColor: applyCanvasAlpha(color, 1),
+                transparentColor: applyCanvasAlpha(color, 0),
+            });
         };
         const resolveTradeMarkerPixelPosition = (chartInstance, marker) => {
             const yScale = chartInstance?.scales?.y;
@@ -1671,7 +1771,10 @@ export function createInvestmentStockDetailsUtils({
                         drawTradeMarker(chartInstance.ctx, {
                             x,
                             y,
-                            type: String(marker.type || ''),
+                            radius: resolveInvestmentTradeMarkerRadius(
+                                marker.quantity,
+                                maxTradeMarkerQuantity,
+                            ),
                             color,
                         });
                     });
@@ -1723,12 +1826,6 @@ export function createInvestmentStockDetailsUtils({
             document.body.appendChild(tooltip);
             return tooltip;
         };
-        const buildTooltipTriangle = (color, direction = 'up') => {
-            const path = direction === 'down'
-                ? 'M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z'
-                : 'M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z';
-            return `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${color}" d="${path}"></path></svg>`;
-        };
         let activeStockDetailsHoverDate = '';
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
@@ -1775,7 +1872,6 @@ export function createInvestmentStockDetailsUtils({
             }
             const dateEl = tooltipEl.querySelector('.chart-tooltip-date');
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
-            const activeMarkerType = String(chart?._activeInvestmentStockDetailsMarkerType || '');
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
             const averagePrice = Number(snapshot?.averagePrice);
             const tooltipRows = [
@@ -1803,9 +1899,7 @@ export function createInvestmentStockDetailsUtils({
                     label: 'Buy shares',
                     value: formatShareCount(buyQuantity),
                     color: resolvedTheme.accentPositive,
-                    bulletHtml: activeMarkerType === 'buy'
-                        ? buildTooltipTriangle(resolvedTheme.accentPositive, 'up')
-                        : '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 });
             }
             if (Number.isFinite(sellQuantity) && sellQuantity > 0) {
@@ -1813,9 +1907,7 @@ export function createInvestmentStockDetailsUtils({
                     label: 'Sell shares',
                     value: formatShareCount(sellQuantity),
                     color: resolvedTheme.accentSecondary,
-                    bulletHtml: activeMarkerType === 'sell'
-                        ? buildTooltipTriangle(resolvedTheme.accentSecondary, 'down')
-                        : '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 });
             }
             listEl.innerHTML = tooltipRows.map((row) => `

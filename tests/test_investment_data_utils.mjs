@@ -1,4 +1,4 @@
-/* Code version: v1.41.6 */
+/* Code version: v1.42.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -157,12 +157,13 @@ const {
     getInvestmentCostBasisMethod,
     getInvestmentBrokerStartingCashBalances,
     getInvestmentBrokerEndingCashBalances,
-        getInvestmentBrokerEndingCashInBaseCurrency,
-        getInvestmentBrokerCurrentPendingSettlementCash,
-        getInvestmentBrokerCurrentDisplayCash,
-        getInvestmentBrokerEndingCashAsOf,
-        getInvestmentBrokerEndingCashAsOfDateTime,
-        getInvestmentBrokerPositionSnapshotAsOf,
+    getInvestmentBrokerEndingCashInBaseCurrency,
+    getInvestmentBrokerCurrentPendingSettlementCash,
+    getInvestmentBrokerCurrentDisplayCash,
+    getInvestmentBrokerCurrentCashSnapshot,
+    getInvestmentBrokerEndingCashAsOf,
+    getInvestmentBrokerEndingCashAsOfDateTime,
+    getInvestmentBrokerPositionSnapshotAsOf,
     getInvestmentEndingCashBalances,
     getInvestmentEndingCashInBaseCurrency,
     getInvestmentStartingCashBalances,
@@ -203,45 +204,72 @@ test('current Holdings equity uses one cash snapshot plus open market values', (
     );
 });
 
-test('current aggregate cash uses verified broker display boundaries', () => {
+test('current broker cash converts foreign balances and applies pending once', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
         ANTIGRAVITY_INVESTMENT_DATA: {
             broker_summaries: {
                 hsbc: {
-                    ending_cash_base_currency: '21109.06',
+                    ending_cash_base_currency: '23412.54',
                     ending_cash_by_currency: {
                         HKD: '89.24',
-                        USD: '21108.38',
+                        USD: '23412.54',
                         CNH: '0.00',
                     },
-                    hsbc_pending_settlement_cash_raw: '1576.750',
+                    hsbc_bank_available_cash: '23388.54',
+                    hsbc_pending_settlement_cash_raw: '-24.600',
                     hsbc_pending_settlement_fee_adjustment: '0.000',
-                    hsbc_pending_settlement_fee_unapplied: '0.020',
-                    hsbc_pending_settlement_cash: '1576.750',
-                    hsbc_broker_cash_estimate: '22685.810',
-                    position_snapshot_as_of: '2026-08-14',
+                    hsbc_pending_settlement_fee_unapplied: '0.000',
+                    hsbc_pending_settlement_cash: '-24.600',
+                    hsbc_pending_settlement_order_count: 1,
+                    hsbc_broker_cash_estimate: '23387.940',
+                    cash_snapshot_authoritative: true,
+                    position_snapshot_as_of: '2026-08-19',
                 },
                 ibkr: {
-                    ending_cash: '879.44',
+                    ending_cash: '950.49',
                     cash_snapshot_authoritative: true,
-                    ending_cash_as_of: '2026-08-14',
+                    ending_cash_as_of: '2026-08-19',
                 },
                 schwab: {
                     ending_cash: '0.41',
                     position_snapshot_as_of: '2026-08-13',
                 },
             },
+            fx_rate_history_by_currency: {
+                HKD: {
+                    dates: ['2026-08-19'],
+                    values: {'2026-08-19': 7.842899799346924},
+                },
+            },
         },
     };
     try {
-        assert.equal(getInvestmentBrokerCurrentPendingSettlementCash('hsbc'), 1576.75);
-        assert.equal(getInvestmentBrokerCurrentDisplayCash('hsbc'), 22685.81);
+        assert.equal(getInvestmentBrokerCurrentPendingSettlementCash('hsbc'), -24.6);
+        assert.equal(getInvestmentBrokerCurrentDisplayCash('hsbc'), 23387.94);
         assert.deepEqual(getInvestmentBrokerEndingCashBalances('hsbc'), {
             HKD: 89.24,
-            USD: 21108.38,
+            USD: 23412.54,
         });
-        assert.equal(getInvestmentBrokerCurrentDisplayCash('ibkr'), 879.44);
+        const fxTimeline = buildInvestmentFxRateTimeline([], 'USD');
+        const hsbcSnapshot = getInvestmentBrokerCurrentCashSnapshot(
+            'hsbc',
+            '2026-08-20',
+            fxTimeline,
+        );
+        assert.ok(hsbcSnapshot);
+        assert.ok(Math.abs(
+            hsbcSnapshot.runningCash - (23412.54 + (89.24 / 7.842899799346924)),
+        ) < 1e-9);
+        assert.ok(Math.abs(
+            hsbcSnapshot.displayCash - (23387.94 + (89.24 / 7.842899799346924)),
+        ) < 1e-9);
+        assert.equal(hsbcSnapshot.isApproximate, true);
+        assert.equal(getInvestmentBrokerCurrentDisplayCash('ibkr'), 950.49);
+        assert.equal(
+            getInvestmentBrokerCurrentCashSnapshot('ibkr', '2026-08-20', fxTimeline)?.displayCash,
+            950.49,
+        );
         assert.equal(getInvestmentBrokerCurrentDisplayCash('schwab'), 0.41);
         assert.equal(getInvestmentBrokerCurrentDisplayCash('longbridge_hk'), null);
     } finally {
@@ -3846,6 +3874,56 @@ test('IBKR stale realized snapshot replays fills after its own as-of date when p
     assert.equal(ibkr.source, 'broker_performance_snapshot_plus_boundary_replay');
     assert.ok(Math.abs(dram.realizedPnlLocal - expectedTotalPnl) < 1e-9);
     assert.ok(Math.abs(dram.realizedPnlByDateLocal['2026-08-12'] - expectedIncrementalPnl) < 1e-9);
+});
+
+test('IBKR stale realized snapshot accepts a rounded same-day position boundary', () => {
+    setDramTestWindow();
+    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+        ibkr: {
+            broker: 'ibkr',
+            account: 'U00000001',
+            position_snapshot_authoritative: true,
+            position_snapshot_as_of: '2026-08-18',
+            position_snapshot: {
+                DRAM: {
+                    quantity: '95',
+                    cost_price: '50.26315789',
+                    cost_basis_status: 'known',
+                    as_of: '2026-08-18 05:00:00',
+                },
+            },
+            performance_snapshot_authoritative: true,
+            performance_snapshot_as_of: '2026-08-14',
+            performance_snapshot: {
+                DRAM: {
+                    currency: 'USD',
+                    realized_total: '0',
+                },
+            },
+        },
+    };
+    const buy = makeScopedDramTrade({
+        broker: 'ibkr', account: 'U00000001', type: 'buy', date: '2026-08-01',
+        quantity: 100, price: 50,
+    });
+    const sell = makeScopedDramTrade({
+        broker: 'ibkr', account: 'U00000001', type: 'sell', date: '2026-08-17',
+        quantity: 10, price: 60,
+    });
+    const sameDayBuy = makeScopedDramTrade({
+        broker: 'ibkr', account: 'U00000001', type: 'buy', date: '2026-08-18',
+        quantity: 5, price: 55,
+    });
+    sameDayBuy.datetime = '2026-08-18 05:00:47';
+
+    const dram = buildTickerSummaries([buy, sell, sameDayBuy], {}, 0, {})[0];
+    const ibkr = dram.realizedPnlAccounts.find((result) => result.broker === 'ibkr');
+
+    assert.equal(ibkr.status, 'complete');
+    assert.equal(ibkr.source, 'broker_performance_snapshot_plus_boundary_replay');
+    assert.equal(ibkr.reconstructedPositionShares, 95);
+    assert.ok(Math.abs(ibkr.realizedPnlLocal - 100) < 1e-9);
+    assert.ok(Math.abs(dram.realizedPnlLocal - 100) < 1e-9);
 });
 
 test('HSBC DRAM buys never enter the IBKR realized P&L scope', () => {
