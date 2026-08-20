@@ -1,8 +1,8 @@
 # antigravity
 
-Documentation version: `v2.74.0`
+Documentation version: `v2.75.0`
 
-`antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
+`antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running strategy and grid-trading backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
 ## Screenshot
 
@@ -13,17 +13,19 @@ Documentation version: `v2.74.0`
 - Compare up to 5 tickers over the same window on a normalized return basis
 - Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time. Direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it.
 - Build weighted portfolios with custom allocations
+- Simulate dollar-cost averaging with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run single-ticker backtests across the built-in strategy library
+- Run the dedicated grid-trading workspace with configurable center-line, spacing, and asymmetric buy/sell levels
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
 - Choose the backtest execution mode between `signal_close` and `next_open`
 - Import broker files, including the validated Zircon HK manual XLSX template, into a local investment ledger used by `Trade -> Investment`
 - Protect browser investment writes with a same-origin check and a session-bound CSRF token
-- Review imported holdings, equity history, and transaction history from `Trade -> Investment`
-- Filter Transaction history by HSBC and HKD as one result set; HKD Savings and HKD Current are temporarily combined
+- Review imported holdings, equity history, Metrics, Stock details, and transaction history from `Trade -> Investment`
+- Filter Transaction history by broker, currency, type, date, and unresolved internal-transfer status; HSBC USD, HKD, and CNH cash remains scoped by source account
 - Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
-- Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
+- Manage theme, date format, broker access, Yahoo Mail SMTP, cash-equivalent instruments, local cache maintenance, strategy metadata, export-image profiles, and design tokens from `Settings`
 
 ## Runtime requirements
 
@@ -116,6 +118,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
+- `DCA`
+  Simulate recurring contributions with configurable amount, frequency, date range, dividend handling, and transaction details.
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
 - `Grid trading`
@@ -130,7 +134,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 
 - Language: American English
 - Currency: USD
-- Date format: `dd Mmm yyyy` (for example, `2 Jul 2026`)
+- Default full date format: `D Mmm yyyy` (for example, `2 Jul 2026`); additional full and compact formats are available in `Settings -> General`
 - Timezone: America/New_York for handoff records and comparison chart axes
 - Market-cap base currency and comparison timezone are application invariants: USD and America/New_York
 
@@ -142,16 +146,18 @@ The current `Settings` navigation includes:
 - `General`
 - `Investment`
 - `Backtest`
+- `Broker access`
+- `Cash equivalents`
+- `Clear caches`
+- `Email (SMTP)`
+- `Export images`
 - `Font tokens`
 - `Color tokens`
 - `Material tokens`
 - `Style tokens`
 - `Network self-check`
-- `Broker access`
-- `Email (SMTP)`
 - `Local market store`
 - `Strategies`
-- `Clear caches`
 
 `Settings -> Color tokens` exposes the semantic palette in grouped Light and Dark
 rows. Color edits are browser-local overrides stored in localStorage; Reset
