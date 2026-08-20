@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.41.0`
+Documentation version: `v1.47.0`
 
 - Fixed: HSBC current Cash now starts from the posted USD Savings ledger
   balance, applies visible pending settlements exactly once, and converts each
@@ -13,11 +13,24 @@ Documentation version: `v1.41.0`
   exact-time Transaction history row, Holdings, and Metrics now agree on that
   value while rows before the snapshot boundary keep their historical replay.
 
-- Changed: Stock-details buy and sell points now render as radial-gradient
-  circles that fade from fully opaque centers to transparent circumferences.
-  The largest plotted transaction uses a 10 px radius, other circle areas are
-  proportional to transaction volume, and regular-session centers remain
-  aligned to the rendered transaction time and price across every range.
+- Changed: Stock-details buy and sell points now render as volume-scaled
+  glowing zones. Nearby same-side points use distance-weighted fluid adhesion
+  bridges to soften discrete clusters, while each transaction center remains
+  aligned to the rendered transaction time and price across every range. The
+  largest plotted transaction uses a lighter 8 px radius and existing
+  red/green theme tokens.
+- Changed: Same-side Glow bridges now follow the rendered close-price path;
+  bridges are omitted when a material reversal or deep V-shaped move would
+  make the connection visually detach from the stock-price trend.
+- Changed: Trend-valid same-side links now start weighted connected zones with
+  smooth nonlinear boundaries derived from marker radii, link distances, and
+  adhesion strength. Weak links and singleton markers remain isolated.
+- Changed: Connected zones now use a center-weighted radial fade with no border
+  stroke; the visible outer edge resolves to fully transparent.
+- Changed: Individual buy and sell origins now reuse the original center-out
+  radial fade. Their circle areas scale with transaction amounts, and the
+  largest amount is normalized only against trades visible in the selected
+  range.
 
 - Added: HSBC USD Savings settlement-only cash refreshes can be imported
   without Portfolio and Order Status text. Existing Holdings positions remain

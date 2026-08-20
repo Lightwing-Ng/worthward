@@ -1,15 +1,18 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.5.0 */
+/* Tests for Investment Stock details boundaries. Code version: v1.11.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+    INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
+    INVESTMENT_TRADE_MARKER_GLOW_ZONE_MIN_STRENGTH,
     INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX,
     aggregateInvestmentStockDetailPositionStates,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
     createInvestmentStockDetailsUtils,
     drawInvestmentTradeMarkerCircle,
+    drawInvestmentTradeMarkerGlow,
     getInvestmentTradeSessionType,
     getInvestmentStockDetailsTransactionSessionType,
     getInvestmentStockDetailsAveragePriceLabel,
@@ -20,6 +23,8 @@ import {
     normalizeInvestmentRange,
     resolveInvestmentStockDetailsDailySnapshotIndex,
     resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey,
+    resolveInvestmentTradeMarkerGlowLinks,
+    resolveInvestmentTradeMarkerGlowZones,
     resolveInvestmentTradeMarkerRadius,
 } from '../app/web/static/assets/js/investment/stock-details.js';
 import {createInvestmentDataUtils} from '../app/web/static/assets/js/investment/data-utils.js';
@@ -95,8 +100,9 @@ test('module exposes a semantic cache-busting version', () => {
     assert.match(INVESTMENT_STOCK_DETAILS_MODULE_VERSION, /^v\d+\.\d+\.\d+$/);
 });
 
-test('trade-marker circle area scales directly with absolute transaction quantity', () => {
+test('trade-marker circle area scales directly with absolute transaction amount', () => {
     const maxRadius = INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX;
+    assert.equal(maxRadius, 8);
     assert.equal(resolveInvestmentTradeMarkerRadius(100, 100), maxRadius);
     assert.equal(resolveInvestmentTradeMarkerRadius(25, 100), maxRadius / 2);
     assert.equal(resolveInvestmentTradeMarkerRadius(-4, 100), maxRadius / 5);
@@ -108,13 +114,105 @@ test('trade-marker circle area scales directly with absolute transaction quantit
     assert.ok(Math.abs((smallerArea / largestArea) - 0.25) < 1e-12);
 });
 
-test('trade markers paint an opaque-to-transparent radial circle without triangle paths', () => {
+test('trade-marker origin uses a center-out gradient with a transparent edge', () => {
     const operations = [];
-    const colorStops = [];
-    const gradient = {
-        addColorStop(offset, color) {
-            colorStops.push([offset, color]);
+    const context = {
+        save: () => operations.push(['save']),
+        createRadialGradient: (...args) => {
+            operations.push(['createRadialGradient', ...args]);
+            return {
+                addColorStop: (offset, color) => operations.push(['addColorStop', offset, color]),
+            };
         },
+        beginPath: () => operations.push(['beginPath']),
+        arc: (...args) => operations.push(['arc', ...args]),
+        fill: () => operations.push(['fill']),
+        restore: () => operations.push(['restore']),
+        set fillStyle(value) {
+            operations.push(['fillStyle', value]);
+        },
+    };
+
+    assert.equal(drawInvestmentTradeMarkerCircle(context, {
+        x: 42,
+        y: 84,
+        radius: 8,
+        opaqueColor: 'rgba(22, 163, 74, 0.64)',
+        transparentColor: 'rgba(22, 163, 74, 0)',
+    }), true);
+    assert.deepEqual(
+        operations.find((operation) => operation[0] === 'createRadialGradient'),
+        ['createRadialGradient', 42, 84, 0, 42, 84, 8],
+    );
+    assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 0), true);
+    assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 1 && /0\)$/.test(operation[2])), true);
+});
+
+test('nearby same-side trade markers resolve into bounded fluid-adhesion links', () => {
+    const links = resolveInvestmentTradeMarkerGlowLinks([
+        {x: 10, y: 20, radius: 8, type: 'buy'},
+        {x: 42, y: 20, radius: 6, type: 'buy'},
+        {x: 42, y: 21, radius: 9, type: 'sell'},
+        {x: 130, y: 20, radius: 8, type: 'buy'},
+    ]);
+    assert.equal(links.length, 1);
+    assert.equal(links[0].fromIndex, 0);
+    assert.equal(links[0].toIndex, 1);
+    assert.ok(links[0].strength > 0);
+    assert.ok(links[0].distance < INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX);
+});
+
+test('fluid adhesion follows the close path and rejects reversal bridges', () => {
+    const createMarkers = (fromPrice, toPrice) => [
+        {index: 0, x: 10, y: fromPrice, price: fromPrice, radius: 8, type: 'buy'},
+        {index: 2, x: 42, y: toPrice, price: toPrice, radius: 6, type: 'buy'},
+    ];
+    const deepVLinks = resolveInvestmentTradeMarkerGlowLinks(
+        createMarkers(100, 100),
+        {priceValues: [100, 78, 100]},
+    );
+    assert.equal(deepVLinks.length, 0);
+
+    const invertedVLinks = resolveInvestmentTradeMarkerGlowLinks(
+        createMarkers(100, 100),
+        {priceValues: [100, 124, 100]},
+    );
+    assert.equal(invertedVLinks.length, 0);
+
+    const risingLinks = resolveInvestmentTradeMarkerGlowLinks(
+        createMarkers(100, 120),
+        {priceValues: [100, 110, 120]},
+    );
+    assert.equal(risingLinks.length, 1);
+});
+
+test('strong links start nonlinear zones while weak and isolated points stay separate', () => {
+    const markers = [
+        {x: 10, y: 20, radius: 8, type: 'buy'},
+        {x: 42, y: 20, radius: 6, type: 'buy'},
+        {x: 74, y: 20, radius: 7, type: 'buy'},
+        {x: 130, y: 20, radius: 8, type: 'buy'},
+    ];
+    const zones = resolveInvestmentTradeMarkerGlowZones(markers, [
+        {fromIndex: 0, toIndex: 1, distance: 32, strength: 0.6},
+        {fromIndex: 1, toIndex: 2, distance: 32, strength: 0.12},
+    ]);
+    assert.equal(zones.length, 1);
+    assert.deepEqual(zones[0].pointIndexes, [0, 1]);
+    assert.ok(zones[0].keyPoints.length >= 12);
+    assert.ok(new Set(zones[0].keyPoints.map((point) => Math.round(point.y))).size > 1);
+
+    const weakZones = resolveInvestmentTradeMarkerGlowZones(markers, [
+        {fromIndex: 0, toIndex: 1, distance: 32, strength: INVESTMENT_TRADE_MARKER_GLOW_ZONE_MIN_STRENGTH / 2},
+    ]);
+    assert.equal(weakZones.length, 0);
+    assert.equal(resolveInvestmentTradeMarkerGlowZones(markers, []).length, 0);
+});
+
+test('trade markers paint nonlinear zone gradients without a border stroke', () => {
+    const operations = [];
+    const gradient = {
+        addColorStop: (offset, color) => operations.push(['addColorStop', offset, color]),
     };
     const context = {
         save: () => operations.push(['save']),
@@ -126,34 +224,47 @@ test('trade markers paint an opaque-to-transparent radial circle without triangl
         arc: (...args) => operations.push(['arc', ...args]),
         moveTo: (...args) => operations.push(['moveTo', ...args]),
         lineTo: (...args) => operations.push(['lineTo', ...args]),
+        quadraticCurveTo: (...args) => operations.push(['quadraticCurveTo', ...args]),
+        closePath: () => operations.push(['closePath']),
+        stroke: () => operations.push(['stroke']),
         fill: () => operations.push(['fill']),
         restore: () => operations.push(['restore']),
         set fillStyle(value) {
             operations.push(['fillStyle', value]);
         },
+        set strokeStyle(value) {
+            operations.push(['strokeStyle', value]);
+        },
+        set shadowColor(value) {
+            operations.push(['shadowColor', value]);
+        },
+        set shadowBlur(value) {
+            operations.push(['shadowBlur', value]);
+        },
+        set globalCompositeOperation(value) {
+            operations.push(['globalCompositeOperation', value]);
+        },
     };
 
-    assert.equal(drawInvestmentTradeMarkerCircle(context, {
-        x: 42,
-        y: 84,
-        radius: 10,
-        opaqueColor: 'rgba(22, 163, 74, 1)',
-        transparentColor: 'rgba(22, 163, 74, 0)',
+    assert.equal(drawInvestmentTradeMarkerGlow(context, {
+        markers: [
+            {x: 42, y: 84, radius: 10, type: 'buy'},
+            {x: 70, y: 84, radius: 8, type: 'buy'},
+            {x: 130, y: 84, radius: 5, type: 'buy'},
+        ],
+        links: [{fromIndex: 0, toIndex: 1, strength: 0.5}],
+        color: '#16a34a',
     }), true);
-    assert.deepEqual(colorStops, [
-        [0, 'rgba(22, 163, 74, 1)'],
-        [1, 'rgba(22, 163, 74, 0)'],
-    ]);
     assert.deepEqual(
-        operations.find((operation) => operation[0] === 'createRadialGradient'),
-        ['createRadialGradient', 42, 84, 0, 42, 84, 10],
+        operations.find((operation) => operation[0] === 'globalCompositeOperation'),
+        ['globalCompositeOperation', 'screen'],
     );
-    assert.deepEqual(
-        operations.find((operation) => operation[0] === 'arc'),
-        ['arc', 42, 84, 10, 0, Math.PI * 2],
-    );
-    assert.equal(operations.some((operation) => operation[0] === 'moveTo'), false);
+    assert.equal(operations.filter((operation) => operation[0] === 'createRadialGradient').length >= 3, true);
+    assert.equal(operations.some((operation) => operation[0] === 'stroke'), false);
     assert.equal(operations.some((operation) => operation[0] === 'lineTo'), false);
+    assert.equal(operations.some((operation) => operation[0] === 'quadraticCurveTo'), true);
+    assert.equal(operations.some((operation) => operation[0] === 'arc'), true);
+    assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 1 && /0\)$/.test(operation[2])), true);
 });
 
 test('pure-trade realized breakdown follows authoritative broker-scoped totals', () => {

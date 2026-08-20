@@ -1,4 +1,4 @@
-/* Code version: v1.154.0 */
+/* Code version: v1.158.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -5544,7 +5544,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.119.0',
+        entry: 'v2.125.0',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.105.0',
         importFeedback: 'v1.8.5',
@@ -5552,7 +5552,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.0.0',
-        stockDetails: 'v0.16.1',
+        stockDetails: 'v0.22.0',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.0',
         urlState: 'v1.2.0',
@@ -5560,7 +5560,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.16.1';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.22.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -9316,7 +9316,7 @@ test('replays trusted intraday fills by minute and carries date-only trades into
     });
 });
 
-test('renders trailing overnight and pre-market buy gradient circles in the stock-details gap', async ({page}) => {
+test('renders trailing overnight and pre-market buy glow zones in the stock-details gap', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {

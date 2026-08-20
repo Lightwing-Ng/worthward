@@ -1,14 +1,24 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.119.0
+ * Code version: v2.125.0
  * - Fixed: Current HSBC Cash now uses the posted ledger boundary, converts
  *   retained foreign cash once, applies pending settlement once, and keeps
  *   its provisional marker across initial and realtime rendering.
  * - Fixed: The latest IBKR history row now honors the exact-time verified
  *   current cash boundary instead of preserving an unanchored buy replay.
- * - Changed: Stock-details buy and sell markers now use volume-scaled
- *   radial-gradient circles centered on their rendered trade prices.
+ * - Changed: Stock-details buy and sell markers now use volume-scaled glowing
+ *   zones with distance-weighted fluid adhesion between nearby same-side trades.
+ * - Changed: Stock-details Glow markers now use lighter radii and lower bridge
+ *   opacity and blur for dense transaction ranges.
+ * - Changed: Same-side Glow bridges now follow a price-path trend gate and
+ *   skip bridges across material reversals and deep V-shaped price moves.
+ * - Changed: Same-side Glow bridges now resolve into weighted connected zones
+ *   with smooth nonlinear boundaries; weak and isolated points stay separate.
+ * - Changed: Connected Glow zones now use center-weighted radial fades with
+ *   no border stroke and a fully transparent outer edge.
+ * - Changed: Individual trade origins now use the original center-out radial
+ *   fade, with area-scaled transaction amounts normalized to the visible range.
  * - Added: HSBC USD Savings settlement-only cash refreshes can sync without
  *   requiring a new Portfolio or Order Status capture; existing holdings stay
  *   authoritative while posted cash clears matching pending buys.
@@ -332,7 +342,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.16.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.22.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -378,7 +388,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.119.0',
+    entry: 'v2.125.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
