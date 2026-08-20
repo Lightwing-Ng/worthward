@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.9."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.10."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_investment_pagination_menu_uses_opaque_frosted_material() -> None:
     ) in menu_rule
 
 
-def test_pagination_range_menu_keeps_native_scrollbar_visuals() -> None:
+def test_pagination_range_menu_hides_the_scrollbar_track() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings_css = (
         project_root / "app/web/static/assets/css/views/settings.css"
@@ -75,10 +75,45 @@ def test_pagination_range_menu_keeps_native_scrollbar_visuals() -> None:
         ".local-store-pagination-range-menu {", maxsplit=1
     )[1].split("}", maxsplit=1)[0]
     assert "overflow-y: auto;" in menu_rule
-    assert "scrollbar-width: thin;" in menu_rule
+    assert "scrollbar-width: none;" in menu_rule
+    assert "-ms-overflow-style: none;" in menu_rule
+    assert "border-radius: 10px;" in menu_rule
     assert "scrollbar-gutter:" not in menu_rule
     assert "scrollbar-color:" not in menu_rule
-    assert ".local-store-pagination-range-menu::-webkit-scrollbar" not in settings_css
+    scrollbar_start = settings_css.index(
+        ".local-store-pagination-range-menu::-webkit-scrollbar {"
+    )
+    scrollbar_rule = settings_css[
+        scrollbar_start:settings_css.index("\n}", scrollbar_start)
+    ]
+    assert "width: 0;" in scrollbar_rule
+    assert "height: 0;" in scrollbar_rule
+    assert "background: transparent;" in scrollbar_rule
+    track_start = settings_css.index(
+        ".local-store-pagination-range-menu::-webkit-scrollbar-track {"
+    )
+    track_rule = settings_css[
+        track_start:settings_css.index("\n}", track_start)
+    ]
+    assert "background: transparent;" in track_rule
+
+
+def test_pagination_range_menu_respects_clipping_ancestors() -> None:
+    """Keep the range menu inside the nearest scrollable workspace boundary."""
+    project_root = Path(__file__).resolve().parents[1]
+    script = (
+        project_root / "app/web/static/assets/js/local-store-pagination.js"
+    ).read_text(encoding="utf-8")
+
+    for token in (
+        "function getLocalStorePaginationRangeMenuClipBounds(picker)",
+        "style.overflowX !== 'visible' || style.overflowY !== 'visible'",
+        "const clipTop = Math.max(viewportInset, clipBounds.top);",
+        "const clipBottom = Math.min(window.innerHeight - viewportInset, clipBounds.bottom);",
+        "const spaceAbove = Math.max(0, pickerRect.top - clipTop - menuGap);",
+        "const spaceBelow = Math.max(0, clipBottom - pickerRect.bottom - menuGap);",
+    ):
+        assert token in script
 
 
 def test_investment_history_scroll_shell_keeps_rounded_bottom_corners() -> None:

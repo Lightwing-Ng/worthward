@@ -1,7 +1,9 @@
 /**
  * Shared Local store pagination primitives.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: Range menus respect the nearest clipping ancestor when calculating
+ *   available height, while keeping the scroll surface free of scrollbar paint.
  * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
  *   viewport-aware menu shared by every pagination surface.
  * - Added: Fixed five-page chunks, canonical button markup, and the shared
@@ -10,7 +12,7 @@
  *   and control contract as client-only pagination.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.0';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.1';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
 const LOCAL_STORE_PAGINATION_RANGE_CLOSE_DELAY_MS = 140;
@@ -414,6 +416,25 @@ function getLocalStorePaginationRangeMenuContentHeight(menu) {
     return grid.scrollHeight + paddingTop + paddingBottom;
 }
 
+function getLocalStorePaginationRangeMenuClipBounds(picker) {
+    let ancestor = picker?.parentElement || null;
+    while (ancestor) {
+        const style = window.getComputedStyle(ancestor);
+        if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+            const rect = ancestor.getBoundingClientRect();
+            return {
+                top: rect.top,
+                bottom: rect.bottom,
+            };
+        }
+        ancestor = ancestor.parentElement;
+    }
+    return {
+        top: 0,
+        bottom: window.innerHeight,
+    };
+}
+
 function positionLocalStorePaginationRangeMenu(picker) {
     const {menu} = getLocalStorePaginationRangeElements(picker);
     if (!menu || !picker.classList.contains('is-open')) return;
@@ -423,17 +444,20 @@ function positionLocalStorePaginationRangeMenu(picker) {
     const pickerRect = picker.getBoundingClientRect();
     const viewportInset = 12;
     const menuGap = 8;
-    const spaceAbove = Math.max(96, pickerRect.top - viewportInset - menuGap);
-    const spaceBelow = Math.max(
-        96,
-        window.innerHeight - pickerRect.bottom - viewportInset - menuGap,
-    );
+    const clipBounds = getLocalStorePaginationRangeMenuClipBounds(picker);
+    const clipTop = Math.max(viewportInset, clipBounds.top);
+    const clipBottom = Math.min(window.innerHeight - viewportInset, clipBounds.bottom);
+    const spaceAbove = Math.max(0, pickerRect.top - clipTop - menuGap);
+    const spaceBelow = Math.max(0, clipBottom - pickerRect.bottom - menuGap);
     const naturalMenuHeight = getLocalStorePaginationRangeMenuContentHeight(menu);
     if (naturalMenuHeight > spaceAbove && spaceBelow > spaceAbove) {
         menu.classList.add('is-below');
     }
     const availableHeight = menu.classList.contains('is-below') ? spaceBelow : spaceAbove;
-    menu.style.setProperty('--pagination-range-menu-max-height', `${availableHeight}px`);
+    menu.style.setProperty(
+        '--pagination-range-menu-max-height',
+        `${Math.max(1, availableHeight)}px`,
+    );
     menu.classList.toggle('is-scrollable', naturalMenuHeight > menu.clientHeight + 1);
     const menuWidth = menu.offsetWidth;
     const idealMenuLeft = pickerRect.left + (pickerRect.width / 2) - (menuWidth / 2);

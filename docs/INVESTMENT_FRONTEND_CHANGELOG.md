@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.49.0`
+Documentation version: `v1.50.0`
 
 - Fixed: HSBC current Cash now starts from the posted USD Savings ledger
   balance, applies visible pending settlements exactly once, and converts each
@@ -35,6 +35,9 @@ Documentation version: `v1.49.0`
 - Changed: Connected zones now use a capped inverse-square amount field. The
   visible intensity is the sum of connected trade amount contributions over
   squared distance, normalized to a 100% threshold instead of circular blobs.
+- Changed: Connected inverse-square fields now apply a 2.2× visual gain after
+  computing `I(x,y)`, strengthening the continuous buffer without changing the
+  field formula or its 100% cap.
 
 - Added: HSBC USD Savings settlement-only cash refreshes can be imported
   without Portfolio and Order Status text. Existing Holdings positions remain

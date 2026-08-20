@@ -17,7 +17,7 @@ import {
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
     setLocalStorePaginationActivePage,
-} from '../local-store-pagination.js?v=local-store-pagination-v1.2.0';
+} from '../local-store-pagination.js?v=local-store-pagination-v1.2.1';
 
 export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.4.0';
 export const INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE = LOCAL_STORE_PAGINATION_CHUNK_SIZE;

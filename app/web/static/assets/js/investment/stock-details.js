@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.23.0
+ * Code version: v0.24.0
  * - Changed: The shared investment data-utils dependency now uses the current
  *   cash-resolver cache key.
  * - Changed: Buy and sell trades now render as volume-scaled glowing zones;
@@ -21,6 +21,9 @@
  * - Changed: Connected zones now render a capped inverse-square intensity
  *   field, summing each connected trade amount over its squared distance
  *   instead of compositing circular blobs.
+ * - Changed: Connected inverse-square fields now use a stronger visual gain
+ *   so nearby same-side origins receive a visible continuous buffer while
+ *   the underlying intensity formula remains unchanged.
  * - Fixed: Pure-trade realized P&L breakdowns now use the shared broker-scoped
  *   summary so Stock details cannot diverge from Holdings calibration.
  * - Fixed: Stock-details intraday trade markers retain off-hours buys that
@@ -101,7 +104,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.23.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.24.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -115,6 +118,7 @@ export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_EDGE_PADDING_PX = 2.5;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_SOFTENING_PX = 2.5;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD = 1;
 export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_RESOLUTION = 0.5;
+export const INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_VISUAL_GAIN = 2.2;
 
 export function resolveInvestmentTradeMarkerRadius(
     amount,
@@ -759,7 +763,11 @@ function createInvestmentTradeMarkerGlowZoneField(
                 resolveInvestmentTradeMarkerGlowBoundaryDistance(worldX, worldY, keyPoints),
                 fadeWidth,
             );
-            const alpha = Math.min(1, Math.max(0, fieldIntensity * maximumAlpha * edgeFade));
+            const visualFieldIntensity = Math.min(
+                1,
+                Math.max(0, fieldIntensity * INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_VISUAL_GAIN),
+            );
+            const alpha = Math.min(1, Math.max(0, visualFieldIntensity * maximumAlpha * edgeFade));
             const offset = ((row * pixelWidth) + column) * 4;
             data[offset] = rgb[0];
             data[offset + 1] = rgb[1];

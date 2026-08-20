@@ -1,4 +1,4 @@
-/* Code version: v0.22.4 */
+/* Code version: v0.22.5 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -2838,9 +2838,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     border: var(--frosted-glass-border);
-    border-radius: var(--radius-soft);
+    border-radius: 10px;
     background: var(--frosted-glass-opaque-background, var(--glass-popover-background));
     background-clip: padding-box;
     box-shadow: var(--glass-popover-shadow);
@@ -2856,6 +2857,24 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .local-store-pagination-range-menu.is-scrollable {
     overflow-y: auto;
+}
+
+.local-store-pagination-range-menu::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    background: transparent;
+}
+
+.local-store-pagination-range-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.local-store-pagination-range-menu::-webkit-scrollbar-thumb {
+    background: transparent;
+}
+
+.local-store-pagination-range-menu::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .local-store-pagination-range-menu::after {

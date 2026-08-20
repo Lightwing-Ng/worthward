@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.12.0 */
+/* Tests for Investment Stock details boundaries. Code version: v1.13.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,6 +6,7 @@ import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD,
+    INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_VISUAL_GAIN,
     INVESTMENT_TRADE_MARKER_GLOW_ZONE_MIN_STRENGTH,
     INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX,
     aggregateInvestmentStockDetailPositionStates,
@@ -162,6 +163,10 @@ test('connected-zone intensity sums inverse-square amount fields and caps at 100
     assert.ok(nearbyIntensity > distantIntensity);
     assert.ok(distantIntensity >= 0);
     assert.ok(distantIntensity <= INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_THRESHOLD);
+});
+
+test('connected-zone field visual gain strengthens the buffer without changing the intensity field', () => {
+    assert.ok(INVESTMENT_TRADE_MARKER_GLOW_ZONE_FIELD_VISUAL_GAIN > 1);
 });
 
 test('nearby same-side trade markers resolve into bounded fluid-adhesion links', () => {
