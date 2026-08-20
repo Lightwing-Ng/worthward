@@ -1,5 +1,7 @@
 # Agent operating guide
 
+Policy version: `v1.2.0-agent-contract.3`
+
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
 
@@ -39,10 +41,11 @@ discovery. This file remains the canonical guide.
 ## Required workflow
 
 1. Read [`README.md`](../README.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TESTING.md`](TESTING.md), and [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) before a cross-cutting change.
-2. Before changing a UI pattern shared with
-   `/Users/example/Desktop/CacheLikesFromTwitter`, read the single local synchronization
-   ledger at `/Users/example/Desktop/SHARED_UI_SYNC.md`. Follow its component-specific
-   leader/follower workflow: update the ledger whenever one project advances first, do
+2. Read [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) before changing a shared UI
+   pattern, then read the single local synchronization ledger at
+   `/Users/example/Desktop/SHARED_UI_SYNC.md`. `antigravity` is the canonical complete
+   baseline and final convergence target; a Cache-first improvement is a `Candidate review`
+   until it is promoted here. Update the ledger whenever one project advances first, do
    not edit the sibling unless the task authorizes both projects, and include the ledger's
    required pending-sync reminder in the handoff until parity is verified.
 3. Search with `rg` when available; otherwise use a recursive fallback such as
