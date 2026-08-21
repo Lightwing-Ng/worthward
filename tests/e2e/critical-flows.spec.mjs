@@ -1,4 +1,4 @@
-/* Code version: v1.160.0 */
+/* Code version: v1.161.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -6182,6 +6182,100 @@ test('keeps the realtime equity endpoint aligned with cash-equivalent Holdings',
         };
     });
     expect(endpoint.chartTotal).toBeCloseTo(endpoint.holdingsTotal, 8);
+});
+
+test('keeps same-day HSBC USD settlement proceeds after earlier buys', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc'],
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-06-30',
+                datetime: '2026-06-30 19:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 20_000,
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-07-01',
+                datetime: '2026-07-01 19:00:00',
+                type: 'buy',
+                ticker: 'BOXX',
+                currency: 'USD',
+                quantity: 1,
+                price: 100,
+                amount: -100,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'P-01-JUL-BUY',
+                    cash_settlement_date: '2026-07-02',
+                    cash_settlement_amount_raw: '-100.00',
+                    cash_settlement_balance_after_raw: '19900.00',
+                    cash_settlement_postings: [{
+                        date: '2026-07-02',
+                        amount_raw: '-100.00',
+                        balance_after_raw: '19900.00',
+                        source_file_kind: 'hsbc_usd_savings_csv',
+                        ledger_sequence: 101,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-07-01',
+                datetime: '2026-07-01 20:00:00',
+                type: 'sell',
+                ticker: 'BOXX',
+                currency: 'USD',
+                quantity: 1,
+                price: 100,
+                amount: 100,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'P-01-JUL-SELL',
+                    cash_settlement_date: '2026-07-02',
+                    cash_settlement_amount_raw: '100.00',
+                    cash_settlement_balance_after_raw: '20000.00',
+                    cash_settlement_postings: [{
+                        date: '2026-07-02',
+                        amount_raw: '100.00',
+                        balance_after_raw: '20000.00',
+                        source_file_kind: 'hsbc_usd_savings_csv',
+                        ledger_sequence: 102,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+        ],
+        priceHistoryByTicker: {
+            BOXX: [
+                {date: '2026-06-30', close: 100},
+                {date: '2026-07-01', close: 100},
+                {date: '2026-07-02', close: 100},
+            ],
+        },
+    });
+    await page.goto('/trade/investment?range=max');
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+
+    const chartValues = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            value: Number(chart.data.datasets?.[0]?.data?.[index]),
+        }));
+    });
+    // The later same-day sale boundary must remain the final cash state.
+    expect(chartValues.find((point) => point.date === '2026-07-02')?.value).toBeCloseTo(20_000, 8);
 });
 
 test('replays future HSBC settlement cash on the settlement date without a derived transaction', async ({page}) => {

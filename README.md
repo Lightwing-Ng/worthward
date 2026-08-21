@@ -1,8 +1,8 @@
 # antigravity
 
-Documentation version: `v2.75.0`
+Documentation version: `v2.77.0`
 
-`antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running strategy and grid-trading backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
+`antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
 ## Screenshot
 
@@ -14,11 +14,12 @@ Documentation version: `v2.75.0`
 - Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time. Direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it.
 - Build weighted portfolios with custom allocations
 - Simulate dollar-cost averaging with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
-- Run single-ticker backtests across the built-in strategy library
-- Run the dedicated grid-trading workspace with configurable center-line, spacing, and asymmetric buy/sell levels
+- Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
+- Use Grid Trading from the Backtest strategy selector, with center-line, spacing, and asymmetric buy/sell levels declared by `strategy_grid_trading.py`
+- Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
-- Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
+- Use `1d` data by default and run `1m` backtests when local intraday data exists for every ticker required by the strategy
 - Choose the backtest execution mode between `signal_close` and `next_open`
 - Import broker files, including the validated Zircon HK manual XLSX template, into a local investment ledger used by `Trade -> Investment`
 - Protect browser investment writes with a same-origin check and a session-bound CSRF token
@@ -121,9 +122,9 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `DCA`
   Simulate recurring contributions with configurable amount, frequency, date range, dividend handling, and transaction details.
 - `Backtest`
-  Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
-- `Grid trading`
-  Run the locked grid-trading strategy from a parallel workspace with dedicated center-line, spacing, and asymmetric buy/sell level controls while reusing Backtest market, capital, metrics, transactions, and chart components.
+  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
+- `Grid Trading`
+  Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and expands inline like the former dedicated page; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
 - `Trade`
   Inspect the `Investment` and `Live trading` views. The former Timing and
   investment aliases redirect to `/trade/investment` for compatibility.
@@ -517,7 +518,8 @@ local and incremental.
 - Strategy implementations live under `strategies/algorithms/`
 - Runtime strategy discovery is dynamic and is handled by `strategies/loader.py`
 - Runtime strategy metadata is derived directly from strategy classes and no longer relies on `strategies/registry.json`
-- Backtest execution logic lives in `strategies/backtest.py`
+- Strategy classes can declare ordered ticker defaults and a required ticker count through `StrategySupportMatrix`
+- Backtest execution logic, including aligned multi-ticker histories and rotation execution, lives in `strategies/backtest.py`
 
 ## Project layout
 

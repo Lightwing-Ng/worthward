@@ -1,4 +1,4 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.3.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -8,27 +8,32 @@
         {% endif %}
     {% endfor %}
 {% endfor %}
-<form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}">
-    <div class="field ticker-field" data-index="1">
+<form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}"
+      data-strategy-required-tickers="{{ strategy_required_tickers }}">
+    <div id="ticker_fields" data-backtest-ticker-fields>
+    {% for ticker_index in range(1, strategy_required_tickers + 1) %}
+    <div class="field ticker-field" data-index="{{ ticker_index }}">
         <div class="ticker-input-row">
             <div class="ticker-input-main">
-                <label for="ticker_1">{{ labels.backtest_ticker }}</label>
+                <label for="ticker_{{ ticker_index }}">{{ labels.backtest_ticker if strategy_required_tickers == 1 else labels.backtest_ticker ~ ' ' ~ ticker_index }}</label>
                 <div class="ticker-input-control">
                     <span class="ticker-leading-slot" aria-hidden="true">
                         <span class="ticker-logo-placeholder"></span>
                         <img class="ticker-input-logo" alt="" hidden>
                     </span>
-                    <input id="ticker_1" name="ticker" data-ticker-input class="text-input-control"
-                           value="{{ ticker_slots[0] if ticker_slots else '' }}" placeholder="" autocomplete="off"
+                    <input id="ticker_{{ ticker_index }}" name="ticker" data-ticker-input class="text-input-control"
+                           value="{{ ticker_slots[ticker_index - 1] if ticker_slots|length >= ticker_index else '' }}" placeholder="" autocomplete="off"
                            autocapitalize="characters" spellcheck="false" inputmode="latin"
                            title="Use a valid ticker such as NVDA or MSFT." required>
                     <button type="button" class="ticker-clear" aria-label="Clear ticker"><span
                             class="icon icon-remove-muted" aria-hidden="true"></span></button>
                 </div>
                 <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
-                <div class="suggestions" id="ticker_1_suggestions"></div>
+                <div class="suggestions" id="ticker_{{ ticker_index }}_suggestions"></div>
             </div>
         </div>
+    </div>
+    {% endfor %}
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact", true) }}
     <div class="field backtest-interval-field">
@@ -87,20 +92,7 @@
             </span>
         </label>
     </div>
-    {% if current_view == "grid-trading" %}
-    <div class="field grid-trading-parameters-field" data-trade-strategy-field data-grid-trading-parameters>
-        <input type="hidden" name="strategy" value="grid-trading">
-        <input type="hidden" name="workspace" value="grid-trading">
-        <div class="grid-trading-parameters-heading">
-            <span class="grid-trading-parameters-title">Grid parameters</span>
-            <span class="grid-trading-parameters-copy">Configure the rolling center and asymmetric buy/sell grid levels.</span>
-        </div>
-        <div class="grid-trading-parameters-panel" role="group" aria-label="Grid trading parameters">
-            {% include "_trade_strategy_params_panel.html" %}
-        </div>
-    </div>
-    {% else %}
-    <div class="field trade-strategy-field" data-trade-strategy-field>
+    <div class="field trade-strategy-field{% if selected_strategy_id == 'grid-trading' %} is-grid-trading-inline{% endif %}" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-native-select" hidden
@@ -130,13 +122,13 @@
             </div>
             <button
                     type="button"
-                    class="trade-strategy-tune-button{% if not strategy_form_fields %} is-hidden{% endif %}"
+                    class="trade-strategy-tune-button{% if not strategy_form_fields or selected_strategy_id == 'grid-trading' %} is-hidden{% endif %}"
                     data-trade-strategy-tune-button
                     aria-label="Tune strategy parameters"
                     aria-pressed="false"
                     aria-expanded="false"
                     aria-controls="trade_strategy_params_panel"
-                    {% if not strategy_form_fields %}aria-hidden="true" tabindex="-1" disabled{% endif %}
+                    {% if not strategy_form_fields or selected_strategy_id == 'grid-trading' %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
                 <span class="icon icon-strategy-tune" aria-hidden="true"></span>
             </button>
@@ -149,9 +141,12 @@
                     hidden
             ></div>
         </div>
-        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover" data-trade-strategy-panel role="region" aria-label="Strategy parameters" hidden>
+        <div class="grid-trading-parameters-heading" data-grid-trading-parameters-heading{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
+            <span class="grid-trading-parameters-title">Grid parameters</span>
+            <span class="grid-trading-parameters-copy">Configure the rolling center and asymmetric buy/sell grid levels.</span>
+        </div>
+        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'grid-trading' %} grid-trading-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>
-    {% endif %}
 </form>

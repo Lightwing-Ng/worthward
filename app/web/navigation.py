@@ -1,6 +1,6 @@
 """Canonical workspace, trade, and settings navigation helpers.
 
-Code version: v1.4.0
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ MIN_TICKERS = 2
 
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
+    "grid-trading": "backtest",
 }
 SUPPORTED_VIEWS = {
     "tickers",
@@ -21,11 +22,10 @@ SUPPORTED_VIEWS = {
     "portfolio",
     "dca",
     "backtest",
-    "grid-trading",
     "trade",
     "settings",
 }
-BACKTEST_VIEWS = {"backtest", "grid-trading"}
+BACKTEST_VIEWS = {"backtest"}
 SUPPORTED_SETTINGS_SECTIONS = {
     "about",
     "general",
@@ -75,7 +75,6 @@ VIEW_PATHS = {
     "portfolio": "/workspaces/portfolio",
     "dca": "/workspaces/dca",
     "backtest": "/workspaces/backtest",
-    "grid-trading": "/workspaces/grid-trading",
     "trade": "/trade/investment",
     "settings": "/settings/about",
 }

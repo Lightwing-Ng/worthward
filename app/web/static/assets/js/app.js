@@ -1,4 +1,4 @@
-/* Code version: v0.28.6 */
+/* Code version: v0.30.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -35,11 +35,19 @@
     }, {});
     const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
-    const isBacktestView = ["backtest", "grid-trading"].includes(state.currentView);
+    const isBacktestView = state.currentView === "backtest";
     const isDcaView = state.currentView === "dca";
     const MIN_TICKERS = constraints?.minTickers || 2;
     const MAX_TICKERS = constraints?.maxTickers || 5;
     const minimumRequiredTickers = (isBacktestView || isDcaView) ? 1 : MIN_TICKERS;
+    const getMinimumRequiredTickers = () => {
+        if (!isBacktestView) return minimumRequiredTickers;
+        const configured = Number.parseInt(
+            document.querySelector("form.controls")?.dataset.strategyRequiredTickers || "",
+            10,
+        );
+        return Number.isFinite(configured) ? Math.max(1, configured) : minimumRequiredTickers;
+    };
     const getLanguageState = () => window.ANTIGRAVITY_APP?.language || {};
     const translateUi = (value) => {
         const languageState = getLanguageState();
@@ -98,7 +106,7 @@
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-    const WORKSPACE_VIEWS = new Set(["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"]);
+    const WORKSPACE_VIEWS = new Set(["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -2868,12 +2876,14 @@
             const suggestions = field.querySelector(".suggestions");
             if (label) {
                 label.setAttribute("for", `ticker_${index}`);
-                label.textContent = (isBacktestView || isDcaView) ? labels.backtest_ticker : `Ticker ${index}`;
+                label.textContent = isBacktestView && getMinimumRequiredTickers() > 1
+                    ? `${labels.backtest_ticker} ${index}`
+                    : (isBacktestView || isDcaView) ? labels.backtest_ticker : `Ticker ${index}`;
             }
             if (input) {
                 input.id = `ticker_${index}`;
                 input.name = "ticker";
-                input.required = index <= minimumRequiredTickers;
+                input.required = index <= getMinimumRequiredTickers();
                 input.placeholder = "";
                 syncTickerClearButton(input);
                 syncTickerInputDecoration(input);
@@ -2893,9 +2903,9 @@
             if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
             const removeButton = field.querySelector(".ticker-remove");
             if (removeButton) {
-                removeButton.classList.toggle("is-placeholder", index <= minimumRequiredTickers);
-                removeButton.tabIndex = index <= minimumRequiredTickers ? -1 : 0;
-                removeButton.setAttribute("aria-hidden", index <= minimumRequiredTickers ? "true" : "false");
+                removeButton.classList.toggle("is-placeholder", index <= getMinimumRequiredTickers());
+                removeButton.tabIndex = index <= getMinimumRequiredTickers() ? -1 : 0;
+                removeButton.setAttribute("aria-hidden", index <= getMinimumRequiredTickers() ? "true" : "false");
             }
         });
         updateAddButtonState();
@@ -4246,7 +4256,7 @@
         });
     };
 
-    const addTickerField = (value = "") => {
+    const addTickerField = (value = "", {focus = true} = {}) => {
         const container = $("#ticker_fields");
         if (!container || getTickerFields().length >= MAX_TICKERS) return;
         const index = getTickerFields().length + 1;
@@ -4301,7 +4311,7 @@
         validateAllTickerInputs();
         syncPortfolioWeightDisabledState();
         dispatchPortfolioPreviewUpdate();
-        input?.focus();
+        if (focus) input?.focus();
     };
 
     // Bind this control before the optional workspace enhancements so a
@@ -4324,7 +4334,7 @@
             : [];
         const container = $("#ticker_fields");
         if (!container) return values;
-        while (getTickerFields().length > Math.max(minimumRequiredTickers, values.length)) {
+        while (getTickerFields().length > Math.max(getMinimumRequiredTickers(), values.length)) {
             getTickerFields()[getTickerFields().length - 1].remove();
         }
         getTickerInputs().forEach((input, index) => {
@@ -4336,7 +4346,7 @@
                 syncPortfolioShareInput(entry, portfolioEntries[index]?.shares || 0);
             });
         }
-        while (getTickerFields().length < Math.max(minimumRequiredTickers, values.length)) {
+        while (getTickerFields().length < Math.max(getMinimumRequiredTickers(), values.length)) {
             addTickerField(values[getTickerFields().length] || "");
         }
         reindexTickerFields();
@@ -5715,7 +5725,7 @@
     const canAutoSubmit = () => {
         if (!form) return false;
         const values = getFilledTickers();
-        if (values.length < minimumRequiredTickers) return false;
+        if (values.length < getMinimumRequiredTickers()) return false;
         if (new Set(values).size !== values.length) return false;
         if (isPortfolioView) {
             const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
@@ -6565,7 +6575,11 @@
             defaultTickers: state.currentView === "portfolio"
                 ? (defaults.portfolio_tickers || [])
                 : isBacktestView || isDcaView
-                    ? [defaults[isBacktestView ? "backtest_ticker" : "dca_ticker"] || defaults.ticker_a || ""]
+                    ? isBacktestView
+                        ? (Array.isArray(state.strategyDefaultTickers) && state.strategyDefaultTickers.length
+                            ? state.strategyDefaultTickers
+                            : [defaults.backtest_ticker || defaults.ticker_a || ""])
+                        : [defaults.dca_ticker || defaults.ticker_a || ""]
                     : [defaults.ticker_a || "QQQ", defaults.ticker_b || "JEPQ"],
             returnMode: priceOnlyInput?.checked ? "price" : includeDividendsInput?.checked ? "dividends" : "total",
             extendedHours: Boolean(extendedHoursInput?.checked && !extendedHoursInput.disabled),
@@ -6577,9 +6591,7 @@
             defaultWeights: defaults.portfolio_weights || [],
             isBacktest: isBacktestView,
             strategy: strategyValue,
-            defaultStrategy: state.currentView === "grid-trading"
-                ? "grid-trading"
-                : defaults.backtest_strategy || "buy-and-hold",
+            defaultStrategy: defaults.backtest_strategy || "buy-and-hold",
             capital: isBacktestView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
             defaultCapital: defaults.backtest_capital ?? 10000,
             interval: isBacktestView ? getSelectedBacktestInterval() : "",
@@ -6688,7 +6700,7 @@
             return;
         }
         const tickers = getFilledTickers();
-        if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
+        if (tickers.length < getMinimumRequiredTickers() || new Set(tickers).size !== tickers.length) return;
         const params = new URLSearchParams({view: state.currentView});
         const activeRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         const activePeriod = periodSelect?.value || defaults.period;
@@ -7316,14 +7328,42 @@
     };
 
     const syncTradeStrategyTuningAvailability = () => {
-        const {tuneButton, panel} = getTradeStrategyRefs();
-        if (!(tuneButton instanceof HTMLButtonElement) || !(panel instanceof HTMLElement)) return;
+        const {field, select, tuneButton, panel} = getTradeStrategyRefs();
+        if (!(field instanceof HTMLElement)
+            || !(select instanceof HTMLSelectElement)
+            || !(tuneButton instanceof HTMLButtonElement)
+            || !(panel instanceof HTMLElement)) return;
+        const wasGridTradingInline = field.classList.contains("is-grid-trading-inline");
+        const isGridTrading = select.value === "grid-trading";
         const hasFields = Boolean(panel.querySelector("[data-strategy-param-key]"));
-        tuneButton.classList.toggle("is-hidden", !hasFields);
-        tuneButton.disabled = !hasFields;
-        tuneButton.setAttribute("aria-hidden", hasFields ? "false" : "true");
-        tuneButton.tabIndex = hasFields ? 0 : -1;
-        if (!hasFields) setTradeStrategyPanelOpen(false);
+        field.classList.toggle("is-grid-trading-inline", isGridTrading);
+        const gridHeading = field.querySelector("[data-grid-trading-parameters-heading]");
+        if (gridHeading instanceof HTMLElement) gridHeading.hidden = !isGridTrading;
+        panel.classList.toggle("grid-trading-parameters-panel", isGridTrading);
+
+        if (isGridTrading) {
+            panel.hidden = !hasFields;
+            panel.style.maxHeight = "";
+            panel.style.height = "";
+            const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
+            if (panelGrid instanceof HTMLElement) panelGrid.style.maxHeight = "";
+        } else if (wasGridTradingInline) {
+            panel.hidden = true;
+            panel.style.maxHeight = "";
+            panel.style.height = "";
+        }
+
+        tuneButton.classList.toggle("is-hidden", !hasFields || isGridTrading);
+        tuneButton.disabled = !hasFields || isGridTrading;
+        tuneButton.setAttribute("aria-hidden", hasFields && !isGridTrading ? "false" : "true");
+        tuneButton.tabIndex = hasFields && !isGridTrading ? 0 : -1;
+        if (isGridTrading) {
+            tuneButton.classList.remove("is-active");
+            tuneButton.setAttribute("aria-pressed", "false");
+            tuneButton.setAttribute("aria-expanded", "false");
+        } else if (!hasFields) {
+            setTradeStrategyPanelOpen(false);
+        }
     };
 
     const setTradeStrategyDropdownOpen = (isOpen) => {
@@ -7529,6 +7569,58 @@
         }, 380);
     };
 
+    const syncBacktestStrategyTickerContract = (payload = {}) => {
+        if (!isBacktestView || !(form instanceof HTMLFormElement)) return;
+        const configuredRequired = Number.parseInt(payload.required_tickers, 10);
+        if (!Number.isFinite(configuredRequired)) return;
+        const requiredTickers = Math.min(MAX_TICKERS, Math.max(1, configuredRequired));
+        const defaultTickers = Array.isArray(payload.default_tickers)
+            ? payload.default_tickers.map(sanitizeTicker).filter(Boolean).slice(0, requiredTickers)
+            : [];
+        const previousRequired = Number.parseInt(form.dataset.strategyRequiredTickers || "1", 10) || 1;
+        const currentTickers = getFilledTickers();
+        const configuredDefaultTicker = sanitizeTicker(
+            defaults.backtest_ticker || defaults.ticker_a || "",
+        );
+        const shouldApplyStrategyDefaults = previousRequired === 1
+            && currentTickers.length <= 1
+            && (!currentTickers[0] || currentTickers[0] === configuredDefaultTicker);
+        const nextTickers = shouldApplyStrategyDefaults
+            ? defaultTickers.slice()
+            : currentTickers.slice(0, requiredTickers);
+        while (nextTickers.length < requiredTickers) {
+            nextTickers.push(defaultTickers[nextTickers.length] || "");
+        }
+
+        form.dataset.strategyRequiredTickers = String(requiredTickers);
+        state.strategyRequiredTickers = requiredTickers;
+        state.strategyDefaultTickers = defaultTickers;
+        state.strategySupports = payload.supports && typeof payload.supports === "object"
+            ? payload.supports
+            : {};
+
+        while (getTickerFields().length > requiredTickers) {
+            getTickerFields()[getTickerFields().length - 1].remove();
+        }
+        while (getTickerFields().length < requiredTickers) {
+            addTickerField("", {focus: false});
+        }
+        getTickerInputs().forEach((input, index) => {
+            const nextTicker = sanitizeTicker(nextTickers[index] || "");
+            if (sanitizeTicker(input.value) === nextTicker) return;
+            input.value = nextTicker;
+            input.dataset.unknown = "";
+            input.dataset.validatedTicker = "";
+            input.dataset.symbol = "";
+            input.dataset.logoUrl = "";
+            input.dataset.companyName = "";
+            setTickerValidationPending(input, false);
+            syncTickerInputDecoration(input);
+        });
+        reindexTickerFields();
+        validateAllTickerInputs();
+    };
+
     const refreshTradeStrategyFields = async (strategyId) => {
         const {panel} = getTradeStrategyRefs();
         if (!(panel instanceof HTMLElement) || !endpoints.strategyFields || !strategyId) return;
@@ -7541,11 +7633,12 @@
             const payload = await response.json();
             if (requestToken !== strategyFieldsRequestToken) return;
             panel.innerHTML = payload.html || "";
+            syncBacktestStrategyTickerContract(payload);
             initStrategyParamControls(panel);
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);
-            } else if (!panel.hidden) {
+            } else if (!panel.hidden && !getTradeStrategyRefs().field?.classList.contains("is-grid-trading-inline")) {
                 positionTradeStrategyPanel();
             }
         } catch (_error) {
@@ -7674,7 +7767,7 @@
             event.preventDefault();
             const values = getFilledTickers();
             validateAllTickerInputs();
-            if (values.length < minimumRequiredTickers) {
+            if (values.length < getMinimumRequiredTickers()) {
                 const firstInput = getTickerInputs()[0];
                 if (firstInput) showTickerValidationTooltip(firstInput);
                 return;

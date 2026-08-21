@@ -1,4 +1,4 @@
-/* Code version: v3.27.6 */
+/* Code version: v3.28.0 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -33,6 +33,36 @@
 
 .grid-trading-parameters-panel .trade-strategy-params-grid {
     max-height: none;
+    overflow: visible;
+}
+
+.trade-strategy-field.is-grid-trading-inline {
+    display: grid;
+    gap: 8px;
+}
+
+.trade-strategy-field.is-grid-trading-inline .trade-strategy-row {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.trade-strategy-field.is-grid-trading-inline .trade-strategy-tune-button.is-hidden {
+    display: none;
+}
+
+.trade-strategy-field.is-grid-trading-inline .trade-strategy-params-popover {
+    position: static;
+    inset: auto;
+    height: auto !important;
+    max-height: none !important;
+    padding: 8px 10px;
+    overflow: visible;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.trade-strategy-field.is-grid-trading-inline .trade-strategy-params-grid {
+    max-height: none !important;
     overflow: visible;
 }
 .trade-sidebar-card {

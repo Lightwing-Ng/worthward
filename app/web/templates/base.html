@@ -1,4 +1,4 @@
-{# Code version: v0.16.24 #}
+{# Code version: v0.18.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.38.30') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.38.31') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -199,7 +199,7 @@
         </section>
     </div>
     <nav class="sidebar-dock" aria-label="{{ translate_ui('Workspace modes') }}">
-        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
+        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ dock_workspace_label }}</span>
         </a>
@@ -238,6 +238,9 @@
     "dcaResult": dca_result,
     "backtestResult": backtest_result,
     "backtestPeriodOptions": backtest_periods_by_interval,
+    "strategyRequiredTickers": strategy_required_tickers,
+    "strategySupports": strategy_supports,
+    "strategyDefaultTickers": strategy_default_tickers,
     "periodMetadata": period_metadata,
     "dateDisplay": {"full": date_display_full_format, "short": date_display_short_format},
     "language": {
@@ -272,22 +275,22 @@
 <script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.0.2') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
-{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.1.0') }}"></script>
 {% endif %}
-{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.1') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
-{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.15.7') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.28.6') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.30.0') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
 {% endif %}
-{% if current_view in ["backtest", "grid-trading"] %}
-<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.3.16') }}"></script>
+{% if current_view in ["backtest"] %}
+<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.4.0') }}"></script>
 {% endif %}
 </body>
 </html>

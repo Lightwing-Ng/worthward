@@ -1,7 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.76.0
+Code version: v0.78.0
+- Changed: Grid Trading is now a visible strategy-owned panel inside the generic
+  Backtest workspace; the former workspace path redirects to that canonical view.
+- Added: strategy-owned multi-ticker contracts now drive Backtest inputs,
+  aligned market-data retrieval, and exported transaction context.
 - Fixed: Investment transaction caches now invalidate payloads generated
   before HSBC Ledger cash, pending settlement, and foreign-currency cash were
   separated into one authoritative current-cash boundary.
@@ -146,7 +150,7 @@ from app.core.email_settings import (
     save_smtp_settings,
     test_smtp_connection,
 )
-from strategies.backtest import run_single_ticker_backtest
+from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
 from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
 from app.infrastructure.connectivity import (
     has_remote_market_access,
@@ -312,7 +316,6 @@ from app.web.navigation import (
     BACKTEST_VIEWS,
     MAX_TICKERS,
     MIN_TICKERS,
-    VIEW_PATHS,
     build_settings_path,
     build_settings_state_url,
     build_settings_url,
@@ -1411,7 +1414,8 @@ def build_web_runtime() -> WebRuntime:
 
     def _get_backtest_cache_key() -> str:
         """Generate a cache key from all backtest configuration parameters."""
-        requested_ticker = request.args.get("ticker", "").strip()
+        requested_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
+        requested_ticker = requested_tickers[0] if requested_tickers else ""
         if not requested_ticker:
             requested_ticker = str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0]))
         normalized_ticker = normalize_ticker_input(requested_ticker)
@@ -1419,7 +1423,7 @@ def build_web_runtime() -> WebRuntime:
         intraday_path = intraday_history_store_path_for(normalized_ticker, "1m") if normalized_ticker else None
         params = [
             request.path,
-            request.args.get("ticker", ""),
+            requested_tickers,
             request.args.get("strategy", ""),
             request.args.get("capital", ""),
             request.args.get("period", ""),
@@ -2426,32 +2430,122 @@ def build_web_runtime() -> WebRuntime:
     def build_local_store_page_url(page_number: int) -> str:
         return build_settings_state_url("local-market-store", page=page_number)
 
+    def get_strategy_ticker_contract(strategy_id: str) -> tuple[int, list[str], dict[str, object]]:
+        """Return the ordered ticker contract declared by one discovered strategy."""
+        definition = next(
+            (item for item in list_enabled_strategies() if str(item.get("id")) == strategy_id),
+            {},
+        )
+        supports = definition.get("supports", {})
+        supports = supports if isinstance(supports, dict) else {}
+        raw_required = supports.get("required_tickers")
+        try:
+            required_tickers = int(raw_required)
+        except (TypeError, ValueError):
+            required_tickers = 2 if supports.get("multi_ticker") else 1
+        required_tickers = max(1, min(required_tickers, MAX_TICKERS))
+        default_tickers: list[str] = []
+        for value in definition.get("default_tickers", []):
+            normalized_ticker = normalize_ticker_input(str(value))
+            if normalized_ticker and normalized_ticker not in default_tickers:
+                default_tickers.append(normalized_ticker)
+        return required_tickers, default_tickers, supports
+
+    def resolve_backtest_tickers(
+            requested_tickers: list[str],
+            strategy_id: str,
+    ) -> tuple[list[str], int, dict[str, object]]:
+        """Resolve strategy-owned ticker defaults while preserving query order."""
+        required_tickers, default_tickers, supports = get_strategy_ticker_contract(strategy_id)
+        normalized_requested = [
+            normalize_ticker_input(str(value))
+            for value in requested_tickers
+            if normalize_ticker_input(str(value))
+        ]
+        if not normalized_requested:
+            resolved = default_tickers[:required_tickers]
+        elif required_tickers == 1:
+            resolved = normalized_requested[:1] or default_tickers[:1]
+        else:
+            resolved = normalized_requested[:required_tickers]
+            for default_ticker in default_tickers:
+                if len(resolved) >= required_tickers:
+                    break
+                if default_ticker not in resolved:
+                    resolved.append(default_ticker)
+        return resolved[:required_tickers], required_tickers, supports
+
     def _run_backtest_from_request():
         backtest_execution_mode = load_backtest_execution_mode()
+        strategy_options = list_enabled_strategies()
+        is_grid_workspace = request.args.get("workspace", "").strip().lower() == "grid-trading"
+        default_strategy_id = (
+            "grid-trading"
+            if is_grid_workspace
+            else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
+        )
+        selected_strategy_id = (
+            "grid-trading"
+            if is_grid_workspace
+            else request.args.get("strategy", default_strategy_id).strip()
+        )
+        strategy_ids = {str(item["id"]) for item in strategy_options}
+        if selected_strategy_id not in strategy_ids and strategy_options:
+            selected_strategy_id = str(strategy_options[0]["id"])
+        strategy = instantiate_strategy(selected_strategy_id)
         requested_tickers = parse_requested_tickers()
+        requested_tickers, required_tickers, _ = resolve_backtest_tickers(
+            requested_tickers,
+            selected_strategy_id,
+        )
         if not requested_tickers:
-            requested_tickers = [normalize_ticker_input(str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0])))]
-        if not requested_tickers:
-            raise ValueError("No ticker selected for backtest.")
-        trade_ticker = validate_ticker_or_raise(requested_tickers[0])
-        backtest_cache_refresh = ensure_latest_backtest_caches(trade_ticker)
+            fallback_ticker = normalize_ticker_input(
+                str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0]))
+            )
+            requested_tickers, required_tickers, _ = resolve_backtest_tickers(
+                [fallback_ticker] if fallback_ticker else [],
+                selected_strategy_id,
+            )
+        if len(requested_tickers) < required_tickers:
+            raise ValueError(f"{strategy.get_metadata().name} requires {required_tickers} tickers.")
+        validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
+        if len(set(validated_tickers)) != len(validated_tickers):
+            raise ValueError(f"{strategy.get_metadata().name} requires distinct tickers.")
+        refreshes = [ensure_latest_backtest_caches(ticker) for ticker in validated_tickers]
+        backtest_cache_refresh = {
+            "daily_error": any(bool(refresh.get("daily_error")) for refresh in refreshes),
+            "intraday_error": any(bool(refresh.get("intraday_error")) for refresh in refreshes),
+        }
         price_only = request.args.get("return", "").strip().lower() == "price" or parse_bool_flag("price_only", "price_return_only")
         include_dividends = False if price_only else (
             request.args.get("return", "").strip().lower() == "dividends"
             or parse_bool_flag("dividends", "include_dividends")
         )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        supported_intervals = list_available_market_intervals(trade_ticker)
+        interval_options = [list_available_market_intervals(ticker) for ticker in validated_tickers]
+        supported_intervals = [
+            interval
+            for interval in ("1d", "1m")
+            if all(interval in options for options in interval_options)
+        ] or ["1d"]
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
             requested_interval = "1m"
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
-        trade_dataset = fetch_history(
-            trade_ticker,
-            False,
-            interval=requested_interval,
-            dividend_mode="price",
+        trade_datasets = [
+            fetch_history(
+                ticker,
+                False,
+                interval=requested_interval,
+                dividend_mode="price",
+            )
+            for ticker in validated_tickers
+        ]
+        trade_dataset = (
+            combine_backtest_datasets(trade_datasets)
+            if required_tickers > 1
+            else trade_datasets[0]
         )
 
         if requested_interval == "1m":
@@ -2477,24 +2571,6 @@ def build_web_runtime() -> WebRuntime:
             common_end_date = trade_dataset["Date"].max()
             trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
 
-        strategy_options = list_enabled_strategies()
-        is_grid_workspace = (
-            request.path == VIEW_PATHS["grid-trading"]
-            or request.args.get("workspace", "").strip().lower() == "grid-trading"
-        )
-        default_strategy_id = (
-            "grid-trading"
-            if is_grid_workspace
-            else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
-        )
-        selected_strategy_id = (
-            "grid-trading"
-            if is_grid_workspace
-            else request.args.get("strategy", default_strategy_id).strip()
-        )
-        strategy_ids = {str(item["id"]) for item in strategy_options}
-        if selected_strategy_id not in strategy_ids and strategy_options:
-            selected_strategy_id = str(strategy_options[0]["id"])
         selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
         backtest_initial_capital = max(
             parse_float_value(
@@ -2504,8 +2580,9 @@ def build_web_runtime() -> WebRuntime:
             1.0,
         )
 
-        strategy = instantiate_strategy(selected_strategy_id)
         signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
+        if hasattr(signal_result, "metadata") and isinstance(signal_result.metadata, dict):
+            signal_result.metadata["tickers"] = validated_tickers
         backtest_result = run_single_ticker_backtest(
             signal_result,
             backtest_initial_capital,
@@ -2516,7 +2593,7 @@ def build_web_runtime() -> WebRuntime:
         )
         return (
             backtest_result,
-            trade_ticker,
+            validated_tickers[0],
             requested_interval,
             date_constraints,
             trade_dataset,
@@ -3156,10 +3233,6 @@ def build_web_runtime() -> WebRuntime:
                                 ][:view_max_tickers]
             include_dividends = False
         elif current_view in BACKTEST_VIEWS and not requested_tickers:
-            default_trade_ticker = normalize_ticker_input(
-                defaults.get("backtest_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
-            )
-            requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
             include_dividends = False if price_only else bool(defaults.get("backtest_include_dividends", False))
         elif current_view == "dca" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
@@ -3222,7 +3295,7 @@ def build_web_runtime() -> WebRuntime:
         strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = (
             "grid-trading"
-            if current_view == "grid-trading"
+            if request.args.get("workspace", "").strip().lower() == "grid-trading"
             else request.args.get(
                 "strategy",
                 defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
@@ -3233,6 +3306,23 @@ def build_web_runtime() -> WebRuntime:
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
+        strategy_required_tickers = 1
+        strategy_supports: dict[str, object] = {}
+        strategy_default_tickers: list[str] = []
+        if current_view in BACKTEST_VIEWS:
+            requested_tickers, strategy_required_tickers, strategy_supports = resolve_backtest_tickers(
+                requested_tickers,
+                selected_strategy_id,
+            )
+            _, strategy_default_tickers, _ = get_strategy_ticker_contract(selected_strategy_id)
+            if not requested_tickers:
+                fallback_ticker = normalize_ticker_input(
+                    str(defaults.get("backtest_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0])))
+                )
+                requested_tickers, strategy_required_tickers, strategy_supports = resolve_backtest_tickers(
+                    [fallback_ticker] if fallback_ticker else [],
+                    selected_strategy_id,
+                )
         selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
         strategy_form_fields = build_strategy_form_fields(selected_strategy_id, selected_strategy_params) if selected_strategy_id else []
         backtest_initial_capital = max(
@@ -3260,8 +3350,15 @@ def build_web_runtime() -> WebRuntime:
         supported_intervals = ["1d"]
         if current_view in BACKTEST_VIEWS and requested_tickers:
             try:
-                trade_ticker = validate_ticker_or_raise(requested_tickers[0])
-                supported_intervals = list_available_market_intervals(trade_ticker)
+                interval_options = [
+                    list_available_market_intervals(validate_ticker_or_raise(ticker))
+                    for ticker in requested_tickers[:strategy_required_tickers]
+                ]
+                supported_intervals = [
+                    interval
+                    for interval in ("1d", "1m")
+                    if all(interval in options for options in interval_options)
+                ] or ["1d"]
             except ValueError:
                 pass
 
@@ -3364,7 +3461,7 @@ def build_web_runtime() -> WebRuntime:
             report_heading = labels["dca_metrics"]
             chart_heading = labels["dca_chart"]
         elif current_view in BACKTEST_VIEWS:
-            page_title = labels.get("grid_trading_title", "Grid trading") if current_view == "grid-trading" else labels["backtest_title"]
+            page_title = labels["backtest_title"]
         elif current_view == "settings":
             page_title = labels["settings_title"]
             if settings_section == "network":
@@ -3441,8 +3538,20 @@ def build_web_runtime() -> WebRuntime:
         try:
             if current_view in BACKTEST_VIEWS:
                 if requested_tickers:
-                    backtest_refresh_ticker = validate_ticker_or_raise(requested_tickers[0])
-                    backtest_market_refresh = ensure_latest_backtest_caches(backtest_refresh_ticker)
+                    backtest_refreshes = [
+                        ensure_latest_backtest_caches(validate_ticker_or_raise(ticker))
+                        for ticker in requested_tickers[:strategy_required_tickers]
+                    ]
+                    backtest_market_refresh = {
+                        "daily_error": any(
+                            bool((refresh or {}).get("daily_error"))
+                            for refresh in backtest_refreshes
+                        ),
+                        "intraday_error": any(
+                            bool((refresh or {}).get("intraday_error"))
+                            for refresh in backtest_refreshes
+                        ),
+                    }
                 # Check cache: skip re-computation if config unchanged
                 cache_key = _get_backtest_cache_key()
                 if cache_key in _cached_backtest:
@@ -3478,8 +3587,8 @@ def build_web_runtime() -> WebRuntime:
                         oldest_key = next(iter(_cached_backtest.keys()))
                         del _cached_backtest[oldest_key]
                 record_strategy_usage(selected_strategy_id)
-                ticker_slots = [trade_ticker]
-                profiles = [fetch_quote_profile(trade_ticker, False)]
+                ticker_slots = requested_tickers[:strategy_required_tickers]
+                profiles = [fetch_quote_profile(ticker, False) for ticker in ticker_slots]
                 backtest_periods_by_interval = {
                     "1d": build_supported_periods_for_history_store(trade_ticker, "1d"),
                     "1m": build_supported_periods_for_history_store(trade_ticker, "1m"),
@@ -4448,7 +4557,8 @@ def build_web_runtime() -> WebRuntime:
                 live_trading_account_label = load_longbridge_account_label(load_broker_settings())
 
         if current_view in {*BACKTEST_VIEWS, "dca"}:
-            ticker_slots = ticker_slots[:1] if ticker_slots else [""]
+            required_slots = strategy_required_tickers if current_view in BACKTEST_VIEWS else 1
+            ticker_slots = ticker_slots[:required_slots] if ticker_slots else [""] * required_slots
         else:
             while len(ticker_slots) < MIN_TICKERS:
                 ticker_slots.append("")
@@ -4469,7 +4579,6 @@ def build_web_runtime() -> WebRuntime:
             "portfolio": "portfolio.html",
             "dca": "dca.html",
             "backtest": "backtest.html",
-            "grid-trading": "grid_trading.html",
             "trade": (
                 "investment.html"
                 if trade_section == "investment"
@@ -4575,7 +4684,7 @@ def build_web_runtime() -> WebRuntime:
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "investment", "backtest", "font-tokens", "color-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
@@ -4594,6 +4703,9 @@ def build_web_runtime() -> WebRuntime:
             strategy_options=strategy_options,
             strategy_option_groups=strategy_option_groups,
             selected_strategy_id=selected_strategy_id,
+            strategy_required_tickers=strategy_required_tickers,
+            strategy_supports=strategy_supports,
+            strategy_default_tickers=strategy_default_tickers,
             strategy_form_fields=strategy_form_fields,
             selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
@@ -4655,11 +4767,26 @@ def build_web_runtime() -> WebRuntime:
                 return "No transactions to export.", 404
 
             strategy_definition = get_strategy_definition(strategy_id)
+            is_multi_asset = bool(backtest_result.get("multi_asset"))
+            raw_tickers = backtest_result.get("tickers", [])
+            report_tickers = [
+                str(ticker).strip()
+                for ticker in raw_tickers
+                if str(ticker).strip()
+            ] if isinstance(raw_tickers, (list, tuple)) else []
+            if not report_tickers:
+                report_tickers = list(dict.fromkeys(
+                    str(trade.get("ticker") or trade_ticker).strip()
+                    for trade in trades
+                    if str(trade.get("ticker") or trade_ticker).strip()
+                ))
+            ticker_caption = " / ".join(report_tickers) or trade_ticker
+            ticker_filename_prefix = "-".join(report_tickers) or trade_ticker
             # 0. Context for Filename
             start_str = trade_dataset["Date"].min().strftime("%Y%m%d")
             end_str = trade_dataset["Date"].max().strftime("%Y%m%d")
             strategy_name = strategy_definition.get('name', strategy_id)
-            report_filename = f"{trade_ticker} Backtest Report {start_str} - {end_str} ({strategy_name}).md"
+            report_filename = f"{ticker_filename_prefix} Backtest Report {start_str} - {end_str} ({strategy_name}).md"
             period_start = pd.to_datetime(trade_dataset["Date"].min())
             period_end = pd.to_datetime(trade_dataset["Date"].max())
             period_label = f"{format_display_date(period_start)} - {format_display_date(period_end)}"
@@ -4676,7 +4803,7 @@ def build_web_runtime() -> WebRuntime:
             win_rate_display = "N/A" if win_rate_pct is None else f"{parse_float_value(win_rate_pct, 0.0):,.2f}%"
 
             md_lines = [
-                f"## Backtest Report: {trade_ticker}",
+                f"## Backtest Report: {ticker_caption}",
                 f"**Generated on**: {format_display_datetime(pd.Timestamp.now(), include_seconds=True, timezone_suffix='HKT')}",
                 f"**Algorithm**: {strategy_name}",
                 f"**Period**: {period_label}",
@@ -4699,15 +4826,20 @@ def build_web_runtime() -> WebRuntime:
             md_lines.extend([
                 "### Transaction History",
                 "",
-                "| No. | Date | Side | Price | Shares | P&L | Cash | Equity |",
-                "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: |"
+                "| No. | Date | Ticker | Side | Price | Shares | P&L | Cash | Equity |"
+                if is_multi_asset
+                else "| No. | Date | Side | Price | Shares | P&L | Cash | Equity |",
+                "| ---: | :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: |"
+                if is_multi_asset
+                else "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: |",
             ])
             for i, trade in enumerate(trades):
                 if trade.get("_virtual_close"):
                     continue  # Skip virtual closing trade, same as table display
                 trade_date = format_display_datetime(pd.to_datetime(trade.get("date")), use_short_date=True) if trade.get("date") else "N/A"
+                ticker_cell = f"{trade.get('ticker', '')} | " if is_multi_asset else ""
                 md_lines.append(
-                    f"| {i + 1} | {trade_date} | {trade.get('side')} | "
+                    f"| {i + 1} | {trade_date} | {ticker_cell}{trade.get('side')} | "
                     f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
                     f"{trade.get('pnl', 0):,.2f} | {trade.get('cash', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
                 )
@@ -4716,6 +4848,8 @@ def build_web_runtime() -> WebRuntime:
             md_lines.extend([
                 "",
                 "### Strategy Context",
+                "",
+                f"- **Tickers**: {ticker_caption}",
                 "",
                 "#### Parameters",
                 "",
@@ -4896,7 +5030,16 @@ def build_web_runtime() -> WebRuntime:
         return render_workspace_page("backtest")
 
     def grid_trading_page():
-        return render_workspace_page("grid-trading")
+        query_pairs = [
+            (key, value)
+            for key, values in request.args.lists()
+            if key not in {"strategy", "workspace"}
+            for value in values
+        ]
+        query_pairs.append(("strategy", "grid-trading"))
+        query_string = urlencode(query_pairs)
+        target_path = build_view_path("backtest")
+        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def legacy_backtest_page():
         return build_legacy_workspace_redirect("backtest")
@@ -5903,6 +6046,7 @@ def build_web_runtime() -> WebRuntime:
             return jsonify({"is_tunable": False, "html": ""})
 
         strategy_form_fields = build_strategy_form_fields(strategy_id)
+        required_tickers, default_tickers, supports = get_strategy_ticker_contract(strategy_id)
         html = render_template(
             "_trade_strategy_params_panel.html",
             strategy_form_fields=strategy_form_fields,
@@ -5911,6 +6055,9 @@ def build_web_runtime() -> WebRuntime:
             {
                 "is_tunable": bool(strategy_form_fields),
                 "html": html,
+                "required_tickers": required_tickers,
+                "default_tickers": default_tickers,
+                "supports": supports,
             }
         )
 

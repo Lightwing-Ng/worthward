@@ -1295,15 +1295,14 @@ Fees: 0.12
             portfolio_body,
         )
 
-    def test_grid_trading_uses_sentence_case_workspace_label(self) -> None:
+    def test_legacy_grid_trading_path_redirects_to_generic_backtest(self) -> None:
         client = create_app().test_client()
 
         response = client.get("/workspaces/grid-trading")
 
-        self.assertEqual(response.status_code, 200)
-        body = response.get_data(as_text=True)
-        self.assertIn('class="settings-nav-label">Grid trading</span>', body)
-        self.assertIn('<p class="report-heading">Grid trading</p>', body)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].startswith("/workspaces/backtest?"))
+        self.assertIn("strategy=grid-trading", response.headers["Location"])
 
     def test_exact_range_markup_exposes_shared_date_roles(self) -> None:
         client = create_app().test_client()

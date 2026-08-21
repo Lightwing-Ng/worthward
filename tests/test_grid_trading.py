@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.1.0."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -31,40 +31,20 @@ def test_grid_trading_strategy_is_discoverable_and_builds_grid_signals() -> None
     assert result.frame["sell_signal"].any()
 
 
-def test_grid_trading_workspace_is_parallel_and_locks_its_strategy() -> None:
+def test_legacy_grid_trading_workspace_redirects_to_generic_backtest() -> None:
     client = create_app().test_client()
 
-    with (
-        patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
-        patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
-        patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
-        patch("app.web.runtime.instantiate_strategy", wraps=instantiate_strategy) as strategy_factory,
-        patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
-        patch("app.web.runtime.record_strategy_usage"),
-    ):
-        response = client.get(
-            "/workspaces/grid-trading?ticker=QQQ&period=1y&capital=10000"
-            "&strategy=macd&center_mode=EMA&center_window=30&grid_spacing_pct=1.5"
-            "&entry_level=2&exit_level=3"
-        )
+    response = client.get(
+        "/workspaces/grid-trading?ticker=QQQ&period=1y&capital=10000"
+        "&strategy=macd&center_mode=EMA&center_window=30&grid_spacing_pct=1.5"
+        "&entry_level=2&exit_level=3"
+    )
 
-    html = response.get_data(as_text=True)
-    assert response.status_code == 200
-    assert strategy_factory.call_args_list
-    assert {call.args[0] for call in strategy_factory.call_args_list} == {"grid-trading"}
-    assert 'name="strategy" value="grid-trading"' in html
-    assert 'name="workspace" value="grid-trading"' in html
-    assert 'data-grid-trading-parameters' in html
-    assert 'name="center_mode"' in html
-    assert '<option value="EMA" selected>EMA</option>' in html
-    assert 'name="center_window"' in html
-    assert 'value="30"' in html
-    assert 'name="entry_level"' in html
-    assert 'value="2"' in html
-    assert 'name="exit_level"' in html
-    assert 'value="3"' in html
-    assert 'data-trade-strategy-combobox' not in html
-    assert 'workspace-nav-item-grid-trading is-active' in html
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert location.startswith("/workspaces/backtest?")
+    assert "strategy=grid-trading" in location
+    assert "workspace=grid-trading" not in location
 
 
 def test_backtest_workspace_keeps_the_general_strategy_selector() -> None:
@@ -82,4 +62,33 @@ def test_backtest_workspace_keeps_the_general_strategy_selector() -> None:
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert 'data-trade-strategy-combobox' in html
-    assert 'data-grid-trading-parameters' not in html
+    assert 'is-grid-trading-inline' not in html
+    assert 'grid-trading-parameters-panel' not in html
+
+
+def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() -> None:
+    client = create_app().test_client()
+
+    with (
+        patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+        patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+        patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+        patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+        patch("app.web.runtime.record_strategy_usage"),
+    ):
+        response = client.get(
+            "/workspaces/backtest?ticker=QQQ&period=1y&capital=10000&strategy=grid-trading"
+            "&center_mode=EMA&center_window=30&grid_spacing_pct=1.5&entry_level=2&exit_level=3"
+        )
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'data-trade-strategy-combobox' in html
+    assert 'is-grid-trading-inline' in html
+    assert 'data-grid-trading-parameters-heading' in html
+    assert 'grid-trading-parameters-panel' in html
+    assert 'name="center_mode"' in html
+    assert '<option value="EMA" selected>EMA</option>' in html
+    assert 'name="grid_spacing_pct"' in html
+    assert 'value="1.5"' in html
+    assert 'name="workspace"' not in html

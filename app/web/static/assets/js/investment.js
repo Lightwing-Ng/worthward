@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.128.1
+ * Code version: v2.128.2
+ * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
+ *   ledger-sequence order, so a later sale proceeds posting cannot be
+ *   overwritten by an earlier same-day buy balance in historical equity.
  * - Fixed: The current HSBC cash snapshot no longer overwrites the latest
  *   unsettled-buy history row; Holdings and Metrics retain the current cash
  *   boundary while Transaction history preserves sequential replay.
@@ -398,7 +401,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.128.1',
+    entry: 'v2.128.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -17146,13 +17149,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     && rightEvidence.sequence !== null
                     && leftEvidence.sequence !== rightEvidence.sequence
                 ) {
-                    const bothCsv = (
-                        leftEvidence.sourceFileKind === 'hsbc_usd_savings_csv'
-                        && rightEvidence.sourceFileKind === 'hsbc_usd_savings_csv'
-                    );
-                    return bothCsv
-                        ? rightEvidence.sequence - leftEvidence.sequence
-                        : leftEvidence.sequence - rightEvidence.sequence;
+                    // `ledger_sequence` is assigned in posted-ledger order,
+                    // even when the source CSV itself is displayed newest-first.
+                    // Keep same-day settlement boundaries chronological so the
+                    // final balance includes every later principal and fee leg.
+                    return leftEvidence.sequence - rightEvidence.sequence;
                 }
                 if (left.kind !== right.kind) return left.kind === 'transaction' ? -1 : 1;
                 return left.index - right.index;

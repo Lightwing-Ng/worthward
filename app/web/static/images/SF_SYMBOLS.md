@@ -34,8 +34,9 @@ monochrome CSS masks.
   `viewBox` and normalized CoreSVG element geometry.
 - Existing official filenames have no current replacements in the 7.2 alias
   map after the Live Trading correction.
-- Grid Trading uses `square.grid.3x3.topleft.filled`, distinct from Backtest's
-  `square.stack.3d.down.forward.fill`.
+- The legacy standalone Grid Trading icon asset `square.grid.3x3.topleft.filled`
+  remains reserved; the canonical Backtest workspace uses
+  `square.stack.3d.down.forward.fill` for the shared strategy surface.
 
 ## Reserved trading assets
 

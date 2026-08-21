@@ -1,16 +1,54 @@
 """
-Single-ticker long-only backtest engine.
+Long-only backtest engines.
 
-Code version: v0.3.3
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
 from math import floor
+from typing import Any
 
 import pandas as pd
 
 from .base import StrategySignalResult
+
+
+def combine_backtest_datasets(datasets: list[pd.DataFrame]) -> pd.DataFrame:
+    """Align ordered ticker histories on their common timestamps for multi-asset strategies."""
+    if len(datasets) < 2:
+        raise ValueError("A multi-asset backtest requires at least two market datasets.")
+
+    merged: pd.DataFrame | None = None
+    for ticker_index, source in enumerate(datasets, start=1):
+        if source.empty or "Date" not in source.columns or "Close" not in source.columns:
+            raise ValueError("Each ticker must provide Date and Close market history.")
+        frame = source.copy()
+        frame["Date"] = pd.to_datetime(frame["Date"], errors="coerce", utc=True).dt.tz_localize(None)
+        frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+        frame = frame.dropna(subset=["Date", "Close"]).drop_duplicates(subset=["Date"]).sort_values("Date")
+        if frame.empty:
+            raise ValueError("Each ticker must provide usable market history.")
+
+        for column, fallback in {
+            "Open": frame["Close"],
+            "High": frame["Close"],
+            "Low": frame["Close"],
+            "Dividends": 0.0,
+        }.items():
+            if column not in frame.columns:
+                frame[column] = fallback
+            frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(fallback)
+
+        columns = ["Date", "Open", "High", "Low", "Close", "Dividends"]
+        frame = frame[columns]
+        if ticker_index > 1:
+            frame = frame.rename(columns={column: f"{column}_{ticker_index}" for column in columns if column != "Date"})
+        merged = frame if merged is None else merged.merge(frame, on="Date", how="inner", sort=True)
+
+    if merged is None or merged.empty:
+        raise ValueError("The selected tickers do not have overlapping market history.")
+    return merged.sort_values("Date").reset_index(drop=True)
 
 
 def _format_display_date(value: pd.Timestamp | str) -> str:
@@ -185,6 +223,195 @@ def _build_buy_hold_equity_series(
     return pd.Series(equity_values, index=frame.index, dtype="float64"), float(equity_values[-1] if equity_values else initial_capital)
 
 
+def run_leveraged_rotation_backtest(
+        signal_result: StrategySignalResult,
+        initial_capital: float,
+        execution_mode: str = "signal_close",
+        interval: str = "1d",
+        reinvest_cash_dividends: bool = False,
+        include_cash_dividends: bool = True,
+) -> dict[str, object]:
+    """Run a full-capital rotation between the two ordered assets in a signal result."""
+    frame = signal_result.frame.copy()
+    if frame.empty:
+        raise ValueError("No market data available for backtest.")
+
+    metadata = signal_result.metadata if isinstance(signal_result.metadata, dict) else {}
+    primary_close_column = str(metadata.get("primary_close_column") or "Close")
+    secondary_close_column = str(metadata.get("secondary_close_column") or "Close_2")
+    if primary_close_column not in frame.columns or secondary_close_column not in frame.columns:
+        raise ValueError("Leveraged Rotation requires two aligned close-price columns.")
+
+    ticker_values = metadata.get("tickers", ("Ticker 1", "Ticker 2"))
+    tickers = tuple(str(value) for value in ticker_values) if isinstance(ticker_values, (list, tuple)) else ()
+    if len(tickers) < 2:
+        tickers = ("Ticker 1", "Ticker 2")
+    trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
+    normalized_execution_mode = "next_open" if str(execution_mode).strip().lower() == "next_open" else "signal_close"
+    cash = float(initial_capital)
+    shares = 0.0
+    active_asset = 1
+    entry_price: float | None = None
+    pending_asset: int | None = None
+    equity_points: list[float] = []
+    trades: list[dict[str, object]] = []
+    realized_gains: list[float] = []
+    rotation_results: list[float] = []
+
+    def asset_column(field: str, asset: int) -> str:
+        return field if asset == 1 else f"{field}_2"
+
+    def row_value(row: Any, field: str, asset: int) -> float:
+        return float(getattr(row, asset_column(field, asset), 0.0) or 0.0)
+
+    def append_trade(
+            row: Any,
+            side: str,
+            asset: int,
+            price: float,
+            pnl: float,
+            share_count: float | None = None,
+    ) -> None:
+        marked_price = row_value(row, "Close", asset)
+        trades.append({
+            "date": pd.Timestamp(row.Date).strftime(trade_date_format),
+            "side": side,
+            "ticker": tickers[asset - 1],
+            "price": round(price, 4),
+            "shares": round(shares if share_count is None else share_count, 6),
+            "pnl": round(pnl, 4),
+            "cash": round(cash, 4),
+            "equity": round(cash + (shares * marked_price), 4),
+        })
+
+    def switch_asset(row: Any, target_asset: int, price_field: str) -> bool:
+        nonlocal active_asset, cash, shares, entry_price
+        if target_asset == active_asset:
+            return False
+        exit_price = row_value(row, price_field, active_asset)
+        target_price = row_value(row, price_field, target_asset)
+        if exit_price <= 0 or target_price <= 0:
+            return False
+
+        previous_asset = active_asset
+        previous_shares = shares
+        realized_pnl = (exit_price - float(entry_price or exit_price)) * previous_shares
+        cash += previous_shares * exit_price
+        shares = 0.0
+        append_trade(row, "Sell", previous_asset, exit_price, realized_pnl, previous_shares)
+        if previous_asset == 2:
+            rotation_results.append(realized_pnl)
+        realized_gains.append(realized_pnl)
+
+        active_asset = target_asset
+        shares = float(floor(cash / target_price))
+        if shares > 0:
+            cash -= shares * target_price
+            entry_price = target_price
+        else:
+            entry_price = None
+        append_trade(row, "Buy", target_asset, target_price, 0.0)
+        return True
+
+    for index, row in enumerate(frame.itertuples(index=False)):
+        if include_cash_dividends and (index > 0 or shares > 0):
+            dividend = row_value(row, "Dividends", active_asset)
+            close_price = row_value(row, "Close", active_asset)
+            cash, shares = _apply_dividend_cash_flow(
+                cash=cash,
+                shares=shares,
+                close_price=close_price,
+                dividend_per_share=dividend,
+                reinvest_cash_dividends=reinvest_cash_dividends,
+            )
+
+        if index == 0:
+            initial_price = row_value(row, "Open", active_asset) or row_value(row, "Close", active_asset)
+            if initial_price <= 0:
+                raise ValueError("The primary ticker has no usable opening price.")
+            shares = float(floor(cash / initial_price))
+            cash -= shares * initial_price
+            entry_price = initial_price
+            append_trade(row, "Buy", active_asset, initial_price, 0.0)
+
+        executed_pending = False
+        if pending_asset is not None and index > 0:
+            executed_pending = switch_asset(row, pending_asset, "Open")
+            pending_asset = None
+
+        enter_signal = bool(getattr(row, signal_result.buy_signal_column, False))
+        exit_signal = bool(getattr(row, signal_result.sell_signal_column, False))
+        if active_asset == 1 and enter_signal and not executed_pending:
+            if normalized_execution_mode == "next_open":
+                pending_asset = 2
+            else:
+                switch_asset(row, 2, "Close")
+        elif active_asset == 2 and exit_signal and not executed_pending:
+            if normalized_execution_mode == "next_open":
+                pending_asset = 1
+            else:
+                switch_asset(row, 1, "Close")
+
+        marked_price = row_value(row, "Close", active_asset)
+        equity_points.append(cash + (shares * marked_price))
+
+    frame["Equity"] = equity_points
+    bh_equity_series, bh_final_equity = _build_buy_hold_equity_series(
+        frame,
+        initial_capital,
+        reinvest_cash_dividends=reinvest_cash_dividends,
+        include_cash_dividends=include_cash_dividends,
+    )
+    beat_bh_mask = frame["Equity"] > bh_equity_series
+    beat_bh_pct = (beat_bh_mask.sum() / len(frame)) * 100.0 if len(frame) > 0 else 0.0
+    total_trades = len(trades)
+    wins = [result for result in rotation_results if result > 0]
+    win_rate_pct = (
+        round((len(wins) / len(rotation_results)) * 100.0, 2)
+        if rotation_results
+        else 0.0
+    )
+    buy_markers, sell_markers = _build_trade_markers(frame, trades, interval)
+    final_equity = float(frame["Equity"].iloc[-1])
+    total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
+    benchmark_alpha = final_equity - bh_final_equity
+    long_gain = sum(max(value, 0.0) for value in realized_gains)
+    long_loss = sum(max(-value, 0.0) for value in realized_gains)
+
+    return {
+        "interval": interval,
+        "multi_asset": True,
+        "tickers": list(tickers),
+        "summary": {
+            "initial_capital": round(float(initial_capital), 2),
+            "final_equity": round(final_equity, 2),
+            "net_return_pct": round(total_return, 2),
+            "beat_bh_pct": round(float(beat_bh_pct), 2),
+            "total_trades": total_trades,
+            "win_rate_pct": win_rate_pct,
+            "benchmark_alpha": round(benchmark_alpha, 2),
+            "long_gain": round(long_gain, 2),
+            "long_loss": round(long_loss, 2),
+            "short_gain": 0.0,
+            "rotation_count": len(rotation_results),
+            "active_ticker": tickers[active_asset - 1],
+        },
+        "chart": {
+            "dates": frame["Date"].map(lambda value: _format_chart_date(value, interval)).tolist(),
+            "raw_dates": [pd.Timestamp(value).isoformat() for value in frame["Date"].tolist()],
+            "open": [round(float(value), 4) for value in frame["Open"].tolist()],
+            "high": [round(float(value), 4) for value in frame["High"].tolist()],
+            "low": [round(float(value), 4) for value in frame["Low"].tolist()],
+            "close": [round(float(value), 4) for value in frame["Close"].tolist()],
+            "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
+            "all_in_equity": [round(float(value), 4) for value in bh_equity_series.tolist()],
+            "buy_markers": buy_markers,
+            "sell_markers": sell_markers,
+        },
+        "trades": trades,
+    }
+
+
 def run_single_ticker_backtest(
         signal_result: StrategySignalResult,
         initial_capital: float,
@@ -193,6 +420,16 @@ def run_single_ticker_backtest(
         reinvest_cash_dividends: bool = False,
         include_cash_dividends: bool = True,
 ) -> dict[str, object]:
+    if signal_result.execution_profile == "leveraged_rotation":
+        return run_leveraged_rotation_backtest(
+            signal_result,
+            initial_capital,
+            execution_mode=execution_mode,
+            interval=interval,
+            reinvest_cash_dividends=reinvest_cash_dividends,
+            include_cash_dividends=include_cash_dividends,
+        )
+
     frame = signal_result.frame.copy()
     if frame.empty:
         raise ValueError("No market data available for backtest.")

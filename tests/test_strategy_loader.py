@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from strategies.loader import instantiate_strategy, list_enabled_strategies, loa
 class StrategyLoaderTests(unittest.TestCase):
     def test_registry_is_built_from_strategy_classes(self) -> None:
         registry = load_strategy_registry()
-        self.assertEqual(registry["version"], "v2.0.0")
+        self.assertEqual(registry["version"], "v2.1.0")
         strategies = registry["strategies"]
         self.assertGreaterEqual(len(strategies), 3)
 

@@ -58,7 +58,6 @@ discovery. This file remains the canonical guide.
    - `/workspaces/portfolio`
    - `/workspaces/dca`
    - `/workspaces/backtest`
-   - `/workspaces/grid-trading`
    - `/trade/investment`
    - `/trade/live-trading`
    - `/settings/<section>`

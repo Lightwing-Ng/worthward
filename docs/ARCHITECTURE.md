@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.40.0`
+Documentation version: `v1.42.0`
 
 ## Holdings P&L display contract
 
@@ -92,7 +92,6 @@ Workspace
   Portfolio          /workspaces/portfolio
   DCA                /workspaces/dca
   Backtest           /workspaces/backtest
-  Grid trading       /workspaces/grid-trading
 
 Trade
   Investment         /trade/investment
@@ -111,7 +110,9 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest and Grid trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid trading locks strategy execution to `grid-trading` and owns its parameter surface.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `grid-trading`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Grid Trading expands its parameter panel inline, while the legacy `/workspaces/grid-trading` path redirects to `/workspaces/backtest?strategy=grid-trading` for compatibility.
+
+Strategies declare their input contract through `StrategySupportMatrix.required_tickers` and `BaseStrategy.get_default_tickers()`. Backtest preserves the ordered ticker inputs, fetches their common local-history range, and passes a combined dataset to multi-asset strategies. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
 
 All `/workspaces/*` pages use the `Canonical URL State Contract`: semantic query names, repeated values whose order carries meaning, omitted defaults, and one stable serialization order. Relative windows use `range=<period>`; custom windows use `range=custom` with `period` and either `date` or `from` / `to`. Workspace tabs and result pagination use `tab` and `page`. Legacy aliases remain readable and are normalized to the canonical form on page hydration or the next state-changing interaction.
 

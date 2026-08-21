@@ -1,7 +1,10 @@
 """
 Backtest route registration.
 
-Code version: v0.4.0
+Code version: v0.5.0
+
+The former Grid Trading URL remains a compatibility redirect; the canonical UI is
+the strategy selector and inline parameter panel in Generic Backtest.
 """
 
 from flask import Flask

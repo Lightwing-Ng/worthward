@@ -1,13 +1,13 @@
 """
 Base strategy interfaces.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 import pandas as pd
 
@@ -17,6 +17,8 @@ class StrategySignalResult:
     frame: pd.DataFrame
     buy_signal_column: str
     sell_signal_column: str
+    execution_profile: str = "single_ticker"
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class StrategySupportMatrix:
     multi_ticker: bool = False
     long_only: bool = True
     short: bool = False
+    required_tickers: int = 1
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,13 @@ class StrategyMetadata:
     display_order: int = 9999
     supports: StrategySupportMatrix = field(default_factory=StrategySupportMatrix)
 
-    def to_catalog_entry(self, module: str, class_name: str, default_params: dict[str, Any]) -> dict[str, Any]:
+    def to_catalog_entry(
+            self,
+            module: str,
+            class_name: str,
+            default_params: dict[str, Any],
+            default_tickers: Sequence[str] = (),
+    ) -> dict[str, Any]:
         return {
             "id": self.strategy_id,
             "name": self.name,
@@ -82,6 +91,7 @@ class StrategyMetadata:
             "enabled": self.enabled,
             "supports": asdict(self.supports),
             "default_params": default_params,
+            "default_tickers": list(default_tickers),
             "module": module,
             "class_name": class_name,
             "ui": {
@@ -119,6 +129,15 @@ class BaseStrategy:
             definition.key: definition.default
             for definition in self.get_parameter_definitions()
         }
+
+    def get_default_tickers(self) -> tuple[str, ...]:
+        """Return strategy-owned ticker defaults for multi-asset strategies."""
+        return ()
+
+    def get_required_ticker_count(self) -> int:
+        """Return the number of ordered ticker inputs required by the strategy."""
+        supports = self.get_metadata().supports
+        return max(1, int(supports.required_tickers or (2 if supports.multi_ticker else 1)))
 
     def normalize_params(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         merged: dict[str, Any] = {

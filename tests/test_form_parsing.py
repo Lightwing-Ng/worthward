@@ -225,7 +225,7 @@ class NavigationHelperTests(unittest.TestCase):
         self.assertEqual(normalize_view_name("trade-messages"), "backtest")
         self.assertEqual(normalize_view_name("nope"), "tickers")
         self.assertEqual(build_view_path("portfolio"), "/workspaces/portfolio")
-        self.assertEqual(build_view_path("grid-trading"), "/workspaces/grid-trading")
+        self.assertEqual(build_view_path("grid-trading"), "/workspaces/backtest")
 
         self.assertEqual(normalize_settings_section("broker-access"), "broker-access")
         self.assertEqual(normalize_settings_section("local_store"), "local-market-store")

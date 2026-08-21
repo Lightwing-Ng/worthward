@@ -36,10 +36,4 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-backtest"></span></span>
         <span class="settings-nav-label">{{ labels.dock_backtest }}</span>
     </a>
-    <a href="{{ dock_urls['grid-trading'] }}"
-       class="settings-nav-item workspace-nav-item-grid-trading{% if current_view == 'grid-trading' %} is-active{% endif %}"
-       {% if current_view == 'grid-trading' %}aria-current="page"{% endif %}>
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-grid-trading"></span></span>
-        <span class="settings-nav-label">{{ labels.get('dock_grid_trading', 'Grid trading') }}</span>
-    </a>
 </nav>

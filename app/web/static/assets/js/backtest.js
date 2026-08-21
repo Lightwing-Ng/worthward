@@ -1,4 +1,4 @@
-/* Code version: v0.3.16 */
+/* Code version: v0.4.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -925,6 +925,7 @@
 			});
 
 			const trades = backtestResult.trades || [];
+			const showTicker = Boolean(backtestResult.multi_asset);
 			const displayTrades = trades.filter((trade) => !trade._virtual_close);
 			if (!displayTrades.length) {
 				nav.hidden = true;
@@ -961,6 +962,7 @@
 					tr.innerHTML = `
 						<td class="trade-transactions-index">${displayIndex++}</td>
 						<td class="trade-transactions-date">${trade.date}</td>
+						${showTicker ? `<td class="trade-transactions-ticker">${trade.ticker || ""}</td>` : ""}
 						<td class="trade-transactions-side">${trade.side}</td>
 						<td class="trade-transactions-number">${formatNumber(trade.price)}</td>
 						<td class="trade-transactions-number">${formatShares(trade.shares)}</td>
