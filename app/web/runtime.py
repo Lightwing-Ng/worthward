@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.78.0
+Code version: v0.79.1
+- Added: Backtest exposes one shared stop-loss switch that controls whether
+  every strategy may close a position below its entry price.
 - Changed: Grid Trading is now a visible strategy-owned panel inside the generic
   Backtest workspace; the former workspace path redirects to that canonical view.
 - Added: strategy-owned multi-ticker contracts now drive Backtest inputs,
@@ -1433,9 +1435,10 @@ def build_web_runtime() -> WebRuntime:
             request.args.get("interval", ""),
             str(request.args.get("price_only", "")),
             str(request.args.get("dividends", "")),
+            str(request.args.get("stop_loss", "")),
             # Include all strategy parameters in cache key
             sorted([(k, request.args.get(k, "")) for k in request.args.keys() if k not in {
-                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends",
+                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends", "stop_loss",
                 "view", "section", "view", "tickers", "weight",
             }]),
             {
@@ -2521,6 +2524,10 @@ def build_web_runtime() -> WebRuntime:
             request.args.get("return", "").strip().lower() == "dividends"
             or parse_bool_flag("dividends", "include_dividends")
         )
+        stop_loss_enabled = parse_bool_flag(
+            "stop_loss",
+            default=bool(defaults.get("backtest_stop_loss", True)),
+        )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         interval_options = [list_available_market_intervals(ticker) for ticker in validated_tickers]
         supported_intervals = [
@@ -2590,6 +2597,7 @@ def build_web_runtime() -> WebRuntime:
             interval=requested_interval,
             reinvest_cash_dividends=include_dividends,
             include_cash_dividends=not price_only,
+            stop_loss_enabled=stop_loss_enabled,
         )
         return (
             backtest_result,
@@ -2610,11 +2618,17 @@ def build_web_runtime() -> WebRuntime:
 
     def collect_strategy_form_values(strategy_id: str) -> dict[str, Any]:
         strategy = instantiate_strategy(strategy_id)
+        get_startup_params = getattr(strategy, "get_startup_params", None)
+        startup_params = (
+            get_startup_params()
+            if callable(get_startup_params)
+            else strategy.normalize_params({})
+        )
         raw_values: dict[str, Any] = {}
         for definition in strategy.get_parameter_definitions():
             raw_value = request.args.get(definition.key)
             if raw_value is None or str(raw_value).strip() == "":
-                raw_values[definition.key] = definition.default
+                raw_values[definition.key] = startup_params[definition.key]
             else:
                 raw_values[definition.key] = raw_value
         return strategy.normalize_params(raw_values)
@@ -3070,6 +3084,10 @@ def build_web_runtime() -> WebRuntime:
         elif dividends_value == "1":
             pairs.append(("dividends", "1"))
 
+        stop_loss_value = request.args.get("stop_loss", "").strip()
+        if stop_loss_value in {"0", "1"}:
+            pairs.append(("stop_loss", stop_loss_value))
+
         overnight_value = request.args.get("overnight", request.args.get("include_overnight", "")).strip()
         if overnight_value == "1":
             pairs.append(("overnight", "1"))
@@ -3131,6 +3149,7 @@ def build_web_runtime() -> WebRuntime:
             "return",
             "price_only",
             "price_return_only",
+            "stop_loss",
             "extended-hours",
             "extended_hours",
             "include_extended_hours",
@@ -3206,6 +3225,10 @@ def build_web_runtime() -> WebRuntime:
         include_dividends = False if price_only else (
             request.args.get("return", "").strip().lower() == "dividends"
             or parse_bool_flag("dividends", "include_dividends")
+        )
+        stop_loss_enabled = parse_bool_flag(
+            "stop_loss",
+            default=bool(defaults.get("backtest_stop_loss", True)),
         )
         if current_view in {"prices", "market-caps"}:
             price_only = True
@@ -4623,6 +4646,7 @@ def build_web_runtime() -> WebRuntime:
             base_currency=BASE_CURRENCY,
             base_timezone=BASE_TIMEZONE,
             include_dividends=include_dividends,
+            stop_loss_enabled=stop_loss_enabled,
             price_only=price_only,
             include_extended_hours=include_extended_hours,
             show_extended_hours_toggle=show_extended_hours_toggle,

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.1
+Code version: v0.5.3
 """
 
 from __future__ import annotations
@@ -12,9 +12,11 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from strategies.loader import list_enabled_strategies
 from tests.factories.market import (
     FakeStrategy,
     backtest_result,
+    fetch_history_stub,
     market_frame,
     quote_profile_stub,
 )
@@ -42,7 +44,7 @@ class BacktestPageTests(unittest.TestCase):
             patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
-            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
             patch("app.web.runtime.record_strategy_usage"),
         ):
             client = create_app().test_client()
@@ -58,12 +60,17 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertIn(
-            '<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">',
+            '<article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">',
             html,
         )
         self.assertIn('data-share-drawer="backtest"', html)
         self.assertIn('id="export_transactions_button"', html)
         self.assertIn('aria-label="Export Transactions"', html)
+        self.assertIn('id="backtest_section_resizer"', html)
+        self.assertLess(html.index('id="backtest_section_resizer"'), html.index('id="backtest_history_surface"'))
+        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
+        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"\n                       checked', html)
+        self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
 
     def test_backtest_page_serializes_logo_profile_for_selected_ticker(self) -> None:
         with (
@@ -80,6 +87,25 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('value="TQQQ"', html)
         self.assertIn("/api/market-store/logos/TQQQ.png", html)
+
+    def test_backtest_page_passes_disabled_stop_loss_to_every_strategy_run(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest?stop_loss=0")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(run_backtest.call_args.kwargs["stop_loss_enabled"])
+        self.assertNotIn(
+            'id="stop_loss" name="stop_loss" type="checkbox" value="1"\n                       checked',
+            html,
+        )
 
     def test_backtest_page_limits_intraday_period_options_to_available_history(self) -> None:
         def _fetch_history(
@@ -148,7 +174,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('value="QQQ"', html)
         self.assertIn('value="TQQQ"', html)
         self.assertIn('name="drawdown_pct"', html)
-        self.assertIn('<th>Ticker</th>', html)
+        self.assertIn('data-markdown-export-label="Ticker">Ticker</th>', html)
         self.assertIn('"multi_asset": true', html)
 
     def test_leveraged_rotation_strategy_fields_api_exposes_ticker_contract(self) -> None:
@@ -161,6 +187,27 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(payload["default_tickers"], ["QQQ", "TQQQ"])
         self.assertTrue(payload["supports"]["multi_ticker"])
         self.assertIn('name="drawdown_pct"', payload["html"])
+
+    def test_every_enabled_strategy_starts_with_its_default_parameters(self) -> None:
+        client = create_app().test_client()
+        for strategy in list_enabled_strategies():
+            strategy_id = str(strategy["id"])
+            with (
+                self.subTest(strategy=strategy_id),
+                patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+                patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+                patch("app.web.runtime.record_strategy_usage"),
+            ):
+                response = client.get(
+                    f"/workspaces/backtest?period=6mo&strategy={strategy_id}"
+                )
+
+            html = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('id="backtest_view_surface"', html)
+            self.assertIn('id="backtest_history_table_wrap"', html)
 
     def test_leveraged_rotation_export_identifies_each_trade_ticker(self) -> None:
         def fetch_rotation_history(

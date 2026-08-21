@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def _build_strategy_catalog() -> list[dict[str, Any]]:
             metadata.to_catalog_entry(
                 module=strategy_class.__module__,
                 class_name=strategy_class.__name__,
-                default_params=strategy.get_default_params(),
+                default_params=strategy.get_startup_params(),
                 default_tickers=strategy.get_default_tickers(),
             )
         )

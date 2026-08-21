@@ -1,12 +1,13 @@
 """
 Base strategy interfaces.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 from typing import Any, Literal, Sequence
 
 import pandas as pd
@@ -129,6 +130,30 @@ class BaseStrategy:
             definition.key: definition.default
             for definition in self.get_parameter_definitions()
         }
+
+    def get_startup_params(self) -> dict[str, Any]:
+        """Return validated, normalized parameters for the first calculation."""
+        normalized = self.normalize_params(self.get_default_params())
+        for definition in self.get_parameter_definitions():
+            value = normalized.get(definition.key)
+            if definition.kind in {"integer", "number"}:
+                if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    raise ValueError(
+                        f"{self.strategy_id} has an invalid default for {definition.key}."
+                    )
+                if definition.minimum is not None and value < definition.minimum:
+                    raise ValueError(
+                        f"{self.strategy_id} has a default below the minimum for {definition.key}."
+                    )
+                if definition.maximum is not None and value > definition.maximum:
+                    raise ValueError(
+                        f"{self.strategy_id} has a default above the maximum for {definition.key}."
+                    )
+            elif definition.kind == "choice" and definition.options and value not in definition.options:
+                raise ValueError(
+                    f"{self.strategy_id} has a default outside the options for {definition.key}."
+                )
+        return normalized
 
     def get_default_tickers(self) -> tuple[str, ...]:
         """Return strategy-owned ticker defaults for multi-asset strategies."""

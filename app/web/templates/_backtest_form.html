@@ -1,4 +1,4 @@
-{# Code version: v0.4.1 #}
+{# Code version: v0.4.2 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -11,7 +11,7 @@
 <form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}"
       data-strategy-required-tickers="{{ strategy_required_tickers }}"
       data-backtest-parameter-form
-      data-generic-parameters="range,interval,capital,return-mode"
+      data-generic-parameters="range,interval,capital,return-mode,stop-loss"
       data-strategy-parameters="code-defined">
     <div id="ticker_fields" data-backtest-ticker-fields>
     {% for ticker_index in range(1, strategy_required_tickers + 1) %}
@@ -91,6 +91,18 @@
             <span class="ios-switch-shell">
                 <input id="include_dividends" name="dividends" type="checkbox" value="1"
                        {% if include_dividends and not price_only %}checked{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field-checkbox field-switch">
+        <label class="switch-row" for="stop_loss">
+            <span class="switch-label" title="{{ labels.backtest_stop_loss_help }}">{{ labels.backtest_stop_loss }}</span>
+            <span class="ios-switch-shell">
+                <input type="hidden" name="stop_loss" value="0">
+                <input id="stop_loss" name="stop_loss" type="checkbox" value="1"
+                       {% if stop_loss_enabled %}checked{% endif %}
+                       title="{{ labels.backtest_stop_loss_help }}">
                 <span class="ios-switch-slider" aria-hidden="true"></span>
             </span>
         </label>

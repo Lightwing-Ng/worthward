@@ -1,10 +1,10 @@
 /*
  * Canonical Workspace URL state parsing and serialization.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  */
 (() => {
-    const VERSION = "v1.1.0";
+    const VERSION = "v1.2.0";
     const DEFAULT_PERIOD = "1y";
     const PERIOD_VALUES = new Set([
         "1d",
@@ -38,6 +38,7 @@
         "strategy",
         "capital",
         "interval",
+        "stop_loss",
         "amount",
         "frequency",
         "weekday",
@@ -76,6 +77,7 @@
         "capital",
         "initial_capital",
         "interval",
+        "stop_loss",
         "amount",
         "frequency",
         "weekday",
@@ -102,6 +104,17 @@
     };
 
     const normalizeValue = (value) => String(value ?? "").trim();
+    const strategyParamValuesMatch = (value, defaultValue) => {
+        const normalizedValue = normalizeValue(value);
+        const normalizedDefault = normalizeValue(defaultValue);
+        if (normalizedValue === normalizedDefault) return true;
+        if (!normalizedValue || !normalizedDefault) return false;
+        const numericValue = Number(normalizedValue);
+        const numericDefault = Number(normalizedDefault);
+        return Number.isFinite(numericValue)
+            && Number.isFinite(numericDefault)
+            && numericValue === numericDefault;
+    };
     const normalizeLower = (value) => normalizeValue(value).toLowerCase();
     const normalizeTicker = (value) => normalizeValue(value).toUpperCase();
 
@@ -196,6 +209,9 @@
             strategy: normalizeValue(params.get("strategy")),
             capital: normalizeValue(params.get("capital") || params.get("initial_capital")),
             interval: normalizeLower(params.get("interval")),
+            stopLossEnabled: params.has("stop_loss")
+                ? parseFlag(params, "stop_loss")
+                : true,
             amount: normalizeValue(params.get("amount")),
             frequency: normalizeLower(params.get("frequency")),
             weekday: normalizeValue(params.get("weekday")),
@@ -285,12 +301,18 @@
             setIfNonDefault(params, "strategy", state.strategy, state.defaultStrategy || "buy-and-hold");
             setIfNonDefault(params, "capital", state.capital, state.defaultCapital ?? "10000");
             setIfNonDefault(params, "interval", state.interval, state.defaultInterval || "1d");
+            if (state.stopLossEnabled !== undefined) {
+                const defaultStopLossEnabled = state.defaultStopLossEnabled ?? true;
+                if (Boolean(state.stopLossEnabled) !== Boolean(defaultStopLossEnabled)) {
+                    params.set("stop_loss", state.stopLossEnabled ? "1" : "0");
+                }
+            }
             (state.strategyParams || []).forEach(([key, value]) => {
                 const normalizedKey = normalizeValue(key);
                 const normalizedValue = normalizeValue(value);
                 if (!normalizedKey || !normalizedValue) return;
                 const defaultValue = state.strategyParamDefaults?.[normalizedKey];
-                if (defaultValue !== undefined && normalizeValue(defaultValue) === normalizedValue) return;
+                if (defaultValue !== undefined && strategyParamValuesMatch(normalizedValue, defaultValue)) return;
                 params.set(normalizedKey, normalizedValue);
             });
         }

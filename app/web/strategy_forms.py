@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -206,7 +206,14 @@ def build_strategy_form_fields(
 ) -> list[dict[str, object]]:
     """Build every template field for one strategy using an injected factory."""
     strategy = strategy_factory(strategy_id)
-    normalized_values = strategy.normalize_params(values or {})
+    get_startup_params = getattr(strategy, "get_startup_params", None)
+    normalized_values = (
+        get_startup_params()
+        if callable(get_startup_params)
+        else strategy.normalize_params({})
+    )
+    if values:
+        normalized_values = strategy.normalize_params(values)
     return [
         build_strategy_form_field(
             definition,

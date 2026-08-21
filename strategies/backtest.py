@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -230,6 +230,7 @@ def run_leveraged_rotation_backtest(
         interval: str = "1d",
         reinvest_cash_dividends: bool = False,
         include_cash_dividends: bool = True,
+        stop_loss_enabled: bool = True,
 ) -> dict[str, object]:
     """Run a full-capital rotation between the two ordered assets in a signal result."""
     frame = signal_result.frame.copy()
@@ -295,6 +296,13 @@ def run_leveraged_rotation_backtest(
 
         previous_asset = active_asset
         previous_shares = shares
+        if (
+            not stop_loss_enabled
+            and previous_shares > 0
+            and entry_price is not None
+            and exit_price < float(entry_price)
+        ):
+            return False
         realized_pnl = (exit_price - float(entry_price or exit_price)) * previous_shares
         cash += previous_shares * exit_price
         shares = 0.0
@@ -419,6 +427,7 @@ def run_single_ticker_backtest(
         interval: str = "1d",
         reinvest_cash_dividends: bool = False,
         include_cash_dividends: bool = True,
+        stop_loss_enabled: bool = True,
 ) -> dict[str, object]:
     if signal_result.execution_profile == "leveraged_rotation":
         return run_leveraged_rotation_backtest(
@@ -428,6 +437,7 @@ def run_single_ticker_backtest(
             interval=interval,
             reinvest_cash_dividends=reinvest_cash_dividends,
             include_cash_dividends=include_cash_dividends,
+            stop_loss_enabled=stop_loss_enabled,
         )
 
     frame = signal_result.frame.copy()
@@ -446,6 +456,12 @@ def run_single_ticker_backtest(
     sell_column = signal_result.sell_signal_column
     pending_order: str | None = None
     is_at_backtest_start = True
+
+    def stop_loss_allows_exit(exit_price: float, *, short_position: bool = False) -> bool:
+        if stop_loss_enabled or entry_price is None:
+            return True
+        return exit_price <= float(entry_price) if short_position else exit_price >= float(entry_price)
+
     for row in frame.itertuples(index=False):
         is_first_row = is_at_backtest_start
         trade_date = pd.Timestamp(row.Date)
@@ -515,7 +531,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
-                elif shares < 0:  # Exit Short (Cover)
+                elif shares < 0 and stop_loss_allows_exit(execution_price, short_position=True):  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * execution_price
                     pnl = (short_shares * float(entry_price or execution_price)) - cost
@@ -533,7 +549,7 @@ def run_single_ticker_backtest(
                     entry_price = None
                 pending_order = None
             elif pending_order == "sell" and execution_price > 0:
-                if shares > 0:  # Exit Long (Sell)
+                if shares > 0 and stop_loss_allows_exit(execution_price):  # Exit Long (Sell)
                     proceeds = shares * execution_price
                     pnl = proceeds - (shares * float(entry_price or execution_price))
                     cash += proceeds
@@ -567,7 +583,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
-                elif shares < 0:  # Exit Short (Cover)
+                elif shares < 0 and stop_loss_allows_exit(close_price, short_position=True):  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * close_price
                     pnl = (short_shares * float(entry_price or close_price)) - cost
@@ -584,7 +600,7 @@ def run_single_ticker_backtest(
                     shares = 0.0
                     entry_price = None
             elif sell_signal and close_price > 0:
-                if shares > 0:  # Exit Long (Sell)
+                if shares > 0 and stop_loss_allows_exit(close_price):  # Exit Long (Sell)
                     proceeds = shares * close_price
                     pnl = proceeds - (shares * float(entry_price or close_price))
                     cash += proceeds

@@ -1,4 +1,4 @@
-/* Code version: v3.29.0 */
+/* Code version: v3.31.0 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -140,6 +140,74 @@
     --workspace-article-pad-block-start: 8px;
     --workspace-article-pad-inline: 12px;
     --workspace-article-pad-block-end: 8px;
+}
+
+.backtest-workspace-main {
+    gap: 8px;
+}
+
+.backtest-results-stack,
+.backtest-history-surface {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+}
+
+.backtest-results-stack > .backtest-trade-performance-card {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+.backtest-view-surface {
+    min-height: 0;
+}
+
+.backtest-view-segmented-frame {
+    --segmented-overflow-option-min-width: 104px;
+    flex-basis: 280px;
+    width: min(100%, 280px);
+}
+
+.backtest-view-surface-body > [data-backtest-view-panel] {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#backtest_overview_panel {
+    display: flex;
+    flex-direction: column;
+}
+
+#backtest_overview_panel > .backtest-surface {
+    flex: 1 1 auto;
+    width: 100%;
+}
+
+#backtest_metrics_view_panel > #backtest_metrics_panel {
+    height: 100%;
+}
+
+.backtest-history-surface {
+    position: relative;
+}
+
+.backtest-history-table-shell {
+    position: relative;
+    flex: 1 1 auto;
+}
+
+.backtest-history-table {
+    table-layout: fixed;
+}
+
+.backtest-history-table thead th {
+    text-align: center !important;
+}
+
+.backtest-history-table td {
+    padding: var(--scrollable-data-table-cell-padding);
 }
 
 .trade-performance-card > .export-transactions-button,

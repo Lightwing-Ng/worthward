@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class GridTradingStrategy(BaseStrategy):
                 key="rise",
                 label="Rise %",
                 kind="number",
-                default=1.0,
+                default=2.0,
                 minimum=0.5,
                 maximum=5.0,
                 step=0.01,

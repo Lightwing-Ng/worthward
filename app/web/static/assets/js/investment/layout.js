@@ -1,10 +1,10 @@
 /**
- * Investment split-layout and resizer helpers.
+ * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.0.1';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.0';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -48,6 +48,9 @@ export function bindInvestmentSectionResizer({
     sectionResizer,
     minVisibleRows = 2,
     getChartInstance = () => null,
+    getChartInstances = null,
+    historyTableSelector = '#history_table_wrap',
+    overviewStageSelector = '.investment-equity-chart-stage',
     windowRef = globalThis.window,
     documentRef = globalThis.document,
     HTMLElementClass = globalThis.HTMLElement,
@@ -121,7 +124,7 @@ export function bindInvestmentSectionResizer({
     };
     const getOverviewMinimumHeight = (baselineMinimum) => {
         const holdingsMinimumHeight = getHoldingsMinimumHeight(baselineMinimum);
-        const stage = reportCard.querySelector('.investment-equity-chart-stage');
+        const stage = reportCard.querySelector(overviewStageSelector);
         if (!isVisibleElement(stage)) return holdingsMinimumHeight;
         const reportHeight = reportCard.getBoundingClientRect().height;
         const stageHeight = stage.getBoundingClientRect().height;
@@ -136,7 +139,7 @@ export function bindInvestmentSectionResizer({
         return Math.max(holdingsMinimumHeight, overviewChromeHeight + stageMinimum);
     };
     const getHistoryMinimumHeight = (baselineMinimum) => {
-        const primaryTableShell = historySurface.querySelector('#history_table_wrap');
+        const primaryTableShell = historySurface.querySelector(historyTableSelector);
         const stockDetailsTableShell = historySurface.querySelector(
             '#investment_stock_details_table_host:not([hidden]) .investment-stock-details-table-shell',
         );
@@ -222,8 +225,12 @@ export function bindInvestmentSectionResizer({
         if (chartResizeFrame) return;
         chartResizeFrame = windowRef.requestAnimationFrame(() => {
             chartResizeFrame = 0;
-            const chartInstance = getChartInstance();
-            if (chartInstance?.canvas?.isConnected) chartInstance.resize();
+            const chartInstances = typeof getChartInstances === 'function'
+                ? getChartInstances()
+                : [getChartInstance()];
+            (Array.isArray(chartInstances) ? chartInstances : [chartInstances])
+                .filter((chartInstance) => chartInstance?.canvas?.isConnected)
+                .forEach((chartInstance) => chartInstance.resize());
         });
     };
     const setValue = (height) => {

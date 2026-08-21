@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.2.0."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def test_grid_trading_strategy_is_discoverable_and_builds_grid_signals() -> None
     dataset = pd.DataFrame({
         "Date": pd.date_range("2026-01-01", periods=5),
         "Open": [100.0, 100.0, 101.2, 99.0, 100.0],
-        "High": [100.0, 100.0, 101.2, 99.0, 100.0],
+        "High": [100.0, 100.0, 102.2, 99.0, 100.0],
         "Low": [100.0, 100.0, 101.2, 99.0, 100.0],
         "Close": [100.0, 100.0, 101.2, 99.0, 100.0],
     })
@@ -24,7 +24,7 @@ def test_grid_trading_strategy_is_discoverable_and_builds_grid_signals() -> None
     result = strategy.compute_signals(dataset, {
         "price_floor": 1.0,
         "price_ceiling": 1000.0,
-        "rise": 1.0,
+        "rise": 2.0,
         "fall": 0.5,
     })
 
@@ -40,7 +40,7 @@ def test_grid_trading_uses_reference_project_parameter_defaults_and_bounds() -> 
     assert tuple(definitions) == ("price_floor", "price_ceiling", "rise", "fall")
     assert definitions["price_floor"].default == 1.0
     assert definitions["price_ceiling"].default == 1000.0
-    assert definitions["rise"].default == 1.0
+    assert definitions["rise"].default == 2.0
     assert definitions["fall"].default == 0.5
     assert definitions["rise"].minimum == 0.5
     assert definitions["rise"].maximum == 5.0
@@ -49,12 +49,12 @@ def test_grid_trading_uses_reference_project_parameter_defaults_and_bounds() -> 
     assert strategy.normalize_params({
         "price_floor": "1.00",
         "price_ceiling": "1000.00",
-        "rise": "1.00",
+        "rise": "2.00",
         "fall": "0.50",
     }) == {
         "price_floor": 1.0,
         "price_ceiling": 1000.0,
-        "rise": 1.0,
+        "rise": 2.0,
         "fall": 0.5,
     }
 
@@ -129,3 +129,31 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'name="fall"' in html
     assert 'value="0.50"' in html
     assert 'name="workspace"' not in html
+
+
+def test_backtest_results_match_investment_surface_layout() -> None:
+    client = create_app().test_client()
+
+    with (
+        patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+        patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+        patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+        patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+        patch("app.web.runtime.record_strategy_usage"),
+    ):
+        response = client.get("/workspaces/backtest?ticker=QQQ&period=1y&strategy=grid-trading")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'id="backtest_view_segmented"' in html
+    assert 'value="overview"' in html
+    assert 'value="metrics"' in html
+    assert 'data-backtest-view-panel="overview"' in html
+    assert 'data-backtest-view-panel="metrics"' in html
+    assert 'data-trade-detail-shell' not in html
+    assert 'id="trade_detail_transactions"' not in html
+    assert 'id="backtest_overview_panel"' in html
+    assert 'Trade actions and net asset curve' in html
+    assert 'class="chart-surface investment-history-surface backtest-history-surface"' in html
+    assert 'data-table-header' in html
+    assert 'id="tradeTransactionsTable"' in html

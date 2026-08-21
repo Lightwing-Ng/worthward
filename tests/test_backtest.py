@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -162,6 +162,54 @@ class BacktestMetricTests(unittest.TestCase):
 
         self.assertEqual(result["chart"]["buy_markers"], [True, False, False, False, False])
         self.assertEqual(result["chart"]["sell_markers"], [False, False, False, True, False])
+
+    def test_stop_loss_switch_blocks_loss_exit_but_keeps_position_open(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2026-02-19", periods=3, freq="D"),
+                "Open": [100.0, 90.0, 80.0],
+                "Close": [100.0, 90.0, 80.0],
+                "buy_signal": [True, False, False],
+                "sell_signal": [False, True, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            stop_loss_enabled=False,
+        )
+
+        self.assertEqual([trade["side"] for trade in result["trades"]], ["Buy"])
+        self.assertEqual(result["summary"]["total_trades"], 1)
+
+    def test_stop_loss_switch_does_not_block_profitable_exit(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2026-02-19", periods=2, freq="D"),
+                "Open": [100.0, 110.0],
+                "Close": [100.0, 110.0],
+                "buy_signal": [True, False],
+                "sell_signal": [False, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            stop_loss_enabled=False,
+        )
+
+        self.assertEqual([trade["side"] for trade in result["trades"]], ["Buy", "Sell"])
+        self.assertEqual(result["summary"]["total_trades"], 2)
 
     def test_all_in_equity_uses_first_open_and_marks_each_close(self) -> None:
         frame = pd.DataFrame(

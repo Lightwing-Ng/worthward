@@ -1,4 +1,4 @@
-/* Code version: v0.4.1 */
+/* Code version: v0.5.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -50,6 +50,33 @@
 		if (!transition?.rawLabels?.length) return null;
 		delete bootstrap.backtestRefreshTransition;
 		return transition;
+	};
+
+	const initBacktestViewTabs = () => {
+		const segmentedControl = document.getElementById("backtest_view_segmented");
+		const viewSurface = document.getElementById("backtest_view_surface");
+		if (!segmentedControl || !viewSurface || segmentedControl.dataset.bound === "1") return;
+		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-view-panel]"));
+		const syncPanels = () => {
+			const active = segmentedControl.querySelector('input[name="backtest_view_tab"]:checked')?.value || "overview";
+			segmentedControl.dataset.active = active;
+			viewSurface.dataset.activeView = active;
+			panels.forEach((panel) => {
+				panel.hidden = panel.dataset.backtestViewPanel !== active;
+			});
+			if (active === "overview") {
+				window.requestAnimationFrame(() => {
+					document.querySelectorAll("#tradePriceChart, #tradeEquityChart").forEach((canvas) => {
+						window.Chart?.getChart?.(canvas)?.resize();
+					});
+				});
+			}
+		};
+		segmentedControl.dataset.bound = "1";
+		segmentedControl.querySelectorAll('input[name="backtest_view_tab"]').forEach((input) => {
+			input.addEventListener("change", syncPanels);
+		});
+		syncPanels();
 	};
 
 	const buildAlignedSeries = (sourceLabels, sourceValues, targetLabels, fallbackValues) => {
@@ -215,6 +242,7 @@
 	};
 
 	const initBacktestWorkspace = () => {
+		initBacktestViewTabs();
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || !window.Chart || !state.backtestResult) return;
 
@@ -1050,4 +1078,5 @@
 	});
 
 	bootstrap.initBacktestWorkspace = initBacktestWorkspace;
+	initBacktestWorkspace();
 })();

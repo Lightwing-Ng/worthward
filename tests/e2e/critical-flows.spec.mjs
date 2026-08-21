@@ -1,4 +1,4 @@
-/* Code version: v1.162.0 */
+/* Code version: v1.163.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -12162,6 +12162,134 @@ test('hides the sidebar through the touch path on an iPad portrait viewport', as
         await expect(backdrop).toHaveCSS('pointer-events', 'none');
     } finally {
         await context.close();
+    }
+});
+
+test('keeps the backtest sidebar toggle touch-safe on a larger iPad viewport', async ({browser, baseURL}) => {
+    const context = await browser.newContext({
+        baseURL,
+        viewport: {width: 1024, height: 1366},
+        hasTouch: true,
+        isMobile: true,
+    });
+    const page = await context.newPage();
+
+    try {
+        await page.goto('/workspaces/backtest?stop_loss=0');
+        const toggle = page.locator('#sidebar_toggle');
+
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        const toggleMotion = await toggle.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const hit = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+            return {
+                pointerCoarse: window.matchMedia('(pointer: coarse)').matches,
+                width: rect.width,
+                height: rect.height,
+                transitionProperty: style.transitionProperty,
+                hitToggle: Boolean(hit?.closest('#sidebar_toggle')),
+            };
+        });
+        expect(toggleMotion.pointerCoarse).toBe(true);
+        expect(toggleMotion.width).toBeGreaterThanOrEqual(44);
+        expect(toggleMotion.height).toBeGreaterThanOrEqual(44);
+        expect(toggleMotion.transitionProperty.split(',').map((value) => value.trim())).not.toContain('transform');
+        expect(toggleMotion.hitToggle).toBe(true);
+
+        await tapAtCenter(page, toggle);
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await tapAtCenter(page, toggle);
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    } finally {
+        await context.close();
+    }
+});
+
+test('resizes the backtest overview and transaction history with the shared section handle', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?stop_loss=0');
+
+    const handle = page.locator('#backtest_section_resizer');
+    const overview = page.locator('.backtest-trade-performance-card');
+    const history = page.locator('#backtest_history_surface');
+    await expect(handle).toBeVisible();
+
+    const handleGeometry = await handle.evaluate((element) => ({
+        height: element.getBoundingClientRect().height,
+        lineHeight: getComputedStyle(element, '::before').height,
+    }));
+    expect(handleGeometry.height).toBe(12);
+    expect(handleGeometry.lineHeight).toBe('1px');
+
+    const before = await page.evaluate(() => ({
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height,
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height,
+    }));
+    await handle.focus();
+    await handle.press('ArrowUp');
+    await expect.poll(() => page.evaluate((beforeSize) => {
+        const overviewHeight = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
+        const historyHeight = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
+        return overviewHeight < beforeSize.overview && historyHeight > beforeSize.history;
+    }, before)).toBe(true);
+    const after = await page.evaluate(() => ({
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height,
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height,
+    }));
+    expect(after.overview).toBeLessThan(before.overview);
+    expect(after.history).toBeGreaterThan(before.history);
+    await expect.poll(() => handle.getAttribute('aria-valuenow')).not.toBe(String(Math.round(before.overview)));
+    await expect(overview).toHaveJSProperty('hidden', false);
+    await expect(history).toBeVisible();
+});
+
+test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?period=6mo&strategy=buy-and-hold');
+
+    const strategyIds = await page.locator('#trade_strategy option').evaluateAll((options) => (
+        options.map((option) => option.value)
+    ));
+    expect(strategyIds.length).toBeGreaterThan(1);
+
+    for (const strategyId of strategyIds) {
+        await page.locator('[data-trade-strategy-trigger]').click();
+        const option = page.locator(
+            `[data-trade-strategy-dropdown] [data-value="${strategyId}"]`
+        );
+        await expect(option).toBeVisible();
+        await option.dispatchEvent('click');
+
+        await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe(strategyId);
+        await expect(page.locator('#backtest_view_surface')).toBeVisible();
+        await expect(page.locator('#backtest_history_table_wrap')).toBeVisible();
+        await expect.poll(() => page.evaluate(() => {
+            const fields = Array.from(document.querySelectorAll('[data-strategy-param-key]'));
+            const valuesMatchDefaults = fields.every((field) => {
+                const control = field.querySelector('[data-strategy-param-input]');
+                if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)) return false;
+                const value = String(control.value || '').trim();
+                const defaultValue = String(control.dataset.default || '').trim();
+                if (value === defaultValue) return true;
+                const numericValue = Number(value);
+                const numericDefault = Number(defaultValue);
+                return value !== ''
+                    && defaultValue !== ''
+                    && Number.isFinite(numericValue)
+                    && Number.isFinite(numericDefault)
+                    && numericValue === numericDefault;
+            });
+            return {
+                valuesMatchDefaults,
+                hasPriceChart: Boolean(document.querySelector('#tradePriceChart')),
+                hasEquityChart: Boolean(document.querySelector('#tradeEquityChart')),
+            };
+        })).toEqual({
+            valuesMatchDefaults: true,
+            hasPriceChart: true,
+            hasEquityChart: true,
+        });
     }
 });
 

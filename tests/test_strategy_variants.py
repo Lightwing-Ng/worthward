@@ -1,6 +1,6 @@
 """Contract tests for alternative strategy implementations.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations

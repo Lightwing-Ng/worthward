@@ -1,4 +1,4 @@
-/* Code version: v0.31.1 */
+/* Code version: v0.31.5 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1927,56 +1927,80 @@
                 "Net return",
                 "Total trades",
                 "Win rate",
+                "Beat B&H",
                 "Alpha vs B&H",
                 "Realized long P&L",
                 "Realized short P&L",
                 "Realized long loss",
-                "Max drawdown",
             ];
+            const pendingMetricCards = tradeMetricLabels.map((label) => (
+                `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`
+            )).join("");
+            const pendingTransactionRows = Array.from({length: 4}, (_, index) => `
+                <tr>
+                    <td class="trade-transactions-index">${index + 1}</td>
+                    <td class="is-pending-value">0000</td>
+                    <td class="is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
+                </tr>
+            `).join("");
             return `
-				<section class="workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
-					
-        			<article class="report-card workspace-article-card workspace-summary-card">
-						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
-					</article>
-					
-					
-					<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
-							<div class="trade-detail-tabs">
-								<div class="trade-detail-toolbar">
-									<div class="range-mode-shell segmented-control--compact trade-detail-shell" data-active="metrics">
-										<span class="segmented-control-option"><span>${labels.backtest_metrics_tab}</span></span>
-										<span class="segmented-control-option"><span>${labels.backtest_transactions_tab}</span></span>
-									</div>
-								</div>
-								<div class="trade-detail-panel">
-									<div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">
-										${tradeMetricLabels.map((label) => `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`).join("")}
-									</div>
-								</div>
-								<div class="trade-detail-panel" hidden>
-									<div class="trade-transactions-wrap">
-										<table class="settings-table trade-transactions-table">
-											<thead>
-												<tr><th>No.</th><th>Date</th><th>Side</th><th class="trade-transactions-number">Price</th><th class="trade-transactions-number">Shares</th><th class="trade-transactions-number">P&amp;L</th><th class="trade-transactions-number">Equity</th></tr>
-											</thead>
-											<tbody>
-												${Array.from({length: 4}, (_, index) => `<tr><td class="trade-transactions-index">${index + 1}</td><td class="is-pending-value">0000</td><td class="is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td></tr>`).join("")}
-											</tbody>
-										</table>
-									</div>
-								</div>
-							</div>
-						</article>
-					<article class="chart-surface backtest-surface">
-							<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
-							<div class="trade-chart-stack">
-								<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
-								<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
-							</div>
-					</article>
-				</section>
-			`;
+                <section class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack backtest-results-stack investment-workspace-header" data-mobile-summary-fixed>
+                    <article class="report-card workspace-article-card workspace-summary-card">
+                        <div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
+                    </article>
+                    <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">
+                        <div class="investment-surface-stack investment-view-surface backtest-view-surface" id="backtest_view_surface" data-active-view="overview">
+                            <div class="investment-view-segmented-wrap">
+                                <div class="segmented-control segmented-control--compact investment-view-segmented backtest-view-segmented"
+                                     id="backtest_view_segmented" data-backtest-view-segmented data-active="overview" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
+                                    <label class="segmented-control-option" for="backtest_view_overview"><input id="backtest_view_overview" name="backtest_view_tab" type="radio" value="overview" checked><span>Overview</span></label>
+                                    <label class="segmented-control-option" for="backtest_view_metrics"><input id="backtest_view_metrics" name="backtest_view_tab" type="radio" value="metrics"><span>Metrics</span></label>
+                                </div>
+                            </div>
+                            <div class="investment-view-surface-body backtest-view-surface-body" id="backtest_view_surface_body">
+                                <div id="backtest_overview_panel" data-backtest-view-panel="overview">
+                                    <article class="chart-surface backtest-surface">
+                                        <div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+                                        <div class="trade-chart-stack">
+                                            <div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
+                                            <div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
+                                        </div>
+                                    </article>
+                                </div>
+                                <div id="backtest_metrics_view_panel" data-backtest-view-panel="metrics" hidden>
+                                    <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">${pendingMetricCards}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    <button type="button"
+                            class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer backtest-section-resizer"
+                            id="backtest_section_resizer"
+                            data-backtest-section-resizer
+                            role="separator"
+                            aria-orientation="horizontal"
+                            aria-label="Resize backtest overview and transaction history"></button>
+                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface">
+                    <div class="chart-heading-row investment-history-heading-row"><p class="chart-heading">${labels.backtest_transactions_tab}</p></div>
+                    <div class="investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
+                        <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
+                            <thead><tr><th>No.</th><th>Date</th><th>Side</th><th>Price</th><th>Shares</th><th>P&amp;L</th><th>Cash</th><th>Equity</th></tr></thead>
+                        </table>
+                        <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll" id="backtest_history_table_scroll" data-table-scroll>
+                            <table id="tradeTransactionsTable" class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-body>
+                                <tbody>${pendingTransactionRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+                </section>
+            `;
         }
         if (state.currentView === "dca") {
             const dcaMetricLabels = [
@@ -4378,6 +4402,7 @@
     const priceOnlyField = $("[data-price-only-field]");
     const includeDividendsInput = $("#include_dividends");
     const dividendReinvestField = $("[data-dividend-reinvest-field]");
+    const stopLossInput = $("#stop_loss");
     const tradeCapitalField = $(".trade-capital-field");
     const tradeCapitalInput = $("#trade_initial_capital");
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
@@ -4718,22 +4743,8 @@
                 optionButton.classList.add("is-with-icon");
             }
 
-            const copyElement = document.createElement("span");
-            copyElement.className = "trade-strategy-dropdown-copy";
-
-            const titleElement = document.createElement("span");
-            titleElement.className = "trade-strategy-dropdown-title";
-            titleElement.textContent = option.textContent || option.value;
-
-            copyElement.appendChild(titleElement);
-
             const descriptionText = option.dataset.description?.trim() || "";
-            if (descriptionText) {
-                const descriptionElement = document.createElement("span");
-                descriptionElement.className = "trade-strategy-dropdown-desc";
-                descriptionElement.textContent = descriptionText;
-                copyElement.appendChild(descriptionElement);
-            }
+            const optionLabel = option.textContent || option.value;
 
             optionButton.appendChild(checkElement);
             if (iconUrl) {
@@ -4770,7 +4781,27 @@
                 mediaSlot.appendChild(mediaElement);
                 optionButton.appendChild(mediaSlot);
             }
-            optionButton.appendChild(copyElement);
+
+            if (descriptionText) {
+                const copyElement = document.createElement("span");
+                copyElement.className = "trade-strategy-dropdown-copy";
+
+                const titleElement = document.createElement("span");
+                titleElement.className = "trade-strategy-dropdown-title";
+                titleElement.textContent = optionLabel;
+                copyElement.appendChild(titleElement);
+
+                const descriptionElement = document.createElement("span");
+                descriptionElement.className = "trade-strategy-dropdown-desc";
+                descriptionElement.textContent = descriptionText;
+                copyElement.appendChild(descriptionElement);
+                optionButton.appendChild(copyElement);
+            } else {
+                const textElement = document.createElement("span");
+                textElement.className = "trade-strategy-dropdown-text";
+                textElement.textContent = optionLabel;
+                optionButton.appendChild(textElement);
+            }
             optionButton.addEventListener("click", () => {
                 if (parts.select.value === option.value) {
                     setSharedSelectDropdownOpen(field, false);
@@ -6612,6 +6643,8 @@
             defaultInterval: defaults.backtest_interval || "1d",
             strategyParams: isBacktestView ? collectStrategyParamEntries() : [],
             strategyParamDefaults,
+            stopLossEnabled: isBacktestView ? Boolean(stopLossInput?.checked) : undefined,
+            defaultStopLossEnabled: defaults.backtest_stop_loss ?? true,
             isDca: isDcaView,
             amount: isDcaView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
             defaultAmount: defaults.dca_amount ?? 1000,
@@ -6912,6 +6945,11 @@
         priceOnlyInput.addEventListener("change", () => {
             syncDividendModeSwitches();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("price-only");
+            scheduleAutoSubmit(80);
+        });
+    }
+    if (stopLossInput && form) {
+        stopLossInput.addEventListener("change", () => {
             scheduleAutoSubmit(80);
         });
     }

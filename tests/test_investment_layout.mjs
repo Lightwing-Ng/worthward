@@ -1,4 +1,4 @@
-/* Tests for Investment split-layout calculations. Code version: v1.0.0 */
+/* Tests for shared workspace split-layout calculations. Code version: v1.1.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

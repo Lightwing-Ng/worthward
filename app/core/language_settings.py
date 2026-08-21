@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.2
+Code version: v0.5.3
 """
 
 from __future__ import annotations
@@ -149,6 +149,8 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Ticker", "股票代號", "股票代码"),
         ("Strategy", "策略", "策略"),
         ("Initial capital (USD)", "初始資金（USD）", "初始资金（USD）"),
+        ("Stop loss", "止損", "止损"),
+        ("Allow sell signals to close below the entry price.", "允許賣出訊號在低於入場價格時平倉。", "允许卖出信号在低于入场价格时平仓。"),
         ("Performance", "表現", "表现"),
         ("Trade actions and net asset curve", "交易操作及淨資產曲線", "交易操作及净资产曲线"),
         ("Metrics", "指標", "指标"),

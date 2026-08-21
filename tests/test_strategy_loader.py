@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -52,6 +52,20 @@ class StrategyLoaderTests(unittest.TestCase):
         strategy = instantiate_strategy(catalog_item["id"])
         self.assertEqual(strategy.__class__.__name__, catalog_item["class_name"])
         self.assertEqual(strategy.__class__.__module__, catalog_item["module"])
+
+    def test_every_enabled_strategy_exposes_valid_startup_params(self) -> None:
+        for catalog_item in list_enabled_strategies():
+            with self.subTest(strategy=catalog_item["id"]):
+                strategy = instantiate_strategy(catalog_item["id"])
+                startup_params = strategy.get_startup_params()
+                self.assertEqual(
+                    catalog_item["default_params"],
+                    startup_params,
+                )
+                self.assertEqual(
+                    set(startup_params),
+                    {definition.key for definition in strategy.get_parameter_definitions()},
+                )
 
 
 if __name__ == "__main__":

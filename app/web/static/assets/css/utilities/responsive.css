@@ -1,4 +1,4 @@
-/* Code version: v3.29.3 */
+/* Code version: v3.29.4 */
 .page > .sidebar-toggle {
 	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
 	left: calc(var(--page-edge-pad) + var(--sidebar-toggle-left));
@@ -433,11 +433,17 @@
 }
 
 /* Keep the touch target stationary while the overlay itself transitions. */
-@media (max-width: 900px) and (hover: none) and (pointer: coarse) {
+@media (hover: none) and (pointer: coarse) {
 	.page > .sidebar-toggle,
 	.page > .sidebar-toggle:hover,
 	.page > .sidebar-toggle:focus-visible,
 	.page > .sidebar-toggle:active {
+		width: 44px;
+		min-width: 44px;
+		height: 44px;
+		min-height: 44px;
+		touch-action: manipulation;
+		z-index: var(--layer-sidebar-toggle);
 		transform: translate3d(var(--sidebar-toggle-x), 0, 0);
 		transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard);
 	}

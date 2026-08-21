@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.1.0 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.2.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -19,7 +19,7 @@ const createRuntime = () => {
 test("publishes the canonical Workspace query contract", () => {
     const api = createRuntime();
 
-    assert.equal(api.VERSION, "v1.1.0");
+    assert.equal(api.VERSION, "v1.2.0");
     assert.deepEqual(Array.from(api.getParameterNames()), [
         "ticker",
         "range",
@@ -37,6 +37,7 @@ test("publishes the canonical Workspace query contract", () => {
         "strategy",
         "capital",
         "interval",
+        "stop_loss",
         "amount",
         "frequency",
         "weekday",
@@ -183,4 +184,67 @@ test("serializes backtest and DCA options without their defaults", () => {
         ),
         "/workspaces/dca?ticker=AAPL&amount=1500&frequency=weekly&weekday=4",
     );
+});
+
+test("compares numeric strategy defaults by value instead of display precision", () => {
+    const api = createRuntime();
+
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/backtest",
+            {
+                tickers: ["AAPL"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "6mo",
+                isBacktest: true,
+                strategy: "grid-trading",
+                defaultStrategy: "grid-trading",
+                capital: "10000",
+                defaultCapital: "10000",
+                interval: "1d",
+                defaultInterval: "1d",
+                strategyParams: [
+                    ["price_floor", "1.00"],
+                    ["price_ceiling", "1000.00"],
+                    ["rise", "2.00"],
+                    ["fall", "0.50"],
+                ],
+                strategyParamDefaults: {
+                    price_floor: "1.0",
+                    price_ceiling: "1000.0",
+                    rise: "2.0",
+                    fall: "0.5",
+                },
+            },
+        ),
+        "/workspaces/backtest?ticker=AAPL&range=6mo",
+    );
+});
+
+test("serializes the shared backtest stop-loss switch against its default", () => {
+    const api = createRuntime();
+
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/backtest",
+            {
+                tickers: ["AAPL"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "6mo",
+                isBacktest: true,
+                strategy: "grid-trading",
+                defaultStrategy: "grid-trading",
+                stopLossEnabled: false,
+                defaultStopLossEnabled: true,
+            },
+        ),
+        "/workspaces/backtest?ticker=AAPL&range=6mo&stop_loss=0",
+    );
+
+    const parsed = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/backtest?stop_loss=0",
+    );
+    assert.equal(parsed.stopLossEnabled, false);
 });

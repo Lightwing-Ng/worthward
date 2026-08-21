@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.3."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.4."""
 
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ def test_coarse_pointer_sidebar_toggle_keeps_its_hit_target_stationary() -> None
         PROJECT_ROOT / "app/web/static/assets/css/utilities/responsive.css"
     )
     touch_block = responsive_source.split(
-        "@media (max-width: 900px) and (hover: none) and (pointer: coarse)",
+        "@media (hover: none) and (pointer: coarse)",
         maxsplit=1,
     )[1]
 
@@ -154,6 +154,12 @@ def test_coarse_pointer_sidebar_toggle_keeps_its_hit_target_stationary() -> None
         ".page > .sidebar-toggle:hover",
         ".page > .sidebar-toggle:focus-visible",
         ".page > .sidebar-toggle:active",
+        "width: 44px;",
+        "min-width: 44px;",
+        "height: 44px;",
+        "min-height: 44px;",
+        "touch-action: manipulation;",
+        "z-index: var(--layer-sidebar-toggle);",
         "transform: translate3d(var(--sidebar-toggle-x), 0, 0);",
         "transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard);",
     ):
