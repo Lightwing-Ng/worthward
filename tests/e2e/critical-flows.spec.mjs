@@ -5544,7 +5544,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.128.0',
+        entry: 'v2.128.1',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.106.0',
         importFeedback: 'v1.8.5',
@@ -6465,7 +6465,7 @@ test('anchors HSBC History cash to an evidenced future SEC settlement balance', 
     await expect(sellRow.locator('td').nth(9)).not.toContainText('*');
 });
 
-test('keeps earlier HSBC buy history sequential and anchors the latest row', async ({page}) => {
+test('keeps HSBC unsettled buy history sequential while current cash stays current', async ({page}) => {
     const pendingBuys = [
         ['DRAM', 5, 57.00, 285.00],
         ['EUV', 1, 25.75, 25.75],
@@ -6552,7 +6552,13 @@ test('keeps earlier HSBC buy history sequential and anchors the latest row', asy
     const firstBuyRow = page.locator('#investment_history_row_2');
     const latestBuyRow = page.locator('#investment_history_row_10');
     await expect(firstBuyRow.locator('td').nth(9)).toContainText('*26,360.01');
-    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*22,474.51');
+    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*25,706.11');
+
+    await page.locator('label[for="investment_view_holdings"]').click();
+    const currentCash = page.locator(
+        '#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]',
+    );
+    await expect(currentCash).toHaveAttribute('data-investment-live-display', '*22,474.51');
 });
 
 test('anchors the latest IBKR buy to the verified current cash snapshot', async ({page}) => {

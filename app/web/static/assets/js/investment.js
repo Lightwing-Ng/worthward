@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.128.0
+ * Code version: v2.128.1
+ * - Fixed: The current HSBC cash snapshot no longer overwrites the latest
+ *   unsettled-buy history row; Holdings and Metrics retain the current cash
+ *   boundary while Transaction history preserves sequential replay.
  * - Changed: FX-converted cash remains unmarked after settlement. The leading
  *   * is reserved for HSBC cash with unresolved settlement evidence.
  * - Fixed: Current HSBC Cash now uses the posted ledger boundary, converts
@@ -395,7 +398,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.128.0',
+    entry: 'v2.128.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -3997,6 +4000,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === snapshot.brokerCode,
             );
             if (!latestBroker) return;
+            if (shouldPreserveSequentialBrokerBuyHistory(latestBroker)) return;
             latestBroker.broker_running_cash = snapshot.runningCash;
             latestBroker.broker_cash_by_currency = {...snapshot.runningBalances};
             latestBroker.broker_pending_settlement_cash = snapshot.pendingSettlementCash;
