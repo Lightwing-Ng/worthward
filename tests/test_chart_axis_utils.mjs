@@ -107,6 +107,7 @@ test('exposes a versioned shared chart axis API', () => {
     assert.match(utils.CHART_AXIS_UTILS_VERSION, /^v\d+\.\d+\.\d+$/);
     assert.equal(typeof utils.buildTickIndexSet, 'function');
     assert.equal(typeof utils.sortedTickIndexes, 'function');
+    assert.equal(typeof utils.buildAllInEquitySeries, 'function');
     assert.equal(typeof utils.readThemeTokens, 'function');
     assert.equal(typeof utils.readThemeToken, 'function');
     assert.equal(typeof utils.normalizeSafeImageUrl, 'function');
@@ -160,6 +161,17 @@ test('buildTickIndexSet uses four ticks on wide viewports when enough points exi
     assert.deepEqual(
         utils.sortedTickIndexes(3, 800),
         [0, 1, 2],
+    );
+});
+
+test('buildAllInEquitySeries uses the opening price and residual cash consistently', () => {
+    assert.deepEqual(
+        utils.buildAllInEquitySeries([100, 110], [105, 120], 1_000),
+        [1_050, 1_200],
+    );
+    assert.deepEqual(
+        utils.buildAllInEquitySeries([], [100, 110], 1_000),
+        [1_000, 1_100],
     );
 });
 

@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResu
 class GridTradingStrategy(BaseStrategy):
     strategy_id = "grid-trading"
     strategy_name = "Grid Trading"
-    strategy_description = "Trades mean-reverting moves around a rolling center line using a configurable grid spacing."
+    strategy_description = "Trades price moves from the last execution with configurable trigger bounds and asymmetric rise/fall percentages."
     strategy_category = "mean-reversion"
     strategy_display_order = 31
     strategy_supports = StrategySupportMatrix(
@@ -27,85 +27,111 @@ class GridTradingStrategy(BaseStrategy):
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
             StrategyParameterDefinition(
-                key="center_mode",
-                label="Center line type",
-                kind="choice",
-                default="SMA",
-                options=("SMA", "EMA"),
-                help_text="Selects a simple or exponential moving center for the grid.",
-            ),
-            StrategyParameterDefinition(
-                key="center_window",
-                label="Center line window",
-                kind="integer",
-                default=20,
-                minimum=2,
-                maximum=250,
-                unit_hint="bars",
-                help_text="Sets the rolling average used as the center of the grid.",
-            ),
-            StrategyParameterDefinition(
-                key="grid_spacing_pct",
-                label="Grid spacing",
+                key="price_floor",
+                label="Trigger price min",
                 kind="number",
-                default=2.0,
-                minimum=0.1,
-                maximum=25.0,
-                step=0.1,
+                default=1.0,
+                step=0.01,
+                help_text="Keeps grid signals active only when the closing price is at or above this lower bound.",
+            ),
+            StrategyParameterDefinition(
+                key="price_ceiling",
+                label="Trigger price max",
+                kind="number",
+                default=1000.0,
+                step=0.01,
+                help_text="Keeps grid signals active only when the closing price is at or below this upper bound.",
+            ),
+            StrategyParameterDefinition(
+                key="rise",
+                label="Rise %",
+                kind="number",
+                default=1.0,
+                minimum=0.5,
+                maximum=5.0,
+                step=0.01,
                 unit_hint="%",
-                help_text="Buys below the lower grid line and sells above the upper grid line.",
+                help_text="Sets the percentage rise from the last execution that triggers a sell signal.",
             ),
             StrategyParameterDefinition(
-                key="entry_level",
-                label="Buy grid level",
-                kind="integer",
-                default=1,
-                minimum=1,
-                maximum=10,
-                unit_hint="levels",
-                help_text="Sets how many grid intervals below the center trigger an entry.",
-            ),
-            StrategyParameterDefinition(
-                key="exit_level",
-                label="Sell grid level",
-                kind="integer",
-                default=1,
-                minimum=1,
-                maximum=10,
-                unit_hint="levels",
-                help_text="Sets how many grid intervals above the center trigger an exit.",
+                key="fall",
+                label="Fall %",
+                kind="number",
+                default=0.5,
+                minimum=0.5,
+                maximum=5.0,
+                step=0.01,
+                unit_hint="%",
+                help_text="Sets the percentage fall from the last execution that triggers a buy signal.",
             ),
         )
 
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
         frame = dataset.copy()
         normalized_params = self.normalize_params(params)
-        center_window = int(normalized_params["center_window"])
-        grid_spacing = float(normalized_params["grid_spacing_pct"]) / 100.0
-        entry_level = int(normalized_params["entry_level"])
-        exit_level = int(normalized_params["exit_level"])
+        price_floor = float(normalized_params["price_floor"])
+        price_ceiling = float(normalized_params["price_ceiling"])
+        rise = float(normalized_params["rise"]) / 100.0
+        fall = float(normalized_params["fall"]) / 100.0
 
-        if normalized_params["center_mode"] == "EMA":
-            frame["grid_center"] = frame["Close"].ewm(span=center_window, adjust=False).mean()
-        else:
-            frame["grid_center"] = frame["Close"].rolling(
-                window=center_window,
-                min_periods=1,
-            ).mean()
-        frame["grid_lower"] = frame["grid_center"] * (1.0 - (grid_spacing * entry_level))
-        frame["grid_upper"] = frame["grid_center"] * (1.0 + (grid_spacing * exit_level))
+        frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+        open_prices = pd.to_numeric(frame.get("Open", frame["Close"]), errors="coerce")
+        high_prices = pd.to_numeric(frame.get("High", frame["Close"]), errors="coerce")
+        low_prices = pd.to_numeric(frame.get("Low", frame["Close"]), errors="coerce")
+        initial_price = (
+            next(
+                (
+                    float(value)
+                    for value in [open_prices.iloc[0], frame["Close"].iloc[0]]
+                    if pd.notna(value) and float(value) > 0
+                ),
+                0.0,
+            )
+            if not frame.empty
+            else 0.0
+        )
 
-        previous_close = frame["Close"].shift(1)
-        previous_lower = frame["grid_lower"].shift(1)
-        previous_upper = frame["grid_upper"].shift(1)
-        frame["buy_signal"] = (
-            (frame["Close"] <= frame["grid_lower"])
-            & (previous_close > previous_lower)
-        ).fillna(False)
-        frame["sell_signal"] = (
-            (frame["Close"] >= frame["grid_upper"])
-            & (previous_close < previous_upper)
-        ).fillna(False)
+        reference_prices: list[float] = []
+        buy_prices: list[float] = []
+        sell_prices: list[float] = []
+        buy_signals: list[bool] = []
+        sell_signals: list[bool] = []
+        reference_price = initial_price
+        for row_index in frame.index:
+            close_price = frame.at[row_index, "Close"]
+            high_price = high_prices.loc[row_index]
+            low_price = low_prices.loc[row_index]
+            buy_price = reference_price * (1.0 - fall)
+            sell_price = reference_price * (1.0 + rise)
+            in_trigger_range = (
+                pd.notna(close_price)
+                and price_floor <= float(close_price) <= price_ceiling
+            )
+            sell_signal = bool(
+                in_trigger_range
+                and pd.notna(high_price)
+                and float(high_price) >= sell_price
+            )
+            buy_signal = bool(
+                in_trigger_range
+                and not sell_signal
+                and pd.notna(low_price)
+                and float(low_price) <= buy_price
+            )
+
+            reference_prices.append(reference_price)
+            buy_prices.append(buy_price)
+            sell_prices.append(sell_price)
+            buy_signals.append(buy_signal)
+            sell_signals.append(sell_signal)
+            if (buy_signal or sell_signal) and pd.notna(close_price) and float(close_price) > 0:
+                reference_price = float(close_price)
+
+        frame["grid_reference_price"] = reference_prices
+        frame["grid_lower"] = buy_prices
+        frame["grid_upper"] = sell_prices
+        frame["buy_signal"] = buy_signals
+        frame["sell_signal"] = sell_signals
 
         return StrategySignalResult(
             frame=frame,

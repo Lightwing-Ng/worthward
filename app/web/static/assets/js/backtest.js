@@ -1,4 +1,4 @@
-/* Code version: v0.4.0 */
+/* Code version: v0.4.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -74,10 +74,13 @@
 		});
 	};
 
-	const buildAllInSeries = (closeSeries, capital) => {
+	const buildAllInSeries = (openSeries, closeSeries, capital) => {
+		if (typeof chartAxis.buildAllInEquitySeries === "function") {
+			return chartAxis.buildAllInEquitySeries(openSeries, closeSeries, capital);
+		}
 		const initialCapital = Number(capital || 0);
 		if (!Array.isArray(closeSeries) || !closeSeries.length || !Number.isFinite(initialCapital)) return [];
-		const openingPrice = Number(closeSeries[0] || 0);
+		const openingPrice = Number((Array.isArray(openSeries) && openSeries.length ? openSeries[0] : closeSeries[0]) || 0);
 		if (!(openingPrice > 0)) return closeSeries.map(() => initialCapital);
 		const shares = Math.floor(initialCapital / openingPrice);
 		const cash = initialCapital - (shares * openingPrice);
@@ -144,8 +147,16 @@
 			.map((tick) => Number(tick?.value ?? tick))
 			.filter((tickValue) => Number.isFinite(tickValue));
 		const shouldAlignWithSingleDecimal = visibleTickValues.some((tickValue) => !isWholeNumber(tickValue));
-		if (shouldAlignWithSingleDecimal) return numericValue.toFixed(1);
-		return isWholeNumber(numericValue) ? String(Math.round(numericValue)) : String(numericValue);
+		if (shouldAlignWithSingleDecimal) {
+			return numericValue.toLocaleString("en-US", {
+				minimumFractionDigits: 1,
+				maximumFractionDigits: 1,
+			});
+		}
+		if (isWholeNumber(numericValue)) {
+			return numericValue.toLocaleString("en-US", {maximumFractionDigits: 0});
+		}
+		return numericValue.toLocaleString("en-US", {maximumFractionDigits: 20});
 	};
 
 	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, nextAllIn, chartYPaddingPx) => {
@@ -298,7 +309,7 @@
 		const tradeMarkerPoints = buildTradeMarkerPoints(backtestResult.trades, rawDates, interval);
 		const allInEquity = Array.isArray(backtestResult.chart?.all_in_equity) && backtestResult.chart.all_in_equity.length
 			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
-			: buildAllInSeries(close, initialCapital);
+			: buildAllInSeries(open, close, initialCapital);
 
 		const axisLineColor = resolvedTheme.muted;
 		const fixedYAxisWidth = 52;

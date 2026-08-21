@@ -1,4 +1,4 @@
-/* Code version: v3.29.2 */
+/* Code version: v3.29.3 */
 .page > .sidebar-toggle {
 	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
 	left: calc(var(--page-edge-pad) + var(--sidebar-toggle-left));
@@ -430,4 +430,15 @@
 		) !important;
 	}
 	html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px !important; }
+}
+
+/* Keep the touch target stationary while the overlay itself transitions. */
+@media (max-width: 900px) and (hover: none) and (pointer: coarse) {
+	.page > .sidebar-toggle,
+	.page > .sidebar-toggle:hover,
+	.page > .sidebar-toggle:focus-visible,
+	.page > .sidebar-toggle:active {
+		transform: translate3d(var(--sidebar-toggle-x), 0, 0);
+		transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard);
+	}
 }

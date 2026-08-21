@@ -1,7 +1,7 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.0.2
+ * Code version: v1.1.0
  */
 (function bootstrapChartAxisUtils(globalScope) {
     "use strict";
@@ -38,6 +38,22 @@
     const sortedTickIndexes = (count, plotWidth) => (
         Array.from(buildTickIndexSet(count, plotWidth)).sort((left, right) => left - right)
     );
+
+    /**
+     * Build the standard buy-and-hold comparison series used by Backtest.
+     * The first available opening price determines whole-share allocation;
+     * every point is then marked to the closing price with residual cash.
+     */
+    const buildAllInEquitySeries = (openSeries, closeSeries, capital) => {
+        const initialCapital = Number(capital || 0);
+        if (!Array.isArray(closeSeries) || !closeSeries.length || !Number.isFinite(initialCapital)) return [];
+        const hasOpeningSeries = Array.isArray(openSeries) && openSeries.length > 0;
+        const openingPrice = Number((hasOpeningSeries ? openSeries[0] : closeSeries[0]) || 0);
+        if (!(openingPrice > 0)) return closeSeries.map(() => initialCapital);
+        const shares = Math.floor(initialCapital / openingPrice);
+        const cash = initialCapital - (shares * openingPrice);
+        return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
+    };
 
     const readThemeToken = (computed, tokenName) => (
         computed.getPropertyValue(tokenName).trim()
@@ -103,10 +119,11 @@
         WIDE_CHART_BREAKPOINT_PX,
         buildTickIndexSet,
         sortedTickIndexes,
+        buildAllInEquitySeries,
         readThemeToken,
         readThemeTokens,
         normalizeSafeImageUrl,
-        CHART_AXIS_UTILS_VERSION: "v1.0.2",
+        CHART_AXIS_UTILS_VERSION: "v1.1.0",
     });
 
     globalScope.ANTIGRAVITY_CHART_AXIS = api;

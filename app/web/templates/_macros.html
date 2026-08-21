@@ -1,4 +1,4 @@
-{# Code version: v0.6.1 #}
+{# Code version: v0.6.2 #}
 
 {% macro render_notice_banner(
     title='',
@@ -144,7 +144,7 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', custom_period_dropdown=false, exact_single_date=false, exact_single_date_label='Trading date') -%}
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', exact_single_date=false, exact_single_date_label='Trading date') -%}
 {% set range_mode_label = labels.mode if labels.mode is defined else "Mode" %}
 {% set selected_period_label = period_labels.get(period, period_labels.get(periods[0], labels.period) if periods else labels.period) %}
 <div class="field range-mode-field">
@@ -162,7 +162,6 @@
 </div>
 <div class="field range-panel" id="period_panel" {% if range_mode == 'exact' %}hidden{% endif %}>
     <label for="period">{{ labels.period }}</label>
-    {% if custom_period_dropdown %}
     <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="period">
         <select id="period" name="period" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
             {% for item in periods %}
@@ -191,14 +190,7 @@
             aria-label="{{ labels.period }}"
             hidden
         ></div>
-    </div>
-    {% else %}
-    <select id="period" name="period" class="form-select">
-        {% for item in periods %}
-        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
-        {% endfor %}
-    </select>
-    {% endif %}
+        </div>
 </div>
 <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
     {% set exact_trading_date = exact_start if exact_start else exact_end %}

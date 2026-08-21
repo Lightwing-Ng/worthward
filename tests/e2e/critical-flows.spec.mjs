@@ -1,4 +1,4 @@
-/* Code version: v1.161.0 */
+/* Code version: v1.162.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -12131,7 +12131,6 @@ test('hides the sidebar through the touch path on an iPad portrait viewport', as
         viewport: {width: 768, height: 1024},
         hasTouch: true,
         isMobile: true,
-        reducedMotion: 'reduce',
     });
     const page = await context.newPage();
 
@@ -12145,6 +12144,12 @@ test('hides the sidebar through the touch path on an iPad portrait viewport', as
         await tapAtCenter(page, toggle);
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await expect(backdrop).toBeVisible();
+        const toggleMotion = await toggle.evaluate((element) => ({
+            pointerCoarse: window.matchMedia('(pointer: coarse)').matches,
+            transitionProperty: getComputedStyle(element).transitionProperty,
+        }));
+        expect(toggleMotion.pointerCoarse).toBe(true);
+        expect(toggleMotion.transitionProperty.split(',').map((value) => value.trim())).not.toContain('transform');
         await expect.poll(() => toggle.evaluate((element) => {
             const rect = element.getBoundingClientRect();
             const hit = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));

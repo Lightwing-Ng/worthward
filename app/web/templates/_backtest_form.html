@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.4.1 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -9,7 +9,10 @@
     {% endfor %}
 {% endfor %}
 <form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}"
-      data-strategy-required-tickers="{{ strategy_required_tickers }}">
+      data-strategy-required-tickers="{{ strategy_required_tickers }}"
+      data-backtest-parameter-form
+      data-generic-parameters="range,interval,capital,return-mode"
+      data-strategy-parameters="code-defined">
     <div id="ticker_fields" data-backtest-ticker-fields>
     {% for ticker_index in range(1, strategy_required_tickers + 1) %}
     <div class="field ticker-field" data-index="{{ ticker_index }}">
@@ -35,7 +38,7 @@
     </div>
     {% endfor %}
     </div>
-    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact", true) }}
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact") }}
     <div class="field backtest-interval-field">
         <label for="backtest_interval_1d">{{ labels.backtest_interval }}</label>
         {{ render_segmented_control(
@@ -143,7 +146,7 @@
         </div>
         <div class="grid-trading-parameters-heading" data-grid-trading-parameters-heading{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
             <span class="grid-trading-parameters-title">Grid parameters</span>
-            <span class="grid-trading-parameters-copy">Configure the rolling center and asymmetric buy/sell grid levels.</span>
+            <span class="grid-trading-parameters-copy">Configure the trigger price bounds and asymmetric rise/fall percentages.</span>
         </div>
         <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'grid-trading' %} grid-trading-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
             {% include "_trade_strategy_params_panel.html" %}

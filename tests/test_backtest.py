@@ -163,6 +163,28 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["chart"]["buy_markers"], [True, False, False, False, False])
         self.assertEqual(result["chart"]["sell_markers"], [False, False, False, True, False])
 
+    def test_all_in_equity_uses_first_open_and_marks_each_close(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Open": [100.0, 110.0],
+                "Close": [105.0, 120.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=1_000.0,
+        )
+
+        self.assertEqual(result["chart"]["all_in_equity"], [1_050.0, 1_200.0])
+
     def test_chart_raw_dates_and_trade_dates_stay_aligned(self) -> None:
         frame = pd.DataFrame(
             {

@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.1
+Code version: v0.5.2
 """
 
 from __future__ import annotations
@@ -368,7 +368,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Grid Trading", "網格交易", "网格交易"),
         ("Baseline strategy that buys at the first available bar and exits at the last available bar.", "在第一個可用訊號柱買入，並在最後一個可用訊號柱退出的基準策略。", "在第一个可用信号柱买入，并在最后一个可用信号柱退出的基准策略。"),
         ("MACD crossover strategy using default daily 12, 26, and 9 settings.", "使用每日 12、26 及 9 預設設定的 MACD 交叉策略。", "使用每日 12、26 及 9 默认设置的 MACD 交叉策略。"),
-        ("Trades mean-reverting moves around a rolling center line using a configurable grid spacing.", "使用可設定的網格間距，交易圍繞滾動中心線的均值回歸走勢。", "使用可配置的网格间距，交易围绕滚动中心线的均值回归走势。"),
+        ("Trades price moves from the last execution with configurable trigger bounds and asymmetric rise/fall percentages.", "根據上次執行價的價格變動，使用可設定的觸發範圍及非對稱升跌百分比進行交易。", "根据上次执行价的价格变动，使用可配置的触发范围及非对称涨跌百分比进行交易。"),
         ("Optimized adaptive multi-factor SuperTrend strategy using NumPy array broadcasting for fast factor clustering.", "使用 NumPy 陣列廣播以快速進行因子叢集的最佳化自適應多因子 SuperTrend 策略。", "使用 NumPy 数组广播以快速进行因子聚类的优化自适应多因子 SuperTrend 策略。"),
         ("kNN regime classifier adhering strictly to the antigravity LLM Strategy Developer Prompt guidelines.", "嚴格遵循 antigravity LLM Strategy Developer Prompt 指引的 kNN 狀態分類器。", "严格遵循 antigravity LLM Strategy Developer Prompt 指引的 kNN 状态分类器。"),
         ("Adaptive multi-factor SuperTrend strategy with three-cluster factor selection inspired by the LuxAlgo PineScript.", "受 LuxAlgo PineScript 啟發、使用三叢集因子選擇的自適應多因子 SuperTrend 策略。", "受 LuxAlgo PineScript 启发、使用三簇因子选择的自适应多因子 SuperTrend 策略。"),
@@ -424,11 +424,10 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Fast EMA", "快速 EMA", "快速 EMA"),
         ("Slow EMA", "慢速 EMA", "慢速 EMA"),
         ("Signal EMA", "訊號 EMA", "信号 EMA"),
-        ("Center line type", "中心線類型", "中心线类型"),
-        ("Center line window", "中心線視窗", "中心线窗口"),
-        ("Grid spacing", "網格間距", "网格间距"),
-        ("Buy grid level", "買入網格層級", "买入网格层级"),
-        ("Sell grid level", "賣出網格層級", "卖出网格层级"),
+        ("Trigger price min", "觸發價格下限", "触发价格下限"),
+        ("Trigger price max", "觸發價格上限", "触发价格上限"),
+        ("Rise %", "升幅 %", "涨幅 %"),
+        ("Fall %", "跌幅 %", "跌幅 %"),
         ("Segmented control", "分段控制項", "分段控件"),
         ("Settings action button", "設定操作按鈕", "设置操作按钮"),
         ("Shared select filter", "共用選擇篩選器", "共享选择筛选器"),

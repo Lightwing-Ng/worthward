@@ -438,6 +438,27 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('class="investment-share-actions"', html)
         self.assertIn('id="share_mask_button"', html)
 
+    def test_compare_sidebar_relative_period_uses_the_shared_backtest_dropdown(self) -> None:
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch(
+                "app.web.runtime.fetch_history",
+                side_effect=lambda ticker, include_dividends, interval="1d", dividend_mode="reinvest": close_frame_for_ticker(ticker),
+            ),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-shared-select-kind="period"', html)
+        self.assertIn('id="period_dropdown"', html)
+        self.assertIn('data-shared-select-trigger', html)
+        self.assertNotIn('id="period" name="period" class="form-select"', html)
+
     def test_compare_page_keeps_periods_available_before_newer_listing(self) -> None:
         def _fetch_history(
             ticker: str,

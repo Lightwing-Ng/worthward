@@ -1,4 +1,4 @@
-/* Code version: v3.28.0 */
+/* Code version: v3.29.0 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -64,6 +64,26 @@
 .trade-strategy-field.is-grid-trading-inline .trade-strategy-params-grid {
     max-height: none !important;
     overflow: visible;
+}
+
+.trade-strategy-param-select-shell {
+    grid-column: 2;
+    min-width: 0;
+    position: relative;
+}
+
+.trade-strategy-param-select-shell .trade-strategy-combobox,
+.trade-strategy-param-select-shell .trade-strategy-trigger {
+    width: 100%;
+}
+
+.trade-strategy-param-select-shell .trade-strategy-trigger {
+    min-height: var(--strategy-param-control-height);
+    height: var(--strategy-param-control-height);
+}
+
+.trade-strategy-param-select-shell .backtest-shared-select-dropdown {
+    width: 100%;
 }
 .trade-sidebar-card {
     padding: 12px 12px 10px;

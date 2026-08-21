@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.4.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -15,7 +15,9 @@
             </div>
         </article>
         <div class="workspace-mode-layout">
-            <article class="chart-surface workspace-mode-controls-surface">
+            <article class="chart-surface workspace-mode-controls-surface"
+                     data-backtest-parameter-panel
+                     aria-label="Backtest parameters">
                 {% include "_backtest_form.html" %}
             </article>
             <article class="workspace-mode-main">

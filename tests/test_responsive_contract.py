@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.2."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.3."""
 
 from __future__ import annotations
 
@@ -139,6 +139,25 @@ def test_sidebar_toggle_is_outside_the_shell_stacking_context() -> None:
     assert ".page > .sidebar-toggle" in _read(
         PROJECT_ROOT / "app/web/static/assets/css/utilities/responsive.css"
     )
+
+
+def test_coarse_pointer_sidebar_toggle_keeps_its_hit_target_stationary() -> None:
+    responsive_source = _read(
+        PROJECT_ROOT / "app/web/static/assets/css/utilities/responsive.css"
+    )
+    touch_block = responsive_source.split(
+        "@media (max-width: 900px) and (hover: none) and (pointer: coarse)",
+        maxsplit=1,
+    )[1]
+
+    for fragment in (
+        ".page > .sidebar-toggle:hover",
+        ".page > .sidebar-toggle:focus-visible",
+        ".page > .sidebar-toggle:active",
+        "transform: translate3d(var(--sidebar-toggle-x), 0, 0);",
+        "transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard);",
+    ):
+        assert fragment in touch_block
 
 
 def test_safe_area_viewports_use_cover_layout() -> None:

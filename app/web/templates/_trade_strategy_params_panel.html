@@ -1,3 +1,4 @@
+{# Code version: v0.2.0 #}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
     {% for field in strategy_form_fields %}
@@ -94,22 +95,46 @@
                 {% endif %}
             </span>
         </label>
-        <div class="trade-strategy-number-field">
-            <div class="trade-strategy-number-row">
-                <select
+        <div class="trade-strategy-param-select-shell backtest-shared-select-field"
+             data-shared-select-field
+             data-shared-select-kind="strategy-param">
+            <select
                     id="strategy_param_{{ field.key }}"
                     name="{{ field.key }}"
-                    class="trade-strategy-param-select form-select"
+                    class="trade-strategy-native-select backtest-shared-select-native"
+                    hidden
+                    aria-hidden="true"
+                    tabindex="-1"
                     data-strategy-param-input="select"
                     data-default="{{ field.default }}"
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
+            >
+                {% for option in field.options %}
+                <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <div class="trade-strategy-combobox">
+                <button
+                        type="button"
+                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                        data-shared-select-trigger
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-controls="strategy_param_{{ field.key }}_dropdown"
+                        aria-label="{{ field.label }}: {{ field.value }}"
+                        title="{{ field.value }}"
                 >
-                    {% for option in field.options %}
-                    <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
-                    {% endfor %}
-                </select>
+                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ field.value }}">{{ field.value }}</span>
+                </button>
             </div>
-            <div class="trade-strategy-stepper-spacer" aria-hidden="true"></div>
+            <div
+                    id="strategy_param_{{ field.key }}_dropdown"
+                    class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                    data-shared-select-dropdown
+                    role="listbox"
+                    aria-label="{{ field.label }}"
+                    hidden
+            ></div>
         </div>
         {% endif %}
     </div>

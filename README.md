@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.77.0`
+Documentation version: `v2.78.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -15,7 +15,7 @@ Documentation version: `v2.77.0`
 - Build weighted portfolios with custom allocations
 - Simulate dollar-cost averaging with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
-- Use Grid Trading from the Backtest strategy selector, with center-line, spacing, and asymmetric buy/sell levels declared by `strategy_grid_trading.py`
+- Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
 - Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
@@ -124,7 +124,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Backtest`
   Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
 - `Grid Trading`
-  Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and expands inline like the former dedicated page; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
+  Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and expands inline with Trigger price min, Trigger price max, Rise %, and Fall %; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
 - `Trade`
   Inspect the `Investment` and `Live trading` views. The former Timing and
   investment aliases redirect to `/trade/investment` for compatibility.

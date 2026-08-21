@@ -1,4 +1,4 @@
-/* Code version: v0.30.0 */
+/* Code version: v0.31.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1254,10 +1254,14 @@
             return;
         }
         const initialCapital = Number(state.backtestResult.summary?.initial_capital || 0);
+        const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
         const closeSeries = Array.isArray(chartState.close) ? [...chartState.close] : [];
-        const openingPrice = Number(closeSeries[0] || 0);
-        const allInShares = openingPrice > 0 ? Math.floor(initialCapital / openingPrice) : 0;
-        const allInCash = initialCapital - (allInShares * openingPrice);
+        const openSeries = Array.isArray(chartState.open) ? [...chartState.open] : [];
+        const allInSeries = Array.isArray(chartState.all_in_equity) && chartState.all_in_equity.length
+            ? chartState.all_in_equity.map((value) => Number(value || 0))
+            : typeof chartAxis.buildAllInEquitySeries === "function"
+                ? chartAxis.buildAllInEquitySeries(openSeries, closeSeries, initialCapital)
+                : [];
         bootstrap.backtestRefreshTransition = {
             capturedAt: performance.now(),
             rawLabels: Array.isArray(chartState.raw_dates) && chartState.raw_dates.length
@@ -1265,7 +1269,7 @@
                 : [...chartState.dates],
             close: closeSeries,
             equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
-            allIn: closeSeries.map((value) => Number((allInCash + (allInShares * Number(value || 0))).toFixed(4))),
+            allIn: allInSeries,
             initialCapital,
         };
     };
@@ -4675,7 +4679,10 @@
         parts.triggerLabel.textContent = nextLabel;
         parts.triggerLabel.dataset.fallbackLabel = nextLabel;
         parts.trigger.title = nextLabel;
-        const fieldLabel = field.closest(".field")?.querySelector("label")?.textContent?.trim() || "";
+        const strategyParam = field.closest("[data-strategy-param-key]");
+        const fieldLabel = strategyParam?.querySelector(":scope > .trade-strategy-param-label .trade-strategy-param-label-trigger > span:first-child")?.textContent?.trim()
+            || field.closest(".field")?.querySelector(":scope > label")?.textContent?.trim()
+            || "";
         if (fieldLabel) {
             parts.trigger.setAttribute("aria-label", `${fieldLabel}: ${nextLabel}`);
         }
@@ -4825,7 +4832,9 @@
         event.preventDefault();
         closeSharedSelectDropdowns(field);
         setTradeStrategyDropdownOpen(false);
-        setTradeStrategyPanelOpen(false);
+        if (!field.closest("[data-trade-strategy-panel]")) {
+            setTradeStrategyPanelOpen(false);
+        }
         renderSharedSelectDropdown(field);
         setSharedSelectDropdownOpen(field, true);
         const options = getSharedSelectOptionButtons(field);
@@ -4922,7 +4931,9 @@
             const shouldOpen = parts.dropdown.hidden;
             closeSharedSelectDropdowns(field);
             setTradeStrategyDropdownOpen(false);
-            setTradeStrategyPanelOpen(false);
+            if (!field.closest("[data-trade-strategy-panel]")) {
+                setTradeStrategyPanelOpen(false);
+            }
             renderSharedSelectDropdown(field);
             setSharedSelectDropdownOpen(field, shouldOpen);
         });
@@ -4935,6 +4946,9 @@
         parts.select.addEventListener("change", () => {
             syncNativeSelectSelection(parts.select, parts.select.value);
             refreshSharedSelectField(field);
+            if (parts.field.dataset.sharedSelectKind === "strategy-param") {
+                scheduleStrategyParamSubmit(80);
+            }
         });
         if (parts.select.id === "period" && parts.select.dataset.periodChangeJsBound !== "1") {
             parts.select.dataset.periodChangeJsBound = "1";
@@ -7321,7 +7335,7 @@
             }
 
             const selectInput = field.querySelector("[data-strategy-param-input='select']");
-            if (selectInput instanceof HTMLSelectElement) {
+            if (selectInput instanceof HTMLSelectElement && !selectInput.closest("[data-shared-select-field]")) {
                 selectInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
             }
         });
@@ -7633,6 +7647,7 @@
             const payload = await response.json();
             if (requestToken !== strategyFieldsRequestToken) return;
             panel.innerHTML = payload.html || "";
+            panel.querySelectorAll("[data-shared-select-field]").forEach((field) => initializeSharedSelectField(field));
             syncBacktestStrategyTickerContract(payload);
             initStrategyParamControls(panel);
             syncTradeStrategyTuningAvailability();
