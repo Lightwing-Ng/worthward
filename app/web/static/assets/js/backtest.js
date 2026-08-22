@@ -1,4 +1,4 @@
-/* Code version: v0.5.3 */
+/* Code version: v0.5.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -340,7 +340,6 @@
 			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
 			: buildAllInSeries(open, close, initialCapital);
 
-		const axisLineColor = resolvedTheme.muted;
 		const fixedYAxisWidth = 52;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
@@ -444,26 +443,6 @@
 					]);
 				})()
 		);
-
-		const referenceLinePlugin = {
-			id: "tradeReferenceLine",
-			beforeDatasetsDraw(chart) {
-				if (chart.canvas !== equityCanvas) return;
-				const { ctx, chartArea, scales } = chart;
-				const yScale = scales?.y;
-				if (!chartArea || !yScale || !Number.isFinite(initialCapital)) return;
-				const y = yScale.getPixelForValue(initialCapital);
-				if (!Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
-				ctx.save();
-				ctx.strokeStyle = axisLineColor;
-				ctx.lineWidth = 1;
-				ctx.beginPath();
-				ctx.moveTo(chartArea.left + 8, y);
-				ctx.lineTo(chartArea.right - 8, y);
-				ctx.stroke();
-				ctx.restore();
-			},
-		};
 
 		const xAxisLabelPlugin = {
 			id: "tradeXAxisLabelPlugin",
@@ -943,7 +922,7 @@
 					y: { ...commonOptions.scales.y, ...equityYScale },
 				},
 			},
-			plugins: [referenceLinePlugin, xAxisLabelPlugin],
+			plugins: [xAxisLabelPlugin],
 		});
 
 		const initTransactionsPagination = () => {

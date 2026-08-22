@@ -1,4 +1,4 @@
-/* Code version: v0.31.9 */
+/* Code version: v0.31.10 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -7388,34 +7388,30 @@
             || !(select instanceof HTMLSelectElement)
             || !(tuneButton instanceof HTMLButtonElement)
             || !(panel instanceof HTMLElement)) return;
-        const wasGridTradingInline = field.classList.contains("is-grid-trading-inline");
         const wasDcaInline = field.classList.contains("is-dca-inline");
-        const isGridTrading = select.value === "grid-trading";
         const isDcaStrategy = select.value === "dca";
         const hasFields = Boolean(panel.querySelector("[data-strategy-param-key]"));
-        field.classList.toggle("is-grid-trading-inline", isGridTrading);
+        field.classList.remove("is-grid-trading-inline");
         field.classList.toggle("is-dca-inline", isDcaStrategy);
-        const gridHeading = field.querySelector("[data-grid-trading-parameters-heading]");
-        if (gridHeading instanceof HTMLElement) gridHeading.hidden = !isGridTrading;
-        panel.classList.toggle("grid-trading-parameters-panel", isGridTrading);
+        panel.classList.remove("grid-trading-parameters-panel");
 
-        if (isGridTrading || isDcaStrategy) {
+        if (isDcaStrategy) {
             panel.hidden = !hasFields;
             panel.style.maxHeight = "";
             panel.style.height = "";
             const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
             if (panelGrid instanceof HTMLElement) panelGrid.style.maxHeight = "";
-        } else if (wasGridTradingInline || wasDcaInline) {
+        } else if (wasDcaInline) {
             panel.hidden = true;
             panel.style.maxHeight = "";
             panel.style.height = "";
         }
 
-        tuneButton.classList.toggle("is-hidden", !hasFields || isGridTrading || isDcaStrategy);
-        tuneButton.disabled = !hasFields || isGridTrading || isDcaStrategy;
-        tuneButton.setAttribute("aria-hidden", hasFields && !isGridTrading && !isDcaStrategy ? "false" : "true");
-        tuneButton.tabIndex = hasFields && !isGridTrading && !isDcaStrategy ? 0 : -1;
-        if (isGridTrading || isDcaStrategy) {
+        tuneButton.classList.toggle("is-hidden", !hasFields || isDcaStrategy);
+        tuneButton.disabled = !hasFields || isDcaStrategy;
+        tuneButton.setAttribute("aria-hidden", hasFields && !isDcaStrategy ? "false" : "true");
+        tuneButton.tabIndex = hasFields && !isDcaStrategy ? 0 : -1;
+        if (isDcaStrategy) {
             tuneButton.classList.remove("is-active");
             tuneButton.setAttribute("aria-pressed", "false");
             tuneButton.setAttribute("aria-expanded", "false");
@@ -7713,7 +7709,7 @@
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);
-            } else if (!panel.hidden && !getTradeStrategyRefs().field?.classList.contains("is-grid-trading-inline")) {
+            } else if (!panel.hidden && !getTradeStrategyRefs().field?.classList.contains("is-dca-inline")) {
                 positionTradeStrategyPanel();
             }
         } catch (_error) {

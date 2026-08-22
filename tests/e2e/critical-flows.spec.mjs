@@ -1,4 +1,4 @@
-/* Code version: v1.165.2 */
+/* Code version: v1.165.3 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -12213,9 +12213,14 @@ test('resizes the backtest overview and transaction history with the shared sect
     await page.goto('/workspaces/backtest?stop_loss=0');
 
     const handle = page.locator('#backtest_section_resizer');
+    const exactHandle = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/button',
+    );
     const overview = page.locator('.backtest-trade-performance-card');
     const history = page.locator('#backtest_history_surface');
     await expect(handle).toBeVisible();
+    await expect(exactHandle).toHaveCount(1);
+    await expect(exactHandle).toHaveAttribute('id', 'backtest_section_resizer');
 
     const handleGeometry = await handle.evaluate((element) => ({
         height: element.getBoundingClientRect().height,
@@ -12244,6 +12249,25 @@ test('resizes the backtest overview and transaction history with the shared sect
     await expect.poll(() => handle.getAttribute('aria-valuenow')).not.toBe(String(Math.round(before.overview)));
     await expect(overview).toHaveJSProperty('hidden', false);
     await expect(history).toBeVisible();
+
+    const pointerBefore = await page.evaluate(() => ({
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height,
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height,
+    }));
+    const handleBox = await handle.boundingBox();
+    if (!handleBox) throw new Error('Backtest section resizer did not have a clickable bounding box.');
+    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+    await page.mouse.down();
+    await page.mouse.move(
+        handleBox.x + (handleBox.width / 2),
+        handleBox.y - 48,
+    );
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate((beforeSize) => {
+        const overviewHeight = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
+        const historyHeight = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
+        return overviewHeight < beforeSize.overview && historyHeight > beforeSize.history;
+    }, pointerBefore)).toBe(true);
 });
 
 test('keeps the backtest view pill synchronized and uses the 100-row transaction page contract', async ({page}) => {
@@ -12362,6 +12386,32 @@ test('starts every backtest strategy with its starter parameters from the dropdo
     }
 });
 
+test('removes the horizontal reference line from the exact backtest equity canvas', async ({page}) => {
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+
+    const exactCanvas = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[2]/div/div[2]/div[1]/article/div[2]/div[2]/div/canvas',
+    );
+    await expect(exactCanvas).toHaveCount(1);
+    await expect(exactCanvas).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradeEquityChart')),
+    ))).toBe(true);
+
+    const chartState = await page.evaluate(() => {
+        const chart = window.Chart.getChart(document.querySelector('#tradeEquityChart'));
+        return {
+            pluginIds: chart.config._config.plugins.map((plugin) => plugin.id || 'anonymous'),
+            xGridVisible: chart.options.scales.x.grid.display,
+            xBorderVisible: chart.options.scales.x.border.display,
+        };
+    });
+
+    expect(chartState.pluginIds).not.toContain('tradeReferenceLine');
+    expect(chartState.xGridVisible).toBe(false);
+    expect(chartState.xBorderVisible).toBe(false);
+});
+
 test('enters DCA through the Backtest strategy dropdown with the shared 100-row table contract', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
@@ -12423,6 +12473,33 @@ test('enters DCA through the Backtest strategy dropdown with the shared 100-row 
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
+});
+
+test('opens Grid Trading private parameters through the shared strategy tune button', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
+
+    const strategyTrigger = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/div[1]/button',
+    );
+    const tuneButton = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/button',
+    );
+    const paramsPanel = page.locator('#trade_strategy_params_panel');
+
+    await expect(strategyTrigger).toHaveText('Grid Trading');
+    await expect(tuneButton).toBeVisible();
+    await expect(tuneButton).toBeEnabled();
+    await expect(tuneButton).toHaveAttribute('aria-hidden', 'false');
+    await expect(page.locator('[data-trade-strategy-field]')).not.toHaveClass(/is-grid-trading-inline/);
+    await expect(paramsPanel).toBeHidden();
+
+    await tuneButton.click();
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(paramsPanel).toBeVisible();
+    for (const key of ['price_floor', 'price_ceiling', 'rise', 'fall']) {
+        await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
+    }
 });
 
 test('keeps the shared dock centered inside the expanded sidebar at intermediate widths', async ({page}) => {

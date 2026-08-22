@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.3.0."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -114,9 +114,10 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'data-backtest-parameter-panel' in html
     assert 'data-backtest-parameter-form' in html
     assert 'data-trade-strategy-combobox' in html
-    assert 'is-grid-trading-inline' in html
+    assert 'is-grid-trading-inline' not in html
     assert 'data-grid-trading-parameters-heading' not in html
-    assert 'grid-trading-parameters-panel' in html
+    assert 'grid-trading-parameters-panel' not in html
+    assert 'class="trade-strategy-tune-button"' in html
     assert 'data-shared-select-kind="period"' in html
     assert 'id="period_dropdown"' in html
     assert 'class="trade-strategy-param-select form-select"' not in html

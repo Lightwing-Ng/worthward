@@ -1,4 +1,4 @@
-{# Code version: v0.4.5 #}
+{# Code version: v0.4.6 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -91,7 +91,7 @@
         {{ render_switch("stop_loss", labels.backtest_stop_loss, "stop_loss", checked=stop_loss_enabled, input_attrs='title="' ~ labels.backtest_stop_loss_help ~ '"') }}
     </div>
     {% endif %}
-    <div class="field trade-strategy-field{% if selected_strategy_id == 'grid-trading' %} is-grid-trading-inline{% elif selected_strategy_id == 'dca' %} is-dca-inline{% endif %}" data-trade-strategy-field>
+    <div class="field trade-strategy-field{% if selected_strategy_id == 'dca' %} is-dca-inline{% endif %}" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-native-select" hidden
@@ -121,13 +121,13 @@
             </div>
             <button
                     type="button"
-                    class="trade-strategy-tune-button{% if not strategy_form_fields or selected_strategy_id in ['grid-trading', 'dca'] %} is-hidden{% endif %}"
+                    class="trade-strategy-tune-button{% if not strategy_form_fields or selected_strategy_id == 'dca' %} is-hidden{% endif %}"
                     data-trade-strategy-tune-button
                     aria-label="Tune strategy parameters"
                     aria-pressed="false"
                     aria-expanded="false"
                     aria-controls="trade_strategy_params_panel"
-                    {% if not strategy_form_fields or selected_strategy_id in ['grid-trading', 'dca'] %}aria-hidden="true" tabindex="-1" disabled{% endif %}
+                    {% if not strategy_form_fields or selected_strategy_id == 'dca' %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
                 <span class="icon icon-strategy-tune" aria-hidden="true"></span>
             </button>
@@ -140,7 +140,7 @@
                     hidden
             ></div>
         </div>
-        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'grid-trading' %} grid-trading-parameters-panel{% elif selected_strategy_id == 'dca' %} dca-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id not in ['grid-trading', 'dca'] %} hidden{% endif %}>
+        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'dca' %} dca-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id != 'dca' %} hidden{% endif %}>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>
