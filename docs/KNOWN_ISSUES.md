@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.232.4`
+Documentation version: `v1.232.5`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -8,6 +8,11 @@ references, transaction descriptions, or copied statement content.
 
 ## Investment imports
 
+- Schwab transaction exports classify `Non-Qualified Div` as dividend income
+  and `NRA Tax Adj` or related withholding-tax actions as
+  `foreign_tax_withholding`; date-only exports retain day-level timestamp
+  provenance, while an explicit intraday datetime column is preserved when
+  present.
 - IBKR GainsKeeper imports retain `BUYOTHER` and `SELLOTHER` money-market
   transactions with their immutable FITIDs, exact source timestamps, and
   cash values; legacy stored GainsKeeper timestamps are normalized to the

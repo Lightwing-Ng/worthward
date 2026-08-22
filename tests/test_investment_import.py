@@ -1,7 +1,11 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.36.0
+Code version: v0.36.1
+- Added: Schwab dividend and NRA tax-adjustment coverage now asserts explicit
+  withholding classification, date-only timestamp provenance, and cash values.
+- Added: Schwab imports with a separate intraday datetime column retain that
+  timestamp instead of silently preferring the date-only column.
 - Added: HSBC ledger and available balances remain distinct so pending orders
   are applied exactly once, including a legacy settlement-posting migration.
 - Added: Standalone USD Savings settlement pages refresh current HSBC cash
@@ -3415,6 +3419,74 @@ Fees: 0.12
             {artifact["bundle_role"] for artifact in payload["source_artifacts"]},
             {"transactions", "positions"},
         )
+
+    def test_schwab_dividend_and_nra_tax_adjustment_are_classified(self) -> None:
+        transactions_csv = "\n".join([
+            '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+            '"08/03/2026","Security Transfer","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","","",""',
+            '"08/21/2026","NRA Tax Adj","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","-$3.26"',
+            '"08/21/2026","Non-Qualified Div","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","$32.59"',
+        ]) + "\n"
+        positions_csv = "\n".join([
+            '"Positions for account Individual ...103 as of 02:07 AM ET, 2026/08/22"',
+            "",
+            '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
+            '"QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","54.24","$271.20","$286.29","ETFs & Closed End Funds",',
+            '"Cash & Cash Investments","--","--","--","$29.74","--","Cash and Money Market",',
+            '"Positions Total","--","--","--","$300.94","--","",',
+        ]) + "\n"
+
+        payload = build_investment_payload_from_schwab_csv(
+            transactions_csv.encode("utf-8"),
+            positions_csv.encode("utf-8"),
+            transaction_filename="Individual_XXX342_Transactions_20260822.csv",
+            positions_filename="Individual-Positions-2026-08-22.csv",
+        )
+
+        by_type = {record["type"]: record for record in payload["transactions"]}
+        self.assertEqual(by_type["dividend"]["net_amount_raw"], "32.59")
+        self.assertEqual(
+            by_type["foreign_tax_withholding"]["net_amount_raw"],
+            "-3.26",
+        )
+        self.assertTrue(
+            by_type["foreign_tax_withholding"]["normalized"]["is_cash_flow"]
+        )
+        self.assertEqual(payload["summary"]["unknown_transaction_types"], [])
+        self.assertEqual(payload["ending_cash"], "29.74")
+        self.assertFalse(payload["datetime_policy"]["source_has_intraday_timestamp"])
+        self.assertTrue(payload["summary"]["holdings_validation"]["matched"])
+
+    def test_schwab_explicit_datetime_column_is_preferred_over_date_column(self) -> None:
+        transactions_csv = "\n".join([
+            '"Date","Time and Date (ET)","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+            '"08/03/2026","","Security Transfer","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","","",""',
+            '"08/21/2026","08/21/2026 03:14:15 PM ET","Non-Qualified Div","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","$1.50"',
+        ]) + "\n"
+        positions_csv = "\n".join([
+            '"Positions for account Individual ...103 as of 02:07 AM ET, 2026/08/22"',
+            "",
+            '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
+            '"QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","54.24","$271.20","$286.29","ETFs & Closed End Funds",',
+            '"Cash & Cash Investments","--","--","--","$1.50","--","Cash and Money Market",',
+            '"Positions Total","--","--","--","$272.70","--","",',
+        ]) + "\n"
+
+        payload = build_investment_payload_from_schwab_csv(
+            transactions_csv.encode("utf-8"),
+            positions_csv.encode("utf-8"),
+            transaction_filename="Individual_XXX342_Transactions_20260822.csv",
+            positions_filename="Individual-Positions-2026-08-22.csv",
+        )
+
+        dividend = next(
+            record for record in payload["transactions"] if record["type"] == "dividend"
+        )
+        self.assertEqual(dividend["datetime"], "2026-08-21 15:14:15")
+        self.assertEqual(dividend["source"]["datetime_source_field"], "datetime")
+        self.assertEqual(dividend["source"]["datetime_precision"], "second")
+        self.assertTrue(dividend["source"]["source_has_intraday_timestamp"])
+        self.assertTrue(payload["datetime_policy"]["source_has_intraday_timestamp"])
 
     def test_schwab_known_internal_transfer_cleanup_rows_are_not_imported(self) -> None:
         transactions_csv = "\n".join([

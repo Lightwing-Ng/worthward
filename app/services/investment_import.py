@@ -1,7 +1,14 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.98.0
+Code version: v0.99.0
+- Fixed: Schwab dividend exports now classify `NRA Tax Adj` and related
+  withholding-tax actions as `foreign_tax_withholding` instead of preserving
+  them as unknown transaction types.
+- Fixed: Schwab CSV imports now distinguish date-only rows from genuine
+  intraday timestamps and prefer an explicit datetime field when one exists.
+- Fixed: Schwab numeric parsing now accepts accounting-style parenthetical
+  negatives and Unicode minus signs used by statement exports.
 - Fixed: HSBC current cash now uses the captured ledger balance as the posted
   cash boundary, applies pending settlements exactly once, and preserves the
   bank's available balance as separate audit evidence.
@@ -25682,8 +25689,18 @@ SCHWAB_ACTION_TO_TYPE = {
     "sell to open": "sell",
     "dividend": "dividend",
     "qualified dividend": "dividend",
+    "qualified div": "dividend",
+    "non-qualified dividend": "dividend",
+    "non-qualified div": "dividend",
     "cash dividend": "dividend",
+    "ordinary dividend": "dividend",
     "reinvest dividend": "dividend_reinvestment",
+    "dividend reinvestment": "dividend_reinvestment",
+    "nra tax adj": "foreign_tax_withholding",
+    "nra tax adjustment": "foreign_tax_withholding",
+    "foreign tax withholding": "foreign_tax_withholding",
+    "withholding tax": "foreign_tax_withholding",
+    "dividend tax": "foreign_tax_withholding",
     "interest": "credit_interest",
     "credit interest": "credit_interest",
     "debit interest": "debit_interest",
@@ -25720,6 +25737,8 @@ SCHWAB_UNKNOWN_NUMERIC_VALUES = frozenset({
     "incomplete",
     "unknown",
     "not available",
+    "—",
+    "–",
 })
 SCHWAB_INTERNAL_TRANSFER_JOURNAL_ACTIONS = frozenset({"journal"})
 SCHWAB_SECURITY_TRANSFER_ACTIONS = frozenset({
@@ -25798,8 +25817,57 @@ def _parse_schwab_decimal(
     raw = _normalize_text(value)
     if raw.lower() in SCHWAB_UNKNOWN_NUMERIC_VALUES:
         return None
-    cleaned = raw.replace("$", "").replace("%", "").replace(",", "")
+    cleaned = (
+        raw.replace("$", "")
+        .replace("%", "")
+        .replace(",", "")
+        .replace("−", "-")
+        .strip()
+    )
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        cleaned = f"-{cleaned[1:-1].strip()}"
     return _parse_decimal(cleaned, field_name, row_number, warnings)
+
+
+def _schwab_has_intraday_timestamp(value: str | None) -> bool:
+    """Return whether a Schwab date field contains a source-provided time."""
+    normalized = _normalize_text(value)
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _classify_schwab_transaction_type(
+    action: str,
+    description: str,
+    unknown_types: set[str],
+) -> str:
+    """Map Schwab's human-readable action variants to ledger semantics."""
+    normalized_action = _normalize_whitespace(action).lower()
+    normalized_description = _normalize_whitespace(description).lower()
+    direct_mapping = SCHWAB_ACTION_TO_TYPE.get(normalized_action)
+    if direct_mapping is not None:
+        return direct_mapping
+
+    combined = f"{normalized_action} {normalized_description}".strip()
+    if "tax" in combined and any(
+        marker in combined
+        for marker in ("nra", "foreign", "withhold", "dividend tax")
+    ):
+        return "foreign_tax_withholding"
+    if re.search(r"\bdiv(?:idend)?\b|\bdistribution\b", combined):
+        return "dividend"
+    if "buy" in normalized_action:
+        return "buy"
+    if "sell" in normalized_action:
+        return "sell"
+    return _classify_transaction_type(action or "Trade", description, unknown_types)
 
 
 def _schwab_amount_from_row(row: dict[str, str], quantity: Decimal | None, price: Decimal | None, side: str) -> Decimal | None:
@@ -25839,22 +25907,16 @@ def _build_schwab_transaction_record(
     description = norm_row.get("description") or norm_row.get("name") or ""
     status = norm_row.get("status", "").lower()
     action_raw = (norm_row.get("action") or norm_row.get("type") or "").strip()
-    action_key = action_raw.lower()
 
     if status and status not in SCHWAB_FILLED_STATUS and "filled" not in status:
         if "price" not in norm_row and "fillprice" not in norm_row:
             return None
 
-    mapped_type = SCHWAB_ACTION_TO_TYPE.get(action_key)
-    if mapped_type is None:
-        if "buy" in action_key:
-            mapped_type = "buy"
-        elif "sell" in action_key:
-            mapped_type = "sell"
-        elif "div" in action_key:
-            mapped_type = "dividend"
-        else:
-            mapped_type = _classify_transaction_type(action_raw or "Trade", description, unknown_types)
+    mapped_type = _classify_schwab_transaction_type(
+        action_raw,
+        description,
+        unknown_types,
+    )
 
     qty_raw = norm_row.get("quantity") or norm_row.get("qty") or norm_row.get("shares") or ""
     price_raw = norm_row.get("price") or norm_row.get("fillprice") or norm_row.get("avgprice") or ""
@@ -25866,6 +25928,9 @@ def _build_schwab_transaction_record(
     if commission_dec < 0:
         commission_dec = abs(commission_dec)
 
+    if mapped_type == "transfer_in" and quantity_dec is not None and quantity_dec < ZERO:
+        mapped_type = "transfer_out"
+
     if mapped_type in {"buy", "sell"} and (quantity_dec is None or quantity_dec <= ZERO or price_dec is None or price_dec <= ZERO):
         return None
 
@@ -25873,15 +25938,29 @@ def _build_schwab_transaction_record(
         "sell" if mapped_type in {"sell", "transfer_out"} else None
     )
 
-    date_str = norm_row.get("date") or norm_row.get("datetime") or norm_row.get("time") or ""
-    if "datetime" in norm_row and not norm_row.get("date"):
-        date_str = norm_row.get("datetime", "")
+    datetime_source_field = ""
+    if norm_row.get("datetime"):
+        date_str = norm_row["datetime"]
+        datetime_source_field = "datetime"
+    elif norm_row.get("date") and norm_row.get("time"):
+        date_str = f"{norm_row['date']} {norm_row['time']}"
+        datetime_source_field = "date_and_time"
+    else:
+        date_str = norm_row.get("date") or norm_row.get("time") or ""
+        datetime_source_field = "date" if norm_row.get("date") else "time"
     date_text, datetime_text = _parse_schwab_datetime(date_str, warnings, row_number)
     if not date_text:
         for alt in ("lastactivitydate", "settledate", "executeddate"):
             if norm_row.get(alt):
-                date_text, datetime_text = _parse_schwab_datetime(norm_row[alt], warnings, row_number)
+                candidate_date_value = norm_row[alt]
+                date_text, datetime_text = _parse_schwab_datetime(
+                    candidate_date_value,
+                    warnings,
+                    row_number,
+                )
                 if date_text:
+                    date_str = candidate_date_value
+                    datetime_source_field = alt
                     break
     if not date_text:
         warnings.append(f"Row {row_number}: missing date for Schwab row")
@@ -25916,6 +25995,11 @@ def _build_schwab_transaction_record(
             "row_number": row_number,
             "action_raw": action_raw,
             "status_raw": status,
+            "datetime_source_field": datetime_source_field,
+            "datetime_precision": (
+                "second" if _schwab_has_intraday_timestamp(date_str) else "day"
+            ),
+            "source_has_intraday_timestamp": _schwab_has_intraday_timestamp(date_str),
         },
     }
     if symbol:
@@ -26556,9 +26640,16 @@ def build_investment_payload_from_schwab_csv(
         "account": account,
         "datetime_policy": {
             "date_field_meaning": "Trade / fill date from Schwab export (ET)",
-            "datetime_field_meaning": "Business-convention datetime derived from date",
+            "datetime_field_meaning": (
+                "Intraday datetime from the Schwab export when present; otherwise "
+                "business-convention datetime derived from the date"
+            ),
             "timezone": "America/New_York",
-            "source_has_intraday_timestamp": True,
+            "source_has_intraday_timestamp": any(
+                isinstance(transaction.get("source"), dict)
+                and transaction["source"].get("source_has_intraday_timestamp") is True
+                for transaction in transactions
+            ),
         },
         "summary": summary,
         "starting_cash": None,
