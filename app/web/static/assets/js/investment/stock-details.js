@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.24.0
+ * Code version: v0.25.0
  * - Changed: The shared investment data-utils dependency now uses the current
  *   cash-resolver cache key.
  * - Changed: Buy and sell trades now render as volume-scaled glowing zones;
@@ -96,15 +96,16 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
+ * - Added: Stock-details chart hover tooltips now expose date-scoped realized and unrealized P&L using the shared base-currency accounting contract.
  */
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.106.0';
+} from './data-utils.js?v=investment-data-utils-v1.107.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.24.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -992,6 +993,31 @@ export function resolveInvestmentStockDetailsDailySnapshotIndex(
     return null;
 }
 
+export function buildInvestmentStockDetailsRealizedPnlTimeline(
+    realizedPnlByDate = {},
+    normalizeDate = (value) => String(value || '').slice(0, 10),
+) {
+    return Object.entries(realizedPnlByDate || {})
+        .map(([rawDate, rawValue]) => ({
+            date: normalizeDate(rawDate),
+            value: Number(rawValue),
+        }))
+        .filter((entry) => entry.date && Number.isFinite(entry.value))
+        .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+export function resolveInvestmentStockDetailsCumulativeRealizedPnl(
+    realizedPnlTimeline = [],
+    targetDate,
+) {
+    const normalizedTargetDate = String(targetDate || '').slice(0, 10);
+    if (!normalizedTargetDate || !Array.isArray(realizedPnlTimeline)) return null;
+    return realizedPnlTimeline.reduce(
+        (total, entry) => entry?.date <= normalizedTargetDate ? total + Number(entry.value || 0) : total,
+        0,
+    );
+}
+
 export function getInvestmentTradeSessionType(value, parseDateParts) {
     const dateParts = parseDateParts(value);
     if (!dateParts || !Number.isInteger(dateParts.hours) || !Number.isInteger(dateParts.minutes)) {
@@ -1205,6 +1231,7 @@ export function createInvestmentStockDetailsUtils({
     getInvestmentCanonicalTicker,
     getInvestmentMarketStoreTickerCandidates,
     getInvestmentProcessedTransactionsCache,
+    getInvestmentStockDetailsPnlSummary = () => null,
     getInvestmentStockDetailsPanel,
     getInvestmentStockDetailsPriceChartInstance,
     getInvestmentStockDetailsPriceChartRequestSerial,
@@ -1226,6 +1253,7 @@ export function createInvestmentStockDetailsUtils({
     getTransactionLotScope,
     getTransactionLotScopeKey,
     getTransactionValuationQuantity,
+    getSignedMetricClass = () => '',
     incrementInvestmentStockDetailsPriceChartRequestSerial,
     isFlatPosition,
     isInvestmentStockDetailsIntradayRange,
@@ -1640,6 +1668,58 @@ export function createInvestmentStockDetailsUtils({
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
+
+        const pnlSummary = getInvestmentStockDetailsPnlSummary(normalizedTicker) || {};
+        const baseCurrency = getInvestmentBaseCurrency();
+        const quoteCurrency = String(
+            pnlSummary.quoteCurrency || getTickerQuoteCurrency(normalizedTicker) || baseCurrency,
+        ).trim().toUpperCase() || baseCurrency;
+        const processedTransactions = getInvestmentProcessedTransactionsCache();
+        const orderedTransactions = [...(
+            Array.isArray(processedTransactions) ? processedTransactions : []
+        )].sort((left, right) => compareInvestmentTransactions(left, right));
+        const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
+        const realizedPnlTimeline = buildInvestmentStockDetailsRealizedPnlTimeline(
+            pnlSummary.realizedPnlByDate,
+            normalizeLedgerDate,
+        );
+        const fallbackRealizedPnl = Number(pnlSummary.realizedPnl);
+        const resolveHistoricalRealizedPnl = (ledgerDate, isLatestPoint = false) => {
+            if (pnlSummary.pnlUnavailable === true) return null;
+            if (realizedPnlTimeline.length) {
+                return resolveInvestmentStockDetailsCumulativeRealizedPnl(realizedPnlTimeline, ledgerDate);
+            }
+            // A broker-only total cannot be truthfully allocated to earlier points.
+            if (!Number.isFinite(fallbackRealizedPnl)) return null;
+            if (Math.abs(fallbackRealizedPnl) <= 1e-9 || isLatestPoint) return fallbackRealizedPnl;
+            return null;
+        };
+        const resolveHistoricalUnrealizedPnl = (snapshot, ledgerDate) => {
+            if (pnlSummary.pnlUnavailable === true) return null;
+            const shares = Number(snapshot?.shares);
+            const closePrice = Number(snapshot?.close);
+            const averagePrice = Number(snapshot?.averagePrice);
+            if (
+                !ledgerDate
+                || !Number.isFinite(shares)
+                || Math.abs(shares) <= 1e-9
+                || !Number.isFinite(closePrice)
+                || !Number.isFinite(averagePrice)
+            ) {
+                return null;
+            }
+            const unrealizedPnlLocal = shares > 0
+                ? (closePrice - averagePrice) * shares
+                : (averagePrice - closePrice) * Math.abs(shares);
+            const unrealizedPnl = convertAmountToBaseCurrency(
+                unrealizedPnlLocal,
+                quoteCurrency,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            return Number.isFinite(unrealizedPnl) ? unrealizedPnl : null;
+        };
 
         const normalizedRange = normalizeInvestmentStockDetailsRange(getSelectedInvestmentStockDetailsRange());
         const allowRealtimeData = shouldRunInvestmentRealtimeQuotes();
@@ -2576,6 +2656,24 @@ export function createInvestmentStockDetailsUtils({
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
             const averagePrice = Number(snapshot?.averagePrice);
+            const realizedPnl = resolveHistoricalRealizedPnl(
+                hoverLedgerDate,
+                pointIndex === labels.length - 1,
+            );
+            const unrealizedPnl = resolveHistoricalUnrealizedPnl(snapshot, hoverLedgerDate);
+            const buildPnlRow = (label, value) => {
+                const numericValue = Number(value);
+                const hasValue = Number.isFinite(numericValue);
+                return {
+                    label,
+                    value: hasValue ? formatHoldingsMoney(numericValue) : '--',
+                    color: hasValue
+                        ? (numericValue >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary)
+                        : resolvedTheme.muted,
+                    valueClass: hasValue ? getSignedMetricClass(numericValue) : '',
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
+                };
+            };
             const tooltipRows = [
                 {
                     label: 'Position',
@@ -2595,6 +2693,8 @@ export function createInvestmentStockDetailsUtils({
                     color: resolvedTheme.muted,
                     bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
+                buildPnlRow('Unrealized P&L', unrealizedPnl),
+                buildPnlRow('Realized P&L', realizedPnl),
             ];
             if (Number.isFinite(buyQuantity) && buyQuantity > 0) {
                 tooltipRows.push({
@@ -2617,7 +2717,7 @@ export function createInvestmentStockDetailsUtils({
                     ${row.bulletHtml.replace('class="chart-tooltip-dot"', `class="chart-tooltip-dot" style="background:${row.color}"`)}
                     <span aria-hidden="true"></span>
                     <span class="chart-tooltip-label">${row.label}</span>
-                    <span class="chart-tooltip-value">${row.value}</span>
+                    <span class="chart-tooltip-value${row.valueClass ? ` ${row.valueClass}` : ''}">${row.value}</span>
                 </div>
             `).join('');
             const canvasRect = chart.canvas.getBoundingClientRect();

@@ -1,4 +1,4 @@
-{# Code version: v0.2.1 #}
+{# Code version: v0.3.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set weekly_label = namespace(value=labels.dca_frequency_weekly) %}
 {% if dca_weekday == 0 %}{% set weekly_label.value = "Monday" %}{% endif %}
@@ -32,7 +32,7 @@
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.dca_amount }}</label>
         <div class="trade-capital-row">
-            <input id="trade_initial_capital" name="amount" class="trade-capital-input" type="text"
+            <input id="trade_initial_capital" name="amount" class="trade-capital-input numeric-input-control" type="text"
                    value="{{ "{:,.2f}".format(dca_amount) }}" inputmode="decimal" autocomplete="off">
         </div>
         <div class="trade-capital-slider-shell" aria-hidden="true">

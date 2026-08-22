@@ -1,12 +1,13 @@
 /**
  * Shared numeric display parsing and integer/fraction rendering.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
  * - Added: One parser and renderer for metric values across workspace pages,
  *   Settings previews, Compare, and Investment realtime transitions.
+ * - Added: A small browser runtime API for dynamically rendered workspace rows.
  */
 
-export const NUMERIC_DISPLAY_MODULE_VERSION = 'v1.0.0';
+export const NUMERIC_DISPLAY_MODULE_VERSION = 'v1.1.0';
 
 const NUMERIC_DISPLAY_PATTERN = /^([+\-]?\*?(?:(?:[A-Z]{3}|\$)\s*)?)(\d[\d,]*)(?:\.(\d+))?(%?)$/;
 
@@ -98,6 +99,18 @@ export function enhanceNumericDisplayElements(root = globalThis.document) {
         element.innerHTML = renderNumericDisplayContent(parsed.raw);
         element.dataset.numericDisplayRendered = 'cell';
     });
+}
+
+const numericDisplayApi = Object.freeze({
+    enhanceNumericDisplayElements,
+    getNumericDisplayParts,
+    parseNumericDisplayValue,
+    renderNumericDisplayContent,
+});
+
+if (typeof window !== 'undefined') {
+    window.ANTIGRAVITY_NUMERIC_DISPLAY = numericDisplayApi;
+    window.dispatchEvent(new CustomEvent('antigravity:numeric-display-ready'));
 }
 
 if (typeof document !== 'undefined') {

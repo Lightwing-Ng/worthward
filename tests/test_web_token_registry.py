@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.7.5
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -126,6 +126,18 @@ def collect_material_rows() -> dict[str, set[str]]:
 
 
 class WebTokenRegistryTests(unittest.TestCase):
+    def test_numeric_input_controls_share_the_28px_keyboard_contract(self) -> None:
+        registry = load_foundation_css_token_registry()
+        forms_css = read_text(WEB_CSS_ROOT / "components" / "forms.css")
+        compare_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "_compare_portfolio_sidebar.html")
+        app_js = read_text(REPO_ROOT / "app" / "web" / "static" / "assets" / "js" / "app.js")
+
+        self.assertEqual(registry["--numeric-input-control-height"].value, "28px")
+        self.assertIn('input[type="number"]', forms_css)
+        self.assertIn("height: var(--numeric-input-control-height);", forms_css)
+        self.assertIn('type="number" inputmode="numeric"', compare_template)
+        self.assertIn('type="number" inputmode="numeric"', app_js)
+
     def test_univers_next_uses_the_complete_collection_and_face_contract(self) -> None:
         fonts_css = read_text(WEB_CSS_ROOT / "foundation" / "fonts.css")
         tokens_css = read_text(FOUNDATION_TOKENS_CSS_PATH)

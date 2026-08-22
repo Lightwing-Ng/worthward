@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.128.2
+ * Code version: v2.129.0
  * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
  *   ledger-sequence order, so a later sale proceeds posting cannot be
  *   overwritten by an earlier same-day buy balance in historical equity.
@@ -37,6 +37,8 @@
  *   authoritative while posted cash clears matching pending buys.
  * - Fixed: Stock details realized-P&L attribution now follows the shared
  *   broker-scoped Holdings result for pure-trade tickers.
+ * - Added: Stock-details chart hover tooltips now show date-scoped realized
+ *   and unrealized P&L using the shared base-currency accounting contract.
  * - Changed: HSBC copy/paste fields now expose only clipboard paste controls;
  *   debug-only local TXT carriers are no longer rendered or read.
  * - Changed: IBKR current holdings calibration now uses an explicit Cash /
@@ -326,7 +328,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.106.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.107.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -355,7 +357,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.24.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.25.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -401,7 +403,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.128.2',
+    entry: 'v2.128.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -5635,6 +5637,9 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentChartPointsCache: () => investmentChartPointsCache,
         getInvestmentMarketStoreTickerCandidates: getInvestmentTickerStoreAliasCandidates,
         getInvestmentProcessedTransactionsCache: () => investmentProcessedTransactionsCache,
+        getInvestmentStockDetailsPnlSummary: (ticker) => investmentTickerSummariesCache.find((summary) => (
+            normalizeInvestmentTicker(summary?.ticker) === normalizeInvestmentTicker(ticker)
+        )) || null,
         getInvestmentStockDetailsPanel: () => investmentStockDetailsPanel,
         getInvestmentStockDetailsPriceChartInstance: () => investmentStockDetailsPriceChartInstance,
         getInvestmentStockDetailsPriceChartRequestSerial: () => investmentStockDetailsPriceChartRequestSerial,
@@ -5645,6 +5650,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getCashEquivalentTickerSet,
         getNormalizedTransactionType,
         getSelectedInvestmentStockDetailsRange: () => selectedInvestmentStockDetailsRange,
+        getSignedMetricClass,
         getTickerQuoteCurrency,
         getTransactionAmount,
         getTransactionBrokerCode,
@@ -9193,7 +9199,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                       aria-label="Asset row ${index}">${escapeHtml(formatInvestmentTickerForDisplay(row.asset))}</span>`}
                     </td>
                     <td class="investment-import-calibration-cell investment-import-calibration-cell-quantity">
-                        <input class="settings-form-control investment-import-calibration-input"
+                        <input class="settings-form-control numeric-input-control investment-import-calibration-input"
                                type="text"
                                inputmode="decimal"
                                autocomplete="off"

@@ -1,4 +1,4 @@
-/* Code version: v0.1.16 */
+/* Code version: v0.1.19 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -181,6 +181,17 @@
             minimumFractionDigits: digits,
             maximumFractionDigits: digits,
         }).format(value);
+        const escapeHtml = (value) => String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        const renderNumericCell = (value, digits = 2) => {
+            const formatted = formatMoney(value, digits);
+            const renderer = window.ANTIGRAVITY_NUMERIC_DISPLAY?.renderNumericDisplayContent;
+            return typeof renderer === "function" ? renderer(formatted) : escapeHtml(formatted);
+        };
         const formatReturn = (value) => `${value >= 0 ? "" : "-"}${Math.abs(value).toFixed(2)}%`;
 
         const parseRawDate = (value) => {
@@ -511,7 +522,7 @@
             const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
             if (!tbody || !nav) return;
             if (!paginationApi) {
-                window.addEventListener("antigravity:local-store-pagination-ready", renderContributionTable, {once: true});
+                window.requestAnimationFrame(renderContributionTable);
                 return;
             }
             const pageSize = paginationApi.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
@@ -544,11 +555,11 @@
                     row.innerHTML = `
                         <td class="trade-transactions-index">${index + 1}</td>
                         <td class="trade-transactions-date">${trade.date || ""}</td>
-                        <td class="trade-transactions-number">${formatMoney(Number(trade.price || 0), 2)}</td>
-                        <td class="trade-transactions-number">${formatMoney(Number(trade.shares || 0), 4)}</td>
-                        <td class="trade-transactions-number">${formatMoney(Number(trade.cumulative_shares || 0), 4)}</td>
-                        <td class="trade-transactions-number">${formatMoney(Number(trade.invested || 0))}</td>
-                        <td class="trade-transactions-number">${formatMoney(Number(trade.equity || 0))}</td>
+                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.price || 0), 2)}</td>
+                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.shares || 0), 4)}</td>
+                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.cumulative_shares || 0), 4)}</td>
+                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.invested || 0))}</td>
+                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.equity || 0))}</td>
                     `;
                     tbody.appendChild(row);
                 }
@@ -627,4 +638,5 @@
     });
 
     bootstrap.initDcaWorkspace = initDcaWorkspace;
+    initDcaWorkspace();
 })();

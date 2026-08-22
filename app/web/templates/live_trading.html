@@ -1,4 +1,4 @@
-{# Code version: v1.10.0 #}
+{# Code version: v1.11.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -134,7 +134,7 @@
                                 <div class="trade-capital-row">
                                     <input id="live_trading_price"
                                            name="price"
-                                           class="trade-capital-input live-trading-number-input"
+                                           class="trade-capital-input numeric-input-control live-trading-number-input"
                                            type="text"
                                            value=""
                                            placeholder="Awaiting valid ticker price"
@@ -149,7 +149,7 @@
                                 <div class="trade-capital-row">
                                     <input id="live_trading_quantity"
                                            name="quantity"
-                                           class="trade-capital-input live-trading-number-input"
+                                           class="trade-capital-input numeric-input-control live-trading-number-input"
                                            type="text"
                                            value=""
                                            inputmode="decimal"

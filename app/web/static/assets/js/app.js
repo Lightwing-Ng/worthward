@@ -1,4 +1,4 @@
-/* Code version: v0.31.10 */
+/* Code version: v0.34.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4313,11 +4313,11 @@
 				${isPortfolioView ? `
 				<div class="portfolio-weight-field">
 					<div class="portfolio-weight-row">
-						<input id="weight_${index}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
+						<input id="weight_${index}" name="weight" class="portfolio-weight-input" type="number" inputmode="numeric" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
 						<span class="portfolio-weight-unit">%</span>
 						<div class="portfolio-share-stepper" role="group" aria-label="Shares">
 							<button type="button" class="portfolio-share-stepper-button" data-share-step="-1" aria-label="Decrease shares">-</button>
-							<input id="shares_${index}" name="shares" class="portfolio-share-input" type="number" min="0" step="1" value="0" placeholder="0" aria-label="Shares">
+							<input id="shares_${index}" name="shares" class="portfolio-share-input" type="number" inputmode="numeric" min="0" step="1" value="0" placeholder="0" aria-label="Shares">
 							<button type="button" class="portfolio-share-stepper-button" data-share-step="1" aria-label="Increase shares">+</button>
 						</div>
 					</div>
@@ -4425,7 +4425,8 @@
     const shouldPortalSharedSelectDropdown = (field) => (
         field instanceof HTMLElement
         && (
-            String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-import-broker"
+            Boolean(field.closest("[data-trade-strategy-panel]"))
+            || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-import-broker"
             || field.classList.contains("investment-import-broker-field")
         )
     );
@@ -4449,6 +4450,16 @@
         dropdown.dataset.sharedSelectOwner = owner;
         if (dropdown.parentElement !== host) host.appendChild(dropdown);
         return true;
+    };
+    const restoreSharedSelectDropdown = (field, dropdown) => {
+        if (!shouldPortalSharedSelectDropdown(field)
+            || !field.closest("[data-trade-strategy-panel]")
+            || !(dropdown instanceof HTMLElement)) return;
+        const host = dropdown.parentElement;
+        if (!(host instanceof HTMLElement) || !host.matches("[data-shared-select-overlay]")) return;
+        field.appendChild(dropdown);
+        delete field.dataset.sharedSelectOwner;
+        delete dropdown.dataset.sharedSelectOwner;
     };
 
     const isOneDayExactDateMode = () => (
@@ -4626,12 +4637,11 @@
         const overlayMetrics = getSidebarOverlayMetrics(triggerRect);
         const left = Math.max(0, triggerRect.left - containerRect.left);
         const top = Math.max(0, triggerRect.bottom - containerRect.top + SIDEBAR_OVERLAY_GAP_PX);
-        const availableWidth = Math.max(0, containerRect.width - left);
-        const width = availableWidth > 0 ? availableWidth : triggerRect.width;
+        const width = Math.max(0, triggerRect.width);
         dropdown.style.left = `${Math.round(left)}px`;
         dropdown.style.top = `${Math.round(top)}px`;
         dropdown.style.right = "auto";
-        dropdown.style.width = `${Math.round(width)}px`;
+        dropdown.style.width = `${width}px`;
         dropdown.style.maxHeight = overlayMetrics ? `${Math.round(overlayMetrics.availableHeight)}px` : "";
     };
 
@@ -4641,12 +4651,13 @@
         const dropdown = parts.dropdown;
         const trigger = parts.trigger;
         const triggerRect = trigger.getBoundingClientRect();
-        // The import Broker menu must not inherit the form's transformed and clipped context.
+        // Constrained menus must not inherit the form's transformed and clipped context.
         const isInsideImportForm = !!trigger.closest('#transaction_form_container')
             || parts.field.classList.contains('investment-import-broker-field')
             || parts.field.dataset.sharedSelectKind === 'investment-import-broker';
-        if (isInsideImportForm) {
-            // Portal the import broker menu above the transformed, clipped form before positioning it.
+        const isInsideStrategyPanel = Boolean(trigger.closest("[data-trade-strategy-panel]"));
+        if (isInsideImportForm || isInsideStrategyPanel) {
+            // Portal constrained menus above clipped form containers before positioning them.
             portalSharedSelectDropdown(field, dropdown);
             const dropdownGap = 4;
             const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
@@ -4684,6 +4695,7 @@
         } else {
             parts.trigger.removeAttribute("aria-activedescendant");
             resetSidebarDropdownPosition(parts.dropdown);
+            restoreSharedSelectDropdown(field, parts.dropdown);
         }
     };
 
@@ -7388,34 +7400,15 @@
             || !(select instanceof HTMLSelectElement)
             || !(tuneButton instanceof HTMLButtonElement)
             || !(panel instanceof HTMLElement)) return;
-        const wasDcaInline = field.classList.contains("is-dca-inline");
-        const isDcaStrategy = select.value === "dca";
         const hasFields = Boolean(panel.querySelector("[data-strategy-param-key]"));
         field.classList.remove("is-grid-trading-inline");
-        field.classList.toggle("is-dca-inline", isDcaStrategy);
         panel.classList.remove("grid-trading-parameters-panel");
 
-        if (isDcaStrategy) {
-            panel.hidden = !hasFields;
-            panel.style.maxHeight = "";
-            panel.style.height = "";
-            const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
-            if (panelGrid instanceof HTMLElement) panelGrid.style.maxHeight = "";
-        } else if (wasDcaInline) {
-            panel.hidden = true;
-            panel.style.maxHeight = "";
-            panel.style.height = "";
-        }
-
-        tuneButton.classList.toggle("is-hidden", !hasFields || isDcaStrategy);
-        tuneButton.disabled = !hasFields || isDcaStrategy;
-        tuneButton.setAttribute("aria-hidden", hasFields && !isDcaStrategy ? "false" : "true");
-        tuneButton.tabIndex = hasFields && !isDcaStrategy ? 0 : -1;
-        if (isDcaStrategy) {
-            tuneButton.classList.remove("is-active");
-            tuneButton.setAttribute("aria-pressed", "false");
-            tuneButton.setAttribute("aria-expanded", "false");
-        } else if (!hasFields) {
+        tuneButton.classList.toggle("is-hidden", !hasFields);
+        tuneButton.disabled = !hasFields;
+        tuneButton.setAttribute("aria-hidden", hasFields ? "false" : "true");
+        tuneButton.tabIndex = hasFields ? 0 : -1;
+        if (!hasFields) {
             setTradeStrategyPanelOpen(false);
         }
     };
@@ -7649,17 +7642,17 @@
             : [];
         const previousRequired = Number.parseInt(form.dataset.strategyRequiredTickers || "1", 10) || 1;
         const currentTickers = getFilledTickers();
-        const configuredDefaultTicker = sanitizeTicker(
-            defaults.backtest_ticker || defaults.ticker_a || "",
-        );
         const shouldApplyStrategyDefaults = previousRequired === 1
-            && currentTickers.length <= 1
-            && (!currentTickers[0] || currentTickers[0] === configuredDefaultTicker);
+            && currentTickers.length === 0;
         const nextTickers = shouldApplyStrategyDefaults
             ? defaultTickers.slice()
             : currentTickers.slice(0, requiredTickers);
-        while (nextTickers.length < requiredTickers) {
-            nextTickers.push(defaultTickers[nextTickers.length] || "");
+        const usedTickers = new Set(nextTickers);
+        for (const defaultTicker of defaultTickers) {
+            if (nextTickers.length >= requiredTickers) break;
+            if (usedTickers.has(defaultTicker)) continue;
+            nextTickers.push(defaultTicker);
+            usedTickers.add(defaultTicker);
         }
 
         form.dataset.strategyRequiredTickers = String(requiredTickers);
@@ -7709,7 +7702,7 @@
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);
-            } else if (!panel.hidden && !getTradeStrategyRefs().field?.classList.contains("is-dca-inline")) {
+            } else if (!panel.hidden) {
                 positionTradeStrategyPanel();
             }
         } catch (_error) {

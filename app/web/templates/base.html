@@ -1,4 +1,4 @@
-{# Code version: v0.18.5 #}
+{# Code version: v0.19.6 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.38.41') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.44.0') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -268,7 +268,7 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
-<script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.0.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.1.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.2') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.1.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
@@ -286,7 +286,7 @@
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.15.7') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.31.10') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.34.0') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.6') }}"></script>
 {% endif %}
@@ -294,7 +294,7 @@
 <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.5.4') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.1.0') }}"></script>
 {% if selected_strategy_id == 'dca' %}
-<script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.16') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.19') }}"></script>
 {% endif %}
 {% endif %}
 </body>

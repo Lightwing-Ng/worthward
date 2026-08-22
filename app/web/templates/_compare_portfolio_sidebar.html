@@ -1,4 +1,4 @@
-{# Code version: v0.1.1 #}
+{# Code version: v0.2.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set portfolio_allocation_mode = portfolio_allocation_mode if current_view == "portfolio" and portfolio_allocation_mode is defined else "weight" %}
 {% set portfolio_allocation_mode = "shares" if portfolio_allocation_mode == "shares" else "weight" %}
@@ -43,11 +43,11 @@
                 {% if current_view == "portfolio" %}
                 <div class="portfolio-weight-field">
                     <div class="portfolio-weight-row">
-                        <input id="weight_{{ index }}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
+                        <input id="weight_{{ index }}" name="weight" class="portfolio-weight-input" type="number" inputmode="numeric" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
                         <span class="portfolio-weight-unit">%</span>
                         <div class="portfolio-share-stepper" role="group" aria-label="Shares">
                             <button type="button" class="portfolio-share-stepper-button" data-share-step="-1" aria-label="Decrease shares">-</button>
-                            <input id="shares_{{ index }}" name="shares" class="portfolio-share-input" type="number" min="0" step="1" value="{{ portfolio_share_slots[index - 1] if index - 1 < portfolio_share_slots|length else 0 }}" placeholder="0" aria-label="Shares">
+                            <input id="shares_{{ index }}" name="shares" class="portfolio-share-input" type="number" inputmode="numeric" min="0" step="1" value="{{ portfolio_share_slots[index - 1] if index - 1 < portfolio_share_slots|length else 0 }}" placeholder="0" aria-label="Shares">
                             <button type="button" class="portfolio-share-stepper-button" data-share-step="1" aria-label="Increase shares">+</button>
                         </div>
                     </div>

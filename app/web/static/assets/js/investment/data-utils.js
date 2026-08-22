@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.106.0
+ * Code version: v1.107.0
+ * - Changed: Dividend and foreign-tax descriptions now use the transaction's
+ *   canonical ticker instead of source-provided security names or identifiers.
  * - Changed: Foreign-currency FX conversion no longer makes a current HSBC
  *   cash display provisional. The leading * now identifies only unresolved
  *   HSBC settlement cash, such as a fee that posts on the following day.
@@ -1719,6 +1721,23 @@ export function createInvestmentDataUtils({
         );
     }
 
+    function normalizeInvestmentDistributionDescriptionIdentity(txn, description) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (!['dividend', 'foreign_tax_withholding'].includes(normalizedType)) {
+            return description;
+        }
+
+        const canonicalTicker = String(getInvestmentCanonicalTicker(txn?.ticker) || txn?.ticker || '')
+            .trim()
+            .toUpperCase();
+        if (!canonicalTicker) return description;
+
+        return String(description || '').replace(
+            /^.*?(?=\s+(?:Cash\s+dividend|Dividend\s+tax)\b)/i,
+            canonicalTicker,
+        );
+    }
+
     function getTransactionDescriptionText(txn, fallback = '--', { normalizeWhitespace = false } = {}) {
         const rawDescription = normalizeWhitespace
             ? normalizeTransactionDescriptionWhitespace(txn?.description)
@@ -1983,6 +2002,7 @@ export function createInvestmentDataUtils({
         }
 
         const moneyMarketIdentity = resolveInvestmentMoneyMarketTransactionIdentity(txn);
+        let cashEquivalentSecurityIdentity = null;
         if (moneyMarketIdentity) {
             description = formatInvestmentMoneyMarketTransactionDescription(
                 txn,
@@ -1990,7 +2010,7 @@ export function createInvestmentDataUtils({
                 description,
             );
         } else {
-            const cashEquivalentSecurityIdentity = resolveInvestmentCashEquivalentSecurityIdentity(txn);
+            cashEquivalentSecurityIdentity = resolveInvestmentCashEquivalentSecurityIdentity(txn);
             if (cashEquivalentSecurityIdentity) {
                 description = formatInvestmentMoneyMarketTransactionDescription(
                     txn,
@@ -1998,6 +2018,10 @@ export function createInvestmentDataUtils({
                     description,
                 );
             }
+        }
+
+        if (!moneyMarketIdentity && !cashEquivalentSecurityIdentity) {
+            description = normalizeInvestmentDistributionDescriptionIdentity(txn, description);
         }
 
         if (isKolRewardTransaction(txn)) {
@@ -5524,4 +5548,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.106.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.107.0';

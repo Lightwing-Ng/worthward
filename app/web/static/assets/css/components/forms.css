@@ -1,4 +1,4 @@
-/* Code version: v0.11.5 */
+/* Code version: v0.16.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -7,20 +7,27 @@
 	--trade-control-label-gap: var(--sidebar-form-field-label-gap);
 	--trade-control-input-height: var(--sidebar-form-control-min-height);
 	--trade-control-inline-gap: var(--sidebar-form-inline-gap);
-	--strategy-param-field-height: 36px;
-	--strategy-param-control-height: 36px;
+	--strategy-param-field-height: var(--numeric-input-control-height);
+	--strategy-param-control-height: var(--numeric-input-control-height);
 	--strategy-param-scrollbar-idle-ms: 720;
 	--ticker-control-width: 80%;
 	--ticker-suggestions-radius: 10px;
 	--ticker-validation-arrow-size: 12px;
 	--ticker-validation-arrow-rise: calc(var(--ticker-validation-arrow-size) * 0.70710678);
 }
+input[type="number"],
+.numeric-input-control,
+.settings-form-control-numeric {
+	box-sizing: border-box;
+	height: var(--numeric-input-control-height);
+	min-height: var(--numeric-input-control-height);
+}
 .field, .field-checkbox { width: 100%; position: relative; }
 .ticker-input-row { display: flex; align-items: flex-start; gap: var(--sidebar-form-inline-gap); padding: var(--sidebar-form-popover-gap); margin: calc(var(--sidebar-form-popover-gap) * -1); border-radius: var(--radius-panel); transition: box-shadow 160ms var(--motion-standard), background 160ms var(--motion-standard); }
 .ticker-input-main { flex: 1 1 auto; min-width: 0; position: relative; }
 .portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 24px; position: relative; }
-.portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: var(--trade-control-input-height); }
-.portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: var(--trade-control-input-height); appearance: textfield; -moz-appearance: textfield; }
+.portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: var(--numeric-input-control-height); }
+.portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; height: var(--numeric-input-control-height); min-height: var(--numeric-input-control-height); appearance: textfield; -moz-appearance: textfield; }
 .portfolio-weight-field.is-open .portfolio-weight-input,
 .portfolio-weight-field:focus-within .portfolio-weight-input,
 .portfolio-weight-input:hover,
@@ -37,8 +44,8 @@
 	align-items: center;
 	box-sizing: border-box;
 	width: 100%;
-	height: var(--trade-control-input-height);
-	min-height: var(--trade-control-input-height);
+	height: var(--numeric-input-control-height);
+	min-height: var(--numeric-input-control-height);
 	border: var(--control-liquid-border);
 	border-radius: var(--radius-pill);
 	background: var(--control-liquid-background);
@@ -305,6 +312,9 @@
 	color: var(--text);
 	cursor: pointer;
 }
+.workspace-mode-controls-surface .trade-controls .trade-strategy-field .trade-strategy-select {
+	font-weight: 300;
+}
 .trade-strategy-select:disabled {
 	opacity: 0.68;
 	cursor: default;
@@ -368,6 +378,10 @@
 	height: auto;
 	padding-top: var(--sidebar-form-control-padding-block);
 	padding-bottom: var(--sidebar-form-control-padding-block);
+}
+.trade-controls .trade-capital-input {
+	height: var(--numeric-input-control-height);
+	min-height: var(--numeric-input-control-height);
 }
 .trade-controls .ticker-field,
 .trade-controls .range-mode-field,
@@ -435,6 +449,10 @@
 	line-height: 1.2;
 	display: flex;
 	align-items: flex-start;
+}
+.workspace-mode-controls-surface .trade-controls .range-mode-field > label,
+.workspace-mode-controls-surface .trade-controls #period_panel > label {
+	font-weight: var(--font-weight-medium);
 }
 .trade-controls .trade-capital-row,
 .trade-controls .range-mode-field > .range-mode-shell,
@@ -725,7 +743,7 @@
 	position: absolute;
 	left: 0;
 	right: 0;
-	top: calc(var(--trade-control-label-height) + var(--trade-control-label-gap) + var(--trade-control-input-height));
+	top: calc(var(--trade-control-label-height) + var(--trade-control-label-gap) + var(--numeric-input-control-height));
 }
 .portfolio-controls[data-portfolio-allocation="shares"] .portfolio-weight-slider-shell,
 .portfolio-controls[data-portfolio-allocation="shares"] .portfolio-weight-tooltip {
@@ -736,8 +754,8 @@
 	max-height: 0;
 }
 .portfolio-controls .portfolio-weight-row {
-	min-height: var(--trade-control-input-height);
-	height: var(--trade-control-input-height);
+	min-height: var(--numeric-input-control-height);
+	height: var(--numeric-input-control-height);
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -837,6 +855,18 @@
 	border-color: var(--theme-glass-border) !important;
 	box-shadow: var(--frosted-glass-shadow-hover);
 }
+.trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger,
+.trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:hover,
+.trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus,
+.trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus-visible {
+	border: none !important;
+}
+.workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger,
+.workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:hover,
+.workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:focus,
+.workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:focus-visible {
+	border-color: transparent !important;
+}
 .trade-strategy-trigger-label {
 	display: inline-flex;
 	align-items: center;
@@ -896,6 +926,9 @@
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
+}
+.strategy-param-dropdown {
+	background: var(--frosted-glass-opaque-background);
 }
 [data-shared-select-overlay] {
 	position: fixed;
@@ -1111,9 +1144,6 @@
 .trade-controls:has(.backtest-shared-select-field.is-open),
 .trade-controls:has(.field.range-panel .backtest-shared-select-trigger[aria-expanded="true"]) {
 	z-index: var(--layer-global-popover);
-}
-.trade-strategy-params-popover:has(.trade-strategy-param.is-open) {
-	padding-bottom: 58px;
 }
 @keyframes strategySelectSnap {
 	0% { transform: translateY(0) scale(1); }
@@ -1583,6 +1613,9 @@
 		transform 400ms var(--segmented-thumb-easing),
 		opacity 140ms var(--motion-standard);
 }
+.backtest-interval-segmented[data-segmented-pill="measured"]::before {
+	transition: none !important;
+}
 .segmented-control[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before,
 .range-mode-shell[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before {
 	opacity: 1;
@@ -1790,7 +1823,7 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-field.is-peer-highlight .date-picker-trigger,
 .date-picker-field.is-peer-highlight .date-picker-manual-input { border-color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); }
 .date-picker-trigger.is-invalid { color: var(--theme-error-strong); border-color: color-mix(in srgb, var(--theme-error) 78%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-error-strong) 72%, transparent); }
-.date-picker-trigger-value { display: flex; align-items: center; width: 100%; min-height: 34px; text-align: left; white-space: nowrap; line-height: 1.2; color: inherit; font: inherit; font-variant-numeric: tabular-nums; outline: none; caret-color: currentColor; }
+.date-picker-trigger-value { display: flex; align-items: center; width: 100%; min-height: 34px; text-align: left; white-space: nowrap; line-height: 1.2; color: inherit; font: inherit; font-weight: var(--font-weight-regular); font-variant-numeric: tabular-nums; outline: none; caret-color: currentColor; }
 .date-picker-trigger-value.is-invalid { color: var(--theme-error-strong); }
 .date-picker-trigger-value[data-empty="1"]::before { content: attr(data-placeholder); color: color-mix(in srgb, var(--theme-text) 58%, transparent); }
 .date-picker-popover { position: fixed; top: 0; left: 0; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-radius: var(--radius-panel); background: var(--glass-popover-background); box-shadow: 0 24px 56px var(--theme-shadow-ambient), 0 10px 24px var(--theme-shadow-ambient); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); z-index: var(--layer-global-popover); }

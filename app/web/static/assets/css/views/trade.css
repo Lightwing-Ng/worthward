@@ -1,30 +1,4 @@
-/* Code version: v3.32.2 */
-
-.trade-strategy-field.is-dca-inline {
-    display: grid;
-    gap: 8px;
-}
-
-.trade-strategy-field.is-dca-inline .trade-strategy-row {
-    grid-template-columns: minmax(0, 1fr);
-}
-
-.trade-strategy-field.is-dca-inline .trade-strategy-params-popover {
-    position: static;
-    inset: auto;
-    height: auto !important;
-    max-height: none !important;
-    padding: 8px 10px;
-    overflow: visible;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-}
-
-.trade-strategy-field.is-dca-inline .trade-strategy-params-grid {
-    max-height: none !important;
-    overflow: visible;
-}
+/* Code version: v3.34.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -97,9 +71,13 @@
 }
 
 .backtest-trade-performance-card {
-    --workspace-article-pad-block-start: 8px;
+    --workspace-article-pad-block-start: 6px;
     --workspace-article-pad-inline: 12px;
-    --workspace-article-pad-block-end: 8px;
+    --workspace-article-pad-block-end: 6px;
+}
+
+.backtest-section-resizer {
+    font-size: 13px;
 }
 
 .backtest-workspace-main {
@@ -143,6 +121,8 @@
 #backtest_overview_panel > .backtest-surface {
     flex: 1 1 auto;
     width: 100%;
+    padding-top: 0;
+    padding-bottom: 0 !important;
 }
 
 #backtest_metrics_view_panel > #backtest_metrics_panel {
@@ -504,6 +484,7 @@
 
 .dca-transactions-shell {
     --dca-transactions-scrollbar-width: 0px;
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
 .dca-transactions-shell > .trade-transactions-table[aria-hidden="true"] {

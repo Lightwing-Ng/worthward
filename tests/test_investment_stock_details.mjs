@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.13.0 */
+/* Tests for Investment Stock details boundaries. Code version: v1.13.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +12,7 @@ import {
     aggregateInvestmentStockDetailPositionStates,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
+    buildInvestmentStockDetailsRealizedPnlTimeline,
     createInvestmentStockDetailsUtils,
     drawInvestmentTradeMarkerCircle,
     drawInvestmentTradeMarkerGlow,
@@ -24,6 +25,7 @@ import {
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
     resolveInvestmentStockDetailsDailySnapshotIndex,
+    resolveInvestmentStockDetailsCumulativeRealizedPnl,
     resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey,
     resolveInvestmentTradeMarkerGlowLinks,
     resolveInvestmentTradeMarkerGlowZoneFieldIntensity,
@@ -101,6 +103,20 @@ function createRealizedBreakdownBuilder() {
 
 test('module exposes a semantic cache-busting version', () => {
     assert.match(INVESTMENT_STOCK_DETAILS_MODULE_VERSION, /^v\d+\.\d+\.\d+$/);
+});
+
+test('stock-details P&L timeline accumulates shared realized values through the hovered date', () => {
+    const timeline = buildInvestmentStockDetailsRealizedPnlTimeline({
+        '2026-08-03': 125.5,
+        '2026-08-01': -10.25,
+        invalid: 'not-a-number',
+    });
+    assert.deepEqual(timeline, [
+        {date: '2026-08-01', value: -10.25},
+        {date: '2026-08-03', value: 125.5},
+    ]);
+    assert.equal(resolveInvestmentStockDetailsCumulativeRealizedPnl(timeline, '2026-08-02'), -10.25);
+    assert.equal(resolveInvestmentStockDetailsCumulativeRealizedPnl(timeline, '2026-08-03'), 115.25);
 });
 
 test('trade-marker circle area scales directly with absolute transaction amount', () => {

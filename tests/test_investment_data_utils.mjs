@@ -1,4 +1,4 @@
-/* Code version: v1.43.0 */
+/* Code version: v1.44.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -1824,20 +1824,24 @@ test('transaction descriptions canonicalize clause separators without changing i
 });
 
 test('IBKR distribution descriptions normalize security identifiers and sentence case', () => {
+    const sourceDescription = 'NEOS Nasdaq-100(R) High Income ETF (Us78433H6751) Cash Dividend USD 0.6346 Per Share - Us Tax';
     assert.equal(
         formatTransactionDescription({
             type: 'foreign_tax_withholding',
-            description: 'Qqqi(Us78433H6751) Cash Dividend USD 0.6346 Per Share - Us Tax',
+            ticker: 'QQQI',
+            description: sourceDescription,
         }),
-        'QQQI (US78433H6751) Cash dividend USD 0.6346 per share · US tax',
+        'QQQI Cash dividend USD 0.6346 per share · US tax',
     );
     assert.equal(
         formatTransactionDescription({
             type: 'dividend',
+            ticker: 'META',
             description: 'Meta(Us30303M1027) CASH DIVIDEND USD 0.033 PER SHARE (Ordinary Dividend)',
         }),
-        'META (US30303M1027) Cash dividend USD 0.033 per share (Ordinary dividend)',
+        'META Cash dividend USD 0.033 per share (Ordinary dividend)',
     );
+    assert.equal(sourceDescription, 'NEOS Nasdaq-100(R) High Income ETF (Us78433H6751) Cash Dividend USD 0.6346 Per Share - Us Tax');
 });
 
 test('money-market transaction descriptions use canonical ISIN identities without mutating source text', () => {

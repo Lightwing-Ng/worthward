@@ -1,4 +1,4 @@
-/* Code version: v0.14.3 */
+/* Code version: v0.15.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -26,6 +26,7 @@
 	--sidebar-form-field-gap: 8px;
 	--sidebar-form-inline-gap: 8px;
 	--sidebar-form-control-min-height: 30px;
+	--numeric-input-control-height: 28px;
 	--sidebar-form-control-padding-inline: 10px;
 	--sidebar-form-control-padding-block: 0px;
 	--sidebar-form-popover-gap: 6px;

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.6
+Code version: v0.5.7
 """
 
 from __future__ import annotations
@@ -272,6 +272,8 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="backtest_view_surface"', html)
         self.assertIn('<option value="dca"', html)
+        self.assertIn('aria-label="Tune strategy parameters"', html)
+        self.assertNotIn('is-dca-inline', html)
         self.assertIn('name="amount"', html)
         self.assertIn('name="frequency"', html)
         self.assertIn('dca-transactions-shell', html)

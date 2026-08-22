@@ -1,4 +1,4 @@
-/* Code version: v1.165.3 */
+/* Code version: v1.166.11 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -798,6 +798,29 @@ test('stacks the portfolio date beneath the aligned summary title', async ({page
     expect(geometry.rangeVerticalGap).toBeGreaterThanOrEqual(1);
 });
 
+test('matches the shared Compare Period dropdown width to its trigger', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
+    const periodTrigger = page.locator('#period_panel [data-shared-select-trigger]');
+    const periodDropdown = page.locator('#period_dropdown');
+
+    await periodTrigger.click();
+    await expect(periodDropdown).toBeVisible();
+
+    const readWidthDelta = () => page.evaluate(() => {
+        const trigger = document.querySelector('#period_panel [data-shared-select-trigger]');
+        const dropdown = document.querySelector('#period_dropdown');
+        if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return Number.POSITIVE_INFINITY;
+        return Math.abs(trigger.getBoundingClientRect().width - dropdown.getBoundingClientRect().width);
+    });
+    await expect.poll(readWidthDelta).toBeLessThan(0.01);
+
+    const widths = await page.evaluate(() => ({
+        trigger: document.querySelector('#period_panel [data-shared-select-trigger]')?.getBoundingClientRect().width,
+        dropdown: document.querySelector('#period_dropdown')?.getBoundingClientRect().width,
+    }));
+    expect(widths.dropdown).toBeCloseTo(widths.trigger, 5);
+});
+
 test('remembers return and price comparison state while switching workspaces', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
     await page.getByRole('link', {name: 'Price performance'}).click();
@@ -1123,6 +1146,16 @@ test('keeps exact-date pickers inside the viewport and clickable', async ({page}
     await dateButton.click();
     await expect(popover).toBeHidden();
     await expect(page.locator('#exact_trading_date')).toHaveValue(selectedValue);
+});
+
+test('renders Compare exact-date values at regular weight', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&range=exact&from=2025-08-14&to=2026-08-14');
+    await expect(page.locator('#exact_panel')).toBeVisible();
+
+    const weights = await page.locator('#exact_panel [data-exact-range-date-grid]:not([hidden]) [data-date-trigger-value]').evaluateAll((values) => (
+        values.map((value) => getComputedStyle(value).fontWeight)
+    ));
+    expect(weights).toEqual(['400', '400']);
 });
 
 test('switches an untouched range mode without submitting or desynchronizing its pill', async ({page}) => {
@@ -5546,15 +5579,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.128.2',
+        entry: 'v2.128.3',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.106.0',
+        dataUtils: 'v1.107.0',
         importFeedback: 'v1.8.5',
         layout: 'v1.1.0',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.0.0',
-        stockDetails: 'v0.24.0',
+        stockDetails: 'v0.25.0',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.1',
         urlState: 'v1.2.0',
@@ -5562,7 +5595,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.24.0';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.25.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -5786,6 +5819,66 @@ test('keeps QQQI Stock details cost labels out of metrics and tooltip', async ({
         return window.Chart?.getChart?.(canvas)?.data?.datasets?.map((dataset) => dataset.label) || [];
     });
     expect(chartDatasetLabels).toContain('QQQI Average price');
+});
+
+test('shows date-scoped realized and unrealized P&L in the Stock details tooltip', async ({page}) => {
+    const ticker = 'DRAM';
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-08-01', type: 'buy', ticker, currency: 'USD', quantity: 10, price: 100, amount: -1_000},
+            {broker: 'ibkr', date: '2026-08-02', type: 'sell', ticker, currency: 'USD', quantity: 4, price: 120, amount: 480},
+        ],
+        priceHistoryByTicker: {
+            [ticker]: [
+                {date: '2026-08-01', close: 110},
+                {date: '2026-08-02', close: 120},
+            ],
+        },
+        tickerProfiles: {
+            [ticker]: {
+                ticker,
+                company_name: 'Roundhill Memory ETF',
+                logo_url: '/market-store/logos/DRAM.svg',
+            },
+        },
+    });
+    await page.setViewportSize({width: 1_024, height: 863});
+    await page.goto(`/trade/investment?view=stock-details&ticker=${ticker}&range=auto`);
+
+    const tooltip = page.locator('[data-investment-stock-details-tooltip="1"]');
+    await expect.poll(() => page.evaluate(() => {
+        const canvas = document.querySelector('#stock_panel .investment-stock-details-price-chart-canvas');
+        const chart = canvas && window.Chart?.getChart?.(canvas);
+        const values = chart?.data?.datasets?.[0]?.data || [];
+        const indexes = values
+            .map((value, index) => Number.isFinite(value) ? index : -1)
+            .filter((index) => index >= 0);
+        const index = indexes[indexes.length - 1] ?? -1;
+        const point = index >= 0 ? chart?.getDatasetMeta(0)?.data?.[index] : null;
+        if (!chart || !point) return false;
+        const center = point.getCenterPoint();
+        const activeElements = [{datasetIndex: 0, index}];
+        chart.setActiveElements(activeElements);
+        chart.tooltip?.setActiveElements(activeElements, {x: center.x, y: center.y});
+        chart.update('none');
+        return true;
+    })).toBe(true);
+    await expect(tooltip).toHaveClass(/is-visible/);
+    await expect(tooltip.locator('.chart-tooltip-label').filter({hasText: /^Unrealized P&L$/})).toHaveCount(1);
+    await expect(tooltip.locator('.chart-tooltip-label').filter({hasText: /^Realized P&L$/})).toHaveCount(1);
+
+    const pnlValues = await tooltip.locator('.chart-tooltip-row').evaluateAll((rows) => Object.fromEntries(
+        rows
+            .map((row) => [
+                row.querySelector('.chart-tooltip-label')?.textContent || '',
+                row.querySelector('.chart-tooltip-value')?.textContent || '',
+            ])
+            .filter(([label]) => ['Unrealized P&L', 'Realized P&L'].includes(label)),
+    ));
+    expect(pnlValues).toEqual({
+        'Unrealized P&L': '120.00',
+        'Realized P&L': '80.00',
+    });
 });
 
 test('uses the standard green token logo for money-market Stock details identity', async ({page}) => {
@@ -11522,6 +11615,47 @@ test('keeps matched security transfer descriptions compact in history', async ({
     expect(Math.abs(transferPresentation.selectTextLeft - transferPresentation.currentLeft)).toBeLessThanOrEqual(1);
 });
 
+test('uses canonical tickers for dividend descriptions in transaction history', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {
+                ledger_no: 6515,
+                broker: 'ibkr',
+                date: '2026-08-21',
+                type: 'foreign_tax_withholding',
+                ticker: 'QQQI',
+                currency: 'USD',
+                amount: -19.55,
+                description: 'NEOS Nasdaq-100(R) High Income ETF (US78433H6751) Cash Dividend USD 0.6518 Per Share - US Tax',
+            },
+            {
+                ledger_no: 6514,
+                broker: 'ibkr',
+                date: '2026-08-21',
+                type: 'dividend',
+                ticker: 'QQQI',
+                currency: 'USD',
+                amount: 195.54,
+                description: 'NEOS Nasdaq-100(R) High Income ETF (US78433H6751) Cash Dividend USD 0.6518 Per Share (Ordinary Dividend)',
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const taxDescriptionCell = page.locator('#investment_history tr')
+        .filter({hasText: 'Foreign Tax Withholding'})
+        .locator('td').nth(4);
+    const dividendDescriptionCell = page.locator('#investment_history tr')
+        .filter({hasText: 'Ordinary dividend'})
+        .locator('td').nth(4);
+    await expect(taxDescriptionCell).toHaveText('QQQI Cash dividend USD 0.6518 per share · US tax');
+    await expect(taxDescriptionCell).not.toContainText('NEOS Nasdaq-100(R) High Income ETF');
+    await expect(taxDescriptionCell).not.toContainText('US78433H6751');
+    await expect(dividendDescriptionCell).toHaveText(
+        'QQQI Cash dividend USD 0.6518 per share (Ordinary dividend)',
+    );
+});
+
 test('replays a manually bound security transfer-out before its receipt', async ({page}) => {
     const sourceKey = 'v2:["ibkr","ibkr:u-suffix:00001","2026-07-31","transfer_out","QQQI","5","USD"]';
     const targetKey = 'v2:["schwab","Individual ...001","2026-07-31","transfer_in","QQQI","5","USD"]';
@@ -12301,6 +12435,44 @@ test('keeps the backtest view pill synchronized and uses the 100-row transaction
     ))).toBe('0');
 });
 
+test('keeps the Backtest interval pill aligned and static in the 1m state', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=DRAM&range=1d&interval=1m');
+
+    const intervalShell = page.locator('#backtest_interval_control');
+    await expect(intervalShell).toHaveAttribute('data-segmented-pill', 'measured');
+    await expect(intervalShell.locator('#backtest_interval_1m')).toBeChecked();
+
+    const pillState = await intervalShell.evaluate((element) => {
+        const pseudo = getComputedStyle(element, '::before');
+        const shellRect = element.getBoundingClientRect();
+        const activeOption = element.querySelector('input:checked')?.closest('.segmented-control-option');
+        const activeRect = activeOption?.getBoundingClientRect();
+        const transformMatch = pseudo.transform.match(
+            /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([-\d.]+)/,
+        );
+        const translateX = pseudo.transform === 'none'
+            ? 0
+            : Number.parseFloat(transformMatch?.[1] || 'NaN');
+        const thumbLeft = shellRect.left + (Number.parseFloat(pseudo.left) || 0) + translateX;
+        const thumbRight = thumbLeft + (Number.parseFloat(pseudo.width) || 0);
+        return {
+            transition: pseudo.transition,
+            opacity: pseudo.opacity,
+            leftDelta: activeRect ? Math.abs(thumbLeft - activeRect.left) : Number.POSITIVE_INFINITY,
+            rightDelta: activeRect ? Math.abs(thumbRight - activeRect.right) : Number.POSITIVE_INFINITY,
+            shellRight: shellRect.right,
+            thumbRight,
+        };
+    });
+
+    expect(pillState.transition).toBe('none');
+    expect(pillState.opacity).toBe('1');
+    expect(pillState.leftDelta).toBeLessThanOrEqual(1);
+    expect(pillState.rightDelta).toBeLessThanOrEqual(1);
+    expect(pillState.thumbRight).toBeLessThanOrEqual(pillState.shellRight + 1);
+});
+
 test('reuses the Investment stock-details table-host style for Backtest transaction details', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
@@ -12412,7 +12584,7 @@ test('removes the horizontal reference line from the exact backtest equity canva
     expect(chartState.xBorderVisible).toBe(false);
 });
 
-test('enters DCA through the Backtest strategy dropdown with the shared 100-row table contract', async ({page}) => {
+test('enters DCA through the Backtest strategy dropdown and tunes private parameters', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
 
@@ -12459,6 +12631,16 @@ test('enters DCA through the Backtest strategy dropdown with the shared 100-row 
     );
     await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe('dca');
     await expect.poll(() => new URL(page.url()).searchParams.get('strategy')).toBe('dca');
+    await expect.poll(() => new URL(page.url()).searchParams.get('ticker')).toBe('TQQQ');
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    const paramsPanel = page.locator('#trade_strategy_params_panel');
+    await expect(tuneButton).toBeVisible();
+    await expect(tuneButton).toBeEnabled();
+    await expect(tuneButton).toHaveAttribute('aria-hidden', 'false');
+    await expect(paramsPanel).toBeHidden();
+    await tuneButton.click();
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(paramsPanel).toBeVisible();
     await expect(page.locator('[data-strategy-param-key="amount"]')).toBeVisible();
     await expect(page.locator('[data-strategy-param-key="frequency"]')).toBeVisible();
     await expect(page.locator('#tradePriceChart')).toBeVisible();
@@ -12473,6 +12655,151 @@ test('enters DCA through the Backtest strategy dropdown with the shared 100-row 
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
+});
+
+test('preserves the current ticker when switching strategies from the default ticker', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=3y&strategy=dca&stop_loss=0');
+
+    const strategyTrigger = page.locator(
+        'div.field.trade-strategy-field:nth-of-type(7) > div.trade-strategy-row:nth-of-type(1) > div.trade-strategy-combobox:nth-of-type(1) > button.trade-strategy-select.form-select',
+    );
+    await expect(strategyTrigger).toBeVisible();
+    await strategyTrigger.click();
+
+    const buyAndHoldOption = page.locator('[data-trade-strategy-dropdown] [data-value="buy-and-hold"]');
+    await expect(buyAndHoldOption).toBeVisible();
+    await buyAndHoldOption.click();
+
+    await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe('buy-and-hold');
+    await expect(page.locator('#ticker_1')).toHaveValue('QQQ');
+});
+
+test('uses lighter Backtest sidebar weights for range labels and strategy selection', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=QQQI&strategy=dca&stop_loss=0');
+
+    const weights = await page.evaluate(() => ({
+        mode: getComputedStyle(document.querySelector('.range-mode-field > label')).fontWeight,
+        period: getComputedStyle(document.querySelector('#period_panel > label')).fontWeight,
+        strategy: getComputedStyle(document.querySelector('.trade-strategy-field .trade-strategy-select')).fontWeight,
+    }));
+    expect(weights).toEqual({mode: '500', period: '500', strategy: '300'});
+});
+
+test('keeps DCA strategy parameter menus above clipping and the panel compact', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=QQQI&strategy=dca&stop_loss=0');
+
+    await page.locator('[data-trade-strategy-tune-button]').click();
+    await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
+
+    const frequencyTrigger = page.locator(
+        '[data-strategy-param-key="frequency"] [data-shared-select-trigger]',
+    );
+    await frequencyTrigger.click();
+    const dropdown = page.locator('#strategy_param_frequency_dropdown');
+    await expect(dropdown).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const panel = document.querySelector('#trade_strategy_params_panel');
+        const dropdown = document.querySelector('#strategy_param_frequency_dropdown');
+        if (!(panel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return null;
+        const dropdownStyle = getComputedStyle(dropdown);
+        return {
+            isPageLevelOverlayChild: dropdown.parentElement?.matches('[data-shared-select-overlay]') || false,
+            position: dropdownStyle.position,
+            backgroundColor: dropdownStyle.backgroundColor,
+            backgroundImage: dropdownStyle.backgroundImage,
+            panelHeight: panel.getBoundingClientRect().height,
+            menuBottom: dropdown.getBoundingClientRect().bottom,
+            viewportHeight: window.innerHeight,
+        };
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout?.isPageLevelOverlayChild).toBe(true);
+    expect(layout?.position).toBe('fixed');
+    expect(layout?.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(layout?.backgroundImage).not.toBe('none');
+    expect(layout?.menuBottom).toBeLessThanOrEqual((layout?.viewportHeight || 0) + 1);
+    expect(layout?.panelHeight).toBeLessThan(320);
+});
+
+test('reuses compact numeric display and Backtest section spacing contracts', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=QQQI&range=3y&return=price&strategy=dca&stop_loss=0&month_day=1');
+
+    const firstRow = page.locator('#backtest_history_table_wrap table[data-table-body] tbody tr').first();
+    await expect(firstRow).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const overview = document.querySelector('#backtest_overview_panel > .backtest-surface');
+        const contentCard = document.querySelector('.backtest-trade-performance-card');
+        const resizer = document.querySelector('#backtest_section_resizer');
+        const firstRow = document.querySelector('#backtest_history_table_wrap table[data-table-body] tbody tr');
+        if (!(overview instanceof HTMLElement)
+            || !(contentCard instanceof HTMLElement)
+            || !(resizer instanceof HTMLElement)
+            || !(firstRow instanceof HTMLTableRowElement)) {
+            return null;
+        }
+        const overviewStyle = getComputedStyle(overview);
+        const contentCardStyle = getComputedStyle(contentCard);
+        const resizerStyle = getComputedStyle(resizer);
+        return {
+            overviewPadding: [overviewStyle.paddingTop, overviewStyle.paddingBottom],
+            contentCardPadding: [contentCardStyle.paddingTop, contentCardStyle.paddingBottom],
+            resizerFontSize: resizerStyle.fontSize,
+            numericCells: Array.from(firstRow.cells).slice(2).map((cell) => ({
+                major: Boolean(cell.querySelector('.workspace-metric-value-major')),
+                minor: Boolean(cell.querySelector('.workspace-metric-value-minor')),
+            })),
+        };
+    });
+
+    expect(layout).not.toBeNull();
+    expect(layout?.overviewPadding).toEqual(['0px', '0px']);
+    expect(layout?.contentCardPadding).toEqual(['6px', '6px']);
+    expect(layout?.resizerFontSize).toBe('13px');
+    expect(layout?.numericCells.length).toBe(5);
+    expect(layout?.numericCells.every((cell) => cell.major && cell.minor)).toBe(true);
+});
+
+test('removes the glass border color from the shared Backtest Period trigger', async ({page}) => {
+    await page.setViewportSize({width: 1033, height: 841});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&strategy=grid-trading&stop_loss=0');
+
+    const periodTrigger = page.locator('#period_panel [data-shared-select-trigger]');
+    await expect(periodTrigger).toBeVisible();
+
+    const borderState = await periodTrigger.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            borderStyle: style.borderStyle,
+            borderWidth: style.borderWidth,
+            borderColor: style.borderColor,
+        };
+    });
+    expect(borderState).toEqual({
+        borderStyle: 'none',
+        borderWidth: '0px',
+        borderColor: 'rgba(0, 0, 0, 0)',
+    });
+
+    await periodTrigger.hover();
+    await expect.poll(() => periodTrigger.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            borderStyle: style.borderStyle,
+            borderWidth: style.borderWidth,
+            borderColor: style.borderColor,
+        };
+    })).toEqual({
+        borderStyle: 'none',
+        borderWidth: '0px',
+        borderColor: 'rgba(0, 0, 0, 0)',
+    });
 });
 
 test('opens Grid Trading private parameters through the shared strategy tune button', async ({page}) => {
@@ -12500,6 +12827,46 @@ test('opens Grid Trading private parameters through the shared strategy tune but
     for (const key of ['price_floor', 'price_ceiling', 'rise', 'fall']) {
         await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
     }
+
+    const numericContract = await page.locator('#trade_strategy_params_panel input[type="number"]').evaluateAll((inputs) => (
+        inputs.map((input) => {
+            const style = getComputedStyle(input);
+            return {
+                height: style.height,
+                minHeight: style.minHeight,
+                inputMode: input.getAttribute('inputmode'),
+            };
+        })
+    ));
+    expect(numericContract).toHaveLength(4);
+    expect(numericContract.every((control) => (
+        control.height === '28px'
+        && control.minHeight === '28px'
+        && ['numeric', 'decimal'].includes(control.inputMode)
+    ))).toBe(true);
+    await expect(page.locator('#trade_initial_capital')).toHaveAttribute('inputmode', 'decimal');
+    await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
+});
+
+test('uses the shared 28px numeric control and iPad keyboard contract in Portfolio', async ({page}) => {
+    await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
+
+    const numericContract = await page.locator('input[type="number"]').evaluateAll((inputs) => (
+        inputs.map((input) => {
+            const style = getComputedStyle(input);
+            return {
+                height: style.height,
+                minHeight: style.minHeight,
+                inputMode: input.getAttribute('inputmode'),
+            };
+        })
+    ));
+    expect(numericContract).toHaveLength(4);
+    expect(numericContract.every((control) => (
+        control.height === '28px'
+        && control.minHeight === '28px'
+        && control.inputMode === 'numeric'
+    ))).toBe(true);
 });
 
 test('keeps the shared dock centered inside the expanded sidebar at intermediate widths', async ({page}) => {

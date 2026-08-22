@@ -1,4 +1,4 @@
-{# Code version: v0.2.1 #}
+{# Code version: v0.3.0 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
@@ -124,7 +124,7 @@
             </div>
             <div
                     id="strategy_param_{{ field.key }}_dropdown"
-                    class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                    class="trade-strategy-dropdown backtest-shared-select-dropdown strategy-param-dropdown"
                     data-shared-select-dropdown
                     role="listbox"
                     aria-label="{{ field.label }}"
