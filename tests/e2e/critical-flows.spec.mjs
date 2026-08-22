@@ -1,4 +1,4 @@
-/* Code version: v1.163.0 */
+/* Code version: v1.165.2 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -638,6 +638,8 @@ test('switches between return comparison and price performance workspaces', asyn
     expect(chartRuntimeSources).toHaveLength(4);
     expect(chartRuntimeSources.every((source) => new URL(source).pathname.startsWith('/static/assets/js/vendor/chart/'))).toBe(true);
     await expect(page.locator('.workspace-nav-item-compare')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#app_sidebar .workspace-mode-nav > a')).toHaveCount(5);
+    await expect(page.locator('#app_sidebar a[href="/workspaces/dca"]')).toHaveCount(0);
 
     const readWorkspaceHeadingLayout = () => page.evaluate(() => {
         const title = document.querySelector('.workspace-mode-title-card .report-heading').getBoundingClientRect();
@@ -5544,17 +5546,17 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.128.1',
+        entry: 'v2.128.2',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.106.0',
         importFeedback: 'v1.8.5',
-        layout: 'v1.0.1',
+        layout: 'v1.1.0',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.0.0',
         stockDetails: 'v0.24.0',
         transactionFilters: 'v1.3.0',
-        transactionTable: 'v1.0.0',
+        transactionTable: 'v1.0.1',
         urlState: 'v1.2.0',
     });
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
@@ -12244,6 +12246,73 @@ test('resizes the backtest overview and transaction history with the shared sect
     await expect(history).toBeVisible();
 });
 
+test('keeps the backtest view pill synchronized and uses the 100-row transaction page contract', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+
+    const viewSegmented = page.locator('#backtest_view_segmented');
+    const historyArticle = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]',
+    );
+    await page.locator('label[for="backtest_view_metrics"]').click();
+    await expect(page.locator('#backtest_view_surface')).toHaveAttribute('data-active-view', 'metrics');
+    await expect(page.locator('#backtest_metrics_view_panel')).toBeVisible();
+    await expect(page.locator('#backtest_overview_panel')).toBeHidden();
+    await expect.poll(() => viewSegmented.evaluate((element) => ({
+        active: element.dataset.active,
+        activeIndex: element.style.getPropertyValue('--segmented-active-index'),
+    }))).toEqual({active: 'metrics', activeIndex: '1'});
+
+    const transactionPageSize = await page.evaluate(() => (
+        window.ANTIGRAVITY_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
+    ));
+    expect(transactionPageSize).toBe(100);
+    expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
+    await expect(historyArticle.locator('#tradeTransactionsPagination')).toBeHidden();
+
+    await page.locator('label[for="backtest_view_overview"]').click();
+    await expect(page.locator('#backtest_view_surface')).toHaveAttribute('data-active-view', 'overview');
+    await expect.poll(() => viewSegmented.evaluate((element) => (
+        element.style.getPropertyValue('--segmented-active-index')
+    ))).toBe('0');
+});
+
+test('reuses the Investment stock-details table-host style for Backtest transaction details', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
+        ],
+        priceHistoryByTicker: {
+            QQQ: [{date: '2026-07-10', close: 500}],
+        },
+        tickerProfiles: {
+            QQQ: {ticker: 'QQQ', company_name: 'Invesco QQQ Trust', logo_url: '/market-store/logos/QQQ.svg'},
+        },
+    });
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/trade/investment?view=stock-details&ticker=QQQ');
+
+    const investmentTableHost = page.locator(
+        'xpath=/html/body/main/div/section/section/article[3]/div[3]',
+    );
+    await expect(investmentTableHost).toBeVisible();
+    const readHostStyle = (locator) => locator.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return Object.fromEntries([
+            'display', 'position', 'flex', 'minHeight', 'margin', 'padding', 'overflow',
+            'boxSizing', 'backgroundColor', 'border', 'borderRadius', 'boxShadow',
+        ].map((property) => [property, style[property]]));
+    });
+    const investmentStyle = await readHostStyle(investmentTableHost);
+
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+    const backtestTableHost = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]/div[2]',
+    );
+    await expect(backtestTableHost).toBeVisible();
+    await expect.poll(() => readHostStyle(backtestTableHost)).toEqual(investmentStyle);
+});
+
 test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?period=6mo&strategy=buy-and-hold');
@@ -12291,6 +12360,69 @@ test('starts every backtest strategy with its starter parameters from the dropdo
             hasEquityChart: true,
         });
     }
+});
+
+test('enters DCA through the Backtest strategy dropdown with the shared 100-row table contract', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
+
+    const strategyTrigger = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/div[1]/button',
+    );
+    await expect(strategyTrigger).toBeVisible();
+    await expect(strategyTrigger).toBeEnabled();
+    const triggerStyle = await strategyTrigger.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            backgroundColor: style.backgroundColor,
+            borderColor: style.borderColor,
+            pointerEvents: style.pointerEvents,
+        };
+    });
+    expect(triggerStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(triggerStyle.borderColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(triggerStyle.pointerEvents).toBe('auto');
+
+    await strategyTrigger.click();
+    const strategyDropdown = page.locator('[data-trade-strategy-dropdown]');
+    await expect(strategyDropdown).toBeVisible();
+    const dropdownStyle = await strategyDropdown.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            position: style.position,
+            backgroundColor: style.backgroundColor,
+            pointerEvents: style.pointerEvents,
+            zIndex: style.zIndex,
+        };
+    });
+    expect(dropdownStyle.position).toBe('fixed');
+    expect(dropdownStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(dropdownStyle.pointerEvents).toBe('auto');
+    expect(Number(dropdownStyle.zIndex)).toBeGreaterThanOrEqual(10002);
+
+    const dcaOption = strategyDropdown.locator('[data-value="dca"]');
+    const dcaOptionBox = await dcaOption.boundingBox();
+    if (!dcaOptionBox) throw new Error('DCA strategy option did not have a clickable bounding box.');
+    await page.mouse.click(
+        dcaOptionBox.x + (dcaOptionBox.width / 2),
+        dcaOptionBox.y + (dcaOptionBox.height / 2),
+    );
+    await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe('dca');
+    await expect.poll(() => new URL(page.url()).searchParams.get('strategy')).toBe('dca');
+    await expect(page.locator('[data-strategy-param-key="amount"]')).toBeVisible();
+    await expect(page.locator('[data-strategy-param-key="frequency"]')).toBeVisible();
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
+    await expect(page.locator('#tradeEquityChart')).toBeVisible();
+
+    const historyArticle = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]',
+    );
+    await expect(historyArticle.locator('.dca-transactions-shell')).toBeVisible();
+    const transactionPageSize = await page.evaluate(() => (
+        window.ANTIGRAVITY_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
+    ));
+    expect(transactionPageSize).toBe(100);
+    expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
 });
 
 test('keeps the shared dock centered inside the expanded sidebar at intermediate widths', async ({page}) => {

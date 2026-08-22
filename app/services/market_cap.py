@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -60,7 +60,14 @@ LONGBRIDGE_MATCH_TOLERANCE_PERCENT = 2.0
 LONGBRIDGE_REVIEW_TOLERANCE_PERCENT = 10.0
 _LONGBRIDGE_SNAPSHOT_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _SEC_TICKER_INDEX: dict[str, int] | None = None
+_SEC_FUND_SERIES_INDEX: dict[str, tuple[int, str]] | None = None
 SEC_USER_AGENT = "Antigravity local portfolio application contact@example.invalid"
+SEC_FUND_SERIES_METADATA_URLS = (
+    "https://www.sec.gov/files/investment/data/other/"
+    "investment-company-series-and-class-information/investment_company_series_class.xml",
+    "https://www.sec.gov/files/investment/data/other/"
+    "investment-company-series-and-class-information/investment_company_series_class_2022.xml",
+)
 COMMON_SHARE_SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 25.0, 40.0, 50.0)
 SHARE_SPLIT_FACTOR_CANDIDATES = tuple(sorted({
     *COMMON_SHARE_SPLIT_FACTORS,
@@ -832,6 +839,56 @@ def _sec_json(url: str) -> Any:
         return json.loads(response.read())
 
 
+def _parse_sec_fund_series_metadata(payload: bytes) -> dict[str, tuple[int, str]]:
+    """Extract fund ticker to CIK/series mappings from SEC metadata XML."""
+    root = ElementTree.fromstring(payload)
+    index: dict[str, tuple[int, str]] = {}
+    for company in root.iter():
+        if company.tag.rsplit("}", 1)[-1] != "company":
+            continue
+        fields = {
+            child.tag.rsplit("}", 1)[-1]: str(child.text or "").strip()
+            for child in company
+        }
+        ticker = fields.get("class_ticker", "").upper()
+        cik = fields.get("cik", "")
+        series_id = fields.get("series_id", "").upper()
+        if not ticker or ticker == "[NULL]" or not series_id or not cik:
+            continue
+        try:
+            index.setdefault(ticker, (int(cik), series_id))
+        except ValueError:
+            continue
+    return index
+
+
+def _sec_fund_series_index() -> dict[str, tuple[int, str]]:
+    """Return SEC fund ticker mappings, including the archived ETF registry."""
+    global _SEC_FUND_SERIES_INDEX
+    if _SEC_FUND_SERIES_INDEX is not None:
+        return _SEC_FUND_SERIES_INDEX
+
+    resolved: dict[str, tuple[int, str]] = {}
+    for url in SEC_FUND_SERIES_METADATA_URLS:
+        try:
+            request = Request(url, headers={"User-Agent": SEC_USER_AGENT})
+            with open_scoped_network_url(request, timeout=12) as response:
+                resolved.update({
+                    ticker: mapping
+                    for ticker, mapping in _parse_sec_fund_series_metadata(response.read()).items()
+                    if ticker not in resolved
+                })
+        except (OSError, ValueError, ElementTree.ParseError) as exc:
+            LOGGER.warning("Unable to load SEC fund series metadata from %s: %s", url, exc)
+    _SEC_FUND_SERIES_INDEX = resolved
+    return resolved
+
+
+def _sec_fund_series_identity(ticker: str) -> tuple[int, str] | None:
+    normalized = normalize_ticker(ticker).removesuffix(".US")
+    return _sec_fund_series_index().get(normalized)
+
+
 def _sec_ticker_cik(ticker: str) -> int | None:
     global _SEC_TICKER_INDEX
     if _SEC_TICKER_INDEX is None:
@@ -841,7 +898,12 @@ def _sec_ticker_cik(ticker: str) -> int | None:
             for item in payload.values()
             if isinstance(item, dict) and item.get("ticker") and item.get("cik_str")
         }
-    return _SEC_TICKER_INDEX.get(normalize_ticker(ticker).removesuffix(".US"))
+    normalized = normalize_ticker(ticker).removesuffix(".US")
+    company_cik = _SEC_TICKER_INDEX.get(normalized)
+    if company_cik is not None:
+        return company_cik
+    fund_identity = _sec_fund_series_identity(normalized)
+    return fund_identity[0] if fund_identity is not None else None
 
 
 def _sec_filing_instance_name(cik: int, accession: str, primary_document: str | None = None) -> str | None:
@@ -1019,35 +1081,148 @@ def fetch_sec_reported_shares(
     return result
 
 
-def fetch_sec_fund_net_assets(ticker: str) -> pd.DataFrame:
-    """Return public Form N-PORT net assets for funds without company-facts shares."""
-    cik = _sec_ticker_cik(ticker)
-    if cik is None:
-        return pd.DataFrame(columns=["Date", "MarketCap"])
-    submissions = _sec_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
+def _parse_sec_fund_net_assets(
+        xml_payload: bytes,
+        filed: object,
+        expected_series_id: str,
+) -> dict[str, object] | None:
+    """Read one raw N-PORT XML document only when it is the requested series."""
+    root = ElementTree.fromstring(xml_payload)
+    series_id = next(
+        (
+            str(element.text or "").strip().upper()
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "seriesId"
+        ),
+        "",
+    )
+    if series_id != expected_series_id.upper():
+        return None
+    net_assets = next(
+        (
+            element.text
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "netAssets"
+        ),
+        None,
+    )
+    value = _positive_number(net_assets)
+    return {"Date": filed, "MarketCap": value} if value is not None else None
+
+
+def _sec_submission_records(submissions: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    records: list[tuple[str, str, str, str]] = []
     recent = submissions.get("filings", {}).get("recent", {})
-    rows: list[dict[str, object]] = []
     for form, accession, document, filed in zip(
             recent.get("form", []), recent.get("accessionNumber", []),
             recent.get("primaryDocument", []), recent.get("filingDate", []), strict=False,
     ):
-        if form != "NPORT-P":
+        records.append((str(form), str(accession), str(document), str(filed)))
+    return records
+
+
+def _sec_nport_search_records(cik: int, series_id: str) -> list[tuple[str, str, str, str]]:
+    """Find N-PORT accessions for one fund series through SEC's filing index."""
+    query = urlencode({
+        "q": series_id,
+        "forms": "NPORT-P",
+        "from": 0,
+        "size": 1000,
+    })
+    payload = _sec_json(f"https://efts.sec.gov/LATEST/search-index?{query}")
+    expected_cik = str(cik).zfill(10)
+    records: list[tuple[str, str, str, str]] = []
+    for hit in payload.get("hits", {}).get("hits", []) if isinstance(payload, dict) else []:
+        source = hit.get("_source", {}) if isinstance(hit, dict) else {}
+        if not isinstance(source, dict):
             continue
-        archive_accession = str(accession).replace("-", "")
-        archive_document = str(document).rsplit("/", maxsplit=1)[-1]
-        response = get_yfinance_session().get(
-            f"https://www.sec.gov/Archives/edgar/data/{cik}/{archive_accession}/{archive_document}",
-            headers={"User-Agent": SEC_USER_AGENT}, timeout=12,
+        source_ciks = {
+            str(value).zfill(10)
+            for value in source.get("ciks", [])
+            if value is not None
+        }
+        if source_ciks and expected_cik not in source_ciks:
+            continue
+        accession = str(source.get("adsh") or "").strip()
+        filed = str(source.get("file_date") or "").strip()
+        if accession and filed:
+            records.append(("NPORT-P", accession, "primary_doc.xml", filed))
+    return records
+
+
+def fetch_sec_fund_net_assets(
+        ticker: str,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Return public Form N-PORT net assets for the requested fund series."""
+    fund_identity = _sec_fund_series_identity(ticker)
+    if fund_identity is None:
+        return pd.DataFrame(columns=["Date", "MarketCap"])
+    cik, series_id = fund_identity
+    try:
+        records = _sec_nport_search_records(cik, series_id)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        LOGGER.warning("Unable to search SEC N-PORT filings for %s: %s", ticker, exc)
+        records = []
+
+    submissions: dict[str, Any] | None = None
+    if not records:
+        submissions = _sec_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
+        records = _sec_submission_records(submissions)
+    start_date = to_naive_timestamp(start) if start is not None else None
+    end_date = to_naive_timestamp(end) if end is not None else None
+    for archived_file in (submissions or {}).get("filings", {}).get("files", []):
+        if not isinstance(archived_file, dict):
+            continue
+        archived_start = to_naive_timestamp(archived_file.get("filingFrom"))
+        archived_end = to_naive_timestamp(archived_file.get("filingTo"))
+        if start_date is not None and archived_end < start_date:
+            continue
+        if end_date is not None and archived_start > end_date:
+            continue
+        try:
+            archived_payload = _sec_json(
+                f"https://data.sec.gov/submissions/{archived_file.get('name', '')}"
+            )
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.warning("Unable to read archived SEC submissions for %s: %s", ticker, exc)
+            continue
+        records.extend(_sec_submission_records({"filings": {"recent": archived_payload}}))
+
+    candidates = [
+        record
+        for record in records
+        if record[0] == "NPORT-P"
+        and not pd.isna(to_naive_timestamp(record[3]))
+        and (end_date is None or to_naive_timestamp(record[3]) <= end_date)
+    ]
+    if start_date is not None:
+        prior = [record for record in candidates if to_naive_timestamp(record[3]) < start_date]
+        in_range = [record for record in candidates if to_naive_timestamp(record[3]) >= start_date]
+        candidates = ([max(prior, key=lambda item: item[3])] if prior else []) + in_range
+
+    rows: list[dict[str, object]] = []
+    for _, accession, _, filed in sorted(set(candidates), key=lambda item: (item[3], item[1])):
+        archive_accession = accession.replace("-", "")
+        request = Request(
+            f"https://www.sec.gov/Archives/edgar/data/{cik}/{archive_accession}/primary_doc.xml",
+            headers={"User-Agent": SEC_USER_AGENT},
         )
-        response.raise_for_status()
-        root = ElementTree.fromstring(response.content)
-        net_assets = next(
-            (element.text for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "netAssets"),
-            None,
-        )
-        value = _positive_number(net_assets)
-        if value is not None:
-            rows.append({"Date": filed, "MarketCap": value})
+        try:
+            with open_scoped_network_url(request, timeout=12) as response:
+                observation = _parse_sec_fund_net_assets(response.read(), filed, series_id)
+        except (OSError, ValueError, ElementTree.ParseError, TypeError) as exc:
+            LOGGER.warning(
+                "Unable to read SEC N-PORT net assets for %s (%s): %s",
+                ticker,
+                accession,
+                exc,
+            )
+            continue
+        if observation is not None:
+            rows.append(observation)
+
     frame = pd.DataFrame(rows, columns=["Date", "MarketCap"])
     if frame.empty:
         return frame
@@ -1214,7 +1389,11 @@ def build_market_cap_history(
     had_reported_shares = not shares.empty
     if not had_reported_shares:
         try:
-            fund_history = fetch_sec_fund_net_assets(ticker)
+            fund_history = fetch_sec_fund_net_assets(
+                ticker,
+                start=price_frame["Date"].min(),
+                end=price_frame["Date"].max(),
+            )
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Unable to refresh SEC fund net assets for %s: %s", ticker, exc)
             fund_history = pd.DataFrame()

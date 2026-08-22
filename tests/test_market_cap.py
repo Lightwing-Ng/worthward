@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.11.0
+Code version: v0.11.1
 """
 
 from __future__ import annotations
@@ -620,6 +620,142 @@ class MarketCapTests(unittest.TestCase):
         self.assertTrue(pd.isna(result.loc[0, "MarketCap"]))
         self.assertEqual(result.loc[1:, "MarketCap"].tolist(), [400_000_000_000.0, 410_000_000_000.0])
         self.assertEqual(result.attrs["market_cap_source"], "sec_nport_net_assets")
+
+    def test_sec_fund_ticker_fallback_resolves_the_fund_cik(self) -> None:
+        with (
+            patch.object(market_cap, "_SEC_TICKER_INDEX", {}),
+            patch.object(
+                market_cap,
+                "_sec_fund_series_identity",
+                return_value=(1485894, "S000076132"),
+            ),
+        ):
+            self.assertEqual(market_cap._sec_ticker_cik("JEPQ"), 1485894)
+
+    def test_sec_fund_series_metadata_preserves_ticker_cik_and_series_identity(self) -> None:
+        payload = b"""
+        <root>
+          <company>
+            <cik>0001485894</cik>
+            <series_id>S000076132</series_id>
+            <class_ticker>JEPQ</class_ticker>
+          </company>
+          <company>
+            <cik>0001485894</cik>
+            <series_id>S000000000</series_id>
+            <class_ticker>[NULL]</class_ticker>
+          </company>
+        </root>
+        """
+
+        self.assertEqual(
+            market_cap._parse_sec_fund_series_metadata(payload),
+            {"JEPQ": (1485894, "S000076132")},
+        )
+
+    def test_sec_nport_search_records_filters_results_to_the_fund_cik(self) -> None:
+        payload = {
+            "hits": {
+                "hits": [
+                    {
+                        "_source": {
+                            "ciks": ["0001485894"],
+                            "adsh": "0001485894-26-000001",
+                            "file_date": "2026-05-29",
+                        },
+                    },
+                    {
+                        "_source": {
+                            "ciks": ["0000000001"],
+                            "adsh": "0000000001-26-000002",
+                            "file_date": "2026-05-29",
+                        },
+                    },
+                ],
+            },
+        }
+        with patch("app.services.market_cap._sec_json", return_value=payload) as sec_json_mock:
+            result = market_cap._sec_nport_search_records(1485894, "S000076132")
+
+        self.assertEqual(result, [(
+            "NPORT-P",
+            "0001485894-26-000001",
+            "primary_doc.xml",
+            "2026-05-29",
+        )])
+        self.assertIn("efts.sec.gov/LATEST/search-index", sec_json_mock.call_args.args[0])
+
+    def test_sec_fund_net_assets_reads_raw_xml_and_filters_other_series(self) -> None:
+        submissions = {
+            "filings": {
+                "recent": {
+                    "form": ["NPORT-P", "NPORT-P"],
+                    "accessionNumber": [
+                        "0002071691-26-000001",
+                        "0002071691-26-000002",
+                    ],
+                    "primaryDocument": [
+                        "xslFormNPORT-P_X01/primary_doc.xml",
+                        "xslFormNPORT-P_X01/primary_doc.xml",
+                    ],
+                    "filingDate": ["2026-01-15", "2026-02-15"],
+                },
+            },
+        }
+        documents = [
+            b"""
+            <edgarSubmission xmlns="http://www.sec.gov/edgar/nport">
+              <seriesId>S000000001</seriesId>
+              <netAssets>999</netAssets>
+            </edgarSubmission>
+            """,
+            b"""
+            <edgarSubmission xmlns="http://www.sec.gov/edgar/nport">
+              <seriesId>S000076132</seriesId>
+              <netAssets>410000000</netAssets>
+            </edgarSubmission>
+            """,
+        ]
+
+        class _Response:
+            def __init__(self, payload: bytes):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                del exc_type, exc_value, traceback
+                return False
+
+            def read(self):
+                return self.payload
+
+        with (
+            patch(
+                "app.services.market_cap._sec_fund_series_identity",
+                return_value=(1485894, "S000076132"),
+            ),
+            patch("app.services.market_cap._sec_json", return_value=submissions),
+            patch(
+                "app.services.market_cap.open_scoped_network_url",
+                side_effect=[_Response(document) for document in documents],
+            ) as open_mock,
+        ):
+            result = market_cap.fetch_sec_fund_net_assets(
+                "JEPQ",
+                start=pd.Timestamp("2026-01-01"),
+                end=pd.Timestamp("2026-03-01"),
+            )
+
+        self.assertEqual(result.to_dict("records"), [{
+            "Date": pd.Timestamp("2026-02-15"),
+            "MarketCap": 410_000_000.0,
+        }])
+        self.assertTrue(all(
+            call.args[0].full_url.endswith("/primary_doc.xml")
+            for call in open_mock.call_args_list
+        ))
 
     def test_sec_reported_shares_falls_back_to_us_gaap_common_stock_fact(self) -> None:
         payload = {

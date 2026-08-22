@@ -1,4 +1,4 @@
-{# Code version: v0.6.2 #}
+{# Code version: v0.6.3 #}
 
 {% macro render_notice_banner(
     title='',
@@ -98,6 +98,16 @@
 {% if overflow_frame %}
 </div>
 {% endif %}
+{%- endmacro %}
+
+{% macro render_switch(input_id, label='', input_name='', input_value='1', checked=false, row_class='switch-row', label_class='switch-label', input_attrs='', row_attrs='') -%}
+<label class="{{ row_class }}" for="{{ input_id }}"{% if row_attrs %} {{ row_attrs|safe }}{% endif %}>
+    <span class="{{ label_class }}">{% if caller is defined %}{{ caller() }}{% else %}{{ label }}{% endif %}</span>
+    <span class="ios-switch-shell">
+        <input id="{{ input_id }}"{% if input_name %} name="{{ input_name }}"{% endif %} type="checkbox" value="{{ input_value }}" {% if checked %}checked {% endif %}{% if input_attrs %}{{ input_attrs|safe }}{% endif %}>
+        <span class="ios-switch-slider" aria-hidden="true"></span>
+    </span>
+</label>
 {%- endmacro %}
 
 {% macro render_date_picker_field(role, input_id, input_name, value, label, aria_label, feedback_id, disabled=false, hidden=false) -%}

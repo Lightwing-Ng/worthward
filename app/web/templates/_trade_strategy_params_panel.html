@@ -1,4 +1,5 @@
-{# Code version: v0.2.0 #}
+{# Code version: v0.2.1 #}
+{% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
     {% for field in strategy_form_fields %}
@@ -35,24 +36,18 @@
             </div>
         </div>
         {% elif field.field_type == "switch" %}
-        <label class="switch-row trade-strategy-boolean-row" for="strategy_param_{{ field.key }}_switch">
-            <span class="switch-label trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
+        {% call render_switch(
+            "strategy_param_" ~ field.key ~ "_switch",
+            row_class="switch-row trade-strategy-boolean-row",
+            label_class="switch-label trade-strategy-param-label-trigger",
+            input_attrs=('data-strategy-param-switch' ~ (' title="' ~ field.help_text ~ '"' if field.help_text else '')),
+            checked=field.switch_checked
+        ) %}
                 <span>{{ field.label }}</span>
                 {% if field.help_text %}
                 <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
                 {% endif %}
-            </span>
-            <span class="ios-switch-shell">
-                <input
-                    id="strategy_param_{{ field.key }}_switch"
-                    type="checkbox"
-                    data-strategy-param-switch
-                    {% if field.switch_checked %}checked{% endif %}
-                    {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
-                >
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {% endcall %}
         <input
             type="hidden"
             name="{{ field.key }}"

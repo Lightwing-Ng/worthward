@@ -1,6 +1,6 @@
-{# Code version: v0.12.0 #}
+{# Code version: v0.12.1 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
+{% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
 {% block sidebar_content %}
 {% set nav_sections = [
@@ -612,13 +612,7 @@
                 </div>
             </div>
             <div class="field-checkbox field-switch settings-field-span-full">
-                <label class="switch-row" for="smtp_use_starttls">
-                    <span class="switch-label">{{ labels.email_smtp_starttls }}</span>
-                    <span class="ios-switch-shell">
-                        <input id="smtp_use_starttls" name="use_starttls" type="checkbox" value="1" {% if smtp_settings.use_starttls %}checked{% endif %}>
-                        <span class="ios-switch-slider" aria-hidden="true"></span>
-                    </span>
-                </label>
+                {{ render_switch("smtp_use_starttls", labels.email_smtp_starttls, "use_starttls", checked=smtp_settings.use_starttls) }}
             </div>
             <div class="settings-action-package-grid">
                 <section class="settings-action-package settings-callout-card-primary">
@@ -1193,13 +1187,13 @@
                             <button type="button" class="{{ row.sample_button_class }}" data-action-package-button data-default-label="{{ row.sample_button }}" data-pending-label="{{ labels.local_store_maintain_pending_button }}">{{ row.sample_button }}</button>
                         </div>
                     </div>
-                    <label class="style-token-action-package-live-control" for="style_token_action_package_live">
-                        <span>{{ translate_ui('Live marker') }}</span>
-                        <span class="ios-switch-shell">
-                            <input id="style_token_action_package_live" type="checkbox" data-style-token-action-package-live>
-                            <span class="ios-switch-slider" aria-hidden="true"></span>
-                        </span>
-                    </label>
+                    {{ render_switch(
+                        "style_token_action_package_live",
+                        translate_ui('Live marker'),
+                        row_class="switch-row style-token-action-package-live-control",
+                        label_class="style-token-action-package-live-label",
+                        input_attrs="data-style-token-action-package-live"
+                    ) }}
                     {% elif row.sample_kind == "workspace-article" %}
                     <section class="workspace-header style-token-workspace-header-demo" aria-hidden="true">
                         <article class="report-card workspace-article-card style-token-workspace-article-demo">

@@ -56,8 +56,7 @@ discovery. This file remains the canonical guide.
    - `/workspaces/market-caps`
    - `/workspaces/prices`
    - `/workspaces/portfolio`
-   - `/workspaces/dca`
-   - `/workspaces/backtest`
+   - `/workspaces/backtest` (includes the `dca` strategy; `/workspaces/dca` remains a compatibility redirect)
    - `/trade/investment`
    - `/trade/live-trading`
    - `/settings/<section>`

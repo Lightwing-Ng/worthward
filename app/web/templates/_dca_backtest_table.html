@@ -1,0 +1,63 @@
+{# Code version: v0.1.0 #}
+<div id="backtest_history_table_wrap" class="scrollable-data-table-shell trade-transactions-shell dca-transactions-shell investment-history-table-shell backtest-history-table-shell"
+     style="
+         --dca-col-index-width: 5%;
+         --dca-col-index-min-width: 44px;
+         --dca-col-date-width: 25%;
+         --dca-col-date-min-width: 96px;
+         --dca-col-price-width: 10%;
+         --dca-col-price-min-width: 72px;
+         --dca-col-shares-width: 10%;
+         --dca-col-shares-min-width: 88px;
+         --dca-col-cumulative-width: 10%;
+         --dca-col-cumulative-min-width: 96px;
+         --dca-col-invested-width: 20%;
+         --dca-col-invested-min-width: 100px;
+         --dca-col-equity-width: 20%;
+         --dca-col-equity-min-width: 100px;
+     ">
+    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
+           data-table-header aria-label="Contribution details columns">
+        <colgroup>
+            <col class="dca-transactions-col dca-transactions-col-index">
+            <col class="dca-transactions-col dca-transactions-col-date">
+            <col class="dca-transactions-col dca-transactions-col-price">
+            <col class="dca-transactions-col dca-transactions-col-shares">
+            <col class="dca-transactions-col dca-transactions-col-cumulative">
+            <col class="dca-transactions-col dca-transactions-col-invested">
+            <col class="dca-transactions-col dca-transactions-col-equity">
+        </colgroup>
+        <thead>
+        <tr>
+            <th>No.</th>
+            <th>Date</th>
+            <th class="trade-transactions-number">Price</th>
+            <th class="trade-transactions-number">Shares</th>
+            <th class="trade-transactions-number">Cum. shares</th>
+            <th class="trade-transactions-number">Invested</th>
+            <th class="trade-transactions-number">Equity</th>
+        </tr>
+        </thead>
+    </table>
+    <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll"
+         id="backtest_history_table_scroll" data-table-scroll>
+        <table id="tradeTransactionsTable"
+               class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
+               data-table-body>
+            <colgroup>
+                <col class="dca-transactions-col dca-transactions-col-index">
+                <col class="dca-transactions-col dca-transactions-col-date">
+                <col class="dca-transactions-col dca-transactions-col-price">
+                <col class="dca-transactions-col dca-transactions-col-shares">
+                <col class="dca-transactions-col dca-transactions-col-cumulative">
+                <col class="dca-transactions-col dca-transactions-col-invested">
+                <col class="dca-transactions-col dca-transactions-col-equity">
+            </colgroup>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+<nav class="settings-pagination local-store-pagination local-store-pagination--floating trade-transactions-pagination"
+     id="tradeTransactionsPagination" aria-label="Contribution pages"
+     aria-controls="tradeTransactionsTable" data-pagination-scroll-target="backtest_history_table_scroll" hidden>
+</nav>

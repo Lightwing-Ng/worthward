@@ -90,7 +90,6 @@ Workspace
   Market cap         /workspaces/market-caps
   Price performance  /workspaces/prices
   Portfolio          /workspaces/portfolio
-  DCA                /workspaces/dca
   Backtest           /workspaces/backtest
 
 Trade
@@ -110,7 +109,7 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `grid-trading`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Grid Trading expands its parameter panel inline, while the legacy `/workspaces/grid-trading` path redirects to `/workspaces/backtest?strategy=grid-trading` for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca` and `grid-trading`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading expands its parameter panel inline, while the legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers` and `BaseStrategy.get_default_tickers()`. Backtest preserves the ordered ticker inputs, fetches their common local-history range, and passes a combined dataset to multi-asset strategies. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
 

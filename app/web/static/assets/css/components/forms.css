@@ -1,4 +1,4 @@
-/* Code version: v0.11.2 */
+/* Code version: v0.11.5 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -363,8 +363,7 @@
 .trade-controls .trade-strategy-select,
 .trade-controls .backtest-shared-select-trigger,
 .trade-controls .trade-capital-input,
-.trade-controls .date-picker-trigger,
-.trade-controls .field-switch .switch-row {
+.trade-controls .date-picker-trigger {
 	min-height: var(--trade-control-input-height);
 	height: auto;
 	padding-top: var(--sidebar-form-control-padding-block);
@@ -375,7 +374,6 @@
 .trade-controls .backtest-interval-field,
 .trade-controls .trade-capital-field,
 .trade-controls #period_panel,
-.trade-controls .field-checkbox.field-switch,
 .trade-controls .field:has(.trade-strategy-select),
 .trade-controls .field:has(.backtest-shared-select-trigger),
 .trade-controls .date-picker-field {
@@ -784,15 +782,6 @@
 }
 .trade-controls .ticker-input-control input { padding-left: 44px; }
 
-.trade-controls .field-switch { padding-top: 0; }
-.trade-controls .field-switch .switch-row {
-	grid-row: 2;
-	padding: var(--sidebar-form-control-padding-block) 0;
-	background: transparent;
-	border: none;
-	box-shadow: none;
-}
-.trade-controls .field-switch .switch-label { display: inline-flex; align-items: center; min-height: 100%; }
 .trade-strategy-field {
 	overflow: visible;
 }
@@ -837,6 +826,16 @@
 }
 .trade-strategy-select.trade-strategy-trigger {
 	border: var(--control-liquid-border) !important;
+	background: var(--glass-surface-background-strong);
+	border-color: var(--theme-glass-border) !important;
+	box-shadow: var(--frosted-glass-shadow);
+}
+.trade-strategy-select.trade-strategy-trigger:hover,
+.trade-strategy-select.trade-strategy-trigger:focus,
+.trade-strategy-select.trade-strategy-trigger:focus-visible {
+	background: var(--frosted-glass-background-hover);
+	border-color: var(--theme-glass-border) !important;
+	box-shadow: var(--frosted-glass-shadow-hover);
 }
 .trade-strategy-trigger-label {
 	display: inline-flex;
@@ -861,12 +860,16 @@
 	right: 0;
 	padding: var(--shared-select-dropdown-padding);
 	border-radius: var(--shared-select-dropdown-radius);
-	background: var(--frosted-glass-surface);
+	color: var(--text);
+	background: var(--frosted-glass-opaque-background);
 	box-shadow: var(--frosted-glass-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	border: var(--frosted-glass-border);
-	z-index: var(--layer-inline-overlay);
+	z-index: var(--layer-global-popover);
+	isolation: isolate;
+	pointer-events: auto;
+	touch-action: pan-y;
 	max-height: var(--shared-select-dropdown-max-height);
 	overflow-x: hidden;
 	overflow-y: auto;
@@ -952,6 +955,9 @@
 	font-size: var(--font-form-label);
 	line-height: 1.2;
 	font-weight: var(--font-weight-regular);
+	cursor: pointer;
+	pointer-events: auto;
+	touch-action: manipulation;
 }
 .trade-strategy-dropdown-option.is-with-icon {
 	grid-template-columns: 16px 20px minmax(0, 1fr);
@@ -1065,8 +1071,9 @@
 	pointer-events: none;
 }
 .trade-strategy-trigger[aria-expanded="true"] {
-	background: var(--control-liquid-background-hover);
-	box-shadow: var(--control-liquid-shadow-focus);
+	background: var(--frosted-glass-background-hover);
+	border-color: var(--theme-glass-border) !important;
+	box-shadow: var(--frosted-glass-shadow-hover);
 }
 .trade-strategy-tune-button .icon {
 	width: 14px;

@@ -1,4 +1,4 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.1.1 #}
 <nav class="settings-nav workspace-mode-nav" aria-label="Workspace sections">
     <a href="{{ dock_urls.tickers }}"
        class="settings-nav-item workspace-nav-item-compare{% if current_view == 'tickers' %} is-active{% endif %}"
@@ -23,12 +23,6 @@
        {% if current_view == 'portfolio' %}aria-current="page"{% endif %}>
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-portfolio"></span></span>
         <span class="settings-nav-label">{{ labels.dock_portfolio }}</span>
-    </a>
-    <a href="{{ dock_urls.dca }}"
-       class="settings-nav-item workspace-nav-item-dca{% if current_view == 'dca' %} is-active{% endif %}"
-       {% if current_view == 'dca' %}aria-current="page"{% endif %}>
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-dca"></span></span>
-        <span class="settings-nav-label">{{ labels.dock_dca }}</span>
     </a>
     <a href="{{ dock_urls.backtest }}"
        class="settings-nav-item workspace-nav-item-backtest{% if current_view == 'backtest' %} is-active{% endif %}"

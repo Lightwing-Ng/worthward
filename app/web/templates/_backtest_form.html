@@ -1,5 +1,5 @@
-{# Code version: v0.4.2 #}
-{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{# Code version: v0.4.5 #}
+{% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
     {% for strategy in group['items'] %}
@@ -39,6 +39,7 @@
     {% endfor %}
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact") }}
+    {% if selected_strategy_id != 'dca' %}
     <div class="field backtest-interval-field">
         <label for="backtest_interval_1d">{{ labels.backtest_interval }}</label>
         {{ render_segmented_control(
@@ -64,6 +65,8 @@
             'id="backtest_interval_control" data-backtest-interval-shell data-active="' ~ requested_interval ~ '" data-option-count="' ~ (supported_intervals|length) ~ '" style="--segmented-option-count: ' ~ (supported_intervals|length) ~ '; --segmented-active-index: ' ~ (1 if requested_interval == "1m" else 0) ~ ';"'
         ) }}
     </div>
+    {% endif %}
+    {% if selected_strategy_id != 'dca' %}
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>
         <div class="trade-capital-row">
@@ -75,39 +78,20 @@
                    max="1000000" step="100" value="{{ backtest_initial_capital|int }}">
         </div>
     </div>
+    {% endif %}
     <div class="field-checkbox field-switch">
-        <label class="switch-row" for="price_only">
-            <span class="switch-label">{{ labels.price_only }}</span>
-            <span class="ios-switch-shell">
-                <input id="price_only" name="price_only" type="checkbox" value="1"
-                       {% if price_only %}checked{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch("price_only", labels.price_only, "price_only", checked=price_only) }}
     </div>
     <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
-        <label class="switch-row" for="include_dividends">
-            <span class="switch-label">{{ labels.include_dividends }}</span>
-            <span class="ios-switch-shell">
-                <input id="include_dividends" name="dividends" type="checkbox" value="1"
-                       {% if include_dividends and not price_only %}checked{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch("include_dividends", labels.include_dividends, "dividends", checked=include_dividends and not price_only) }}
     </div>
+    {% if selected_strategy_id != 'dca' %}
     <div class="field-checkbox field-switch">
-        <label class="switch-row" for="stop_loss">
-            <span class="switch-label" title="{{ labels.backtest_stop_loss_help }}">{{ labels.backtest_stop_loss }}</span>
-            <span class="ios-switch-shell">
-                <input type="hidden" name="stop_loss" value="0">
-                <input id="stop_loss" name="stop_loss" type="checkbox" value="1"
-                       {% if stop_loss_enabled %}checked{% endif %}
-                       title="{{ labels.backtest_stop_loss_help }}">
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        <input type="hidden" name="stop_loss" value="0">
+        {{ render_switch("stop_loss", labels.backtest_stop_loss, "stop_loss", checked=stop_loss_enabled, input_attrs='title="' ~ labels.backtest_stop_loss_help ~ '"') }}
     </div>
-    <div class="field trade-strategy-field{% if selected_strategy_id == 'grid-trading' %} is-grid-trading-inline{% endif %}" data-trade-strategy-field>
+    {% endif %}
+    <div class="field trade-strategy-field{% if selected_strategy_id == 'grid-trading' %} is-grid-trading-inline{% elif selected_strategy_id == 'dca' %} is-dca-inline{% endif %}" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-native-select" hidden
@@ -137,13 +121,13 @@
             </div>
             <button
                     type="button"
-                    class="trade-strategy-tune-button{% if not strategy_form_fields or selected_strategy_id == 'grid-trading' %} is-hidden{% endif %}"
+                    class="trade-strategy-tune-button{% if not strategy_form_fields or selected_strategy_id in ['grid-trading', 'dca'] %} is-hidden{% endif %}"
                     data-trade-strategy-tune-button
                     aria-label="Tune strategy parameters"
                     aria-pressed="false"
                     aria-expanded="false"
                     aria-controls="trade_strategy_params_panel"
-                    {% if not strategy_form_fields or selected_strategy_id == 'grid-trading' %}aria-hidden="true" tabindex="-1" disabled{% endif %}
+                    {% if not strategy_form_fields or selected_strategy_id in ['grid-trading', 'dca'] %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
                 <span class="icon icon-strategy-tune" aria-hidden="true"></span>
             </button>
@@ -156,11 +140,7 @@
                     hidden
             ></div>
         </div>
-        <div class="grid-trading-parameters-heading" data-grid-trading-parameters-heading{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
-            <span class="grid-trading-parameters-title">Grid parameters</span>
-            <span class="grid-trading-parameters-copy">Configure the trigger price bounds and asymmetric rise/fall percentages.</span>
-        </div>
-        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'grid-trading' %} grid-trading-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id != 'grid-trading' %} hidden{% endif %}>
+        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover{% if selected_strategy_id == 'grid-trading' %} grid-trading-parameters-panel{% elif selected_strategy_id == 'dca' %} dca-parameters-panel{% endif %}" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if selected_strategy_id not in ['grid-trading', 'dca'] %} hidden{% endif %}>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>

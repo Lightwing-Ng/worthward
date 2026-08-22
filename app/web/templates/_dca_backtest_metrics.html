@@ -1,0 +1,17 @@
+{# Code version: v0.1.0 #}
+<div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">
+    <div class="trade-metric-card"><span class="trade-metric-label">Amount per period</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.amount_per_period) }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Total invested</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.total_invested) }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.final_equity) }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(dca_result.summary.net_return_pct) }}%</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Total buys</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ dca_result.summary.contribution_count }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Total shares</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.4f}".format(dca_result.summary.total_shares) }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">Average cost</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.4f}".format(dca_result.summary.average_cost) }}</span></div>
+    <div class="trade-metric-card"><span class="trade-metric-label">If all in</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.all_in_equity) }}</span></div>
+    <div class="trade-metric-card">
+        <span class="trade-metric-label">vs all in</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ 'var(--theme-accent-positive)' if dca_result.summary.all_in_alpha >= 0 else 'var(--theme-accent-secondary)' }};">
+            {{ "+" if dca_result.summary.all_in_alpha >= 0 else "-" }}{{ "{:,.2f}".format(dca_result.summary.all_in_alpha|abs) }}
+        </span>
+    </div>
+</div>

@@ -588,9 +588,9 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('"raw_dates": ["2026-03-27 08:00", "2026-03-27 09:30", "2026-03-27 15:59", "2026-03-27 16:30"]', html)
         self.assertNotIn('id="include_extended_hours"', html)
         self.assertIn('data-price-only-field hidden', html)
-        self.assertIn('id="price_only" name="price_only" type="checkbox" value="1"  disabled', html)
+        self.assertIn('id="price_only" name="price_only" type="checkbox" value="1" disabled', html)
         self.assertIn('data-dividend-reinvest-field hidden', html)
-        self.assertIn('id="include_dividends" name="dividends" type="checkbox" value="1"  disabled', html)
+        self.assertIn('id="include_dividends" name="dividends" type="checkbox" value="1" disabled', html)
 
     def test_compare_page_legacy_extended_hours_query_keeps_automatic_behavior(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:

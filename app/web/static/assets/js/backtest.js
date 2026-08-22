@@ -1,4 +1,4 @@
-/* Code version: v0.5.1 */
+/* Code version: v0.5.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -61,6 +61,7 @@
 			const active = segmentedControl.querySelector('input[name="backtest_view_tab"]:checked')?.value || "overview";
 			segmentedControl.dataset.active = active;
 			viewSurface.dataset.activeView = active;
+			window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(segmentedControl, {activeValue: active});
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.backtestViewPanel !== active;
 			});
@@ -244,7 +245,7 @@
 	const initBacktestWorkspace = () => {
 		initBacktestViewTabs();
 		const state = window.ANTIGRAVITY_APP;
-		if (!state || state.currentView !== "backtest" || !window.Chart || !state.backtestResult) return;
+		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) return;
 
 		const priceCanvas = document.getElementById("tradePriceChart");
 		const equityCanvas = document.getElementById("tradeEquityChart");
@@ -971,7 +972,7 @@
 				return;
 			}
 
-			const PAGE_SIZE = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
+			const PAGE_SIZE = paginationApi.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE;
 			const totalPages = Math.max(1, Math.ceil(displayTrades.length / PAGE_SIZE));
 			let currentPage = 1;
 			const syncTablePageUrl = (page) => {

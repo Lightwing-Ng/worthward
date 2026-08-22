@@ -1,4 +1,4 @@
-/* Code version: v0.31.5 */
+/* Code version: v0.31.9 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -37,6 +37,7 @@
     const isPortfolioView = state.currentView === "portfolio";
     const isBacktestView = state.currentView === "backtest";
     const isDcaView = state.currentView === "dca";
+    const isDcaStrategy = isBacktestView && state.selectedStrategyId === "dca";
     const MIN_TICKERS = constraints?.minTickers || 2;
     const MAX_TICKERS = constraints?.maxTickers || 5;
     const minimumRequiredTickers = (isBacktestView || isDcaView) ? 1 : MIN_TICKERS;
@@ -114,7 +115,7 @@
     const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
     const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
     let hasInitialResult = isBacktestView
-        ? Boolean(state.backtestResult)
+        ? Boolean(isDcaStrategy ? state.dcaResult : state.backtestResult)
         : isDcaView
             ? Boolean(state.dcaResult)
             : Boolean(state.chart?.series?.length);
@@ -1988,6 +1989,7 @@
                             aria-label="Resize backtest overview and transaction history"></button>
                 <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface">
                     <div class="chart-heading-row investment-history-heading-row"><p class="chart-heading">${labels.backtest_transactions_tab}</p></div>
+                    <div class="investment-stock-details-table-host">
                     <div class="investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
                             <thead><tr><th>No.</th><th>Date</th><th>Side</th><th>Price</th><th>Shares</th><th>P&amp;L</th><th>Cash</th><th>Equity</th></tr></thead>
@@ -1997,6 +1999,7 @@
                                 <tbody>${pendingTransactionRows}</tbody>
                             </table>
                         </div>
+                    </div>
                     </div>
                 </article>
                 </section>
@@ -7386,30 +7389,33 @@
             || !(tuneButton instanceof HTMLButtonElement)
             || !(panel instanceof HTMLElement)) return;
         const wasGridTradingInline = field.classList.contains("is-grid-trading-inline");
+        const wasDcaInline = field.classList.contains("is-dca-inline");
         const isGridTrading = select.value === "grid-trading";
+        const isDcaStrategy = select.value === "dca";
         const hasFields = Boolean(panel.querySelector("[data-strategy-param-key]"));
         field.classList.toggle("is-grid-trading-inline", isGridTrading);
+        field.classList.toggle("is-dca-inline", isDcaStrategy);
         const gridHeading = field.querySelector("[data-grid-trading-parameters-heading]");
         if (gridHeading instanceof HTMLElement) gridHeading.hidden = !isGridTrading;
         panel.classList.toggle("grid-trading-parameters-panel", isGridTrading);
 
-        if (isGridTrading) {
+        if (isGridTrading || isDcaStrategy) {
             panel.hidden = !hasFields;
             panel.style.maxHeight = "";
             panel.style.height = "";
             const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
             if (panelGrid instanceof HTMLElement) panelGrid.style.maxHeight = "";
-        } else if (wasGridTradingInline) {
+        } else if (wasGridTradingInline || wasDcaInline) {
             panel.hidden = true;
             panel.style.maxHeight = "";
             panel.style.height = "";
         }
 
-        tuneButton.classList.toggle("is-hidden", !hasFields || isGridTrading);
-        tuneButton.disabled = !hasFields || isGridTrading;
-        tuneButton.setAttribute("aria-hidden", hasFields && !isGridTrading ? "false" : "true");
-        tuneButton.tabIndex = hasFields && !isGridTrading ? 0 : -1;
-        if (isGridTrading) {
+        tuneButton.classList.toggle("is-hidden", !hasFields || isGridTrading || isDcaStrategy);
+        tuneButton.disabled = !hasFields || isGridTrading || isDcaStrategy;
+        tuneButton.setAttribute("aria-hidden", hasFields && !isGridTrading && !isDcaStrategy ? "false" : "true");
+        tuneButton.tabIndex = hasFields && !isGridTrading && !isDcaStrategy ? 0 : -1;
+        if (isGridTrading || isDcaStrategy) {
             tuneButton.classList.remove("is-active");
             tuneButton.setAttribute("aria-pressed", "false");
             tuneButton.setAttribute("aria-expanded", "false");
@@ -7454,13 +7460,29 @@
 
     const positionTradeStrategyDropdown = () => {
         const {field, trigger, dropdown} = getTradeStrategyRefs();
-        if (!(dropdown instanceof HTMLElement) || dropdown.hidden) return;
-        const container = dropdown.parentElement;
-        positionSidebarDropdownFromTrigger(
-            trigger,
-            dropdown,
-            container instanceof HTMLElement ? container : field,
+        if (!(dropdown instanceof HTMLElement) || dropdown.hidden || !(trigger instanceof HTMLElement)) return;
+        const anchor = field?.querySelector(".trade-strategy-row");
+        const anchorRect = anchor instanceof HTMLElement
+            ? anchor.getBoundingClientRect()
+            : trigger.getBoundingClientRect();
+        const triggerRect = trigger.getBoundingClientRect();
+        const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
+        const availableHeight = Math.max(
+            120,
+            viewportHeight - triggerRect.bottom - SIDEBAR_OVERLAY_GAP_PX - 12,
         );
+        dropdown.style.position = "fixed";
+        dropdown.style.left = `${Math.round(anchorRect.left)}px`;
+        dropdown.style.top = `${Math.round(triggerRect.bottom + SIDEBAR_OVERLAY_GAP_PX)}px`;
+        dropdown.style.right = "auto";
+        dropdown.style.bottom = "auto";
+        dropdown.style.width = `${Math.round(anchorRect.width)}px`;
+        dropdown.style.minWidth = `${Math.round(triggerRect.width)}px`;
+        dropdown.style.maxWidth = "calc(100vw - 24px)";
+        dropdown.style.maxHeight = `${Math.round(availableHeight)}px`;
+        dropdown.style.zIndex = "10002";
+        dropdown.style.overflowY = "auto";
+        dropdown.style.overscrollBehavior = "contain";
     };
 
     const renderTradeStrategyDropdown = () => {
@@ -7701,11 +7723,11 @@
     const initializeTradeStrategyField = () => {
         const refs = getTradeStrategyRefs();
         if (!(refs.field instanceof HTMLElement)) return;
+        if (refs.field.dataset.tradeStrategyBound === "1") return;
         initStrategyParamControls(refs.field);
         syncTradeStrategyTuningAvailability();
         syncTradeStrategyTriggerLabel();
         renderTradeStrategyDropdown();
-        if (refs.field.dataset.tradeStrategyBound === "1") return;
         refs.field.dataset.tradeStrategyBound = "1";
         if (refs.tuneButton instanceof HTMLButtonElement) {
             refs.tuneButton.addEventListener("click", () => {
@@ -7890,7 +7912,7 @@
             }
             const currentParams = new URLSearchParams(currentUrlObj.search);
             const nextParams = new URLSearchParams(nextUrlObj.search);
-            if (state.currentView === "backtest") {
+            if (state.currentView === "backtest" && state.selectedStrategyId !== "dca") {
                 showWorkspaceModal({
                     title: "Running Backtest",
                     copy: "Calculating strategy signals and performance metrics. This may take a moment depending on the data resolution and strategy complexity.",
@@ -7915,7 +7937,7 @@
                 } else {
                     delete bootstrap.backtestRefreshTransition;
                 }
-            } else if (state.currentView === "dca") {
+            } else if (state.currentView === "dca" || (state.currentView === "backtest" && state.selectedStrategyId === "dca")) {
                 showWorkspaceModal({
                     title: "Running DCA simulation",
                     copy: "Calculating recurring buy dates, cumulative shares, and the if-all-in comparison curve for the selected range.",

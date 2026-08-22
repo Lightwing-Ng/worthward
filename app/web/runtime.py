@@ -1,7 +1,12 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.79.1
+Code version: v0.80.2
+- Fixed: Backtest daily Period options now use the same shared range list as
+  comparison workspaces, including short intraday-compatible ranges.
+- Fixed: Unified Backtest exports now render recurring-investment contributions with
+  DCA-specific metrics and transaction columns instead of signal-trade fields.
+- Added: Dollar-cost averaging is registered as a Backtest strategy and uses the recurring-investment simulator for execution.
 - Added: Backtest exposes one shared stop-loss switch that controls whether
   every strategy may close a position below its entry price.
 - Changed: Grid Trading is now a visible strategy-owned panel inside the generic
@@ -2391,6 +2396,18 @@ def build_web_runtime() -> WebRuntime:
         target_path = build_view_path(view_name)
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
+    def build_dca_backtest_redirect():
+        query_pairs = [
+            (key, value)
+            for key, values in request.args.lists()
+            if key not in {"strategy", "workspace"}
+            for value in values
+        ]
+        query_pairs.append(("strategy", "dca"))
+        query_string = urlencode(query_pairs)
+        target_path = build_view_path("backtest")
+        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
+
     def resolve_settings_section() -> str:
         for parameter_name in ("section", "settings_section"):
             requested_section = request.args.get(parameter_name, "").strip()
@@ -2495,6 +2512,8 @@ def build_web_runtime() -> WebRuntime:
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
+        if selected_strategy_id == "dca":
+            return _run_dca_from_request()
         strategy = instantiate_strategy(selected_strategy_id)
         requested_tickers = parse_requested_tickers()
         requested_tickers, required_tickers, _ = resolve_backtest_tickers(
@@ -2632,6 +2651,81 @@ def build_web_runtime() -> WebRuntime:
             else:
                 raw_values[definition.key] = raw_value
         return strategy.normalize_params(raw_values)
+
+    def _run_dca_from_request(requested_tickers: list[str] | None = None):
+        """Run the recurring-investment simulator through the Backtest request contract."""
+        requested = [
+            normalize_ticker_input(str(value))
+            for value in (requested_tickers or parse_requested_tickers("backtest"))
+            if normalize_ticker_input(str(value))
+        ]
+        if not requested:
+            fallback = normalize_ticker_input(
+                str(defaults.get("dca_ticker", defaults.get("backtest_ticker", DEFAULT_TICKERS[0])))
+            )
+            requested = [fallback] if fallback else [DEFAULT_TICKERS[0]]
+        ticker = validate_ticker_or_raise(requested[0])
+        refreshes = ensure_latest_daily_caches([ticker])
+        try:
+            dataset = fetch_history(ticker, False, dividend_mode="price")
+        except ValueError:
+            path = history_store_path_for(ticker)
+            if not path.exists():
+                raise
+            dataset = select_price_series(
+                pd.read_parquet(path),
+                False,
+                dividend_mode="price",
+            )
+
+        range_mode, period, exact_start, exact_end = parse_range_request_args()
+        date_constraints = build_date_constraint_payload(
+            dataset,
+            requested_start=exact_start or None,
+            requested_end=exact_end or None,
+        )
+        if range_mode == "exact":
+            if not date_constraints.trading_dates:
+                raise ValueError("The selected exact range does not contain trading dates.")
+            dataset = slice_dataset_to_exact_range(
+                dataset,
+                date_constraints.adjusted_start,
+                date_constraints.adjusted_end,
+            )
+        else:
+            supported_periods = build_supported_periods_from_dates(dataset["Date"], interval="1d")
+            period, _ = resolve_requested_period_from_supported(
+                period,
+                supported_periods,
+                earliest_available=dataset["Date"].min() if not dataset.empty else None,
+            )
+            dataset = slice_dataset_for_period(dataset, period, dataset["Date"].max())
+        if dataset.empty:
+            raise ValueError(f"No market data available for {ticker} in the selected range.")
+
+        params = collect_strategy_form_values("dca")
+        result = simulate_recurring_investment(
+            ticker,
+            dataset,
+            amount_per_period=params["amount"],
+            frequency=params["frequency"],
+            weekday=params["weekday"],
+            month_day=params["month_day"],
+            reinvest_cash_dividends=(request.args.get("return", "").strip().lower() == "dividends")
+            or parse_bool_flag("dividends", "include_dividends"),
+            include_cash_dividends=request.args.get("return", "").strip().lower() != "price"
+            and not parse_bool_flag("price_only", "price_return_only"),
+        )
+        return (
+            result,
+            ticker,
+            "1d",
+            date_constraints,
+            dataset,
+            "dca",
+            params,
+            {"daily_error": any(bool(refresh) for refresh in refreshes)},
+        )
 
     def build_strategy_form_fields(strategy_id: str, values: dict[str, Any] | None = None) -> list[dict[str, object]]:
         return build_strategy_form_fields_for_strategy(
@@ -3357,18 +3451,36 @@ def build_web_runtime() -> WebRuntime:
         )
         dca_amount = max(
             parse_float_value(
-                request.args.get("amount"),
-                1000.0,
+                request.args.get("amount", selected_strategy_params.get("amount")),
+                float(defaults.get("dca_amount", 1000.0)),
             ),
             1.0,
         )
         dca_frequency = (
             "weekly"
-            if request.args.get("frequency", str(defaults.get("dca_frequency", "monthly"))).strip().lower() == "weekly"
+            if request.args.get(
+                "frequency",
+                str(selected_strategy_params.get("frequency", defaults.get("dca_frequency", "monthly"))),
+            ).strip().lower() == "weekly"
             else "monthly"
         )
-        dca_weekday = min(max(parse_int_value(request.args.get("weekday"), parse_int_value(defaults.get("dca_weekday"), 0)), 0), 4)
-        dca_month_day = min(max(parse_int_value(request.args.get("month-day", request.args.get("month_day")), parse_int_value(defaults.get("dca_month_day"), 15)), 1), 28)
+        dca_weekday = min(max(
+            parse_int_value(
+                request.args.get("weekday", selected_strategy_params.get("weekday")),
+                parse_int_value(defaults.get("dca_weekday"), 0),
+            ),
+            0,
+        ), 4)
+        dca_month_day = min(max(
+            parse_int_value(
+                request.args.get(
+                    "month-day",
+                    request.args.get("month_day", selected_strategy_params.get("month_day")),
+                ),
+                parse_int_value(defaults.get("dca_month_day"), 15),
+            ),
+            1,
+        ), 28)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         supported_intervals = ["1d"]
         if current_view in BACKTEST_VIEWS and requested_tickers:
@@ -3391,7 +3503,7 @@ def build_web_runtime() -> WebRuntime:
 
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
-        if current_view == "dca":
+        if current_view == "dca" or selected_strategy_id == "dca":
             requested_interval = "1d"
             supported_intervals = ["1d"]
 
@@ -3439,7 +3551,7 @@ def build_web_runtime() -> WebRuntime:
         settings_tab = "current"
         settings_page_number = 1
         backtest_periods_by_interval: dict[str, list[str]] = {
-            "1d": list(SUPPORTED_PERIODS_1D),
+            "1d": list(COMPARE_PERIODS_1D),
             "1m": list(SUPPORTED_PERIODS_1M),
         }
 
@@ -3559,7 +3671,52 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"No market data returned for {ticker}.")
 
         try:
-            if current_view in BACKTEST_VIEWS:
+            if current_view in BACKTEST_VIEWS and selected_strategy_id == "dca":
+                (
+                    dca_result,
+                    trade_ticker,
+                    requested_interval,
+                    date_constraints,
+                    trade_dataset,
+                    selected_strategy_id,
+                    selected_strategy_params,
+                    dca_refresh_status,
+                ) = _run_dca_from_request(requested_tickers)
+                backtest_market_refresh = {
+                    "daily_error": bool(dca_refresh_status.get("daily_error")),
+                    "intraday_error": False,
+                }
+                record_strategy_usage(selected_strategy_id)
+                ticker_slots = [trade_ticker]
+                profiles = [fetch_quote_profile(trade_ticker, False)]
+                backtest_periods_by_interval = {
+                    "1d": list(COMPARE_PERIODS_1D),
+                    "1m": build_supported_periods_for_history_store(trade_ticker, "1m"),
+                }
+                supported_periods = list(COMPARE_PERIODS_1D)
+                period, period_notice = resolve_requested_period_from_supported(
+                    period,
+                    supported_periods,
+                    earliest_available=trade_dataset["Date"].min(),
+                )
+                if period_notice and notice is None:
+                    notice = period_notice
+                elif period_notice:
+                    notice += " " + period_notice
+                exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
+                exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
+                period_label = "Exact range" if range_mode == "exact" else format_period_label(period)
+                display_range = (
+                    f"{format_display_date(trade_dataset['Date'].min())} - "
+                    f"{format_display_date(trade_dataset['Date'].max())}"
+                )
+                if backtest_market_refresh.get("daily_error"):
+                    refresh_notice = (
+                        "Could not refresh the latest 1d cache automatically, so the recurring-investment "
+                        "simulation reused the newest local daily data."
+                    )
+                    notice = f"{notice} {refresh_notice}" if notice else refresh_notice
+            elif current_view in BACKTEST_VIEWS:
                 if requested_tickers:
                     backtest_refreshes = [
                         ensure_latest_backtest_caches(validate_ticker_or_raise(ticker))
@@ -3613,13 +3770,13 @@ def build_web_runtime() -> WebRuntime:
                 ticker_slots = requested_tickers[:strategy_required_tickers]
                 profiles = [fetch_quote_profile(ticker, False) for ticker in ticker_slots]
                 backtest_periods_by_interval = {
-                    "1d": build_supported_periods_for_history_store(trade_ticker, "1d"),
+                    "1d": list(COMPARE_PERIODS_1D),
                     "1m": build_supported_periods_for_history_store(trade_ticker, "1m"),
                 }
-                if not trade_dataset.empty:
-                    backtest_periods_by_interval[requested_interval] = build_supported_periods_from_dates(
+                if requested_interval == "1m" and not trade_dataset.empty:
+                    backtest_periods_by_interval["1m"] = build_supported_periods_from_dates(
                         trade_dataset["Date"],
-                        interval=requested_interval,
+                        interval="1m",
                     )
                 if backtest_market_refresh:
                     refresh_notices: list[str] = []
@@ -4817,6 +4974,78 @@ def build_web_runtime() -> WebRuntime:
             dataset_export_date_format = "%Y-%m-%d %H:%M" if requested_interval == "1m" else "%Y-%m-%d"
             market_data_csv = trade_dataset.to_csv(index=False, date_format=dataset_export_date_format).rstrip()
 
+            if strategy_id == "dca":
+                dca_amount = parse_float_value(summary.get("amount_per_period"), 0.0)
+                dca_planned = parse_float_value(summary.get("planned_capital"), 0.0)
+                dca_invested = parse_float_value(summary.get("total_invested"), 0.0)
+                dca_final_equity = parse_float_value(summary.get("final_equity"), 0.0)
+                dca_net_return = parse_float_value(summary.get("net_return_pct"), 0.0)
+                dca_all_in_equity = parse_float_value(summary.get("all_in_equity"), 0.0)
+                dca_all_in_alpha = parse_float_value(summary.get("all_in_alpha"), 0.0)
+                dca_trades = [trade for trade in trades if not trade.get("_virtual_close")]
+                md_lines = [
+                    f"## DCA Backtest Report: {ticker_caption}",
+                    f"**Generated on**: {format_display_datetime(pd.Timestamp.now(), include_seconds=True, timezone_suffix='HKT')}",
+                    f"**Algorithm**: {strategy_name}",
+                    f"**Period**: {period_label}",
+                    "",
+                    "### Performance Summary",
+                    f"- **Amount per period**: ${dca_amount:,.2f}",
+                    f"- **Planned capital**: ${dca_planned:,.2f}",
+                    f"- **Total invested**: ${dca_invested:,.2f}",
+                    f"- **Final equity**: ${dca_final_equity:,.2f}",
+                    f"- **Net return**: {dca_net_return:,.2f}%",
+                    f"- **Contribution days**: {summary.get('investment_days', len(dca_trades))}",
+                    f"- **Total shares**: {parse_float_value(summary.get('total_shares'), 0.0):,.6f}",
+                    f"- **Average cost**: ${parse_float_value(summary.get('average_cost'), 0.0):,.4f}",
+                    f"- **All-in final equity**: ${dca_all_in_equity:,.2f}",
+                    f"- **DCA alpha vs all-in**: {'+' if dca_all_in_alpha >= 0 else '-'}${abs(dca_all_in_alpha):,.2f}",
+                    "",
+                    "### Contribution History",
+                    "",
+                    "| No. | Date | Ticker | Price | Amount | Shares | Cumulative shares | Invested | Equity |",
+                    "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+                for index, trade in enumerate(dca_trades, start=1):
+                    md_lines.append(
+                        f"| {index} | {trade.get('date', 'N/A')} | {trade.get('ticker', ticker_caption)} | "
+                        f"{parse_float_value(trade.get('price'), 0.0):,.2f} | "
+                        f"${parse_float_value(trade.get('amount'), 0.0):,.2f} | "
+                        f"{parse_float_value(trade.get('shares'), 0.0):,.6f} | "
+                        f"{parse_float_value(trade.get('cumulative_shares'), 0.0):,.6f} | "
+                        f"${parse_float_value(trade.get('invested'), 0.0):,.2f} | "
+                        f"${parse_float_value(trade.get('equity'), 0.0):,.2f} |"
+                    )
+                md_lines.extend([
+                    "",
+                    "### Strategy Context",
+                    "",
+                    f"- **Tickers**: {ticker_caption}",
+                    "",
+                    "#### Parameters",
+                    "",
+                    "| Parameter | Value |",
+                    "| :--- | :--- |",
+                ])
+                for key, val in strategy_params.items():
+                    md_lines.append(f"| {key} | {val} |")
+                md_lines.extend([
+                    "",
+                    "### Source market data",
+                    "",
+                    "```text",
+                    market_data_csv,
+                    "```",
+                    "",
+                ])
+                md_content = "\n".join(md_lines)
+                return send_file(
+                    BytesIO(md_content.encode("utf-8")),
+                    mimetype="text/markdown",
+                    as_attachment=True,
+                    download_name=report_filename,
+                )
+
             # 1. Performance Summary
             benchmark_alpha = float(summary.get("benchmark_alpha", 0) or 0)
             long_gain = float(summary.get("long_gain", 0) or 0)
@@ -5045,10 +5274,10 @@ def build_web_runtime() -> WebRuntime:
         return build_legacy_workspace_redirect("portfolio")
 
     def dca_page():
-        return render_workspace_page("dca")
+        return build_dca_backtest_redirect()
 
     def legacy_dca_page():
-        return build_legacy_workspace_redirect("dca")
+        return build_dca_backtest_redirect()
 
     def backtest_page():
         return render_workspace_page("backtest")
@@ -6132,7 +6361,7 @@ def build_web_runtime() -> WebRuntime:
         }
         period_options_mapping = {
             ticker: {
-                "1d": build_supported_periods_for_history_store(ticker, "1d"),
+                "1d": list(COMPARE_PERIODS_1D),
                 "1m": build_supported_periods_for_history_store(ticker, "1m"),
             }
             for ticker in unique_tickers

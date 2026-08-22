@@ -1,8 +1,14 @@
-/* Code version: v0.1.15 */
+/* Code version: v0.1.16 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
     const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+    const resolveShareView = () => (
+        window.ANTIGRAVITY_APP?.currentView === "backtest"
+            && window.ANTIGRAVITY_APP?.selectedStrategyId === "dca"
+            ? "backtest"
+            : "dca"
+    );
 
     const readThemeTokens = () => (
         typeof chartAxis.readThemeTokens === "function"
@@ -114,7 +120,8 @@
 
     const initDcaWorkspace = () => {
         const state = window.ANTIGRAVITY_APP;
-        if (!state || state.currentView !== "dca" || !window.Chart || !state.dcaResult) return;
+        const isUnifiedBacktestDca = state?.currentView === "backtest" && state.selectedStrategyId === "dca";
+        if (!state || (!isUnifiedBacktestDca && state.currentView !== "dca") || !window.Chart || !state.dcaResult) return;
         if (typeof bootstrap.dcaTableAlignmentCleanup === "function") {
             bootstrap.dcaTableAlignmentCleanup();
             bootstrap.dcaTableAlignmentCleanup = null;
@@ -507,7 +514,8 @@
                 window.addEventListener("antigravity:local-store-pagination-ready", renderContributionTable, {once: true});
                 return;
             }
-            const pageSize = paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
+            const pageSize = paginationApi.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
+                || paginationApi.LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE;
             const totalPages = Math.max(1, Math.ceil(trades.length / pageSize));
             let currentPage = 1;
 			const syncTablePageUrl = (page) => {
@@ -585,7 +593,7 @@
             if (!(canvas instanceof HTMLCanvasElement) || canvas.dataset.tradeChartReady === "1") return;
             canvas.dataset.tradeChartReady = "1";
             if (priceCanvas.dataset.tradeChartReady === "1" && equityCanvas.dataset.tradeChartReady === "1") {
-                bootstrap.workspaceShare?.dispatchReady?.("dca");
+                bootstrap.workspaceShare?.dispatchReady?.(resolveShareView());
             }
         };
         window.requestAnimationFrame(() => {
@@ -600,17 +608,22 @@
 
     const buildDcaShareFilename = () => {
         const ticker = String(window.ANTIGRAVITY_APP?.dcaResult?.summary?.ticker || "").trim().toLowerCase() || "dca";
-        return share().buildFilename?.("dca", ticker) || `dca-${ticker}.png`;
+        const shareView = resolveShareView();
+        return share().buildFilename?.(shareView, ticker) || `${shareView}-${ticker}.png`;
     };
 
-    bootstrap.registerWorkspaceShareProvider?.("dca", {
+    const shareView = resolveShareView();
+    bootstrap.registerWorkspaceShareProvider?.(shareView, {
         isReady: () => Boolean(window.ANTIGRAVITY_APP?.dcaResult) && share().areTradeChartsReady?.(),
         buildCard: () => share().buildTradeCard?.({
-            shareView: "dca",
+            shareView,
             title: document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()
                 || "DCA",
         }),
         buildFilename: buildDcaShareFilename,
+        onAnchorClick: shareView === "backtest"
+            ? () => window.location.assign(`/api/export-transactions${window.location.search}`)
+            : undefined,
     });
 
     bootstrap.initDcaWorkspace = initDcaWorkspace;

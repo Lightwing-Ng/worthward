@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.3
+Code version: v0.5.6
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from app.core.config import COMPARE_PERIODS_1D
 from strategies.loader import list_enabled_strategies
 from tests.factories.market import (
     FakeStrategy,
@@ -69,7 +70,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('id="backtest_section_resizer"', html)
         self.assertLess(html.index('id="backtest_section_resizer"'), html.index('id="backtest_history_surface"'))
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
-        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"\n                       checked', html)
+        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
 
     def test_backtest_page_serializes_logo_profile_for_selected_ticker(self) -> None:
@@ -142,6 +143,43 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('"backtestPeriodOptions"', html)
         self.assertIn('"1m": ["1d"]', html)
 
+    def test_backtest_page_uses_shared_comparison_period_options_for_daily_interval(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&interval=1d")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        period_options = html.split('id="period"', 1)[1].split("</select>", 1)[0]
+        self.assertEqual(
+            [
+                period
+                for period in COMPARE_PERIODS_1D
+                if f'value="{period}"' in period_options
+            ],
+            list(COMPARE_PERIODS_1D),
+        )
+
+    def test_market_store_presence_uses_shared_daily_period_options(self) -> None:
+        with (
+            patch("app.web.runtime.build_supported_periods_for_history_store", return_value=["6mo", "1y", "max"]),
+            patch("app.web.runtime.has_recent_one_minute_store", return_value=False),
+        ):
+            client = create_app().test_client()
+            response = client.get("/api/market-store/presence?ticker=QQQ")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["periodOptions"]["QQQ"]["1d"],
+            list(COMPARE_PERIODS_1D),
+        )
+
     def test_leveraged_rotation_uses_two_strategy_defaults_and_renders_asset_trades(self) -> None:
         def fetch_rotation_history(
             ticker: str,
@@ -192,6 +230,8 @@ class BacktestPageTests(unittest.TestCase):
         client = create_app().test_client()
         for strategy in list_enabled_strategies():
             strategy_id = str(strategy["id"])
+            if strategy_id == "dca":
+                continue
             with (
                 self.subTest(strategy=strategy_id),
                 patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
@@ -208,6 +248,84 @@ class BacktestPageTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn('id="backtest_view_surface"', html)
             self.assertIn('id="backtest_history_table_wrap"', html)
+
+    def test_dca_is_rendered_as_a_backtest_strategy(self) -> None:
+        dates = pd.date_range("2025-01-01", periods=420, freq="B")
+        dca_history = pd.DataFrame({
+            "Date": dates,
+            "Close": [100.0 + (index * 0.1) for index in range(len(dates))],
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=dca_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=dca&period=1y"
+                "&amount=500&frequency=monthly&month_day=15"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="backtest_view_surface"', html)
+        self.assertIn('<option value="dca"', html)
+        self.assertIn('name="amount"', html)
+        self.assertIn('name="frequency"', html)
+        self.assertIn('dca-transactions-shell', html)
+        self.assertIn('Amount per period', html)
+
+    def test_legacy_dca_route_redirects_to_backtest_strategy(self) -> None:
+        client = create_app().test_client()
+        response = client.get(
+            "/workspaces/dca?ticker=QQQ&range=3y&amount=500"
+            "&frequency=weekly&weekday=4&month_day=15"
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.headers["Location"],
+            "/workspaces/backtest?ticker=QQQ&range=3y&amount=500"
+            "&frequency=weekly&weekday=4&month_day=15&strategy=dca",
+        )
+
+    def test_dca_strategy_fields_api_uses_registry_parameters(self) -> None:
+        client = create_app().test_client()
+        response = client.get("/api/trade-strategy-fields?strategy=dca")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["is_tunable"])
+        self.assertEqual(payload["required_tickers"], 1)
+        self.assertIn('name="amount"', payload["html"])
+        self.assertIn('name="frequency"', payload["html"])
+
+    def test_dca_export_uses_recurring_investment_columns(self) -> None:
+        dates = pd.date_range("2025-01-01", periods=420, freq="B")
+        dca_history = pd.DataFrame({
+            "Date": dates,
+            "Close": [100.0 + (index * 0.1) for index in range(len(dates))],
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=dca_history),
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/api/export-transactions?strategy=dca&ticker=QQQ&period=1y"
+                "&amount=500&frequency=monthly&month_day=15"
+            )
+
+        report = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("## DCA Backtest Report: QQQ", report)
+        self.assertIn(
+            "| No. | Date | Ticker | Price | Amount | Shares | Cumulative shares | Invested | Equity |",
+            report,
+        )
+        self.assertIn("- **Amount per period**: $500.00", report)
 
     def test_leveraged_rotation_export_identifies_each_trade_ticker(self) -> None:
         def fetch_rotation_history(

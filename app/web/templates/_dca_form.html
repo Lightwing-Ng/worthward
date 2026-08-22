@@ -1,4 +1,5 @@
-{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{# Code version: v0.2.1 #}
+{% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set weekly_label = namespace(value=labels.dca_frequency_weekly) %}
 {% if dca_weekday == 0 %}{% set weekly_label.value = "Monday" %}{% endif %}
 {% if dca_weekday == 1 %}{% set weekly_label.value = "Tuesday" %}{% endif %}
@@ -40,24 +41,10 @@
         </div>
     </div>
     <div class="field-checkbox field-switch">
-        <label class="switch-row" for="price_only">
-            <span class="switch-label">{{ labels.price_only }}</span>
-            <span class="ios-switch-shell">
-                <input id="price_only" name="price_only" type="checkbox" value="1"
-                       {% if price_only %}checked{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch("price_only", labels.price_only, "price_only", checked=price_only) }}
     </div>
     <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
-        <label class="switch-row" for="include_dividends">
-            <span class="switch-label">{{ labels.include_dividends }}</span>
-            <span class="ios-switch-shell">
-                <input id="include_dividends" name="dividends" type="checkbox" value="1"
-                       {% if include_dividends and not price_only %}checked{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch("include_dividends", labels.include_dividends, "dividends", checked=include_dividends and not price_only) }}
     </div>
     <div class="field dca-frequency-field">
         <label for="dca_frequency_weekly">{{ labels.dca_frequency }}</label>

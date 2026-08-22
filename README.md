@@ -13,7 +13,7 @@ Documentation version: `v2.78.0`
 - Compare up to 5 tickers over the same window on a normalized return basis
 - Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time. Direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it.
 - Build weighted portfolios with custom allocations
-- Simulate dollar-cost averaging with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
+- Simulate dollar-cost averaging from the Backtest strategy selector with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
 - Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
 - Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
@@ -119,10 +119,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
-- `DCA`
-  Simulate recurring contributions with configurable amount, frequency, date range, dividend handling, and transaction details.
 - `Backtest`
-  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
+  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Select `Dollar-cost averaging` to use the recurring-contribution simulator with the shared Backtest result surface. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
 - `Grid Trading`
   Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and expands inline with Trigger price min, Trigger price max, Rise %, and Fall %; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
 - `Trade`

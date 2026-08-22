@@ -1,11 +1,15 @@
 /**
  * Investment transaction-table selection and page-state helpers.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
  */
 
-export const INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION = 'v1.0.0';
-export const INVESTMENT_HISTORY_PAGE_SIZE = 100;
+import {
+    LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE,
+} from '../local-store-pagination.js?v=local-store-pagination-v1.2.2';
+
+export const INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION = 'v1.0.1';
+export const INVESTMENT_HISTORY_PAGE_SIZE = LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE;
 
 export function isInvestmentHistoryDisplayHidden(transaction) {
     return transaction?.presentation_hidden === true;

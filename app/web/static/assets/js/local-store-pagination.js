@@ -1,20 +1,22 @@
 /**
  * Shared Local store pagination primitives.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
  * - Fixed: Range menus respect the nearest clipping ancestor when calculating
  *   available height, while keeping the scroll surface free of scrollbar paint.
  * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
  *   viewport-aware menu shared by every pagination surface.
  * - Added: Fixed five-page chunks, canonical button markup, and the shared
  *   active-indicator motion used by every local pagination surface.
+ * - Added: Transaction-detail tables can share a 100-row page-size contract.
  * - Added: Link rendering keeps server-backed pagination on the same builder
  *   and control contract as client-only pagination.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.1';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.2';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
+const LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE = 100;
 const LOCAL_STORE_PAGINATION_RANGE_CLOSE_DELAY_MS = 140;
 
 let localStorePaginationRangeMenuId = 0;
@@ -700,6 +702,7 @@ export function syncLocalStorePaginationActivePage(
 export {
     LOCAL_STORE_PAGINATION_CHUNK_SIZE,
     LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE,
+    LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE,
     LOCAL_STORE_PAGINATION_MODULE_VERSION,
 };
 
@@ -707,6 +710,7 @@ if (typeof window !== 'undefined') {
     window.ANTIGRAVITY_LOCAL_STORE_PAGINATION = Object.freeze({
         LOCAL_STORE_PAGINATION_CHUNK_SIZE,
         LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE,
+        LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE,
         LOCAL_STORE_PAGINATION_MODULE_VERSION,
         animateLocalStorePaginationIndicator,
         bindLocalStorePagination,

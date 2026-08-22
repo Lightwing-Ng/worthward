@@ -115,7 +115,7 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'data-backtest-parameter-form' in html
     assert 'data-trade-strategy-combobox' in html
     assert 'is-grid-trading-inline' in html
-    assert 'data-grid-trading-parameters-heading' in html
+    assert 'data-grid-trading-parameters-heading' not in html
     assert 'grid-trading-parameters-panel' in html
     assert 'data-shared-select-kind="period"' in html
     assert 'id="period_dropdown"' in html

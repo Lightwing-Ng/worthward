@@ -1,4 +1,5 @@
-{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{# Code version: v0.1.1 #}
+{% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set portfolio_allocation_mode = portfolio_allocation_mode if current_view == "portfolio" and portfolio_allocation_mode is defined else "weight" %}
 {% set portfolio_allocation_mode = "shares" if portfolio_allocation_mode == "shares" else "weight" %}
 {% set portfolio_share_slots = portfolio_shares if current_view == "portfolio" and portfolio_shares is defined else [] %}
@@ -83,31 +84,31 @@
          data-overnight-source-ready="{{ 1 if show_overnight_toggle else 0 }}"
          data-overnight-source-policy="longbridge"
         {% if not show_overnight_toggle %}hidden{% endif %}>
-        <label class="switch-row" for="include_overnight_hours">
-            <span class="switch-label" title="Longbridge adds the 20:00–04:00 New York overnight session.">Overnight</span>
-            <span class="ios-switch-shell">
-                <input id="include_overnight_hours" name="overnight" type="checkbox" value="1" {% if include_overnight and show_overnight_toggle %}checked{% endif %} {% if not show_overnight_toggle %}disabled{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch(
+            "include_overnight_hours",
+            "Overnight",
+            "overnight",
+            checked=include_overnight and show_overnight_toggle,
+            input_attrs=('disabled ' if not show_overnight_toggle else '') ~ 'title="Longbridge adds the 20:00–04:00 New York overnight session."'
+        ) }}
     </div>
     {% set hide_dividend_switches = current_view in ["prices", "market-caps"] or (current_view == "tickers" and period == "1d") %}
     <div class="field-checkbox field-switch" data-price-only-field {% if hide_dividend_switches %}hidden{% endif %}>
-        <label class="switch-row" for="price_only">
-            <span class="switch-label">{{ labels.price_only }}</span>
-            <span class="ios-switch-shell">
-                <input id="price_only" name="price_only" type="checkbox" value="1" {% if price_only and not hide_dividend_switches %}checked{% endif %} {% if hide_dividend_switches %}disabled{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch(
+            "price_only",
+            labels.price_only,
+            "price_only",
+            checked=price_only and not hide_dividend_switches,
+            input_attrs=('disabled' if hide_dividend_switches else '')
+        ) }}
     </div>
     <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only or hide_dividend_switches %}hidden{% endif %}>
-        <label class="switch-row" for="include_dividends">
-            <span class="switch-label">{{ labels.include_dividends }}</span>
-            <span class="ios-switch-shell">
-                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends and not price_only and not hide_dividend_switches %}checked{% endif %} {% if hide_dividend_switches %}disabled{% endif %}>
-                <span class="ios-switch-slider" aria-hidden="true"></span>
-            </span>
-        </label>
+        {{ render_switch(
+            "include_dividends",
+            labels.include_dividends,
+            "dividends",
+            checked=include_dividends and not price_only and not hide_dividend_switches,
+            input_attrs=('disabled' if hide_dividend_switches else '')
+        ) }}
     </div>
 </form>

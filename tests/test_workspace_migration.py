@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.3.9
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -229,6 +229,8 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertIn("Price performance", sidebar_html)
         self.assertIn("Compute your portfolio", sidebar_html)
         self.assertIn("Backtest", sidebar_html)
+        self.assertNotIn("Dollar-cost averaging", sidebar_html)
+        self.assertNotIn("/workspaces/dca", sidebar_html)
         self.assertNotIn('<form class="controls sidebar-form', sidebar_html)
 
         self.assertIn('class="workspace-mode-layout"', workspace_html)
