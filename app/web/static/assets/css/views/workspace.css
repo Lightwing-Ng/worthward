@@ -1,4 +1,4 @@
-/* Code version: v1.15.7 */
+/* Code version: v1.15.8 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
@@ -769,6 +769,7 @@
     line-height: 1;
     letter-spacing: -0.04em;
     font-variant-numeric: tabular-nums;
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
 .performance-metric-row {

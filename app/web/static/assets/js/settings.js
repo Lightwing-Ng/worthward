@@ -1,4 +1,4 @@
-/* Code version: v0.20.0 */
+/* Code version: v0.21.1 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
 import {
@@ -837,11 +837,15 @@ import {
             switchShell.dataset.bound = "1";
             const syncActiveValue = () => {
                 const checkedInput = switchShell.querySelector('input[type="radio"]:checked');
-                const nextValue = checkedInput instanceof HTMLInputElement ? checkedInput.value : "period";
-                const isExact = nextValue === "exact";
-                switchShell.setAttribute("data-active", isExact ? "exact" : "period");
-                switchShell.dataset.segmentedActiveIndex = isExact ? "1" : "0";
-                switchShell.style.setProperty("--segmented-active-index", isExact ? "1" : "0");
+                const options = Array.from(switchShell.querySelectorAll(".range-mode-option"));
+                const activeIndex = Math.max(0, options.findIndex((option) => option.querySelector('input[type="radio"]') === checkedInput));
+                const optionCount = Math.max(options.length, 1);
+                const nextValue = checkedInput instanceof HTMLInputElement ? checkedInput.value : "overview";
+                switchShell.setAttribute("data-active", nextValue);
+                switchShell.dataset.optionCount = String(optionCount);
+                switchShell.dataset.segmentedActiveIndex = String(activeIndex);
+                switchShell.style.setProperty("--segmented-option-count", String(optionCount));
+                switchShell.style.setProperty("--segmented-active-index", String(activeIndex));
             };
             switchShell.querySelectorAll('input[type="radio"]').forEach((input) => {
                 input.addEventListener("change", syncActiveValue);
@@ -869,6 +873,8 @@ import {
             const trigger = demo.querySelector("[data-style-token-table-filter-trigger]");
             const dropdown = demo.querySelector("[data-style-token-table-filter-dropdown]");
             const summary = demo.querySelector("[data-style-token-table-filter-summary]");
+            const pagination = demo.querySelector("[data-style-token-table-pagination]");
+            const scrollContainer = demo.querySelector(".style-token-table-demo-scroll");
             const optionHost = dropdown?.parentElement;
             if (!(field instanceof HTMLElement)
                 || !(trigger instanceof HTMLButtonElement)
@@ -880,10 +886,18 @@ import {
                 .filter((option) => option instanceof HTMLButtonElement);
             const rows = Array.from(demo.querySelectorAll("[data-style-token-table-demo-row]"))
                 .filter((row) => row instanceof HTMLTableRowElement);
+            const pageSize = Math.max(
+                Number.parseInt(demo.dataset.styleTokenTablePageSize || "6", 10) || 6,
+                1,
+            );
             const defaultLabel = demo.querySelector("[data-style-token-table-filter-header]")
                 ?.querySelector(".scrollable-data-table-filter-default-label")
                 ?.textContent
                 ?.trim() || "Type";
+            let activeRows = rows;
+            let currentPage = 1;
+            let didBindPagination = false;
+            let didWaitForPaginationApi = false;
 
             const closeDropdown = () => {
                 field.classList.remove("is-open");
@@ -911,6 +925,49 @@ import {
                 });
             };
 
+            const renderPage = ({resetPage = false, animationState = null} = {}) => {
+                const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+                const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
+                if (resetPage) currentPage = 1;
+                currentPage = Math.min(totalPages, Math.max(1, currentPage));
+                const firstRowIndex = (currentPage - 1) * pageSize;
+                const visibleRows = new Set(activeRows.slice(firstRowIndex, firstRowIndex + pageSize));
+                rows.forEach((row) => {
+                    row.hidden = !visibleRows.has(row);
+                });
+                if (!(pagination instanceof HTMLElement)) return;
+                if (!paginationApi) {
+                    pagination.hidden = true;
+                    demo.classList.remove("has-floating-pagination");
+                    if (!didWaitForPaginationApi) {
+                        didWaitForPaginationApi = true;
+                        window.addEventListener("antigravity:local-store-pagination-ready", () => {
+                            didWaitForPaginationApi = false;
+                            renderPage();
+                        }, {once: true});
+                    }
+                    return;
+                }
+                const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+                demo.classList.toggle("has-floating-pagination", paginationState.shouldRender);
+                pagination.hidden = !paginationState.shouldRender;
+                paginationApi.renderLocalStorePagination(pagination, paginationState);
+                if (!didBindPagination) {
+                    didBindPagination = true;
+                    paginationApi.bindLocalStorePagination(
+                        pagination,
+                        (nextPage, {animationState: nextAnimationState} = {}) => {
+                            currentPage = nextPage;
+                            renderPage({animationState: nextAnimationState});
+                            if (scrollContainer instanceof HTMLElement) scrollContainer.scrollTop = 0;
+                        },
+                    );
+                }
+                if (animationState && typeof paginationApi.animateLocalStorePaginationIndicator === "function") {
+                    paginationApi.animateLocalStorePaginationIndicator(pagination, animationState);
+                }
+            };
+
             const syncFilter = (value, {close = true} = {}) => {
                 const nextValue = String(value || "all").trim().toLowerCase();
                 let selectedOption = options.find((option) => option.dataset.styleTokenTableFilterOption === nextValue);
@@ -926,18 +983,13 @@ import {
                     option.classList.toggle("is-active", isSelected);
                     option.setAttribute("aria-selected", String(isSelected));
                 });
-                const allRows = rows.length;
-                let visibleRows = 0;
-                rows.forEach((row) => {
-                    const isVisible = selectedValue === "all"
-                        || row.dataset.styleTokenTableFilterValue === selectedValue;
-                    row.hidden = !isVisible;
-                    if (isVisible) visibleRows += 1;
-                });
+                activeRows = rows.filter((row) => selectedValue === "all"
+                    || row.dataset.styleTokenTableFilterValue === selectedValue);
                 trigger.setAttribute("aria-label", `${defaultLabel} filter: ${selectedLabel}`);
                 const label = trigger.querySelector("[data-style-token-table-filter-label]");
                 if (label instanceof HTMLElement) label.textContent = selectedLabel;
-                summary.textContent = `${visibleRows} filtered of ${allRows} total`;
+                summary.textContent = `${activeRows.length} filtered of ${rows.length} total`;
+                renderPage({resetPage: true});
                 if (close) closeDropdown();
             };
 

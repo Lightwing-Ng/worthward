@@ -1,4 +1,4 @@
-{# Code version: v0.12.1 #}
+{# Code version: v0.12.7 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -96,7 +96,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.20.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.21.1') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -1156,14 +1156,18 @@
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
                     {% if row.sample_kind == "range-mode" %}
-                    <div class="range-mode-shell" data-active="period" data-option-count="2" data-segmented-active-index="0" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
-                        <label class="range-mode-option" for="style_token_range_relative">
-                            <input id="style_token_range_relative" name="style_token_range_mode" type="radio" value="period" checked>
-                            <span>{{ translate_ui('Relative') }}</span>
+                    <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
+                        <label class="range-mode-option" for="style_token_range_overview">
+                            <input id="style_token_range_overview" name="style_token_range_mode" type="radio" value="overview" checked>
+                            <span>{{ translate_ui('Overview') }}</span>
                         </label>
-                        <label class="range-mode-option" for="style_token_range_exact">
-                            <input id="style_token_range_exact" name="style_token_range_mode" type="radio" value="exact">
-                            <span>{{ translate_ui('Exact') }}</span>
+                        <label class="range-mode-option" for="style_token_range_details">
+                            <input id="style_token_range_details" name="style_token_range_mode" type="radio" value="details">
+                            <span>{{ translate_ui('Details') }}</span>
+                        </label>
+                        <label class="range-mode-option" for="style_token_range_metrics">
+                            <input id="style_token_range_metrics" name="style_token_range_mode" type="radio" value="metrics">
+                            <span>{{ translate_ui('Metrics') }}</span>
                         </label>
                     </div>
                     {% elif row.sample_kind == "action-button" %}
@@ -1313,7 +1317,7 @@
                     </div>
                     {% elif row.sample_kind == "data-table" %}
                     <div class="style-token-table-demo-shell">
-                        <div class="scrollable-data-table-shell style-token-table-demo" data-style-token-table-filter-demo>
+                        <div class="scrollable-data-table-shell local-store-pagination-host style-token-table-demo" data-style-token-table-filter-demo data-style-token-table-page-size="{{ row.sample_table_page_size or 6 }}">
                             <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table"
                                    data-table-header
                                    data-table-interactive-header
@@ -1360,14 +1364,14 @@
                                     {% endfor %}
                                 </tr>
                                 <tr data-table-summary-row data-summary-scope="both">
-                                    <td colspan="3"><span class="investment-holdings-summary-copy" data-style-token-table-filter-summary>4 filtered of 4 total</span></td>
+                                    <td colspan="3"><span class="investment-holdings-summary-copy" data-style-token-table-filter-summary>{{ row.sample_table_rows|length }} filtered of {{ row.sample_table_rows|length }} total</span></td>
                                     <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68">$7,089.68</span></span></td>
                                 </tr>
                                 </thead>
                             </table>
-                            <div class="trade-transactions-wrap scrollable-data-table-scroll style-token-scrollable-table-scroll style-token-table-demo-scroll">
-                                <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table">
-                                    <tbody>
+                            <div class="trade-transactions-wrap scrollable-data-table-scroll style-token-scrollable-table-scroll style-token-table-demo-scroll" id="style_token_table_demo_scroll" data-table-scroll>
+                                <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table" id="style_token_table_demo_body_table" data-table-body>
+                                    <tbody id="style_token_table_demo_body">
                                     {% for sample_row in row.sample_table_rows %}
                                     <tr data-style-token-table-demo-row data-style-token-table-filter-value="{{ sample_row[row.sample_table_filter_column_index]|lower }}">
                                         {% for cell in sample_row %}
@@ -1378,6 +1382,12 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <nav class="settings-pagination local-store-pagination local-store-pagination--floating style-token-table-demo-pagination"
+                                 aria-label="{{ translate_ui('Scrollable data table pages') }}"
+                                 aria-controls="style_token_table_demo_body"
+                                 data-pagination-scroll-target="style_token_table_demo_scroll"
+                                 data-style-token-table-pagination
+                                 hidden></nav>
                         </div>
                     </div>
                     {% elif row.sample_kind == "investment-holdings-allocation-badge" %}
@@ -1422,20 +1432,32 @@
                         </div>
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
-                    <nav class="settings-pagination local-store-pagination" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo>
-                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc((var(--local-store-pagination-slot-size) + var(--local-store-pagination-gap)) * 2), 0, 0); opacity: 1;"></span>
-                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true">
-                            <span class="icon icon-page-prev" aria-hidden="true"></span>
-                        </span>
+                    <div class="style-token-pagination-demo-surface">
+                    <nav class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 9;">
+                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 4)), 0, 0); opacity: 1;"></span>
                         <span class="local-store-page-button" aria-hidden="true">1</span>
-                        <span class="local-store-page-button is-active" aria-hidden="true">2</span>
-                        <span class="local-store-page-button" aria-hidden="true">3</span>
-                        <span class="local-store-page-button" aria-hidden="true">4</span>
-                        <span class="local-store-page-button" aria-hidden="true">5</span>
-                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true">
-                            <span class="icon icon-page-next" aria-hidden="true"></span>
+                        <span class="local-store-page-ellipsis" aria-hidden="true">
+                            <span class="local-store-page-ellipsis-dots"></span>
                         </span>
+                        <span class="local-store-page-button" aria-hidden="true">21</span>
+                        <span class="local-store-page-button" aria-hidden="true">22</span>
+                        <span class="local-store-page-button is-active" aria-hidden="true">23</span>
+                        <span class="local-store-page-button" aria-hidden="true">24</span>
+                        <span class="local-store-page-button" aria-hidden="true">25</span>
+                        <span class="local-store-page-ellipsis" aria-hidden="true">
+                            <span class="local-store-page-ellipsis-dots"></span>
+                        </span>
+                        <span class="local-store-page-button" aria-hidden="true">64</span>
                     </nav>
+                    </div>
+                    {% elif row.sample_kind == "token-inventory" %}
+                    <div class="style-token-inventory-demo" aria-hidden="true">
+                        <span class="style-token-inventory-count">{{ row.tokens|length }}</span>
+                        <div class="style-token-inventory-copy">
+                            <p class="style-token-inventory-title">{{ row.sample_title }}</p>
+                            <p class="style-token-inventory-note">{{ row.sample_copy }}</p>
+                        </div>
+                    </div>
                     {% endif %}
                 </div>
                 <div class="style-token-meta">

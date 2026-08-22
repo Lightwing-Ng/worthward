@@ -1,4 +1,4 @@
-/* Code version: v0.5.1 */
+/* Code version: v0.5.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -300,31 +300,24 @@
 
 	const renderComparePercentValue = (valueNode, value) => {
 		if (!(valueNode instanceof HTMLElement)) return;
-		valueNode.textContent = "";
 		const display = formatCompareLivePercent(value);
+		valueNode.replaceChildren();
+		delete valueNode.dataset.numericDisplayRendered;
 		if (display === "—") {
+			delete valueNode.dataset.numericDisplayValue;
 			const empty = document.createElement("span");
 			empty.className = "compare-percent-empty";
 			empty.textContent = "—";
 			valueNode.appendChild(empty);
 			return;
 		}
-		const match = display.match(/^(.+)(\.)(\d{2})(%)$/);
-		if (!match) {
-			valueNode.textContent = display;
+		valueNode.dataset.numericDisplayValue = display;
+		const enhanceNumericDisplay = window.ANTIGRAVITY_NUMERIC_DISPLAY?.enhanceNumericDisplayElements;
+		if (typeof enhanceNumericDisplay === "function") {
+			enhanceNumericDisplay(valueNode);
 			return;
 		}
-		[
-			["compare-percent-major", match[1]],
-			["compare-percent-dot", match[2]],
-			["compare-percent-minor", match[3]],
-			["compare-percent-suffix", match[4]],
-		].forEach(([className, text]) => {
-			const part = document.createElement("span");
-			part.className = className;
-			part.textContent = text;
-			valueNode.appendChild(part);
-		});
+		valueNode.textContent = display;
 	};
 
 	const appendCompareWinnerBadge = (targetNode, className = "winner-badge") => {

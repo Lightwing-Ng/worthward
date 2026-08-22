@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.10."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.14."""
 
 from __future__ import annotations
 
@@ -31,6 +31,55 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert "--scrollable-data-table-header-height" in html
     assert "--scrollable-data-table-summary-background" in html
     assert 'data-summary-scope="both"' in html
+
+
+def test_style_tokens_are_alphabetized_and_include_the_shared_inventory() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    titles = [
+        fragment.split("</p>", maxsplit=1)[0]
+        for fragment in html.split('<p class="style-token-title">')[1:]
+    ]
+    assert response.status_code == 200
+    assert titles == sorted(titles, key=str.casefold)
+    assert 'data-style-token-card="shared-style-primitives"' in html
+    assert html.count('<p class="style-token-title">Shared style primitives</p>') == 1
+    assert html.count('<td class="style-token-name">--workspace-title-safe-top</td>') == 1
+    assert 'data-active="overview" data-option-count="3"' in html
+    assert 'value="overview" checked' in html
+    assert 'value="details"' in html
+    assert 'value="metrics"' in html
+    assert 'data-pagination-page-count="64"' in html
+    assert 'data-pagination-current-page="23"' in html
+    assert html.count('class="local-store-page-ellipsis"') >= 2
+    assert '>21</span>' in html
+    assert '>22</span>' in html
+    assert '>23</span>' in html
+    assert '>24</span>' in html
+    assert '>25</span>' in html
+    assert '>64</span>' in html
+
+
+def test_shared_segmented_and_pagination_controls_use_regular_unselected_weight() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    forms_css = (project_root / "app/web/static/assets/css/components/forms.css").read_text(encoding="utf-8")
+    settings_css = (project_root / "app/web/static/assets/css/views/settings.css").read_text(encoding="utf-8")
+
+    segmented_rule_start = forms_css.index(".segmented-control-option span,")
+    segmented_rule_end = forms_css.index(".segmented-control[data-segmented-pill=", segmented_rule_start)
+    segmented_rule = forms_css[segmented_rule_start:segmented_rule_end]
+    selected_rule_start = forms_css.index(".segmented-control-option input:checked + span,")
+    selected_rule_end = forms_css.index(".range-mode-shell > .segmented-control-option input:checked + span", selected_rule_start)
+    selected_rule = forms_css[selected_rule_start:selected_rule_end]
+    pagination_rule_start = settings_css.index("\n.local-store-page-button {\n") + 1
+    pagination_rule_end = settings_css.index(".local-store-page-button.is-active {", pagination_rule_start)
+    pagination_rule = settings_css[pagination_rule_start:pagination_rule_end]
+    assert "font-weight: var(--font-weight-regular);" in segmented_rule
+    assert "font-weight: var(--font-weight-bold);" in selected_rule
+    assert "font-weight: var(--font-weight-regular);" in pagination_rule
 
 
 def test_shared_select_option_highlights_use_pill_geometry() -> None:
@@ -474,3 +523,9 @@ def test_style_tokens_render_the_interactive_standard_table_filter_demo() -> Non
     assert 'data-style-token-table-filter-trigger' in html
     assert 'data-style-token-table-filter-option="buy"' in html
     assert 'data-style-token-table-filter-summary' in html
+    assert 'local-store-pagination-host style-token-table-demo' in html
+    assert 'data-style-token-table-page-size="6"' in html
+    assert 'data-style-token-table-pagination' in html
+    assert 'data-table-header' in html
+    assert 'data-table-body' in html
+    assert html.count('data-style-token-table-demo-row') == 12

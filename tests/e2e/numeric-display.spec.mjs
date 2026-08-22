@@ -1,4 +1,4 @@
-/* Browser contract for shared numeric typography. Code version: v1.0.1 */
+/* Browser contract for shared numeric typography. Code version: v1.1.0 */
 
 import {test, expect} from '@playwright/test';
 
@@ -87,5 +87,38 @@ test('Style tokens and Font tokens use the shared integer/fraction display', asy
     expect(fontSampleState['--font-numeric-fraction-scale']).toEqual({
         previewToken: '--font-metric-value',
         computedSize: '24px',
+    });
+});
+
+test('Compare performance summary uses the shared integer/fraction display', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=MSFT&ticker=AAPL&range=2y');
+
+    const values = page.locator('#compare_summary_region .compare-percent-value');
+    await expect(values).toHaveCount(4);
+    const valueState = await values.evaluateAll((elements) => elements.map((element) => {
+        const metrics = element.closest('.performance-metrics');
+        const parts = Array.from(element.children);
+        return {
+            text: element.textContent.trim(),
+            dataValue: element.getAttribute('data-numeric-display-value'),
+            classes: parts.map((part) => part.className),
+            majorFontSize: getComputedStyle(parts[0]).fontSize,
+            minorFontSize: getComputedStyle(parts[1]).fontSize,
+            decimalScale: getComputedStyle(metrics).getPropertyValue('--workspace-metric-decimal-scale-local').trim(),
+            legacyParts: element.querySelectorAll('.compare-percent-major, .compare-percent-dot, .compare-percent-minor, .compare-percent-suffix').length,
+        };
+    }));
+
+    valueState.forEach((value) => {
+        expect(value.text).toMatch(/^[+-]?\d[\d,]*\.\d{2}%$/);
+        expect(value.dataValue).toBe(value.text);
+        expect(value.classes).toEqual([
+            'workspace-metric-value-major',
+            'workspace-metric-value-minor',
+            'workspace-metric-value-suffix',
+        ]);
+        expect(Number.parseFloat(value.minorFontSize)).toBeLessThan(Number.parseFloat(value.majorFontSize));
+        expect(value.decimalScale).toBe('0.76');
+        expect(value.legacyParts).toBe(0);
     });
 });

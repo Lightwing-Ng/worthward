@@ -1,4 +1,4 @@
-/* Code version: v1.75.43 */
+/* Code version: v1.75.46 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1231,6 +1231,8 @@
 
 #compare_summary_panel {
     position: relative;
+    width: calc(100% + var(--workspace-article-pad-inline) + var(--workspace-article-pad-inline));
+    margin-inline: calc(-1 * var(--workspace-article-pad-inline));
 }
 
 .compare-summary-content-card {
@@ -1240,7 +1242,11 @@
 #compare_summary_panel > .investment-share-actions[data-share-placement="summary-panel"] {
     position: absolute;
     top: var(--investment-share-actions-top, 0px);
-    right: calc(var(--settings-round-icon-button-size) + var(--investment-share-action-gap));
+    right: calc(
+        var(--settings-round-icon-button-size)
+        + var(--investment-share-action-gap)
+        + var(--workspace-article-pad-inline)
+    );
     transform: none;
     z-index: calc(var(--layer-surface-content) + 2);
     width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
@@ -5010,6 +5016,49 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     align-content: start;
     gap: var(--investment-transfer-link-gap);
     min-width: 0;
+}
+
+.investment-transfer-link-shared-select-field {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+    border-radius: inherit;
+    position: relative;
+}
+
+.investment-transfer-link-shared-select-field > .investment-transfer-link-select.backtest-shared-select-native {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 1px;
+    height: 1px;
+    min-width: 1px;
+    min-height: 1px;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.investment-transfer-link-shared-select-field .investment-transfer-link-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    height: 22px;
+    font-size: var(--font-table-body);
+    line-height: var(--investment-transfer-link-line-height);
+    padding: 0 24px 0 var(--investment-transfer-link-pad-inline);
+}
+
+.investment-transfer-link-shell.is-resolved .investment-transfer-link-shared-select-field .investment-transfer-link-select {
+    padding-inline-start: 0;
+}
+
+.investment-transfer-link-shell.is-unresolved .investment-transfer-link-shared-select-field .investment-transfer-link-select {
+    border: 1px solid var(--theme-accent-secondary) !important;
+    border-radius: var(--radius-soft);
+}
+
+.investment-transfer-link-shell.is-ignored .investment-transfer-link-shared-select-field .investment-transfer-link-select {
+    border-color: color-mix(in srgb, var(--theme-muted) 45%, transparent);
 }
 
 .investment-transfer-link-shell.is-unresolved {

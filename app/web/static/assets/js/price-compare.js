@@ -1,4 +1,4 @@
-/* Code version: v0.15.7 */
+/* Code version: v0.15.8 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -238,6 +238,17 @@
 		}
 		const fractionDigits = ["JPY", "KRW"].includes(currency) ? 0 : 2;
 		const formatted = numeric.toLocaleString("en-US", {minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits});
+		return showCurrency ? `${currency} ${formatted}` : formatted;
+	};
+
+	const formatPriceAxis = (value, currency, showCurrency) => {
+		const numeric = finiteNumber(value);
+		if (numeric === null) return "";
+		if (typeof bootstrap.currencyDisplay?.formatAxis === "function") {
+			return bootstrap.currencyDisplay.formatAxis(numeric, currency, showCurrency);
+		}
+		const fractionDigits = ["JPY", "KRW"].includes(currency) ? 0 : 2;
+		const formatted = numeric.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: fractionDigits});
 		return showCurrency ? `${currency} ${formatted}` : formatted;
 	};
 
@@ -1021,7 +1032,7 @@
 							ticks: {
 								color: theme.muted,
 								padding: 8,
-								callback: (value, tickIndex, ticks) => formatPrice(value, currency, showCurrency && tickIndex === (ticks?.length || 0) - 1),
+								callback: (value, tickIndex, ticks) => formatPriceAxis(value, currency, showCurrency && tickIndex === (ticks?.length || 0) - 1),
 							},
 						},
 					},

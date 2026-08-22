@@ -1,4 +1,4 @@
-/* Code version: v0.34.0 */
+/* Code version: v0.37.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1911,6 +1911,7 @@
             window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initDcaWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+            window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
             if (state.currentView === "portfolio") {
                 dispatchPortfolioPreviewUpdate();
             }
@@ -4426,7 +4427,9 @@
         field instanceof HTMLElement
         && (
             Boolean(field.closest("[data-trade-strategy-panel]"))
+            || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "strategy"
             || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-import-broker"
+            || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-transfer"
             || field.classList.contains("investment-import-broker-field")
         )
     );
@@ -4453,11 +4456,17 @@
     };
     const restoreSharedSelectDropdown = (field, dropdown) => {
         if (!shouldPortalSharedSelectDropdown(field)
-            || !field.closest("[data-trade-strategy-panel]")
+            || (!field.closest("[data-trade-strategy-panel]")
+                && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "strategy"
+                && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "investment-transfer")
             || !(dropdown instanceof HTMLElement)) return;
         const host = dropdown.parentElement;
         if (!(host instanceof HTMLElement) || !host.matches("[data-shared-select-overlay]")) return;
-        field.appendChild(dropdown);
+        const kind = String(field.dataset.sharedSelectKind || "").trim().toLowerCase();
+        const restoreParent = kind === "strategy"
+            ? field.querySelector(":scope > .trade-strategy-row")
+            : field;
+        (restoreParent instanceof HTMLElement ? restoreParent : field).appendChild(dropdown);
         delete field.dataset.sharedSelectOwner;
         delete dropdown.dataset.sharedSelectOwner;
     };
@@ -4533,7 +4542,14 @@
         const select = field.querySelector("select");
         const trigger = field.querySelector("[data-shared-select-trigger]");
         const triggerLabel = field.querySelector("[data-shared-select-trigger-label]");
-        const dropdown = getSharedSelectDropdown(field);
+        const controlledDropdownId = trigger?.getAttribute("aria-controls")?.trim() || "";
+        const controlledDropdown = controlledDropdownId
+            ? document.getElementById(controlledDropdownId)
+            : null;
+        const dropdown = controlledDropdown instanceof HTMLElement
+            && controlledDropdown.matches("[data-shared-select-dropdown]")
+            ? controlledDropdown
+            : getSharedSelectDropdown(field);
         if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
             return null;
         }
@@ -4656,7 +4672,9 @@
             || parts.field.classList.contains('investment-import-broker-field')
             || parts.field.dataset.sharedSelectKind === 'investment-import-broker';
         const isInsideStrategyPanel = Boolean(trigger.closest("[data-trade-strategy-panel]"));
-        if (isInsideImportForm || isInsideStrategyPanel) {
+        const isTradeStrategyField = String(parts.field.dataset.sharedSelectKind || "").trim().toLowerCase() === "strategy";
+        const isInvestmentTransfer = String(parts.field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-transfer";
+        if (isInsideImportForm || isInsideStrategyPanel || isTradeStrategyField || isInvestmentTransfer) {
             // Portal constrained menus above clipped form containers before positioning them.
             portalSharedSelectDropdown(field, dropdown);
             const dropdownGap = 4;
@@ -5000,6 +5018,70 @@
             parts.select.dataset.periodChangeJsBound = "1";
             parts.select.addEventListener("change", handlePeriodSelectionChange);
         }
+    };
+
+    const upgradeStandaloneSharedSelects = () => {
+        const standaloneSelects = Array.from(document.querySelectorAll(
+            "select.trade-strategy-select.form-select:not(.backtest-shared-select-native)"
+        )).filter((select) => (
+            select instanceof HTMLSelectElement
+            && !select.closest("[data-shared-select-field]")
+            && select.dataset.sharedSelectStandaloneReady !== "1"
+        ));
+
+        standaloneSelects.forEach((select) => {
+            const host = select.parentElement;
+            if (!(host instanceof HTMLElement)) return;
+
+            const selectId = String(select.id || "").trim();
+            const generatedId = selectId || `investment_transfer_select_${++sharedSelectOwnerSequence}`;
+            const selectedOption = Array.from(select.options).find((option) => option.value === select.value);
+            const selectedLabel = selectedOption?.textContent?.trim() || select.value || "";
+            const field = document.createElement("div");
+            field.className = "trade-strategy-row backtest-shared-select-row backtest-shared-select-field investment-transfer-link-shared-select-field";
+            field.dataset.sharedSelectField = "";
+            field.dataset.sharedSelectKind = "investment-transfer";
+
+            const combobox = document.createElement("div");
+            combobox.className = "trade-strategy-combobox backtest-shared-select-combobox";
+
+            const trigger = document.createElement("button");
+            trigger.type = "button";
+            trigger.className = "trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger investment-transfer-link-select";
+            trigger.dataset.sharedSelectTrigger = "";
+            trigger.setAttribute("aria-haspopup", "listbox");
+            trigger.setAttribute("aria-expanded", "false");
+            trigger.setAttribute("aria-controls", `${generatedId}_dropdown`);
+            trigger.setAttribute("aria-label", select.getAttribute("aria-label") || selectedLabel);
+            trigger.title = selectedLabel;
+
+            const triggerLabel = document.createElement("span");
+            triggerLabel.className = "trade-strategy-trigger-label";
+            triggerLabel.dataset.sharedSelectTriggerLabel = "";
+            triggerLabel.dataset.fallbackLabel = selectedLabel;
+            triggerLabel.textContent = selectedLabel;
+            trigger.appendChild(triggerLabel);
+            combobox.appendChild(trigger);
+
+            const dropdown = document.createElement("div");
+            dropdown.id = `${generatedId}_dropdown`;
+            dropdown.className = "trade-strategy-dropdown backtest-shared-select-dropdown investment-transfer-link-dropdown";
+            dropdown.dataset.sharedSelectDropdown = "";
+            dropdown.setAttribute("role", "listbox");
+            dropdown.setAttribute("aria-label", select.getAttribute("aria-label") || "Select an option");
+            dropdown.hidden = true;
+
+            select.classList.add("trade-strategy-native-select", "backtest-shared-select-native");
+            select.hidden = false;
+            select.setAttribute("aria-hidden", "true");
+            select.tabIndex = -1;
+            select.dataset.sharedSelectStandaloneReady = "1";
+
+            host.replaceChild(field, select);
+            field.appendChild(select);
+            field.appendChild(combobox);
+            field.appendChild(dropdown);
+        });
     };
 
     const getBacktestIntervalShell = () => document.querySelector("[data-backtest-interval-shell]");
@@ -5530,6 +5612,16 @@
             const fractionDigits = this.minorUnits(currency);
             const formatted = numeric.toLocaleString("en-US", {
                 minimumFractionDigits: fractionDigits,
+                maximumFractionDigits: fractionDigits,
+            });
+            return showCurrency ? `${currency} ${formatted}` : formatted;
+        },
+        formatAxis(value, currency, showCurrency = true) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return "";
+            const fractionDigits = this.minorUnits(currency);
+            const formatted = numeric.toLocaleString("en-US", {
+                minimumFractionDigits: 0,
                 maximumFractionDigits: fractionDigits,
             });
             return showCurrency ? `${currency} ${formatted}` : formatted;
@@ -7416,6 +7508,14 @@
     const setTradeStrategyDropdownOpen = (isOpen) => {
         const {field, trigger, dropdown, panel} = getTradeStrategyRefs();
         if (!(dropdown instanceof HTMLElement) || !(trigger instanceof HTMLButtonElement)) return;
+        const sharedParts = getSharedSelectParts(field);
+        if (sharedParts) {
+            setSharedSelectDropdownOpen(field, isOpen);
+            if (field instanceof HTMLElement) {
+                field.classList.toggle("is-open", isOpen || (!(panel instanceof HTMLElement) ? false : !panel.hidden));
+            }
+            return;
+        }
         dropdown.hidden = !isOpen;
         trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
         if (field instanceof HTMLElement) {
@@ -7432,6 +7532,10 @@
     const syncTradeStrategyTriggerLabel = () => {
         const {field, select, trigger, triggerLabel} = getTradeStrategyRefs();
         if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement)) return;
+        if (getSharedSelectParts(field)) {
+            syncSharedSelectTriggerLabel(field);
+            return;
+        }
         const selectedOption = Array.from(select.options).find((option) => option.value === select.value);
         const nextLabel = selectedOption?.textContent?.trim()
             || triggerLabel.dataset.fallbackLabel
@@ -7450,6 +7554,10 @@
     const positionTradeStrategyDropdown = () => {
         const {field, trigger, dropdown} = getTradeStrategyRefs();
         if (!(dropdown instanceof HTMLElement) || dropdown.hidden || !(trigger instanceof HTMLElement)) return;
+        if (getSharedSelectParts(field)) {
+            positionSharedSelectDropdown(field);
+            return;
+        }
         const anchor = field?.querySelector(".trade-strategy-row");
         const anchorRect = anchor instanceof HTMLElement
             ? anchor.getBoundingClientRect()
@@ -7755,7 +7863,10 @@
     };
 
     const repairSidebarControlBindings = () => {
-        getSharedSelectFields().forEach((field) => initializeSharedSelectField(field));
+        upgradeStandaloneSharedSelects();
+        getSharedSelectFields()
+            .filter((field) => String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "strategy")
+            .forEach((field) => initializeSharedSelectField(field));
         initializeTradeStrategyField();
         syncBacktestIntervalSegmentedControl();
     };
@@ -7777,13 +7888,19 @@
     }, true);
     document.addEventListener("click", (event) => {
         const {field} = getTradeStrategyRefs();
-        const clickedInsideStrategyField = field instanceof HTMLElement && field.contains(event.target);
+        const eventPath = typeof event.composedPath === "function" ? event.composedPath() : [];
+        const clickedInsideStrategyField = field instanceof HTMLElement
+            && (field.contains(event.target) || eventPath.includes(field));
+        const strategyDropdown = getSharedSelectParts(field)?.dropdown;
+        const clickedInsideStrategyDropdown = strategyDropdown instanceof HTMLElement
+            && (strategyDropdown.contains(event.target) || eventPath.includes(strategyDropdown));
         const clickedInsideSharedField = getSharedSelectFields().some((sharedField) => {
-            if (sharedField.contains(event.target)) return true;
+            if (sharedField.contains(event.target) || eventPath.includes(sharedField)) return true;
             const dropdown = getSharedSelectParts(sharedField)?.dropdown;
-            return dropdown instanceof HTMLElement && dropdown.contains(event.target);
+            return dropdown instanceof HTMLElement
+                && (dropdown.contains(event.target) || eventPath.includes(dropdown));
         });
-        if (!clickedInsideStrategyField) {
+        if (!clickedInsideStrategyField && !clickedInsideStrategyDropdown) {
             setTradeStrategyDropdownOpen(false);
             setTradeStrategyPanelOpen(false);
         }

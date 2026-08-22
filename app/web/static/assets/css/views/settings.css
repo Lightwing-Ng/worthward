@@ -1,4 +1,4 @@
-/* Code version: v0.22.5 */
+/* Code version: v0.22.10 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -647,6 +647,62 @@
     -webkit-backdrop-filter: var(--frosted-glass-blur);
 }
 
+.style-token-inventory-demo {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 168px;
+    padding: 24px;
+    border-radius: var(--radius-panel);
+    background: var(--frosted-glass-background);
+    border: var(--frosted-glass-border);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+}
+
+.style-token-inventory-count {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    inline-size: 88px;
+    block-size: 88px;
+    border-radius: 50%;
+    background: var(--accent-fill);
+    color: var(--accent-contrast);
+    font-size: var(--font-metric-md);
+    font-weight: var(--font-weight-bold);
+    box-shadow: 0 12px 24px var(--accent-shadow-soft);
+}
+
+.style-token-inventory-copy {
+    min-width: 0;
+}
+
+.style-token-inventory-title,
+.style-token-inventory-note {
+    margin: 0;
+}
+
+.style-token-inventory-title {
+    color: var(--text);
+    font-size: var(--font-form-control);
+    font-weight: var(--font-weight-bold);
+}
+
+.style-token-inventory-note {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: var(--font-form-label);
+    line-height: 1.4;
+}
+
+.style-token-pagination-demo-surface {
+    position: relative;
+    min-height: 64px;
+    overflow: visible;
+}
+
 .style-token-demo > .settings-round-icon-button {
     width: var(--settings-round-icon-button-size);
     height: var(--settings-round-icon-button-size);
@@ -936,10 +992,22 @@ div.style-token-modal-demo {
 .style-token-table-demo {
     width: min(100%, 520px);
     max-width: 100%;
+    height: 252px;
+    min-height: 0;
 }
 
 .style-token-table-demo-scroll {
     max-height: 156px;
+}
+
+.scrollable-data-table-shell.style-token-table-demo > .style-token-table-demo-scroll {
+    flex: 0 0 156px;
+    height: 156px;
+    max-height: 156px;
+}
+
+.style-token-table-demo-pagination {
+    max-width: calc(100% - 8px);
 }
 
 .style-token-table-filter-dropdown {
@@ -2744,7 +2812,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     text-decoration: none;
     font-size: var(--font-table-body);
     line-height: 1;
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-regular);
     transition: transform var(--local-store-pagination-motion-duration) var(--local-store-pagination-motion-easing), color 180ms var(--motion-standard), border-color 180ms var(--motion-standard), background 180ms var(--motion-standard), box-shadow 180ms var(--motion-standard);
 }
 

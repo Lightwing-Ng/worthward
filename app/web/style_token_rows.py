@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.6.3
+Code version: v1.7.1
 """
 
 from __future__ import annotations
@@ -9,7 +9,90 @@ from collections.abc import Mapping
 import re
 
 
-def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]:
+SHARED_STYLE_TOKEN_NAMES = (
+    "--backtest-surface-bottom-pad",
+    "--control-glass-background-hover",
+    "--control-liquid-blur",
+    "--control-liquid-shadow",
+    "--control-liquid-shadow-focus",
+    "--demo-accent-gradient",
+    "--global-quick-actions-right",
+    "--layer-base",
+    "--layer-chart-tooltip",
+    "--layer-control-affordance",
+    "--layer-decorative-backdrop",
+    "--layer-fixed-dock",
+    "--layer-global-popover",
+    "--layer-inline-ornament",
+    "--layer-inline-overlay",
+    "--layer-inline-overlay-host",
+    "--layer-sidebar-toggle",
+    "--layer-surface-content",
+    "--live-trading-pin-icon-size",
+    "--live-trading-pin-slot-dot-size",
+    "--live-trading-pin-slot-size",
+    "--local-store-pagination-gap",
+    "--mode-switch-thumb-shadow",
+    "--motion-bouncy",
+    "--motion-duration-emphasized",
+    "--motion-duration-fast",
+    "--motion-duration-spatial",
+    "--motion-duration-standard",
+    "--motion-emphasized",
+    "--motion-inertial",
+    "--motion-overshoot",
+    "--motion-press",
+    "--motion-shimmer",
+    "--motion-standard",
+    "--numeric-input-control-height",
+    "--page-edge-pad",
+    "--page-mobile-scroll-bottom-pad-base",
+    "--radius-control",
+    "--radius-pill",
+    "--radius-soft",
+    "--responsive-breakpoint-layout-switch-min",
+    "--settings-action-package-max-width",
+    "--settings-form-control-max-width",
+    "--settings-form-control-min-width",
+    "--settings-form-shell-max-width",
+    "--settings-general-panel-pad",
+    "--settings-reading-guard-single-column-width",
+    "--settings-round-icon-button-border",
+    "--settings-strategy-param-cell-pad-block",
+    "--settings-strategy-param-cell-pad-inline",
+    "--settings-text-input-background",
+    "--settings-text-input-pad-inline",
+    "--sidebar-dock-bottom-gap",
+    "--sidebar-dock-hit-size",
+    "--sidebar-form-control-min-height",
+    "--sidebar-form-control-padding-block",
+    "--sidebar-form-field-label-gap",
+    "--sidebar-form-inline-gap",
+    "--sidebar-form-popover-gap",
+    "--sidebar-overlay-available-inline-size",
+    "--sidebar-overlay-inset-bottom",
+    "--sidebar-overlay-inset-left",
+    "--sidebar-overlay-inset-top",
+    "--sidebar-toggle-center-offset",
+    "--sidebar-toggle-left",
+    "--sidebar-toggle-top",
+    "--sidebar-width",
+    "--trade-chart-y-padding-px",
+    "--workspace-article-sidebar-morph-duration",
+    "--workspace-mobile-surface-bottom-pad",
+    "--workspace-modal-close-center-offset",
+    "--workspace-modal-close-size",
+    "--workspace-title-rail-control-height",
+    "--workspace-title-rail-height",
+    "--workspace-title-rail-pad-block-start",
+    "--workspace-title-safe-top",
+)
+
+
+def build_style_token_rows(
+        labels: Mapping[str, str],
+        foundation_token_registry: Mapping[str, object] | None = None,
+) -> list[dict[str, object]]:
     def style_token_id(name: str) -> str:
         return name.strip().lower().replace(" ", "-")
 
@@ -52,6 +135,17 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "reference_label": material_name,
             "reference_target_id": material_token_id(material_name),
         }
+
+    if foundation_token_registry is None:
+        from app.web.token_registry import load_foundation_css_token_registry
+
+        foundation_token_registry = load_foundation_css_token_registry()
+
+    def foundation_token_value(name: str) -> str:
+        definition = foundation_token_registry.get(name)
+        if definition is None:
+            raise KeyError(f"Missing foundation style token: {name}")
+        return str(getattr(definition, "value", definition))
 
     rows = [
         {
@@ -278,11 +372,20 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "sample_table_filter_label": "Type",
             "sample_table_filter_column_index": 2,
             "sample_table_filter_options": ["All", "Buy", "Sell"],
+            "sample_table_page_size": 6,
             "sample_table_rows": [
                 ["12", "2 Apr 2026", "Buy", "NVDA @ 123.45 x 10", "$1,234.50"],
                 ["11", "1 Apr 2026", "Deposit", "--", "$5,000.00"],
                 ["10", "31 Mar 2026", "Dividend", "AAPL", "$42.18"],
                 ["9", "28 Mar 2026", "Sell", "TSLA @ 271.00 x 3", "$813.00"],
+                ["8", "27 Mar 2026", "Buy", "MSFT @ 410.00 x 2", "$820.00"],
+                ["7", "26 Mar 2026", "Buy", "AAPL @ 172.00 x 3", "$516.00"],
+                ["6", "25 Mar 2026", "Sell", "GOOGL @ 150.00 x 4", "$600.00"],
+                ["5", "24 Mar 2026", "Deposit", "--", "$2,500.00"],
+                ["4", "23 Mar 2026", "Dividend", "NVDA", "$18.40"],
+                ["3", "22 Mar 2026", "Buy", "AMD @ 180.00 x 2", "$360.00"],
+                ["2", "21 Mar 2026", "Sell", "AMZN @ 175.00 x 1", "$175.00"],
+                ["1", "20 Mar 2026", "Buy", "META @ 490.00 x 1", "$490.00"],
             ],
             "tokens": [
                 raw_token("--radius-panel", "10px"),
@@ -589,28 +692,33 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             ],
             "related_styles": [],
         },
+        {
+            "id": style_token_id("Shared style primitives"),
+            "name": "Shared style primitives",
+            "sample_kind": "token-inventory",
+            "sample_title": "Shared style primitives",
+            "sample_copy": "Foundation style tokens reused across at least two project surfaces.",
+            "sample_button": "",
+            "sample_button_class": "",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "tokens": [
+                raw_token(name, foundation_token_value(name))
+                for name in SHARED_STYLE_TOKEN_NAMES
+            ],
+            "related_styles": [],
+        },
     ]
-    token_order = {
-        "Investment community share card": 5,
-        "Text input control": 10,
-        "Ticker input control": 15,
-        "Settings execution option": 20,
-        "Segmented control": 30,
-        "Workspace article": 34,
-        "Workspace metric value": 35,
-        "Portfolio donut orbit": 36,
-        "Scrollable data table": 37,
-        "Investment Holdings allocation badge": 38,
-        "Settings action button": 40,
-        "Settings action package": 50,
-        "Circular icon button": 60,
-        "Trade strategy stepper": 70,
-        "Local store pagination": 80,
-        "Modal dialog": 90,
-        "Modal dialog banner message": 100,
-        "Chart tooltip": 110,
-    }
-    rows.sort(key=lambda row: (token_order.get(str(row.get("name", "")), 999), str(row.get("name", ""))))
+    for row in rows:
+        row["tokens"] = sorted(
+            row.get("tokens", []),
+            key=lambda token: str(token.get("name", "")).casefold(),
+        )
+        row["related_styles"] = sorted(
+            row.get("related_styles", []),
+            key=lambda related_style: str(related_style.get("name", "")).casefold(),
+        )
+    rows.sort(key=lambda row: str(row.get("name", "")).casefold())
     return rows
 
 def build_export_image_rows(project_display_url: str) -> list[dict[str, object]]:

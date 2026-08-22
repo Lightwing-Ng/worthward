@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.8.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
 from app.web.style_token_rows import (
+    SHARED_STYLE_TOKEN_NAMES,
     build_color_token_rows,
     build_export_image_rows,
     build_font_token_rows,
@@ -174,6 +175,36 @@ class WebTokenRegistryTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(token_names), 100)
         self.assertEqual(duplicates, [])
+
+    def test_shared_style_inventory_is_alphabetized_and_reused(self) -> None:
+        labels = {
+            "local_store_maintain_button": "Maintain local data",
+            "local_store_maintain_title": "Local data maintenance",
+            "local_store_maintain_note": "Keep local price data current.",
+            "portfolio_total_return": "Portfolio return",
+            "hero_title": "Control center",
+            "portfolio_title": "Portfolio workspace",
+            "backtest_ticker": "Ticker",
+            "period": "Period",
+            "backtest_strategy": "Strategy",
+        }
+        style_rows = build_style_token_rows(labels)
+        row_names = [str(row["name"]) for row in style_rows]
+        self.assertEqual(row_names, sorted(row_names, key=str.casefold))
+
+        shared_row = next(row for row in style_rows if row["name"] == "Shared style primitives")
+        shared_names = [str(token["name"]) for token in shared_row["tokens"]]
+        self.assertEqual(shared_names, list(SHARED_STYLE_TOKEN_NAMES))
+        self.assertEqual(shared_names, sorted(shared_names, key=str.casefold))
+
+        source_text = "\n".join(
+            read_text(path)
+            for path in (REPO_ROOT / "app").rglob("*")
+            if path.is_file() and path.suffix in {".css", ".html", ".js", ".mjs"}
+        )
+        source_counts = Counter(re.findall(r"--[a-z][a-z0-9_-]*", source_text))
+        for token_name in SHARED_STYLE_TOKEN_NAMES:
+            self.assertGreaterEqual(source_counts[token_name], 3)
 
     def test_design_token_builders_use_only_explicit_presentation_inputs(self) -> None:
         labels = {

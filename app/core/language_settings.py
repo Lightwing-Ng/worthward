@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.3
+Code version: v0.5.5
 """
 
 from __future__ import annotations
@@ -315,6 +315,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Show Sensitive Values", "顯示敏感值", "显示敏感值"),
         ("Welcome to vibe and star this project.", "歡迎使用，並為此專案點選 star。", "欢迎使用，并为此项目点选 star。"),
         ("Overview", "概覽", "概览"),
+        ("Details", "詳情", "详情"),
         ("Holdings", "持倉", "持仓"),
         ("Stock details", "股票詳情", "股票详情"),
         ("Portfolio", "投資組合", "投资组合"),
@@ -438,6 +439,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Circular icon button", "圓形圖示按鈕", "圆形图标按钮"),
         ("Use the article shell as the desktop baseline. On narrow screens, the mobile heading surface keeps the glass material but drops the shadow before morphing toward the sidebar.", "以文章外框作為桌面基準。在窄螢幕上，流動版標題表面保留玻璃材質但移除陰影，然後向側邊欄變形。", "以文章外框作为桌面基准。在窄屏幕上，移动版标题表面保留玻璃材质但移除阴影，然后向侧边栏变形。"),
         ("Scrollable data table", "可滾動資料表", "可滚动数据表"),
+        ("Scrollable data table pages", "可滾動資料表頁面", "可滚动数据表页面"),
         ("Transaction history", "交易歷史", "交易历史"),
         ("Time", "時間", "时间"),
         ("Type", "類型", "类型"),

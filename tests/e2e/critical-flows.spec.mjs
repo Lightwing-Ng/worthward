@@ -1,4 +1,4 @@
-/* Code version: v1.166.11 */
+/* Code version: v1.166.16 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -739,9 +739,12 @@ test('anchors the comparison share control to the summary panel without overlapp
         const button = document.querySelector('#export_transactions_button');
         const drawer = button?.closest('[data-share-drawer="tickers"]');
         const panel = document.querySelector('#compare_summary_panel');
+        const chartSurface = document.querySelector('.workspace-mode-main > .workspace-header > .chart-surface');
         const theme = document.querySelector('#global_theme_toggle');
         const rect = (element) => element?.getBoundingClientRect();
         const share = rect(button);
+        const panelRect = rect(panel);
+        const chartSurfaceRect = rect(chartSurface);
         const themeRect = rect(theme);
         const overlaps = share && themeRect
             ? share.left < themeRect.right
@@ -757,6 +760,9 @@ test('anchors the comparison share control to the summary panel without overlapp
             overlapsTheme: overlaps,
             shareRight: share?.right,
             themeLeft: themeRect?.left,
+            summaryWidthDelta: panelRect && chartSurfaceRect
+                ? Math.abs(panelRect.width - chartSurfaceRect.width)
+                : null,
         };
     });
 
@@ -764,6 +770,7 @@ test('anchors the comparison share control to the summary panel without overlapp
     expect(geometry.themeCenterDelta).toBeLessThanOrEqual(1);
     expect(geometry.overlapsTheme).toBe(false);
     expect(geometry.shareRight).toBeLessThan(geometry.themeLeft);
+    expect(geometry.summaryWidthDelta).toBeLessThanOrEqual(0.01);
 });
 
 test('stacks the portfolio date beneath the aligned summary title', async ({page}) => {
@@ -1019,6 +1026,39 @@ test('draws no return zero baseline for a market-cap chart', async ({page}) => {
 
     expect(chartState.zeroBandCalls).toEqual([]);
     expect(chartState.xBorderVisible).toBe(false);
+});
+
+test('formats market-cap y-axis values without fixed trailing zeroes', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=6mo');
+    await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('#returnsChart'))));
+
+    const formattedTicks = await page.evaluate(() => {
+        const state = window.ANTIGRAVITY_APP;
+        state.currentView = 'market-caps';
+        state.chart = {
+            ...state.chart,
+            profiles: [],
+            series: [{
+                ticker: 'QQQ',
+                dates: ['1 Jan 2026', '2 Jan 2026'],
+                raw_dates: ['2026-01-01 00:00', '2026-01-02 00:00'],
+                normalized_returns: [0, 1],
+                market_caps: [1_234, 4_500_000_000_000],
+                color: '#0055cc',
+            }],
+        };
+        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        const chart = window.Chart.getChart(document.querySelector('#returnsChart'));
+        const callback = chart.options.scales.y.ticks.callback;
+        const ticks = [{value: 1_000}, {value: 1_234}, {value: 1_500}];
+        return [
+            callback(1_234, 1, ticks),
+            callback(4_500_000_000_000, 1, ticks),
+            callback(4_000_000_000_000, 1, ticks),
+        ];
+    });
+
+    expect(formattedTicks).toEqual(['$1,234', '$4.5T', '$4T']);
 });
 
 test('omits midnight from long market-cap x-axis labels', async ({page}) => {
@@ -1815,7 +1855,12 @@ test('switches short price ranges and formats price axes by currency precision',
     const formattedTicks = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => window.Chart.getChart(canvas).options.scales.y.ticks.callback(1040))
     ));
-    expect(formattedTicks).toEqual(['1,040.00', '1,040.00', '1,040.00']);
+    expect(formattedTicks).toEqual(['1,040', '1,040', '1,040']);
+
+    const fractionalTick = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => (
+        window.Chart.getChart(canvas).options.scales.y.ticks.callback(1040.5)
+    ));
+    expect(fractionalTick).toBe('1,040.5');
 
     const threeDayAxis = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => {
@@ -5605,7 +5650,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.9.6');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.9.7');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -11936,11 +11981,28 @@ test('keeps style-token showcase pills interactive and donut satellites centered
     await page.goto('/settings/style-tokens');
 
     const rangeShell = page.locator('[data-style-token-card="segmented-control"] .range-mode-shell');
-    const exactOption = rangeShell.locator('label[for="style_token_range_exact"]');
-    await exactOption.click();
-    await expect(rangeShell.locator('#style_token_range_exact')).toBeChecked();
-    await expect(rangeShell).toHaveAttribute('data-active', 'exact');
+    const detailsOption = rangeShell.locator('label[for="style_token_range_details"]');
+    await detailsOption.click();
+    await expect(rangeShell.locator('#style_token_range_details')).toBeChecked();
+    await expect(rangeShell).toHaveAttribute('data-active', 'details');
     await expect(rangeShell).toHaveAttribute('data-segmented-active-index', '1');
+    await expect(rangeShell.locator('.range-mode-option span').nth(0)).toHaveCSS('font-weight', '400');
+    await expect(rangeShell.locator('.range-mode-option span').nth(1)).toHaveCSS('font-weight', '700');
+    await expect(rangeShell.locator('.range-mode-option span').nth(2)).toHaveCSS('font-weight', '400');
+    await rangeShell.locator('label[for="style_token_range_metrics"]').click();
+    await expect(rangeShell.locator('#style_token_range_metrics')).toBeChecked();
+    await expect(rangeShell).toHaveAttribute('data-active', 'metrics');
+    await expect(rangeShell).toHaveAttribute('data-segmented-active-index', '2');
+
+    const pagination = page.locator('[data-style-token-card="local-store-pagination"] .local-store-pagination');
+    await expect(pagination).toBeVisible();
+    await expect(pagination).toHaveClass(/local-store-pagination--floating/);
+    await expect(pagination.locator('.local-store-page-nav')).toHaveCount(0);
+    await expect(pagination.locator('.local-store-page-ellipsis')).toHaveCount(2);
+    await expect(pagination.locator('.local-store-page-button')).toHaveText(['1', '21', '22', '23', '24', '25', '64']);
+    expect(await pagination.locator('.local-store-page-button').evaluateAll((buttons) => (
+        buttons.map((button) => getComputedStyle(button).fontWeight)
+    ))).toEqual(['400', '400', '400', '700', '400', '400', '400']);
 
     const orbit = page.locator('[data-style-token-card="portfolio-donut-orbit"] .style-token-portfolio-donut-orbit');
     await expect(orbit).toBeVisible();
@@ -12063,9 +12125,22 @@ test('demonstrates the shared filter header contract in the standard table token
     const field = header.locator('[data-style-token-table-filter-field]');
     const trigger = header.locator('[data-style-token-table-filter-trigger]');
     const summary = card.locator('[data-style-token-table-filter-summary]');
+    const pagination = card.locator('[data-style-token-table-pagination]');
+    const scroll = card.locator('.style-token-table-demo-scroll');
 
     await expect(header).toHaveCount(1);
     await expect(trigger).toHaveText('All');
+    await expect(pagination).toBeVisible();
+    await expect(pagination).toHaveAttribute('data-pagination-page-count', '2');
+    await expect(pagination).toHaveClass(/local-store-pagination--floating/);
+    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(6);
+    const scrollState = await scroll.evaluate((element) => ({
+        overflowY: getComputedStyle(element).overflowY,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+    }));
+    expect(scrollState.overflowY).toBe('auto');
+    expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
     await expect.poll(() => field.evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
 
     await trigger.hover({force: true});
@@ -12102,13 +12177,17 @@ test('demonstrates the shared filter header contract in the standard table token
     await expect(dropdown).toBeVisible();
     await dropdown.locator('[data-style-token-table-filter-option="buy"]').click();
     await expect(trigger).toHaveText('Buy');
-    await expect(summary).toHaveText('1 filtered of 4 total');
-    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(1);
+    await expect(summary).toHaveText('5 filtered of 12 total');
+    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(5);
+    await expect(pagination).toBeHidden();
 
     await trigger.click();
     await page.locator('[data-style-token-table-filter-dropdown] [data-style-token-table-filter-option="all"]').click();
-    await expect(summary).toHaveText('4 filtered of 4 total');
-    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(4);
+    await expect(summary).toHaveText('12 filtered of 12 total');
+    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(6);
+    await pagination.locator('[data-pagination-target="2"]').click();
+    await expect(pagination.locator('[data-pagination-target="2"]')).toHaveAttribute('aria-current', 'page');
+    await expect(card.locator('[data-style-token-table-demo-row]:not([hidden])')).toHaveCount(6);
     await expect(defaultLabel).toHaveCount(1);
 });
 
@@ -12390,6 +12469,51 @@ test('resizes the backtest overview and transaction history with the shared sect
     }));
     const handleBox = await handle.boundingBox();
     if (!handleBox) throw new Error('Backtest section resizer did not have a clickable bounding box.');
+    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+    await page.mouse.down();
+    await page.mouse.move(
+        handleBox.x + (handleBox.width / 2),
+        handleBox.y - 48,
+    );
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate((beforeSize) => {
+        const overviewHeight = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
+        const historyHeight = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
+        return overviewHeight < beforeSize.overview && historyHeight > beforeSize.history;
+    }, pointerBefore)).toBe(true);
+});
+
+test('rebinds the backtest section handle after same-page result hydration', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?stop_loss=0');
+
+    const handle = page.locator('#backtest_section_resizer');
+    expect(page.url()).toContain('stop_loss=0');
+    await expect(handle).toBeVisible();
+    await expect(page.locator('#stop_loss')).not.toBeChecked();
+    await page.locator('label[for="stop_loss"]').click();
+    await expect(page.locator('#stop_loss')).toBeChecked();
+    await expect.poll(() => page.url()).not.toContain('stop_loss=0');
+    await expect(handle).toHaveAttribute('aria-valuenow', /\d+/);
+
+    const before = await page.evaluate(() => ({
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height,
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height,
+    }));
+    await handle.focus();
+    await handle.press('ArrowDown');
+    await expect.poll(() => page.evaluate((beforeSize) => {
+        const overviewHeight = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
+        const historyHeight = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
+        return overviewHeight > beforeSize.overview && historyHeight < beforeSize.history;
+    }, before)).toBe(true);
+
+    const pointerBefore = await page.evaluate(() => ({
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height,
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height,
+    }));
+    const handleBox = await handle.boundingBox();
+    if (!handleBox) throw new Error('Hydrated Backtest section resizer did not have a clickable bounding box.');
     await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
     await page.mouse.down();
     await page.mouse.move(

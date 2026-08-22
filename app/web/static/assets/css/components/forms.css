@@ -1,4 +1,4 @@
-/* Code version: v0.16.0 */
+/* Code version: v0.17.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1630,14 +1630,14 @@ input[type="number"],
 .segmented-control-option input,
 .range-mode-option input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
-.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms var(--motion-standard); overflow-wrap: anywhere; text-wrap: balance; }
+.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-regular); color: var(--theme-muted); transition: color 220ms var(--motion-standard); overflow-wrap: anywhere; text-wrap: balance; }
 .segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
 	white-space: nowrap;
 }
 .segmented-control-option:hover span,
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
-.range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); letter-spacing: 0; }
+.range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); font-weight: var(--font-weight-bold); letter-spacing: 0; }
 .range-mode-shell > .segmented-control-option input:checked + span { color: var(--theme-muted); }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
 .segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,
@@ -1657,6 +1657,7 @@ input[type="number"],
 .segmented-control[data-active="metrics"] > .segmented-control-option:nth-child(4) > span,
 .range-mode-shell[data-active="metrics"] > .segmented-control-option:nth-child(4) > span {
 	color: var(--color-white-adaptive);
+	font-weight: var(--font-weight-bold);
 	letter-spacing: 0;
 }
 .segmented-control--compact {

@@ -1,13 +1,13 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.3.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
-{% macro render_compare_percent_value(value) -%}
+{% macro render_compare_percent_value(value, classes="compare-percent-value", workspace_mask="", color="") -%}
 {% if value is none %}
-<span class="compare-percent-empty">—</span>
+<span class="{{ classes }} compare-percent-empty"{% if workspace_mask %} data-workspace-mask="{{ workspace_mask }}"{% endif %}>—</span>
 {% else %}
 {% set percent_text = "{:,.2f}".format(value) %}
-<span data-numeric-display-value="{{ percent_text }}%">{{ percent_text }}%</span>
+<span class="{{ classes }}"{% if workspace_mask %} data-workspace-mask="{{ workspace_mask }}"{% endif %}{% if color %} style="color: {{ color }};"{% endif %} data-numeric-display-value="{{ percent_text }}%">{{ percent_text }}%</span>
 {% endif %}
 {%- endmacro %}
 
@@ -55,13 +55,13 @@
                             </div>
                             <div class="performance-metrics">
                                 <p class="report-value performance-metric-row performance-metric-row-total">
-                                    <span class="compare-percent-value" data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ render_compare_percent_value(item.ending_return) }}</span>
+                                    {{ render_compare_percent_value(item.ending_return, workspace_mask="compare-return", color=item.color) }}
                                     {% if item.is_winner %}
                                     <span class="winner-badge winner-badge-total-return" role="img" aria-label="{{ labels.winner_alt }}"></span>
                                     {% endif %}
                                 </p>
                                 <p class="report-value performance-metric-row performance-metric-row-dividend">
-                                    <span class="compare-percent-value compare-percent-value-secondary" data-workspace-mask="compare-ttm-dividend-yield">{{ render_compare_percent_value(item.ttm_dividend_yield) }}</span>
+                                    {{ render_compare_percent_value(item.ttm_dividend_yield, "compare-percent-value compare-percent-value-secondary", "compare-ttm-dividend-yield") }}
                                     {% if item.is_dividend_yield_winner %}
                                     <span class="winner-badge winner-badge-dividend-yield" role="img" aria-label="{{ labels.winner_alt }}"></span>
                                     {% endif %}
@@ -95,5 +95,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/compare.js', v=version ~ '-compare-v0.5.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/compare.js', v=version ~ '-compare-v0.5.2') }}"></script>
 {% endblock %}

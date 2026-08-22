@@ -1,4 +1,4 @@
-/* Code version: v0.9.6 */
+/* Code version: v0.9.7 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -105,7 +105,7 @@
 		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	};
 
-	const formatMarketCapLabel = (value, maximumFractionDigits = 2) => {
+	const formatMarketCapLabel = (value, maximumFractionDigits = 2, minimumFractionDigits = maximumFractionDigits) => {
 		const numeric = Number(value);
 		if (!Number.isFinite(numeric)) return "";
 		const units = [
@@ -116,7 +116,7 @@
 		const unit = units.find((item) => Math.abs(numeric) >= item.threshold);
 		if (!unit) return `$${numeric.toLocaleString("en-US", {maximumFractionDigits: 0})}`;
 		return `$${(numeric / unit.threshold).toLocaleString("en-US", {
-			minimumFractionDigits: maximumFractionDigits,
+			minimumFractionDigits,
 			maximumFractionDigits,
 		})}${unit.suffix}`;
 	};
@@ -1304,7 +1304,7 @@
 							},
 							callback(value, index, ticks) {
 								if (index === 0 || index === ticks.length - 1) return "";
-								return isMarketCapView ? formatMarketCapLabel(value, 1) : formatPercentAxisLabel(value);
+								return isMarketCapView ? formatMarketCapLabel(value, 1, 0) : formatPercentAxisLabel(value);
 							},
 						},
 					},
