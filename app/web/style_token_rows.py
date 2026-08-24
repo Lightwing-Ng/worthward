@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.7.1
+Code version: v1.8.6
 """
 
 from __future__ import annotations
@@ -159,6 +159,7 @@ def build_style_token_rows(
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "tokens": [
+                material_reference_token("--segmented-control-material", "Frosted glass"),
                 raw_token("--mode-switch-radius", "var(--radius-pill)"),
                 px_token("--mode-switch-pad", 4, 0),
                 px_token("--mode-switch-gap", 4, 0),
@@ -172,8 +173,8 @@ def build_style_token_rows(
             "related_styles": [],
         },
         {
-            "id": style_token_id("Settings action button"),
-            "name": "Settings action button",
+            "id": style_token_id("Primary button"),
+            "name": "Primary button",
             "sample_kind": "action-button",
             "sample_title": "",
             "sample_copy": "",
@@ -182,15 +183,37 @@ def build_style_token_rows(
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "tokens": [
-                raw_token("--settings-action-button-radius", "var(--radius-pill)"),
-                px_token("--settings-action-button-pad-block", 0, 0),
-                px_token("--settings-action-button-pad-inline", 18, 0),
-                px_token("--settings-action-button-min-height", 32, 1),
-                raw_token("--settings-action-button-background", "var(--theme-accent-primary)"),
-                raw_token("--settings-action-button-color", "var(--color-white-adaptive)"),
-                raw_token("--settings-action-button-background-disabled", "color-mix(in srgb, var(--theme-muted) 28%, transparent)"),
-                raw_token("--settings-action-button-color-disabled", "color-mix(in srgb, var(--settings-action-button-color) 72%, transparent)"),
-                raw_token("--settings-action-button-background-pending", "color-mix(in srgb, var(--settings-action-button-background) 76%, white 24%)"),
+                raw_token("--primary-button-background", "var(--theme-accent-primary)"),
+                raw_token("--primary-button-background-disabled", "color-mix(in srgb, var(--theme-muted) 28%, transparent)"),
+                raw_token("--primary-button-background-hover", "color-mix(in srgb, var(--primary-button-background) 88%, white)"),
+                raw_token("--primary-button-background-pending", "color-mix(in srgb, var(--primary-button-background) 76%, white 24%)"),
+                raw_token("--primary-button-border", "0px solid transparent"),
+                raw_token("--primary-button-border-hover", "0px solid transparent"),
+                raw_token("--primary-button-color", "var(--color-white-adaptive)"),
+                raw_token("--primary-button-color-disabled", "color-mix(in srgb, var(--primary-button-color) 72%, transparent)"),
+                px_token("--primary-button-min-height", 32, 1),
+                px_token("--primary-button-pad-block", 0, 0),
+                px_token("--primary-button-pad-inline", 18, 0),
+                raw_token("--primary-button-radius", "var(--radius-pill)"),
+            ],
+            "related_styles": [],
+        },
+        {
+            "id": style_token_id("Primary inverted button"),
+            "name": "Primary (inverted) button",
+            "sample_kind": "action-button",
+            "sample_title": "",
+            "sample_copy": "",
+            "sample_button": labels["local_store_maintain_button"],
+            "sample_button_class": "settings-inline-button settings-inline-button-primary settings-inline-button-primary-inverted",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "tokens": [
+                raw_token("--primary-button-inverted-background", "var(--color-white-adaptive)"),
+                raw_token("--primary-button-inverted-background-hover", "color-mix(in srgb, var(--theme-accent-primary) 8%, var(--color-white-adaptive))"),
+                raw_token("--primary-button-inverted-border", "1px solid var(--accent-border-soft)"),
+                raw_token("--primary-button-inverted-border-hover", "1px solid var(--accent-border-strong)"),
+                raw_token("--primary-button-inverted-color", "var(--accent-text)"),
             ],
             "related_styles": [],
         },
@@ -205,6 +228,7 @@ def build_style_token_rows(
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "tokens": [
+                material_reference_token("--shared-select-trigger-material", "Frosted glass"),
                 px_token("--shared-select-dropdown-padding", 10, 0),
                 raw_token("--shared-select-dropdown-radius", "var(--radius-soft)"),
                 raw_token("--shared-select-dropdown-max-height", "min(360px, 55vh)"),
@@ -228,6 +252,7 @@ def build_style_token_rows(
             "sample_icon_class": "icon-store-maintain",
             "sample_icon_shell_class": "settings-callout-card-primary",
             "tokens": [
+                material_reference_token("--settings-action-package-material", "Frosted glass"),
                 px_token("--settings-action-package-column-gap", 12),
                 px_token("--settings-action-package-row-gap", 8),
                 px_token("--settings-action-package-copy-gap", 4),
@@ -239,10 +264,6 @@ def build_style_token_rows(
                 px_token("--style-token-demo-width", 384),
             ],
             "related_styles": [
-                {
-                    "name": "Settings action button",
-                    "target_id": style_token_id("Settings action button"),
-                },
                 {
                     "name": "Settings execution option",
                     "target_id": style_token_id("Settings execution option"),
@@ -260,6 +281,7 @@ def build_style_token_rows(
             "sample_icon_class": "icon-plus",
             "sample_icon_shell_class": "",
             "tokens": [
+                material_reference_token("--settings-round-icon-button-material", "Frosted glass"),
                 px_token("--settings-round-icon-button-size", 36, 1),
                 px_token("--settings-round-icon-button-icon-size", 18, 1),
                 raw_token("--settings-round-icon-button-radius", "var(--radius-pill)"),
@@ -388,6 +410,7 @@ def build_style_token_rows(
                 ["1", "20 Mar 2026", "Buy", "META @ 490.00 x 1", "$490.00"],
             ],
             "tokens": [
+                material_reference_token("--scrollable-data-table-header-material", "Frosted glass"),
                 raw_token("--radius-panel", "10px"),
                 raw_token("--glass-surface-background-soft", "var(--theme-glass-surface-background-soft)"),
                 raw_token("--panel-strong", "var(--theme-panel-strong)"),
@@ -567,7 +590,7 @@ def build_style_token_rows(
                 px_token("--settings-general-option-pad-block", 14, 0),
                 px_token("--settings-general-option-pad-inline", 16, 0),
                 raw_token("--settings-general-option-background", "var(--glass-surface-background-strong)"),
-                raw_token("--settings-general-option-border", "1px solid color-mix(in srgb, var(--theme-text) 8%, transparent)"),
+                raw_token("--settings-general-option-border", "0.5px solid color-mix(in srgb, var(--theme-text) 8%, transparent)"),
             ],
             "related_styles": [],
         },
@@ -582,6 +605,7 @@ def build_style_token_rows(
             "sample_icon_class": "suggestion-loading-spinner",
             "sample_icon_shell_class": "",
             "tokens": [
+                material_reference_token("--workspace-modal-material", "Frosted glass"),
                 px_token("--workspace-modal-radius", 10),
                 px_token("--workspace-modal-pad-block", 18),
                 px_token("--workspace-modal-pad-inline", 18),
@@ -603,7 +627,9 @@ def build_style_token_rows(
             "sample_button_class": "",
             "sample_icon_class": "icon-modal-dialog-banner-backtest-execution",
             "sample_icon_shell_class": "",
-            "tokens": [],
+            "tokens": [
+                material_reference_token("--notice-floating-material", "Frosted glass"),
+            ],
             "related_styles": [
                 {
                     "name": "Modal dialog",
@@ -642,6 +668,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 px_token("--local-store-pagination-slot-size", 30, 1),
+                material_reference_token("--local-store-pagination-material", "Frosted glass"),
                 raw_token("--local-store-pagination-button-radius", "var(--radius-pill)"),
                 raw_token("--local-store-pagination-indicator-radius", "var(--radius-pill)"),
                 raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
@@ -689,22 +716,6 @@ def build_style_token_rows(
                 px_token("--chart-tooltip-item-gap", 8, 1),
                 raw_token("--chart-tooltip-label-align", "left"),
                 raw_token("--chart-tooltip-value-align", "right"),
-            ],
-            "related_styles": [],
-        },
-        {
-            "id": style_token_id("Shared style primitives"),
-            "name": "Shared style primitives",
-            "sample_kind": "token-inventory",
-            "sample_title": "Shared style primitives",
-            "sample_copy": "Foundation style tokens reused across at least two project surfaces.",
-            "sample_button": "",
-            "sample_button_class": "",
-            "sample_icon_class": "",
-            "sample_icon_shell_class": "",
-            "tokens": [
-                raw_token(name, foundation_token_value(name))
-                for name in SHARED_STYLE_TOKEN_NAMES
             ],
             "related_styles": [],
         },

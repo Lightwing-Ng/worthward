@@ -1,4 +1,4 @@
-/* Code version: v0.5.5 */
+/* Code version: v0.5.6 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -967,6 +967,34 @@
 
 			const formatNumber = (num) => Number(num || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 			const formatShares = (num) => Math.round(Number(num || 0)).toLocaleString();
+			const escapeHtml = (value) => String(value)
+				.replaceAll("&", "&amp;")
+				.replaceAll("<", "&lt;")
+				.replaceAll(">", "&gt;")
+				.replaceAll('"', "&quot;")
+				.replaceAll("'", "&#39;");
+			const renderNumericCell = (value) => {
+				const formatted = formatNumber(value);
+				const renderer = window.ANTIGRAVITY_NUMERIC_DISPLAY?.renderNumericDisplayContent;
+				return typeof renderer === "function" ? renderer(formatted) : escapeHtml(formatted);
+			};
+			const formatTradeDate = (value) => {
+				const rawValue = String(value || "").trim();
+				const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(rawValue);
+				if (!match) return rawValue;
+				const dateParts = {
+					year: Number(match[1]),
+					monthIndex: Number(match[2]) - 1,
+					day: Number(match[3]),
+				};
+				const formatShortDateParts = bootstrap.dateDisplay?.formatShortDateParts;
+				const dateText = typeof formatShortDateParts === "function"
+					? formatShortDateParts(dateParts)
+					: `${dateParts.year}/${String(dateParts.monthIndex + 1).padStart(2, "0")}/${String(dateParts.day).padStart(2, "0")}`;
+				if (!match[4] || !match[5]) return dateText;
+				const timeText = `${String(match[4]).padStart(2, "0")}:${match[5]}${match[6] ? `:${match[6]}` : ""}`;
+				return `${dateText} ${timeText}`;
+			};
 
 			const goToPage = (p, {animationState = null} = {}) => {
 				currentPage = Math.min(totalPages, Math.max(1, Number(p) || 1));
@@ -982,14 +1010,14 @@
 					tr.dataset.chartIndex = chartIndex;
 					tr.innerHTML = `
 						<td class="trade-transactions-index">${displayIndex++}</td>
-						<td class="trade-transactions-date">${trade.date}</td>
+						<td class="trade-transactions-date">${escapeHtml(formatTradeDate(trade.date))}</td>
 						${showTicker ? `<td class="trade-transactions-ticker">${trade.ticker || ""}</td>` : ""}
 						<td class="trade-transactions-side">${trade.side}</td>
-						<td class="trade-transactions-number">${formatNumber(trade.price)}</td>
+						<td class="trade-transactions-number price">${renderNumericCell(trade.price)}</td>
 						<td class="trade-transactions-number">${formatShares(trade.shares)}</td>
-						<td class="trade-transactions-number">${formatNumber(trade.pnl)}</td>
-						<td class="trade-transactions-number">${formatNumber(trade.cash)}</td>
-						<td class="trade-transactions-number">${formatNumber(trade.equity)}</td>
+						<td class="trade-transactions-number pnl">${renderNumericCell(trade.pnl)}</td>
+						<td class="trade-transactions-number cash">${renderNumericCell(trade.cash)}</td>
+						<td class="trade-transactions-number equity">${renderNumericCell(trade.equity)}</td>
 					`;
 					tbody.appendChild(tr);
 				}

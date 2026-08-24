@@ -1,4 +1,4 @@
-/* Code version: v0.15.0 */
+/* Code version: v0.15.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -102,7 +102,7 @@
 	--settings-general-option-pad-inline: 16px;
 	--settings-general-option-max-width: 640px;
 	--settings-general-option-background: var(--glass-surface-background-strong);
-	--settings-general-option-border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
+	--settings-general-option-border: 0.5px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
 	--settings-action-package-radius: var(--settings-general-option-radius);
 	--settings-action-package-pad-block: var(--settings-general-option-pad-block);
 	--settings-action-package-pad-inline: var(--settings-general-option-pad-inline);
@@ -115,15 +115,23 @@
 	--settings-action-package-live-marker-size: 8px;
 	--settings-action-package-live-marker-color: var(--theme-accent-positive);
 	--settings-action-package-live-marker-duration: 1.8s;
-	--settings-action-button-radius: var(--radius-pill);
-	--settings-action-button-pad-block: 0px;
-	--settings-action-button-pad-inline: 18px;
-	--settings-action-button-min-height: 32px;
-	--settings-action-button-background: var(--theme-accent-primary);
-	--settings-action-button-color: var(--color-white-adaptive);
-	--settings-action-button-background-disabled: color-mix(in srgb, var(--theme-muted) 28%, transparent);
-	--settings-action-button-color-disabled: color-mix(in srgb, var(--settings-action-button-color) 72%, transparent);
-	--settings-action-button-background-pending: color-mix(in srgb, var(--settings-action-button-background) 76%, white 24%);
+	--primary-button-radius: var(--radius-pill);
+	--primary-button-pad-block: 0px;
+	--primary-button-pad-inline: 18px;
+	--primary-button-min-height: 32px;
+	--primary-button-background: var(--theme-accent-primary);
+	--primary-button-color: var(--color-white-adaptive);
+	--primary-button-border: 0px solid transparent;
+	--primary-button-background-hover: color-mix(in srgb, var(--primary-button-background) 88%, white);
+	--primary-button-border-hover: 0px solid transparent;
+	--primary-button-background-disabled: color-mix(in srgb, var(--theme-muted) 28%, transparent);
+	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
+	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
+	--primary-button-inverted-background: var(--color-white-adaptive);
+	--primary-button-inverted-color: var(--accent-text);
+	--primary-button-inverted-border: 1px solid var(--accent-border-soft);
+	--primary-button-inverted-background-hover: color-mix(in srgb, var(--theme-accent-primary) 8%, var(--color-white-adaptive));
+	--primary-button-inverted-border-hover: 1px solid var(--accent-border-strong);
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;
 	--settings-round-icon-button-radius: var(--radius-pill);

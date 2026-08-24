@@ -1,4 +1,4 @@
-{# Code version: v0.12.7 #}
+{# Code version: v0.12.11 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -96,7 +96,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.21.1') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.21.4') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -1433,8 +1433,9 @@
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
                     <div class="style-token-pagination-demo-surface">
-                    <nav class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 9;">
-                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 4)), 0, 0); opacity: 1;"></span>
+                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
+                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 5)), 0, 0); opacity: 1;"></span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-prev" aria-hidden="true"></span></span>
                         <span class="local-store-page-button" aria-hidden="true">1</span>
                         <span class="local-store-page-ellipsis" aria-hidden="true">
                             <span class="local-store-page-ellipsis-dots"></span>
@@ -1448,6 +1449,7 @@
                             <span class="local-store-page-ellipsis-dots"></span>
                         </span>
                         <span class="local-store-page-button" aria-hidden="true">64</span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-next" aria-hidden="true"></span></span>
                     </nav>
                     </div>
                     {% elif row.sample_kind == "token-inventory" %}

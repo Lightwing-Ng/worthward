@@ -1,7 +1,7 @@
 /**
  * Standard scrollable table alignment controller.
  *
- * Code version: v1.0.2
+ * Code version: v1.0.3
  */
 (function bootstrapStandardTableController(globalScope) {
     "use strict";
@@ -18,10 +18,18 @@
 
     const getCellSpan = (cell) => Math.max(1, Number(cell?.colSpan) || 1);
 
+    const isVisibleMeasurementRow = (row) => {
+        if (!row || row.hidden) return false;
+        if (typeof globalScope.getComputedStyle === "function"
+            && globalScope.getComputedStyle(row).display === "none") return false;
+        return true;
+    };
+
     const selectMeasurementRowDescriptor = (rows = [], expectedColumnCount = 0) => {
         const candidates = rows.filter((row) => (
             !row.empty
             && !row.summary
+            && row.visible !== false
             && row.cellSpans.length > 0
             && row.cellSpans.every((span) => span === 1)
         ));
@@ -40,6 +48,7 @@
             row,
             empty: row.matches("[data-table-empty-row]"),
             summary: row.matches("[data-table-summary-row]"),
+            visible: isVisibleMeasurementRow(row),
             cellSpans: Array.from(row.cells).map(getCellSpan),
         }));
         return selectMeasurementRowDescriptor(descriptors, expectedColumnCount)?.row || null;

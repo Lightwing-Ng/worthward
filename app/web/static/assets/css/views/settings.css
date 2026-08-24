@@ -1,4 +1,4 @@
-/* Code version: v0.22.10 */
+/* Code version: v0.22.15 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -111,6 +111,32 @@
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Style token demos own their visual effects. Keep the workspace shell open so
+ * shadows, blur, and translated controls can escape the card edge; the token
+ * list below remains the only vertical scrollport.
+ */
+.settings-workspace-header.settings-shell-style-tokens {
+    overflow: visible;
+}
+
+.settings-shell-style-tokens > .style-token-shell {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+}
+
+.settings-shell-style-tokens > .style-token-shell > .style-token-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: -24px -48px;
+    padding: 24px 48px;
+    overflow: auto;
+    overscroll-behavior: contain;
 }
 
 .settings-shell-about,
@@ -292,9 +318,9 @@
     border-radius: var(--settings-action-package-radius);
     background: var(--settings-action-package-background);
     border: var(--settings-action-package-border);
-    box-shadow: var(--shadow);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     max-width: var(--settings-action-package-max-width);
 }
 
@@ -742,6 +768,7 @@
 .style-token-copy-button {
     flex: 0 0 auto;
     margin-left: auto;
+    margin-inline-end: max(0px, calc(var(--global-quick-actions-right) - var(--page-edge-pad)));
     transform: none;
 }
 
@@ -819,9 +846,14 @@
 }
 
 .style-token-value-link {
+    display: inline-block;
+    max-width: 100%;
+    padding-right: calc(var(--strategy-stepper-width) + 8px);
+    box-sizing: border-box;
     color: var(--accent-text);
     text-decoration: none;
     font-weight: var(--font-weight-semibold);
+    text-align: right;
 }
 
 .style-token-value-link:hover,
@@ -838,8 +870,14 @@
 }
 
 .style-token-related-value {
-    display: inline-block;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-right: calc(var(--strategy-stepper-width) + 8px);
+    box-sizing: border-box;
     white-space: nowrap;
+    text-align: right;
 }
 
 .style-token-demo .settings-round-icon-button {
@@ -888,19 +926,20 @@
 }
 
 .style-token-value-text {
-    display: inline-block;
-    flex: 0 1 auto;
+    display: block;
+    width: 100%;
     min-width: 0;
     max-width: 100%;
     padding-right: calc(var(--strategy-stepper-width) + 8px);
     box-sizing: border-box;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     text-align: right;
 }
 
 .style-token-modal-shell {
     padding: 20px 0;
-    overflow: clip;
+    overflow: visible;
     scrollbar-width: none;
 }
 
@@ -3555,53 +3594,67 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-inline-button-primary {
     width: fit-content;
     min-width: 0;
-    min-height: var(--settings-action-button-min-height);
-    padding: var(--settings-action-button-pad-block) var(--settings-action-button-pad-inline);
-    border-radius: var(--settings-action-button-radius);
-    background: var(--settings-action-button-background);
-    color: var(--settings-action-button-color);
+    min-height: var(--primary-button-min-height);
+    padding: var(--primary-button-pad-block) var(--primary-button-pad-inline);
+    border: var(--primary-button-border);
+    border-radius: var(--primary-button-radius);
+    background: var(--primary-button-background);
+    color: var(--primary-button-color);
     box-shadow: none;
     text-transform: none;
     letter-spacing: normal;
 }
 
 .settings-inline-button-primary:disabled {
-    background: var(--settings-action-button-background-disabled);
-    color: var(--settings-action-button-color-disabled);
+    background: var(--primary-button-background-disabled);
+    color: var(--primary-button-color-disabled);
+    border: var(--primary-button-border);
     cursor: not-allowed;
     pointer-events: none;
 }
 
 .settings-inline-button-primary.is-pending {
-    background: var(--settings-action-button-background-pending);
-    color: var(--settings-action-button-color);
+    background: var(--primary-button-background-pending);
+    color: var(--primary-button-color);
+    border: var(--primary-button-border);
     cursor: progress;
 }
 
 .settings-inline-button-primary:hover,
 .settings-inline-button-primary:focus-visible {
-    background: color-mix(in srgb, var(--settings-action-button-background) 88%, white);
+    background: var(--primary-button-background-hover);
+    border: var(--primary-button-border-hover);
     box-shadow: none;
 }
 
 .settings-inline-button-primary:disabled:hover,
 .settings-inline-button-primary:disabled:focus-visible {
-    background: var(--settings-action-button-background-disabled);
+    background: var(--primary-button-background-disabled);
+    border: var(--primary-button-border);
     box-shadow: none;
 }
 
 .settings-inline-button-primary.is-pending:hover,
 .settings-inline-button-primary.is-pending:focus-visible {
-    background: var(--settings-action-button-background-pending);
+    background: var(--primary-button-background-pending);
+    border: var(--primary-button-border);
     box-shadow: none;
+}
+
+.settings-inline-button-primary-inverted {
+    --primary-button-background: var(--primary-button-inverted-background);
+    --primary-button-color: var(--primary-button-inverted-color);
+    --primary-button-border: var(--primary-button-inverted-border);
+    --primary-button-background-hover: var(--primary-button-inverted-background-hover);
+    --primary-button-border-hover: var(--primary-button-inverted-border-hover);
 }
 
 .settings-inline-button-secondary-token {
     width: fit-content;
     min-width: 0;
-    min-height: var(--settings-action-button-min-height);
-    padding: var(--settings-action-button-pad-block) var(--settings-action-button-pad-inline);
-    border-radius: var(--settings-action-button-radius);
+    min-height: var(--primary-button-min-height);
+    padding: var(--primary-button-pad-block) var(--primary-button-pad-inline);
+    border-radius: var(--primary-button-radius);
     background: var(--glass-surface-background-dense);
     color: var(--accent-text);
     border: 1px solid var(--accent-border-soft);

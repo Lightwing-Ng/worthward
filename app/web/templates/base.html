@@ -1,4 +1,4 @@
-{# Code version: v0.20.9 #}
+{# Code version: v0.20.12 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.46.10') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.46.21') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -270,10 +270,10 @@
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
 <script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.1.0') }}"></script>
-<script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.2') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.3') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.1.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.2') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.3') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.1.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
@@ -287,12 +287,12 @@
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.16.0') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.38.5') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.38.6') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.10.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.5.5') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.5.6') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.1.3') }}"></script>
 {% if selected_strategy_id == 'dca' %}
     <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.19') }}"></script>

@@ -1,4 +1,4 @@
-/* Code version: v0.21.1 */
+/* Code version: v0.21.4 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
 import {
@@ -1029,6 +1029,77 @@ import {
         });
     };
 
+    const attachStyleTokenPaginationDemos = () => {
+        const shell = getStyleTokenShell();
+        if (!(shell instanceof HTMLElement)) return;
+        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+        if (!paginationApi) {
+            if (shell.dataset.styleTokenPaginationReadyWaiting !== "1") {
+                shell.dataset.styleTokenPaginationReadyWaiting = "1";
+                window.addEventListener("antigravity:local-store-pagination-ready", () => {
+                    delete shell.dataset.styleTokenPaginationReadyWaiting;
+                    attachStyleTokenPaginationDemos();
+                }, {once: true});
+            }
+            return;
+        }
+
+        shell.querySelectorAll("[data-local-store-pagination-demo]").forEach((pagination) => {
+            if (!(pagination instanceof HTMLElement) || pagination.dataset.styleTokenPaginationDemoBound === "1") return;
+            const totalPages = Math.max(
+                Number.parseInt(pagination.dataset.paginationPageCount || "1", 10) || 1,
+                1,
+            );
+            let currentPage = Math.min(
+                totalPages,
+                Math.max(Number.parseInt(pagination.dataset.paginationCurrentPage || "1", 10) || 1, 1),
+            );
+
+            const render = ({animationState = null} = {}) => {
+                const state = paginationApi.buildLocalStorePagination(totalPages, currentPage);
+                const items = state.items;
+                const rangeMenuIdPrefix = pagination.id || "style_token_pagination_demo";
+                const renderOptions = {
+                    rangeUnit: "pages",
+                    rangeMenuIdPrefix,
+                };
+                pagination.style.setProperty("--local-store-pagination-slots", String(items.length));
+                pagination.dataset.paginationPageCount = String(state.totalPages);
+                pagination.dataset.paginationCurrentPage = String(state.currentPage);
+                pagination.dataset.paginationCompact = state.isCompact ? "1" : "0";
+                pagination.dataset.paginationRangeMenuIdPrefix = rangeMenuIdPrefix;
+                pagination.classList.remove("is-animating", "has-open-range");
+                pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${items.map((item) => {
+                    if (["ellipsis", "previous", "next"].includes(item.kind)) {
+                        return paginationApi.renderLocalStorePaginationItem(item, renderOptions);
+                    }
+                    if (!Number.isFinite(Number(item.page))) return "";
+                    return `<span class="local-store-page-button${item.isActive ? " is-active" : ""}" aria-hidden="true">${item.page}</span>`;
+                }).join("")}`;
+                pagination.classList.add("is-animated");
+                paginationApi.bindLocalStorePaginationRangePickers(pagination);
+                paginationApi.positionLocalStorePaginationIndicator(
+                    pagination,
+                    pagination.querySelector(".local-store-page-button.is-active"),
+                    {immediate: true},
+                );
+                if (animationState && typeof paginationApi.animateLocalStorePaginationIndicator === "function") {
+                    paginationApi.animateLocalStorePaginationIndicator(pagination, animationState);
+                }
+            };
+
+            pagination.dataset.styleTokenPaginationDemoBound = "1";
+            render();
+            paginationApi.bindLocalStorePagination(
+                pagination,
+                (nextPage, {animationState = null} = {}) => {
+                    currentPage = Math.min(totalPages, Math.max(Number(nextPage) || 1, 1));
+                    render({animationState});
+                },
+            );
+        });
+    };
+
     const attachStyleTokenDemoInteractions = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement) || shell.dataset.bound === "1") return;
@@ -1070,7 +1141,7 @@ import {
                     actionPackage.dataset.actionPackagePendingTimer = String(timer);
                     return;
                 }
-                const controlContainer = document.querySelector('[data-style-token-name="--settings-action-button-background"]');
+                const controlContainer = document.querySelector('[data-style-token-name="--primary-button-background"]');
                 if (controlContainer instanceof HTMLElement) {
                     controlContainer.scrollIntoView({behavior: "smooth", block: "center"});
                     const input = controlContainer.querySelector("input");
@@ -2848,6 +2919,7 @@ import {
         attachStyleTokenCopyButtons();
         attachStyleTokenModeSwitches();
         attachStyleTokenTableFilterDemos();
+        attachStyleTokenPaginationDemos();
         attachStyleTokenDemoInteractions();
         attachStyleTokenActionPackageLiveControl();
         revealStyleTokenHashTarget();

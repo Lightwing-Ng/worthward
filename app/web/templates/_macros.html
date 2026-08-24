@@ -1,4 +1,4 @@
-{# Code version: v0.6.3 #}
+{# Code version: v0.6.4 #}
 
 {% macro render_notice_banner(
     title='',
@@ -59,11 +59,16 @@
 </div>
 {%- endmacro %}
 
-{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None) -%}
+{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None, range_text=None, range_class='workspace-result-date-range') -%}
 <article class="chart-surface">
     {% if chart_heading %}
     <div class="chart-heading-row">
         <p class="chart-heading">{{ chart_heading }}</p>
+    </div>
+    {% endif %}
+    {% if range_text %}
+    <div class="chart-heading-row price-compare-range-row">
+        <span class="{{ range_class }}">{{ range_text }}</span>
     </div>
     {% endif %}
     <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %} class="chart-region-wrap">

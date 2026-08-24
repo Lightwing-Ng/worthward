@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.8
+Code version: v0.5.9
 """
 
 from __future__ import annotations
@@ -72,6 +72,28 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
+
+    def test_backtest_history_xpath_target_owns_scrollable_table_shell(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        shell_start = html.index('<div id="backtest_history_table_wrap"')
+        shell_end = html.index(">", shell_start)
+        shell_tag = html[shell_start:shell_end]
+        self.assertIn("investment-stock-details-table-host", shell_tag)
+        self.assertIn("scrollable-data-table-shell", shell_tag)
+        self.assertIn("local-store-pagination-host", shell_tag)
+        self.assertIn("backtest-history-table-shell", shell_tag)
+        self.assertEqual(html.count('id="backtest_history_table_wrap"'), 1)
 
     def test_backtest_page_serializes_logo_profile_for_selected_ticker(self) -> None:
         with (

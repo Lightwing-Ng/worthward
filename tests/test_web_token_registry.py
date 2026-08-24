@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.8.1
+Code version: v0.8.2
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertGreaterEqual(len(token_names), 100)
         self.assertEqual(duplicates, [])
 
-    def test_shared_style_inventory_is_alphabetized_and_reused(self) -> None:
+    def test_shared_style_inventory_is_kept_out_of_the_settings_specimens(self) -> None:
         labels = {
             "local_store_maintain_button": "Maintain local data",
             "local_store_maintain_title": "Local data maintenance",
@@ -192,10 +192,7 @@ class WebTokenRegistryTests(unittest.TestCase):
         row_names = [str(row["name"]) for row in style_rows]
         self.assertEqual(row_names, sorted(row_names, key=str.casefold))
 
-        shared_row = next(row for row in style_rows if row["name"] == "Shared style primitives")
-        shared_names = [str(token["name"]) for token in shared_row["tokens"]]
-        self.assertEqual(shared_names, list(SHARED_STYLE_TOKEN_NAMES))
-        self.assertEqual(shared_names, sorted(shared_names, key=str.casefold))
+        self.assertNotIn("Shared style primitives", row_names)
 
         source_text = "\n".join(
             read_text(path)
@@ -229,6 +226,38 @@ class WebTokenRegistryTests(unittest.TestCase):
         )
 
         action_package = next(row for row in style_rows if row["name"] == "Settings action package")
+        primary_button = next(row for row in style_rows if row["name"] == "Primary button")
+        inverted_button = next(row for row in style_rows if row["name"] == "Primary (inverted) button")
+        self.assertNotIn("Settings action button", {row["name"] for row in style_rows})
+        self.assertEqual(primary_button["id"], "primary-button")
+        self.assertEqual(
+            primary_button["sample_button_class"],
+            "settings-inline-button settings-inline-button-primary",
+        )
+        self.assertEqual(
+            {token["name"] for token in primary_button["tokens"]},
+            {
+                "--primary-button-background",
+                "--primary-button-background-disabled",
+                "--primary-button-background-hover",
+                "--primary-button-background-pending",
+                "--primary-button-border",
+                "--primary-button-border-hover",
+                "--primary-button-color",
+                "--primary-button-color-disabled",
+                "--primary-button-min-height",
+                "--primary-button-pad-block",
+                "--primary-button-pad-inline",
+                "--primary-button-radius",
+            },
+        )
+        self.assertEqual(inverted_button["id"], "primary-inverted-button")
+        self.assertIn("settings-inline-button-primary-inverted", inverted_button["sample_button_class"])
+        self.assertEqual(inverted_button["related_styles"], [])
+        self.assertEqual(
+            action_package["related_styles"],
+            [{"name": "Settings execution option", "target_id": "settings-execution-option"}],
+        )
         self.assertEqual(action_package["sample_title"], labels["local_store_maintain_title"])
         self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
         self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])

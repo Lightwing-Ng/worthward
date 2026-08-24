@@ -1,4 +1,4 @@
-/* Code version: v0.17.1 */
+/* Code version: v0.17.3 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -859,7 +859,21 @@ input[type="number"],
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:hover,
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus,
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus-visible {
-	border: none !important;
+	border: var(--frosted-glass-border) !important;
+}
+.backtest-shared-select-trigger {
+	background: var(--frosted-glass-background);
+	border: var(--frosted-glass-border) !important;
+	box-shadow: var(--frosted-glass-shadow);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
+}
+.backtest-shared-select-trigger:hover,
+.backtest-shared-select-trigger:focus,
+.backtest-shared-select-trigger:focus-visible {
+	background: var(--frosted-glass-background-hover);
+	border: var(--frosted-glass-border) !important;
+	box-shadow: var(--frosted-glass-shadow-hover);
 }
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger,
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:hover,
@@ -1320,14 +1334,21 @@ input[type="number"],
 }
 .trade-strategy-number-field {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) 20px;
-	column-gap: 4px;
+	grid-template-columns: minmax(0, 1fr) 0;
+	column-gap: 0;
 	align-items: stretch;
 	position: relative;
 }
 .trade-strategy-number-field::before {
 	content: "";
 	grid-column: 2;
+	width: 0;
+	overflow: hidden;
+}
+.trade-strategy-param.is-open .trade-strategy-number-field,
+.trade-strategy-number-field:focus-within {
+	grid-template-columns: minmax(0, 1fr) var(--strategy-stepper-width);
+	column-gap: 4px;
 }
 .trade-strategy-stepper,
 .trade-strategy-stepper-spacer {
@@ -1557,7 +1578,8 @@ input[type="number"],
 	position: relative;
 	padding: var(--mode-switch-pad);
 	border-radius: var(--mode-switch-radius);
-	background: var(--control-glass-background);
+	background: var(--frosted-glass-background);
+	border: var(--frosted-glass-border);
 	display: grid;
 	grid-template-columns: repeat(var(--segmented-option-count), minmax(var(--segmented-option-min-width), 1fr));
 	gap: var(--mode-switch-gap);
@@ -1565,9 +1587,9 @@ input[type="number"],
 	isolation: isolate;
 	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard);
 	align-items: stretch;
-	backdrop-filter: saturate(200%) blur(26px);
-	-webkit-backdrop-filter: saturate(200%) blur(26px);
-	box-shadow: inset 0 1px 0 var(--theme-glass-highlight), inset 0 -1px 0 var(--theme-glass-border), 0 10px 28px var(--theme-shadow-ambient);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	box-shadow: var(--frosted-glass-shadow);
 	margin-inline: auto;
 	scrollbar-width: none;
 	overscroll-behavior-x: contain;
@@ -1592,7 +1614,7 @@ input[type="number"],
 .segmented-control[data-segmented-align="center"],
 .range-mode-shell[data-segmented-align="center"] { margin-inline: auto; }
 .segmented-control:hover,
-.range-mode-shell:hover { background: var(--control-glass-background-hover); }
+.range-mode-shell:hover { background: var(--frosted-glass-background-hover, var(--control-glass-background-hover)); }
 .segmented-control::before,
 .range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform var(--segmented-thumb-duration) var(--segmented-thumb-easing); will-change: transform; backface-visibility: hidden; pointer-events: none; z-index: 0; }
 .segmented-control:has(> .segmented-control-option:first-child input:checked)::before,

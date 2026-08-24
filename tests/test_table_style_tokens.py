@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.14."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.19."""
 
 from __future__ import annotations
 
@@ -12,10 +12,23 @@ def test_settings_css_has_no_legacy_ibkr_gateway_selectors() -> None:
     settings_css = (
         project_root / "app/web/static/assets/css/views/settings.css"
     ).read_text(encoding="utf-8")
-
     assert "settings-ibkr-gateway" not in settings_css
     assert "settings-broker-guide" not in settings_css
     assert "settingsIbkrGatewayPulse" not in settings_css
+
+
+def test_settings_general_option_uses_the_half_pixel_border_token() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    foundation_tokens = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    style_token_rows = (
+        project_root / "app/web/style_token_rows.py"
+    ).read_text(encoding="utf-8")
+
+    expected = "0.5px solid color-mix(in srgb, var(--theme-text) 8%, transparent)"
+    assert f"--settings-general-option-border: {expected};" in foundation_tokens
+    assert f'raw_token("--settings-general-option-border", "{expected}")' in style_token_rows
 
 
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:
@@ -33,7 +46,103 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert 'data-summary-scope="both"' in html
 
 
-def test_style_tokens_are_alphabetized_and_include_the_shared_inventory() -> None:
+def test_requested_style_token_components_link_to_frosted_glass() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+    html = response.get_data(as_text=True)
+    card_ids = (
+        "circular-icon-button",
+        "modal-dialog",
+        "modal-dialog-banner-message",
+        "scrollable-data-table",
+        "segmented-control",
+        "settings-action-package",
+        "shared-select-filter",
+    )
+
+    assert response.status_code == 200
+    for card_id in card_ids:
+        card_start = html.index(f'data-style-token-card="{card_id}"')
+        next_card = html.find('data-style-token-card="', card_start + 1)
+        card_html = html[card_start:next_card if next_card >= 0 else None]
+        assert 'href="/settings/material-tokens#frosted-glass"' in card_html
+
+
+def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    forms_css = (
+        project_root / "app/web/static/assets/css/components/forms.css"
+    ).read_text(encoding="utf-8")
+    tables_css = (
+        project_root / "app/web/static/assets/css/components/tables.css"
+    ).read_text(encoding="utf-8")
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+
+    segmented_rule = forms_css.split(
+        ".segmented-control,\n.range-mode-shell {", 1
+    )[1].split(".segmented-control::-webkit-scrollbar", 1)[0]
+    shared_select_rule = forms_css.rsplit(
+        ".backtest-shared-select-trigger {", 1
+    )[1].split(".backtest-shared-select-trigger:hover", 1)[0]
+    action_package_rule = settings_css.split(
+        ".settings-action-package {", 1
+    )[1].split(".settings-action-package-icon-shell", 1)[0]
+    table_filter_rule = tables_css.split(
+        ".scrollable-data-table-filter-trigger {", 1
+    )[1].split("}", 1)[0]
+
+    for rule in (segmented_rule, shared_select_rule, table_filter_rule):
+        assert "var(--frosted-glass-background" in rule
+        assert "var(--frosted-glass-border)" in rule
+        assert "var(--frosted-glass-shadow" in rule
+        assert "var(--frosted-glass-blur)" in rule
+    assert "background: var(--settings-action-package-background);" in action_package_rule
+    assert "border: var(--settings-action-package-border);" in action_package_rule
+    assert "box-shadow: var(--frosted-glass-shadow);" in action_package_rule
+    assert "backdrop-filter: var(--frosted-glass-blur);" in action_package_rule
+    assert "--settings-action-package-background: var(--frosted-glass-background);" in tokens_css
+    assert "--settings-action-package-border: var(--frosted-glass-border);" in tokens_css
+
+
+def test_style_token_reference_links_share_the_value_text_alignment_contract() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+
+    link_rule = settings_css.split(
+        ".style-token-value-link {", 1
+    )[1].split("}", 1)[0]
+    value_text_rule = settings_css.split(
+        ".style-token-value-text {", 1
+    )[1].split("}", 1)[0]
+    related_value_rule = settings_css.split(
+        ".style-token-related-value {", 1
+    )[1].split("}", 1)[0]
+
+    for declaration in (
+        "padding-right: calc(var(--strategy-stepper-width) + 8px);",
+        "text-align: right;",
+    ):
+        assert declaration in link_rule
+        assert declaration in value_text_rule
+        assert declaration in related_value_rule
+    for declaration in (
+        "display: block;",
+        "width: 100%;",
+        "box-sizing: border-box;",
+    ):
+        assert declaration in value_text_rule
+        assert declaration in related_value_rule
+
+
+def test_style_tokens_are_alphabetized_without_the_shared_primitives_specimen() -> None:
     client = create_app().test_client()
 
     response = client.get("/settings/style-tokens")
@@ -45,15 +154,19 @@ def test_style_tokens_are_alphabetized_and_include_the_shared_inventory() -> Non
     ]
     assert response.status_code == 200
     assert titles == sorted(titles, key=str.casefold)
-    assert 'data-style-token-card="shared-style-primitives"' in html
-    assert html.count('<p class="style-token-title">Shared style primitives</p>') == 1
-    assert html.count('<td class="style-token-name">--workspace-title-safe-top</td>') == 1
+    assert 'data-style-token-card="shared-style-primitives"' not in html
+    assert '<p class="style-token-title">Shared style primitives</p>' not in html
     assert 'data-active="overview" data-option-count="3"' in html
     assert 'value="overview" checked' in html
     assert 'value="details"' in html
     assert 'value="metrics"' in html
+    assert 'data-style-token-card="primary-button"' in html
+    assert 'class="settings-inline-button settings-inline-button-primary"' in html
     assert 'data-pagination-page-count="64"' in html
     assert 'data-pagination-current-page="23"' in html
+    assert 'class="local-store-page-button local-store-page-nav"' in html
+    assert 'icon-page-prev' in html
+    assert 'icon-page-next' in html
     assert html.count('class="local-store-page-ellipsis"') >= 2
     assert '>21</span>' in html
     assert '>22</span>' in html

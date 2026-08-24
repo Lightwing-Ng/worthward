@@ -1,4 +1,4 @@
-/* Code version: v1.167.9 */
+/* Code version: v1.167.18 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -439,23 +439,37 @@ test('copies every Style token name from a right-aligned round button with feedb
     await expect(copyButtons).toHaveCount(await cards.count());
 
     const executionCard = page.locator('[data-style-token-card="settings-execution-option"]');
+    const executionOption = executionCard.locator('label.settings-general-option');
     const titleRow = executionCard.locator('.style-token-title-row');
     const copyButton = executionCard.locator('[data-style-token-copy]');
     await expect(executionCard.locator('.style-token-title')).toHaveText('Settings execution option');
+    const optionBorder = await executionOption.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            token: style.getPropertyValue('--settings-general-option-border').trim(),
+            borderStyle: style.borderTopStyle,
+        };
+    });
+    expect(optionBorder.token).toMatch(/^0\.5px solid color-mix\(in srgb, .+ 8%, transparent\)$/);
+    expect(optionBorder.borderStyle).toBe('solid');
     await expect(copyButton).toHaveAttribute('data-style-token-copy', 'Settings execution option');
 
     const geometry = await titleRow.evaluate((row) => {
         const button = row.querySelector('[data-style-token-copy]');
         const rowBounds = row.getBoundingClientRect();
         const buttonBounds = button.getBoundingClientRect();
+        const themeBounds = document.querySelector('#global_theme_toggle').getBoundingClientRect();
         return {
-            rightDelta: Math.abs(rowBounds.right - buttonBounds.right),
+            themeRightDelta: Math.abs(themeBounds.right - buttonBounds.right),
+            titleRowInset: rowBounds.right - buttonBounds.right,
             width: buttonBounds.width,
             height: buttonBounds.height,
             radius: getComputedStyle(button).borderRadius,
         };
     });
-    expect(geometry.rightDelta).toBeLessThanOrEqual(1);
+    expect(geometry.themeRightDelta).toBeLessThanOrEqual(1);
+    expect(geometry.titleRowInset).toBeGreaterThanOrEqual(9);
+    expect(geometry.titleRowInset).toBeLessThanOrEqual(11);
     expect(geometry.width).toBe(36);
     expect(geometry.height).toBe(36);
     expect(geometry.radius).toBe('999px');
@@ -465,6 +479,63 @@ test('copies every Style token name from a right-aligned round button with feedb
     await expect(copyButton).toHaveClass(/is-copied/);
     await expect(copyButton).toHaveAttribute('aria-label', 'Copied');
     await expect(page.locator('[data-style-token-copy-status]')).toHaveText('Copied: Settings execution option');
+});
+
+test('keeps style-token values aligned within their shared value column and omits the primitives specimen', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    await expect(page.locator('[data-style-token-card="shared-style-primitives"]')).toHaveCount(0);
+    await expect(page.getByText('Shared style primitives', {exact: true})).toHaveCount(0);
+
+    const alignment = await page.evaluate(() => {
+        const rangeRight = (element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const rects = [...range.getClientRects()];
+            return rects.length ? Math.max(...rects.map((rect) => rect.right)) : null;
+        };
+        const chart = document.querySelector('#chart-tooltip');
+        const color = [...chart.querySelectorAll('.style-token-value-text')]
+            .find((element) => element.textContent.includes('color-mix'));
+        const right = [...chart.querySelectorAll('.style-token-value-text')]
+            .find((element) => element.textContent.trim() === 'right');
+        const frosted = [...chart.querySelectorAll('.style-token-value-link')]
+            .find((element) => element.textContent.trim() === 'Frosted glass');
+        const related = document.querySelector('#modal-dialog-banner-message .style-token-related-value');
+        const elements = {color, right, frosted, related};
+        const contentRights = Object.fromEntries(Object.entries(elements).map(([name, element]) => {
+            const bounds = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return [name, {
+                boxRight: bounds.right,
+                contentRight: bounds.right - Number.parseFloat(style.paddingRight),
+                textRight: rangeRight(element),
+                display: style.display,
+                width: style.width,
+            }];
+        }));
+        return contentRights;
+    });
+
+    const textRights = Object.values(alignment).map((value) => value.textRight);
+    expect(Math.max(...textRights) - Math.min(...textRights)).toBeLessThanOrEqual(1);
+    expect(alignment.color.display).toBe('block');
+    expect(alignment.related.display).toBe('block');
+    expect(alignment.color.width).toBe(alignment.related.width);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    const narrowGeometry = await page.evaluate(() => {
+        const theme = document.querySelector('#global_theme_toggle').getBoundingClientRect();
+        const copyRights = [...document.querySelectorAll('.style-token-copy-button')]
+            .map((button) => button.getBoundingClientRect().right);
+        return {
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            maxThemeDelta: Math.max(...copyRights.map((right) => Math.abs(right - theme.right))),
+        };
+    });
+    expect(narrowGeometry.documentOverflow).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.maxThemeDelta).toBeLessThanOrEqual(1);
 });
 
 test('exposes paired Light and Dark color tokens with live tuning controls', async ({page}) => {
@@ -674,6 +745,10 @@ test('switches between return comparison and Ticker comparison workspaces', asyn
     await expect(page.locator('.price-compare-workspace')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-main')).toHaveAttribute('aria-labelledby', 'price_history_heading');
+    const priceResultArticle = page.locator('xpath=/html/body/main/div/section/section/div/section/div/article');
+    await expect(priceResultArticle).toHaveCount(1);
+    await expect(priceResultArticle.locator('.price-compare-range')).toHaveCount(1);
+    await expect(page.locator('xpath=/html/body/main/div/section/section/div/section/div/header/div/span')).toHaveCount(0);
 
     const aaplLogo = page.locator('.ticker-input-control:has(input[value="AAPL"]) .ticker-input-logo');
     const aaplLogoState = async () => aaplLogo.evaluate((logo) => {
@@ -1829,6 +1904,10 @@ test('shows immediate feedback while a five-year market-cap range is calculated'
     await expect(page.locator('.market-cap-compare-workspace')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-main')).toHaveAttribute('aria-labelledby', 'market_cap_history_heading');
+    const marketCapResultArticle = page.locator('xpath=/html/body/main/div/section/section/div/section/div/article');
+    await expect(marketCapResultArticle).toHaveCount(1);
+    await expect(marketCapResultArticle.locator('.market-cap-compare-range')).toHaveCount(1);
+    await expect(page.locator('xpath=/html/body/main/div/section/section/div/section/div/header/div/span')).toHaveCount(0);
 
     const range = page.locator('.market-cap-compare-range');
     await expect(range).toBeVisible();
@@ -12055,6 +12134,57 @@ test('serializes Settings language tabs and pagination in the canonical URL', as
     await expect(page).toHaveURL(/\/settings\/general$/);
 });
 
+test('shows the standalone primary button specimen and keeps its inverted variant', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    const primaryCard = page.locator('[data-style-token-card="primary-button"]');
+    const primary = primaryCard.locator('.style-token-demo > button');
+    const invertedCard = page.locator('[data-style-token-card="primary-inverted-button"]');
+    const inverted = invertedCard.locator('.style-token-demo > button');
+
+    await expect(primaryCard).toHaveCount(1);
+    await expect(primary).toHaveText('Maintain all data');
+    await expect(primary).toHaveClass(/settings-inline-button-primary/);
+    await expect(primary).not.toHaveClass(/settings-inline-button-primary-inverted/);
+    await expect(invertedCard.locator('.style-token-title')).toHaveText('Primary (inverted) button');
+    await expect(inverted).toHaveClass(/settings-inline-button-primary-inverted/);
+
+    const state = await page.evaluate(() => {
+        const button = document.querySelector('[data-style-token-card="primary-inverted-button"] .style-token-demo > button');
+        if (!(button instanceof HTMLElement)) return null;
+        const style = getComputedStyle(button);
+        return {
+            background: style.backgroundColor,
+            color: style.color,
+            borderWidth: style.borderTopWidth,
+            radius: style.borderTopLeftRadius,
+            minHeight: style.minHeight,
+        };
+    });
+
+    expect(state).not.toBeNull();
+    expect(state.borderWidth).toBe('1px');
+    expect(state.radius).toBe('999px');
+    expect(state.minHeight).toBe('32px');
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    const narrowState = await page.evaluate(() => {
+        const primaryButton = document.querySelector('[data-style-token-card="primary-button"] .style-token-demo > button');
+        const invertedButton = document.querySelector('[data-style-token-card="primary-inverted-button"] .style-token-demo > button');
+        const primaryRect = primaryButton?.getBoundingClientRect();
+        const invertedRect = invertedButton?.getBoundingClientRect();
+        return {
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            primaryWidth: primaryRect?.width ?? 0,
+            invertedWidth: invertedRect?.width ?? 0,
+        };
+    });
+    expect(narrowState.documentOverflow).toBeLessThanOrEqual(1);
+    expect(narrowState.primaryWidth).toBeGreaterThan(0);
+    expect(narrowState.invertedWidth).toBeGreaterThan(0);
+});
+
 test('keeps style-token showcase pills interactive and donut satellites centered', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
@@ -12675,25 +12805,8 @@ test('keeps the Backtest interval pill aligned and static in the 1m state', asyn
     expect(pillState.thumbRight).toBeLessThanOrEqual(pillState.shellRight + 1);
 });
 
-test('reuses the Investment stock-details table-host style for Backtest transaction details', async ({page}) => {
-    await mockInvestmentReadApis(page, {
-        transactions: [
-            {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
-        ],
-        priceHistoryByTicker: {
-            QQQ: [{date: '2026-07-10', close: 500}],
-        },
-        tickerProfiles: {
-            QQQ: {ticker: 'QQQ', company_name: 'Invesco QQQ Trust', logo_url: '/market-store/logos/QQQ.svg'},
-        },
-    });
+test('applies the Scrollable data table style to Backtest transaction details', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/trade/investment?view=stock-details&ticker=QQQ');
-
-    const investmentTableHost = page.locator(
-        'xpath=/html/body/main/div/section/section/article[3]/div[3]',
-    );
-    await expect(investmentTableHost).toBeVisible();
     const readHostStyle = (locator) => locator.evaluate((element) => {
         const style = getComputedStyle(element);
         return Object.fromEntries([
@@ -12701,14 +12814,92 @@ test('reuses the Investment stock-details table-host style for Backtest transact
             'boxSizing', 'backgroundColor', 'border', 'borderRadius', 'boxShadow',
         ].map((property) => [property, style[property]]));
     });
-    const investmentStyle = await readHostStyle(investmentTableHost);
+
+    await page.goto('/settings/style-tokens');
+    const referenceTableShell = page.locator(
+        '[data-style-token-card="scrollable-data-table"] .scrollable-data-table-shell.style-token-table-demo',
+    );
+    await expect(referenceTableShell).toBeVisible();
+    const referenceStyle = await readHostStyle(referenceTableShell);
 
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
     const backtestTableHost = page.locator(
         'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]/div[2]',
     );
     await expect(backtestTableHost).toBeVisible();
-    await expect.poll(() => readHostStyle(backtestTableHost)).toEqual(investmentStyle);
+    await expect(backtestTableHost).toHaveClass(/scrollable-data-table-shell/);
+    await expect(backtestTableHost.locator(':scope > [data-table-header]')).toHaveCount(1);
+    const backtestTableScroll = backtestTableHost.locator(':scope > [data-table-scroll]');
+    await expect(backtestTableScroll).toHaveCount(1);
+    await expect.poll(() => backtestTableScroll.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            overflowY: style.overflowY,
+            hasInternalOverflow: element.scrollHeight > element.clientHeight,
+        };
+    })).toEqual({overflowY: 'auto', hasInternalOverflow: true});
+    await expect.poll(() => readHostStyle(backtestTableHost)).toEqual(referenceStyle);
+});
+
+test('uses the global compact date format and split numeric typography in Backtest transactions', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+
+    const setCompactDateFormat = async (value) => {
+        await page.goto('/settings/general');
+        const field = page.locator('[data-shared-select-kind="settings-short-date"]');
+        await expect(field).toBeVisible();
+        await field.locator('[data-shared-select-trigger]').click();
+        const option = page.locator(`#settings_short_date_format_dropdown [data-value="${value}"]`);
+        await expect(option).toBeVisible();
+        await option.click();
+        await page.waitForLoadState('domcontentloaded');
+        await expect(page.locator('#settings_short_date_format')).toHaveValue(value);
+    };
+
+    await setCompactDateFormat('dd_mm_yyyy');
+    try {
+        await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+        const transactionHost = page.locator(
+            'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]/div[2]',
+        );
+        await expect(transactionHost).toBeVisible();
+        const firstRow = transactionHost.locator('table[data-table-body] tbody tr').first();
+        await expect(firstRow).toBeVisible();
+
+        const renderedState = await page.evaluate(() => {
+            const state = JSON.parse(document.getElementById('antigravity_state')?.textContent || '{}');
+            const row = document.querySelector('#backtest_history_table_wrap table[data-table-body] tbody tr');
+            const numericCells = ['price', 'pnl', 'cash', 'equity'].map((className) => {
+                const cell = row?.querySelector(`.${className}`);
+                return {
+                    hasMajor: Boolean(cell?.querySelector('.workspace-metric-value-major')),
+                    hasMinor: Boolean(cell?.querySelector('.workspace-metric-value-minor')),
+                    majorFontSize: cell?.querySelector('.workspace-metric-value-major')
+                        ? getComputedStyle(cell.querySelector('.workspace-metric-value-major')).fontSize
+                        : null,
+                    minorFontSize: cell?.querySelector('.workspace-metric-value-minor')
+                        ? getComputedStyle(cell.querySelector('.workspace-metric-value-minor')).fontSize
+                        : null,
+                };
+            });
+            return {
+                shortDateFormat: state.dateDisplay?.short,
+                dateText: row?.querySelector('.trade-transactions-date')?.textContent?.trim() || '',
+                numericCells,
+            };
+        });
+
+        expect(renderedState.shortDateFormat).toBe('dd_mm_yyyy');
+        expect(renderedState.dateText).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
+        expect(renderedState.numericCells).toHaveLength(4);
+        renderedState.numericCells.forEach((cell) => {
+            expect(cell.hasMajor).toBe(true);
+            expect(cell.hasMinor).toBe(true);
+            expect(Number.parseFloat(cell.minorFontSize)).toBeLessThan(Number.parseFloat(cell.majorFontSize));
+        });
+    } finally {
+        await setCompactDateFormat('yyyy_mm_dd');
+    }
 });
 
 test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
@@ -12848,6 +13039,38 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     await expect(page.locator('#tradePriceChart')).toBeVisible();
     await expect(page.locator('#tradeEquityChart')).toBeVisible();
 
+    const dcaHistoryShell = page.locator('#backtest_history_table_wrap');
+    await expect(dcaHistoryShell).toHaveClass(/scrollable-data-table-shell/);
+    await expect(dcaHistoryShell.locator(':scope > [data-table-header]')).toHaveCount(1);
+    await expect(dcaHistoryShell.locator(':scope > [data-table-scroll]')).toHaveCount(1);
+    const dcaHistoryGeometry = await dcaHistoryShell.evaluate((shell) => {
+        const header = shell.querySelector(':scope > [data-table-header]');
+        const scroll = shell.querySelector(':scope > [data-table-scroll]');
+        const headerRow = header?.querySelector('tr');
+        const headerCell = header?.querySelector('th');
+        if (!(header instanceof HTMLElement)
+            || !(scroll instanceof HTMLElement)
+            || !(headerRow instanceof HTMLElement)
+            || !(headerCell instanceof HTMLElement)) return null;
+        const headerRect = header.getBoundingClientRect();
+        const headerRowRect = headerRow.getBoundingClientRect();
+        const headerCellRect = headerCell.getBoundingClientRect();
+        return {
+            headerWidth: headerRect.width,
+            headerHeight: headerRect.height,
+            headerRowHeight: headerRowRect.height,
+            headerCellHeight: headerCellRect.height,
+            scrollOverflowY: getComputedStyle(scroll).overflowY,
+            hasInternalVerticalOverflow: scroll.scrollHeight > scroll.clientHeight,
+        };
+    });
+    expect(dcaHistoryGeometry).not.toBeNull();
+    expect(dcaHistoryGeometry.headerWidth).toBeGreaterThanOrEqual(720);
+    expect(dcaHistoryGeometry.headerHeight).toBeLessThan(60);
+    expect(dcaHistoryGeometry.headerRowHeight).toBeLessThan(60);
+    expect(dcaHistoryGeometry.headerCellHeight).toBeLessThan(60);
+    expect(dcaHistoryGeometry.scrollOverflowY).toBe('auto');
+    expect(dcaHistoryGeometry.hasInternalVerticalOverflow).toBe(true);
     const historyArticle = page.locator(
         'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]',
     );
@@ -13096,6 +13319,23 @@ test('keeps the Grid Trading tuning panel inside the desktop viewport', async ({
         const anchorRect = panel.closest('[data-trade-strategy-field]')
             ?.querySelector('.trade-strategy-row')
             ?.getBoundingClientRect();
+        const numberInputs = Array.from(panel.querySelectorAll('.trade-strategy-number-field'))
+            .map((field) => {
+                const row = field.querySelector('.trade-strategy-number-row');
+                const input = field.querySelector('input[type="number"]');
+                const stepper = field.querySelector('.trade-strategy-stepper');
+                if (!(field instanceof HTMLElement)
+                    || !(row instanceof HTMLElement)
+                    || !(input instanceof HTMLElement)
+                    || !(stepper instanceof HTMLElement)) return null;
+                return {
+                    fieldWidth: field.getBoundingClientRect().width,
+                    rowWidth: row.getBoundingClientRect().width,
+                    inputWidth: input.getBoundingClientRect().width,
+                    stepperHidden: getComputedStyle(stepper).visibility === 'hidden',
+                };
+            })
+            .filter(Boolean);
         const inputs = Array.from(panel.querySelectorAll('input, select, button'))
             .filter((node) => node.getClientRects().length > 0)
             .map((node) => {
@@ -13106,6 +13346,7 @@ test('keeps the Grid Trading tuning panel inside the desktop viewport', async ({
             flipped: panel.classList.contains('is-flipped'),
             panel: {top: panelRect.top, bottom: panelRect.bottom},
             anchor: anchorRect ? {top: anchorRect.top, bottom: anchorRect.bottom} : null,
+            numberInputs,
             inputs,
             viewportHeight: window.visualViewport?.height || window.innerHeight,
         };
@@ -13117,6 +13358,12 @@ test('keeps the Grid Trading tuning panel inside the desktop viewport', async ({
     expect(geometry.anchor).not.toBeNull();
     expect(geometry.panel.bottom).toBeLessThanOrEqual((geometry.anchor?.top || 0) - 4);
     expect(geometry.inputs).toHaveLength(12);
+    expect(geometry.numberInputs).toHaveLength(4);
+    expect(geometry.numberInputs.every((input) => (
+        input.stepperHidden
+        && input.rowWidth >= input.fieldWidth - 1
+        && input.inputWidth >= input.rowWidth - 1
+    ))).toBe(true);
     expect(geometry.inputs.every((input) => (
         input.top >= geometry.panel.top
         && input.bottom <= geometry.panel.bottom

@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.1.1 */
 
 /* Compact filter headers are a shared scrollable-table contract. */
 .scrollable-data-table-filter-header {
@@ -49,10 +49,12 @@
     min-height: 22px;
     height: 22px;
     padding: 0 14px 0 4px;
-    border: 0 !important;
+    border: var(--frosted-glass-border) !important;
     border-radius: 6px;
-    background: transparent;
-    box-shadow: none;
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     font: inherit;
     letter-spacing: inherit;
     color: inherit;

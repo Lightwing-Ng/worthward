@@ -1,7 +1,7 @@
 /**
  * Shared Local store pagination primitives.
  *
- * Code version: v1.2.2
+ * Code version: v1.2.3
  * - Fixed: Range menus respect the nearest clipping ancestor when calculating
  *   available height, while keeping the scroll surface free of scrollbar paint.
  * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
@@ -11,9 +11,11 @@
  * - Added: Transaction-detail tables can share a 100-row page-size contract.
  * - Added: Link rendering keeps server-backed pagination on the same builder
  *   and control contract as client-only pagination.
+ * - Exposed: Canonical item markup is available to presentation-only demos
+ *   that preserve an existing direct-child DOM contract.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.2';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.3';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
 const LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE = 100;
@@ -721,6 +723,7 @@ if (typeof window !== 'undefined') {
         ensureLocalStorePaginationIndicator,
         getLocalStorePaginationMotionDurationMs,
         positionLocalStorePaginationIndicator,
+        renderLocalStorePaginationItem,
         renderLocalStorePagination,
         setLocalStorePaginationActivePage,
         syncLocalStorePaginationActivePage,

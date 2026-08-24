@@ -1,4 +1,4 @@
-/** Standard table and investment filter contract tests. Code version: v1.3.1. */
+/** Standard table and investment filter contract tests. Code version: v1.3.2. */
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -71,6 +71,15 @@ test("colspan empty and summary rows are never column measurement candidates", (
     assert.equal(tableController.selectMeasurementRowDescriptor([
         { id: "empty", empty: true, cellSpans: [3] },
     ], 3), null);
+});
+
+test("hidden pagination rows are excluded from column measurement", () => {
+    const hiddenPage = {id: "hidden-page", visible: false, cellSpans: [1, 1, 1]};
+    const visiblePage = {id: "visible-page", cellSpans: [1, 1, 1]};
+    assert.equal(
+        tableController.selectMeasurementRowDescriptor([hiddenPage, visiblePage], 3),
+        visiblePage,
+    );
 });
 
 test("fixed table headers mirror the scroll container horizontal offset", () => {

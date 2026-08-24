@@ -1,4 +1,4 @@
-/* Code version: v0.38.5 */
+/* Code version: v0.38.6 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1998,8 +1998,7 @@
                             aria-label="Resize backtest overview and transaction history"></button>
                 <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface">
                     <div class="chart-heading-row investment-history-heading-row"><p class="chart-heading">${labels.backtest_transactions_tab}</p></div>
-                    <div class="investment-stock-details-table-host">
-                    <div class="investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
+                    <div class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
                             <thead><tr><th>No.</th><th>Date</th><th>Side</th><th>Price</th><th>Shares</th><th>P&amp;L</th><th>Cash</th><th>Equity</th></tr></thead>
                         </table>
@@ -2008,7 +2007,6 @@
                                 <tbody>${pendingTransactionRows}</tbody>
                             </table>
                         </div>
-                    </div>
                     </div>
                 </article>
                 </section>

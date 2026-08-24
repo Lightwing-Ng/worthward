@@ -1,4 +1,4 @@
-{# Code version: v0.4.1 #}
+{# Code version: v0.4.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -25,13 +25,24 @@
                 <header class="report-card workspace-article-card workspace-summary-card">
                     <div class="report-heading-row workspace-result-heading-stack">
                         <h2 class="report-heading" id="{{ comparison_heading_id }}">{{ chart_heading or (translate_ui('Market cap history') if is_market_cap_comparison else translate_ui('Price history')) }}</h2>
-                        {% if display_range %}<span class="price-compare-range{% if is_market_cap_comparison %} market-cap-compare-range{% endif %} workspace-result-date-range">{{ display_range }}</span>{% endif %}
                     </div>
                 </header>
                 {% if is_market_cap_comparison %}
-                {{ render_chart_surface('', series, "No authoritative shares-outstanding history is available for the selected range.", "compare_chart_region") }}
+                {{ render_chart_surface(
+                    '',
+                    series,
+                    "No authoritative shares-outstanding history is available for the selected range.",
+                    "compare_chart_region",
+                    display_range,
+                    "price-compare-range market-cap-compare-range workspace-result-date-range"
+                ) }}
                 {% else %}
-                <section class="chart-surface price-subplots-surface" aria-labelledby="price_history_heading">
+                <article class="chart-surface price-subplots-surface" aria-labelledby="price_history_heading">
+                    {% if display_range %}
+                    <div class="chart-heading-row price-compare-range-row">
+                        <span class="price-compare-range workspace-result-date-range">{{ display_range }}</span>
+                    </div>
+                    {% endif %}
                     {% if series %}
                     <div id="price_subplot_region"
                          class="price-subplot-grid"
@@ -59,7 +70,7 @@
                         <p>Please configure at least two tickers to compare.</p>
                     </div>
                     {% endif %}
-                </section>
+                </article>
                 {% endif %}
             </div>
         </section>

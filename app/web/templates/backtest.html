@@ -1,4 +1,4 @@
-{# Code version: v0.5.4 #}
+{# Code version: v0.5.5 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -145,12 +145,27 @@
                         <p class="chart-heading">{{ labels.backtest_transactions_tab }}</p>
                     </div>
                         {% if backtest_result or dca_result %}
-                    <div class="investment-stock-details-table-host">
+                    <div id="backtest_history_table_wrap"
+                         class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}"
+                         {% if selected_strategy_id == 'dca' %}style="
+                             --dca-col-index-width: 5%;
+                             --dca-col-index-min-width: 44px;
+                             --dca-col-date-width: 25%;
+                             --dca-col-date-min-width: 96px;
+                             --dca-col-price-width: 10%;
+                             --dca-col-price-min-width: 72px;
+                             --dca-col-shares-width: 10%;
+                             --dca-col-shares-min-width: 88px;
+                             --dca-col-cumulative-width: 10%;
+                             --dca-col-cumulative-min-width: 96px;
+                             --dca-col-invested-width: 20%;
+                             --dca-col-invested-min-width: 100px;
+                             --dca-col-equity-width: 20%;
+                             --dca-col-equity-min-width: 100px;
+                         "{% endif %}>
                     {% if selected_strategy_id == 'dca' %}
                         {% include "_dca_backtest_table.html" %}
-                    </div>
                     {% else %}
-                    <div class="scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                data-table-header aria-label="Transaction details columns">
                             <colgroup>
@@ -204,7 +219,6 @@
                              aria-controls="tradeTransactionsTable" data-pagination-scroll-target="backtest_history_table_scroll" hidden>
                             <!-- Pagination buttons will be injected by JS -->
                         </nav>
-                    </div>
                     </div>
                     {% endif %}
                     {% else %}
