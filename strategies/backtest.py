@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.5.2
+Code version: v0.5.3
 """
 
 from __future__ import annotations
@@ -85,6 +85,51 @@ def _build_trade_pairs(trades: list[dict[str, object]]) -> list[tuple[dict[str, 
             continue
         trade_pairs.append((first_trade, second_trade))
     return trade_pairs
+
+
+def _coerce_trade_float(value: object, default: float = 0.0) -> float:
+    try:
+        parsed = float(value or 0.0)
+    except (TypeError, ValueError):
+        return default
+    return parsed if isfinite(parsed) else default
+
+
+def _normalize_transaction_rows(trades: list[dict[str, object]]) -> None:
+    """Add the shared Backtest transaction fields while preserving legacy keys."""
+    positions: dict[str, dict[str, float]] = {}
+    for trade in trades:
+        ticker_key = str(trade.get("ticker") or "__single__")
+        position = positions.setdefault(ticker_key, {"quantity": 0.0, "cost": 0.0})
+        quantity = abs(_coerce_trade_float(trade.get("quantity", trade.get("shares"))))
+        price = _coerce_trade_float(trade.get("price"))
+        cash = _coerce_trade_float(trade.get("cash"))
+        equity = _coerce_trade_float(trade.get("equity"))
+        realized_pnl = _coerce_trade_float(
+            trade.get("realized_pnl", trade.get("pnl"))
+        )
+        side = str(trade.get("side") or "").strip().lower()
+
+        if side == "buy":
+            position["quantity"] += quantity
+            position["cost"] += quantity * price
+        elif side == "sell" and position["quantity"] > 0:
+            released_quantity = min(quantity, position["quantity"])
+            average_cost = position["cost"] / position["quantity"]
+            position["quantity"] -= released_quantity
+            position["cost"] -= average_cost * released_quantity
+            if position["quantity"] <= 1e-9:
+                position["quantity"] = 0.0
+                position["cost"] = 0.0
+
+        market_value = equity - cash
+        unrealized_pnl = market_value - position["cost"]
+        trade.update({
+            "quantity": round(quantity, 6),
+            "realized_pnl": round(realized_pnl, 4),
+            "unrealized_pnl": round(unrealized_pnl, 4),
+            "market_value": round(market_value, 4),
+        })
 
 
 def _build_win_rate_trade_pairs(
@@ -385,6 +430,7 @@ def run_leveraged_rotation_backtest(
     benchmark_alpha = final_equity - bh_final_equity
     long_gain = sum(max(value, 0.0) for value in realized_gains)
     long_loss = sum(max(-value, 0.0) for value in realized_gains)
+    _normalize_transaction_rows(trades)
 
     return {
         "interval": interval,
@@ -749,6 +795,8 @@ def run_single_ticker_backtest(
             s_shares = float(t1.get("shares", 0.0))
             realized_short_pnl = (s_price - b_price) * s_shares
             short_gain += max(realized_short_pnl, 0.0)
+
+    _normalize_transaction_rows(trades)
 
     return {
         "interval": interval,

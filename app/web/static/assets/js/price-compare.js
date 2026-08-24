@@ -1,4 +1,4 @@
-/* Code version: v0.16.0 */
+/* Code version: v0.16.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -21,6 +21,11 @@
 		maximumWidth: 5,
 		slotRatio: 0.68,
 	});
+	const ONE_DAY_US_SESSION_DIVIDER_MINUTES = Object.freeze([
+		(9 * 60) + 30,
+		16 * 60,
+	]);
+	const LONG_RANGE_TOOLTIP_PERIODS = new Set(["6mo", "1y", "2y", "3y", "5y", "10y", "max"]);
 	const imageCache = new Map();
 	const priceCharts = new Map();
 	let refreshTimer = 0;
@@ -55,6 +60,37 @@
 		const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
 		if (!match) return null;
 		return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5])) / 60000);
+	};
+
+	const buildOneDayUsSessionDividerIndexes = (rawDates, includeOvernight = false) => {
+		if (!Array.isArray(rawDates) || !rawDates.length) return [];
+		const sessionDate = String(rawDates.find((value) => {
+			const minute = parseRawMinute(value);
+			const minuteOfDay = Number.isFinite(minute) ? minute % 1440 : null;
+			return Number.isFinite(minuteOfDay)
+				&& minuteOfDay >= (4 * 60)
+				&& minuteOfDay < (20 * 60);
+		}) || "").slice(0, 10);
+		if (!sessionDate) return [];
+		const dividerMinutes = includeOvernight
+			? [(4 * 60), ...ONE_DAY_US_SESSION_DIVIDER_MINUTES]
+			: [...ONE_DAY_US_SESSION_DIVIDER_MINUTES];
+		return dividerMinutes
+			.map((boundaryMinute) => {
+				const boundaryIndex = rawDates.findIndex((value) => {
+					const minute = parseRawMinute(value);
+					return String(value).slice(0, 10) === sessionDate
+						&& Number.isFinite(minute)
+						&& (minute % 1440) >= boundaryMinute;
+				});
+				if (boundaryIndex <= 0 || boundaryIndex >= rawDates.length) return null;
+				const previousIndex = boundaryIndex - 1;
+				const previousMinute = parseRawMinute(rawDates[previousIndex]);
+				const currentMinute = parseRawMinute(rawDates[boundaryIndex]);
+				if (!Number.isFinite(previousMinute) || !Number.isFinite(currentMinute)) return null;
+				return {boundaryMinute, leftIndex: previousIndex, rightIndex: boundaryIndex};
+			})
+			.filter(Boolean);
 	};
 
 	const formatXAxisValue = (rawValue, intraday) => {
@@ -322,7 +358,7 @@
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
 
-	const formatSharedTooltipDate = (value, tickers = []) => {
+	const formatSharedTooltipDate = (value, tickers = [], {period = ""} = {}) => {
 		const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
 		if (!match) return String(value || "");
 		const convertedParts = bootstrap.dateDisplay?.convertNewYorkWallTimeParts?.(value, "Asia/Hong_Kong");
@@ -336,7 +372,7 @@
 			? bootstrap.dateDisplay.formatFullDateParts(dateParts)
 			: `${dateParts.day} ${month} ${dateParts.year}`;
 		const dateMarkup = `<span class="chart-tooltip-primary-date">${escapeTooltipHtml(date)}</span>`;
-		if (!convertedParts) return dateMarkup;
+		if (!convertedParts || LONG_RANGE_TOOLTIP_PERIODS.has(String(period || "").toLowerCase())) return dateMarkup;
 		const selectedMarkets = new Set((tickers || []).map(marketForTicker));
 		const timezones = ["Asia/Hong_Kong"];
 		if (selectedMarkets.size > 1) {
@@ -383,7 +419,7 @@
 		drawSharedHoverGuides();
 	};
 
-	const updateSharedHover = (dataIndex, sourceChart, event, {series, profiles, showCurrency}) => {
+	const updateSharedHover = (dataIndex, sourceChart, event, {series, profiles, showCurrency, period}) => {
 		if (!Number.isInteger(dataIndex) || dataIndex < 0 || !(sourceChart?.canvas instanceof HTMLCanvasElement)) {
 			hideSharedHover();
 			return;
@@ -400,6 +436,7 @@
 		if (dateElement) dateElement.innerHTML = formatSharedTooltipDate(
 			rawDate,
 			series.map((item) => item.ticker),
+			{period},
 		);
 		if (listElement) {
 			listElement.innerHTML = series.map((item) => {
@@ -703,6 +740,28 @@
 			|| new URLSearchParams(window.location.search).get("period")?.toLowerCase()
 			|| "";
 		const sharedRawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
+		const pageParams = new URLSearchParams(window.location.search);
+		const overnightInput = document.querySelector("#include_overnight_hours");
+		const includeOvernight = pageParams.get("overnight") === "1"
+			|| pageParams.get("include_overnight") === "1"
+			|| Boolean(overnightInput?.checked);
+		const hasUsSessionExtendedHours = sharedRawDates.some((value) => {
+			const minute = parseRawMinute(value);
+			return Number.isFinite(minute) && ((minute % 1440) < ((9 * 60) + 30) || (minute % 1440) >= (16 * 60));
+		})
+			&& sharedRawDates.some((value) => {
+				const minute = parseRawMinute(value);
+				return Number.isFinite(minute) && (minute % 1440) < ((9 * 60) + 30);
+			})
+			&& sharedRawDates.some((value) => {
+				const minute = parseRawMinute(value);
+				return Number.isFinite(minute) && (minute % 1440) >= (16 * 60);
+			});
+		const oneDayUsSessionDividerIndexes = requestedPeriod === "1d"
+			&& series.some((item) => marketForTicker(item?.ticker) === "US")
+			&& hasUsSessionExtendedHours
+			? buildOneDayUsSessionDividerIndexes(sharedRawDates, includeOvernight)
+			: [];
 		const marketSessionEvents = requestedPeriod === "1d"
 			? buildMarketSessionEvents(sharedRawDates, series.map((item) => item.ticker))
 			: [];
@@ -767,6 +826,9 @@
 			canvas.dataset.singleDayTimeLabels = String(singleDayLabelIndexes.size);
 			canvas.dataset.marketSessionEvents = String(marketSessionEvents.length);
 			canvas.dataset.marketSessionLineStyle = marketSessionEvents.length ? "solid-session-divider" : "";
+			canvas.dataset.oneDaySessionDividers = String(oneDayUsSessionDividerIndexes.length);
+			canvas.dataset.oneDaySessionDividerIndexes = oneDayUsSessionDividerIndexes.map(({leftIndex, rightIndex}) => `${leftIndex}:${rightIndex}`).join(",");
+			canvas.dataset.oneDaySessionDividerLineStyle = oneDayUsSessionDividerIndexes.length ? "solid-session-divider" : "";
 
 			const fixedScaleWidthPlugin = {
 				id: `priceFixedScaleWidth${index}`,
@@ -812,13 +874,32 @@
 			const multiDaySessionDividerPlugin = {
 				id: `priceMultiDaySessionDivider${index}`,
 				beforeDatasetsDraw(chart) {
-					if (!isShortMultiDayRange || !chart.chartArea || !chart.scales?.x) return;
+					if (oneDayUsSessionDividerIndexes.length || !isShortMultiDayRange || !chart.chartArea || !chart.scales?.x) return;
 					chart.ctx.save();
 					applySessionDividerStroke(chart.ctx, theme);
 					intradayDayGroups.slice(1).forEach((group) => {
 						const previousX = chart.scales.x.getPixelForValue(group.startIndex - 1);
 						const currentX = chart.scales.x.getPixelForValue(group.startIndex);
 						const x = (previousX + currentX) / 2;
+						if (!Number.isFinite(x)) return;
+						chart.ctx.beginPath();
+						chart.ctx.moveTo(x, chart.chartArea.top);
+						chart.ctx.lineTo(x, chart.chartArea.bottom);
+						chart.ctx.stroke();
+					});
+					chart.ctx.restore();
+				},
+			};
+			const oneDaySessionDividerPlugin = {
+				id: `priceOneDaySessionDivider${index}`,
+				beforeDatasetsDraw(chart) {
+					if (!oneDayUsSessionDividerIndexes.length || !chart.chartArea || !chart.scales?.x) return;
+					chart.ctx.save();
+					applySessionDividerStroke(chart.ctx, theme);
+					oneDayUsSessionDividerIndexes.forEach(({leftIndex, rightIndex}) => {
+						const leftX = chart.scales.x.getPixelForValue(leftIndex);
+						const rightX = chart.scales.x.getPixelForValue(rightIndex);
+						const x = (leftX + rightX) / 2;
 						if (!Number.isFinite(x)) return;
 						chart.ctx.beginPath();
 						chart.ctx.moveTo(x, chart.chartArea.top);
@@ -1002,6 +1083,7 @@
 							profiles,
 							currencies,
 							showCurrency,
+							period: requestedPeriod,
 						});
 					},
 					plugins: {
@@ -1041,7 +1123,7 @@
 						},
 					},
 				},
-				plugins: [fixedScaleWidthPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
+				plugins: [fixedScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
 			});
 			priceCharts.set(index, chart);
 			canvas.onmouseleave = hideSharedHover;

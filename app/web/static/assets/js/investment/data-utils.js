@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.107.0
+ * Code version: v1.108.0
+ * - Changed: HSBC buy and sell descriptions now show one compact P-/S- order
+ *   reference, with a trailing * only while settlement evidence is unresolved.
  * - Changed: Dividend and foreign-tax descriptions now use the transaction's
  *   canonical ticker instead of source-provided security names or identifiers.
  * - Changed: Foreign-currency FX conversion no longer makes a current HSBC
@@ -224,6 +226,34 @@ export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
         normalizedFiles.length >= 1
         && normalizedFiles.every((file) => pdfPredicate(file))
     );
+}
+
+function hasHsbcCashSettlementEvidence(source) {
+    if (!source || typeof source !== 'object') return false;
+    const hasFiniteValue = (value) => {
+        const normalized = String(value ?? '').trim().replace(/,/g, '');
+        return normalized !== '' && Number.isFinite(Number(normalized));
+    };
+    if (
+        hasFiniteValue(source.cash_settlement_amount_raw)
+        || hasFiniteValue(source.cash_settlement_balance_after_raw)
+    ) {
+        return true;
+    }
+    return Array.isArray(source.cash_settlement_postings)
+        && source.cash_settlement_postings.some((posting) => (
+            posting
+            && typeof posting === 'object'
+            && (
+                hasFiniteValue(posting.amount_raw ?? posting.amount)
+                || hasFiniteValue(posting.balance_after_raw)
+            )
+        ));
+}
+
+export function isHsbcSettlementActuallyPending(source) {
+    return source?.cash_replay_pending_settlement === true
+        && !hasHsbcCashSettlementEvidence(source);
 }
 
 export function resolveRealtimeQuoteSource(quotes = []) {
@@ -1942,13 +1972,46 @@ export function createInvestmentDataUtils({
         return details ? `${identityLabel} · ${details}` : identityLabel;
     }
 
-    function getHsbcReferenceCodeSummary(txn) {
-        const rawCodes = [
-            String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim(),
-            String(txn?.source?.cash_settlement_reference || '').replace(/\s+/g, ' ').trim(),
-        ].filter(Boolean);
-        if (!rawCodes.length) return '';
-        return Array.from(new Set(rawCodes)).join(', ');
+    function normalizeHsbcOrderReference(value) {
+        const normalized = String(value ?? '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return '';
+
+        const settlementReferenceMatch = normalized.match(
+            /\bREF\s+([PS])(\d+)001\s+SEC\b/i,
+        );
+        if (settlementReferenceMatch) {
+            return `${settlementReferenceMatch[1].toUpperCase()}-${settlementReferenceMatch[2]}`;
+        }
+
+        const compactReferenceMatch = normalized.match(/^([PS])[-\s]?(\d+)001$/i);
+        if (compactReferenceMatch) {
+            return `${compactReferenceMatch[1].toUpperCase()}-${compactReferenceMatch[2]}`;
+        }
+
+        const orderReferenceMatch = normalized.match(/^([PS])[-\s]?([A-Z0-9-]+)$/i);
+        if (orderReferenceMatch) {
+            return `${orderReferenceMatch[1].toUpperCase()}-${orderReferenceMatch[2].toUpperCase()}`;
+        }
+
+        return '';
+    }
+
+    function getHsbcOrderReferenceLabel(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const candidates = [
+            source.statement_order_id,
+            source.order_id,
+            source.cash_settlement_reference,
+            txn?.description,
+        ];
+        let reference = '';
+        for (const candidate of candidates) {
+            reference = normalizeHsbcOrderReference(candidate);
+            if (reference) break;
+        }
+        if (!reference) return '';
+
+        return isHsbcSettlementActuallyPending(source) ? `${reference}*` : reference;
     }
 
     function getHsbcOrderExecutionSequence(txn) {
@@ -2029,9 +2092,9 @@ export function createInvestmentDataUtils({
         }
 
         if (brokerCode === 'hsbc' && ['buy', 'sell'].includes(normalizedTypeDesc)) {
-            const referenceSummary = getHsbcReferenceCodeSummary(txn);
-            if (referenceSummary) {
-                return normalizeTransactionDescriptionPresentation(`${description} · ${referenceSummary}`);
+            const referenceLabel = getHsbcOrderReferenceLabel(txn);
+            if (referenceLabel) {
+                return normalizeTransactionDescriptionPresentation(`${description} · ${referenceLabel}`);
             }
         }
 
@@ -5548,4 +5611,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.107.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.108.0';

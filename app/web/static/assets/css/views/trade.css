@@ -1,4 +1,4 @@
-/* Code version: v3.34.11 */
+/* Code version: v3.34.13 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -100,12 +100,6 @@
     min-height: 0;
 }
 
-.backtest-view-segmented-frame {
-    --segmented-overflow-option-min-width: 104px;
-    flex-basis: 280px;
-    width: min(100%, 280px);
-}
-
 .backtest-view-surface-body > [data-backtest-view-panel] {
     flex: 1 1 auto;
     min-width: 0;
@@ -125,14 +119,40 @@
     padding-bottom: 0 !important;
 }
 
-#backtest_metrics_view_panel > #backtest_metrics_panel {
-    height: 100%;
-}
-
 .backtest-history-surface {
     position: relative;
     min-width: 0;
     max-width: 100%;
+}
+
+.backtest-history-view-segmented-frame {
+    --segmented-overflow-option-min-width: 104px;
+    flex: 0 1 360px;
+    width: min(100%, 360px);
+}
+
+.backtest-history-view-body {
+    gap: 0;
+}
+
+.backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]) {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#backtest_history_metrics_panel:not([hidden]) {
+    overflow-y: auto;
+}
+
+#backtest_history_metrics_panel > #backtest_metrics_panel {
+    min-height: 100%;
+}
+
+#backtest_history_transactions_panel:not([hidden]) {
+    display: flex;
+    flex-direction: column;
 }
 
 .backtest-history-table-shell {
@@ -143,7 +163,7 @@
     --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
-.backtest-history-surface > .investment-stock-details-table-host.backtest-history-table-shell:not([hidden]) {
+#backtest_history_transactions_panel > .investment-stock-details-table-host.backtest-history-table-shell:not([hidden]) {
     flex: 1 1 auto;
     min-height: 0;
     height: 100%;
@@ -179,20 +199,25 @@
 }
 
 .backtest-history-table {
-    --scrollable-data-table-min-width: 720px;
-    --investment-col-no-width: 44px;
-    --investment-col-time-width: 84px;
-    --investment-col-type-width: 56px;
-    --investment-col-market-value-width: 84px;
-    --investment-col-cash-width: 96px;
-    --investment-col-equity-width: 96px;
+    --scrollable-data-table-min-width: 900px;
+    --backtest-col-no-width: 5%;
+    --backtest-col-date-time-width: 15%;
+    --backtest-col-ticker-width: 10%;
+    --backtest-col-side-width: 10%;
+    --backtest-col-price-width: 10%;
+    --backtest-col-quantity-width: 10%;
+    --backtest-col-realized-pnl-width: 10%;
+    --backtest-col-unrealized-pnl-width: 10%;
+    --backtest-col-cash-width: 10%;
+    --backtest-col-market-value-width: 10%;
+    --backtest-col-equity-width: 10%;
     table-layout: fixed;
 }
 
 .backtest-history-table-shell > .backtest-history-table[data-table-header],
 .backtest-history-table-shell > .investment-history-table-scroll > .backtest-history-table {
-    width: max(100%, 720px);
-    min-width: 720px !important;
+    width: max(100%, 900px);
+    min-width: 900px !important;
 }
 
 .backtest-history-table-shell .backtest-history-table thead th {
@@ -628,40 +653,6 @@
 .trade-transactions-number.equity {
     min-width: 0;
     vertical-align: top;
-}
-
-.dca-transactions-shell .trade-transactions-index,
-.dca-transactions-shell .trade-transactions-date,
-.dca-transactions-shell .trade-transactions-number {
-    width: auto;
-}
-
-.dca-transactions-shell .dca-transactions-col-index {
-    width: max(var(--dca-col-index-width, 8%), var(--dca-col-index-min-width, 44px));
-}
-
-.dca-transactions-shell .dca-transactions-col-date {
-    width: max(var(--dca-col-date-width, 16%), var(--dca-col-date-min-width, 96px));
-}
-
-.dca-transactions-shell .dca-transactions-col-price {
-    width: max(var(--dca-col-price-width, 12%), var(--dca-col-price-min-width, 72px));
-}
-
-.dca-transactions-shell .dca-transactions-col-shares {
-    width: max(var(--dca-col-shares-width, 14%), var(--dca-col-shares-min-width, 88px));
-}
-
-.dca-transactions-shell .dca-transactions-col-cumulative {
-    width: max(var(--dca-col-cumulative-width, 16%), var(--dca-col-cumulative-min-width, 96px));
-}
-
-.dca-transactions-shell .dca-transactions-col-invested {
-    width: max(var(--dca-col-invested-width, 17%), var(--dca-col-invested-min-width, 100px));
-}
-
-.dca-transactions-shell .dca-transactions-col-equity {
-    width: max(var(--dca-col-equity-width, 17%), var(--dca-col-equity-min-width, 100px));
 }
 
 .trade-chart-stack {

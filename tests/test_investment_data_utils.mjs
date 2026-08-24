@@ -1719,6 +1719,37 @@ test('transaction descriptions reserve at-sign for prices and use multiplication
     }
 });
 
+test('HSBC trade descriptions use compact order references and mark unresolved settlement', () => {
+    const pendingOrder = {
+        broker: 'hsbc',
+        type: 'buy',
+        ticker: 'EUV',
+        quantity_abs: '3',
+        price: '24.50',
+        source: {
+            statement_order_id: 'P-590134',
+            cash_settlement_reference: 'REF P344496153 SEC',
+            cash_replay_pending_settlement: true,
+        },
+    };
+    assert.equal(
+        formatTransactionDescription(pendingOrder),
+        'EUV @ 24.50 × 3 · P-590134*',
+    );
+
+    const settledOrder = {
+        ...pendingOrder,
+        source: {
+            ...pendingOrder.source,
+            cash_settlement_amount_raw: '-73.50',
+        },
+    };
+    assert.equal(
+        formatTransactionDescription(settledOrder),
+        'EUV @ 24.50 × 3 · P-590134',
+    );
+});
+
 test('cash and FX descriptions retain source evidence without legacy-equivalent ambiguity', () => {
     assert.equal(
         formatTransactionDescription({

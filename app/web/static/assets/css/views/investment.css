@@ -1,4 +1,4 @@
-/* Code version: v1.75.49 */
+/* Code version: v1.75.54 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4299,6 +4299,12 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-import-date-row > .investment-import-date-control-row {
     padding-left: 0;
 }
+
+#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value {
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+}
+
 #investment_import_ibkr_fields > .investment-import-mode-field,
 #investment_import_hsbc_fields > .investment-import-mode-field {
     position: sticky;
@@ -4484,6 +4490,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     width: 100%;
     min-width: 0;
     max-width: none;
+    height: var(--sidebar-form-control-min-height);
     padding-right: calc(var(--trade-control-input-height) + var(--settings-text-input-pad-inline));
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4766,6 +4773,26 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     background: color-mix(in srgb, var(--glass-surface-background-strong) 88%, transparent);
     color: var(--text);
     line-height: 1.4;
+}
+
+#investment_import_hsbc_fields .investment-import-file-input {
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+    padding-block: 0;
+    font-size: var(--font-table-body);
+    line-height: 1.2;
+}
+
+#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"] .investment-import-file-input {
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+    padding-block: 0;
+}
+
+#investment_import_ibkr_fields [data-ibkr-import-mode-panel="gainskeeper"] .investment-import-file-input {
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+    padding-block: 0;
 }
 
 .investment-import-file-input::file-selector-button {

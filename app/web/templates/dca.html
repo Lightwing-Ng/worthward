@@ -87,57 +87,51 @@
                                     </div>
                                 </div>
                                 <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
-                                    <div class="scrollable-data-table-shell trade-transactions-shell dca-transactions-shell"
-                                         style="
-                                             --dca-col-index-width: 5%;
-                                             --dca-col-index-min-width: 44px;
-                                             --dca-col-date-width: 25%;
-                                             --dca-col-date-min-width: 96px;
-                                             --dca-col-price-width: 10%;
-                                             --dca-col-price-min-width: 72px;
-                                             --dca-col-shares-width: 10%;
-                                             --dca-col-shares-min-width: 88px;
-                                             --dca-col-cumulative-width: 10%;
-                                             --dca-col-cumulative-min-width: 96px;
-                                             --dca-col-invested-width: 20%;
-                                             --dca-col-invested-min-width: 100px;
-                                             --dca-col-equity-width: 20%;
-                                             --dca-col-equity-min-width: 100px;
-                                         ">
-                                        <table class="settings-table trade-transactions-table scrollable-data-table"
+                                     <div class="scrollable-data-table-shell trade-transactions-shell dca-transactions-shell"
+                                         >
+                                        <table class="settings-table trade-transactions-table scrollable-data-table backtest-history-table"
                                                aria-hidden="true">
                                             <colgroup>
-                                                <col class="dca-transactions-col dca-transactions-col-index">
-                                                <col class="dca-transactions-col dca-transactions-col-date">
-                                                <col class="dca-transactions-col dca-transactions-col-price">
-                                                <col class="dca-transactions-col dca-transactions-col-shares">
-                                                <col class="dca-transactions-col dca-transactions-col-cumulative">
-                                                <col class="dca-transactions-col dca-transactions-col-invested">
-                                                <col class="dca-transactions-col dca-transactions-col-equity">
+                                                <col style="width: var(--backtest-col-no-width);">
+                                                <col style="width: var(--backtest-col-date-time-width);">
+                                                <col style="width: var(--backtest-col-side-width);">
+                                                <col style="width: var(--backtest-col-price-width);">
+                                                <col style="width: var(--backtest-col-quantity-width);">
+                                                <col style="width: var(--backtest-col-realized-pnl-width);">
+                                                <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                                <col style="width: var(--backtest-col-cash-width);">
+                                                <col style="width: var(--backtest-col-market-value-width);">
+                                                <col style="width: var(--backtest-col-equity-width);">
                                             </colgroup>
                                             <thead>
                                             <tr>
                                                 <th>No.</th>
-                                                <th>Date</th>
+                                                <th>Date time</th>
+                                                <th>Side</th>
                                                 <th class="trade-transactions-number">Price</th>
-                                                <th class="trade-transactions-number">Shares</th>
-                                                <th class="trade-transactions-number">Cum. shares</th>
-                                                <th class="trade-transactions-number">Invested</th>
+                                                <th class="trade-transactions-number">Quantity</th>
+                                                <th class="trade-transactions-number">Realized P&amp;L</th>
+                                                <th class="trade-transactions-number">Unrealized P&amp;L</th>
+                                                <th class="trade-transactions-number">Cash</th>
+                                                <th class="trade-transactions-number">Market value</th>
                                                 <th class="trade-transactions-number">Equity</th>
                                             </tr>
                                             </thead>
                                         </table>
                                         <div class="trade-transactions-wrap scrollable-data-table-scroll">
                                             <table id="tradeTransactionsTable"
-                                                   class="settings-table trade-transactions-table scrollable-data-table">
+                                                   class="settings-table trade-transactions-table scrollable-data-table backtest-history-table">
                                                 <colgroup>
-                                                    <col class="dca-transactions-col dca-transactions-col-index">
-                                                    <col class="dca-transactions-col dca-transactions-col-date">
-                                                    <col class="dca-transactions-col dca-transactions-col-price">
-                                                    <col class="dca-transactions-col dca-transactions-col-shares">
-                                                    <col class="dca-transactions-col dca-transactions-col-cumulative">
-                                                    <col class="dca-transactions-col dca-transactions-col-invested">
-                                                    <col class="dca-transactions-col dca-transactions-col-equity">
+                                                    <col style="width: var(--backtest-col-no-width);">
+                                                    <col style="width: var(--backtest-col-date-time-width);">
+                                                    <col style="width: var(--backtest-col-side-width);">
+                                                    <col style="width: var(--backtest-col-price-width);">
+                                                    <col style="width: var(--backtest-col-quantity-width);">
+                                                    <col style="width: var(--backtest-col-realized-pnl-width);">
+                                                    <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                                    <col style="width: var(--backtest-col-cash-width);">
+                                                    <col style="width: var(--backtest-col-market-value-width);">
+                                                    <col style="width: var(--backtest-col-equity-width);">
                                                 </colgroup>
                                                 <tbody>
                                                 </tbody>
@@ -181,5 +175,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.7') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.16') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.20') }}"></script>
 {% endblock %}

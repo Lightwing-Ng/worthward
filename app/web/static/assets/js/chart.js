@@ -1,4 +1,4 @@
-/* Code version: v0.10.0 */
+/* Code version: v0.10.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -105,17 +105,18 @@
 		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	};
 
-	const formatMarketCapLabel = (value, maximumFractionDigits = 2, minimumFractionDigits = maximumFractionDigits) => {
+	const formatMarketCapLabel = (value, maximumFractionDigits = 2, minimumFractionDigits = maximumFractionDigits, showCurrency = true) => {
 		const numeric = Number(value);
 		if (!Number.isFinite(numeric)) return "";
+		const currencyPrefix = showCurrency ? "$" : "";
 		const units = [
 			{threshold: 1e12, suffix: "T"},
 			{threshold: 1e9, suffix: "B"},
 			{threshold: 1e6, suffix: "M"},
 		];
 		const unit = units.find((item) => Math.abs(numeric) >= item.threshold);
-		if (!unit) return `$${numeric.toLocaleString("en-US", {maximumFractionDigits: 0})}`;
-		return `$${(numeric / unit.threshold).toLocaleString("en-US", {
+		if (!unit) return `${currencyPrefix}${numeric.toLocaleString("en-US", {maximumFractionDigits: 0})}`;
+		return `${currencyPrefix}${(numeric / unit.threshold).toLocaleString("en-US", {
 			minimumFractionDigits,
 			maximumFractionDigits,
 		})}${unit.suffix}`;
@@ -1307,7 +1308,7 @@
 							},
 							callback(value, index, ticks) {
 								if (index === 0 || index === ticks.length - 1) return "";
-								return isMarketCapView ? formatMarketCapLabel(value, 1, 0) : formatPercentAxisLabel(value);
+								return isMarketCapView ? formatMarketCapLabel(value, 1, 0, false) : formatPercentAxisLabel(value);
 							},
 						},
 					},

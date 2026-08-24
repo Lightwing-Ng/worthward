@@ -1,4 +1,4 @@
-/* Code version: v0.1.19 */
+/* Code version: v0.1.21 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -152,7 +152,7 @@
         const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
         if (!tradeChartStack) return;
         const chartYPaddingPx = 5;
-        const fixedYAxisWidth = 52;
+        const fixedYAxisWidth = 72;
         const contributionByIndex = new Map();
         const indexByDate = new Map();
         rawDates.forEach((value, index) => {
@@ -181,6 +181,14 @@
             minimumFractionDigits: digits,
             maximumFractionDigits: digits,
         }).format(value);
+        const buildYAxisTicks = (fractionDigits) => ({
+            color: resolvedTheme.muted,
+            display: true,
+            padding: 8,
+            callback(value) {
+                return formatMoney(Number(value || 0), fractionDigits);
+            },
+        });
         const escapeHtml = (value) => String(value)
             .replaceAll("&", "&amp;")
             .replaceAll("<", "&lt;")
@@ -191,6 +199,10 @@
             const formatted = formatMoney(value, digits);
             const renderer = window.ANTIGRAVITY_NUMERIC_DISPLAY?.renderNumericDisplayContent;
             return typeof renderer === "function" ? renderer(formatted) : escapeHtml(formatted);
+        };
+        const numericTradeValue = (trade, key, fallback = 0) => {
+            const value = Number(trade?.[key]);
+            return Number.isFinite(value) ? value : fallback;
         };
         const formatReturn = (value) => `${value >= 0 ? "" : "-"}${Math.abs(value).toFixed(2)}%`;
 
@@ -302,14 +314,7 @@
                     afterFit: (scale) => {
                         scale.width = fixedYAxisWidth;
                     },
-                    ticks: {
-                        color: resolvedTheme.muted,
-                        display: true,
-                        padding: 8,
-                        callback(value) {
-                            return formatMoney(Number(value || 0));
-                        },
-                    },
+                    ticks: buildYAxisTicks(0),
                 },
             },
         };
@@ -354,7 +359,11 @@
                 ...commonOptions,
                 scales: {
                     ...commonOptions.scales,
-                    y: {...commonOptions.scales.y, ...priceYScale},
+                    y: {
+                        ...commonOptions.scales.y,
+                        ...priceYScale,
+                        ticks: buildYAxisTicks(2),
+                    },
                 },
             },
             plugins: [contributionMarkerPlugin],
@@ -551,15 +560,24 @@
                         ?? indexByDate.get(String(trade.date || ""))
                         ?? "";
                     const row = document.createElement("tr");
+                    const equity = numericTradeValue(trade, "equity");
+                    const cash = numericTradeValue(trade, "cash");
+                    const marketValue = numericTradeValue(trade, "market_value", equity - cash);
+                    const quantity = numericTradeValue(trade, "quantity", numericTradeValue(trade, "shares"));
+                    const realizedPnl = numericTradeValue(trade, "realized_pnl", numericTradeValue(trade, "pnl"));
+                    const unrealizedPnl = numericTradeValue(trade, "unrealized_pnl");
                     row.dataset.chartIndex = String(chartIndex);
                     row.innerHTML = `
                         <td class="trade-transactions-index">${index + 1}</td>
                         <td class="trade-transactions-date">${trade.date || ""}</td>
-                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.price || 0), 2)}</td>
-                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.shares || 0), 4)}</td>
-                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.cumulative_shares || 0), 4)}</td>
-                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.invested || 0))}</td>
-                        <td class="trade-transactions-number">${renderNumericCell(Number(trade.equity || 0))}</td>
+                        <td class="trade-transactions-side">${trade.side || "Buy"}</td>
+                        <td class="trade-transactions-number price">${renderNumericCell(numericTradeValue(trade, "price"), 2)}</td>
+                        <td class="trade-transactions-number quantity">${renderNumericCell(quantity, 4)}</td>
+                        <td class="trade-transactions-number realized-pnl">${renderNumericCell(realizedPnl)}</td>
+                        <td class="trade-transactions-number unrealized-pnl">${renderNumericCell(unrealizedPnl)}</td>
+                        <td class="trade-transactions-number cash">${renderNumericCell(cash)}</td>
+                        <td class="trade-transactions-number market-value">${renderNumericCell(marketValue)}</td>
+                        <td class="trade-transactions-number equity">${renderNumericCell(equity)}</td>
                     `;
                     tbody.appendChild(row);
                 }

@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.10.1
+Code version: v0.10.2
 """
 
 from __future__ import annotations
@@ -875,6 +875,21 @@ def slice_intraday_datasets_for_compare_period(
         if requested_day_count <= 0:
             raise ValueError(f"Unsupported intraday comparison period: {period}")
         target_trading_days = sorted(common_market_local_days or set())[-requested_day_count:]
+
+    requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0
+    if all_tickers_are_us and requested_day_count:
+        common_complete_days: set[object] | None = None
+        for index, dataset in enumerate(prepared_datasets):
+            ticker = ticker_values[index] if index < len(ticker_values) else None
+            bounded_dataset = dataset[dataset["Date"] <= common_end].copy()
+            complete_days = _complete_intraday_trading_days(bounded_dataset, ticker)
+            common_complete_days = (
+                complete_days
+                if common_complete_days is None
+                else common_complete_days & complete_days
+            )
+        if common_complete_days:
+            target_trading_days = sorted(common_complete_days)[-requested_day_count:]
 
     for index, dataset in enumerate(prepared_datasets):
         ticker = ticker_values[index] if index < len(ticker_values) else None

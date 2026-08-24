@@ -1,4 +1,4 @@
-{# Code version: v0.6.2 #}
+{# Code version: v0.6.3 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -85,12 +85,10 @@
     <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
         {{ render_switch("include_dividends", labels.include_dividends, "dividends", checked=include_dividends and not price_only) }}
     </div>
-    {% if selected_strategy_id != 'dca' %}
     <div class="field-checkbox field-switch">
         <input type="hidden" name="stop_loss" value="0">
         {{ render_switch("stop_loss", labels.backtest_stop_loss, "stop_loss", checked=stop_loss_enabled, input_attrs='title="' ~ labels.backtest_stop_loss_help ~ '"') }}
     </div>
-    {% endif %}
     <div class="field trade-strategy-field backtest-shared-select-field" data-trade-strategy-field data-shared-select-field data-shared-select-kind="strategy">
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row backtest-shared-select-row">

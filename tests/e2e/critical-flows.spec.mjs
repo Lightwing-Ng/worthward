@@ -1,4 +1,4 @@
-/* Code version: v1.167.27 */
+/* Code version: v1.167.49 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -810,6 +810,27 @@ test('switches between return comparison and Ticker comparison workspaces', asyn
     await page.locator('#global_theme_toggle').click();
 });
 
+test('keeps the merged DCA strategy out of the optimistic workspace sidebar', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT');
+
+    const navigationState = await page.evaluate(() => {
+        const rendered = window.ANTIGRAVITY_BOOTSTRAP.renderOptimisticNavigationSkeleton({view: 'backtest'});
+        const sidebar = document.querySelector('#app_sidebar');
+        return {
+            rendered,
+            labels: [...sidebar.querySelectorAll('.navigation-skeleton-sidebar-nav .settings-nav-label')]
+                .map((node) => node.textContent.trim()),
+            hasDcaLabel: sidebar.textContent.includes('Dollar-cost averaging'),
+        };
+    });
+
+    expect(navigationState).toEqual({
+        rendered: true,
+        labels: ['Return comparison', 'Ticker comparison', 'Compute your portfolio', 'Backtest'],
+        hasDcaLabel: false,
+    });
+});
+
 test('anchors the comparison share control to the summary panel without overlapping the theme control', async ({page}) => {
     await page.addInitScript(() => {
         window.sessionStorage.setItem('antigravity:sidebar-open', 'false');
@@ -1145,7 +1166,7 @@ test('formats market-cap y-axis values without fixed trailing zeroes', async ({p
         ];
     });
 
-    expect(formattedTicks).toEqual(['$1,234', '$4.5T', '$4T']);
+    expect(formattedTicks).toEqual(['1,234', '4.5T', '4T']);
 });
 
 test('omits midnight from long market-cap x-axis labels', async ({page}) => {
@@ -1449,6 +1470,38 @@ test('switches exact-date pickers into a bounded year grid with explanatory disa
     await expect(page.locator('#exact_trading_date_feedback')).toContainText('JEPQ has no comparable history before 23 May 2022.');
     await monthGrid.locator('[data-month-value="2022-05"]').click();
     await expect(page.locator('.date-picker-popover:not([hidden]) [data-date-calendar]:not([hidden])')).toBeVisible();
+});
+
+test('allows the current US premarket date for an exact one-day comparison', async ({page}) => {
+    await page.route('**/api/date-constraints*', async (route) => {
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                min_date: '2026-04-15',
+                max_date: '2026-08-24',
+                trading_dates: ['2026-04-15', '2026-08-21', '2026-08-24'],
+                adjusted_start: '2026-08-24',
+                adjusted_end: '2026-08-24',
+                message: null,
+                availability: {
+                    latest: {message: 'Current US session data is available for the selected tickers.'},
+                },
+            }),
+        });
+    });
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&range=exact&period=1d&date=2026-08-24');
+
+    const input = page.locator('#exact_trading_date');
+    await expect.poll(() => input.inputValue()).toBe('2026-08-24');
+    await expect.poll(() => input.evaluate((element) => element.max)).toBe('2026-08-24');
+    await page.getByRole('textbox', {name: 'Type trading date'}).click();
+    await page.locator('.date-picker-popover:not([hidden]) [data-date-title]').click();
+    const monthGrid = page.locator('[data-date-month-grid]:not([hidden])');
+    await expect(monthGrid.locator('[data-month-value="2026-08"]')).toHaveAttribute('data-selectable', 'true');
+    await monthGrid.locator('[data-month-value="2026-08"]').click();
+    await expect(
+        page.locator('.date-picker-popover:not([hidden]) [data-date-calendar]:not([hidden]) [data-value="2026-08-24"]'),
+    ).toHaveAttribute('data-selectable', 'true');
 });
 
 test('keeps manual date drafts neutral and reserves feedback for complete unavailable dates', async ({page}) => {
@@ -1778,6 +1831,34 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
     expect(marketCapUrl.searchParams.has('period')).toBe(false);
 });
 
+test('keeps the Price chart responsive when 1 year is submitted twice', async ({page}) => {
+    const consoleErrors = [];
+    page.on('console', (message) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&range=6mo');
+    const periodTrigger = page.locator('#period_panel [data-shared-select-trigger]');
+    await expect(periodTrigger).toHaveAttribute('aria-label', 'Period: 6 months');
+    await periodTrigger.click();
+    await page.locator('#period_dropdown [role="option"][data-value="1y"]').click();
+
+    // A repeated change event used to let an older hydration clean up the newer one.
+    await page.evaluate(() => {
+        document.querySelector('#period')?.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+
+    await expect(page).toHaveURL(/\/workspaces\/prices\?ticker=AAPL&ticker=MSFT$/);
+    await expect.poll(() => page.locator('#workspace_panel').getAttribute('data-workspace-pending'))
+        .toBeNull();
+    await expect(page.locator('#period')).toHaveValue('1y');
+    await expect(page.locator('.price-compare-range'))
+        .toHaveText(/^\d{2} [A-Z][a-z]{2} \d{4} - \d{2} [A-Z][a-z]{2} \d{4}$/);
+    await expect(page.locator('canvas')).toHaveCount(2);
+    expect(consoleErrors.filter((message) => message.includes('Hydration Error'))).toEqual([]);
+});
+
 test('keeps the Ticker comparison metric control within the narrow sidebar viewport', async ({page}) => {
     await page.setViewportSize({width: 390, height: 844});
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
@@ -1804,6 +1885,40 @@ test('keeps the Ticker comparison metric control within the narrow sidebar viewp
     expect(geometry.control).not.toBeNull();
     expect(geometry.control?.left).toBeGreaterThanOrEqual(0);
     expect(geometry.control?.right).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+});
+
+test('keeps the range pill aligned after responsive sidebar resizing', async ({page}) => {
+    const exactUrl = '/workspaces/prices?ticker=AAPL&ticker=MSFT&range=exact&period=1d&date=2026-07-15';
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto(exactUrl);
+    await setSidebarExpanded(page, false);
+    await page.setViewportSize({width: 1008, height: 1123});
+    await page.waitForTimeout(500);
+
+    const pillState = await page.locator('.range-mode-shell').evaluate((element) => {
+        const pseudo = getComputedStyle(element, '::before');
+        const shellRect = element.getBoundingClientRect();
+        const activeOption = element.querySelector('input:checked')?.closest('.segmented-control-option');
+        const activeRect = activeOption?.getBoundingClientRect();
+        const transformMatch = pseudo.transform.match(
+            /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([-\d.]+)/,
+        );
+        const translateX = pseudo.transform === 'none'
+            ? 0
+            : Number.parseFloat(transformMatch?.[1] || 'NaN');
+        const pillLeft = shellRect.left + (Number.parseFloat(pseudo.left) || 0) + translateX;
+        const pillRight = pillLeft + (Number.parseFloat(pseudo.width) || 0);
+        return {
+            leftDelta: activeRect ? Math.abs(pillLeft - activeRect.left) : Number.POSITIVE_INFINITY,
+            rightDelta: activeRect ? Math.abs(pillRight - activeRect.right) : Number.POSITIVE_INFINITY,
+            shellRight: shellRect.right,
+            pillRight,
+        };
+    });
+
+    expect(pillState.leftDelta).toBeLessThanOrEqual(1);
+    expect(pillState.rightDelta).toBeLessThanOrEqual(1);
+    expect(pillState.pillRight).toBeLessThanOrEqual(pillState.shellRight + 1);
 });
 
 test('keeps the active one-day trading date when switching Price performance to Exact', async ({page}) => {
@@ -2102,6 +2217,118 @@ test('switches short price ranges and formats price axes by currency precision',
         && item.labels.every((label) => Array.isArray(label) && label.length === 2 && /^\d{2}:\d{2}$/.test(label[0]))
     ))).toBe(true);
 
+    const oneDaySessionDividers = await page.evaluate(() => {
+        const originalSeries = window.ANTIGRAVITY_APP.chart.series;
+        const minutes = Array.from({length: 960}, (_, index) => {
+            const totalMinutes = (4 * 60) + index;
+            return `2026-07-10 ${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
+        });
+        window.ANTIGRAVITY_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
+            ...item,
+            raw_dates: minutes,
+            dates: minutes,
+            prices: minutes.map((_value, index) => 100 + (seriesIndex * 10) + (index * 0.01)),
+            candlestick_prices: minutes.map((_value, index) => {
+                const price = 100 + (seriesIndex * 10) + (index * 0.01);
+                return {x: index, o: price, h: price + 0.2, l: price - 0.2, c: price + 0.1, v: 100};
+            }),
+        }));
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        const result = canvases.map((canvas, index) => {
+            const chart = window.Chart.getChart(canvas);
+            const indexes = canvas.dataset.oneDaySessionDividerIndexes.split(',').map((pair) => pair.split(':').map(Number));
+            return {
+                count: canvas.dataset.oneDaySessionDividers,
+                indexes: canvas.dataset.oneDaySessionDividerIndexes,
+                lineStyle: canvas.dataset.oneDaySessionDividerLineStyle,
+                pluginId: chart.config.plugins.find((plugin) => plugin.id === `priceOneDaySessionDivider${index}`)?.id || '',
+                positions: indexes.map(([leftIndex, rightIndex]) => (
+                    (chart.scales.x.getPixelForValue(leftIndex) + chart.scales.x.getPixelForValue(rightIndex)) / 2
+                )),
+                chartArea: {top: chart.chartArea.top, bottom: chart.chartArea.bottom},
+            };
+        });
+        window.ANTIGRAVITY_APP.chart.series = originalSeries;
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        return result;
+    });
+    expect(oneDaySessionDividers.every((item) => (
+        item.count === '2'
+        && item.lineStyle === 'solid-session-divider'
+        && item.indexes.split(',').length === 2
+        && item.pluginId
+        && item.positions.length === 2
+        && item.positions[0] < item.positions[1]
+        && item.chartArea.bottom > item.chartArea.top
+    ))).toBe(true);
+    expect(new Set(oneDaySessionDividers.map((item) => item.indexes)).size).toBe(1);
+    expect(new Set(oneDaySessionDividers.flatMap((item) => item.positions.map((position) => position.toFixed(3)))).size).toBe(2);
+    const firstDividerPositions = oneDaySessionDividers[0].positions;
+    expect(oneDaySessionDividers.slice(1).every((item) => item.positions.every((position, positionIndex) => (
+        Math.abs(position - firstDividerPositions[positionIndex]) <= 0.01
+    )))).toBe(true);
+
+    const overnightSessionDividers = await page.evaluate(() => {
+        const originalSeries = window.ANTIGRAVITY_APP.chart.series;
+        const originalHref = window.location.href;
+        const overnightInput = document.querySelector('#include_overnight_hours');
+        const originalChecked = Boolean(overnightInput?.checked);
+        const minutes = Array.from({length: 1440}, (_, index) => (
+            new Date(Date.UTC(2026, 6, 14, 20, 0) + (index * 60000)).toISOString().slice(0, 16).replace('T', ' ')
+        ));
+        if (overnightInput) overnightInput.checked = true;
+        const params = new URLSearchParams(window.location.search);
+        params.set('overnight', '1');
+        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+        window.ANTIGRAVITY_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
+            ...item,
+            raw_dates: minutes,
+            dates: minutes,
+            prices: minutes.map((_value, index) => 100 + (seriesIndex * 10) + (index * 0.01)),
+            candlestick_prices: minutes.map((_value, index) => {
+                const price = 100 + (seriesIndex * 10) + (index * 0.01);
+                return {x: index, o: price, h: price + 0.2, l: price - 0.2, c: price + 0.1, v: 100};
+            }),
+        }));
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        const result = canvases.map((canvas, index) => {
+            const chart = window.Chart.getChart(canvas);
+            const indexes = canvas.dataset.oneDaySessionDividerIndexes.split(',').map((pair) => pair.split(':').map(Number));
+            return {
+                count: canvas.dataset.oneDaySessionDividers,
+                indexes: canvas.dataset.oneDaySessionDividerIndexes,
+                lineStyle: canvas.dataset.oneDaySessionDividerLineStyle,
+                pluginId: chart.config.plugins.find((plugin) => plugin.id === `priceOneDaySessionDivider${index}`)?.id || '',
+                positions: indexes.map(([leftIndex, rightIndex]) => (
+                    (chart.scales.x.getPixelForValue(leftIndex) + chart.scales.x.getPixelForValue(rightIndex)) / 2
+                )),
+                chartArea: {top: chart.chartArea.top, bottom: chart.chartArea.bottom},
+            };
+        });
+        window.ANTIGRAVITY_APP.chart.series = originalSeries;
+        if (overnightInput) overnightInput.checked = originalChecked;
+        window.history.replaceState({}, '', originalHref);
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        return result;
+    });
+    expect(overnightSessionDividers.every((item) => (
+        item.count === '3'
+        && item.lineStyle === 'solid-session-divider'
+        && item.indexes.split(',').length === 3
+        && item.pluginId
+        && item.positions.length === 3
+        && item.positions[0] < item.positions[1]
+        && item.positions[1] < item.positions[2]
+        && item.chartArea.bottom > item.chartArea.top
+    ))).toBe(true);
+    expect(new Set(overnightSessionDividers.map((item) => item.indexes)).size).toBe(1);
+    const firstOvernightDividerPositions = overnightSessionDividers[0].positions;
+    expect(overnightSessionDividers.slice(1).every((item) => item.positions.every((position, positionIndex) => (
+        Math.abs(position - firstOvernightDividerPositions[positionIndex]) <= 0.01
+    )))).toBe(true);
+
     const referenceLine = await page.evaluate(() => {
         const originalSeries = window.ANTIGRAVITY_APP.chart.series[2];
         const originalProfile = window.ANTIGRAVITY_APP.chart.profiles[2];
@@ -2148,7 +2375,44 @@ test('switches short price ranges and formats price axes by currency precision',
 
     const tooltipDateLines = await page.evaluate(() => {
         const host = document.createElement('div');
-        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate('2026-07-10 12:53');
+        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate(
+            '2026-07-10 12:53',
+            [],
+            {period: '3d'},
+        );
+        const shortRange = {
+            date: host.querySelector('.chart-tooltip-primary-date')?.textContent || '',
+            time: host.querySelector('.chart-tooltip-market-time')?.textContent || '',
+        };
+        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate(
+            '2026-07-10 12:53',
+            [],
+            {period: '6mo'},
+        );
+        const originalHref = window.location.href;
+        const renderTooltipForPeriod = (period) => {
+            const params = new URLSearchParams(window.location.search);
+            params.set('range', period);
+            params.delete('period');
+            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+            window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+            const canvas = document.querySelector('[data-price-subplot-canvas]');
+            const chart = window.Chart.getChart(canvas);
+            chart.options.onHover(
+                {y: chart.chartArea.top},
+                [{index: 0}],
+                chart,
+            );
+            const tooltip = document.querySelector('.price-shared-tooltip');
+            return {
+                date: tooltip?.querySelector('.chart-tooltip-primary-date')?.textContent || '',
+                time: tooltip?.querySelector('.chart-tooltip-market-time')?.textContent || '',
+            };
+        };
+        const renderedShortRange = renderTooltipForPeriod('3d');
+        const renderedLongRange = renderTooltipForPeriod('6mo');
+        window.history.replaceState({}, '', originalHref);
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
         return {
             date: host.querySelector('.chart-tooltip-primary-date')?.textContent || '',
             expectedDate: window.ANTIGRAVITY_BOOTSTRAP.dateDisplay.formatFullDateParts({
@@ -2157,10 +2421,19 @@ test('switches short price ranges and formats price axes by currency precision',
                 day: 11,
             }),
             time: host.querySelector('.chart-tooltip-market-time')?.textContent || '',
+            shortRange,
+            renderedShortRange,
+            renderedLongRange,
         };
     });
     expect(tooltipDateLines.date).toBe(tooltipDateLines.expectedDate);
-    expect(tooltipDateLines.time).toBe('00:53 HKT');
+    expect(tooltipDateLines.time).toBe('');
+    expect(tooltipDateLines.shortRange).toEqual({
+        date: tooltipDateLines.expectedDate,
+        time: '00:53 HKT',
+    });
+    expect(tooltipDateLines.renderedShortRange.time).toBeTruthy();
+    expect(tooltipDateLines.renderedLongRange.time).toBe('');
 
     const multiMarketPresentation = await page.evaluate(() => {
         const tickers = ['0005.HK', 'HSBA.L', 'HSBC'];
@@ -2641,8 +2914,12 @@ test('validates the investment import flow without mutating the local store', as
     await expect(page.getByRole('textbox', {name: 'Type page date'})).toBeVisible();
     await expect(page.locator('[data-ibkr-calibration-table]')).toBeVisible();
     await expect(page.locator('[data-ibkr-calibration-table] thead th')).toHaveText(['No.', 'Asset', 'Cash / quantity']);
-    await expect(page.locator('[data-ibkr-calibration-row]')).toHaveCount(6);
-    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)', 'Cash (CNH)']);
+    await expect(page.locator('[data-ibkr-calibration-row]')).toHaveCount(5);
+    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)']);
+    await page.locator('#ibkr_trade_notifications_text').fill('HKD 1,000.00\nCNY 2,000.00');
+    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)', 'Cash (HKD)', 'Cash (CNH)']);
+    await page.locator('#ibkr_trade_notifications_text').fill('');
+    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)']);
     expect(await page.locator('[data-ibkr-calibration-row]').first().locator('td').first().evaluate((cell) => getComputedStyle(cell).textAlign)).toBe('center');
     await expect(page.locator('[data-ibkr-calibration-asset]')).toHaveCount(4);
     expect(await page.locator('[data-ibkr-calibration-asset]').evaluateAll((fields) => fields.map((field) => field.textContent.trim()))).toEqual(['QQQI', 'DRAM', 'IBKR', 'NVDA']);
@@ -2821,6 +3098,114 @@ test('validates the investment import flow without mutating the local store', as
     const multipartBody = bocHkPostRequest.postDataBuffer()?.toString('latin1') || '';
     expect((multipartBody.match(/name="boc_hk_statement_pdfs"/g) || []).length).toBe(2);
     expect(multipartBody.indexOf('2026-07.pdf')).toBeLessThan(multipartBody.indexOf('2026-06.pdf'));
+});
+
+test('keeps the Investment import broker dropdown stable while scrolling to HSBC', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [],
+        brokerSummaries: {},
+    });
+    await page.setViewportSize({width: 825, height: 773});
+    await page.goto('/trade/investment');
+    await page.locator('#toggle_form_button').click();
+
+    const trigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
+    const dropdown = page.locator('#investment_import_broker_dropdown');
+    await trigger.click();
+    await page.waitForTimeout(220);
+
+    await dropdown.hover();
+    await page.mouse.wheel(0, 620);
+    await expect.poll(() => dropdown.evaluate((menu) => menu.scrollTop)).toBeGreaterThan(0);
+
+    const scrolledGeometry = await dropdown.evaluate((menu) => {
+        const rect = menu.getBoundingClientRect();
+        return {top: rect.top, left: rect.left, width: rect.width, scrollTop: menu.scrollTop};
+    });
+    await page.waitForTimeout(150);
+    const settledGeometry = await dropdown.evaluate((menu) => {
+        const rect = menu.getBoundingClientRect();
+        return {top: rect.top, left: rect.left, width: rect.width, scrollTop: menu.scrollTop};
+    });
+    expect(scrolledGeometry.scrollTop).toBeGreaterThan(0);
+    expect(settledGeometry.scrollTop).toBeGreaterThan(0);
+    expect(Math.abs(settledGeometry.top - scrolledGeometry.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(settledGeometry.left - scrolledGeometry.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(settledGeometry.width - scrolledGeometry.width)).toBeLessThanOrEqual(1);
+
+    const hsbcOption = dropdown.locator('[role="option"][data-value="hsbc"]');
+    await expect(hsbcOption).toBeVisible();
+    await hsbcOption.click();
+    await expect(dropdown).toBeHidden();
+    await expect(page.locator('#investment_import_broker')).toHaveValue('hsbc');
+    await expect(page.locator('#investment_import_hsbc_fields')).toBeVisible();
+    await expect(page.locator('#hsbc_portfolio_text_display')).toHaveCSS('height', '30px');
+    await page.locator('label[for="hsbc_import_mode_statement_pdf"]').click();
+    await expect(page.locator('#hsbc_statement_pdfs')).toBeVisible();
+    await expect(page.locator('#hsbc_statement_pdfs')).toHaveCSS('font-size', '13px');
+    await expect(page.locator('#hsbc_statement_pdfs')).toHaveCSS('height', '30px');
+});
+
+test('keeps the IBKR file inputs compact', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [],
+        brokerSummaries: {},
+    });
+    await page.setViewportSize({width: 825, height: 773});
+    await page.goto('/trade/investment');
+    await page.locator('#toggle_form_button').click();
+
+    const trigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
+    const dropdown = page.locator('#investment_import_broker_dropdown');
+    await trigger.click();
+    await dropdown.locator('[role="option"][data-value="ibkr"]').click();
+    await expect(page.locator('#investment_import_ibkr_fields')).toBeVisible();
+    await expect(page.locator('#transactions_csv')).toHaveCSS('height', '30px');
+    await expect(page.locator('#positions_csv')).toHaveCSS('height', '30px');
+    await page.locator('label[for="ibkr_import_mode_gainskeeper"]').click();
+    await expect(page.locator('#gainskeeper_files')).toBeVisible();
+    await expect(page.locator('#gainskeeper_files')).toHaveCSS('height', '30px');
+});
+
+test('shows only pasted-evidence non-USD cash rows in IBKR calibration', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [],
+        brokerSummaries: {
+            ibkr: {
+                ending_cash_by_currency: {USD: '3323.1', HKD: '1000', CNH: '2000'},
+                position_snapshot_authoritative: true,
+                position_snapshot: {},
+            },
+        },
+    });
+    await page.setViewportSize({width: 825, height: 773});
+    await page.goto('/trade/investment');
+    await page.locator('#toggle_form_button').click();
+
+    const brokerTrigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
+    await brokerTrigger.click();
+    await page.locator('#investment_import_broker_dropdown [role="option"][data-value="ibkr"]').click();
+    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
+
+    await expect(page.locator('#ibkr_trade_notifications_display')).toHaveCSS('height', '30px');
+    await expect(page.locator(
+        '#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value'
+    )).toHaveCSS('height', '30px');
+
+    const cashAssets = page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset');
+    await expect(cashAssets).toHaveText(['Cash (USD)']);
+
+    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
+        input.value = 'Portfolio\nHKD 1,000.00\nCNY 2,000.00';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+    await expect(cashAssets).toHaveText(['Cash (USD)', 'Cash (HKD)', 'Cash (CNH)']);
+
+    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
+        input.value = '';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+    await expect(cashAssets).toHaveText(['Cash (USD)']);
 });
 
 test('validates HSBC cash-only paste and USD settlement refresh separately from the full snapshot', async ({page}) => {
@@ -5793,7 +6178,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
         entry: 'v2.128.3',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.107.0',
+        dataUtils: 'v1.108.0',
         importFeedback: 'v1.8.5',
         layout: 'v1.1.0',
         pagination: 'v1.4.0',
@@ -6707,6 +7092,11 @@ test('replays future HSBC settlement cash on the settlement date without a deriv
     const settledOrderRow = page.locator('#investment_history_row_2');
     await expect(settledOrderRow.locator('td').nth(9)).not.toContainText('*');
     await expect(settledOrderRow.locator('td').nth(10)).not.toContainText('*');
+    await expect(
+        page.locator('#investment_history .investment-history-cell-left')
+            .filter({hasText: 'BOXX @ 900.00 × 1'})
+            .first(),
+    ).toHaveText('BOXX @ 900.00 × 1 · P-TEST');
     await expect(page.getByText('HSBC cash settlement replay', {exact: true})).toHaveCount(0);
     await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(5);
 });
@@ -6954,6 +7344,11 @@ test('keeps HSBC unsettled buy history sequential while current cash stays curre
     const latestBuyRow = page.locator('#investment_history_row_10');
     await expect(firstBuyRow.locator('td').nth(9)).toContainText('*26,360.01');
     await expect(latestBuyRow.locator('td').nth(9)).toContainText('*25,706.11');
+    await expect(
+        page.locator('#investment_history .investment-history-cell-left')
+            .filter({hasText: 'DRAM @ 57.00 × 5'})
+            .first(),
+    ).toHaveText('DRAM @ 57.00 × 5 · P-TEST-1*');
 
     await page.locator('label[for="investment_view_holdings"]').click();
     const currentCash = page.locator(
@@ -12933,35 +13328,70 @@ test('rebinds the backtest section handle after same-page result hydration', asy
     }, pointerBefore)).toBe(true);
 });
 
-test('keeps the backtest view pill synchronized and uses the 100-row transaction page contract', async ({page}) => {
+test('keeps the Backtest Metrics and Transactions pill synchronized', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
 
-    const viewSegmented = page.locator('#backtest_view_segmented');
-    const historyArticle = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]',
-    );
-    await page.locator('label[for="backtest_view_metrics"]').click();
-    await expect(page.locator('#backtest_view_surface')).toHaveAttribute('data-active-view', 'metrics');
-    await expect(page.locator('#backtest_metrics_view_panel')).toBeVisible();
-    await expect(page.locator('#backtest_overview_panel')).toBeHidden();
+    const viewSegmented = page.locator('#backtest_history_view_segmented');
+    const historyArticle = page.locator('#backtest_history_surface');
+    await expect(page.locator('#backtest_view_segmented')).toHaveCount(0);
+    await expect(page.locator('#backtest_view_surface')).toHaveAttribute('data-active-view', 'overview');
+    await expect(page.locator('#backtest_overview_panel')).toBeVisible();
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeVisible();
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeHidden();
+    await expect(historyArticle.locator('.investment-history-heading-row')).toHaveCount(0);
+
+    await page.locator('label[for="backtest_history_metrics"]').click();
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'metrics');
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeVisible();
+    await expect(page.locator('#backtest_metrics_panel .trade-metric-card')).toHaveCount(10);
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeHidden();
     await expect.poll(() => viewSegmented.evaluate((element) => ({
         active: element.dataset.active,
         activeIndex: element.style.getPropertyValue('--segmented-active-index'),
-    }))).toEqual({active: 'metrics', activeIndex: '1'});
+    }))).toEqual({active: 'metrics', activeIndex: '0'});
+    const centeredPill = await page.evaluate(() => {
+        const surface = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
+        const pill = document.querySelector('#backtest_history_view_segmented')?.getBoundingClientRect();
+        return {
+            centerDelta: Math.abs((pill.left + (pill.width / 2)) - (surface.left + (surface.width / 2))),
+            leftGap: pill.left - surface.left,
+            rightGap: surface.right - pill.right,
+        };
+    });
+    expect(centeredPill.centerDelta).toBeLessThanOrEqual(1);
+    expect(centeredPill.leftGap).toBeGreaterThanOrEqual(0);
+    expect(centeredPill.rightGap).toBeGreaterThanOrEqual(0);
 
     const transactionPageSize = await page.evaluate(() => (
         window.ANTIGRAVITY_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
+    await page.locator('label[for="backtest_history_transactions"]').click();
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'transactions');
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeVisible();
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeHidden();
     await expect(historyArticle.locator('#tradeTransactionsPagination')).toBeHidden();
 
-    await page.locator('label[for="backtest_view_overview"]').click();
-    await expect(page.locator('#backtest_view_surface')).toHaveAttribute('data-active-view', 'overview');
     await expect.poll(() => viewSegmented.evaluate((element) => (
         element.style.getPropertyValue('--segmented-active-index')
-    ))).toBe('0');
+    ))).toBe('1');
+
+    await page.setViewportSize({width: 390, height: 844});
+    await expect(viewSegmented).toBeVisible();
+    const narrowPill = await page.evaluate(() => {
+        const surface = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
+        const pill = document.querySelector('#backtest_history_view_segmented')?.getBoundingClientRect();
+        return {
+            leftGap: pill.left - surface.left,
+            rightGap: surface.right - pill.right,
+            width: pill.width,
+        };
+    });
+    expect(narrowPill.width).toBeGreaterThan(0);
+    expect(narrowPill.leftGap).toBeGreaterThanOrEqual(0);
+    expect(narrowPill.rightGap).toBeGreaterThanOrEqual(0);
 });
 
 test('keeps the Backtest interval pill aligned and static in the 1m state', async ({page}) => {
@@ -13174,6 +13604,45 @@ test('removes the horizontal reference line from the exact backtest equity canva
     expect(chartState.xBorderVisible).toBe(false);
 });
 
+test('formats Backtest price and equity axes with distinct precision', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+
+    const readAxes = () => page.evaluate(() => {
+        const readAxis = (selector) => {
+            const chart = window.Chart?.getChart?.(document.querySelector(selector));
+            if (!chart) return null;
+            return {
+                labels: chart.scales?.y?.ticks?.map((tick) => String(tick.label ?? '')).filter(Boolean) || [],
+                width: chart.scales?.y?.width || 0,
+            };
+        };
+        return {
+            price: readAxis('#tradePriceChart'),
+            equity: readAxis('#tradeEquityChart'),
+        };
+    });
+
+    const assertAxisContract = async () => {
+        await expect.poll(async () => {
+            const axes = await readAxes();
+            return Boolean(axes.price?.labels.length && axes.equity?.labels.length);
+        }).toBe(true);
+
+        const axes = await readAxes();
+        const priceTickPattern = /^-?\d{1,3}(,\d{3})*\.\d{2}$/;
+        const equityTickPattern = /^-?\d{1,3}(,\d{3})*$/;
+        expect(axes.price?.labels.every((label) => priceTickPattern.test(label))).toBe(true);
+        expect(axes.equity?.labels.every((label) => equityTickPattern.test(label))).toBe(true);
+        expect(axes.price?.width).toBeGreaterThanOrEqual(72);
+        expect(axes.equity?.width).toBeGreaterThanOrEqual(72);
+    };
+
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=5y&strategy=dca&stop_loss=0&month_day=1');
+    await assertAxisContract();
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=5y&strategy=buy-and-hold&stop_loss=0');
+    await assertAxisContract();
+});
+
 test('enters DCA through the Backtest strategy dropdown and tunes private parameters', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
@@ -13348,12 +13817,79 @@ test('keeps DCA strategy parameter menus above clipping and the panel compact', 
     expect(layout?.panelHeight).toBeLessThan(320);
 });
 
+test('keeps the bottom Backtest strategy parameter dropdown fully visible', async ({page}) => {
+    await page.setViewportSize({width: 990, height: 1242});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend_ai_gemini&interval=1m');
+
+    await page.locator('[data-trade-strategy-tune-button]').click();
+    await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
+    const field = page.locator('[data-strategy-param-key="from_cluster"]');
+    await expect(field).toBeVisible();
+    await field.locator('[data-shared-select-trigger]').click();
+    const dropdown = page.locator('#strategy_param_from_cluster_dropdown');
+    await expect(dropdown).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const trigger = document.querySelector('[data-strategy-param-key="from_cluster"] [data-shared-select-trigger]');
+        const dropdown = document.querySelector('#strategy_param_from_cluster_dropdown');
+        if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return null;
+        const triggerRect = trigger.getBoundingClientRect();
+        const dropdownRect = dropdown.getBoundingClientRect();
+        const options = Array.from(dropdown.querySelectorAll('[role="option"]')).map((option) => {
+            const rect = option.getBoundingClientRect();
+            return {
+                text: option.textContent?.trim() || '',
+                top: rect.top,
+                bottom: rect.bottom,
+            };
+        });
+        return {
+            isPageLevelOverlayChild: dropdown.parentElement?.matches('[data-shared-select-overlay]') || false,
+            position: getComputedStyle(dropdown).position,
+            triggerTop: triggerRect.top,
+            triggerBottom: triggerRect.bottom,
+            dropdownTop: dropdownRect.top,
+            dropdownBottom: dropdownRect.bottom,
+            dropdownLeft: dropdownRect.left,
+            dropdownRight: dropdownRect.right,
+            triggerWidth: triggerRect.width,
+            dropdownWidth: dropdownRect.width,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            options,
+        };
+    });
+    expect(layout).not.toBeNull();
+    expect(layout?.isPageLevelOverlayChild).toBe(true);
+    expect(layout?.position).toBe('fixed');
+    expect(layout?.dropdownTop).toBeGreaterThanOrEqual(0);
+    expect(layout?.dropdownBottom).toBeLessThanOrEqual((layout?.viewportHeight || 0) + 1);
+    expect(layout?.dropdownLeft).toBeGreaterThanOrEqual(0);
+    expect(layout?.dropdownRight).toBeLessThanOrEqual((layout?.viewportWidth || 0) + 1);
+    expect(layout?.dropdownWidth).toBeGreaterThanOrEqual((layout?.triggerWidth || 0) - 1);
+    expect(layout?.options.every((option) => option.top >= 0 && option.bottom <= (layout?.viewportHeight || 0) + 1)).toBe(true);
+    expect(layout?.options.map((option) => option.text)).toEqual(['Best', 'Average', 'Worst']);
+});
+
 test('reuses compact numeric display and Backtest section spacing contracts', async ({page}) => {
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto('/workspaces/backtest?ticker=QQQI&range=3y&return=price&strategy=dca&stop_loss=0&month_day=1');
 
     const firstRow = page.locator('#backtest_history_table_wrap table[data-table-body] tbody tr').first();
     await expect(firstRow).toBeVisible();
+    await expect(page.locator('#backtest_history_table_wrap table[data-table-header] thead th')).toHaveText([
+        'No.',
+        'Date time',
+        'Side',
+        'Price',
+        'Quantity',
+        'Realized P&L',
+        'Unrealized P&L',
+        'Cash',
+        'Market value',
+        'Equity',
+    ]);
+    await expect(firstRow.locator('td')).toHaveCount(10);
 
     const layout = await page.evaluate(() => {
         const overview = document.querySelector('#backtest_overview_panel > .backtest-surface');
@@ -13373,7 +13909,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
             overviewPadding: [overviewStyle.paddingTop, overviewStyle.paddingBottom],
             contentCardPadding: [contentCardStyle.paddingTop, contentCardStyle.paddingBottom],
             resizerFontSize: resizerStyle.fontSize,
-            numericCells: Array.from(firstRow.cells).slice(2).map((cell) => ({
+            numericCells: Array.from(firstRow.querySelectorAll('.trade-transactions-number')).map((cell) => ({
                 major: Boolean(cell.querySelector('.workspace-metric-value-major')),
                 minor: Boolean(cell.querySelector('.workspace-metric-value-minor')),
             })),
@@ -13384,8 +13920,45 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
     expect(layout?.overviewPadding).toEqual(['0px', '0px']);
     expect(layout?.contentCardPadding).toEqual(['6px', '6px']);
     expect(layout?.resizerFontSize).toBe('13px');
-    expect(layout?.numericCells.length).toBe(5);
+    expect(layout?.numericCells.length).toBe(7);
     expect(layout?.numericCells.every((cell) => cell.major && cell.minor)).toBe(true);
+});
+
+test('renders the Backtest transaction contract for intraday results', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&interval=1m&rise=0.50&fall=1.00');
+
+    const headerCells = page.locator('#backtest_history_table_wrap [data-table-header] thead th');
+    await expect(headerCells).toHaveText([
+        'No.',
+        'Date time',
+        'Side',
+        'Price',
+        'Quantity',
+        'Realized P&L',
+        'Unrealized P&L',
+        'Cash',
+        'Market value',
+        'Equity',
+    ]);
+
+    const firstRow = page.locator('#backtest_history_table_wrap [data-table-body] tbody tr').first();
+    await expect(firstRow).toBeVisible();
+    await expect(firstRow.locator('td')).toHaveCount(10);
+    await expect(firstRow.locator('td').first()).toHaveText('1');
+    const selectedInterval = await page.locator('#backtest_interval_control').getAttribute('data-active');
+    if (selectedInterval === '1m') {
+        await expect(firstRow.locator('.trade-transactions-date')).toHaveText(/\d{2}:\d{2}/);
+    }
+
+    const tableGeometry = await page.locator('#backtest_history_table_wrap [data-table-header]').evaluate((table) => ({
+        columnCount: table.querySelectorAll('col').length,
+        minWidth: Number.parseFloat(getComputedStyle(table).minWidth),
+        tableWidth: table.getBoundingClientRect().width,
+    }));
+    expect(tableGeometry.columnCount).toBe(10);
+    expect(tableGeometry.minWidth).toBeGreaterThanOrEqual(900);
+    expect(tableGeometry.tableWidth).toBeGreaterThanOrEqual(900);
 });
 
 test('removes the glass border color from the shared Backtest Period trigger', async ({page}) => {
@@ -13470,6 +14043,33 @@ test('opens Grid Trading private parameters through the shared strategy tune but
     await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
 });
 
+test('waits for Grid Trading parameter blur before recalculating', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    const hydrationRequests = [];
+    page.on('request', (request) => {
+        if (request.headers()['x-requested-with'] !== 'workspace-hydrate') return;
+        if (new URL(request.url()).pathname !== '/workspaces/backtest') return;
+        hydrationRequests.push(request.url());
+    });
+
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&fall=0.50');
+    await expect(page.locator('#tradeEquityChart')).toBeVisible();
+
+    await page.locator('[data-trade-strategy-tune-button]').click();
+    const fallInput = page.locator('#strategy_param_fall');
+    await expect(fallInput).toBeVisible();
+    await fallInput.click();
+    await fallInput.press('ControlOrMeta+A');
+    await fallInput.pressSequentially('1.75');
+
+    await page.waitForTimeout(350);
+    expect(hydrationRequests).toHaveLength(0);
+
+    await page.locator('body').click({position: {x: 800, y: 500}});
+    await expect.poll(() => hydrationRequests.length).toBe(1);
+    await expect(page).toHaveURL(/fall=1\.75/);
+});
+
 test('replaces Backtest controls when the strategy changes without losing the ticker', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
@@ -13493,7 +14093,8 @@ test('replaces Backtest controls when the strategy changes without losing the ti
     await expect(page.locator('[data-strategy-param-key="frequency"]')).toHaveCount(1);
     await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(0);
     await expect(page.locator('#backtest_interval_control')).toHaveCount(0);
-    await expect(page.locator('#stop_loss')).toHaveCount(0);
+    await expect(page.locator('#stop_loss')).toHaveCount(1);
+    await expect(page.locator('#stop_loss')).not.toBeChecked();
 
     await chooseStrategy('grid-trading');
     await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');

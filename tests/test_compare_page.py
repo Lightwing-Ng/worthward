@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.13.2
+Code version: v0.13.3
 """
 
 from __future__ import annotations
@@ -33,6 +33,57 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_one_day_date_constraints_include_current_us_session_from_compare_fallback(self) -> None:
+        stale_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-08-20 09:30", "2026-08-21 09:30"],
+            )
+            for ticker in ("AAPL", "MSFT")
+        }
+        current_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-08-24 04:00", "2026-08-24 05:00"],
+            )
+            for ticker in ("AAPL", "MSFT")
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "price",
+        ) -> pd.DataFrame:
+            del include_dividends, interval, dividend_mode
+            return stale_frames[ticker]
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch(
+                "app.web.runtime.refresh_recent_one_minute_store_with_yfinance",
+                side_effect=ValueError("Recent minute history is unavailable."),
+            ),
+            patch(
+                "app.web.runtime.fetch_compare_one_day_extended_history",
+                side_effect=lambda ticker, *, trading_date=None: current_frames[ticker],
+            ) as compare_fallback_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/date-constraints?view=prices&range=exact&period=1d"
+                "&from=2026-08-24&to=2026-08-24"
+                "&ticker=AAPL&ticker=MSFT"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertEqual(payload["adjusted_start"], "2026-08-24")
+        self.assertEqual(payload["adjusted_end"], "2026-08-24")
+        self.assertEqual(payload["max_date"], "2026-08-24")
+        self.assertIn("2026-08-24", payload["trading_dates"])
+        self.assertIsNone(payload["message"])
+        self.assertEqual(compare_fallback_mock.call_count, 2)
+
     def test_one_day_date_constraints_include_requested_exact_day_fallback(self) -> None:
         stale_frames = {
             ticker: ohlc_frame_for_dates(

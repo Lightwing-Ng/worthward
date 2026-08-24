@@ -1,7 +1,9 @@
 """
 Exact-range date constraint logic.
 
-Code version: v0.8.0
+Code version: v0.8.1
+- Changed: Compare date bounds at calendar-day precision so a requested date
+  equal to the latest available day is not reported as automatically adjusted.
 """
 
 from __future__ import annotations
@@ -28,11 +30,11 @@ def align_requested_exact_dates(
     if available_dates.empty:
         raise ValueError("No shared trading dates are available for the selected tickers.")
 
-    available = pd.Index(pd.to_datetime(available_dates).sort_values().unique())
+    available = pd.Index(pd.to_datetime(available_dates).dt.normalize().sort_values().unique())
     min_date = available[0]
     max_date = available[-1]
     start = pd.to_datetime(requested_start).normalize() if requested_start else min_date
-    end = pd.to_datetime(requested_end).replace(hour=23, minute=59, second=59) if requested_end else max_date
+    end = pd.to_datetime(requested_end).normalize() if requested_end else max_date
 
     adjusted = False
     if start < min_date:

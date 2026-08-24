@@ -1,4 +1,4 @@
-/* Code version: v0.5.6 */
+/* Code version: v0.5.9 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -52,29 +52,22 @@
 		return transition;
 	};
 
-	const initBacktestViewTabs = () => {
-		const segmentedControl = document.getElementById("backtest_view_segmented");
-		const viewSurface = document.getElementById("backtest_view_surface");
+	const initBacktestHistoryTabs = () => {
+		const segmentedControl = document.getElementById("backtest_history_view_segmented");
+		const viewSurface = document.getElementById("backtest_history_surface");
 		if (!segmentedControl || !viewSurface || segmentedControl.dataset.bound === "1") return;
-		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-view-panel]"));
+		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-history-view-panel]"));
 		const syncPanels = () => {
-			const active = segmentedControl.querySelector('input[name="backtest_view_tab"]:checked')?.value || "overview";
+			const active = segmentedControl.querySelector('input[name="backtest_history_view_tab"]:checked')?.value || "transactions";
 			segmentedControl.dataset.active = active;
 			viewSurface.dataset.activeView = active;
 			window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(segmentedControl, {activeValue: active});
 			panels.forEach((panel) => {
-				panel.hidden = panel.dataset.backtestViewPanel !== active;
+				panel.hidden = panel.dataset.backtestHistoryViewPanel !== active;
 			});
-			if (active === "overview") {
-				window.requestAnimationFrame(() => {
-					document.querySelectorAll("#tradePriceChart, #tradeEquityChart").forEach((canvas) => {
-						window.Chart?.getChart?.(canvas)?.resize();
-					});
-				});
-			}
 		};
 		segmentedControl.dataset.bound = "1";
-		segmentedControl.querySelectorAll('input[name="backtest_view_tab"]').forEach((input) => {
+		segmentedControl.querySelectorAll('input[name="backtest_history_view_tab"]').forEach((input) => {
 			input.addEventListener("change", syncPanels);
 		});
 		syncPanels();
@@ -164,27 +157,14 @@
 		chart.options.scales.y.max = nextScale.max;
 	};
 
-	const isWholeNumber = (value) => Number.isFinite(value) && Math.abs(value - Math.round(value)) < 1e-6;
-
-	const formatBacktestYAxisTick = (value, index, ticks) => {
+	const formatBacktestYAxisTick = (value, index, ticks, fractionDigits) => {
 		if (index === 0 || index === ticks.length - 1) return "";
 		const numericValue = Number(value);
 		if (!Number.isFinite(numericValue)) return String(value ?? "");
-		const visibleTickValues = (Array.isArray(ticks) ? ticks : [])
-			.slice(1, -1)
-			.map((tick) => Number(tick?.value ?? tick))
-			.filter((tickValue) => Number.isFinite(tickValue));
-		const shouldAlignWithSingleDecimal = visibleTickValues.some((tickValue) => !isWholeNumber(tickValue));
-		if (shouldAlignWithSingleDecimal) {
-			return numericValue.toLocaleString("en-US", {
-				minimumFractionDigits: 1,
-				maximumFractionDigits: 1,
-			});
-		}
-		if (isWholeNumber(numericValue)) {
-			return numericValue.toLocaleString("en-US", {maximumFractionDigits: 0});
-		}
-		return numericValue.toLocaleString("en-US", {maximumFractionDigits: 20});
+		return numericValue.toLocaleString("en-US", {
+			minimumFractionDigits: fractionDigits,
+			maximumFractionDigits: fractionDigits,
+		});
 	};
 
 	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, nextAllIn, chartYPaddingPx) => {
@@ -243,7 +223,7 @@
 	};
 
 	const initBacktestWorkspace = () => {
-		initBacktestViewTabs();
+		initBacktestHistoryTabs();
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) return;
 
@@ -340,7 +320,7 @@
 			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
 			: buildAllInSeries(open, close, initialCapital);
 
-		const fixedYAxisWidth = 52;
+		const fixedYAxisWidth = 72;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
 		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
@@ -554,6 +534,15 @@
 			},
 		};
 
+		const buildYAxisTicks = (fractionDigits) => ({
+			color: resolvedTheme.muted,
+			display: true,
+			padding: 8,
+			callback(value, index, ticks) {
+				return formatBacktestYAxisTick(value, index, ticks, fractionDigits);
+			},
+		});
+
 		const commonOptions = {
 			responsive: true,
 			maintainAspectRatio: false,
@@ -574,14 +563,7 @@
 					afterFit: (scale) => {
 						scale.width = fixedYAxisWidth;
 					},
-					ticks: {
-						color: resolvedTheme.muted,
-						display: true,
-						padding: 8,
-						callback(value, index, ticks) {
-							return formatBacktestYAxisTick(value, index, ticks);
-						},
-					},
+					ticks: buildYAxisTicks(0),
 				},
 			},
 		};
@@ -863,7 +845,11 @@
 				scales: {
 					...commonOptions.scales,
 					x: { ...commonOptions.scales.x, display: false },
-					y: { ...commonOptions.scales.y, ...priceYScale },
+					y: {
+						...commonOptions.scales.y,
+						...priceYScale,
+						ticks: buildYAxisTicks(2),
+					},
 				},
 			},
 			plugins: [candlestickPlugin, tradeMarkerPlugin],
@@ -967,6 +953,10 @@
 
 			const formatNumber = (num) => Number(num || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 			const formatShares = (num) => Math.round(Number(num || 0)).toLocaleString();
+			const numericTradeValue = (trade, key, fallback = 0) => {
+				const value = Number(trade?.[key]);
+				return Number.isFinite(value) ? value : fallback;
+			};
 			const escapeHtml = (value) => String(value)
 				.replaceAll("&", "&amp;")
 				.replaceAll("<", "&lt;")
@@ -1007,6 +997,12 @@
 					const trade = displayTrades[i];
 					const tr = document.createElement("tr");
 					const chartIndex = indexByDate.has(String(trade.date || "")) ? indexByDate.get(String(trade.date || "")) : "";
+					const equity = numericTradeValue(trade, "equity");
+					const cash = numericTradeValue(trade, "cash");
+					const marketValue = numericTradeValue(trade, "market_value", equity - cash);
+					const quantity = numericTradeValue(trade, "quantity", numericTradeValue(trade, "shares"));
+					const realizedPnl = numericTradeValue(trade, "realized_pnl", numericTradeValue(trade, "pnl"));
+					const unrealizedPnl = numericTradeValue(trade, "unrealized_pnl");
 					tr.dataset.chartIndex = chartIndex;
 					tr.innerHTML = `
 						<td class="trade-transactions-index">${displayIndex++}</td>
@@ -1014,10 +1010,12 @@
 						${showTicker ? `<td class="trade-transactions-ticker">${trade.ticker || ""}</td>` : ""}
 						<td class="trade-transactions-side">${trade.side}</td>
 						<td class="trade-transactions-number price">${renderNumericCell(trade.price)}</td>
-						<td class="trade-transactions-number">${formatShares(trade.shares)}</td>
-						<td class="trade-transactions-number pnl">${renderNumericCell(trade.pnl)}</td>
-						<td class="trade-transactions-number cash">${renderNumericCell(trade.cash)}</td>
-						<td class="trade-transactions-number equity">${renderNumericCell(trade.equity)}</td>
+						<td class="trade-transactions-number quantity">${formatShares(quantity)}</td>
+						<td class="trade-transactions-number realized-pnl">${renderNumericCell(realizedPnl)}</td>
+						<td class="trade-transactions-number unrealized-pnl">${renderNumericCell(unrealizedPnl)}</td>
+						<td class="trade-transactions-number cash">${renderNumericCell(cash)}</td>
+						<td class="trade-transactions-number market-value">${renderNumericCell(marketValue)}</td>
+						<td class="trade-transactions-number equity">${renderNumericCell(equity)}</td>
 					`;
 					tbody.appendChild(tr);
 				}

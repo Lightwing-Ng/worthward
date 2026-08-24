@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.9
+Code version: v0.5.12
 """
 
 from __future__ import annotations
@@ -69,6 +69,9 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('aria-label="Export Transactions"', html)
         self.assertIn('id="backtest_section_resizer"', html)
         self.assertLess(html.index('id="backtest_section_resizer"'), html.index('id="backtest_history_surface"'))
+        self.assertIn('id="backtest_history_view_segmented"', html)
+        self.assertNotIn('id="backtest_view_segmented"', html)
+        self.assertNotIn('<p class="chart-heading">Transaction details</p>', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
@@ -94,6 +97,33 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn("local-store-pagination-host", shell_tag)
         self.assertIn("backtest-history-table-shell", shell_tag)
         self.assertEqual(html.count('id="backtest_history_table_wrap"'), 1)
+
+    def test_backtest_transaction_table_uses_the_shared_ten_column_contract(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ", intraday=True)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result(intraday=True)),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest?ticker=QQQ&interval=1m")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        for label in [
+            "No.",
+            "Date time",
+            "Side",
+            "Price",
+            "Quantity",
+            "Realized P&amp;L",
+            "Unrealized P&amp;L",
+            "Cash",
+            "Market value",
+            "Equity",
+        ]:
+            self.assertIn(f'data-markdown-export-label="{label}">{label}</th>', html)
 
     def test_backtest_page_serializes_logo_profile_for_selected_ticker(self) -> None:
         with (
@@ -356,7 +386,7 @@ class BacktestPageTests(unittest.TestCase):
             client = create_app().test_client()
             response = client.get(
                 "/workspaces/backtest?ticker=QQQ&strategy=dca&period=1y"
-                "&amount=500&frequency=monthly&month_day=15"
+                "&amount=500&frequency=monthly&month_day=15&stop_loss=0"
             )
 
         html = response.get_data(as_text=True)
@@ -369,6 +399,11 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('name="frequency"', html)
         self.assertIn('dca-transactions-shell', html)
         self.assertIn('Amount per period', html)
+        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
+        self.assertNotIn(
+            'id="stop_loss" name="stop_loss" type="checkbox" value="1" checked',
+            html,
+        )
 
     def test_legacy_dca_route_redirects_to_backtest_strategy(self) -> None:
         client = create_app().test_client()
@@ -415,7 +450,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("## DCA Backtest Report: QQQ", report)
         self.assertIn(
-            "| No. | Date | Ticker | Price | Amount | Shares | Cumulative shares | Invested | Equity |",
+            "| No. | Date time | Side | Price | Quantity | Realized P&L | Unrealized P&L | Cash | Market value | Equity |",
             report,
         )
         self.assertIn("- **Amount per period**: $500.00", report)
@@ -444,7 +479,10 @@ class BacktestPageTests(unittest.TestCase):
         report = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("## Backtest Report: QQQ / TQQQ", report)
-        self.assertIn("| No. | Date | Ticker | Side | Price | Shares | P&L | Cash | Equity |", report)
+        self.assertIn(
+            "| No. | Date time | Ticker | Side | Price | Quantity | Realized P&L | Unrealized P&L | Cash | Market value | Equity |",
+            report,
+        )
         self.assertIn("| QQQ |", report)
         self.assertIn("| TQQQ |", report)
 

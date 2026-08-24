@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.4.1."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.4.2."""
 
 from __future__ import annotations
 
@@ -202,11 +202,13 @@ def test_backtest_results_match_investment_surface_layout() -> None:
 
     html = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert 'id="backtest_view_segmented"' in html
-    assert 'value="overview"' in html
+    assert 'id="backtest_history_view_segmented"' in html
     assert 'value="metrics"' in html
+    assert 'value="transactions"' in html
+    assert 'id="backtest_view_segmented"' not in html
     assert 'data-backtest-view-panel="overview"' in html
-    assert 'data-backtest-view-panel="metrics"' in html
+    assert 'data-backtest-history-view-panel="metrics"' in html
+    assert 'data-backtest-history-view-panel="transactions"' in html
     assert 'data-trade-detail-shell' not in html
     assert 'id="trade_detail_transactions"' not in html
     assert 'id="backtest_overview_panel"' in html

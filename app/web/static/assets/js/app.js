@@ -1,4 +1,4 @@
-/* Code version: v0.38.7 */
+/* Code version: v0.38.14 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -140,6 +140,7 @@
     let activeScrollableTableHeaderCleanup = null;
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
+    let workspaceSubmitToken = 0;
     let lastWorkspaceRangeNoticeFingerprint = "";
     let lastWorkspaceRangeNoticeTexts = new Set();
     let pendingWorkspaceChartTransition = null;
@@ -826,7 +827,6 @@
         tickers: {title: labels.dock_tickers || "Return comparison"},
         prices: {title: labels.dock_ticker_comparison || "Ticker comparison"},
         portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
-        dca: {title: labels.dock_dca || "Dollar-cost averaging"},
         backtest: {title: labels.dock_backtest || "Backtest"},
     });
 
@@ -1115,7 +1115,7 @@
                 || path.startsWith("/dca/")
                 || path === "/workspaces/dca"
                 || path.startsWith("/workspaces/dca/")
-            ) return "dca";
+            ) return "backtest";
             if (
                 path === "/backtest"
                 || path.startsWith("/backtest/")
@@ -1957,6 +1957,7 @@
                     <td class="trade-transactions-number is-pending-value">0000</td>
                     <td class="trade-transactions-number is-pending-value">0000</td>
                     <td class="trade-transactions-number is-pending-value">0000</td>
+                    <td class="trade-transactions-number is-pending-value">0000</td>
                 </tr>
             `).join("");
             return `
@@ -1966,13 +1967,6 @@
                     </article>
                     <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">
                         <div class="investment-surface-stack investment-view-surface backtest-view-surface" id="backtest_view_surface" data-active-view="overview">
-                            <div class="investment-view-segmented-wrap">
-                                <div class="segmented-control segmented-control--compact investment-view-segmented backtest-view-segmented"
-                                     id="backtest_view_segmented" data-backtest-view-segmented data-active="overview" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
-                                    <label class="segmented-control-option" for="backtest_view_overview"><input id="backtest_view_overview" name="backtest_view_tab" type="radio" value="overview" checked><span>Overview</span></label>
-                                    <label class="segmented-control-option" for="backtest_view_metrics"><input id="backtest_view_metrics" name="backtest_view_tab" type="radio" value="metrics"><span>Metrics</span></label>
-                                </div>
-                            </div>
                             <div class="investment-view-surface-body backtest-view-surface-body" id="backtest_view_surface_body">
                                 <div id="backtest_overview_panel" data-backtest-view-panel="overview">
                                     <article class="chart-surface backtest-surface">
@@ -1982,9 +1976,6 @@
                                             <div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
                                         </div>
                                     </article>
-                                </div>
-                                <div id="backtest_metrics_view_panel" data-backtest-view-panel="metrics" hidden>
-                                    <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">${pendingMetricCards}</div>
                                 </div>
                             </div>
                         </div>
@@ -1996,16 +1987,56 @@
                             role="separator"
                             aria-orientation="horizontal"
                             aria-label="Resize backtest overview and transaction history"></button>
-                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface">
-                    <div class="chart-heading-row investment-history-heading-row"><p class="chart-heading">${labels.backtest_transactions_tab}</p></div>
+                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface" data-active-view="transactions">
+                    <div class="investment-view-segmented-wrap backtest-history-view-segmented-wrap">
+                        <div class="segmented-control-overflow-frame investment-view-segmented-frame backtest-history-view-segmented-frame"
+                             data-segmented-overflow-frame data-overflow-start="0" data-overflow-end="0">
+                            <div class="segmented-control segmented-control--compact investment-view-segmented backtest-history-view-segmented"
+                                 id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="transactions" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
+                                <label class="segmented-control-option" for="backtest_history_metrics"><input id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics"><span>Metrics</span></label>
+                                <label class="segmented-control-option" for="backtest_history_transactions"><input id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" checked><span>Transactions</span></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="investment-view-surface-body backtest-history-view-body" id="backtest_history_view_body">
+                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics" hidden>
+                            <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">${pendingMetricCards}</div>
+                        </div>
+                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions">
                     <div class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
-                            <thead><tr><th>No.</th><th>Date</th><th>Side</th><th>Price</th><th>Shares</th><th>P&amp;L</th><th>Cash</th><th>Equity</th></tr></thead>
+                            <colgroup>
+                                <col style="width: var(--backtest-col-no-width);">
+                                <col style="width: var(--backtest-col-date-time-width);">
+                                <col style="width: var(--backtest-col-side-width);">
+                                <col style="width: var(--backtest-col-price-width);">
+                                <col style="width: var(--backtest-col-quantity-width);">
+                                <col style="width: var(--backtest-col-realized-pnl-width);">
+                                <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                <col style="width: var(--backtest-col-cash-width);">
+                                <col style="width: var(--backtest-col-market-value-width);">
+                                <col style="width: var(--backtest-col-equity-width);">
+                            </colgroup>
+                            <thead><tr><th>No.</th><th>Date time</th><th>Side</th><th>Price</th><th>Quantity</th><th>Realized P&amp;L</th><th>Unrealized P&amp;L</th><th>Cash</th><th>Market value</th><th>Equity</th></tr></thead>
                         </table>
                         <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll" id="backtest_history_table_scroll" data-table-scroll>
                             <table id="tradeTransactionsTable" class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-body>
+                                <colgroup>
+                                    <col style="width: var(--backtest-col-no-width);">
+                                    <col style="width: var(--backtest-col-date-time-width);">
+                                    <col style="width: var(--backtest-col-side-width);">
+                                    <col style="width: var(--backtest-col-price-width);">
+                                    <col style="width: var(--backtest-col-quantity-width);">
+                                    <col style="width: var(--backtest-col-realized-pnl-width);">
+                                    <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                    <col style="width: var(--backtest-col-cash-width);">
+                                    <col style="width: var(--backtest-col-market-value-width);">
+                                    <col style="width: var(--backtest-col-equity-width);">
+                                </colgroup>
                                 <tbody>${pendingTransactionRows}</tbody>
                             </table>
+                        </div>
+                    </div>
                         </div>
                     </div>
                 </article>
@@ -4655,6 +4686,7 @@
         dropdown.style.minWidth = "";
         dropdown.style.maxWidth = "";
         dropdown.style.maxHeight = "";
+        dropdown.style.height = "";
         dropdown.style.zIndex = "";
         dropdown.style.overflowY = "";
         dropdown.style.maxWidth = "";
@@ -4693,20 +4725,57 @@
             // Portal constrained menus above clipped form containers before positioning them.
             portalSharedSelectDropdown(field, dropdown);
             const dropdownGap = 4;
-            const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
-            const spaceBelow = Math.max(140, viewportHeight - triggerRect.bottom - dropdownGap - 12);
-            // Cap at a comfortable height but allow the list to be fully usable.
-            const maxH = Math.min(380, spaceBelow);
+            const viewport = window.visualViewport;
+            const viewportLeft = Number(viewport?.offsetLeft) || 0;
+            const viewportTop = Number(viewport?.offsetTop) || 0;
+            const viewportWidth = Number(viewport?.width) || window.innerWidth || 0;
+            const viewportHeight = Number(viewport?.height) || window.innerHeight || 0;
+            const viewportRight = viewportLeft + viewportWidth;
+            const viewportBottom = viewportTop + viewportHeight;
+            const viewportEdge = 12;
+            const maxWidth = Math.max(0, Math.min(420, viewportWidth - (viewportEdge * 2)));
+            const triggerWidth = Math.max(0, triggerRect.width);
+            const availableWidth = Math.max(0, viewportRight - viewportEdge - Math.max(viewportLeft + viewportEdge, triggerRect.left));
+            const menuWidth = Math.min(
+                maxWidth,
+                Math.max(triggerWidth, availableWidth),
+            );
 
             dropdown.style.position = 'fixed';
-            dropdown.style.left = `${Math.round(triggerRect.left)}px`;
+            dropdown.style.left = `${Math.round(Math.min(
+                Math.max(viewportLeft + viewportEdge, triggerRect.left),
+                viewportRight - viewportEdge - menuWidth,
+            ))}px`;
             dropdown.style.top = `${Math.round(triggerRect.bottom + dropdownGap)}px`;
             dropdown.style.bottom = 'auto';
             dropdown.style.right = 'auto';
-            dropdown.style.width = `${Math.round(triggerRect.width)}px`;
-            dropdown.style.minWidth = `${Math.round(triggerRect.width)}px`;
-            dropdown.style.maxWidth = 'min(420px, 92vw)';
-            dropdown.style.maxHeight = `${Math.round(maxH)}px`;
+            dropdown.style.width = 'max-content';
+            dropdown.style.minWidth = `${Math.round(Math.min(triggerWidth, menuWidth))}px`;
+            dropdown.style.maxWidth = `${Math.round(maxWidth)}px`;
+            dropdown.style.maxHeight = 'none';
+            dropdown.style.height = 'auto';
+
+            const measuredWidth = Math.max(triggerWidth, dropdown.getBoundingClientRect().width);
+            const boundedWidth = Math.min(maxWidth, measuredWidth);
+            const boundedLeft = Math.min(
+                Math.max(viewportLeft + viewportEdge, triggerRect.left),
+                viewportRight - viewportEdge - boundedWidth,
+            );
+            dropdown.style.width = `${Math.round(boundedWidth)}px`;
+            dropdown.style.left = `${Math.round(boundedLeft)}px`;
+
+            const naturalHeight = Math.max(dropdown.scrollHeight, dropdown.getBoundingClientRect().height);
+            const spaceBelow = Math.max(0, viewportBottom - viewportEdge - triggerRect.bottom - dropdownGap);
+            const spaceAbove = Math.max(0, triggerRect.top - viewportTop - viewportEdge - dropdownGap);
+            const opensAbove = naturalHeight > spaceBelow && spaceAbove > spaceBelow;
+            const availableHeight = Math.max(0, Math.min(380, opensAbove ? spaceAbove : spaceBelow));
+            const visibleHeight = Math.min(naturalHeight, availableHeight);
+            const top = opensAbove
+                ? Math.max(viewportTop + viewportEdge, triggerRect.top - dropdownGap - visibleHeight)
+                : Math.min(viewportBottom - viewportEdge - visibleHeight, triggerRect.bottom + dropdownGap);
+
+            dropdown.style.top = `${Math.round(top)}px`;
+            dropdown.style.maxHeight = `${Math.round(availableHeight)}px`;
             dropdown.style.zIndex = '10002';
 
             dropdown.style.overflowY = 'auto';
@@ -7473,10 +7542,20 @@
             if (!(field instanceof HTMLElement) || field.dataset.strategyParamBound === "1") return;
             field.dataset.strategyParamBound = "1";
 
+            // Keep editable strategy values local until focus leaves the control.
             const textInput = field.querySelector("[data-strategy-param-input='text']");
             if (textInput instanceof HTMLInputElement) {
-                textInput.addEventListener("input", () => scheduleStrategyParamSubmit());
-                textInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+                const markTextDraft = () => {
+                    textInput.dataset.strategyParamDirty = "1";
+                };
+                const commitTextDraft = () => {
+                    if (textInput.dataset.strategyParamDirty !== "1") return;
+                    delete textInput.dataset.strategyParamDirty;
+                    scheduleStrategyParamSubmit(80);
+                };
+                textInput.addEventListener("input", markTextDraft);
+                textInput.addEventListener("change", markTextDraft);
+                textInput.addEventListener("blur", commitTextDraft);
             }
 
             const numberInput = field.querySelector("[data-strategy-param-input='number']");
@@ -7522,10 +7601,17 @@
                 });
                 numberInput.addEventListener("focus", () => field.classList.add("is-open"));
                 numberInput.addEventListener("click", () => field.classList.add("is-open"));
-                numberInput.addEventListener("input", () => scheduleStrategyParamSubmit());
+                numberInput.addEventListener("input", () => {
+                    numberInput.dataset.strategyParamDirty = "1";
+                });
                 numberInput.addEventListener("change", () => {
+                    numberInput.dataset.strategyParamDirty = "1";
+                });
+                numberInput.addEventListener("blur", () => {
+                    const hasDraft = numberInput.dataset.strategyParamDirty === "1";
                     syncStandaloneNumber(numberInput.value);
-                    scheduleStrategyParamSubmit(80);
+                    delete numberInput.dataset.strategyParamDirty;
+                    if (hasDraft) scheduleStrategyParamSubmit(80);
                 });
                 field.addEventListener("focusout", () => window.setTimeout(() => {
                     if (field.matches(":focus-within")) return;
@@ -7953,7 +8039,14 @@
         positionTradeStrategyDropdown();
         positionTradeStrategyPanel();
     });
-    document.addEventListener("scroll", () => {
+    document.addEventListener("scroll", (event) => {
+        // Scrolling a portalled menu must not remeasure and reposition the menu.
+        // Reapplying its unconstrained measurement styles during the scroll event
+        // resets scrollTop and makes the option list jump back to its start.
+        const scrollTarget = event.target;
+        if (scrollTarget instanceof Element && scrollTarget.closest("[data-shared-select-dropdown]")) {
+            return;
+        }
         getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));
         positionTradeStrategyDropdown();
         positionTradeStrategyPanel();
@@ -8016,8 +8109,9 @@
     if (form) {
         form.noValidate = true;
         form.addEventListener("submit", async (event) => {
-            if (isSubmittingWithOverlay) return;
             event.preventDefault();
+            if (isSubmittingWithOverlay) return;
+            const submitToken = ++workspaceSubmitToken;
             const values = getFilledTickers();
             validateAllTickerInputs();
             if (values.length < getMinimumRequiredTickers()) {
@@ -8031,6 +8125,7 @@
                 return;
             }
             const areTickersValid = await ensureTickerValidityBeforeSubmit();
+            if (submitToken !== workspaceSubmitToken) return;
             if (!areTickersValid) {
                 const invalidInput = getTickerInputs().find((input) => !input.checkValidity() || input.dataset.unknown === "1");
                 if (invalidInput) showTickerValidationTooltip(invalidInput);
@@ -8074,6 +8169,7 @@
             } catch (error) {
                 console.warn("Market Store Presence Error:", error);
             }
+            if (submitToken !== workspaceSubmitToken) return;
             isSubmittingWithOverlay = true;
             setFormBusyState(true);
             rememberCurrentViewUrl(nextUrl);
@@ -8168,19 +8264,24 @@
             applyPendingWorkspaceMarkup();
             try {
                 const hydrated = await hydrateWorkspaceFromUrl(nextUrl);
+                if (submitToken !== workspaceSubmitToken) return;
                 if (hydrated === false) return;
                 hasInitialResult = true;
             } catch (error) {
-                console.error("Hydration Error: ", error);
+                if (error?.name !== "AbortError") {
+                    console.error("Hydration Error: ", error);
+                }
                 if (error?.name === "AbortError") return;
                 window.requestAnimationFrame(() => {
                     window.location.assign(nextUrl);
                 });
                 return;
             } finally {
-                hideWorkspaceModal();
-                isSubmittingWithOverlay = false;
-                setFormBusyState(false);
+                if (submitToken === workspaceSubmitToken) {
+                    hideWorkspaceModal();
+                    isSubmittingWithOverlay = false;
+                    setFormBusyState(false);
+                }
             }
         });
     }

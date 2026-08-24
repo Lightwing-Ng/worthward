@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.47.3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.47.10') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -285,17 +285,17 @@
 {% endif %}
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.16.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.16.3') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.38.7') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.38.14') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
-<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.10.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.10.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-<script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.5.6') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.5.9') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.1.3') }}"></script>
 {% if selected_strategy_id == 'dca' %}
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.19') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.21') }}"></script>
 {% endif %}
 {% endif %}
 </body>

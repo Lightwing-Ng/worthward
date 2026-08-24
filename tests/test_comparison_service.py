@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.8.2
+Code version: v0.8.3
 """
 
 from __future__ import annotations
@@ -358,6 +358,50 @@ class ComparisonServiceTests(unittest.TestCase):
             aligned[0].loc[aligned[0]["Close"].notna(), "Date"].dt.strftime("%Y-%m-%d %H:%M").tolist(),
             ["2026-03-25 09:30", "2026-03-26 09:30", "2026-03-27 09:30"],
         )
+
+    def test_multi_day_us_compare_uses_common_complete_trading_days(self) -> None:
+        def _dataset(days: list[str], starting_price: float) -> pd.DataFrame:
+            frames = []
+            for offset, day in enumerate(days):
+                dates = pd.date_range(
+                    f"{day} 09:30",
+                    f"{day} 15:59",
+                    freq="min",
+                )
+                frames.append(pd.DataFrame({
+                    "Date": dates,
+                    "Close": starting_price + offset + (dates.minute / 1_000),
+                }))
+            return pd.concat(frames, ignore_index=True)
+
+        first_ticker_days = [
+            "2026-07-20",
+            "2026-08-17",
+            "2026-08-18",
+            "2026-08-19",
+            "2026-08-20",
+            "2026-08-21",
+        ]
+        second_ticker_days = first_ticker_days[1:]
+
+        aligned = slice_intraday_datasets_for_compare_period(
+            [
+                _dataset(first_ticker_days, 300.0),
+                _dataset(second_ticker_days, 400.0),
+            ],
+            "1w",
+            pd.Timestamp("2026-08-21 16:00"),
+            ["AAPL", "MSFT"],
+        )
+
+        expected_days = second_ticker_days
+        for dataset in aligned:
+            self.assertEqual(len(dataset), 5 * 390)
+            self.assertEqual(
+                dataset["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist(),
+                expected_days,
+            )
+            self.assertTrue(dataset["Close"].notna().all())
 
     def test_exact_four_day_intraday_alignment_keeps_equal_session_widths(self) -> None:
         complete = pd.DataFrame(

@@ -1,7 +1,12 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.81.2
+Code version: v0.81.4
+- Changed: Exact one-day US date constraints now reuse the existing comparison
+  market-data fallback so an active trading day remains selectable when Yahoo
+  or the local one-minute cache is behind the current session.
+- Changed: The shared Backtest stop-loss control now flows through DCA as well;
+  DCA has no exit orders, so its execution remains contribution-only.
 - Changed: Ticker comparison now serves price and market-cap modes from the
   canonical prices workspace while preserving the legacy market-cap URL as a
   compatibility redirect.
@@ -613,6 +618,11 @@ def build_web_runtime() -> WebRuntime:
             for value in (requested_start, requested_end)
             if value and not pd.isna(parsed := pd.to_datetime(value, errors="coerce"))
         }
+        dates_to_probe = set(requested_dates)
+        if not dates_to_probe and any(infer_ticker_market(ticker) == "US" for ticker in tickers):
+            live_session_state = nyse_market_session_state(include_overnight=True)
+            if live_session_state.get("is_trading_day"):
+                dates_to_probe.add(live_session_date)
         for ticker in tickers:
             use_overnight_source = include_overnight_flag and infer_ticker_market(ticker) == "US"
             if use_overnight_source:
@@ -646,7 +656,7 @@ def build_web_runtime() -> WebRuntime:
             available_dates = set(date_frame["Date"].dt.date) if not date_frame.empty else set()
             should_refresh_public_data = (
                 not use_overnight_source
-                and (not requested_dates or not requested_dates.issubset(available_dates))
+                and (not dates_to_probe or not dates_to_probe.issubset(available_dates))
             )
             if should_refresh_public_data:
                 try:
@@ -667,20 +677,28 @@ def build_web_runtime() -> WebRuntime:
                     LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
                     refresh_failures.append(ticker)
             available_dates = set(date_frame["Date"].dt.date) if not date_frame.empty else set()
-            missing_requested_dates = requested_dates - available_dates
+            missing_requested_dates = dates_to_probe - available_dates
             if not use_overnight_source:
                 for requested_date in sorted(missing_requested_dates):
                     try:
-                        exact_dataset = fetch_one_minute_history_for_trading_date(
-                            ticker,
-                            requested_date,
-                            include_dividends=False,
-                            dividend_mode="price",
-                        )
+                        if infer_ticker_market(ticker) == "US":
+                            exact_dataset = fetch_compare_one_day_extended_history(
+                                ticker,
+                                trading_date=requested_date,
+                            )
+                            regular_session_only = False
+                        else:
+                            exact_dataset = fetch_one_minute_history_for_trading_date(
+                                ticker,
+                                requested_date,
+                                include_dividends=False,
+                                dividend_mode="price",
+                            )
+                            regular_session_only = True
                         prepared_exact_dataset = prepare_intraday_dataset_for_compare(
                             exact_dataset,
                             ticker,
-                            regular_session_only=True,
+                            regular_session_only=regular_session_only,
                         )
                         exact_date_frame = market_local_trading_dates_frame(
                             prepared_exact_dataset,
@@ -701,6 +719,10 @@ def build_web_runtime() -> WebRuntime:
                         )
                         if ticker not in refresh_failures:
                             refresh_failures.append(ticker)
+            if dates_to_probe and dates_to_probe.issubset(
+                    set(date_frame["Date"].dt.date) if not date_frame.empty else set()
+            ):
+                refresh_failures = [failed_ticker for failed_ticker in refresh_failures if failed_ticker != ticker]
             has_live_session_date = has_live_session_date or bool(
                 not date_frame.empty and (date_frame["Date"].dt.date == live_session_date).any()
             )
@@ -2744,6 +2766,10 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"No market data available for {ticker} in the selected range.")
 
         params = collect_strategy_form_values("dca")
+        stop_loss_enabled = parse_bool_flag(
+            "stop_loss",
+            default=bool(defaults.get("backtest_stop_loss", True)),
+        )
         result = simulate_recurring_investment(
             ticker,
             dataset,
@@ -2755,6 +2781,7 @@ def build_web_runtime() -> WebRuntime:
             or parse_bool_flag("dividends", "include_dividends"),
             include_cash_dividends=request.args.get("return", "").strip().lower() != "price"
             and not parse_bool_flag("price_only", "price_return_only"),
+            stop_loss_enabled=stop_loss_enabled,
         )
         return (
             result,
@@ -3922,6 +3949,7 @@ def build_web_runtime() -> WebRuntime:
                     month_day=dca_month_day,
                     reinvest_cash_dividends=include_dividends,
                     include_cash_dividends=not price_only,
+                    stop_loss_enabled=stop_loss_enabled,
                 )
                 profiles = [fetch_quote_profile(dca_ticker, False)]
                 ticker_slots = [dca_ticker]
@@ -5063,18 +5091,22 @@ def build_web_runtime() -> WebRuntime:
                     "",
                     "### Contribution History",
                     "",
-                    "| No. | Date | Ticker | Price | Amount | Shares | Cumulative shares | Invested | Equity |",
-                    "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
+                    "| No. | Date time | Side | Price | Quantity | Realized P&L | Unrealized P&L | Cash | Market value | Equity |",
+                    "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
                 ]
                 for index, trade in enumerate(dca_trades, start=1):
+                    equity = parse_float_value(trade.get("equity"), 0.0)
+                    cash = parse_float_value(trade.get("cash"), 0.0)
+                    market_value = parse_float_value(trade.get("market_value"), equity - cash)
                     md_lines.append(
-                        f"| {index} | {trade.get('date', 'N/A')} | {trade.get('ticker', ticker_caption)} | "
+                        f"| {index} | {trade.get('date', 'N/A')} | {trade.get('side', 'Buy')} | "
                         f"{parse_float_value(trade.get('price'), 0.0):,.2f} | "
-                        f"${parse_float_value(trade.get('amount'), 0.0):,.2f} | "
-                        f"{parse_float_value(trade.get('shares'), 0.0):,.6f} | "
-                        f"{parse_float_value(trade.get('cumulative_shares'), 0.0):,.6f} | "
-                        f"${parse_float_value(trade.get('invested'), 0.0):,.2f} | "
-                        f"${parse_float_value(trade.get('equity'), 0.0):,.2f} |"
+                        f"{parse_float_value(trade.get('quantity', trade.get('shares')), 0.0):,.0f} | "
+                        f"{parse_float_value(trade.get('realized_pnl'), 0.0):,.2f} | "
+                        f"{parse_float_value(trade.get('unrealized_pnl'), 0.0):,.2f} | "
+                        f"{cash:,.2f} | "
+                        f"{market_value:,.2f} | "
+                        f"{equity:,.2f} |"
                     )
                 md_lines.extend([
                     "",
@@ -5139,22 +5171,28 @@ def build_web_runtime() -> WebRuntime:
             md_lines.extend([
                 "### Transaction History",
                 "",
-                "| No. | Date | Ticker | Side | Price | Shares | P&L | Cash | Equity |"
+                "| No. | Date time | Ticker | Side | Price | Quantity | Realized P&L | Unrealized P&L | Cash | Market value | Equity |"
                 if is_multi_asset
-                else "| No. | Date | Side | Price | Shares | P&L | Cash | Equity |",
-                "| ---: | :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: |"
+                else "| No. | Date time | Side | Price | Quantity | Realized P&L | Unrealized P&L | Cash | Market value | Equity |",
+                "| ---: | :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
                 if is_multi_asset
-                else "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: |",
+                else "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ])
             for i, trade in enumerate(trades):
                 if trade.get("_virtual_close"):
                     continue  # Skip virtual closing trade, same as table display
                 trade_date = format_display_datetime(pd.to_datetime(trade.get("date")), use_short_date=True) if trade.get("date") else "N/A"
                 ticker_cell = f"{trade.get('ticker', '')} | " if is_multi_asset else ""
+                equity = parse_float_value(trade.get("equity"), 0.0)
+                cash = parse_float_value(trade.get("cash"), 0.0)
+                market_value = parse_float_value(trade.get("market_value"), equity - cash)
                 md_lines.append(
                     f"| {i + 1} | {trade_date} | {ticker_cell}{trade.get('side')} | "
-                    f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
-                    f"{trade.get('pnl', 0):,.2f} | {trade.get('cash', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
+                    f"{trade.get('price', 0):,.2f} | "
+                    f"{parse_float_value(trade.get('quantity', trade.get('shares')), 0.0):,.0f} | "
+                    f"{parse_float_value(trade.get('realized_pnl', trade.get('pnl')), 0.0):,.2f} | "
+                    f"{parse_float_value(trade.get('unrealized_pnl'), 0.0):,.2f} | "
+                    f"{cash:,.2f} | {market_value:,.2f} | {equity:,.2f} |"
                 )
 
             # 3. Strategy Context

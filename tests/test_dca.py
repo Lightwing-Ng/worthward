@@ -1,6 +1,6 @@
 """Behavior tests for recurring investment schedules and simulations.
 
-Code version: v1.1.0
+Code version: v1.1.2
 """
 
 from __future__ import annotations
@@ -166,6 +166,35 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
         )
         self.assertEqual(result["chart"]["contribution_markers"], [True, True, True])
         self.assertEqual(result["chart"]["raw_dates"][0], "2026-01-15")
+        first_trade = trades[0]
+        self.assertEqual(first_trade["side"], "Buy")
+        self.assertEqual(first_trade["quantity"], first_trade["shares"])
+        self.assertEqual(first_trade["realized_pnl"], 0.0)
+        self.assertAlmostEqual(first_trade["market_value"], first_trade["equity"] - first_trade["cash"])
+        self.assertAlmostEqual(
+            first_trade["unrealized_pnl"],
+            first_trade["market_value"] - first_trade["invested"],
+        )
+
+    def test_shared_stop_loss_flag_is_preserved_without_changing_buy_only_dca(self) -> None:
+        frame = close_frame_for_dates(
+            ["2026-01-15", "2026-02-16", "2026-03-16"],
+            [100.0, 120.0, 125.0],
+        )
+
+        result = simulate_recurring_investment(
+            "QQQ",
+            frame,
+            amount_per_period=1_000.0,
+            frequency="monthly",
+            weekday=0,
+            month_day=15,
+            stop_loss_enabled=False,
+        )
+
+        self.assertFalse(result["summary"]["stop_loss_enabled"])
+        self.assertEqual(result["summary"]["contribution_count"], 3)
+        self.assertEqual(result["summary"]["total_invested"], 3_000.0)
 
     def test_sparse_market_dates_combine_multiple_scheduled_events(self) -> None:
         frame = close_frame_for_dates(["2026-01-01", "2026-01-20"], [100.0, 200.0])

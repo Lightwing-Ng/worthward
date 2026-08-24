@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.3
+ * Code version: v2.129.4
  * - Changed: Stock-details and equity range controls now reuse the Investment
  *   view segmented-control classes and option markup.
  * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
@@ -46,6 +46,8 @@
  * - Changed: IBKR current holdings calibration now uses an explicit Cash /
  *   quantity column, labels cash rows as Cash (currency), and removes the
  *   separate currency column that mixed cash with security quantities.
+ * - Changed: IBKR calibration defaults to Cash (USD) and reveals non-USD cash
+ *   rows only when pasted Trade Notifications text provides currency evidence.
  * - Fixed: IBKR calibration rows now union the authoritative position
  *   snapshot with the latest calculated broker holdings and cash currencies,
  *   so later buys or newly observed currencies are not omitted.
@@ -328,9 +330,10 @@ import {
     createInvestmentDataUtils,
     filterAggregateOnlyOverlayTransactions,
     isCompleteHsbcStatementPdfBundle,
+    isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.107.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.108.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -9080,6 +9083,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return rows;
     }
 
+    function getIbkrTradeNotificationCashCurrencies(rawText) {
+        const text = normalizeClipboardText(rawText);
+        const currencies = [];
+        if (/(?:\bHKD\b|HK\$|Hong Kong Dollar|港元|港币)/i.test(text)) {
+            currencies.push('HKD');
+        }
+        if (/(?:\bCNH\b|\bCNY\b|\bRMB\b|Renminbi|Offshore RMB|人民币|离岸人民币)/i.test(text)) {
+            currencies.push('CNH');
+        }
+        return currencies;
+    }
+
     function getCurrentIbkrCalibrationRows() {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[selectedBroker];
@@ -9110,13 +9125,8 @@ document.addEventListener('DOMContentLoaded', () => {
             currencies.push(currency);
         };
         addCurrency('USD');
-        [
-            getInvestmentBrokerEndingCashBalances(selectedBroker),
-            latestProcessed?.broker_cash_by_currency,
-            latestProcessed?.calculated_broker_cash_by_currency,
-        ].forEach((balances) => {
-            Object.entries(cloneCashLedgerBalances(balances)).forEach(([currency]) => addCurrency(currency));
-        });
+        getIbkrTradeNotificationCashCurrencies(ibkrTradeNotificationsTextInput?.value || '')
+            .forEach((currency) => addCurrency(currency));
 
         return [
             ...currencies.map((currency) => ({
@@ -9356,6 +9366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             ibkrTradeNotificationsTextInput.value = text;
             syncIbkrTradeNotificationsDisplay();
+            renderIbkrPositionCalibrationTable();
             syncImportValidationState();
             clearImportFeedback();
         } catch (_error) {
@@ -9970,34 +9981,6 @@ document.addEventListener('DOMContentLoaded', () => {
             || window.ANTIGRAVITY_INVESTMENT_DATA?.broker
             || 'ibkr'
         );
-    }
-
-    function hasHsbcCashSettlementEvidence(source) {
-        if (!source || typeof source !== 'object') return false;
-        const hasFiniteValue = (value) => {
-            const normalized = String(value ?? '').trim().replace(/,/g, '');
-            return normalized !== '' && Number.isFinite(Number(normalized));
-        };
-        if (
-            hasFiniteValue(source.cash_settlement_amount_raw)
-            || hasFiniteValue(source.cash_settlement_balance_after_raw)
-        ) {
-            return true;
-        }
-        return Array.isArray(source.cash_settlement_postings)
-            && source.cash_settlement_postings.some((posting) => (
-                posting
-                && typeof posting === 'object'
-                && (
-                    hasFiniteValue(posting.amount_raw ?? posting.amount)
-                    || hasFiniteValue(posting.balance_after_raw)
-                )
-            ));
-    }
-
-    function isHsbcSettlementActuallyPending(source) {
-        return source?.cash_replay_pending_settlement === true
-            && !hasHsbcCashSettlementEvidence(source);
     }
 
     function isUnsettledHsbcBuyTransaction(txn) {
@@ -13118,6 +13101,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ibkrTradeNotificationsTextInput.addEventListener('input', () => {
             clearImportFeedback();
             syncIbkrTradeNotificationsDisplay();
+            if (getSelectedIbkrImportMode() === 'web_paste') {
+                renderIbkrPositionCalibrationTable();
+            }
             syncImportValidationState();
         });
     }

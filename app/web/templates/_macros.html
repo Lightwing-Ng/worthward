@@ -1,4 +1,4 @@
-{# Code version: v0.6.4 #}
+{# Code version: v0.6.6 #}
 
 {% macro render_notice_banner(
     title='',
@@ -172,7 +172,7 @@
             {"id": "range_period", "value": "period", "label": labels.range_mode_period},
             {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
         ],
-        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" data-segmented-pill="measured" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
     ) }}
 </div>
 <div class="field range-panel" id="period_panel" {% if range_mode == 'exact' %}hidden{% endif %}>
@@ -236,7 +236,7 @@
             id="export_standard_xlsx_button"
             aria-label="Export Standard XLSX" title="Export Standard XLSX">
         <span class="icon"
-              style="-webkit-mask-image: url(/static/images/arrow.up.document.fill.svg); mask-image: url(/static/images/arrow.up.document.fill.svg);"></span>
+              style="-webkit-mask-image: url(/static/images/arrow.down.document.fill.svg); mask-image: url(/static/images/arrow.down.document.fill.svg);"></span>
     </button>
     {% endif %}
     <button type="button" class="export-transactions-button" id="export_transactions_button"

@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.25.0
+Code version: v0.25.1
 - Added: HSBC USD Savings settlement-only cash refreshes are accepted by
   route prevalidation without requiring Portfolio and Order Status text.
 """
@@ -660,6 +660,37 @@ Fees: 0.12
         self.assertEqual(transaction["price_raw"], "210.25")
         self.assertEqual(transaction["commission_raw"], "-1.25")
 
+    def test_standard_xlsx_export_normalizes_legacy_nra_tax_adjustment_type(self) -> None:
+        client = create_app().test_client()
+
+        response = self._post_investment_import(
+            client,
+            "/api/investment/exports/standard.xlsx",
+            json={
+                "transactions": [{
+                    "ledger_no": 6513,
+                    "broker": "schwab",
+                    "account": "SCHWAB-001",
+                    "datetime": "2026-08-21 09:15:00",
+                    "type": "nra_tax_adj",
+                    "currency": "USD",
+                    "ticker": "QQQI",
+                    "amount": -3.26,
+                    "description": "NEOS NASDAQ-100(R) HIGH INCOME ETF",
+                    "source": {"reference_id": "SCHWAB-NRA-6513"},
+                }],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=response.data,
+            filename="QQQI_standard_investment_export.xlsx",
+        )
+        transaction = payload["transactions"][0]
+        self.assertEqual(transaction["type"], "foreign_tax_withholding")
+        self.assertIn("nra_tax_adj", transaction["description"])
+
     def test_standard_xlsx_export_accepts_full_history_scopes_above_2000_rows(self) -> None:
         client = create_app().test_client()
         transactions = [
@@ -1243,6 +1274,7 @@ Fees: 0.12
         self.assertIn('class="export-transactions-button"', body)
         self.assertIn('id="export_transactions_button"', body)
         self.assertIn('title="Export Transactions"', body)
+        self.assertIn('/static/images/arrow.down.document.fill.svg', body)
 
     def test_legacy_invest_routes_redirect_to_trade_investment(self) -> None:
         client = create_app().test_client()

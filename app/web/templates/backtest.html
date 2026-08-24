@@ -1,4 +1,4 @@
-{# Code version: v0.5.5 #}
+{# Code version: v0.5.7 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -29,22 +29,8 @@
                     </article>
                     <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">
                         {% if backtest_result or dca_result %}
+                            {{ render_investment_share_actions(shell_id='workspace_share_drawer_backtest', share_drawer='backtest', show_mask=false, capture_label='Save backtest screenshot', anchor_label='Export Transactions', anchor_title='Export Transactions') }}
                             <div class="investment-surface-stack investment-view-surface backtest-view-surface" id="backtest_view_surface" data-active-view="overview">
-                                <div class="investment-view-segmented-wrap">
-                                    {{ render_segmented_control(
-                                        "segmented-control--compact investment-view-segmented backtest-view-segmented",
-                                        "backtest_view_tab",
-                                        "overview",
-                                        [
-                                            {"id": "backtest_view_overview", "value": "overview", "label": "Overview"},
-                                            {"id": "backtest_view_metrics", "value": "metrics", "label": "Metrics"},
-                                        ],
-                                        'id="backtest_view_segmented" data-backtest-view-segmented data-active="overview" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
-                                        true,
-                                        'investment-view-segmented-frame backtest-view-segmented-frame'
-                                    ) }}
-                                    {{ render_investment_share_actions(shell_id='workspace_share_drawer_backtest', share_drawer='backtest', show_mask=false, capture_label='Save backtest screenshot', anchor_label='Export Transactions', anchor_title='Export Transactions') }}
-                                </div>
                                 <div class="investment-view-surface-body backtest-view-surface-body" id="backtest_view_surface_body">
                                     <div id="backtest_overview_panel" data-backtest-view-panel="overview">
                                         <article class="chart-surface backtest-surface">
@@ -65,68 +51,6 @@
                                             </div>
                                         </article>
                                     </div>
-                                    <div id="backtest_metrics_view_panel" data-backtest-view-panel="metrics" hidden>
-                                        {% if selected_strategy_id == 'dca' %}
-                                        {% include "_dca_backtest_metrics.html" %}
-                                        {% else %}
-                                        <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid"
-                                             id="backtest_metrics_panel">
-                                        <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span
-                                                class="trade-metric-value"
-                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(backtest_result.summary.initial_capital) }}</span>
-                                        </div>
-                                        <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span
-                                                class="trade-metric-value"
-                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(backtest_result.summary.final_equity) }}</span>
-                                        </div>
-                                        <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span
-                                                class="trade-metric-value"
-                                                data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.net_return_pct) }}%</span>
-                                        </div>
-                                        <div class="trade-metric-card"><span class="trade-metric-label">Total trades</span><span
-                                                class="trade-metric-value"
-                                                data-workspace-mask="trade-metric">{{ backtest_result.summary.total_trades }}</span>
-                                        </div>
-                                        <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span
-                                                class="trade-metric-value"
-                                                data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.win_rate_pct is none else "%.2f"|format(backtest_result.summary.win_rate_pct) ~ "%" }}</span>
-                                        </div>
-                                        <div class="trade-metric-card"
-                                             title="Percentage of days/bars where strategy equity exceeded buy-and-hold value"><span
-                                                class="trade-metric-label">Beat B&H</span><span class="trade-metric-value"
-                                                                                                data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.beat_bh_pct) }}%</span>
-                                        </div>
-                                        <div class="trade-metric-card">
-                                            <span class="trade-metric-label">Alpha vs B&H</span>
-                                            <span class="trade-metric-value" data-workspace-mask="trade-metric"
-                                                  style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.benchmark_alpha >= 0 else 'var(--theme-accent-secondary)' }};">
-                                                {{ "+" if backtest_result.summary.benchmark_alpha >= 0 else "-" }}{{ "{:,.2f}".format(backtest_result.summary.benchmark_alpha|abs) }}
-                                            </span>
-                                        </div>
-                                        <div class="trade-metric-card">
-                                            <span class="trade-metric-label">Realized long P&L</span>
-                                            <span class="trade-metric-value" data-workspace-mask="trade-metric"
-                                                  style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.long_gain >= 0 else 'var(--theme-accent-secondary)' }};">
-                                                {{ "+" if backtest_result.summary.long_gain >= 0 else "-" }}{{ "{:,.2f}".format(backtest_result.summary.long_gain|abs) }}
-                                            </span>
-                                        </div>
-                                        <div class="trade-metric-card">
-                                            <span class="trade-metric-label">Realized short P&L</span>
-                                            <span class="trade-metric-value" data-workspace-mask="trade-metric"
-                                                  style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.short_gain >= 0 else 'var(--theme-accent-secondary)' }};">
-                                                {{ "+" if backtest_result.summary.short_gain >= 0 else "-" }}{{ "{:,.2f}".format(backtest_result.summary.short_gain|abs) }}
-                                            </span>
-                                        </div>
-                                        <div class="trade-metric-card">
-                                            <span class="trade-metric-label">Realized long loss</span>
-                                            <span class="trade-metric-value" data-workspace-mask="trade-metric"
-                                                  style="color: {{ 'var(--theme-accent-secondary)' if backtest_result.summary.long_loss > 0 else 'var(--theme-accent-positive)' }};">
-                                                {{ "-" if backtest_result.summary.long_loss > 0 else "+" }}{{ "{:,.2f}".format(backtest_result.summary.long_loss|abs) }}
-                                            </span>
-                                        </div>
-                                        </div>
-                                        {% endif %}
-                                    </div>
                                 </div>
                             </div>
                         {% else %}
@@ -140,55 +64,63 @@
                             role="separator"
                             aria-orientation="horizontal"
                             aria-label="Resize backtest overview and transaction history"></button>
-                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface">
-                    <div class="chart-heading-row investment-history-heading-row">
-                        <p class="chart-heading">{{ labels.backtest_transactions_tab }}</p>
+                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface" data-active-view="transactions">
+                    <div class="investment-view-segmented-wrap backtest-history-view-segmented-wrap">
+                        {{ render_segmented_control(
+                            "segmented-control--compact investment-view-segmented backtest-history-view-segmented",
+                            "backtest_history_view_tab",
+                            "transactions",
+                            [
+                                {"id": "backtest_history_metrics", "value": "metrics", "label": "Metrics"},
+                                {"id": "backtest_history_transactions", "value": "transactions", "label": "Transactions"},
+                            ],
+                            'id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="transactions" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
+                            true,
+                            'investment-view-segmented-frame backtest-history-view-segmented-frame'
+                        ) }}
                     </div>
+                    <div class="investment-view-surface-body backtest-history-view-body" id="backtest_history_view_body">
+                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics" hidden>
+                            {% if backtest_result or dca_result %}
+                            {% include "_backtest_metrics.html" %}
+                            {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
+                            {% endif %}
+                        </div>
+                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions">
                         {% if backtest_result or dca_result %}
                     <div id="backtest_history_table_wrap"
-                         class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}"
-                         {% if selected_strategy_id == 'dca' %}style="
-                             --dca-col-index-width: 5%;
-                             --dca-col-index-min-width: 44px;
-                             --dca-col-date-width: 25%;
-                             --dca-col-date-min-width: 96px;
-                             --dca-col-price-width: 10%;
-                             --dca-col-price-min-width: 72px;
-                             --dca-col-shares-width: 10%;
-                             --dca-col-shares-min-width: 88px;
-                             --dca-col-cumulative-width: 10%;
-                             --dca-col-cumulative-min-width: 96px;
-                             --dca-col-invested-width: 20%;
-                             --dca-col-invested-min-width: 100px;
-                             --dca-col-equity-width: 20%;
-                             --dca-col-equity-min-width: 100px;
-                         "{% endif %}>
+                         class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}">
                     {% if selected_strategy_id == 'dca' %}
                         {% include "_dca_backtest_table.html" %}
                     {% else %}
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                data-table-header aria-label="Transaction details columns">
                             <colgroup>
-                                <col style="width: var(--investment-col-no-width);">
-                                <col style="width: var(--investment-col-time-width);">
-                                {% if backtest_result.multi_asset %}<col style="width: var(--investment-col-type-width);">{% endif %}
-                                <col style="width: var(--investment-col-type-width);">
-                                <col style="width: var(--investment-col-market-value-width);">
-                                <col style="width: var(--investment-col-market-value-width);">
-                                <col style="width: var(--investment-col-market-value-width);">
-                                <col style="width: var(--investment-col-cash-width);">
-                                <col style="width: var(--investment-col-equity-width);">
+                                <col style="width: var(--backtest-col-no-width);">
+                                <col style="width: var(--backtest-col-date-time-width);">
+                                {% if backtest_result.multi_asset %}<col style="width: var(--backtest-col-ticker-width);">{% endif %}
+                                <col style="width: var(--backtest-col-side-width);">
+                                <col style="width: var(--backtest-col-price-width);">
+                                <col style="width: var(--backtest-col-quantity-width);">
+                                <col style="width: var(--backtest-col-realized-pnl-width);">
+                                <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                <col style="width: var(--backtest-col-cash-width);">
+                                <col style="width: var(--backtest-col-market-value-width);">
+                                <col style="width: var(--backtest-col-equity-width);">
                             </colgroup>
                             <thead>
                             <tr>
                                 <th data-markdown-export-label="No.">No.</th>
-                                <th data-markdown-export-label="Date">Date</th>
+                                <th data-markdown-export-label="Date time">Date time</th>
                                 {% if backtest_result.multi_asset %}<th data-markdown-export-label="Ticker">Ticker</th>{% endif %}
                                 <th data-markdown-export-label="Side">Side</th>
                                 <th data-markdown-export-label="Price">Price</th>
-                                <th data-markdown-export-label="Shares">Shares</th>
-                                <th data-markdown-export-label="P&amp;L">P&amp;L</th>
+                                <th data-markdown-export-label="Quantity">Quantity</th>
+                                <th data-markdown-export-label="Realized P&amp;L">Realized P&amp;L</th>
+                                <th data-markdown-export-label="Unrealized P&amp;L">Unrealized P&amp;L</th>
                                 <th data-markdown-export-label="Cash">Cash</th>
+                                <th data-markdown-export-label="Market value">Market value</th>
                                 <th data-markdown-export-label="Equity">Equity</th>
                             </tr>
                             </thead>
@@ -199,15 +131,17 @@
                                    class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                    data-table-body>
                                 <colgroup>
-                                    <col style="width: var(--investment-col-no-width);">
-                                    <col style="width: var(--investment-col-time-width);">
-                                    {% if backtest_result.multi_asset %}<col style="width: var(--investment-col-type-width);">{% endif %}
-                                    <col style="width: var(--investment-col-type-width);">
-                                    <col style="width: var(--investment-col-market-value-width);">
-                                    <col style="width: var(--investment-col-market-value-width);">
-                                    <col style="width: var(--investment-col-market-value-width);">
-                                    <col style="width: var(--investment-col-cash-width);">
-                                    <col style="width: var(--investment-col-equity-width);">
+                                    <col style="width: var(--backtest-col-no-width);">
+                                    <col style="width: var(--backtest-col-date-time-width);">
+                                    {% if backtest_result.multi_asset %}<col style="width: var(--backtest-col-ticker-width);">{% endif %}
+                                    <col style="width: var(--backtest-col-side-width);">
+                                    <col style="width: var(--backtest-col-price-width);">
+                                    <col style="width: var(--backtest-col-quantity-width);">
+                                    <col style="width: var(--backtest-col-realized-pnl-width);">
+                                    <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                                    <col style="width: var(--backtest-col-cash-width);">
+                                    <col style="width: var(--backtest-col-market-value-width);">
+                                    <col style="width: var(--backtest-col-equity-width);">
                                 </colgroup>
                                 <tbody>
                                 <!-- Transactions will be rendered by JS with pagination -->
@@ -224,6 +158,8 @@
                     {% else %}
                     <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>
                     {% endif %}
+                        </div>
+                    </div>
                 </article>
                 </article>
             </article>

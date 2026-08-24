@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -41,6 +41,36 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total_trades"], 4)
         # 2 completed pairs, both wins → 2/2 = 100% win rate
         self.assertEqual(result["summary"]["win_rate_pct"], 100.0)
+        for trade in result["trades"]:
+            self.assertEqual(trade["quantity"], trade["shares"])
+            self.assertEqual(trade["realized_pnl"], trade["pnl"])
+            self.assertIn("unrealized_pnl", trade)
+            self.assertAlmostEqual(trade["market_value"], trade["equity"] - trade["cash"])
+
+    def test_transaction_dates_preserve_intraday_precision(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-08-19 09:40", "2026-08-19 10:40"]),
+                "Open": [72.50, 72.60],
+                "Close": [72.56, 72.70],
+                "High": [72.60, 72.80],
+                "Low": [72.40, 72.50],
+                "buy_signal": [True, False],
+                "sell_signal": [False, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            interval="1m",
+        )
+
+        self.assertIn("09:40", result["trades"][0]["date"])
 
     def test_win_rate_counts_sell_then_lower_rebuy_as_win(self) -> None:
         frame = pd.DataFrame(

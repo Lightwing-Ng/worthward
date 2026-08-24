@@ -1,24 +1,30 @@
-{# Code version: v0.1.1 #}
+{# Code version: v0.1.2 #}
     <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
            data-table-header aria-label="Contribution details columns">
         <colgroup>
-            <col class="dca-transactions-col dca-transactions-col-index">
-            <col class="dca-transactions-col dca-transactions-col-date">
-            <col class="dca-transactions-col dca-transactions-col-price">
-            <col class="dca-transactions-col dca-transactions-col-shares">
-            <col class="dca-transactions-col dca-transactions-col-cumulative">
-            <col class="dca-transactions-col dca-transactions-col-invested">
-            <col class="dca-transactions-col dca-transactions-col-equity">
+            <col style="width: var(--backtest-col-no-width);">
+            <col style="width: var(--backtest-col-date-time-width);">
+            <col style="width: var(--backtest-col-side-width);">
+            <col style="width: var(--backtest-col-price-width);">
+            <col style="width: var(--backtest-col-quantity-width);">
+            <col style="width: var(--backtest-col-realized-pnl-width);">
+            <col style="width: var(--backtest-col-unrealized-pnl-width);">
+            <col style="width: var(--backtest-col-cash-width);">
+            <col style="width: var(--backtest-col-market-value-width);">
+            <col style="width: var(--backtest-col-equity-width);">
         </colgroup>
         <thead>
         <tr>
-            <th>No.</th>
-            <th>Date</th>
-            <th class="trade-transactions-number">Price</th>
-            <th class="trade-transactions-number">Shares</th>
-            <th class="trade-transactions-number">Cum. shares</th>
-            <th class="trade-transactions-number">Invested</th>
-            <th class="trade-transactions-number">Equity</th>
+            <th data-markdown-export-label="No.">No.</th>
+            <th data-markdown-export-label="Date time">Date time</th>
+            <th data-markdown-export-label="Side">Side</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Price">Price</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Quantity">Quantity</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Realized P&amp;L">Realized P&amp;L</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Unrealized P&amp;L">Unrealized P&amp;L</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Cash">Cash</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Market value">Market value</th>
+            <th class="trade-transactions-number" data-markdown-export-label="Equity">Equity</th>
         </tr>
         </thead>
     </table>
@@ -28,13 +34,16 @@
                class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                data-table-body>
             <colgroup>
-                <col class="dca-transactions-col dca-transactions-col-index">
-                <col class="dca-transactions-col dca-transactions-col-date">
-                <col class="dca-transactions-col dca-transactions-col-price">
-                <col class="dca-transactions-col dca-transactions-col-shares">
-                <col class="dca-transactions-col dca-transactions-col-cumulative">
-                <col class="dca-transactions-col dca-transactions-col-invested">
-                <col class="dca-transactions-col dca-transactions-col-equity">
+                <col style="width: var(--backtest-col-no-width);">
+                <col style="width: var(--backtest-col-date-time-width);">
+                <col style="width: var(--backtest-col-side-width);">
+                <col style="width: var(--backtest-col-price-width);">
+                <col style="width: var(--backtest-col-quantity-width);">
+                <col style="width: var(--backtest-col-realized-pnl-width);">
+                <col style="width: var(--backtest-col-unrealized-pnl-width);">
+                <col style="width: var(--backtest-col-cash-width);">
+                <col style="width: var(--backtest-col-market-value-width);">
+                <col style="width: var(--backtest-col-equity-width);">
             </colgroup>
             <tbody></tbody>
         </table>

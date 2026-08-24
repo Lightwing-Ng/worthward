@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -88,6 +88,12 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
     "FX translation P&L": "fx_translation_pnl",
     "Transfer In": "transfer_in",
     "Transfer Out": "transfer_out",
+}
+_STANDARD_INVESTMENT_EXPORT_TYPE_ALIASES = {
+    "nra tax adj": "foreign_tax_withholding",
+    "nra tax adjustment": "foreign_tax_withholding",
+    "nra_tax_adj": "foreign_tax_withholding",
+    "nra_tax_adjustment": "foreign_tax_withholding",
 }
 ZIRCON_HK_CURRENCIES = ("HKD", "USD", "CNH", "CNY", "SGD")
 ZIRCON_HK_BROKER_ENTRIES = tuple(
@@ -750,7 +756,11 @@ def _standard_export_row(
     *,
     reference_id_override: str | None = None,
 ) -> tuple[Any, ...]:
-    transaction_type = normalize_import_text(transaction.get("type")).casefold()
+    raw_transaction_type = normalize_import_text(transaction.get("type")).casefold()
+    transaction_type = _STANDARD_INVESTMENT_EXPORT_TYPE_ALIASES.get(
+        raw_transaction_type,
+        raw_transaction_type,
+    )
     type_label_by_value = {
         value: label for label, value in ZIRCON_HK_TYPE_LABELS.items()
     }
@@ -853,6 +863,11 @@ def _standard_export_row(
         )
 
     description = normalize_import_whitespace(transaction.get("description"))
+    if transaction_type != raw_transaction_type:
+        description = normalize_import_whitespace(
+            f"[Standard XLSX normalization: original Type {raw_transaction_type!r} "
+            f"exported as {type_label!r}.] {description}"
+        )
     if fallback_reasons:
         description = normalize_import_whitespace(
             f"[Standard XLSX fallback: original Type {type_label!r} exported as "
