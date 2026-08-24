@@ -1,4 +1,4 @@
-/* Code version: v0.1.2 */
+/* Code version: v0.2.0 */
 import {expect, test} from '@playwright/test';
 
 const assertNoVisibleNativeSelects = async (page) => {
@@ -18,7 +18,7 @@ const assertOptionMarkup = async (page, dropdownSelector) => {
 };
 
 test('reuses the shared dropdown contract across workspace selectors', async ({page}) => {
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&period=1y');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&period=1y');
     await assertNoVisibleNativeSelects(page);
 
     const periodField = page.locator('#period_panel [data-shared-select-field]');

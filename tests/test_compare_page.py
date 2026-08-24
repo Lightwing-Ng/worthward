@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.12.1
+Code version: v0.13.2
 """
 
 from __future__ import annotations
@@ -13,11 +13,13 @@ import re
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import pandas as pd
 
 from app import create_app
 from app.core.date_display_settings import DateDisplaySettings
+from app.core.language_settings import LanguageSettings
 from app.models.schemas import SeriesPayload
 from tests.factories.market import close_frame_for_ticker, ohlc_frame_for_dates, quote_profile_stub
 
@@ -75,7 +77,7 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn("2026-07-30", payload["trading_dates"])
         self.assertEqual(exact_day_fetch_mock.call_count, 2)
 
-    def test_market_cap_page_accepts_ten_tickers_and_keeps_usd_new_york_base(self) -> None:
+    def test_ticker_comparison_market_cap_metric_accepts_ten_tickers_and_keeps_usd_new_york_base(self) -> None:
         daily_dates = pd.to_datetime(["2026-06-29", "2026-06-30", "2026-07-01"])
         tickers = [f"TICK{index}" for index in range(1, 11)]
 
@@ -117,8 +119,12 @@ class ComparePageTests(unittest.TestCase):
             patch("app.web.runtime.load_date_display_settings", return_value=date_display_settings),
             patch("app.services.presentation.load_date_display_settings", return_value=date_display_settings),
         ):
-            response = create_app().test_client().get(
-                f"/workspaces/market-caps?{query}&range=exact&period=5y&from=2026-06-29&to=2026-07-01"
+            client = create_app().test_client()
+            response = client.get(
+                f"/workspaces/prices?metric=market-cap&{query}&range=exact&period=5y&from=2026-06-29&to=2026-07-01"
+            )
+            price_response = client.get(
+                f"/workspaces/prices?{query}&range=exact&period=5y&from=2026-06-29&to=2026-07-01"
             )
 
         html = response.get_data(as_text=True)
@@ -132,6 +138,7 @@ class ComparePageTests(unittest.TestCase):
         state = json.loads(unescape(state_match.group(1)))
         self.assertEqual(len(state["chart"]["series"]), 10)
         self.assertEqual(state["constraints"]["maxTickers"], 10)
+        self.assertEqual(state["comparisonMetric"], "market-cap")
         self.assertEqual(state["base"], {"currency": "USD", "timezone": "America/New_York"})
         self.assertEqual(
             re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html),
@@ -141,6 +148,98 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn(">2026 Jul 01</span>", html)
         self.assertNotIn(">2026-06-29</span>", html)
         self.assertNotIn(">2026-07-01</span>", html)
+        self.assertIn('data-comparison-metric-field', html)
+        self.assertIn('value="market-cap" checked', html)
+
+        price_html = price_response.get_data(as_text=True)
+        price_state_match = re.search(
+            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            price_html,
+            re.DOTALL,
+        )
+        self.assertEqual(price_response.status_code, 200)
+        self.assertIsNotNone(price_state_match)
+        price_state = json.loads(unescape(price_state_match.group(1)))
+        self.assertEqual(len(price_state["chart"]["series"]), 5)
+        self.assertEqual(price_state["constraints"]["maxTickers"], 5)
+        self.assertEqual(price_state["comparisonMetric"], "price")
+        self.assertEqual(
+            re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', price_html),
+            tickers[:5],
+        )
+        self.assertIn('value="price" checked', price_html)
+
+    def test_market_cap_legacy_path_redirects_to_the_canonical_metric_url(self) -> None:
+        client = create_app().test_client()
+        response = client.get(
+            "/workspaces/market-caps?ticker=AAPL&ticker=NVDA&range=exact&period=1d"
+            "&from=2026-07-30&to=2026-07-30&overnight=1&metric=price",
+            follow_redirects=False,
+        )
+        bare_response = client.get("/workspaces/market-caps", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        location = urlsplit(response.headers["Location"])
+        self.assertEqual(location.path, "/workspaces/prices")
+        self.assertEqual(
+            parse_qs(location.query),
+            {
+                "ticker": ["AAPL", "NVDA"],
+                "range": ["exact"],
+                "period": ["1d"],
+                "from": ["2026-07-30"],
+                "to": ["2026-07-30"],
+                "overnight": ["1"],
+                "metric": ["market-cap"],
+            },
+        )
+        self.assertEqual(bare_response.status_code, 302)
+        self.assertEqual(bare_response.headers["Location"], "/workspaces/prices?metric=market-cap")
+
+    def test_root_legacy_market_cap_view_uses_the_canonical_metric_url(self) -> None:
+        client = create_app().test_client()
+        response = client.get(
+            "/?view=market-caps&metric=price&ticker=AAPL&ticker=NVDA&range=exact"
+            "&period=1d&from=2026-07-30&to=2026-07-30&overnight=1",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        location = urlsplit(response.headers["Location"])
+        self.assertEqual(location.path, "/workspaces/prices")
+        self.assertEqual(
+            parse_qs(location.query),
+            {
+                "ticker": ["AAPL", "NVDA"],
+                "range": ["exact"],
+                "period": ["1d"],
+                "from": ["2026-07-30"],
+                "to": ["2026-07-30"],
+                "overnight": ["1"],
+                "metric": ["market-cap"],
+            },
+        )
+
+    def test_ticker_comparison_metric_controls_and_headings_are_translated(self) -> None:
+        client = create_app().test_client()
+        with patch(
+            "app.web.runtime.load_language_settings",
+            return_value=LanguageSettings(language="zh_hans_cn"),
+        ):
+            price_response = client.get("/workspaces/prices?ticker=AAPL&ticker=NVDA")
+            market_cap_response = client.get(
+                "/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA"
+            )
+
+        price_html = price_response.get_data(as_text=True)
+        market_cap_html = market_cap_response.get_data(as_text=True)
+        self.assertEqual(price_response.status_code, 200)
+        self.assertIn(">比较</label>", price_html)
+        self.assertIn(">价格</span>", price_html)
+        self.assertIn(">市值</span>", price_html)
+        self.assertIn(">价格历史</h2>", price_html)
+        self.assertEqual(market_cap_response.status_code, 200)
+        self.assertIn(">市值历史</h2>", market_cap_html)
 
     def test_price_page_hides_overnight_for_korean_and_hong_kong_tickers(self) -> None:
         intraday_frames = {
@@ -1137,7 +1236,7 @@ class ComparePageTests(unittest.TestCase):
             patch("app.web.runtime.build_market_cap_series_payload", side_effect=_build_market_cap_series),
         ):
             response = create_app().test_client().get(
-                "/workspaces/market-caps?ticker=AAPL&ticker=NVDA&ticker=MSFT"
+                "/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&ticker=MSFT"
                 "&range=exact&period=5y&from=2021-07-13&to=2021-07-19"
             )
 

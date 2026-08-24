@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.0
+ * Code version: v2.129.2
  * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
  *   ledger-sequence order, so a later sale proceeds posting cannot be
  *   overwritten by an earlier same-day buy balance in historical equity.
@@ -381,7 +381,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.1.0';
+} from './investment/layout.js?v=investment-layout-v1.1.2';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -403,7 +403,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.128.3',
+    entry: 'v2.129.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

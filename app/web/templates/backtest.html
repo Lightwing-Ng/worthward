@@ -1,4 +1,4 @@
-{# Code version: v0.5.3 #}
+{# Code version: v0.5.4 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -150,7 +150,7 @@
                         {% include "_dca_backtest_table.html" %}
                     </div>
                     {% else %}
-                    <div class="investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
+                    <div class="scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                data-table-header aria-label="Transaction details columns">
                             <colgroup>
@@ -199,13 +199,13 @@
                                 </tbody>
                             </table>
                         </div>
+                        <nav class="settings-pagination local-store-pagination local-store-pagination--floating trade-transactions-pagination"
+                             id="tradeTransactionsPagination" aria-label="Transaction pages"
+                             aria-controls="tradeTransactionsTable" data-pagination-scroll-target="backtest_history_table_scroll" hidden>
+                            <!-- Pagination buttons will be injected by JS -->
+                        </nav>
                     </div>
                     </div>
-                    <nav class="settings-pagination local-store-pagination local-store-pagination--floating trade-transactions-pagination"
-                         id="tradeTransactionsPagination" aria-label="Transaction pages"
-                         aria-controls="tradeTransactionsTable" data-pagination-scroll-target="backtest_history_table_scroll" hidden>
-                        <!-- Pagination buttons will be injected by JS -->
-                    </nav>
                     {% endif %}
                     {% else %}
                     <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>

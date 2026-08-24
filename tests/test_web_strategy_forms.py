@@ -1,7 +1,7 @@
 """
 Tests for pure strategy form and catalog presentation builders.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -64,7 +64,27 @@ class WebStrategyFormTests(unittest.TestCase):
         self.assertEqual([group["key"] for group in groups], ["baseline", "recent", "all"])
         self.assertEqual(groups[0]["items"], [baseline])
         self.assertEqual(groups[1]["items"], [zeta])
-        self.assertEqual(groups[2]["items"], [alpha, zeta])
+        self.assertEqual(groups[2]["items"], [alpha])
+
+    def test_option_groups_emit_each_strategy_id_once_for_a_single_selected_option(self) -> None:
+        baseline = {"id": "buy-and-hold", "name": "Buy and hold"}
+        alpha = {"id": "alpha", "name": "Alpha"}
+        alpha_duplicate = {"id": "alpha", "name": "Alpha duplicate"}
+        zeta = {"id": "zeta", "name": "Zulu"}
+
+        groups = build_strategy_option_groups(
+            [baseline, alpha, alpha_duplicate, zeta],
+            ["zeta", "zeta", "alpha", "buy-and-hold"],
+        )
+        rendered_ids = [
+            str(item["id"])
+            for group in groups
+            for item in group["items"]
+        ]
+
+        self.assertEqual(rendered_ids, ["buy-and-hold", "zeta", "alpha"])
+        self.assertEqual(len(rendered_ids), len(set(rendered_ids)))
+        self.assertEqual(rendered_ids.count("zeta"), 1)
 
     def test_numeric_fields_preserve_slider_and_decimal_display_contracts(self) -> None:
         integer_field = build_strategy_form_field(

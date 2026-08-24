@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.1.2
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -34,30 +34,35 @@ def build_strategy_option_groups(
     strategy_options: list[dict[str, object]],
     recent_strategy_ids: Sequence[str],
 ) -> list[dict[str, object]]:
-    """Build baseline, recent, and alphabetical selector groups."""
-    baseline_items = [
-        item
-        for item in strategy_options
-        if item.get("id") == "buy-and-hold"
-    ]
+    """Build mutually exclusive baseline, recent, and alphabetical groups."""
+    available_by_id: dict[str, dict[str, object]] = {}
+    for item in strategy_options:
+        strategy_id = str(item.get("id", "")).strip()
+        if strategy_id and strategy_id not in available_by_id:
+            available_by_id[strategy_id] = item
+
+    baseline_items = (
+        [available_by_id["buy-and-hold"]]
+        if "buy-and-hold" in available_by_id
+        else []
+    )
+    assigned_strategy_ids = {"buy-and-hold"} if baseline_items else set()
 
     recent_items = []
     for strategy_id in recent_strategy_ids:
-        if strategy_id == "buy-and-hold":
+        normalized_strategy_id = str(strategy_id).strip()
+        if normalized_strategy_id in assigned_strategy_ids:
             continue
-        matching = [
-            item
-            for item in strategy_options
-            if item.get("id") == strategy_id
-        ]
-        if matching:
-            recent_items.append(matching[0])
+        matching = available_by_id.get(normalized_strategy_id)
+        if matching is not None:
+            recent_items.append(matching)
+            assigned_strategy_ids.add(normalized_strategy_id)
 
     all_other_items = sorted(
         [
             item
-            for item in strategy_options
-            if item.get("id") != "buy-and-hold"
+            for strategy_id, item in available_by_id.items()
+            if strategy_id not in assigned_strategy_ids
         ],
         key=lambda item: str(item.get("name", "")).lower(),
     )

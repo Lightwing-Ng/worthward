@@ -1,4 +1,4 @@
-/** Standard table and investment filter contract tests. Code version: v1.3.0. */
+/** Standard table and investment filter contract tests. Code version: v1.3.1. */
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -71,6 +71,13 @@ test("colspan empty and summary rows are never column measurement candidates", (
     assert.equal(tableController.selectMeasurementRowDescriptor([
         { id: "empty", empty: true, cellSpans: [3] },
     ], 3), null);
+});
+
+test("fixed table headers mirror the scroll container horizontal offset", () => {
+    assert.equal(tableController.getHeaderHorizontalTranslate(0), "");
+    assert.equal(tableController.getHeaderHorizontalTranslate(84.5), "-84.5px 0px");
+    assert.equal(tableController.getHeaderHorizontalTranslate(-12), "12px 0px");
+    assert.equal(tableController.getHeaderHorizontalTranslate("not-a-number"), "");
 });
 
 test("summary scopes have explicit all, filtered, and both labels", () => {

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.43.0`
+Documentation version: `v1.44.0`
 
 ## Holdings P&L display contract
 
@@ -87,8 +87,8 @@ their established public names for compatibility.
 ```text
 Workspace
   Return comparison  /workspaces/compare
-  Market cap         /workspaces/market-caps
-  Price performance  /workspaces/prices
+  Ticker comparison  /workspaces/prices
+                     /workspaces/prices?metric=market-cap
   Portfolio          /workspaces/portfolio
   Backtest           /workspaces/backtest
 
@@ -103,7 +103,7 @@ and Dark values are rendered from the versioned theme configuration, while
 browser-local overrides remain in localStorage and never enter `settings_store/`.
 ```
 
-Older `/compare`, `/portfolio`, `/backtest`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects.
+Older `/compare`, `/portfolio`, `/backtest`, `/workspaces/market-caps`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects. The former market-cap route redirects to `/workspaces/prices?metric=market-cap` while preserving canonical query state.
 
 The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
@@ -123,7 +123,7 @@ Hidden-page range menus remain keyboard accessible and keep vertical scrolling
 available within the calculated viewport range while delegating scrollbar
 painting to the native browser surface.
 
-Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates. The market-cap workspace accepts up to 10 user-selected tickers; other comparison workspaces retain the shared 5-ticker limit.
+Return comparison and Ticker comparison share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Ticker comparison defaults to Price and retains the existing 5-ticker price-subplot contract; its `metric=market-cap` mode reuses the comparison controls and range workflow while allowing 10 tickers. Market-cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates.
 
 ## Data ownership
 

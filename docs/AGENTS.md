@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.2.0-agent-contract.3`
+Policy version: `v1.2.0-agent-contract.4`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -53,13 +53,14 @@ discovery. This file remains the canonical guide.
 4. Reuse factories under `tests/factories/`; do not create another quote-profile, OHLC-frame, or backtest-result double in a test module.
 5. Use canonical routes in new tests:
    - `/workspaces/compare`
-   - `/workspaces/market-caps`
    - `/workspaces/prices`
+   - `/workspaces/prices?metric=market-cap`
    - `/workspaces/portfolio`
    - `/workspaces/backtest` (includes the `dca` strategy; `/workspaces/dca` remains a compatibility redirect)
    - `/trade/investment`
    - `/trade/live-trading`
    - `/settings/<section>`
+   - Treat `/workspaces/market-caps` as a compatibility redirect and test it as a redirect rather than a canonical renderer.
 6. Run the smallest relevant test first, then `./scripts/check.sh` before handoff.
 7. Record intentional behavior changes in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) or the relevant domain documentation.
 

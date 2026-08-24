@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.3.0
+Code version: v1.3.1
 """
 
 from __future__ import annotations
@@ -96,6 +96,7 @@ class GridTradingStrategy(BaseStrategy):
         sell_prices: list[float] = []
         buy_signals: list[bool] = []
         sell_signals: list[bool] = []
+        # The execution engine owns reference updates because only it sees fills.
         reference_price = initial_price
         for row_index in frame.index:
             close_price = frame.at[row_index, "Close"]
@@ -124,8 +125,6 @@ class GridTradingStrategy(BaseStrategy):
             sell_prices.append(sell_price)
             buy_signals.append(buy_signal)
             sell_signals.append(sell_signal)
-            if (buy_signal or sell_signal) and pd.notna(close_price) and float(close_price) > 0:
-                reference_price = float(close_price)
 
         frame["grid_reference_price"] = reference_prices
         frame["grid_lower"] = buy_prices
@@ -137,4 +136,13 @@ class GridTradingStrategy(BaseStrategy):
             frame=frame,
             buy_signal_column="buy_signal",
             sell_signal_column="sell_signal",
+            execution_profile="grid_trading",
+            metadata={
+                "grid_parameters": {
+                    "price_floor": price_floor,
+                    "price_ceiling": price_ceiling,
+                    "rise": rise,
+                    "fall": fall,
+                },
+            },
         )

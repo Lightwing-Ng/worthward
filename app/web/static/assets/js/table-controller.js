@@ -1,7 +1,7 @@
 /**
  * Standard scrollable table alignment controller.
  *
- * Code version: v1.0.1
+ * Code version: v1.0.2
  */
 (function bootstrapStandardTableController(globalScope) {
     "use strict";
@@ -9,6 +9,12 @@
     const HEADER_HEIGHT_PROPERTY = "--scrollable-data-table-header-height";
     const SCROLLBAR_WIDTH_PROPERTY = "--scrollable-data-table-scrollbar-width";
     const BORDER_COMPENSATION_PROPERTY = "--scrollable-data-table-overlay-border-compensation";
+
+    const getHeaderHorizontalTranslate = (scrollLeft = 0) => {
+        const offset = Number(scrollLeft);
+        if (!Number.isFinite(offset) || offset === 0) return "";
+        return `${-offset}px 0px`;
+    };
 
     const getCellSpan = (cell) => Math.max(1, Number(cell?.colSpan) || 1);
 
@@ -123,8 +129,39 @@
     const attach = (shell, { scrollbarProperty = "" } = {}) => {
         if (!(shell instanceof HTMLElement)) return () => {};
         let frameId = 0;
+        let scrollFrameId = 0;
         let resizeObserver = null;
+        let boundScrollContainer = null;
+        const initialHeaderTranslations = new Map();
         const visualOverlay = ensureVisualOverlay(shell);
+
+        const syncHeaderHorizontalPosition = () => {
+            const headerTable = getHeaderTable(shell);
+            const scrollContainer = getScrollContainer(shell);
+            if (!(headerTable instanceof HTMLTableElement)
+                || !(scrollContainer instanceof HTMLElement)) return;
+            if (!initialHeaderTranslations.has(headerTable)) {
+                initialHeaderTranslations.set(headerTable, headerTable.style.translate);
+            }
+            const initialTranslate = initialHeaderTranslations.get(headerTable) || "";
+            headerTable.style.translate = getHeaderHorizontalTranslate(scrollContainer.scrollLeft)
+                || initialTranslate;
+        };
+
+        const scheduleHeaderHorizontalPosition = () => {
+            if (scrollFrameId) return;
+            scrollFrameId = globalScope.requestAnimationFrame(() => {
+                scrollFrameId = 0;
+                syncHeaderHorizontalPosition();
+            });
+        };
+
+        const bindScrollContainer = (scrollContainer) => {
+            if (boundScrollContainer === scrollContainer) return;
+            boundScrollContainer?.removeEventListener("scroll", scheduleHeaderHorizontalPosition);
+            boundScrollContainer = scrollContainer;
+            boundScrollContainer?.addEventListener("scroll", scheduleHeaderHorizontalPosition, { passive: true });
+        };
 
         const sync = () => {
             frameId = 0;
@@ -134,6 +171,7 @@
             if (!(headerTable instanceof HTMLTableElement)
                 || !(scrollContainer instanceof HTMLElement)
                 || !(bodyTable instanceof HTMLTableElement)) return;
+            bindScrollContainer(scrollContainer);
             const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
             const bodyRow = getMeasurementRow(bodyTable, Math.max(
                 0,
@@ -151,6 +189,7 @@
             if (headerHeight > 0) {
                 shell.style.setProperty(HEADER_HEIGHT_PROPERTY, `${roundUpToDevicePixel(headerHeight)}px`);
             }
+            syncHeaderHorizontalPosition();
         };
 
         const schedule = () => {
@@ -169,8 +208,13 @@
 
         return () => {
             if (frameId) globalScope.cancelAnimationFrame(frameId);
+            if (scrollFrameId) globalScope.cancelAnimationFrame(scrollFrameId);
             globalScope.removeEventListener("resize", schedule);
+            boundScrollContainer?.removeEventListener("scroll", scheduleHeaderHorizontalPosition);
             resizeObserver?.disconnect();
+            initialHeaderTranslations.forEach((initialTranslate, headerTable) => {
+                headerTable.style.translate = initialTranslate;
+            });
             visualOverlay.remove();
             shell.style.removeProperty(HEADER_HEIGHT_PROPERTY);
             shell.style.removeProperty(SCROLLBAR_WIDTH_PROPERTY);
@@ -211,6 +255,7 @@
         getMeasurementRow,
         selectMeasurementRowDescriptor,
         syncColumnWidths,
+        getHeaderHorizontalTranslate,
     });
     globalScope.ANTIGRAVITY_TABLES = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;

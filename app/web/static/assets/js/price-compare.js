@@ -1,8 +1,12 @@
-/* Code version: v0.15.8 */
+/* Code version: v0.16.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
+	const isPriceComparison = () => (
+		state.currentView === "prices"
+		&& String(state.comparisonMetric || "").trim().toLowerCase() !== "market-cap"
+	);
 
 	const REFRESH_MS = 45000;
 	const Y_AXIS_WIDTH = 92;
@@ -542,7 +546,7 @@
 
 	const initializePriceSubplotOrdering = () => {
 		const sections = getPriceSubplotSections();
-		if (state.currentView !== "prices" || sections.length < 2) return () => {};
+		if (!isPriceComparison() || sections.length < 2) return () => {};
 		let activeDrag = null;
 		let insertionSection = null;
 		const disposers = [];
@@ -690,7 +694,7 @@
 	};
 
 	const renderPriceSubplots = () => {
-		if (state.currentView !== "prices" || !window.Chart) return;
+		if (!isPriceComparison() || !window.Chart) return;
 		const series = Array.isArray(state.chart?.series) ? state.chart.series : [];
 		const profiles = Array.isArray(state.chart?.profiles) ? state.chart.profiles : [];
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
@@ -1046,7 +1050,7 @@
 
 	const formatLocalIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 	const refreshLivePrices = async () => {
-		if (state.currentView !== "prices") return;
+		if (!isPriceComparison()) return;
 		const pageParams = new URLSearchParams(window.location.search);
 		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		const period = workspaceState?.period || (pageParams.get("period") || "").toLowerCase();
@@ -1105,6 +1109,7 @@
 		liveRequestSerial += 1;
 		liveRequestController?.abort();
 		liveRequestController = null;
+		if (!isPriceComparison()) return;
 		renderPriceSubplots();
 		teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
 		updatePriceCompareHeadingDate();

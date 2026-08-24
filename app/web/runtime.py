@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.80.2
+Code version: v0.81.2
+- Changed: Ticker comparison now serves price and market-cap modes from the
+  canonical prices workspace while preserving the legacy market-cap URL as a
+  compatibility redirect.
 - Fixed: Backtest daily Period options now use the same shared range list as
   comparison workspaces, including short intraday-compatible ranges.
 - Fixed: Unified Backtest exports now render recurring-investment contributions with
@@ -331,6 +334,7 @@ from app.web.navigation import (
     build_view_path,
     build_view_url,
     max_tickers_for_view,
+    normalize_comparison_metric,
     normalize_settings_page,
     normalize_settings_section,
     normalize_settings_tab,
@@ -1421,16 +1425,25 @@ def build_web_runtime() -> WebRuntime:
 
     def _get_backtest_cache_key() -> str:
         """Generate a cache key from all backtest configuration parameters."""
-        requested_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
-        requested_ticker = requested_tickers[0] if requested_tickers else ""
-        if not requested_ticker:
-            requested_ticker = str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0]))
-        normalized_ticker = normalize_ticker_input(requested_ticker)
-        daily_path = history_store_path_for(normalized_ticker) if normalized_ticker else None
-        intraday_path = intraday_history_store_path_for(normalized_ticker, "1m") if normalized_ticker else None
+        requested_tickers = parse_requested_tickers("backtest")
+        if not requested_tickers:
+            fallback_ticker = normalize_ticker_input(
+                str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0]))
+            )
+            requested_tickers = [fallback_ticker] if fallback_ticker else []
+        history_versions = []
+        for ticker in requested_tickers:
+            daily_path = history_store_path_for(ticker)
+            intraday_path = intraday_history_store_path_for(ticker, "1m")
+            history_versions.append({
+                "ticker": ticker,
+                "daily_mtime_ns": daily_path.stat().st_mtime_ns if daily_path.exists() else None,
+                "intraday_mtime_ns": intraday_path.stat().st_mtime_ns if intraday_path.exists() else None,
+            })
         params = [
             request.path,
             requested_tickers,
+            load_backtest_execution_mode(),
             request.args.get("strategy", ""),
             request.args.get("capital", ""),
             request.args.get("period", ""),
@@ -1446,10 +1459,7 @@ def build_web_runtime() -> WebRuntime:
                 "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends", "stop_loss",
                 "view", "section", "view", "tickers", "weight",
             }]),
-            {
-                "daily_mtime_ns": daily_path.stat().st_mtime_ns if daily_path and daily_path.exists() else None,
-                "intraday_mtime_ns": intraday_path.stat().st_mtime_ns if intraday_path and intraday_path.exists() else None,
-            },
+            history_versions,
         ]
         key_string = json.dumps(params, sort_keys=True)
         return hashlib.sha256(key_string.encode("utf-8")).hexdigest()[:16]
@@ -1531,10 +1541,25 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"Invalid ticker format: {raw_ticker}.")
         return normalized_ticker
 
-    def parse_requested_tickers(view_name: str | None = None) -> list[str]:
+    def resolve_comparison_metric(view_name: str | None = None) -> str:
+        """Resolve the metric used by the unified Ticker comparison workspace."""
+        normalized_view = normalize_view_name(view_name)
+        if normalized_view not in {"prices", "market-caps"}:
+            return "price"
+        default_metric = "market-cap" if normalized_view == "market-caps" else "price"
+        return normalize_comparison_metric(
+            request.args.get("metric"),
+            default=default_metric,
+        )
+
+    def parse_requested_tickers(
+        view_name: str | None = None,
+        comparison_metric: str | None = None,
+    ) -> list[str]:
+        resolved_metric = comparison_metric or resolve_comparison_metric(view_name)
         return parse_requested_tickers_from_args(
             request.args,
-            max_tickers=max_tickers_for_view(view_name),
+            max_tickers=max_tickers_for_view(view_name, resolved_metric),
             normalize=normalize_ticker_input,
             getlist=request.args.getlist,
         )
@@ -2392,9 +2417,24 @@ def build_web_runtime() -> WebRuntime:
         return normalize_view_name(request.args.get("view", "tickers"))
 
     def build_legacy_workspace_redirect(view_name: str):
+        if normalize_view_name(view_name) == "market-caps":
+            return build_market_cap_compare_redirect()
         query_string = request.query_string.decode().strip()
         target_path = build_view_path(view_name)
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
+
+    def build_market_cap_compare_redirect():
+        """Redirect the retired market-cap workspace to its unified URL."""
+        query_pairs = [("metric", "market-cap")]
+        query_pairs.extend(
+            (key, value)
+            for key, values in request.args.lists()
+            if key not in {"metric", "view"}
+            for value in values
+        )
+        query_string = urlencode(query_pairs, doseq=True)
+        target_path = build_view_path("prices")
+        return redirect(f"{target_path}?{query_string}")
 
     def build_dca_backtest_redirect():
         query_pairs = [
@@ -3125,10 +3165,18 @@ def build_web_runtime() -> WebRuntime:
 
     def build_modern_query_pairs(view_name: str | None = None) -> list[tuple[str, str]]:
         pairs: list[tuple[str, str]] = []
-        view_max_tickers = max_tickers_for_view(view_name)
+        normalized_view = normalize_view_name(view_name)
+        comparison_metric = resolve_comparison_metric(normalized_view)
+        view_max_tickers = max_tickers_for_view(normalized_view, comparison_metric)
 
-        for ticker in parse_requested_tickers(view_name):
+        for ticker in parse_requested_tickers(normalized_view, comparison_metric):
             pairs.append(("ticker", ticker))
+
+        if (
+            normalized_view in {"market-caps", "prices"}
+            and comparison_metric == "market-cap"
+        ):
+            pairs.append(("metric", comparison_metric))
 
         has_weight_args = bool(request.args.getlist("weight")) or any(
             key.startswith("weight_") for key in request.args.keys()
@@ -3265,6 +3313,7 @@ def build_web_runtime() -> WebRuntime:
             "section",
             "ticker_a",
             "ticker_b",
+            "metric",
         }
         passthrough_keys.update({f"ticker_{index}" for index in range(1, view_max_tickers + 1)})
         passthrough_keys.update({f"weight_{index}" for index in range(1, view_max_tickers + 1)})
@@ -3312,8 +3361,13 @@ def build_web_runtime() -> WebRuntime:
             for change in entry.get("changes", [])
         ]
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
-        view_max_tickers = max_tickers_for_view(current_view)
-        requested_tickers = parse_requested_tickers(current_view)
+        comparison_metric = resolve_comparison_metric(current_view)
+        is_market_cap_comparison = (
+            current_view == "market-caps"
+            or (current_view == "prices" and comparison_metric == "market-cap")
+        )
+        view_max_tickers = max_tickers_for_view(current_view, comparison_metric)
+        requested_tickers = parse_requested_tickers(current_view, comparison_metric)
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         price_only = request.args.get("return", "").strip().lower() == "price" or parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
         include_dividends = False if price_only else (
@@ -3580,13 +3634,18 @@ def build_web_runtime() -> WebRuntime:
             notice = None
 
         if current_view == "prices":
-            page_title = labels.get("dock_prices", "Price performance")
-            report_heading = labels.get("dock_prices", "Price performance")
-            chart_heading = "Price history"
+            if is_market_cap_comparison:
+                page_title = labels.get("dock_market_caps", "Market cap comparison")
+                report_heading = labels.get("dock_market_caps", "Market cap comparison")
+                chart_heading = translate_ui("Market cap history")
+            else:
+                page_title = labels.get("dock_prices", "Price performance")
+                report_heading = labels.get("dock_prices", "Price performance")
+                chart_heading = translate_ui("Price history")
         elif current_view == "market-caps":
             page_title = labels.get("dock_market_caps", "Market cap comparison")
             report_heading = labels.get("dock_market_caps", "Market cap comparison")
-            chart_heading = "Market cap history"
+            chart_heading = translate_ui("Market cap history")
         elif current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
@@ -4023,11 +4082,11 @@ def build_web_runtime() -> WebRuntime:
                         market_cap_split_events = {
                             ticker: extract_stock_split_events(dataset)
                             for ticker, dataset in zip(validated_tickers, datasets)
-                        } if current_view == "market-caps" else {}
+                        } if is_market_cap_comparison else {}
                         market_cap_split_actions_authoritative = {
                             ticker: bool(dataset.attrs.get("stock_split_actions_authoritative"))
                             for ticker, dataset in zip(validated_tickers, datasets)
-                        } if current_view == "market-caps" else {}
+                        } if is_market_cap_comparison else {}
                         include_extended_hours = (
                             current_view in {"tickers", "market-caps", "prices"}
                             and supports_compare_extended_hours(validated_tickers, period)
@@ -4564,7 +4623,7 @@ def build_web_runtime() -> WebRuntime:
                                 )
                             ]
                         else:
-                            if current_view == "market-caps":
+                            if is_market_cap_comparison:
                                 series = [
                                     build_market_cap_series_payload(
                                         ticker,
@@ -4865,7 +4924,8 @@ def build_web_runtime() -> WebRuntime:
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade", "settings")},
+            comparison_metric=comparison_metric,
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "prices", "portfolio", "dca", "backtest", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "investment", "backtest", "font-tokens", "color-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
@@ -5242,6 +5302,8 @@ def build_web_runtime() -> WebRuntime:
         legacy_view = request.args.get("view")
         if request.args:
             target_view = resolve_view() if legacy_view else "tickers"
+            if target_view == "market-caps":
+                return build_market_cap_compare_redirect()
             if target_view == "settings":
                 return redirect(
                     build_settings_state_url(
@@ -5259,7 +5321,7 @@ def build_web_runtime() -> WebRuntime:
         return render_workspace_page("tickers")
 
     def market_cap_compare_page():
-        return render_workspace_page("market-caps")
+        return build_market_cap_compare_redirect()
 
     def legacy_compare_page():
         return build_legacy_workspace_redirect("tickers")
@@ -5984,7 +6046,12 @@ def build_web_runtime() -> WebRuntime:
         requested_view = normalize_view_name(
             request.args.get("view", request.args.get("mode", "tickers"))
         )
-        requested_tickers = parse_requested_tickers(requested_view)
+        comparison_metric = resolve_comparison_metric(requested_view)
+        is_market_cap_comparison = (
+            requested_view == "market-caps"
+            or (requested_view == "prices" and comparison_metric == "market-cap")
+        )
+        requested_tickers = parse_requested_tickers(requested_view, comparison_metric)
         minimum_required = 1 if requested_view in {"backtest", "dca"} else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
             return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
@@ -5996,6 +6063,9 @@ def build_web_runtime() -> WebRuntime:
             request.args.get("return", "").strip().lower() == "dividends"
             or request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
         )
+        if is_market_cap_comparison:
+            price_only_flag = True
+            include_dividends_flag = False
         dividend_mode = resolve_workspace_dividend_mode(price_only_flag, include_dividends_flag)
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
@@ -6011,7 +6081,11 @@ def build_web_runtime() -> WebRuntime:
                 requested_end=requested_end,
             )
             return jsonify(date_constraint_payload_to_json(payload))
-        if requested_view in {"tickers", "market-caps"} and requested_range == "exact" and requested_period in {"3d", "1w"}:
+        if (
+            (requested_view in {"tickers", "market-caps"} or is_market_cap_comparison)
+            and requested_range == "exact"
+            and requested_period in {"3d", "1w"}
+        ):
             payload = build_short_intraday_date_constraint_payload(
                 validated_tickers,
                 requested_start=requested_start,
@@ -6019,7 +6093,10 @@ def build_web_runtime() -> WebRuntime:
             )
             if payload.trading_dates:
                 return jsonify(date_constraint_payload_to_json(payload))
-        if requested_view in {"tickers", "market-caps", "portfolio", "dca"}:
+        if (
+            requested_view in {"tickers", "market-caps", "portfolio", "dca"}
+            or is_market_cap_comparison
+        ):
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [
             fetch_history(ticker, include_dividends_flag, dividend_mode=dividend_mode)

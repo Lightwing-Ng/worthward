@@ -1,30 +1,36 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.4.1 #}
 {% extends "base.html" %}
+{% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
+{% set is_market_cap_comparison = comparison_metric == "market-cap" %}
+{% set comparison_heading_id = "market_cap_history_heading" if is_market_cap_comparison else "price_history_heading" %}
 
 {% block sidebar_content %}
 {% include "_workspace_mode_nav.html" %}
 {% endblock %}
 
 {% block workspace_content %}
-<section class="workspace-mode-shell price-compare-workspace" aria-labelledby="price_performance_heading">
+<section class="workspace-mode-shell price-compare-workspace{% if is_market_cap_comparison %} market-cap-compare-workspace{% endif %}" aria-labelledby="ticker_comparison_heading">
     <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
         <div class="report-heading-row">
-            <h2 class="report-heading" id="price_performance_heading">{{ labels.dock_prices }}</h2>
+            <h2 class="report-heading" id="ticker_comparison_heading">{{ report_heading or labels.get('dock_ticker_comparison', 'Ticker comparison') }}</h2>
         </div>
     </header>
     <div class="workspace-mode-layout">
-        <aside class="chart-surface workspace-mode-controls-surface" aria-labelledby="price_performance_heading">
+        <aside class="chart-surface workspace-mode-controls-surface" aria-labelledby="ticker_comparison_heading">
             {% include "_compare_portfolio_sidebar.html" %}
         </aside>
-        <section class="workspace-mode-main" aria-labelledby="price_history_heading">
+        <section class="workspace-mode-main" aria-labelledby="{{ comparison_heading_id }}">
             <div class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <header class="report-card workspace-article-card workspace-summary-card">
                     <div class="report-heading-row workspace-result-heading-stack">
-                        <h2 class="report-heading" id="price_history_heading">Price history</h2>
-                        {% if display_range %}<span class="price-compare-range workspace-result-date-range">{{ display_range }}</span>{% endif %}
+                        <h2 class="report-heading" id="{{ comparison_heading_id }}">{{ chart_heading or (translate_ui('Market cap history') if is_market_cap_comparison else translate_ui('Price history')) }}</h2>
+                        {% if display_range %}<span class="price-compare-range{% if is_market_cap_comparison %} market-cap-compare-range{% endif %} workspace-result-date-range">{{ display_range }}</span>{% endif %}
                     </div>
                 </header>
+                {% if is_market_cap_comparison %}
+                {{ render_chart_surface('', series, "No authoritative shares-outstanding history is available for the selected range.", "compare_chart_region") }}
+                {% else %}
                 <section class="chart-surface price-subplots-surface" aria-labelledby="price_history_heading">
                     {% if series %}
                     <div id="price_subplot_region"
@@ -54,6 +60,7 @@
                     </div>
                     {% endif %}
                 </section>
+                {% endif %}
             </div>
         </section>
     </div>

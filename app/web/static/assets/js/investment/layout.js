@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.1.0
+ * Code version: v1.1.2
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.0';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.2';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -241,6 +241,22 @@ export function bindInvestmentSectionResizer({
         scheduleOverviewChartResize();
         sectionResizer.setAttribute('aria-valuetext', `Overview ${Math.round(overviewRatio * 100)} percent`);
     };
+    const syncSectionResizerAria = (range) => {
+        const availableHeight = getAvailableTrackHeight();
+        const value = getValue();
+        if (!(availableHeight > 0) || !(value > 0)) return;
+        const resolvedRange = range || getRange();
+        const roundedValue = Math.round(value);
+        const minimum = Math.min(Math.round(resolvedRange.minimum), roundedValue);
+        const maximum = Math.max(Math.round(resolvedRange.maximum), roundedValue);
+        sectionResizer.setAttribute('aria-valuemin', String(minimum));
+        sectionResizer.setAttribute('aria-valuemax', String(maximum));
+        sectionResizer.setAttribute('aria-valuenow', String(roundedValue));
+        sectionResizer.setAttribute(
+            'aria-valuetext',
+            `Overview ${Math.round((value / availableHeight) * 100)} percent`,
+        );
+    };
     const valueFromPointer = (clientY) => {
         const reportRect = reportCard.getBoundingClientRect();
         const handleRect = sectionResizer.getBoundingClientRect();
@@ -259,9 +275,13 @@ export function bindInvestmentSectionResizer({
         ));
         if (!Number.isFinite(overviewRatio)) overviewRatio = defaultOverviewShare;
         const nextHeight = resolveInvestmentOverviewHeight(availableHeight, overviewRatio, range);
-        if (Math.abs(nextHeight - getValue()) < 0.5) return;
+        if (Math.abs(nextHeight - getValue()) < 0.5) {
+            syncSectionResizerAria(range);
+            return;
+        }
         workspaceHeader.style.setProperty('--investment-overview-track', `${nextHeight}px`);
         scheduleOverviewChartResize();
+        syncSectionResizerAria(range);
     };
     const scheduleRatioReflow = () => {
         if (resizeFrame) return;

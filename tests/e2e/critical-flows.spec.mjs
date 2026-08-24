@@ -1,4 +1,4 @@
-/* Code version: v1.166.16 */
+/* Code version: v1.167.9 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -630,7 +630,7 @@ test('keeps Settings export tokens on detached Investment export targets', async
     });
 });
 
-test('switches between return comparison and price performance workspaces', async ({page}) => {
+test('switches between return comparison and Ticker comparison workspaces', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
     const chartRuntimeSources = await page.locator('script[src]').evaluateAll((scripts) => (
         scripts.map((script) => script.src).filter((source) => source.includes('/vendor/chart/'))
@@ -638,7 +638,7 @@ test('switches between return comparison and price performance workspaces', asyn
     expect(chartRuntimeSources).toHaveLength(4);
     expect(chartRuntimeSources.every((source) => new URL(source).pathname.startsWith('/static/assets/js/vendor/chart/'))).toBe(true);
     await expect(page.locator('.workspace-nav-item-compare')).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('#app_sidebar .workspace-mode-nav > a')).toHaveCount(5);
+    await expect(page.locator('#app_sidebar .workspace-mode-nav > a')).toHaveCount(4);
     await expect(page.locator('#app_sidebar a[href="/workspaces/dca"]')).toHaveCount(0);
 
     const readWorkspaceHeadingLayout = () => page.evaluate(() => {
@@ -665,14 +665,14 @@ test('switches between return comparison and price performance workspaces', asyn
     expect(compareHeadingLayout.bottomDelta).toBeLessThanOrEqual(1);
     expect(compareHeadingLayout.controlsTop).toBeLessThanOrEqual(64);
 
-    await page.getByRole('link', {name: 'Price performance'}).click();
+    await page.getByRole('link', {name: 'Ticker comparison'}).click();
     await expect(page).toHaveURL(/\/workspaces\/prices/);
     await expect(page.locator('.workspace-nav-item-prices')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.workspace-mode-title-card')).toContainText('Price performance');
     await expect(page.getByRole('heading', {name: 'Price performance', exact: true, level: 2})).toBeVisible();
     await expect(page.getByRole('heading', {name: 'Price history', exact: true, level: 2})).toBeVisible();
-    await expect(page.locator('.price-compare-workspace')).toHaveAttribute('aria-labelledby', 'price_performance_heading');
-    await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'price_performance_heading');
+    await expect(page.locator('.price-compare-workspace')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
+    await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-main')).toHaveAttribute('aria-labelledby', 'price_history_heading');
 
     const aaplLogo = page.locator('.ticker-input-control:has(input[value="AAPL"]) .ticker-input-logo');
@@ -828,16 +828,16 @@ test('matches the shared Compare Period dropdown width to its trigger', async ({
     expect(widths.dropdown).toBeCloseTo(widths.trigger, 5);
 });
 
-test('remembers return and price comparison state while switching workspaces', async ({page}) => {
+test('remembers return and Ticker comparison state while switching workspaces', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
-    await page.getByRole('link', {name: 'Price performance'}).click();
+    await page.getByRole('link', {name: 'Ticker comparison'}).click();
     await expect(page).toHaveURL(/\/workspaces\/prices\?ticker=QQQ&ticker=AAPL$/);
 
     await page.goto('/workspaces/prices?ticker=DRAM&ticker=MU&ticker=STX&period=5y');
     await page.getByRole('link', {name: 'Return comparison'}).click();
     await expect(page).toHaveURL(/\/workspaces\/compare\?ticker=QQQ&ticker=AAPL$/);
 
-    await page.getByRole('link', {name: 'Price performance'}).click();
+    await page.getByRole('link', {name: 'Ticker comparison'}).click();
     await expect(page).toHaveURL(/\/workspaces\/prices\?ticker=DRAM&ticker=MU&ticker=STX&range=5y$/);
 });
 
@@ -989,7 +989,8 @@ test('draws no return zero baseline for a market-cap chart', async ({page}) => {
 
     const chartState = await page.evaluate(() => {
         const state = window.ANTIGRAVITY_APP;
-        state.currentView = 'market-caps';
+        state.currentView = 'prices';
+        state.comparisonMetric = 'market-cap';
         state.chart = {
             ...state.chart,
             profiles: [],
@@ -1034,7 +1035,8 @@ test('formats market-cap y-axis values without fixed trailing zeroes', async ({p
 
     const formattedTicks = await page.evaluate(() => {
         const state = window.ANTIGRAVITY_APP;
-        state.currentView = 'market-caps';
+        state.currentView = 'prices';
+        state.comparisonMetric = 'market-cap';
         state.chart = {
             ...state.chart,
             profiles: [],
@@ -1076,8 +1078,9 @@ test('omits midnight from long market-cap x-axis labels', async ({page}) => {
             color: '#0055cc',
         };
         const renderAxisLabels = (period) => {
-            window.history.replaceState({}, '', `/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=${period}`);
-            state.currentView = 'market-caps';
+            window.history.replaceState({}, '', `/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=JEPQ&period=${period}`);
+            state.currentView = 'prices';
+            state.comparisonMetric = 'market-cap';
             state.chart = {...state.chart, profiles: [], series: [series]};
             window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
             const canvas = document.querySelector('#returnsChart');
@@ -1199,7 +1202,7 @@ test('renders Compare exact-date values at regular weight', async ({page}) => {
 });
 
 test('switches an untouched range mode without submitting or desynchronizing its pill', async ({page}) => {
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&period=1d');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&period=1d');
     const rangeShell = page.locator('.range-mode-shell');
     const form = page.locator('form.controls');
     await form.evaluate((element) => {
@@ -1238,7 +1241,7 @@ test('switches an untouched range mode without submitting or desynchronizing its
 });
 
 test('pre-fills Exact with the rendered multi-day market-cap range', async ({page}) => {
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&period=6mo');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&period=6mo');
     await page.locator('form.controls').evaluate((form) => {
         form.addEventListener('submit', (event) => event.preventDefault(), {capture: true});
     });
@@ -1258,7 +1261,7 @@ test('pre-fills Exact with the rendered multi-day market-cap range', async ({pag
 });
 
 test('retains rendered exact-date labels after a market-cap page reload', async ({page}) => {
-    const exactUrl = '/workspaces/market-caps?ticker=AAPL&ticker=NVDA&range=exact&period=6mo&from=2026-01-20&to=2026-07-24';
+    const exactUrl = '/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&range=exact&period=6mo&from=2026-01-20&to=2026-07-24';
 
     await page.goto(exactUrl);
     const startEditor = page.getByRole('textbox', {name: 'Type start date'});
@@ -1298,7 +1301,7 @@ test('retains rendered exact-date labels after a market-cap page reload', async 
 });
 
 test('submits a selected custom Period option for market-cap comparison', async ({page}) => {
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&period=1w');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&period=1w');
     const periodTrigger = page.locator('[data-shared-select-trigger]');
     await periodTrigger.click();
     const periodListbox = page.getByRole('listbox', {name: 'Period', exact: true});
@@ -1309,6 +1312,8 @@ test('submits a selected custom Period option for market-cap comparison', async 
 
     await expect(page.locator('#period')).toHaveValue('2y');
     await expect(page.getByRole('button', {name: 'Period: 2 years', exact: true})).toBeVisible();
+    await page.locator('#add_ticker').click();
+    await expect(page.locator('#ticker_3')).toBeVisible();
 });
 
 test('switches exact-date pickers into a bounded year grid with explanatory disabled months', async ({page}) => {
@@ -1646,6 +1651,76 @@ test('keeps ticker identity visible and range pills interactive on price perform
     await expect(page.locator('#period_panel')).toBeVisible();
 });
 
+test('switches the Ticker comparison metric at the requested sidebar position', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
+
+    const metricField = page.locator('xpath=/html/body/main/div/section/section/div/aside/form/div[3]');
+    await expect(metricField).toHaveAttribute('data-comparison-metric-field', '');
+    const placement = await metricField.evaluate((field) => ({
+        previousId: field.previousElementSibling?.id || '',
+        nextClasses: field.nextElementSibling?.className || '',
+    }));
+    expect(placement).toEqual({
+        previousId: 'ticker_add_wrapper',
+        nextClasses: expect.stringContaining('range-mode-field'),
+    });
+
+    const metricSwitch = metricField.locator('[data-comparison-metric-switch]');
+    const priceMetric = metricSwitch.locator('[data-comparison-metric-input][value="price"]');
+    const marketCapMetric = metricSwitch.locator('[data-comparison-metric-input][value="market-cap"]');
+    await expect(priceMetric).toBeChecked();
+    await expect(marketCapMetric).not.toBeChecked();
+    const pricePillColor = await metricSwitch.evaluate((element) => getComputedStyle(element, '::before').backgroundColor);
+    expect(pricePillColor).toBe('rgb(0, 85, 204)');
+    expect(await page.evaluate(() => window.ANTIGRAVITY_APP.constraints.maxTickers)).toBe(5);
+
+    const isMarketCapNavigation = (request) => {
+        const url = new URL(request.url());
+        return url.pathname === '/workspaces/prices' && url.searchParams.get('metric') === 'market-cap';
+    };
+    const marketCapNavigation = page.waitForRequest(isMarketCapNavigation);
+    await page.route('**/workspaces/prices?*', async (route) => {
+        if (isMarketCapNavigation(route.request())) {
+            await route.abort();
+            return;
+        }
+        await route.continue();
+    });
+    await metricSwitch.locator('label[for="comparison_metric_market_cap"]').click();
+    const marketCapUrl = new URL((await marketCapNavigation).url());
+    expect(marketCapUrl.searchParams.get('metric')).toBe('market-cap');
+    expect(marketCapUrl.searchParams.getAll('ticker')).toEqual(['AAPL', 'NVDA']);
+    expect(marketCapUrl.searchParams.has('period')).toBe(false);
+});
+
+test('keeps the Ticker comparison metric control within the narrow sidebar viewport', async ({page}) => {
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
+
+    const sidebarToggle = page.locator('#sidebar_toggle');
+    if (await sidebarToggle.getAttribute('aria-expanded') !== 'true') {
+        await sidebarToggle.click();
+    }
+
+    const metricField = page.locator('xpath=/html/body/main/div/section/section/div/aside/form/div[3]');
+    await expect(metricField).toBeVisible();
+    const geometry = await metricField.evaluate((field) => {
+        const rect = field.getBoundingClientRect();
+        const control = field.querySelector('[data-comparison-metric-switch]');
+        const controlRect = control?.getBoundingClientRect();
+        return {
+            field: {left: rect.left, right: rect.right},
+            control: controlRect ? {left: controlRect.left, right: controlRect.right} : null,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    expect(geometry.field.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.field.right).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    expect(geometry.control).not.toBeNull();
+    expect(geometry.control?.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.control?.right).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+});
+
 test('keeps the active one-day trading date when switching Price performance to Exact', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=QQQ&ticker=AAPL&period=1d');
     await page.locator('form.controls').evaluate((form) => {
@@ -1748,11 +1823,11 @@ test('shows immediate price-range feedback and preserves add-ticker after hydrat
 
 test('shows immediate feedback while a five-year market-cap range is calculated', async ({page}) => {
     await page.setViewportSize({width: 1_024, height: 768});
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&period=1d');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&period=1d');
     await expect(page.getByRole('heading', {name: 'Market cap comparison', exact: true, level: 2})).toBeVisible();
     await expect(page.getByRole('heading', {name: 'Market cap history', exact: true, level: 2})).toBeVisible();
-    await expect(page.locator('.market-cap-compare-workspace')).toHaveAttribute('aria-labelledby', 'market_cap_comparison_heading');
-    await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'market_cap_comparison_heading');
+    await expect(page.locator('.market-cap-compare-workspace')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
+    await expect(page.locator('.workspace-mode-controls-surface')).toHaveAttribute('aria-labelledby', 'ticker_comparison_heading');
     await expect(page.locator('.workspace-mode-main')).toHaveAttribute('aria-labelledby', 'market_cap_history_heading');
 
     const range = page.locator('.market-cap-compare-range');
@@ -1786,12 +1861,13 @@ test('shows immediate feedback while a five-year market-cap range is calculated'
             body: JSON.stringify({missingHistory: []}),
         });
     });
-    await page.route('**/workspaces/market-caps?*', async (route) => {
+    await page.route('**/workspaces/prices?*', async (route) => {
         const request = route.request();
         const isHydration = request.headers()['x-requested-with'] === 'workspace-hydrate';
         const requestParams = new URL(request.url()).searchParams;
+        const isMarketCap = requestParams.get('metric') === 'market-cap';
         const isFiveYears = (requestParams.get('range') || requestParams.get('period')) === '5y';
-        if (isHydration && isFiveYears) {
+        if (isHydration && isMarketCap && isFiveYears) {
             await new Promise((resolve) => setTimeout(resolve, 600));
             await route.fulfill({
                 contentType: 'text/html',
@@ -1822,13 +1898,15 @@ test('submits a valid market-cap ticker after it is committed by blur', async ({
             body: JSON.stringify({missingHistory: []}),
         });
     });
-    await page.goto('/workspaces/market-caps?ticker=AAPL&ticker=NVDA&ticker=GOOGL&period=1y');
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&ticker=GOOGL&period=1y');
     await page.locator('#add_ticker').click();
     const tickerInput = page.locator('#ticker_4');
     await tickerInput.fill('MSFT');
     const hydrationHtml = await page.content();
-    await page.route('**/workspaces/market-caps?*', async (route) => {
-        if (route.request().headers()['x-requested-with'] === 'workspace-hydrate') {
+    await page.route('**/workspaces/prices?*', async (route) => {
+        const request = route.request();
+        const isMarketCap = new URL(request.url()).searchParams.get('metric') === 'market-cap';
+        if (isMarketCap && request.headers()['x-requested-with'] === 'workspace-hydrate') {
             await route.fulfill({contentType: 'text/html', body: hydrationHtml});
             return;
         }
@@ -12970,6 +13048,160 @@ test('opens Grid Trading private parameters through the shared strategy tune but
     ))).toBe(true);
     await expect(page.locator('#trade_initial_capital')).toHaveAttribute('inputmode', 'decimal');
     await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
+});
+
+test('replaces Backtest controls when the strategy changes without losing the ticker', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
+
+    const chooseStrategy = async (strategyId) => {
+        const trigger = page.locator('[data-trade-strategy-trigger]');
+        await trigger.click();
+        const option = page.locator(`[data-trade-strategy-dropdown] [data-value="${strategyId}"]`);
+        await expect(option).toHaveCount(1);
+        await option.click();
+        await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe(strategyId);
+    };
+
+    await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
+    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(1);
+    await expect(page.locator('#backtest_interval_control')).toHaveCount(1);
+    await expect(page.locator('#stop_loss')).not.toBeChecked();
+
+    await chooseStrategy('dca');
+    await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
+    await expect(page.locator('[data-strategy-param-key="frequency"]')).toHaveCount(1);
+    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(0);
+    await expect(page.locator('#backtest_interval_control')).toHaveCount(0);
+    await expect(page.locator('#stop_loss')).toHaveCount(0);
+
+    await chooseStrategy('grid-trading');
+    await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
+    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(1);
+    await expect(page.locator('[data-strategy-param-key="frequency"]')).toHaveCount(0);
+    await expect(page.locator('#backtest_interval_control')).toHaveCount(1);
+});
+
+test('keeps the Grid Trading tuning panel inside the desktop viewport', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 720});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
+
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    const paramsPanel = page.locator('#trade_strategy_params_panel');
+    await tuneButton.click();
+    await expect(paramsPanel).toBeVisible();
+
+    const geometry = await paramsPanel.evaluate((panel) => {
+        const panelRect = panel.getBoundingClientRect();
+        const anchorRect = panel.closest('[data-trade-strategy-field]')
+            ?.querySelector('.trade-strategy-row')
+            ?.getBoundingClientRect();
+        const inputs = Array.from(panel.querySelectorAll('input, select, button'))
+            .filter((node) => node.getClientRects().length > 0)
+            .map((node) => {
+                const rect = node.getBoundingClientRect();
+                return {top: rect.top, bottom: rect.bottom};
+            });
+        return {
+            flipped: panel.classList.contains('is-flipped'),
+            panel: {top: panelRect.top, bottom: panelRect.bottom},
+            anchor: anchorRect ? {top: anchorRect.top, bottom: anchorRect.bottom} : null,
+            inputs,
+            viewportHeight: window.visualViewport?.height || window.innerHeight,
+        };
+    });
+
+    expect(geometry.flipped).toBe(true);
+    expect(geometry.panel.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.panel.bottom).toBeLessThanOrEqual(geometry.viewportHeight);
+    expect(geometry.anchor).not.toBeNull();
+    expect(geometry.panel.bottom).toBeLessThanOrEqual((geometry.anchor?.top || 0) - 4);
+    expect(geometry.inputs).toHaveLength(12);
+    expect(geometry.inputs.every((input) => (
+        input.top >= geometry.panel.top
+        && input.bottom <= geometry.panel.bottom
+        && input.top >= 0
+        && input.bottom <= geometry.viewportHeight
+    ))).toBe(true);
+});
+
+test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state accurate', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 720});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
+    await page.setViewportSize({width: 390, height: 844});
+    const visibleNoticeClose = page.locator('[data-dismissible-notice]:not([hidden]) .notice-close').first();
+    if (await visibleNoticeClose.isVisible()) {
+        await visibleNoticeClose.click();
+    }
+    await setSidebarExpanded(page, false);
+
+    const historyShell = page.locator('#backtest_history_table_wrap');
+    const historyScroll = page.locator('#backtest_history_table_scroll');
+    const headerTable = historyShell.locator('[data-table-header]');
+    const resizer = page.locator('#backtest_section_resizer');
+    await expect(historyShell).toBeVisible();
+    await expect(historyScroll).toBeVisible();
+    await expect(resizer).toHaveAttribute('aria-valuenow', /\d+/);
+
+    await expect.poll(() => page.evaluate(() => {
+        const scroll = document.getElementById('backtest_history_table_scroll');
+        const bodyTable = scroll?.querySelector('[data-table-body]');
+        const shell = document.querySelector('#backtest_history_table_wrap');
+        const resizerElement = document.getElementById('backtest_section_resizer');
+        const overview = document.querySelector('.backtest-trade-performance-card');
+        const appShell = document.querySelector('.app-shell');
+        if (!scroll || !bodyTable || !shell || !resizerElement || !overview || !appShell) return null;
+        const valueNow = Number(resizerElement.getAttribute('aria-valuenow'));
+        const valueMin = Number(resizerElement.getAttribute('aria-valuemin'));
+        const valueMax = Number(resizerElement.getAttribute('aria-valuemax'));
+        return {
+            bodyWidth: bodyTable.getBoundingClientRect().width,
+            clientWidth: scroll.clientWidth,
+            scrollWidth: scroll.scrollWidth,
+            viewportWidth: document.documentElement.clientWidth,
+            nowrap: getComputedStyle(bodyTable.querySelector('tbody td') || bodyTable).whiteSpace,
+            paginationInsideShell: shell.contains(document.getElementById('tradeTransactionsPagination')),
+            ariaMatchesOverview: valueNow === Math.round(overview.getBoundingClientRect().height),
+            ariaInRange: valueNow >= valueMin && valueNow <= valueMax,
+            appShellScrollable: appShell.scrollHeight > appShell.clientHeight,
+        };
+    })).toEqual(expect.objectContaining({
+        bodyWidth: expect.any(Number),
+        clientWidth: expect.any(Number),
+        scrollWidth: expect.any(Number),
+        nowrap: 'nowrap',
+        paginationInsideShell: true,
+        ariaMatchesOverview: true,
+        ariaInRange: true,
+        appShellScrollable: true,
+    }));
+
+    const tableMetrics = await historyScroll.evaluate((scroll) => ({
+        clientWidth: scroll.clientWidth,
+        clientHeight: scroll.clientHeight,
+        scrollWidth: scroll.scrollWidth,
+    }));
+    expect(tableMetrics.clientHeight).toBeGreaterThan(0);
+    expect(tableMetrics.scrollWidth).toBeGreaterThanOrEqual(720);
+    expect(tableMetrics.clientWidth).toBeLessThanOrEqual(390);
+    expect(tableMetrics.scrollWidth).toBeGreaterThan(tableMetrics.clientWidth);
+    const horizontalOffset = await historyScroll.evaluate((scroll) => {
+        scroll.scrollLeft = Math.min(96, scroll.scrollWidth - scroll.clientWidth);
+        scroll.dispatchEvent(new Event('scroll'));
+        return scroll.scrollLeft;
+    });
+    expect(horizontalOffset).toBeGreaterThan(0);
+    await expect.poll(() => headerTable.evaluate((header) => Number.parseFloat(header.style.translate || '0')))
+        .toBe(-horizontalOffset);
+
+    const nestedScrollMoved = await page.evaluate(() => {
+        const appShell = document.querySelector('.app-shell');
+        if (!appShell) return false;
+        const before = appShell.scrollTop;
+        appShell.scrollTop = Math.min(appShell.scrollHeight - appShell.clientHeight, before + 120);
+        return appShell.scrollTop > before;
+    });
+    expect(nestedScrollMoved).toBe(true);
 });
 
 test('uses the shared 28px numeric control and iPad keyboard contract in Portfolio', async ({page}) => {

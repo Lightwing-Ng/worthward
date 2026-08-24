@@ -1,4 +1,4 @@
-/* Code version: v0.9.7 */
+/* Code version: v0.10.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -208,7 +208,10 @@
 		const { chart: chartState, theme, chartConfig } = state;
 		const resolvedTheme = readThemeTokens();
 		const { series, profiles } = chartState;
-		const isMarketCapView = state.currentView === "market-caps";
+		const isMarketCapView = (
+			state.currentView === "prices"
+			&& String(state.comparisonMetric || "").trim().toLowerCase() === "market-cap"
+		);
 		const selectedTradingDate = String(chartState.tradingDate || "");
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";

@@ -1,4 +1,4 @@
-/* Code version: v3.34.0 */
+/* Code version: v3.34.7 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -131,23 +131,76 @@
 
 .backtest-history-surface {
     position: relative;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .backtest-history-table-shell {
     position: relative;
     flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.backtest-history-surface > .investment-stock-details-table-host:not([hidden]) > .backtest-history-table-shell {
+    min-height: 0;
+    height: 100%;
+}
+
+@media (max-width: 767px) {
+    .backtest-workspace-main,
+    .backtest-results-stack {
+        height: auto;
+    }
+
+    .backtest-results-stack {
+        flex: 0 0 auto;
+    }
+
+    .backtest-results-stack.investment-workspace-header {
+        flex: 0 0 auto;
+        min-height: calc(
+            var(--investment-section-min-height)
+            + var(--investment-section-min-height)
+            + var(--investment-section-resizer-size)
+            + 84px
+        );
+    }
+
+    .backtest-results-stack > .backtest-trade-performance-card,
+    .backtest-history-surface {
+        flex: 0 0 auto;
+        min-height: var(--investment-section-min-height);
+    }
 }
 
 .backtest-history-table {
+    --scrollable-data-table-min-width: 720px;
+    --investment-col-no-width: 44px;
+    --investment-col-time-width: 84px;
+    --investment-col-type-width: 56px;
+    --investment-col-market-value-width: 84px;
+    --investment-col-cash-width: 96px;
+    --investment-col-equity-width: 96px;
     table-layout: fixed;
 }
 
-.backtest-history-table thead th {
-    text-align: center !important;
+.backtest-history-table-shell > .backtest-history-table[data-table-header],
+.backtest-history-table-shell > .investment-history-table-scroll > .backtest-history-table {
+    width: max(100%, 720px);
+    min-width: 720px !important;
 }
 
-.backtest-history-table td {
+.backtest-history-table-shell .backtest-history-table thead th {
+    text-align: center !important;
+    white-space: nowrap !important;
+}
+
+.backtest-history-table-shell .backtest-history-table td {
     padding: var(--scrollable-data-table-cell-padding);
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
 }
 
 .trade-performance-card > .export-transactions-button,

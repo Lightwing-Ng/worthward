@@ -1,4 +1,4 @@
-/* Code version: v0.17.0 */
+/* Code version: v0.17.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1130,7 +1130,7 @@ input[type="number"],
 	padding: 10px;
 	overflow-x: hidden;
 	overflow-x: clip;
-	overflow-y: visible;
+	overflow-y: hidden;
 	border-radius: var(--radius-soft);
 	background: var(--glass-popover-background);
 	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
@@ -1472,6 +1472,15 @@ input[type="number"],
 	transform-origin: top center;
 	animation: workspace-popover-gel-in 260ms var(--motion-bouncy) both;
 	will-change: transform, opacity, filter;
+}
+.trade-strategy-params-popover.is-flipped:not([hidden]) {
+	transform-origin: bottom center;
+	animation-name: workspace-popover-gel-in-up;
+}
+@keyframes workspace-popover-gel-in-up {
+	0% { opacity: 0; transform: translateY(9px) scale(0.955); filter: saturate(82%); }
+	68% { opacity: 1; transform: translateY(-1px) scale(1.012); filter: saturate(108%); }
+	100% { opacity: 1; transform: translateY(0) scale(1); filter: saturate(100%); }
 }
 @media (prefers-reduced-motion: reduce) {
 	.suggestions.is-open,

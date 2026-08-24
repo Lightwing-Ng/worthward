@@ -1,6 +1,6 @@
 """Canonical workspace, trade, and settings navigation helpers.
 
-Code version: v1.5.0
+Code version: v1.6.0
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 MAX_TICKERS = 5
 MARKET_CAP_MAX_TICKERS = 10
 MIN_TICKERS = 2
+COMPARISON_METRICS = {"price", "market-cap"}
 
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
@@ -70,7 +71,7 @@ LEGACY_TRADE_SECTION_ALIASES = {
 }
 VIEW_PATHS = {
     "tickers": "/workspaces/compare",
-    "market-caps": "/workspaces/market-caps",
+    "market-caps": "/workspaces/prices",
     "prices": "/workspaces/prices",
     "portfolio": "/workspaces/portfolio",
     "dca": "/workspaces/dca",
@@ -80,9 +81,30 @@ VIEW_PATHS = {
 }
 
 
-def max_tickers_for_view(view_name: str | None) -> int:
+def normalize_comparison_metric(
+    metric_name: str | None,
+    *,
+    default: str = "price",
+) -> str:
+    """Return a supported Ticker comparison metric."""
+    normalized_default = default.strip().lower()
+    if normalized_default not in COMPARISON_METRICS:
+        normalized_default = "price"
+    candidate = (metric_name or "").strip().lower()
+    return candidate if candidate in COMPARISON_METRICS else normalized_default
+
+
+def max_tickers_for_view(
+    view_name: str | None,
+    comparison_metric: str | None = None,
+) -> int:
     """Return the ticker-input limit for a canonical workspace view."""
-    return MARKET_CAP_MAX_TICKERS if normalize_view_name(view_name) == "market-caps" else MAX_TICKERS
+    normalized_view = normalize_view_name(view_name)
+    is_market_cap_comparison = normalized_view == "market-caps" or (
+        normalized_view == "prices"
+        and normalize_comparison_metric(comparison_metric) == "market-cap"
+    )
+    return MARKET_CAP_MAX_TICKERS if is_market_cap_comparison else MAX_TICKERS
 
 
 def normalize_view_name(view_name: str | None) -> str:
@@ -98,8 +120,12 @@ def build_view_path(view_name: str) -> str:
 
 
 def build_view_url(view_name: str) -> str:
-    """Alias of build_view_path for template/url call sites."""
-    return build_view_path(view_name)
+    """Return the canonical workspace URL for template and URL call sites."""
+    normalized_view = normalize_view_name(view_name)
+    target_path = build_view_path(normalized_view)
+    if normalized_view == "market-caps":
+        return f"{target_path}?{urlencode({'metric': 'market-cap'})}"
+    return target_path
 
 
 def normalize_settings_section(section_name: str | None) -> str:

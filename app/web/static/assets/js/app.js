@@ -1,7 +1,13 @@
-/* Code version: v0.37.1 */
+/* Code version: v0.38.5 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
+    const normalizeComparisonMetric = (value) => (
+        String(value || "").trim().toLowerCase() === "market-cap" ? "market-cap" : "price"
+    );
+    const isMarketCapComparison = () => (
+        state.currentView === "prices" && normalizeComparisonMetric(state.comparisonMetric) === "market-cap"
+    );
     const responsive = window.ANTIGRAVITY_RESPONSIVE;
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const fetchAbortDebugConfig = state.debug?.fetchAbort || null;
@@ -107,7 +113,7 @@
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-    const WORKSPACE_VIEWS = new Set(["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"]);
+    const WORKSPACE_VIEWS = new Set(["tickers", "prices", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -167,7 +173,10 @@
             ],
         },
         prices: {
-            masks: ['[data-workspace-mask="price-subplots"]'],
+            masks: [
+                '[data-workspace-mask="price-subplots"]',
+                '[data-workspace-mask="chart-area"]',
+            ],
         },
         portfolio: {
             masks: [
@@ -815,8 +824,7 @@
     });
     const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({
         tickers: {title: labels.dock_tickers || "Return comparison"},
-        "market-caps": {title: labels.dock_market_caps || "Market cap comparison"},
-        prices: {title: labels.dock_prices || "Price performance"},
+        prices: {title: labels.dock_ticker_comparison || "Ticker comparison"},
         portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
         dca: {title: labels.dock_dca || "Dollar-cost averaging"},
         backtest: {title: labels.dock_backtest || "Backtest"},
@@ -1094,7 +1102,7 @@
                 || path === "/workspaces/compare"
                 || path.startsWith("/workspaces/compare/")
             ) return "tickers";
-            if (path === "/workspaces/market-caps" || path.startsWith("/workspaces/market-caps/")) return "market-caps";
+            if (path === "/workspaces/market-caps" || path.startsWith("/workspaces/market-caps/")) return "prices";
             if (path === "/workspaces/prices" || path.startsWith("/workspaces/prices/")) return "prices";
             if (
                 path === "/portfolio"
@@ -1242,7 +1250,7 @@
             series: state.chart.series.map((item) => ({
                 ticker: item.ticker,
                 dates: [...(item.dates || [])],
-                values: [...(state.currentView === "market-caps" ? (item.market_caps || []) : (item.normalized_returns || []))],
+                values: [...(isMarketCapComparison() ? (item.market_caps || []) : (item.normalized_returns || []))],
             })),
         };
     };
@@ -2225,7 +2233,7 @@
             applyPortfolioPendingState();
             return;
         }
-		if (["market-caps", "prices"].includes(state.currentView)) {
+		if (state.currentView === "prices") {
 			const workspacePanel = document.getElementById("workspace_panel");
 			if (workspacePanel) workspacePanel.dataset.workspacePending = "1";
 			return;
@@ -2283,7 +2291,7 @@
     };
 
     const mergeKnownTickerProfilesIntoState = (nextState) => {
-        if (!nextState || !["tickers", "market-caps", "prices", "portfolio"].includes(nextState.currentView)) return nextState;
+        if (!nextState || !["tickers", "prices", "portfolio"].includes(nextState.currentView)) return nextState;
         if (!nextState.chart) return nextState;
         const profileMap = collectKnownTickerProfileMap();
         if (!profileMap.size) return nextState;
@@ -2375,7 +2383,7 @@
         const workspacePanel = document.getElementById("workspace_panel");
         if (!nextWorkspacePanel || !workspacePanel) throw new Error("Workspace panel missing from response.");
         syncGlobalNoticeBanners(doc, nextUrl);
-        if (["tickers", "market-caps"].includes(state.currentView)) {
+        if (state.currentView === "tickers") {
             const hydratedCompareWorkspace = bootstrap.hydrateCompareWorkspace?.({
                 doc,
                 replaceDomRegion,
@@ -2395,7 +2403,9 @@
                 replaceDomRegion(currentChartRegion, nextChartRegion);
                 workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
             }
-        } else if (["market-caps", "prices", "backtest", "dca"].includes(state.currentView)) {
+        } else if (state.currentView === "backtest") {
+            hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
+        } else if (["prices", "dca"].includes(state.currentView)) {
             hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
         } else {
             workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
@@ -2462,7 +2472,7 @@
             return fallbackUrl;
         }
         const targetView = resolveViewFromUrl(fallbackUrl);
-        const comparisonViews = new Set(["tickers", "market-caps", "prices"]);
+        const comparisonViews = new Set(["tickers", "prices"]);
         if (!comparisonViews.has(state.currentView) || !comparisonViews.has(targetView)) {
             return fallbackUrl;
         }
@@ -4205,20 +4215,22 @@
     };
 
     const showImmediateRangeLoadingDialog = () => {
-        if (state.currentView === "prices") {
+        if (state.currentView === "prices" && isMarketCapComparison()) {
             showWorkspaceModal({
-                title: "Updating price history",
-                copy: "Loading the selected New York market-time range while keeping the current chart context visible.",
+                title: translateUi("Calculating market-cap history"),
+                copy: translateUi("Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment."),
                 loadingSpinner: true,
             });
             return;
         }
-        if (state.currentView !== "market-caps") return;
-        showWorkspaceModal({
-            title: "Calculating market-cap history",
-            copy: "Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment.",
-            loadingSpinner: true,
-        });
+        if (state.currentView === "prices") {
+            showWorkspaceModal({
+                title: translateUi("Updating price history"),
+                copy: translateUi("Loading the selected New York market-time range while keeping the current chart context visible."),
+                loadingSpinner: true,
+            });
+            return;
+        }
     };
 
     const showCompareOverlay = () => {
@@ -4389,6 +4401,11 @@
     };
 
     const form = $("form.controls");
+    const comparisonMetricInputs = $$("[data-comparison-metric-input]");
+    const getComparisonMetric = () => {
+        const selectedInput = comparisonMetricInputs.find((input) => input.checked);
+        return normalizeComparisonMetric(selectedInput?.value || state.comparisonMetric);
+    };
     const periodPanel = $("#period_panel");
     const exactPanel = $("#exact_panel");
     const periodSelect = $("#period");
@@ -4472,7 +4489,7 @@
     };
 
     const isOneDayExactDateMode = () => (
-        ["tickers", "market-caps", "prices"].includes(state.currentView)
+        ["tickers", "prices"].includes(state.currentView)
         && (periodSelect?.value || defaults.period) === "1d"
     );
 
@@ -4488,8 +4505,8 @@
 
     const syncDividendModeSwitches = () => {
         if (!priceOnlyInput || !includeDividendsInput) return;
-        const isPriceCompare = ["market-caps", "prices"].includes(state.currentView);
-        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isPriceCompare = state.currentView === "prices";
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         if (priceOnlyField instanceof HTMLElement) {
             priceOnlyField.hidden = isOneDayPeriod || isPriceCompare;
         }
@@ -4512,7 +4529,7 @@
 
     const syncOneDayOvernightSwitch = () => {
         if (!(overnightField instanceof HTMLElement) || !overnightInput) return;
-        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const hasEligibleTicker = getFilledTickers().some(isUsTicker);
         const canUseOvernight = (
             overnightField.dataset.overnightSourceReady === "1"
@@ -4529,7 +4546,7 @@
             syncOneDayOvernightSwitch();
             return;
         }
-        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const canUseExtendedHours = isOneDayPeriod && areAllFilledTickersUs();
         extendedHoursField.hidden = !canUseExtendedHours;
         extendedHoursInput.disabled = !canUseExtendedHours;
@@ -5659,7 +5676,7 @@
     const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
 
     const getRenderedChartDateRange = () => {
-        if (["tickers", "market-caps", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
+        if (["tickers", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
             const displayRangeDate = parseOneDayTradingDateTextToIso(
                 $("#compare_summary_date_range, .price-compare-range")?.textContent || "",
             );
@@ -5671,7 +5688,7 @@
             }
         }
         if (
-            ["tickers", "market-caps", "prices"].includes(state.currentView)
+            ["tickers", "prices"].includes(state.currentView)
             && (periodSelect?.value || defaults.period) === "1d"
             && state.chart?.tradingDate
         ) {
@@ -6724,6 +6741,7 @@
         return workspaceUrlState.buildWorkspaceUrl(window.location.href, {
             ...rangeState,
             tickers: getFilledTickers(),
+            comparisonMetric: state.currentView === "prices" ? getComparisonMetric() : "price",
             defaultTickers: state.currentView === "portfolio"
                 ? (defaults.portfolio_tickers || [])
                 : isBacktestView || isDcaView
@@ -6856,6 +6874,9 @@
         const tickers = getFilledTickers();
         if (tickers.length < getMinimumRequiredTickers() || new Set(tickers).size !== tickers.length) return;
         const params = new URLSearchParams({view: state.currentView});
+        if (state.currentView === "prices" && getComparisonMetric() === "market-cap") {
+            params.set("metric", "market-cap");
+        }
         const activeRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         const activePeriod = periodSelect?.value || defaults.period;
         if (activeRangeMode) params.set("range", activeRangeMode);
@@ -7031,6 +7052,21 @@
     };
     rangeModeInputs.forEach((input) => {
         input.addEventListener("change", () => handleRangeModeChange(input));
+    });
+    comparisonMetricInputs.forEach((input) => {
+        input.addEventListener("change", () => {
+            if (!input.checked || state.currentView !== "prices") return;
+            const nextMetric = normalizeComparisonMetric(input.value);
+            if (nextMetric === normalizeComparisonMetric(state.comparisonMetric)) return;
+            state.comparisonMetric = nextMetric;
+            if (autoSubmitTimer) {
+                window.clearTimeout(autoSubmitTimer);
+                autoSubmitTimer = null;
+            }
+            const nextUrl = buildCleanWorkspaceUrl();
+            const currentUrl = `${window.location.pathname}${window.location.search}`;
+            if (nextUrl !== currentUrl) window.location.assign(nextUrl);
+        });
     });
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
@@ -7294,6 +7330,7 @@
     let strategySwitchAnimationTimer = null;
     let strategyFieldsRequestToken = 0;
     let strategyScrollbarIdleTimer = 0;
+    let pendingBacktestStrategyNavigation = false;
 
     const scheduleStrategyParamSubmit = (delay = 160) => {
         if (!hasInitialResult) return;
@@ -7322,15 +7359,32 @@
         const panelStyles = getComputedStyle(panel);
         const panelAnchor = field.querySelector(".trade-strategy-row");
         const anchorRect = panelAnchor instanceof HTMLElement ? panelAnchor.getBoundingClientRect() : field.getBoundingClientRect();
-        const overlayMetrics = getSidebarOverlayMetrics(anchorRect, 160);
-        const availableHeight = overlayMetrics ? overlayMetrics.availableHeight : 160;
+        const visualViewport = window.visualViewport;
+        const viewportTop = Number(visualViewport?.offsetTop) || 0;
+        const viewportHeight = Number(visualViewport?.height) || window.innerHeight || 0;
+        const viewportBottom = viewportTop + viewportHeight;
+        const viewportEdge = 12;
+        const placementGap = SIDEBAR_OVERLAY_GAP_PX;
+        const availableAbove = Math.max(0, anchorRect.top - viewportTop - viewportEdge - placementGap);
+        const availableBelow = Math.max(0, viewportBottom - anchorRect.bottom - viewportEdge - placementGap);
         const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
         if (panelGrid instanceof HTMLElement) {
             const verticalChrome = (Number.parseFloat(panelStyles.paddingTop) || 0)
-                + (Number.parseFloat(panelStyles.paddingBottom) || 0);
-            const gridMaxHeight = Math.max(96, availableHeight - verticalChrome);
+                + (Number.parseFloat(panelStyles.paddingBottom) || 0)
+                + (Number.parseFloat(panelStyles.borderTopWidth) || 0)
+                + (Number.parseFloat(panelStyles.borderBottomWidth) || 0);
+            const gridRect = panelGrid.getBoundingClientRect();
+            const contentHeight = Math.ceil(Math.max(
+                panelGrid.scrollHeight,
+                ...Array.from(panelGrid.children).map((child) => (
+                    Math.max(0, child.getBoundingClientRect().bottom - gridRect.top)
+                )),
+            ));
+            const naturalPanelHeight = contentHeight + verticalChrome;
+            const placeAbove = availableBelow < naturalPanelHeight && availableAbove > availableBelow;
+            const availableHeight = placeAbove ? availableAbove : availableBelow;
+            const gridMaxHeight = Math.max(0, availableHeight - verticalChrome);
             panelGrid.style.maxHeight = `${Math.round(gridMaxHeight)}px`;
-            const contentHeight = Math.ceil(panelGrid.scrollHeight);
             const needsScroll = contentHeight > Math.round(gridMaxHeight);
             panelGrid.classList.toggle("is-scrollable", needsScroll);
             if (!needsScroll) {
@@ -7340,13 +7394,21 @@
                     strategyScrollbarIdleTimer = 0;
                 }
             }
-            const desiredPanelHeight = Math.min(availableHeight, contentHeight + verticalChrome);
+            panel.classList.toggle("is-flipped", placeAbove);
+            panel.style.top = placeAbove ? "auto" : `calc(100% + ${placementGap}px)`;
+            panel.style.bottom = placeAbove ? `calc(100% + ${placementGap}px)` : "auto";
+            panel.style.transformOrigin = placeAbove ? "bottom center" : "top center";
+            const desiredPanelHeight = Math.min(availableHeight, naturalPanelHeight);
             panel.style.height = `${Math.round(desiredPanelHeight)}px`;
             panel.style.maxHeight = `${Math.round(availableHeight)}px`;
             return;
         }
+        panel.classList.remove("is-flipped");
+        panel.style.top = "";
+        panel.style.bottom = "";
+        panel.style.transformOrigin = "";
         panel.style.height = "";
-        panel.style.maxHeight = `${Math.round(availableHeight)}px`;
+        panel.style.maxHeight = "";
     };
 
     const setStrategyPanelScrollingState = () => {
@@ -7382,6 +7444,10 @@
         } else {
             panel.style.maxHeight = "";
             panel.style.height = "";
+            panel.style.top = "";
+            panel.style.bottom = "";
+            panel.style.transformOrigin = "";
+            panel.classList.remove("is-flipped");
             const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
             if (panelGrid instanceof HTMLElement) {
                 panelGrid.style.maxHeight = "";
@@ -7857,6 +7923,7 @@
                 pulseStrategySwitch();
                 await refreshTradeStrategyFields(select.value);
                 if (!form) return;
+                pendingBacktestStrategyNavigation = isBacktestView;
                 window.setTimeout(() => form.requestSubmit(), 72);
             });
         }
@@ -7989,6 +8056,13 @@
             if (hasInitialResult && currentUrlObj.pathname === nextUrlObj.pathname && currentUrlObj.searchParams.toString() === nextUrlObj.searchParams.toString()) {
                 return;
             }
+            const shouldReloadForStrategyChange = pendingBacktestStrategyNavigation;
+            pendingBacktestStrategyNavigation = false;
+            if (shouldReloadForStrategyChange) {
+                rememberCurrentViewUrl(nextUrl);
+                window.location.assign(nextUrl);
+                return;
+            }
             let missingLocalTickers = [];
             try {
                 missingLocalTickers = await fetchMissingLocalMarketTickers(values);
@@ -8051,7 +8125,7 @@
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
             } else if (
-                ["tickers", "market-caps", "prices"].includes(state.currentView)
+                ["tickers", "prices"].includes(state.currentView)
                 && !missingLocalTickers.length
                 && pendingWorkspaceChartTransition?.view === state.currentView
                 && String(pendingWorkspaceChartTransition.reason || "").startsWith("ticker")
@@ -8061,8 +8135,8 @@
                     copy: "Rebuilding the return curve and performance summary for the selected tickers. You can close this dialog while loading continues.",
                     loadingSpinner: true,
                 });
-            } else if (["tickers", "market-caps", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
-                if (["market-caps", "prices"].includes(state.currentView)) {
+            } else if (["tickers", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
+                if (state.currentView === "prices") {
                     showImmediateRangeLoadingDialog();
                 } else {
                     showWorkspaceModal({
@@ -8202,9 +8276,9 @@
     const refreshStrategyDropdownUI = () => {
         const select = document.getElementById("trade_strategy");
         if (!select) return;
-        let recentIds = [];
+        let persistedRecentIds = [];
         try {
-            recentIds = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
+            persistedRecentIds = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
         } catch (_e) {
             return;
         }
@@ -8212,11 +8286,19 @@
         if (!recentGroup) return;
 
         const currentSelection = select.value;
+        const optionById = new Map(
+            Array.from(select.options).map((option) => [option.value, option]),
+        );
+        const serverRecentIds = Array.from(recentGroup.querySelectorAll(":scope > option"))
+            .map((option) => option.value);
+        const recentIds = [...new Set([...serverRecentIds, ...persistedRecentIds])]
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+            .slice(0, 3);
         recentGroup.innerHTML = "";
         recentIds.forEach((id) => {
             if (id === "buy-and-hold") return;
-            // Find reference option in any other group
-            const reference = select.querySelector(`optgroup:not([data-strategy-group="recent"]) option[value="${id}"]`);
+            const reference = optionById.get(id);
             if (reference) {
                 const clone = reference.cloneNode(true);
                 recentGroup.appendChild(clone);
@@ -8224,8 +8306,7 @@
         });
 
         recentGroup.hidden = recentGroup.children.length === 0;
-        // Restore selection because DOM change might reset it, then mirror
-        // the selected marker onto every duplicate option in Recent and All.
+        // Restore selection because rebuilding the Recent group can reset it.
         syncStrategyOptionSelection(select, currentSelection);
         syncTradeStrategyTriggerLabel();
         renderTradeStrategyDropdown();

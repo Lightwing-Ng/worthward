@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.7
+Code version: v0.5.8
 """
 
 from __future__ import annotations
@@ -88,6 +88,75 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('value="TQQQ"', html)
         self.assertIn("/api/market-store/logos/TQQQ.png", html)
+
+    def test_backtest_cache_distinguishes_legacy_tickers_values(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            first_response = client.get(
+                "/workspaces/backtest?tickers=QQQ&strategy=buy-and-hold&period=1y"
+            )
+            second_response = client.get(
+                "/workspaces/backtest?tickers=AAPL&strategy=buy-and-hold&period=1y"
+            )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(run_backtest.call_count, 2)
+
+    def test_backtest_cache_normalizes_ticker_and_legacy_tickers_aliases(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            first_response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y"
+            )
+            second_response = client.get(
+                "/workspaces/backtest?tickers=QQQ.US&strategy=buy-and-hold&period=1y"
+            )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(run_backtest.call_count, 1)
+
+    def test_backtest_cache_includes_execution_mode(self) -> None:
+        execution_mode = ["signal_close"]
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+            patch("app.web.runtime.load_backtest_execution_mode", side_effect=lambda: execution_mode[0]),
+        ):
+            client = create_app().test_client()
+            first_response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y"
+            )
+            execution_mode[0] = "next_open"
+            second_response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y"
+            )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(run_backtest.call_count, 2)
 
     def test_backtest_page_passes_disabled_stop_loss_to_every_strategy_run(self) -> None:
         with (

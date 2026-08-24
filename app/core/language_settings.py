@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.5
+Code version: v0.5.7
 """
 
 from __future__ import annotations
@@ -134,8 +134,18 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Price return only", "僅計價格回報", "仅计算价格收益"),
         ("Performance summary", "表現摘要", "表现摘要"),
         ("Stock return comparison", "股票回報比較", "股票收益比较"),
+        ("Comparison", "比較", "比较"),
+        ("Price", "價格", "价格"),
+        ("Market cap", "市值", "市值"),
         ("Market cap comparison", "市值比較", "市值比较"),
+        ("Market cap history", "市值歷史", "市值历史"),
         ("Price performance", "價格表現", "价格表现"),
+        ("Price history", "價格歷史", "价格历史"),
+        ("Ticker comparison", "股票代號比較", "股票代码比较"),
+        ("Calculating market-cap history", "正在計算市值歷史", "正在计算市值历史"),
+        ("Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment.", "正在合併所選區間的歷史價格與時點在外流通股數。較長區間可能需要一些時間。", "正在合并所选区间的历史价格与时点流通股数。较长区间可能需要一些时间。"),
+        ("Updating price history", "正在更新價格歷史", "正在更新价格历史"),
+        ("Loading the selected New York market-time range while keeping the current chart context visible.", "正在載入所選紐約市場時段，同時保留目前圖表內容。", "正在加载所选纽约市场时段，同时保留当前图表内容。"),
         ("Workspace", "工作區", "工作区"),
         ("Portfolio summary", "投資組合摘要", "投资组合摘要"),
         ("Portfolio return chart", "投資組合回報圖表", "投资组合收益图表"),

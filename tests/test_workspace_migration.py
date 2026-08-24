@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.4.0
+Code version: v1.5.1
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class OptimisticNavigationTests(unittest.TestCase):
     def test_navigation_registry_covers_every_route_profile(self) -> None:
         source = APP_JS.read_text(encoding="utf-8")
 
-        for view in ("tickers", "portfolio", "dca", "backtest"):
+        for view in ("tickers", "prices", "portfolio", "dca", "backtest"):
             self.assertIn(f"{view}: {{title:", source)
 
         for section in (
@@ -115,11 +115,15 @@ class OptimisticNavigationTests(unittest.TestCase):
         price_loading_dialog = source.split("const showImmediateRangeLoadingDialog = () => {", 1)[1].split(
             "const showCompareOverlay", 1
         )[0]
-        self.assertIn('title: "Updating price history"', price_loading_dialog)
+        self.assertIn('title: translateUi("Updating price history")', price_loading_dialog)
         self.assertIn("loadingSpinner: true", price_loading_dialog)
+        self.assertIn(
+            "'[data-workspace-mask=\"chart-area\"]'",
+            source.split("prices: {", 1)[1].split("portfolio: {", 1)[0],
+        )
         self.assertNotIn("showImmediateRangeLoadingDialog();\n            refreshSharedSelectField", source)
         self.assertIn(
-            'if (["market-caps", "prices"].includes(state.currentView)) {',
+            'if (state.currentView === "prices" && isMarketCapComparison()) {',
             source,
         )
         can_auto_submit = source.split("const canAutoSubmit = () => {", 1)[1].split(
@@ -225,8 +229,9 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
         self.assertIn('aria-label="Workspace sections"', sidebar_html)
         self.assertIn("Return comparison", sidebar_html)
-        self.assertIn("Market cap comparison", sidebar_html)
-        self.assertIn("Price performance", sidebar_html)
+        self.assertIn("Ticker comparison", sidebar_html)
+        self.assertNotIn("Market cap comparison", sidebar_html)
+        self.assertNotIn("Price performance", sidebar_html)
         self.assertIn("Compute your portfolio", sidebar_html)
         self.assertIn("Backtest", sidebar_html)
         self.assertNotIn("Dollar-cost averaging", sidebar_html)
@@ -264,7 +269,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
         ):
             responses = {
                 "compare": self.client.get("/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y&dividends=1"),
-                "market_caps": self.client.get("/workspaces/market-caps?ticker=QQQ&ticker=AAPL&period=1y"),
+                "market_caps": self.client.get("/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=AAPL&period=1y"),
                 "portfolio": self.client.get("/workspaces/portfolio?ticker=NVDA&ticker=AAPL&weight=60&weight=40&period=1y&dividends=1"),
                 "backtest": self.client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y&capital=10000"),
             }
@@ -272,6 +277,15 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertEqual(
             {name: response.status_code for name, response in responses.items()},
             {name: 200 for name in responses},
+        )
+        legacy_market_caps = self.client.get(
+            "/workspaces/market-caps?ticker=QQQ&ticker=AAPL&period=1y",
+            follow_redirects=False,
+        )
+        self.assertEqual(legacy_market_caps.status_code, 302)
+        self.assertEqual(
+            legacy_market_caps.headers["Location"],
+            "/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=AAPL&period=1y",
         )
 
         self._assert_workspace_contract(
@@ -281,15 +295,17 @@ class WorkspaceMigrationTests(unittest.TestCase):
         market_cap_html = responses["market_caps"].get_data(as_text=True)
         self._assert_workspace_contract(
             market_cap_html,
-            control_class='ticker-form-controls market-caps-controls',
+            control_class='ticker-form-controls prices-controls',
         )
         market_cap_sidebar = _slice_between(
             market_cap_html,
             '<aside class="panel sidebar" id="app_sidebar">',
             "</aside>",
         )
-        self.assertLess(market_cap_sidebar.index("Price performance"), market_cap_sidebar.index("Market cap comparison"))
-        self.assertLess(market_cap_sidebar.index("Market cap comparison"), market_cap_sidebar.index("Compute your portfolio"))
+        self.assertLess(market_cap_sidebar.index("Ticker comparison"), market_cap_sidebar.index("Compute your portfolio"))
+        self.assertIn('data-comparison-metric-field', market_cap_html)
+        self.assertIn('value="market-cap" checked', market_cap_html)
+        self.assertIn('"comparisonMetric": "market-cap"', market_cap_html)
         self.assertIn('"market_caps": [1000000000.0, 1100000000.0]', market_cap_html)
         self.assertIn('data-exact-range-date-grid', market_cap_html)
         self.assertIn('data-exact-single-date-grid', market_cap_html)
@@ -309,10 +325,11 @@ class WorkspaceMigrationTests(unittest.TestCase):
             control_class='ticker-controls trade-controls',
         )
 
-    def test_comparison_workspace_memory_includes_market_cap_view(self) -> None:
+    def test_comparison_workspace_memory_uses_one_price_view_with_metric_state(self) -> None:
         app_source = APP_JS.read_text(encoding="utf-8")
-        self.assertIn('const comparisonViews = new Set(["tickers", "market-caps", "prices"]);', app_source)
+        self.assertIn('const comparisonViews = new Set(["tickers", "prices"]);', app_source)
         self.assertIn('path === "/workspaces/market-caps"', app_source)
+        self.assertIn('state.currentView === "prices" && normalizeComparisonMetric(state.comparisonMetric) === "market-cap"', app_source)
 
 
 if __name__ == "__main__":

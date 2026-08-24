@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -456,6 +456,32 @@ def run_single_ticker_backtest(
     sell_column = signal_result.sell_signal_column
     pending_order: str | None = None
     is_at_backtest_start = True
+    is_grid_execution = signal_result.execution_profile == "grid_trading"
+    grid_metadata = signal_result.metadata if isinstance(signal_result.metadata, dict) else {}
+    raw_grid_params = grid_metadata.get("grid_parameters", {})
+    grid_params = raw_grid_params if isinstance(raw_grid_params, dict) else {}
+    grid_price_floor_value = grid_params.get("price_floor", 0.0)
+    grid_price_ceiling_value = grid_params.get("price_ceiling", float("inf"))
+    grid_rise_value = grid_params.get("rise", 0.0)
+    grid_fall_value = grid_params.get("fall", 0.0)
+    grid_price_floor = float(0.0 if grid_price_floor_value is None else grid_price_floor_value)
+    grid_price_ceiling = float(
+        float("inf") if grid_price_ceiling_value is None else grid_price_ceiling_value
+    )
+    grid_rise = float(0.0 if grid_rise_value is None else grid_rise_value)
+    grid_fall = float(0.0 if grid_fall_value is None else grid_fall_value)
+    grid_reference_price: float | None = None
+    grid_reference_prices: list[float] = []
+    grid_lower_prices: list[float] = []
+    grid_upper_prices: list[float] = []
+    grid_buy_signals: list[bool] = []
+    grid_sell_signals: list[bool] = []
+
+    def record_grid_execution(execution_price: float) -> None:
+        """Advance Grid's trigger anchor only after an order actually fills."""
+        nonlocal grid_reference_price
+        if is_grid_execution and execution_price > 0:
+            grid_reference_price = execution_price
 
     def stop_loss_allows_exit(exit_price: float, *, short_position: bool = False) -> bool:
         if stop_loss_enabled or entry_price is None:
@@ -468,8 +494,8 @@ def run_single_ticker_backtest(
         open_price = float(getattr(row, "Open", 0.0))
         close_price = float(row.Close)
         dividend_per_share = float(getattr(row, "Dividends", 0.0) or 0.0)
-        buy_signal = bool(getattr(row, buy_column))
-        sell_signal = bool(getattr(row, sell_column))
+        buy_signal = False if is_grid_execution else bool(getattr(row, buy_column))
+        sell_signal = False if is_grid_execution else bool(getattr(row, sell_column))
 
         if include_cash_dividends:
             cash, shares = _apply_dividend_cash_flow(
@@ -481,7 +507,13 @@ def run_single_ticker_backtest(
             )
 
         # Special Case: Entry-at-Point-Zero for strategies with initial signals
-        if is_first_row and (buy_signal or sell_signal) and shares == 0 and open_price > 0:
+        if (
+                not is_grid_execution
+                and is_first_row
+                and (buy_signal or sell_signal)
+                and shares == 0
+                and open_price > 0
+        ):
             if normalized_execution_mode == "next_open":
                 # In next_open mode, even initial signals get deferred to the next bar open
                 if buy_signal:
@@ -506,6 +538,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
+                        record_grid_execution(open_price)
                     buy_signal = False
                 # Do NOT allow short selling when starting with zero shares (long-only)
                 elif sell_signal:
@@ -531,6 +564,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
+                        record_grid_execution(execution_price)
                 elif shares < 0 and stop_loss_allows_exit(execution_price, short_position=True):  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * execution_price
@@ -545,6 +579,7 @@ def run_single_ticker_backtest(
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
+                    record_grid_execution(execution_price)
                     shares = 0.0
                     entry_price = None
                 pending_order = None
@@ -562,10 +597,40 @@ def run_single_ticker_backtest(
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
+                    record_grid_execution(execution_price)
                     shares = 0.0
                     entry_price = None
                 # Do NOT allow entry short in long-only mode
                 pending_order = None
+
+        if is_grid_execution:
+            if grid_reference_price is None:
+                grid_reference_price = open_price if open_price > 0 else close_price
+            reference_price = grid_reference_price if grid_reference_price and grid_reference_price > 0 else 0.0
+            grid_lower = reference_price * (1.0 - grid_fall)
+            grid_upper = reference_price * (1.0 + grid_rise)
+            high_price = getattr(row, "High", close_price)
+            low_price = getattr(row, "Low", close_price)
+            in_trigger_range = (
+                pd.notna(close_price)
+                and grid_price_floor <= close_price <= grid_price_ceiling
+            )
+            sell_signal = bool(
+                in_trigger_range
+                and pd.notna(high_price)
+                and float(high_price) >= grid_upper
+            )
+            buy_signal = bool(
+                in_trigger_range
+                and not sell_signal
+                and pd.notna(low_price)
+                and float(low_price) <= grid_lower
+            )
+            grid_reference_prices.append(reference_price)
+            grid_lower_prices.append(grid_lower)
+            grid_upper_prices.append(grid_upper)
+            grid_buy_signals.append(buy_signal)
+            grid_sell_signals.append(sell_signal)
 
         if normalized_execution_mode == "signal_close":
             if buy_signal and close_price > 0:
@@ -583,6 +648,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
+                        record_grid_execution(close_price)
                 elif shares < 0 and stop_loss_allows_exit(close_price, short_position=True):  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * close_price
@@ -597,6 +663,7 @@ def run_single_ticker_backtest(
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
+                    record_grid_execution(close_price)
                     shares = 0.0
                     entry_price = None
             elif sell_signal and close_price > 0:
@@ -613,6 +680,7 @@ def run_single_ticker_backtest(
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
+                    record_grid_execution(close_price)
                     shares = 0.0
                     entry_price = None
                 # Do NOT allow entry short in long-only mode
@@ -626,6 +694,12 @@ def run_single_ticker_backtest(
 
         equity_points.append(cash + (shares * close_price))
 
+    if is_grid_execution:
+        frame["grid_reference_price"] = grid_reference_prices
+        frame["grid_lower"] = grid_lower_prices
+        frame["grid_upper"] = grid_upper_prices
+        frame["buy_signal"] = grid_buy_signals
+        frame["sell_signal"] = grid_sell_signals
     frame["Equity"] = equity_points
     bh_equity_series, bh_final_equity = _build_buy_hold_equity_series(
         frame,

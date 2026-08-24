@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.4.0."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.4.1."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from strategies.backtest import run_single_ticker_backtest
 from strategies.loader import instantiate_strategy, list_enabled_strategies
 from tests.factories.market import backtest_result, fetch_history_stub, quote_profile_stub
 
@@ -29,8 +30,63 @@ def test_grid_trading_strategy_is_discoverable_and_builds_grid_signals() -> None
     })
 
     assert "grid-trading" in {item["id"] for item in list_enabled_strategies()}
+    assert result.execution_profile == "grid_trading"
     assert result.frame["buy_signal"].any()
     assert result.frame["sell_signal"].any()
+
+
+def test_grid_anchor_does_not_advance_after_an_unfilled_sell_signal() -> None:
+    strategy = instantiate_strategy("grid-trading")
+    signal_result = strategy.compute_signals(pd.DataFrame({
+        "Date": pd.date_range("2026-01-01", periods=4),
+        "Open": [100.0, 100.9, 98.0, 100.0],
+        "High": [103.0, 100.9, 99.0, 100.0],
+        "Low": [100.0, 100.5, 97.0, 99.0],
+        "Close": [103.0, 100.9, 98.0, 100.0],
+    }), {
+        "price_floor": 1.0,
+        "price_ceiling": 1000.0,
+        "rise": 1.0,
+        "fall": 1.0,
+    })
+
+    result = run_single_ticker_backtest(
+        signal_result,
+        initial_capital=10_000.0,
+        execution_mode="signal_close",
+    )
+
+    assert [(trade["date"], trade["side"], trade["price"]) for trade in result["trades"]] == [
+        ("2026/01/03", "Buy", 98.0),
+        ("2026/01/04", "Sell", 100.0),
+    ]
+
+
+def test_grid_anchor_uses_the_next_open_fill_price_before_later_signals() -> None:
+    strategy = instantiate_strategy("grid-trading")
+    signal_result = strategy.compute_signals(pd.DataFrame({
+        "Date": pd.date_range("2026-01-01", periods=4),
+        "Open": [100.0, 90.0, 96.0, 95.0],
+        "High": [100.0, 94.0, 97.0, 95.0],
+        "Low": [99.0, 90.0, 95.0, 94.0],
+        "Close": [99.0, 94.0, 96.0, 95.0],
+    }), {
+        "price_floor": 1.0,
+        "price_ceiling": 1000.0,
+        "rise": 5.0,
+        "fall": 0.5,
+    })
+
+    result = run_single_ticker_backtest(
+        signal_result,
+        initial_capital=10_000.0,
+        execution_mode="next_open",
+    )
+
+    assert [(trade["date"], trade["side"], trade["price"]) for trade in result["trades"]] == [
+        ("2026/01/02", "Buy", 90.0),
+        ("2026/01/04", "Sell", 95.0),
+    ]
 
 
 def test_grid_trading_uses_reference_project_parameter_defaults_and_bounds() -> None:

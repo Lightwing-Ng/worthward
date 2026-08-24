@@ -1,4 +1,4 @@
-/* Code version: v0.5.4 */
+/* Code version: v0.5.5 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -928,6 +928,7 @@
 		const initTransactionsPagination = () => {
 			const table = document.getElementById("tradeTransactionsTable");
 			const nav = document.getElementById("tradeTransactionsPagination");
+			const tableShell = document.getElementById("backtest_history_table_wrap");
 			const tbody = table?.querySelector("tbody");
 			const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
 			if (!table || !nav || !tbody) return;
@@ -948,6 +949,7 @@
 			const displayTrades = trades.filter((trade) => !trade._virtual_close);
 			if (!displayTrades.length) {
 				nav.hidden = true;
+				tableShell?.classList.remove("has-floating-pagination");
 				return;
 			}
 
@@ -993,6 +995,7 @@
 				}
 				const paginationState = paginationApi.buildLocalStorePagination(totalPages, currentPage);
 				nav.hidden = !paginationState.shouldRender;
+				tableShell?.classList.toggle("has-floating-pagination", paginationState.shouldRender);
 				paginationApi.renderLocalStorePagination(nav, paginationState);
 				if (animationState) {
 					paginationApi.animateLocalStorePaginationIndicator(nav, animationState);

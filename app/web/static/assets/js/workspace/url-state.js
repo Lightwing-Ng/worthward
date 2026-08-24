@@ -1,10 +1,10 @@
 /*
  * Canonical Workspace URL state parsing and serialization.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
  */
 (() => {
-    const VERSION = "v1.2.0";
+    const VERSION = "v1.3.0";
     const DEFAULT_PERIOD = "1y";
     const PERIOD_VALUES = new Set([
         "1d",
@@ -23,6 +23,7 @@
     ]);
     const CANONICAL_PARAMETER_NAMES = Object.freeze([
         "ticker",
+        "metric",
         "range",
         "period",
         "date",
@@ -48,6 +49,7 @@
     ]);
     const LEGACY_PARAMETER_NAMES = new Set([
         "ticker",
+        "metric",
         "tickers",
         "ticker_a",
         "ticker_b",
@@ -117,6 +119,9 @@
     };
     const normalizeLower = (value) => normalizeValue(value).toLowerCase();
     const normalizeTicker = (value) => normalizeValue(value).toUpperCase();
+    const normalizeComparisonMetric = (value) => (
+        normalizeLower(value) === "market-cap" ? "market-cap" : "price"
+    );
 
     const getDelimitedValues = (params, name) => params.getAll(name)
         .flatMap((value) => String(value || "").split(","))
@@ -192,6 +197,7 @@
         return {
             pathname: url.pathname,
             tickers,
+            comparisonMetric: normalizeComparisonMetric(params.get("metric")),
             rangeMode: range.mode,
             range: range.range,
             period: range.period,
@@ -261,6 +267,9 @@
         const tickers = (state.tickers || []).map(normalizeTicker);
         const defaultTickers = (state.defaultTickers || []).map(normalizeTicker);
         if (!arraysEqual(tickers, defaultTickers)) setRepeatedValues(params, "ticker", tickers);
+        if (normalizeComparisonMetric(state.comparisonMetric || state.metric) === "market-cap") {
+            params.set("metric", "market-cap");
+        }
 
         const mode = normalizeLower(state.rangeMode || (state.range === "custom" ? "exact" : "period"));
         const period = normalizePeriod(state.period || state.range, normalizePeriod(defaultPeriod));

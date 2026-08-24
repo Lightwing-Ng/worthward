@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.2.0 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.3.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -19,9 +19,10 @@ const createRuntime = () => {
 test("publishes the canonical Workspace query contract", () => {
     const api = createRuntime();
 
-    assert.equal(api.VERSION, "v1.2.0");
+    assert.equal(api.VERSION, "v1.3.0");
     assert.deepEqual(Array.from(api.getParameterNames()), [
         "ticker",
+        "metric",
         "range",
         "period",
         "date",
@@ -45,6 +46,45 @@ test("publishes the canonical Workspace query contract", () => {
         "tab",
         "page",
     ]);
+});
+
+test("uses price as the default Ticker comparison metric and serializes market cap explicitly", () => {
+    const api = createRuntime();
+    const defaultMetric = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/prices?ticker=NVDA&ticker=MSFT",
+    );
+    const marketCapMetric = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/prices?metric=market-cap&ticker=NVDA&ticker=MSFT",
+    );
+
+    assert.equal(defaultMetric.comparisonMetric, "price");
+    assert.equal(marketCapMetric.comparisonMetric, "market-cap");
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/prices?metric=price",
+            {
+                tickers: ["NVDA", "MSFT"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "1y",
+                comparisonMetric: "price",
+            },
+        ),
+        "/workspaces/prices?ticker=NVDA&ticker=MSFT",
+    );
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/prices",
+            {
+                tickers: ["NVDA", "MSFT"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "1y",
+                comparisonMetric: "market-cap",
+            },
+        ),
+        "/workspaces/prices?ticker=NVDA&ticker=MSFT&metric=market-cap",
+    );
 });
 
 test("parses canonical and legacy range shapes into one state", () => {

@@ -1,10 +1,10 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.1.1
+ * Code version: v0.1.3
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.1.0';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.1.2';
 
 const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 let cleanupBacktestLayout = () => {};
