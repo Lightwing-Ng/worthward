@@ -1,12 +1,12 @@
 """
 Long-only backtest engines.
 
-Code version: v0.5.1
+Code version: v0.5.2
 """
 
 from __future__ import annotations
 
-from math import floor
+from math import floor, isfinite
 from typing import Any
 
 import pandas as pd
@@ -189,7 +189,7 @@ def _apply_dividend_cash_flow(
         dividend_per_share: float,
         reinvest_cash_dividends: bool,
 ) -> tuple[float, float]:
-    if shares <= 0 or dividend_per_share <= 0:
+    if shares <= 0 or not isfinite(dividend_per_share) or dividend_per_share <= 0:
         return cash, shares
     dividend_cash = shares * dividend_per_share
     if reinvest_cash_dividends and close_price > 0:

@@ -1,7 +1,7 @@
 /**
- * Shared Local store pagination primitives.
+ * Shared pagination primitives.
  *
- * Code version: v1.2.3
+ * Code version: v1.2.4
  * - Fixed: Range menus respect the nearest clipping ancestor when calculating
  *   available height, while keeping the scroll surface free of scrollbar paint.
  * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
@@ -15,7 +15,7 @@
  *   that preserve an existing direct-child DOM contract.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.3';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.4';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
 const LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE = 100;

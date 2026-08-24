@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.8.6
+Code version: v1.9.0
 """
 
 from __future__ import annotations
@@ -173,6 +173,35 @@ def build_style_token_rows(
             "related_styles": [],
         },
         {
+            "id": style_token_id("Switch"),
+            "name": "Switch",
+            "sample_kind": "switch",
+            "sample_title": "Reinvest cash dividends",
+            "sample_copy": "",
+            "sample_button": "",
+            "sample_button_class": "",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "tokens": [
+                px_token("--switch-width", 40, 1),
+                px_token("--switch-height", 24, 1),
+                raw_token("--switch-radius", "var(--radius-pill)"),
+                raw_token("--switch-track-background", "var(--theme-glass-border)"),
+                raw_token("--switch-track-background-checked", "var(--mode-switch-thumb-background)"),
+                raw_token("--switch-track-shadow", "inset 0 0 0 1px var(--theme-glass-border)"),
+                raw_token("--switch-track-shadow-checked", "inset 0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 14%, transparent)"),
+                raw_token("--switch-track-transition", "background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard)"),
+                px_token("--switch-thumb-inset", 2, 0),
+                px_token("--switch-thumb-size", 20, 1),
+                raw_token("--switch-thumb-radius", "50%"),
+                raw_token("--switch-thumb-background", "var(--color-white-adaptive)"),
+                raw_token("--switch-thumb-shadow", "inset 0 1px 0 var(--theme-glass-highlight)"),
+                px_token("--switch-thumb-offset", 16, 0),
+                raw_token("--switch-thumb-transition", "transform 260ms var(--motion-emphasized), box-shadow 220ms var(--motion-standard)"),
+            ],
+            "related_styles": [],
+        },
+        {
             "id": style_token_id("Primary button"),
             "name": "Primary button",
             "sample_kind": "action-button",
@@ -240,6 +269,39 @@ def build_style_token_rows(
                 raw_token("--control-liquid-border", "1px solid transparent"),
             ],
             "related_styles": [],
+        },
+        {
+            "id": style_token_id("Shared select dropdown"),
+            "name": "Shared select dropdown",
+            "sample_kind": "shared-select-dropdown",
+            "sample_title": "Period",
+            "sample_copy": "The standard Period trigger and accessible option menu used by comparison and workspace forms.",
+            "sample_button": "1 year",
+            "sample_value": "1y",
+            "sample_button_class": "",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "sample_options": [
+                {"value": "1d", "label": "1 day"},
+                {"value": "3d", "label": "3 days"},
+                {"value": "1w", "label": "1 week"},
+                {"value": "6mo", "label": "6 months"},
+                {"value": "1y", "label": "1 year"},
+                {"value": "2y", "label": "2 years"},
+                {"value": "3y", "label": "3 years"},
+                {"value": "5y", "label": "5 years"},
+                {"value": "10y", "label": "10 years"},
+                {"value": "max", "label": "Max"},
+            ],
+            "tokens": [
+                material_reference_token("--shared-select-dropdown-material", "Frosted glass"),
+            ],
+            "related_styles": [
+                {
+                    "name": "Shared select filter",
+                    "target_id": style_token_id("Shared select filter"),
+                },
+            ],
         },
         {
             "id": style_token_id("Settings action package"),
@@ -381,8 +443,8 @@ def build_style_token_rows(
             "related_styles": [],
         },
         {
-            "id": style_token_id("Scrollable data table"),
-            "name": "Scrollable data table",
+            "id": style_token_id("Scrollable table"),
+            "name": "Scrollable table",
             "sample_kind": "data-table",
             "sample_title": "Transaction history",
             "sample_copy": "",
@@ -491,8 +553,8 @@ def build_style_token_rows(
             ],
             "related_styles": [
                 {
-                    "name": "Scrollable data table",
-                    "target_id": style_token_id("Scrollable data table"),
+                    "name": "Scrollable table",
+                    "target_id": style_token_id("Scrollable table"),
                 },
                 {
                     "name": "Workspace metric value",
@@ -657,8 +719,8 @@ def build_style_token_rows(
             "related_styles": [],
         },
         {
-            "id": style_token_id("Local store pagination"),
-            "name": "Local store pagination",
+            "id": style_token_id("Pagination"),
+            "name": "Pagination",
             "sample_kind": "local-store-pagination",
             "sample_title": "",
             "sample_copy": "",
@@ -684,8 +746,8 @@ def build_style_token_rows(
             "related_styles": [],
         },
         {
-            "id": style_token_id("Chart tooltip"),
-            "name": "Chart tooltip",
+            "id": style_token_id("Tooltip"),
+            "name": "Tooltip",
             "sample_kind": "chart-tooltip",
             "sample_title": "26 Mar 2026 10:08",
             "sample_copy": "",

@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.19."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.24."""
 
 from __future__ import annotations
 
@@ -31,6 +31,48 @@ def test_settings_general_option_uses_the_half_pixel_border_token() -> None:
     assert f'raw_token("--settings-general-option-border", "{expected}")' in style_token_rows
 
 
+def test_style_token_stepper_input_has_a_compact_demo_height_fallback() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+
+    stepper_rule = settings_css.split(
+        ".style-token-stepper-input {", 1
+    )[1].split("}", 1)[0]
+    assert "height: var(--strategy-param-control-height, 24px);" in stepper_rule
+    assert "min-height: var(--strategy-param-control-height, 24px);" in stepper_rule
+
+
+def test_style_tokens_expose_the_shared_switch_contract() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    workspace_css = (
+        project_root / "app/web/static/assets/css/views/workspace.css"
+    ).read_text(encoding="utf-8")
+    style_token_rows = (
+        project_root / "app/web/style_token_rows.py"
+    ).read_text(encoding="utf-8")
+    html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
+
+    assert 'data-style-token-card="switch"' in html
+    assert 'data-style-token-switch-demo' in html
+    assert 'id="style_token_switch_demo"' in html
+    assert 'data-style-token-switch-input' in html
+    assert "Reinvest cash dividends" in html
+    for token_name in (
+        "--switch-width",
+        "--switch-height",
+        "--switch-track-background-checked",
+        "--switch-thumb-offset",
+    ):
+        assert token_name in tokens_css
+        assert token_name in workspace_css
+        assert token_name in style_token_rows
+
+
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:
     client = create_app().test_client()
 
@@ -46,6 +88,54 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert 'data-summary-scope="both"' in html
 
 
+def test_style_token_shared_filter_demo_uses_the_shared_select_contract() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    demo_start = html.index('data-style-token-shared-select-demo')
+    demo_html = html[demo_start:]
+    assert 'data-shared-select-field' in demo_html
+    assert 'data-shared-select-trigger' in demo_html
+    assert 'data-shared-select-dropdown' in demo_html
+    assert 'id="style_token_shared_select_demo"' in demo_html
+    assert 'value="buy"' in demo_html
+    assert 'value="sell"' in demo_html
+
+
+def test_style_token_period_dropdown_demo_uses_the_standard_period_options() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    card_start = html.index('data-style-token-card="shared-select-dropdown"')
+    next_card = html.find('data-style-token-card="', card_start + 1)
+    card_html = html[card_start:next_card if next_card >= 0 else None]
+    assert 'data-style-token-shared-select-dropdown-demo' in card_html
+    assert 'id="style_token_shared_select_dropdown"' in card_html
+    assert 'aria-label="Period: 1 year"' in card_html
+    for value, label in (
+        ("1d", "1 day"),
+        ("3d", "3 days"),
+        ("1w", "1 week"),
+        ("6mo", "6 months"),
+        ("1y", "1 year"),
+        ("2y", "2 years"),
+        ("3y", "3 years"),
+        ("5y", "5 years"),
+        ("10y", "10 years"),
+        ("max", "Max"),
+    ):
+        assert f'<option value="{value}"' in card_html
+        assert f'data-value="{value}"' in card_html
+        assert label in card_html
+    assert 'href="/settings/material-tokens#frosted-glass"' in card_html
+
+
 def test_requested_style_token_components_link_to_frosted_glass() -> None:
     client = create_app().test_client()
 
@@ -55,10 +145,11 @@ def test_requested_style_token_components_link_to_frosted_glass() -> None:
         "circular-icon-button",
         "modal-dialog",
         "modal-dialog-banner-message",
-        "scrollable-data-table",
+            "scrollable-table",
         "segmented-control",
         "settings-action-package",
         "shared-select-filter",
+        "shared-select-dropdown",
     )
 
     assert response.status_code == 200
@@ -97,11 +188,15 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
         ".scrollable-data-table-filter-trigger {", 1
     )[1].split("}", 1)[0]
 
-    for rule in (segmented_rule, shared_select_rule, table_filter_rule):
+    for rule in (shared_select_rule, table_filter_rule):
         assert "var(--frosted-glass-background" in rule
         assert "var(--frosted-glass-border)" in rule
         assert "var(--frosted-glass-shadow" in rule
         assert "var(--frosted-glass-blur)" in rule
+    assert "var(--frosted-glass-background" in segmented_rule
+    assert "border: 0;" in segmented_rule
+    assert "var(--frosted-glass-shadow" in segmented_rule
+    assert "var(--frosted-glass-blur)" in segmented_rule
     assert "background: var(--settings-action-package-background);" in action_package_rule
     assert "border: var(--settings-action-package-border);" in action_package_rule
     assert "box-shadow: var(--frosted-glass-shadow);" in action_package_rule
@@ -154,8 +249,15 @@ def test_style_tokens_are_alphabetized_without_the_shared_primitives_specimen() 
     ]
     assert response.status_code == 200
     assert titles == sorted(titles, key=str.casefold)
+    assert 'data-style-token-card="tooltip"' in html
+    assert '<p class="style-token-title">Tooltip</p>' in html
+    assert "chart tooltip" not in html.casefold()
+    assert 'data-style-token-card="pagination"' in html
+    assert '<p class="style-token-title">Pagination</p>' in html
+    assert "local store pagination" not in html.casefold()
     assert 'data-style-token-card="shared-style-primitives"' not in html
     assert '<p class="style-token-title">Shared style primitives</p>' not in html
+    assert 'style-token-inventory-demo' not in html
     assert 'data-active="overview" data-option-count="3"' in html
     assert 'value="overview" checked' in html
     assert 'value="details"' in html
@@ -461,9 +563,40 @@ def test_investment_equity_range_uses_the_compact_segmented_control_contract() -
         "--mode-switch-thumb-offset: 4px;",
         "--mode-switch-label-pad-inline: 8px;",
         "--mode-switch-label-min-height: 24px;",
-        "--mode-switch-thumb-background: var(--accent-fill);",
     ):
         assert declaration in range_rule
+
+
+def test_blue_pill_variants_reuse_the_segmented_thumb_background_token() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    forms_css = (
+        project_root / "app/web/static/assets/css/components/forms.css"
+    ).read_text(encoding="utf-8")
+    workspace_css = (
+        project_root / "app/web/static/assets/css/views/workspace.css"
+    ).read_text(encoding="utf-8")
+    trade_css = (
+        project_root / "app/web/static/assets/css/views/trade.css"
+    ).read_text(encoding="utf-8")
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+
+    assert "background: var(--mode-switch-thumb-background);" in forms_css
+    switch_rule = workspace_css.split(
+        ".ios-switch-shell input:checked + .ios-switch-slider {", 1
+    )[1].split("}", 1)[0]
+    trade_detail_rule = trade_css.split(
+        ".trade-detail-shell::before {", 1
+    )[1].split("}", 1)[0]
+    live_buy_rule = investment_css.split(
+        '.live-trading-side-segmented[data-active="buy"]::before {', 1
+    )[1].split("}", 1)[0]
+
+    assert "background: var(--switch-track-background-checked);" in switch_rule
+    for rule in (trade_detail_rule, live_buy_rule):
+        assert "background: var(--mode-switch-thumb-background);" in rule
+    assert "background: #0055cc;" not in live_buy_rule
 
 
 def test_investment_import_modal_uses_page_blur_and_standard_action_package() -> None:
@@ -630,7 +763,9 @@ def test_style_tokens_render_the_interactive_standard_table_filter_demo() -> Non
 
     html = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert 'data-style-token-card="scrollable-data-table"' in html
+    assert 'data-style-token-card="scrollable-table"' in html
+    assert '<p class="style-token-title">Scrollable table</p>' in html
+    assert "scrollable data table" not in html.casefold()
     assert 'data-style-token-table-filter-demo' in html
     assert 'data-table-interactive-header' in html
     assert 'data-style-token-table-filter-trigger' in html

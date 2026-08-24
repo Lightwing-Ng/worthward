@@ -1,4 +1,4 @@
-/* Code version: v0.17.3 */
+/* Code version: v0.17.5 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -114,7 +114,7 @@ input[type="number"],
 	min-height: var(--portfolio-weight-slider-thumb-size);
 	padding: 0;
 	margin: 0;
-	border: 0;
+	border: var(--frosted-glass-border);
 	appearance: none;
 	-webkit-appearance: none;
 	background: transparent;
@@ -909,7 +909,7 @@ input[type="number"],
 	box-shadow: var(--frosted-glass-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
-	border: var(--frosted-glass-border);
+	border: 0;
 	z-index: var(--layer-global-popover);
 	isolation: isolate;
 	pointer-events: auto;
@@ -1579,7 +1579,7 @@ input[type="number"],
 	padding: var(--mode-switch-pad);
 	border-radius: var(--mode-switch-radius);
 	background: var(--frosted-glass-background);
-	border: var(--frosted-glass-border);
+	border: 0;
 	display: grid;
 	grid-template-columns: repeat(var(--segmented-option-count), minmax(var(--segmented-option-min-width), 1fr));
 	gap: var(--mode-switch-gap);

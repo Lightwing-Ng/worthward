@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.7
+Code version: v0.5.9
 """
 
 from __future__ import annotations
@@ -305,7 +305,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Clear ticker", "清除股票代號", "清除股票代码"),
         ("Remove ticker", "移除股票代號", "移除股票代码"),
         ("Reusable style", "可重用樣式", "可复用样式"),
-        ("Local store pagination demo", "本機資料庫分頁示範", "本地数据库分页示范"),
+        ("Pagination demo", "分頁示範", "分页示范"),
         ("Add a ticker", "加入股票代號", "添加股票代码"),
         ("Remove", "移除", "移除"),
         ("Stocks", "股票類", "股票类"),
@@ -448,8 +448,8 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Settings action package", "設定操作套件", "设置操作套件"),
         ("Circular icon button", "圓形圖示按鈕", "圆形图标按钮"),
         ("Use the article shell as the desktop baseline. On narrow screens, the mobile heading surface keeps the glass material but drops the shadow before morphing toward the sidebar.", "以文章外框作為桌面基準。在窄螢幕上，流動版標題表面保留玻璃材質但移除陰影，然後向側邊欄變形。", "以文章外框作为桌面基准。在窄屏幕上，移动版标题表面保留玻璃材质但移除阴影，然后向侧边栏变形。"),
-        ("Scrollable data table", "可滾動資料表", "可滚动数据表"),
-        ("Scrollable data table pages", "可滾動資料表頁面", "可滚动数据表页面"),
+        ("Scrollable table", "可滾動表格", "可滚动表格"),
+        ("Scrollable table pages", "可滾動表格頁面", "可滚动表格页面"),
         ("Transaction history", "交易歷史", "交易历史"),
         ("Time", "時間", "时间"),
         ("Type", "類型", "类型"),
@@ -486,10 +486,10 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("tokens", "權杖", "令牌"),
         ("Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full", "Yahoo Mail 個人帳戶使用 SMTP 時需要應用程式密碼。請保持 STARTTLS 啟用，並使用完整的", "Yahoo Mail 个人账户使用 SMTP 时需要应用密码。请保持 STARTTLS 启用，并使用完整的"),
         ("address with the generated app password.", "地址及已產生的應用程式密碼。", "地址及已生成的应用密码。"),
-        ("Chart tooltip", "圖表工具提示", "图表工具提示"),
+        ("Tooltip", "工具提示", "工具提示"),
         ("Close price", "收市價", "收盘价"),
         ("Investment Holdings allocation badge", "投資持倉配置徽章", "投资持仓配置徽章"),
-        ("Local store pagination", "本機資料庫分頁", "本地数据库分页"),
+        ("Pagination", "分頁", "分页"),
         ("Modal dialog", "模態對話框", "模态对话框"),
         ("Modal dialog banner message", "模態對話框橫幅訊息", "模态对话框横幅消息"),
         ("Portfolio donut orbit", "投資組合圓環軌道", "投资组合环形图轨道"),

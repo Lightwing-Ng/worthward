@@ -1,4 +1,4 @@
-{# Code version: v0.12.11 #}
+{# Code version: v0.12.14 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -1170,6 +1170,15 @@
                             <span>{{ translate_ui('Metrics') }}</span>
                         </label>
                     </div>
+                    {% elif row.sample_kind == "switch" %}
+                    <div class="field-checkbox field-switch style-token-switch-demo" data-style-token-switch-demo>
+                        {{ render_switch(
+                            "style_token_switch_demo",
+                            row.sample_title,
+                            "style_token_switch_demo",
+                            input_attrs="data-style-token-switch-input"
+                        ) }}
+                    </div>
                     {% elif row.sample_kind == "action-button" %}
                     <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
                     {% elif row.sample_kind == "round-icon-button" %}
@@ -1383,7 +1392,7 @@
                                 </table>
                             </div>
                             <nav class="settings-pagination local-store-pagination local-store-pagination--floating style-token-table-demo-pagination"
-                                 aria-label="{{ translate_ui('Scrollable data table pages') }}"
+                                 aria-label="{{ translate_ui('Scrollable table pages') }}"
                                  aria-controls="style_token_table_demo_body"
                                  data-pagination-scroll-target="style_token_table_demo_scroll"
                                  data-style-token-table-pagination
@@ -1403,18 +1412,84 @@
                         {% endfor %}
                     </div>
                     {% elif row.sample_kind == "shared-select-filter" %}
-                    <div class="style-token-shared-select-shell">
-                        <div class="field backtest-shared-select-field is-open">
+                    <div class="style-token-shared-select-shell" data-style-token-shared-select-demo>
+                        <div class="field backtest-shared-select-field is-open" data-shared-select-field data-shared-select-kind="style-token-demo">
                             <div class="trade-strategy-row backtest-shared-select-row">
-                                <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" aria-expanded="true">
-                                    <span class="trade-strategy-trigger-label">{{ row.sample_button }}</span>
+                                <select id="style_token_shared_select_demo"
+                                        class="trade-strategy-native-select backtest-shared-select-native"
+                                        hidden
+                                        aria-hidden="true"
+                                        tabindex="-1">
+                                    {% for option in ["All", "Buy", "Sell"] %}
+                                    <option value="{{ option|lower }}"{% if option == row.sample_button %} selected{% endif %}>{{ translate_ui(option) }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger
+                                        aria-haspopup="listbox"
+                                        aria-expanded="true"
+                                        aria-controls="style_token_shared_select_demo_dropdown">
+                                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label>{{ translate_ui(row.sample_button) }}</span>
                                     <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
                                 </button>
-                                <div class="trade-strategy-dropdown backtest-shared-select-dropdown" role="listbox">
+                                <div id="style_token_shared_select_demo_dropdown"
+                                     class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                     data-shared-select-dropdown
+                                     role="listbox"
+                                     aria-label="{{ translate_ui('Shared select filter') }}">
                                     {% for option in ["All", "Buy", "Sell"] %}
-                                    <button type="button" class="trade-strategy-dropdown-option{% if option == row.sample_button %} is-selected is-active{% endif %}" role="option" aria-selected="{{ 'true' if option == row.sample_button else 'false' }}">
+                                    <button type="button"
+                                            class="trade-strategy-dropdown-option{% if option == row.sample_button %} is-selected is-active{% endif %}"
+                                            data-value="{{ option|lower }}"
+                                            role="option"
+                                            aria-selected="{{ 'true' if option == row.sample_button else 'false' }}">
                                         <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
                                         <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ translate_ui(option) }}</span></span>
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "shared-select-dropdown" %}
+                    <div class="style-token-shared-select-shell" data-style-token-shared-select-dropdown-demo>
+                        <div class="field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="style-token-demo">
+                            <label class="sr-only" for="style_token_shared_select_dropdown">{{ translate_ui(row.sample_title) }}</label>
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <select id="style_token_shared_select_dropdown"
+                                        class="trade-strategy-native-select backtest-shared-select-native"
+                                        hidden
+                                        aria-hidden="true"
+                                        tabindex="-1">
+                                    {% for option in row.sample_options %}
+                                    <option value="{{ option.value }}"{% if option.value == row.sample_value %} selected{% endif %}>{{ translate_ui(option.label) }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger
+                                        aria-haspopup="listbox"
+                                        aria-expanded="false"
+                                        aria-controls="style_token_shared_select_dropdown_menu"
+                                        aria-label="{{ translate_ui(row.sample_title) }}: {{ translate_ui(row.sample_button) }}">
+                                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ translate_ui(row.sample_button) }}">{{ translate_ui(row.sample_button) }}</span>
+                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                </button>
+                                <div id="style_token_shared_select_dropdown_menu"
+                                     class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                     data-shared-select-dropdown
+                                     role="listbox"
+                                     hidden
+                                     aria-label="{{ translate_ui(row.sample_title) }}">
+                                    {% for option in row.sample_options %}
+                                    <button type="button"
+                                            class="trade-strategy-dropdown-option{% if option.value == row.sample_value %} is-selected is-active{% endif %}"
+                                            data-value="{{ option.value }}"
+                                            role="option"
+                                            aria-selected="{{ 'true' if option.value == row.sample_value else 'false' }}">
+                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                        <span class="trade-strategy-dropdown-text">{{ translate_ui(option.label) }}</span>
                                     </button>
                                     {% endfor %}
                                 </div>
@@ -1433,7 +1508,7 @@
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
                     <div class="style-token-pagination-demo-surface">
-                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
+                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
                         <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 5)), 0, 0); opacity: 1;"></span>
                         <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-prev" aria-hidden="true"></span></span>
                         <span class="local-store-page-button" aria-hidden="true">1</span>
@@ -1451,14 +1526,6 @@
                         <span class="local-store-page-button" aria-hidden="true">64</span>
                         <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-next" aria-hidden="true"></span></span>
                     </nav>
-                    </div>
-                    {% elif row.sample_kind == "token-inventory" %}
-                    <div class="style-token-inventory-demo" aria-hidden="true">
-                        <span class="style-token-inventory-count">{{ row.tokens|length }}</span>
-                        <div class="style-token-inventory-copy">
-                            <p class="style-token-inventory-title">{{ row.sample_title }}</p>
-                            <p class="style-token-inventory-note">{{ row.sample_copy }}</p>
-                        </div>
                     </div>
                     {% endif %}
                 </div>

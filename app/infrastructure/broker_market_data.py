@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.13.0
+Code version: v0.13.1
 """
 
 from __future__ import annotations
@@ -802,6 +802,11 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame, ticker: str | None =
     normalized = normalized.loc[session_mask].copy()
     if normalized.empty:
         return normalized.reset_index(drop=True)
+
+    if "Dividends" in normalized.columns:
+        normalized["Dividends"] = pd.to_numeric(
+            normalized["Dividends"], errors="coerce"
+        ).fillna(0.0)
 
     normalized = normalized.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
     return normalized.reset_index(drop=True)

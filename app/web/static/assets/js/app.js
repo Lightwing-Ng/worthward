@@ -1,4 +1,4 @@
-/* Code version: v0.38.6 */
+/* Code version: v0.38.7 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5003,6 +5003,9 @@
         if (parts && isBrokerSharedSelectKind(parts.field)) {
             sortBrokerSelectOptions(parts.select);
         }
+        const shouldStartOpen = Boolean(parts)
+            && (!parts.dropdown.hidden || parts.field.classList.contains("is-open"))
+            && parts.trigger.getAttribute("aria-expanded") === "true";
         refreshSharedSelectField(field);
         if (!parts || parts.field.dataset.sharedSelectJsBound === "1") return;
         parts.field.dataset.sharedSelectJsBound = "1";
@@ -5032,6 +5035,10 @@
         if (parts.select.id === "period" && parts.select.dataset.periodChangeJsBound !== "1") {
             parts.select.dataset.periodChangeJsBound = "1";
             parts.select.addEventListener("change", handlePeriodSelectionChange);
+        }
+        if (shouldStartOpen) {
+            renderSharedSelectDropdown(field);
+            setSharedSelectDropdownOpen(field, true);
         }
     };
 

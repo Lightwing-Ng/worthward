@@ -1,9 +1,9 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.3 */
 import {expect, test} from '@playwright/test';
 
 const paginationSelector = '#style_token_pagination_demo';
 const paginationMetaXPath = '/html/body/main/div/section/section/section/div/section[4]/div[2]';
-const scrollableTableDemoSelector = '[data-style-token-card="scrollable-data-table"] .style-token-table-demo-shell';
+const scrollableTableDemoSelector = '[data-style-token-card="scrollable-table"] .style-token-table-demo-shell';
 
 test('keeps the Style tokens pagination demo circular and makes both hidden ranges interactive', async ({page}) => {
     await page.goto('/settings/style-tokens');
@@ -75,7 +75,7 @@ test('keeps the Style tokens pagination demo circular and makes both hidden rang
     await expect(pagination.locator('.local-store-pagination-range-picker.is-open')).toHaveCount(0);
 });
 
-test('keeps the scrollable data table aligned after moving to page two', async ({page}) => {
+test('keeps the scrollable table aligned after moving to page two', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
     const demo = page.locator(scrollableTableDemoSelector);

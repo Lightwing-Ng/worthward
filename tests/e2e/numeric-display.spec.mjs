@@ -1,4 +1,4 @@
-/* Browser contract for shared numeric typography. Code version: v1.1.0 */
+/* Browser contract for shared numeric typography. Code version: v1.1.1 */
 
 import {test, expect} from '@playwright/test';
 
@@ -16,7 +16,7 @@ test('Style tokens and Font tokens use the shared integer/fraction display', asy
         const amountCells = Array.from(document.querySelectorAll('[data-numeric-display-cell]'))
             .filter((cell) => cell.querySelector('.workspace-metric-value-minor'));
         const tooltipValue = document.querySelector(
-            '[data-style-token-card="chart-tooltip"] [data-numeric-display-value]',
+            '[data-style-token-card="tooltip"] [data-numeric-display-value]',
         );
         return {
             workspaceMetricParts: partClasses(workspaceMetric),

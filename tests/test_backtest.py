@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -232,6 +232,32 @@ class BacktestMetricTests(unittest.TestCase):
         )
 
         self.assertEqual(result["chart"]["all_in_equity"], [1_050.0, 1_200.0])
+
+    def test_missing_dividends_do_not_poison_intraday_equity_series(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2026-02-20", periods=3, freq="min"),
+                "Open": [100.0, 101.0, 102.0],
+                "Close": [100.0, 101.0, 102.0],
+                "Dividends": [0.0, float("nan"), float("nan")],
+                "buy_signal": [True, False, False],
+                "sell_signal": [False, False, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            interval="1m",
+        )
+
+        self.assertEqual(result["chart"]["equity"], [10_000.0, 10_100.0, 10_200.0])
+        self.assertEqual(result["chart"]["all_in_equity"], [10_000.0, 10_100.0, 10_200.0])
+        self.assertEqual(result["summary"]["final_equity"], 10_200.0)
 
     def test_chart_raw_dates_and_trade_dates_stay_aligned(self) -> None:
         frame = pd.DataFrame(

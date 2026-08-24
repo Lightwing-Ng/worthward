@@ -1,4 +1,4 @@
-/* Code version: v1.75.46 */
+/* Code version: v1.75.47 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1118,7 +1118,7 @@
 }
 
 .live-trading-side-segmented[data-active="buy"]::before {
-    background: #0055cc;
+    background: var(--mode-switch-thumb-background);
 }
 
 .live-trading-side-segmented[data-active="sell"]::before {
@@ -2703,7 +2703,6 @@
     --mode-switch-thumb-offset: 4px;
     --mode-switch-label-pad-inline: 8px;
     --mode-switch-label-min-height: 24px;
-    --mode-switch-thumb-background: var(--accent-fill);
     --segmented-text-render-safety-px: 3px;
     grid-template-columns: repeat(var(--segmented-option-count, 7), minmax(0, 1fr));
     width: fit-content;

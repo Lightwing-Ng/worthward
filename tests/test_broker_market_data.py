@@ -494,12 +494,14 @@ class BrokerMarketDataTests(unittest.TestCase):
                 "Close": [100.5, 101.5, 102.5],
                 "Volume": [1_000, 1_100, 1_200],
                 "Turnover": [100_500, 111_650, 123_000],
+                "Dividends": [float("nan"), None, 0.25],
             }
         )
 
         normalized = normalize_one_minute_store_frame(dataset)
 
         self.assertEqual(normalized["Date"].tolist(), [pd.Timestamp("2026-03-27 09:30:00"), pd.Timestamp("2026-03-27 09:31:00")])
+        self.assertEqual(normalized["Dividends"].tolist(), [0.0, 0.0])
 
     def test_normalize_one_minute_store_frame_keeps_hk_regular_session(self) -> None:
         dataset = pd.DataFrame(

@@ -1,4 +1,4 @@
-/* Code version: v3.34.10 */
+/* Code version: v3.34.11 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -292,7 +292,7 @@
 }
 
 .trade-detail-shell::before {
-    background: var(--accent-fill);
+    background: var(--mode-switch-thumb-background);
     box-shadow: var(--mode-switch-thumb-shadow);
 }
 

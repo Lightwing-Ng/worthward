@@ -1,4 +1,4 @@
-/* Code version: v1.167.18 */
+/* Code version: v1.167.24 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -443,6 +443,11 @@ test('copies every Style token name from a right-aligned round button with feedb
     const titleRow = executionCard.locator('.style-token-title-row');
     const copyButton = executionCard.locator('[data-style-token-copy]');
     await expect(executionCard.locator('.style-token-title')).toHaveText('Settings execution option');
+    await expect(copyButton).toHaveCSS('visibility', 'hidden');
+    await expect(copyButton).toHaveCSS('opacity', '0');
+    await titleRow.hover();
+    await expect(copyButton).toBeVisible();
+    await expect(copyButton).toHaveCSS('opacity', '1');
     const optionBorder = await executionOption.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -452,6 +457,11 @@ test('copies every Style token name from a right-aligned round button with feedb
     });
     expect(optionBorder.token).toMatch(/^0\.5px solid color-mix\(in srgb, .+ 8%, transparent\)$/);
     expect(optionBorder.borderStyle).toBe('solid');
+
+    const stepperInput = page.locator(
+        '[data-style-token-card="trade-strategy-stepper"] .style-token-stepper-input',
+    );
+    await expect(stepperInput).toHaveCSS('height', '24px');
     await expect(copyButton).toHaveAttribute('data-style-token-copy', 'Settings execution option');
 
     const geometry = await titleRow.evaluate((row) => {
@@ -494,12 +504,12 @@ test('keeps style-token values aligned within their shared value column and omit
             const rects = [...range.getClientRects()];
             return rects.length ? Math.max(...rects.map((rect) => rect.right)) : null;
         };
-        const chart = document.querySelector('#chart-tooltip');
-        const color = [...chart.querySelectorAll('.style-token-value-text')]
+        const tooltip = document.querySelector('#tooltip');
+        const color = [...tooltip.querySelectorAll('.style-token-value-text')]
             .find((element) => element.textContent.includes('color-mix'));
-        const right = [...chart.querySelectorAll('.style-token-value-text')]
+        const right = [...tooltip.querySelectorAll('.style-token-value-text')]
             .find((element) => element.textContent.trim() === 'right');
-        const frosted = [...chart.querySelectorAll('.style-token-value-link')]
+        const frosted = [...tooltip.querySelectorAll('.style-token-value-link')]
             .find((element) => element.textContent.trim() === 'Frosted glass');
         const related = document.querySelector('#modal-dialog-banner-message .style-token-related-value');
         const elements = {color, right, frosted, related};
@@ -12185,6 +12195,71 @@ test('shows the standalone primary button specimen and keeps its inverted varian
     expect(narrowState.invertedWidth).toBeGreaterThan(0);
 });
 
+test('shows the standard Switch specimen and preserves its checked geometry', async ({page}) => {
+    const readSwitchGeometry = async (input) => input.evaluate((element) => {
+        const shell = element.closest('.ios-switch-shell');
+        const slider = shell?.querySelector('.ios-switch-slider');
+        if (!(shell instanceof HTMLElement) || !(slider instanceof HTMLElement)) return null;
+        const sliderStyle = getComputedStyle(slider);
+        const thumbStyle = getComputedStyle(slider, '::after');
+        return {
+            shell: {width: shell.getBoundingClientRect().width, height: shell.getBoundingClientRect().height},
+            slider: {
+                width: slider.getBoundingClientRect().width,
+                height: slider.getBoundingClientRect().height,
+                borderRadius: sliderStyle.borderRadius,
+                background: sliderStyle.backgroundColor,
+                boxShadow: sliderStyle.boxShadow,
+            },
+            thumb: {
+                width: thumbStyle.width,
+                height: thumbStyle.height,
+                borderRadius: thumbStyle.borderRadius,
+                background: thumbStyle.backgroundColor,
+                boxShadow: thumbStyle.boxShadow,
+                transform: thumbStyle.transform,
+            },
+        };
+    });
+
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend_ai_gemini&interval=1m&stop_loss=0');
+    const productionInput = page.locator('[data-dividend-reinvest-field] [data-switch-input], [data-dividend-reinvest-field] input[type="checkbox"]').first();
+    await expect(page.locator('[data-dividend-reinvest-field]')).toBeVisible();
+    await expect(productionInput).not.toBeChecked();
+    const productionGeometry = await readSwitchGeometry(productionInput);
+
+    await page.goto('/settings/style-tokens');
+
+    const card = page.locator('[data-style-token-card="switch"]');
+    const input = card.locator('[data-style-token-switch-input]');
+    const slider = card.locator('.ios-switch-slider');
+
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('.style-token-title')).toHaveText('Switch');
+    await expect(input).not.toBeChecked();
+    await expect(card.locator('.switch-label')).toHaveText('Reinvest cash dividends');
+    await expect(slider).toHaveCSS('width', '40px');
+    await expect(slider).toHaveCSS('height', '24px');
+    expect(await readSwitchGeometry(input)).toEqual(productionGeometry);
+
+    const before = await input.evaluate((element) => {
+        const thumb = element.nextElementSibling;
+        return thumb instanceof HTMLElement ? getComputedStyle(thumb, '::after').transform : null;
+    });
+    await input.check();
+    await expect(input).toBeChecked();
+    const after = await input.evaluate((element) => {
+        const thumb = element.nextElementSibling;
+        return thumb instanceof HTMLElement ? getComputedStyle(thumb, '::after').transform : null;
+    });
+    expect(before).not.toBe(after);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    await expect(page.locator('[data-style-token-card="switch"] [data-style-token-switch-input]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test('keeps style-token showcase pills interactive and donut satellites centered', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
@@ -12202,13 +12277,16 @@ test('keeps style-token showcase pills interactive and donut satellites centered
     await expect(rangeShell).toHaveAttribute('data-active', 'metrics');
     await expect(rangeShell).toHaveAttribute('data-segmented-active-index', '2');
 
-    const pagination = page.locator('[data-style-token-card="local-store-pagination"] .local-store-pagination');
+    const pagination = page.locator('[data-style-token-card="pagination"] .local-store-pagination');
+    await expect(page.locator('[data-style-token-card="pagination"] .style-token-title')).toHaveText('Pagination');
     await expect(pagination).toBeVisible();
+    await expect(pagination).toHaveAttribute('aria-label', 'Pagination demo');
     await expect(pagination).toHaveClass(/local-store-pagination--floating/);
-    await expect(pagination.locator('.local-store-page-nav')).toHaveCount(0);
+    await expect(pagination.locator('.local-store-page-nav')).toHaveCount(2);
     await expect(pagination.locator('.local-store-page-ellipsis')).toHaveCount(2);
-    await expect(pagination.locator('.local-store-page-button')).toHaveText(['1', '21', '22', '23', '24', '25', '64']);
-    expect(await pagination.locator('.local-store-page-button').evaluateAll((buttons) => (
+    const pageButtons = pagination.locator('.local-store-page-button:not(.local-store-page-nav)');
+    await expect(pageButtons).toHaveText(['1', '21', '22', '23', '24', '25', '64']);
+    expect(await pageButtons.evaluateAll((buttons) => (
         buttons.map((button) => getComputedStyle(button).fontWeight)
     ))).toEqual(['400', '400', '400', '700', '400', '400', '400']);
 
@@ -12302,6 +12380,81 @@ test('keeps Investment Holdings allocation badge glyph slots stable', async ({pa
     });
 });
 
+test('keeps the Style token segmented control at 36px without an outer border', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    const rangeShell = page.locator('[data-style-token-card="segmented-control"] .range-mode-shell');
+    await expect(rangeShell).toHaveCSS('height', '36px');
+    await expect(rangeShell).toHaveCSS('border-top-width', '0px');
+    await expect(rangeShell).toHaveCSS('border-right-width', '0px');
+    await expect(rangeShell).toHaveCSS('border-bottom-width', '0px');
+    await expect(rangeShell).toHaveCSS('border-left-width', '0px');
+});
+
+test('allows the Style token Shared select filter to switch between All, Buy, and Sell', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    const card = page.locator('[data-style-token-card="shared-select-filter"]');
+    const field = card.locator('[data-style-token-shared-select-demo] [data-shared-select-field]');
+    const trigger = field.locator('[data-shared-select-trigger]');
+    const dropdown = field.locator('[data-shared-select-dropdown]');
+    const nativeSelect = field.locator('select.backtest-shared-select-native');
+
+    await expect(trigger).toHaveText('All');
+    await expect(dropdown).toBeVisible();
+    await dropdown.locator('[role="option"][data-value="buy"]').click();
+    await expect(trigger).toHaveText('Buy');
+    await expect(nativeSelect).toHaveValue('buy');
+    await expect(dropdown).toBeHidden();
+
+    await trigger.click();
+    await expect(dropdown).toBeVisible();
+    await dropdown.locator('[role="option"][data-value="sell"]').click();
+    await expect(trigger).toHaveText('Sell');
+    await expect(nativeSelect).toHaveValue('sell');
+});
+
+test('shows the standard Period dropdown specimen in Style tokens', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    const card = page.locator('[data-style-token-card="shared-select-dropdown"]');
+    const field = card.locator('[data-style-token-shared-select-dropdown-demo] [data-shared-select-field]');
+    const trigger = field.locator('[data-shared-select-trigger]');
+    const dropdown = field.locator('[data-shared-select-dropdown]');
+    const nativeSelect = field.locator('select.backtest-shared-select-native');
+
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('.style-token-title')).toHaveText('Shared select dropdown');
+    await expect(trigger).toHaveText('1 year');
+    await expect(trigger).toHaveAttribute('aria-label', 'Period: 1 year');
+    await expect(dropdown).toBeHidden();
+    await trigger.click();
+    await expect(dropdown).toBeVisible();
+    await expect(dropdown.locator('[role="option"]')).toHaveCount(10);
+    await expect(dropdown.locator('[role="option"][data-value="1y"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(dropdown.locator('[role="option"][data-value="1y"]')).toHaveCSS('border-radius', '999px');
+
+    const childClassNames = await dropdown.locator('[role="option"]').first().evaluate((option) => (
+        [...option.children].map((child) => child.className)
+    ));
+    expect(childClassNames).toEqual(['trade-strategy-dropdown-check', 'trade-strategy-dropdown-text']);
+
+    await dropdown.locator('[role="option"][data-value="2y"]').click();
+    await expect(trigger).toHaveText('2 years');
+    await expect(trigger).toHaveAttribute('aria-label', 'Period: 2 years');
+    await expect(nativeSelect).toHaveValue('2y');
+    await expect(dropdown).toBeHidden();
+
+    await trigger.click();
+    await expect(dropdown).toBeVisible();
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    await expect(page.locator('[data-style-token-card="shared-select-dropdown"] [data-style-token-shared-select-dropdown-demo]')).toBeVisible();
+    await page.locator('[data-style-token-card="shared-select-dropdown"] [data-shared-select-trigger]').click();
+    await expect(page.locator('[data-style-token-card="shared-select-dropdown"] [data-shared-select-dropdown]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
 test('uses pill corners for Shared select filter option highlights', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
@@ -12327,7 +12480,7 @@ test('uses pill corners for Shared select filter option highlights', async ({pag
 test('demonstrates the shared filter header contract in the standard table tokens', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
-    const card = page.locator('[data-style-token-card="scrollable-data-table"]');
+    const card = page.locator('[data-style-token-card="scrollable-table"]');
     const header = card.locator('[data-style-token-table-filter-header]');
     const defaultLabel = header.locator('.scrollable-data-table-filter-default-label');
     const field = header.locator('[data-style-token-table-filter-field]');
@@ -12805,7 +12958,7 @@ test('keeps the Backtest interval pill aligned and static in the 1m state', asyn
     expect(pillState.thumbRight).toBeLessThanOrEqual(pillState.shellRight + 1);
 });
 
-test('applies the Scrollable data table style to Backtest transaction details', async ({page}) => {
+test('applies the Scrollable table style to Backtest transaction details', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     const readHostStyle = (locator) => locator.evaluate((element) => {
         const style = getComputedStyle(element);
@@ -12817,7 +12970,7 @@ test('applies the Scrollable data table style to Backtest transaction details', 
 
     await page.goto('/settings/style-tokens');
     const referenceTableShell = page.locator(
-        '[data-style-token-card="scrollable-data-table"] .scrollable-data-table-shell.style-token-table-demo',
+        '[data-style-token-card="scrollable-table"] .scrollable-data-table-shell.style-token-table-demo',
     );
     await expect(referenceTableShell).toBeVisible();
     const referenceStyle = await readHostStyle(referenceTableShell);

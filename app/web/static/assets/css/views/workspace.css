@@ -1,4 +1,4 @@
-/* Code version: v1.16.0 */
+/* Code version: v1.17.0 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -1378,9 +1378,9 @@
 
 .ios-switch-shell {
     position: relative;
-    width: 40px;
-    height: 24px;
-    flex: 0 0 40px;
+    width: var(--switch-width);
+    height: var(--switch-height);
+    flex: 0 0 var(--switch-width);
 }
 
 .ios-switch-shell input {
@@ -1395,33 +1395,32 @@
 .ios-switch-slider {
     position: absolute;
     inset: 0;
-    border-radius: var(--radius-pill);
-    background: var(--theme-glass-border);
-    box-shadow: inset 0 0 0 1px var(--theme-glass-border);
-    transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard);
+    border-radius: var(--switch-radius);
+    background: var(--switch-track-background);
+    box-shadow: var(--switch-track-shadow);
+    transition: var(--switch-track-transition);
 }
 
 .ios-switch-slider::after {
     content: "";
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--color-white-adaptive);
-    box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
-    transition: transform 260ms var(--motion-emphasized), box-shadow 220ms var(--motion-standard);
+    top: var(--switch-thumb-inset);
+    left: var(--switch-thumb-inset);
+    width: var(--switch-thumb-size);
+    height: var(--switch-thumb-size);
+    border-radius: var(--switch-thumb-radius);
+    background: var(--switch-thumb-background);
+    box-shadow: var(--switch-thumb-shadow);
+    transition: var(--switch-thumb-transition);
 }
 
 .ios-switch-shell input:checked + .ios-switch-slider {
-    background: var(--accent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 14%, transparent);
+    background: var(--switch-track-background-checked);
+    box-shadow: var(--switch-track-shadow-checked);
 }
 
 .ios-switch-shell input:checked + .ios-switch-slider::after {
-    transform: translateX(16px);
-    box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
+    transform: translateX(var(--switch-thumb-offset));
 }
 
 .error {
