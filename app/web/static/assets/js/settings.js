@@ -1,4 +1,4 @@
-/* Code version: v0.21.4 */
+/* Code version: v0.21.6 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
 import {
@@ -829,6 +829,23 @@ import {
         });
     };
 
+    const syncStyleTokenMeasuredPill = (switchShell, options, activeIndex) => {
+        const activeOption = options[activeIndex];
+        if (!(activeOption instanceof HTMLElement)) return;
+        const shellStyles = window.getComputedStyle(switchShell);
+        const thumbInset = Number.parseFloat(shellStyles.getPropertyValue("--mode-switch-thumb-inset"))
+            || Number.parseFloat(shellStyles.paddingLeft)
+            || 0;
+        switchShell.style.setProperty(
+            "--segmented-pill-left",
+            `${Math.max(0, activeOption.offsetLeft - thumbInset)}px`,
+        );
+        switchShell.style.setProperty(
+            "--segmented-pill-width",
+            `${Math.max(1, activeOption.offsetWidth)}px`,
+        );
+    };
+
     const attachStyleTokenModeSwitches = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
@@ -846,6 +863,12 @@ import {
                 switchShell.dataset.segmentedActiveIndex = String(activeIndex);
                 switchShell.style.setProperty("--segmented-option-count", String(optionCount));
                 switchShell.style.setProperty("--segmented-active-index", String(activeIndex));
+                window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(switchShell, {
+                    activeValue: nextValue,
+                    activeIndex,
+                    options,
+                });
+                syncStyleTokenMeasuredPill(switchShell, options, activeIndex);
             };
             switchShell.querySelectorAll('input[type="radio"]').forEach((input) => {
                 input.addEventListener("change", syncActiveValue);
@@ -861,6 +884,10 @@ import {
                 input.dispatchEvent(new Event("change", {bubbles: true}));
             });
             syncActiveValue();
+            if (typeof ResizeObserver === "function") {
+                const observer = new ResizeObserver(syncActiveValue);
+                observer.observe(switchShell);
+            }
         });
     };
 

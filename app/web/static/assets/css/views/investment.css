@@ -1,4 +1,4 @@
-/* Code version: v1.75.47 */
+/* Code version: v1.75.49 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2695,40 +2695,8 @@
     display: none;
 }
 
-.investment-stock-details-range-segmented {
-    --mode-switch-pad: 2px;
-    --mode-switch-gap: 2px;
-    --mode-switch-min-height: 32px;
-    --mode-switch-thumb-inset: 2px;
-    --mode-switch-thumb-offset: 4px;
-    --mode-switch-label-pad-inline: 8px;
-    --mode-switch-label-min-height: 24px;
-    --segmented-text-render-safety-px: 3px;
-    grid-template-columns: repeat(var(--segmented-option-count, 7), minmax(0, 1fr));
-    width: fit-content;
-    max-width: none;
-    margin: 0;
+.investment-stock-details-range-shell > .segmented-control {
     pointer-events: auto;
-}
-
-.investment-stock-details-range-segmented > .segmented-control-option > span {
-    min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
-    padding: 0 var(--mode-switch-label-pad-inline);
-    font-size: var(--font-ui-xs);
-    color: var(--theme-muted) !important;
-}
-
-.investment-stock-details-range-label {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: max-content;
-    color: inherit;
-}
-
-.investment-stock-details-range-segmented .segmented-control-option input:checked + span,
-.investment-stock-details-range-segmented .segmented-control-option input:checked + span .investment-stock-details-range-label {
-    color: var(--color-white-adaptive) !important;
 }
 
 .investment-stock-details-price-chart-canvas {
@@ -5651,11 +5619,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
     .investment-stock-details-range-shell {
         width: calc(100% - 8px);
-    }
-
-    .investment-stock-details-range-segmented > .segmented-control-option > span {
-        padding: 0 var(--mode-switch-label-pad-inline);
-        font-size: 10px;
     }
 
     .investment-stock-details-price-chart-shell,

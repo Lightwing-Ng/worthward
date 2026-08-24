@@ -1,4 +1,4 @@
-/* Code version: v1.167.24 */
+/* Code version: v1.167.27 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8779,6 +8779,7 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
         shellOverflowX: 'visible',
         shellOverflowY: 'visible',
     });
+    await expect.poll(() => overviewRange.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe('auto');
     expect(overviewLayers.shellZIndex).toBeGreaterThan(overviewLayers.stageZIndex);
 
     await page.locator('label[for="investment_view_metrics"]').click();
@@ -8791,6 +8792,44 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     const stockDetailsRange = page.locator('#stock_panel .investment-stock-details-range-segmented');
     await expect(stockDetailsRange).toHaveClass(/is-pill-ready/);
     await expect(stockDetailsRange).toHaveAttribute('data-segmented-overflow', '0');
+    const segmentedMotherStyle = (selector) => page.locator(selector).evaluate((element) => {
+        const computed = getComputedStyle(element);
+        const firstOption = element.querySelector('.segmented-control-option');
+        return {
+            sharedClasses: ['segmented-control', 'segmented-control--compact', 'investment-view-segmented']
+                .every((className) => element.classList.contains(className)),
+            signature: {
+                display: computed.display,
+                boxSizing: computed.boxSizing,
+                padding: computed.padding,
+                gap: computed.gap,
+                minHeight: computed.minHeight,
+                height: computed.height,
+                borderRadius: computed.borderRadius,
+                backgroundColor: computed.backgroundColor,
+                boxShadow: computed.boxShadow,
+                fontSize: computed.fontSize,
+                fontWeight: computed.fontWeight,
+                lineHeight: computed.lineHeight,
+                overflow: computed.overflow,
+                pointerEvents: computed.pointerEvents,
+            },
+            optionShape: firstOption ? {
+                tagName: firstOption.tagName,
+                className: firstOption.className,
+                inputTagName: firstOption.querySelector('input')?.tagName || '',
+                labelTagName: firstOption.querySelector('input + span')?.tagName || '',
+                nestedLabelCount: firstOption.querySelector('input + span')?.children.length || 0,
+            } : null,
+        };
+    });
+    const viewSegmentedMotherStyle = await segmentedMotherStyle('#investment_view_segmented');
+    const stockDetailsSegmentedMotherStyle = await segmentedMotherStyle(
+        '#stock_panel .investment-stock-details-range-segmented',
+    );
+    expect(stockDetailsSegmentedMotherStyle.sharedClasses).toBe(true);
+    expect(stockDetailsSegmentedMotherStyle.signature).toEqual(viewSegmentedMotherStyle.signature);
+    expect(stockDetailsSegmentedMotherStyle.optionShape).toEqual(viewSegmentedMotherStyle.optionShape);
     const stockDetailsLayers = await readLayerGeometry(
         '#stock_panel .investment-stock-details-range-segmented',
         '#stock_panel .investment-stock-details-price-chart-stage',
@@ -12264,6 +12303,11 @@ test('keeps style-token showcase pills interactive and donut satellites centered
     await page.goto('/settings/style-tokens');
 
     const rangeShell = page.locator('[data-style-token-card="segmented-control"] .range-mode-shell');
+    await expect(rangeShell).toHaveAttribute('data-segmented-pill', 'measured');
+    await expect(rangeShell).toHaveClass(/is-pill-ready/);
+    expect(await rangeShell.locator('.range-mode-option span').evaluateAll((labels) => (
+        labels.map((label) => getComputedStyle(label).whiteSpace)
+    ))).toEqual(['nowrap', 'nowrap', 'nowrap']);
     const detailsOption = rangeShell.locator('label[for="style_token_range_details"]');
     await detailsOption.click();
     await expect(rangeShell.locator('#style_token_range_details')).toBeChecked();

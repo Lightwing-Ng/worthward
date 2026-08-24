@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.2
+ * Code version: v2.129.3
+ * - Changed: Stock-details and equity range controls now reuse the Investment
+ *   view segmented-control classes and option markup.
  * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
  *   ledger-sequence order, so a later sale proceeds posting cannot be
  *   overwritten by an earlier same-day buy balance in historical equity.
@@ -1014,6 +1016,8 @@ document.addEventListener('DOMContentLoaded', () => {
         { value: '1y', label: '1Y' },
         { value: 'max', label: 'Max' },
     ];
+    const INVESTMENT_RANGE_SEGMENTED_CONTROL_CLASS =
+        'segmented-control--compact investment-view-segmented investment-stock-details-range-segmented';
     const INVESTMENT_BROKER_META = {
         ibkr: {
             code: 'ibkr',
@@ -5371,7 +5375,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentEquityActiveRangeLabel() {
         const rangeControl = getInvestmentEquityRangeControl();
-        const activeLabel = rangeControl?.querySelector('input[type="radio"]:checked + span .investment-stock-details-range-label');
+        const activeLabel = rangeControl?.querySelector('input[type="radio"]:checked + span');
         return activeLabel instanceof HTMLElement ? activeLabel.textContent.trim() : '';
     }
 
@@ -5425,9 +5429,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel, {
-            labelSelector: '.investment-stock-details-range-label',
-        });
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel);
         if (!pillGeometry) {
             rangeControl.classList.remove('is-pill-ready');
             return;
@@ -5464,9 +5466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel, {
-            labelSelector: '.investment-stock-details-range-label',
-        });
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel);
         if (!pillGeometry) {
             rangeControl.classList.remove('is-pill-ready');
             return;
@@ -5498,7 +5498,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inputName = 'investment_stock_details_range',
         inputIdPrefix = 'investment_stock_details_range',
         shellClassName = 'investment-stock-details-range-shell',
-        controlClassName = 'investment-stock-details-range-segmented',
+        controlClassName = INVESTMENT_RANGE_SEGMENTED_CONTROL_CLASS,
         dataAttributeName = 'data-investment-stock-details-range-segmented',
         activeRange = 'max',
         options = INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
@@ -5519,7 +5519,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                    type="radio"
                                    value="${option.value}"
                                    ${option.value === activeRange ? 'checked' : ''}>
-                            <span><span class="investment-stock-details-range-label">${option.label}</span></span>
+                            <span>${option.label}</span>
                         </label>
                     `).join('')}
                 </div>
@@ -5532,7 +5532,6 @@ document.addEventListener('DOMContentLoaded', () => {
             inputName: 'investment_stock_details_range',
             inputIdPrefix: 'investment_stock_details_range',
             shellClassName: 'investment-stock-details-range-shell',
-            controlClassName: 'investment-stock-details-range-segmented',
             dataAttributeName: 'data-investment-stock-details-range-segmented',
             activeRange: normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange),
             options: INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
@@ -5544,7 +5543,6 @@ document.addEventListener('DOMContentLoaded', () => {
             inputName: 'investment_equity_range',
             inputIdPrefix: 'investment_equity_range',
             shellClassName: 'investment-stock-details-range-shell',
-            controlClassName: 'investment-stock-details-range-segmented',
             dataAttributeName: 'data-investment-equity-range-segmented',
             activeRange: normalizeInvestmentEquityRange(selectedInvestmentEquityRange),
             options: INVESTMENT_EQUITY_RANGE_OPTIONS,

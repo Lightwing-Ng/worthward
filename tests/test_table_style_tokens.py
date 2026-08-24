@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.24."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.26."""
 
 from __future__ import annotations
 
@@ -197,6 +197,12 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
     assert "border: 0;" in segmented_rule
     assert "var(--frosted-glass-shadow" in segmented_rule
     assert "var(--frosted-glass-blur)" in segmented_rule
+    style_token_range_rule = settings_css.split(
+        ".settings-shell-style-tokens .range-mode-shell {", 1
+    )[1].split("}", 1)[0]
+    assert "background: var(--control-glass-background);" in style_token_range_rule
+    assert "saturate(200%) blur(26px)" in style_token_range_rule
+    assert "linear-gradient" not in style_token_range_rule
     assert "background: var(--settings-action-package-background);" in action_package_rule
     assert "border: var(--settings-action-package-border);" in action_package_rule
     assert "box-shadow: var(--frosted-glass-shadow);" in action_package_rule
@@ -259,6 +265,7 @@ def test_style_tokens_are_alphabetized_without_the_shared_primitives_specimen() 
     assert '<p class="style-token-title">Shared style primitives</p>' not in html
     assert 'style-token-inventory-demo' not in html
     assert 'data-active="overview" data-option-count="3"' in html
+    assert 'data-segmented-pill="measured"' in html
     assert 'value="overview" checked' in html
     assert 'value="details"' in html
     assert 'value="metrics"' in html
@@ -544,27 +551,24 @@ def test_style_tokens_modal_title_uses_shared_bold_weight() -> None:
     assert "font-weight: var(--font-weight-regular);" not in modal_title_rule
 
 
-def test_investment_equity_range_uses_the_compact_segmented_control_contract() -> None:
+def test_investment_ranges_reuse_the_investment_view_segmented_control_contract() -> None:
     project_root = Path(__file__).resolve().parents[1]
+    investment_js = (
+        project_root / "app/web/static/assets/js/investment.js"
+    ).read_text(encoding="utf-8")
     investment_css = (
         project_root / "app/web/static/assets/css/views/investment.css"
     ).read_text(encoding="utf-8")
 
-    range_rule = investment_css.split(
-        ".investment-stock-details-range-segmented {",
-        1,
-    )[1].split("}", 1)[0]
-
-    for declaration in (
-        "--mode-switch-pad: 2px;",
-        "--mode-switch-gap: 2px;",
-        "--mode-switch-min-height: 32px;",
-        "--mode-switch-thumb-inset: 2px;",
-        "--mode-switch-thumb-offset: 4px;",
-        "--mode-switch-label-pad-inline: 8px;",
-        "--mode-switch-label-min-height: 24px;",
-    ):
-        assert declaration in range_rule
+    assert (
+        "'segmented-control--compact investment-view-segmented "
+        "investment-stock-details-range-segmented'"
+    ) in investment_js
+    assert "<span>${option.label}</span>" in investment_js
+    assert "investment-stock-details-range-label" not in investment_js
+    assert ".investment-stock-details-range-segmented {" not in investment_css
+    assert ".investment-stock-details-range-shell > .segmented-control" in investment_css
+    assert "pointer-events: auto" in investment_css
 
 
 def test_blue_pill_variants_reuse_the_segmented_thumb_background_token() -> None:

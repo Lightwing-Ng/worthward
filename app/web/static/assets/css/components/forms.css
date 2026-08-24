@@ -1,4 +1,4 @@
-/* Code version: v0.17.5 */
+/* Code version: v0.17.6 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1661,7 +1661,7 @@ input[type="number"],
 .segmented-control-option input,
 .range-mode-option input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
-.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-regular); color: var(--theme-muted); transition: color 220ms var(--motion-standard); overflow-wrap: anywhere; text-wrap: balance; }
+.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-regular); color: var(--theme-muted); transition: color 220ms var(--motion-standard); overflow-wrap: normal; text-wrap: nowrap; white-space: nowrap; }
 .segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
 	white-space: nowrap;
 }
