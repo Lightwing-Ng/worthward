@@ -1,7 +1,10 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.25.0
+ * Code version: v0.25.1
+ * - Fixed: Average-price chart points and tooltip snapshots now use the
+ *   configured cost-basis replay, with the latest point aligned to the
+ *   authoritative ticker-summary cost basis when available.
  * - Changed: The shared investment data-utils dependency now uses the current
  *   cash-resolver cache key.
  * - Changed: Buy and sell trades now render as volume-scaled glowing zones;
@@ -105,7 +108,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.1';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -1670,6 +1673,11 @@ export function createInvestmentStockDetailsUtils({
         }
 
         const pnlSummary = getInvestmentStockDetailsPnlSummary(normalizedTicker) || {};
+        const currentSummaryAveragePrice = Number(pnlSummary.averagePrice);
+        const hasCurrentSummaryAveragePrice = (
+            Number.isFinite(currentSummaryAveragePrice)
+            && currentSummaryAveragePrice > 0
+        );
         const baseCurrency = getInvestmentBaseCurrency();
         const quoteCurrency = String(
             pnlSummary.quoteCurrency || getTickerQuoteCurrency(normalizedTicker) || baseCurrency,
@@ -2170,17 +2178,23 @@ export function createInvestmentStockDetailsUtils({
                 getTickerQuoteCurrency,
             );
             const close = Number(closeValues[index]);
-            const renderedAveragePrice = Number(renderedAggregateState.averagePrice);
+            const replayAveragePrice = Number(aggregateState.averagePrice);
+            const averagePrice = (
+                index === labels.length - 1
+                && hasCurrentSummaryAveragePrice
+            )
+                ? currentSummaryAveragePrice
+                : replayAveragePrice;
             averagePriceSeries.push(
-                Number.isFinite(renderedAveragePrice) && renderedAveragePrice > 0
-                    ? renderedAveragePrice
+                Number.isFinite(averagePrice) && averagePrice > 0
+                    ? averagePrice
                     : null,
             );
             stockSnapshotsByDate.set(String(label), {
                 shares: Number.isFinite(aggregateState.shares) ? aggregateState.shares : 0,
                 close: Number.isFinite(close) ? close : null,
-                averagePrice: Number.isFinite(renderedAggregateState.averagePrice)
-                    ? renderedAggregateState.averagePrice
+                averagePrice: Number.isFinite(averagePrice)
+                    ? averagePrice
                     : null,
                 buyQuantity,
                 sellQuantity,

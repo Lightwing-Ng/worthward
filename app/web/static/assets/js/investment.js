@@ -362,7 +362,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.25.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.25.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,

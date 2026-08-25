@@ -1,4 +1,4 @@
-/* Code version: v0.22.19 */
+/* Code version: v0.23.0 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -3578,6 +3578,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     border-radius: var(--primary-button-radius);
     background: var(--primary-button-background);
     color: var(--primary-button-color);
+    font-weight: var(--primary-button-font-weight);
     box-shadow: none;
     text-transform: none;
     letter-spacing: normal;

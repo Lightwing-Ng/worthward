@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.9.0
+Code version: v1.10.0
 """
 
 from __future__ import annotations
@@ -220,6 +220,7 @@ def build_style_token_rows(
                 raw_token("--primary-button-border-hover", "0px solid transparent"),
                 raw_token("--primary-button-color", "var(--color-white-adaptive)"),
                 raw_token("--primary-button-color-disabled", "color-mix(in srgb, var(--primary-button-color) 72%, transparent)"),
+                raw_token("--primary-button-font-weight", "var(--font-weight-medium)"),
                 px_token("--primary-button-min-height", 32, 1),
                 px_token("--primary-button-pad-block", 0, 0),
                 px_token("--primary-button-pad-inline", 18, 0),

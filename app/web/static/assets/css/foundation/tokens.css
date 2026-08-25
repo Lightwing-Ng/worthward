@@ -1,4 +1,4 @@
-/* Code version: v0.16.0 */
+/* Code version: v0.17.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -127,6 +127,7 @@
 	--primary-button-background-disabled: color-mix(in srgb, var(--theme-muted) 28%, transparent);
 	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
 	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
+	--primary-button-font-weight: var(--font-weight-medium);
 	--primary-button-inverted-background: var(--color-white-adaptive);
 	--primary-button-inverted-color: var(--accent-text);
 	--primary-button-inverted-border: 1px solid var(--accent-border-soft);

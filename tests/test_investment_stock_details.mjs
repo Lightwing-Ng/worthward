@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.13.1 */
+/* Tests for Investment Stock details boundaries. Code version: v1.13.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

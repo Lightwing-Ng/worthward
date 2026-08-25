@@ -1,4 +1,4 @@
-/* Code version: v1.167.49 */
+/* Code version: v1.167.51 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -6184,7 +6184,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.0.0',
-        stockDetails: 'v0.25.0',
+        stockDetails: 'v0.25.1',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.1',
         urlState: 'v1.2.0',
@@ -6192,7 +6192,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.25.0';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.25.1';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -6416,6 +6416,69 @@ test('keeps QQQI Stock details cost labels out of metrics and tooltip', async ({
         return window.Chart?.getChart?.(canvas)?.data?.datasets?.map((dataset) => dataset.label) || [];
     });
     expect(chartDatasetLabels).toContain('QQQI Average price');
+});
+
+test('aligns the latest average-price chart point with the authoritative ticker cost basis', async ({page}) => {
+    const ticker = 'DRAM';
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {ledger_no: 1, broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker, currency: 'USD', quantity: 1, price: 60, amount: -60},
+        ],
+        summary: {
+            position_snapshot_authoritative: true,
+            position_snapshot_as_of: '2026-07-11',
+        },
+        positionSnapshot: {
+            [ticker]: {
+                quantity: '1',
+                cost_basis_status: 'known',
+                cost_price: '50',
+                market_value: '55',
+                last_price: '55',
+            },
+        },
+        priceHistoryByTicker: {
+            [ticker]: [
+                {date: '2026-07-10', close: 55},
+                {date: '2026-07-11', close: 55},
+            ],
+        },
+        tickerProfiles: {
+            [ticker]: {
+                ticker,
+                company_name: 'Roundhill Memory ETF',
+                logo_url: '/market-store/logos/DRAM.svg',
+            },
+        },
+    });
+    await page.setViewportSize({width: 920, height: 900});
+    await page.goto(`/trade/investment?view=stock-details&ticker=${ticker}`);
+    await page.locator('label[for="investment_stock_details_range_max"]').click();
+    const averagePriceMetricCard = page.locator('#stock_panel .trade-metric-card')
+        .filter({hasText: 'Average price'});
+    await expect(averagePriceMetricCard).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+        const canvas = document.querySelector('#stock_panel .investment-stock-details-price-chart-canvas');
+        const chart = canvas && window.Chart?.getChart?.(canvas);
+        return Boolean(chart?.data?.datasets?.length && chart?.data?.labels?.length);
+    })).toBe(true);
+
+    const parity = await page.evaluate(() => {
+        const metricCard = [...document.querySelectorAll('#stock_panel .trade-metric-card')]
+            .find((card) => card.querySelector('.trade-metric-label')?.textContent?.trim() === 'Average price');
+        const metricText = metricCard?.querySelector('.trade-metric-value')?.textContent || '';
+        const canvas = document.querySelector('#stock_panel .investment-stock-details-price-chart-canvas');
+        const chart = canvas && window.Chart?.getChart?.(canvas);
+        const averageDataset = chart?.data?.datasets?.find((dataset) => (
+            String(dataset.label || '').endsWith('Average price')
+        ));
+        return {
+            metric: Number(metricText.replaceAll(',', '').trim()),
+            latestAveragePrice: Number(averageDataset?.data?.at(-1)),
+        };
+    });
+    expect(parity.metric).toBe(50);
+    expect(parity.latestAveragePrice).toBeCloseTo(parity.metric, 8);
 });
 
 test('shows date-scoped realized and unrealized P&L in the Stock details tooltip', async ({page}) => {
@@ -12594,22 +12657,49 @@ test('shows the standalone primary button specimen and keeps its inverted varian
     await expect(inverted).toHaveClass(/settings-inline-button-primary-inverted/);
 
     const state = await page.evaluate(() => {
+        const primaryButton = document.querySelector('[data-style-token-card="primary-button"] .style-token-demo > button');
         const button = document.querySelector('[data-style-token-card="primary-inverted-button"] .style-token-demo > button');
-        if (!(button instanceof HTMLElement)) return null;
+        if (!(primaryButton instanceof HTMLElement) || !(button instanceof HTMLElement)) return null;
+        const primaryStyle = getComputedStyle(primaryButton);
         const style = getComputedStyle(button);
         return {
+            primaryFontWeight: primaryStyle.fontWeight,
+            primaryBorderWidth: primaryStyle.borderTopWidth,
             background: style.backgroundColor,
             color: style.color,
             borderWidth: style.borderTopWidth,
+            fontWeight: style.fontWeight,
             radius: style.borderTopLeftRadius,
             minHeight: style.minHeight,
         };
     });
 
     expect(state).not.toBeNull();
+    expect(state.primaryFontWeight).toBe('500');
+    expect(state.primaryBorderWidth).toBe('0px');
     expect(state.borderWidth).toBe('1px');
+    expect(state.fontWeight).toBe('500');
     expect(state.radius).toBe('999px');
     expect(state.minHeight).toBe('32px');
+
+    const closeControls = [
+        page.locator('[data-style-token-card="modal-dialog"] .workspace-modal-close'),
+        page.locator('[data-style-token-card="modal-dialog-banner-message"] .notice-close'),
+    ];
+    for (const closeControl of closeControls) {
+        await closeControl.hover();
+        const closeState = await closeControl.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+                background: style.backgroundColor,
+                boxShadow: style.boxShadow,
+                outlineStyle: style.outlineStyle,
+            };
+        });
+        expect(closeState.background).toBe('rgba(0, 0, 0, 0)');
+        expect(closeState.boxShadow).toBe('none');
+        expect(closeState.outlineStyle).toBe('none');
+    }
 
     await page.setViewportSize({width: 390, height: 844});
     await page.reload();

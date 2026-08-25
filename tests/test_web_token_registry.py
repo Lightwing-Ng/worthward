@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.8.2
+Code version: v0.8.3
 """
 
 from __future__ import annotations
@@ -245,6 +245,7 @@ class WebTokenRegistryTests(unittest.TestCase):
                 "--primary-button-border-hover",
                 "--primary-button-color",
                 "--primary-button-color-disabled",
+                "--primary-button-font-weight",
                 "--primary-button-min-height",
                 "--primary-button-pad-block",
                 "--primary-button-pad-inline",
