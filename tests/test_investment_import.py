@@ -3457,6 +3457,131 @@ Fees: 0.12
         self.assertFalse(payload["datetime_policy"]["source_has_intraday_timestamp"])
         self.assertTrue(payload["summary"]["holdings_validation"]["matched"])
 
+    def test_schwab_reimport_deduplicates_legacy_nra_tax_adjustment_type(self) -> None:
+        legacy_tax = {
+            "date": "2026-08-21",
+            "datetime": "2026-08-21 20:00:00",
+            "type": "nra_tax_adj",
+            "currency": "USD",
+            "ticker": "QQQI",
+            "description": "NEOS NASDAQ-100(R) HIGH INCOME ETF",
+            "gross_amount_raw": "-3.26",
+            "commission_raw": "0",
+            "net_amount_raw": "-3.26",
+            "broker": "schwab",
+            "account": "Individual ...103",
+            "source": {
+                "file_kind": "schwab_csv",
+                "action_raw": "NRA Tax Adj",
+                "broker": "schwab",
+                "account": "Individual ...103",
+                "row_number": 2,
+            },
+        }
+        incoming_tax = {
+            **legacy_tax,
+            "type": "foreign_tax_withholding",
+            "source": {
+                **legacy_tax["source"],
+                "row_number": 3,
+            },
+        }
+
+        merged = merge_investment_payloads(
+            {
+                "schema_version": 3,
+                "broker": "schwab",
+                "account": "Individual ...103",
+                "transactions": [legacy_tax],
+            },
+            {
+                "schema_version": 3,
+                "broker": "schwab",
+                "account": "Individual ...103",
+                "transactions": [incoming_tax],
+            },
+        )
+
+        self.assertEqual(len(merged["transactions"]), 1)
+        transaction = merged["transactions"][0]
+        self.assertEqual(transaction["type"], "foreign_tax_withholding")
+        self.assertEqual(transaction["source"]["action_raw"], "NRA Tax Adj")
+        self.assertEqual(transaction["source"]["legacy_type_raw"], "nra_tax_adj")
+        self.assertEqual(
+            merged["summary"]["incremental_import"]["added_record_count"],
+            0,
+        )
+        self.assertEqual(
+            merged["summary"]["incremental_import"]["duplicate_record_count"],
+            1,
+        )
+
+    def test_schwab_date_only_same_day_trade_order_uses_newest_first_source_rows(self) -> None:
+        transactions_csv = "\n".join([
+            '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+            '"08/24/2026","Sell","EUV","CORGI LITHOGRAPHY & SEMICONDUCTOR PHOTONICS ETF","1","$23.755","","$23.76"',
+            '"08/24/2026","Buy","EUV","CORGI LITHOGRAPHY & SEMICONDUCTOR PHOTONICS ETF","1","$23.45","","-$23.45"',
+            '"08/23/2026","Non-Qualified Div","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","$1.00"',
+        ]) + "\n"
+        positions_csv = "\n".join([
+            '"Positions for account Individual ...001 as of 09:00 PM ET, 2026/08/24"',
+            "",
+            '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
+            '"Cash & Cash Investments","--","--","--","$0.00","--","Cash and Money Market",',
+            '"Positions Total","--","--","--","$0.00","--","",',
+        ]) + "\n"
+
+        payload = build_investment_payload_from_schwab_csv(
+            transactions_csv.encode("utf-8"),
+            positions_csv.encode("utf-8"),
+            transaction_filename="Individual_XXX001_Transactions_20260824.csv",
+            positions_filename="Individual-Positions-2026-08-24.csv",
+        )
+
+        trades = [
+            transaction
+            for transaction in payload["transactions"]
+            if transaction.get("ticker") == "EUV"
+        ]
+        self.assertEqual([transaction["type"] for transaction in trades], ["buy", "sell"])
+        self.assertEqual(
+            trades[0]["source"]["source_row_order"],
+            "newest_first",
+        )
+
+    def test_schwab_user_confirmed_same_day_sequence_overrides_source_rows(self) -> None:
+        sell = {
+            "date": "2026-08-24",
+            "datetime": "2026-08-24 20:00:00",
+            "type": "sell",
+            "broker": "schwab",
+            "account": "Individual ...001",
+            "ticker": "EUV",
+            "quantity_raw": "1",
+            "net_amount_raw": "23.755",
+            "source": {
+                "file_kind": "schwab_csv",
+                "row_number": 2,
+                "source_row_order": "newest_first",
+                "same_day_execution_sequence": 2,
+            },
+        }
+        buy = {
+            **sell,
+            "type": "buy",
+            "net_amount_raw": "-23.45",
+            "source": {
+                **sell["source"],
+                "row_number": 3,
+                "same_day_execution_sequence": 1,
+            },
+        }
+        transactions = [sell, buy]
+
+        _sort_transactions(transactions)
+
+        self.assertEqual([transaction["type"] for transaction in transactions], ["buy", "sell"])
+
     def test_schwab_explicit_datetime_column_is_preferred_over_date_column(self) -> None:
         transactions_csv = "\n".join([
             '"Date","Time and Date (ET)","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',

@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.4
+ * Code version: v2.129.5
+ * - Fixed: Browser replay now honors Schwab date-only same-day execution
+ *   metadata, so a user-confirmed Buy-before-Sell sequence survives restart.
+ * - Changed: Linked dividend and withholding rows display their canonical
+ *   ticker before the preserved broker description.
  * - Changed: Stock-details and equity range controls now reuse the Investment
  *   view segmented-control classes and option markup.
  * - Fixed: HSBC same-day USD Savings settlement boundaries now replay in
@@ -333,7 +337,7 @@ import {
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.108.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.109.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,

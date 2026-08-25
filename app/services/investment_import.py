@@ -1,7 +1,13 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.99.0
+Code version: v0.101.0
+- Fixed: Schwab date-only same-day buy and sell rows now follow the
+  export's source chronology instead of cash-safety ordering; an explicit
+  user-confirmed sequence remains authoritative across re-imports.
+- Fixed: Incremental Schwab imports now canonicalize legacy persisted
+  `nra_tax_adj` withholding rows before duplicate matching, while retaining the
+  original stored type as source provenance instead of double-counting tax.
 - Fixed: Schwab dividend exports now classify `NRA Tax Adj` and related
   withholding-tax actions as `foreign_tax_withholding` instead of preserving
   them as unknown transaction types.
@@ -4390,6 +4396,37 @@ def _reconcile_cross_broker_security_transfers(
 
 
 def _sort_transactions(transactions: list[dict[str, Any]]) -> None:
+    def _schwab_date_only_trade_sequence(item: dict[str, Any]) -> Decimal | None:
+        if _normalize_broker_code(item.get("broker")) != "schwab":
+            return None
+        if _normalize_text(item.get("type")).lower() not in {"buy", "sell"}:
+            return None
+        source = item.get("source") if isinstance(item.get("source"), dict) else {}
+        if source.get("source_has_intraday_timestamp") is True:
+            return None
+        if _normalize_text(source.get("datetime_precision")).lower() == "second":
+            return None
+
+        explicit_sequence = source.get("same_day_execution_sequence")
+        if explicit_sequence not in (None, ""):
+            try:
+                return Decimal(str(explicit_sequence))
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+
+        try:
+            row_number = int(source.get("row_number", 0) or 0)
+        except (TypeError, ValueError):
+            row_number = 0
+        if row_number <= 0:
+            return None
+        source_row_order = _normalize_text(source.get("source_row_order")).lower()
+        if source_row_order == "newest_first":
+            return Decimal(-row_number)
+        if source_row_order == "oldest_first":
+            return Decimal(row_number)
+        return None
+
     def _transaction_cash_sort_amount(item: dict[str, Any]) -> Decimal:
         normalized = item.get("normalized") if isinstance(item.get("normalized"), dict) else {}
         for value in (
@@ -4407,6 +4444,12 @@ def _sort_transactions(transactions: list[dict[str, Any]]) -> None:
     def _cash_safety_sort_key(item: dict[str, Any]) -> tuple[int, Decimal]:
         normalized_type = _normalize_text(item.get("type")).replace(" ", "_").lower()
         cash_amount = _transaction_cash_sort_amount(item)
+        schwab_trade_sequence = _schwab_date_only_trade_sequence(item)
+        if schwab_trade_sequence is not None:
+            # Schwab's date-only transaction export is newest-first. Keep
+            # same-day buy/sell chronology ahead of the generic cash-safety
+            # fallback, which otherwise always places a sell before a buy.
+            return (1, schwab_trade_sequence)
         if cash_amount > ZERO:
             return (0, -cash_amount)
         if normalized_type in {"deposit", "sell", "dividend", "credit_interest", "payment_in_lieu"}:
@@ -10690,6 +10733,12 @@ def normalize_investment_payload_tickers(payload: dict[str, Any]) -> dict[str, A
             record_broker = _normalize_broker_code(
                 txn.get("broker") or source.get("broker")
             )
+            if (
+                payload_broker == "schwab"
+                or record_broker == "schwab"
+                or _normalize_text(source.get("file_kind")) == "schwab_csv"
+            ):
+                _canonicalize_schwab_legacy_transaction_type(txn)
             is_bochk_record = (
                 record_broker == "boc_hk"
                 or _normalize_text(source.get("file_kind")) == "boc_hk_statement_pdf"
@@ -25715,6 +25764,27 @@ SCHWAB_ACTION_TO_TYPE = {
     "journal": "adjustment",
     "fee": "adjustment",
 }
+SCHWAB_LEGACY_TRANSACTION_TYPE_ALIASES = {
+    "nra_tax_adj": "foreign_tax_withholding",
+    "nra_tax_adjustment": "foreign_tax_withholding",
+}
+
+
+def _canonicalize_schwab_legacy_transaction_type(
+    record: dict[str, Any],
+) -> None:
+    """Canonicalize legacy Schwab type labels without discarding raw evidence."""
+    raw_type = _normalize_text(record.get("type"))
+    normalized_key = re.sub(r"[\s-]+", "_", raw_type.casefold())
+    canonical_type = SCHWAB_LEGACY_TRANSACTION_TYPE_ALIASES.get(normalized_key)
+    if not canonical_type or normalized_key == canonical_type:
+        return
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    source.setdefault("legacy_type_raw", raw_type)
+    record["type"] = canonical_type
+    record["source"] = source
+
+
 SCHWAB_POSITIONS_HEADER_PATTERN = re.compile(
     r"^Positions\s+for\s+account\s+(?P<account>.+?)\s+as\s+of\s+"
     r"(?P<time>\d{1,2}:\d{2}\s*[AP]M)\s+ET,\s*"
@@ -26035,6 +26105,31 @@ def _build_schwab_transaction_record(
     if isinstance(src, dict):
         src["broker"] = "schwab"
     return record
+
+
+def _infer_schwab_source_row_order(
+    transactions: list[dict[str, Any]],
+) -> str:
+    """Infer whether the export rows run newest-first or oldest-first."""
+    dated_rows: list[tuple[int, str]] = []
+    for transaction in transactions:
+        source = transaction.get("source") if isinstance(transaction.get("source"), dict) else {}
+        try:
+            row_number = int(source.get("row_number", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        date_text = _normalize_text(transaction.get("date"))
+        if row_number > 0 and date_text:
+            dated_rows.append((row_number, date_text))
+    dated_rows.sort(key=lambda item: item[0])
+    dates = [date_text for _row_number, date_text in dated_rows]
+    if len(dates) < 2 or len(set(dates)) < 2:
+        return "unknown"
+    if all(left >= right for left, right in zip(dates, dates[1:])):
+        return "newest_first"
+    if all(left <= right for left, right in zip(dates, dates[1:])):
+        return "oldest_first"
+    return "mixed"
 
 
 def _normalize_schwab_positions_header_key(key: str) -> str:
@@ -26550,6 +26645,12 @@ def build_investment_payload_from_schwab_csv(
         positions_filename=positions_filename,
         positions_account=account,
     )
+
+    source_row_order = _infer_schwab_source_row_order(transactions)
+    for transaction in transactions:
+        source = transaction.get("source") if isinstance(transaction.get("source"), dict) else {}
+        source["source_row_order"] = source_row_order
+        transaction["source"] = source
 
     _sort_transactions(transactions)
 

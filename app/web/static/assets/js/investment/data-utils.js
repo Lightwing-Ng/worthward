@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.108.0
+ * Code version: v1.109.0
+ * - Fixed: Schwab date-only same-day trades now keep the persisted execution
+ *   sequence during browser replay instead of falling back to cash ordering.
+ * - Changed: Linked Schwab dividend and withholding rows now display their
+ *   canonical ticker while retaining the raw broker description as evidence.
  * - Changed: HSBC buy and sell descriptions now show one compact P-/S- order
  *   reference, with a trailing * only while settlement evidence is unresolved.
  * - Changed: Dividend and foreign-tax descriptions now use the transaction's
@@ -1762,10 +1766,18 @@ export function createInvestmentDataUtils({
             .toUpperCase();
         if (!canonicalTicker) return description;
 
-        return String(description || '').replace(
+        const normalizedDescription = String(description || '').trim();
+        const escapedTicker = canonicalTicker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (new RegExp(`^${escapedTicker}(?:\\s|·|$)`, 'i').test(normalizedDescription)) {
+            return normalizedDescription;
+        }
+
+        const replacedDescription = normalizedDescription.replace(
             /^.*?(?=\s+(?:Cash\s+dividend|Dividend\s+tax)\b)/i,
             canonicalTicker,
         );
+        if (replacedDescription !== normalizedDescription) return replacedDescription;
+        return normalizedDescription ? `${canonicalTicker} · ${normalizedDescription}` : canonicalTicker;
     }
 
     function getTransactionDescriptionText(txn, fallback = '--', { normalizeWhitespace = false } = {}) {
@@ -2020,6 +2032,29 @@ export function createInvestmentDataUtils({
         if (!Number.isFinite(sourceRank) || sourceRank <= 0) return Number.NaN;
         const pageOrder = String(source.order_status_page_order || 'newest_first').trim().toLowerCase();
         return pageOrder === 'oldest_first' ? sourceRank : -sourceRank;
+    }
+
+    function getSchwabDateOnlyTradeSequence(txn) {
+        const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (broker !== 'schwab' || !['buy', 'sell'].includes(normalizedType)) return null;
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        if (
+            source.source_has_intraday_timestamp === true
+            || String(source.datetime_precision || '').trim().toLowerCase() === 'second'
+        ) {
+            return null;
+        }
+
+        const explicitSequence = Number(source.same_day_execution_sequence);
+        if (Number.isFinite(explicitSequence)) return explicitSequence;
+
+        const sourceRow = Number(source.row_number);
+        if (!Number.isFinite(sourceRow) || sourceRow <= 0) return null;
+        const sourceRowOrder = String(source.source_row_order || '').trim().toLowerCase();
+        if (sourceRowOrder === 'newest_first') return -sourceRow;
+        if (sourceRowOrder === 'oldest_first') return sourceRow;
+        return null;
     }
 
     function getHsbcSortCategory(txn) {
@@ -2354,6 +2389,35 @@ export function createInvestmentDataUtils({
                 return leftSequence - rightSequence;
             }
         }
+        if (leftBroker === 'schwab' && rightBroker === 'schwab') {
+            const leftAccount = String(
+                leftTxn?.account_id
+                ?? leftTxn?.account
+                ?? leftTxn?.source?.account_id
+                ?? leftTxn?.source?.account
+                ?? leftTxn?.source?.account_number
+                ?? '',
+            ).trim();
+            const rightAccount = String(
+                rightTxn?.account_id
+                ?? rightTxn?.account
+                ?? rightTxn?.source?.account_id
+                ?? rightTxn?.source?.account
+                ?? rightTxn?.source?.account_number
+                ?? '',
+            ).trim();
+            const leftSequence = getSchwabDateOnlyTradeSequence(leftTxn);
+            const rightSequence = getSchwabDateOnlyTradeSequence(rightTxn);
+            if (
+                leftAccount
+                && leftAccount === rightAccount
+                && Number.isFinite(leftSequence)
+                && Number.isFinite(rightSequence)
+                && leftSequence !== rightSequence
+            ) {
+                return leftSequence - rightSequence;
+            }
+        }
         const leftCashCategory = getSameTimeCashSafetySortCategory(leftTxn);
         const rightCashCategory = getSameTimeCashSafetySortCategory(rightTxn);
         if (leftCashCategory !== rightCashCategory) {
@@ -2457,6 +2521,35 @@ export function createInvestmentDataUtils({
             const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
             const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
             if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
+                return leftSequence - rightSequence;
+            }
+        }
+        if (leftBroker === 'schwab' && rightBroker === 'schwab') {
+            const leftAccount = String(
+                leftTxn?.account_id
+                ?? leftTxn?.account
+                ?? leftTxn?.source?.account_id
+                ?? leftTxn?.source?.account
+                ?? leftTxn?.source?.account_number
+                ?? '',
+            ).trim();
+            const rightAccount = String(
+                rightTxn?.account_id
+                ?? rightTxn?.account
+                ?? rightTxn?.source?.account_id
+                ?? rightTxn?.source?.account
+                ?? rightTxn?.source?.account_number
+                ?? '',
+            ).trim();
+            const leftSequence = getSchwabDateOnlyTradeSequence(leftTxn);
+            const rightSequence = getSchwabDateOnlyTradeSequence(rightTxn);
+            if (
+                leftAccount
+                && leftAccount === rightAccount
+                && Number.isFinite(leftSequence)
+                && Number.isFinite(rightSequence)
+                && leftSequence !== rightSequence
+            ) {
                 return leftSequence - rightSequence;
             }
         }
@@ -5611,4 +5704,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.108.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.109.0';

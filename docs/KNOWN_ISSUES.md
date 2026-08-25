@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.232.5`
+Documentation version: `v1.232.8`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -12,7 +12,13 @@ references, transaction descriptions, or copied statement content.
   and `NRA Tax Adj` or related withholding-tax actions as
   `foreign_tax_withholding`; date-only exports retain day-level timestamp
   provenance, while an explicit intraday datetime column is preserved when
-  present.
+  present. Incremental re-imports also canonicalize legacy persisted
+  `nra_tax_adj` records before duplicate matching and retain the old type as
+  source provenance. When Schwab supplies only a date, same-day buy and sell
+  chronology follows the inferred source row direction; an explicit user
+  confirmation takes precedence in both persisted replay and browser replay.
+  A linked dividend or withholding row displays its canonical ticker before
+  the preserved broker description.
 - IBKR GainsKeeper imports retain `BUYOTHER` and `SELLOTHER` money-market
   transactions with their immutable FITIDs, exact source timestamps, and
   cash values; legacy stored GainsKeeper timestamps are normalized to the

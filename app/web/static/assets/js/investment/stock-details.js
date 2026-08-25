@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.25.1
+ * Code version: v0.25.2
+ * - Changed: Stock details imports the browser replay and linked-distribution
+ *   display contract used by the Investment transaction history.
  * - Fixed: Average-price chart points and tooltip snapshots now use the
  *   configured cost-basis replay, with the latest point aligned to the
  *   authoritative ticker-summary cost basis when available.
@@ -104,11 +106,11 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.108.0';
+} from './data-utils.js?v=investment-data-utils-v1.109.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.1';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.2';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;

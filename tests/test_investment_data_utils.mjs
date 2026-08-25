@@ -390,6 +390,40 @@ test('HSBC date-only orders retain source-page execution order after SEC settlem
     assert.ok(compareInvestmentTaxLotTransactions(sale, purchase) > 0);
 });
 
+test('Schwab date-only trades retain explicit same-day execution sequence', () => {
+    const buy = {
+        broker: 'schwab',
+        account: 'Individual ...001',
+        date: '2026-08-24',
+        datetime: '2026-08-24 20:00:00',
+        type: 'buy',
+        ticker: 'EUV',
+        normalized: {net_amount: '-23.45'},
+        source: {
+            file_kind: 'schwab_csv',
+            datetime_precision: 'day',
+            source_has_intraday_timestamp: false,
+            source_row_order: 'newest_first',
+            row_number: 3,
+            same_day_execution_sequence: 1,
+        },
+    };
+    const sell = {
+        ...buy,
+        type: 'sell',
+        normalized: {net_amount: '23.755'},
+        source: {
+            ...buy.source,
+            row_number: 2,
+            same_day_execution_sequence: 2,
+        },
+    };
+
+    assert.ok(compareInvestmentTransactions(buy, sell) < 0);
+    assert.ok(compareInvestmentTransactionsForReplay(buy, sell) < 0);
+    assert.ok(compareInvestmentTaxLotTransactions(buy, sell) < 0);
+});
+
 test('tax-lot replay normalizes mixed source timestamp formats before sorting', () => {
     setDramTestWindow();
     const historicalBuy = makeScopedDramTrade({
@@ -1709,6 +1743,27 @@ test('transaction descriptions reserve at-sign for prices and use multiplication
                 normalized: {position_quantity: '-5'},
             }),
             'QQQI × -5',
+        );
+    } finally {
+        if (previousWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = previousWindow;
+        }
+    }
+});
+
+test('linked distribution descriptions show the ticker while retaining broker text', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}}};
+    try {
+        assert.equal(
+            formatTransactionDescription({
+                type: 'dividend',
+                ticker: 'QQQI',
+                description: 'CORP EVT PAYMENT SEC',
+            }),
+            'QQQI · CORP EVT PAYMENT SEC',
         );
     } finally {
         if (previousWindow === undefined) {
