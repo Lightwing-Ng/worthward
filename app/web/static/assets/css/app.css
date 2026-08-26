@@ -1,8 +1,8 @@
-/* Code version: v0.48.4 */
+/* Code version: v0.48.5 */
 @import url("./foundation/fonts.css?v=0.3.0");
 @import url("./foundation/tokens.css?v=4.5.4");
 @import url("./layout/shell.css?v=3.28.2");
-@import url("./components/forms.css?v=3.37.4");
+@import url("./components/forms.css?v=3.37.5");
 @import url("./components/resizer.css?v=1.2.0");
 @import url("./components/tables.css?v=0.1.1");
 @import url("./views/workspace.css?v=1.19.4");

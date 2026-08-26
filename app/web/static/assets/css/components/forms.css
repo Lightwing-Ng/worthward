@@ -1,4 +1,4 @@
-/* Code version: v0.17.6 */
+/* Code version: v0.17.7 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -403,6 +403,9 @@ input[type="number"],
 }
 .trade-controls .range-mode-field > .range-mode-shell {
 	width: 100%;
+}
+.ticker-controls .field.range-panel > .backtest-shared-select-row {
+	grid-template-columns: minmax(0, 1fr);
 }
 .trade-controls .ticker-input-row {
 	grid-row: 1 / span 2;
@@ -1709,6 +1712,11 @@ input[type="number"],
 		grid-template-rows: auto auto;
 		row-gap: var(--trade-control-label-gap);
 		justify-content: stretch;
+	}
+	.ticker-controls .field.range-panel > .backtest-shared-select-row {
+		width: min(320px, 100%);
+		max-width: 320px;
+		margin-inline: auto;
 	}
 	.segmented-control--compact-mobile {
 		width: min(320px, 100%);

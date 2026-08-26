@@ -1,4 +1,4 @@
-/* Code version: v0.22.5 */
+/* Code version: v0.22.8 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -20,6 +20,7 @@
 	const CHIP_HOVER_PRICE_MARKER_RADIUS = 3;
 	const CHIP_DISTRIBUTION_BIN_COUNT = 100;
 	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
+	const CHIPS_PAYLOAD_CACHE_LIMIT = 64;
 	const PRICE_LEVEL_MINIMUM_HISTORICAL_RANGE_COVERAGE = 0.35;
 	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
 	const CHIP_REVEAL_MOTION_NAME = "shared-bouncy-spring";
@@ -555,6 +556,102 @@
 		return [tickers, period, from, to].join("|");
 	};
 
+	const parseChipsRequestKey = (requestKey) => {
+		const parts = String(requestKey || "").split("|");
+		if (parts.length < 4) return null;
+		return {
+			tickers: parts.slice(0, -3).map((ticker) => String(ticker || "").trim().toUpperCase()).filter(Boolean),
+			period: parts.at(-3) || "",
+			from: parts.at(-2) || "",
+			to: parts.at(-1) || "",
+		};
+	};
+
+	const cacheChipsPayload = (requestKey, payload) => {
+		if (!payload || typeof payload !== "object") return null;
+		chipsPayloadCache.set(requestKey, payload);
+		while (chipsPayloadCache.size > CHIPS_PAYLOAD_CACHE_LIMIT) {
+			chipsPayloadCache.delete(chipsPayloadCache.keys().next().value);
+		}
+		return payload;
+	};
+
+	const subsetCachedChipsPayload = (payload, requestedTickers) => {
+		const requestedSet = new Set(requestedTickers);
+		const series = Array.isArray(payload?.series) ? payload.series : [];
+		const seriesByTicker = new Map(series.map((item) => [
+			String(item?.ticker || "").trim().toUpperCase(),
+			item,
+		]));
+		const cachedErrors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
+		const hasAllRequestedTickers = requestedTickers.every((ticker) => (
+			seriesByTicker.has(ticker) || Object.prototype.hasOwnProperty.call(cachedErrors, ticker)
+		));
+		if (!hasAllRequestedTickers) return null;
+		return {
+			...payload,
+			series: series.filter((item) => requestedSet.has(String(item?.ticker || "").trim().toUpperCase())),
+			errors: Object.fromEntries(Object.entries(cachedErrors).filter(([ticker]) => (
+			requestedSet.has(String(ticker || "").trim().toUpperCase())
+		))),
+		};
+	};
+
+	const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+	const sliceCachedChipsPayloadToRange = (payload, requestedTickers, from, to) => {
+		if (!isIsoDate(from) || !isIsoDate(to) || from > to) return null;
+		const subset = subsetCachedChipsPayload(payload, requestedTickers);
+		if (!subset) return null;
+		const errors = subset.errors && typeof subset.errors === "object" ? subset.errors : {};
+		const series = subset.series.map((item) => {
+			if (!Array.isArray(item?.ohlcv)) return null;
+			const ohlcv = item.ohlcv.filter((row) => {
+				const date = String(row?.t || "").slice(0, 10);
+				return isIsoDate(date) && date >= from && date <= to;
+			});
+			return {...item, ohlcv};
+		});
+		const seriesByTicker = new Map(series.filter(Boolean).map((item) => [
+			String(item?.ticker || "").trim().toUpperCase(),
+			item,
+		]));
+		const canReuseRange = requestedTickers.every((ticker) => {
+			if (Object.prototype.hasOwnProperty.call(errors, ticker)) return true;
+			const item = seriesByTicker.get(ticker);
+			return item && hasUsableOhlcv(item);
+		});
+		if (!canReuseRange) return null;
+		return {...subset, series: series.filter(Boolean)};
+	};
+
+	const getCachedChipsPayload = (requestKey) => {
+		const direct = chipsPayloadCache.get(requestKey);
+		if (direct) return direct;
+		const requested = parseChipsRequestKey(requestKey);
+		if (!requested?.tickers.length) return null;
+		for (const [cachedKey, payload] of chipsPayloadCache.entries()) {
+			if (cachedKey === requestKey) continue;
+			const cached = parseChipsRequestKey(cachedKey);
+			if (!cached) continue;
+			if (cached.tickers.length < requested.tickers.length) continue;
+			const sameDateRange = cached.from === requested.from && cached.to === requested.to;
+			const coversRequestedRange = isIsoDate(cached.from)
+				&& isIsoDate(cached.to)
+				&& isIsoDate(requested.from)
+				&& isIsoDate(requested.to)
+				&& cached.from <= requested.from
+				&& cached.to >= requested.to;
+			const sameScope = cached.period === requested.period && sameDateRange;
+			if (!sameScope && !coversRequestedRange) continue;
+			const reusable = sameDateRange
+				? subsetCachedChipsPayload(payload, requested.tickers)
+				: sliceCachedChipsPayloadToRange(payload, requested.tickers, requested.from, requested.to);
+			if (reusable) return cacheChipsPayload(requestKey, reusable);
+		}
+		return null;
+	};
+
 	const applyChipsPayload = (payload, requestKey) => {
 		if (!isChipsEnabled() || requestKey !== chipsRequestKey()) return;
 		const errors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
@@ -675,17 +772,6 @@
 		};
 	};
 
-	const drawSolidPriceHoverMarker = (ctx, marker, color) => {
-		if (!ctx || !marker || !Number.isFinite(marker.x) || !Number.isFinite(marker.y)) return;
-		ctx.save();
-		ctx.fillStyle = color;
-		ctx.globalAlpha = 1;
-		ctx.beginPath();
-		ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.restore();
-	};
-
 	const getThemeAlignedLogoX = (chart) => {
 		const canvasWidth = Number(chart?.width || chart?.canvas?.clientWidth || 0);
 		const fallbackCanvasX = Math.max(
@@ -720,7 +806,7 @@
 	const loadChips = async () => {
 		if (!isChipsEnabled() || !state.endpoints?.compareChips) return;
 		const requestKey = chipsRequestKey();
-		const cached = chipsPayloadCache.get(requestKey);
+		const cached = getCachedChipsPayload(requestKey);
 		if (cached) {
 			applyChipsPayload(cached, requestKey);
 			return;
@@ -753,7 +839,7 @@
 				setChipsStatus(payload.error || "Chip distribution is unavailable.", "error");
 				return;
 				}
-				chipsPayloadCache.set(requestKey, payload);
+				cacheChipsPayload(requestKey, payload);
 			applyChipsPayload(payload, requestKey);
 		} catch (error) {
 			if (error?.name === "AbortError") return;
@@ -1263,7 +1349,8 @@
 		if (!chipsEnabled) setChipsStatus();
 		const series = Array.isArray(state.chart?.series) ? state.chart.series : [];
 		const profiles = Array.isArray(state.chart?.profiles) ? state.chart.profiles : [];
-		const chipPayload = chipsEnabled ? chipsPayloadCache.get(chipsRequestKey()) : null;
+		const chipRequestKey = chipsRequestKey();
+		const chipPayload = chipsEnabled ? getCachedChipsPayload(chipRequestKey) : null;
 		const chipSeriesByTicker = new Map(
 			(Array.isArray(chipPayload?.series) ? chipPayload.series : [])
 				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]),
@@ -1409,8 +1496,8 @@
 			canvas.dataset.chipPocStyle = chipsEnabled ? "price-relative-opacity" : "";
 			canvas.dataset.chipCategoryStack = chipsEnabled ? "none" : "";
 			canvas.dataset.chipColorModel = chipsEnabled ? "price-relative" : "";
-			canvas.dataset.chipHoverMarker = chipsEnabled ? "solid-price" : "";
-			canvas.dataset.chipHoverMarkerAxis = chipsEnabled ? "shared-y-scale" : "";
+			canvas.dataset.chipHoverMarker = chipsEnabled ? "none" : "";
+			canvas.dataset.chipHoverMarkerAxis = chipsEnabled ? "none" : "";
 			canvas.dataset.chipLogoPlacement = chipsEnabled ? "panel-top-right" : "price-close";
 			canvas.dataset.chipRevealMotion = chipsEnabled ? CHIP_REVEAL_MOTION_NAME : "";
 			canvas.dataset.chipRevealState = chipsEnabled
@@ -1474,14 +1561,12 @@
 
 				},
 				afterDatasetsDraw(chart) {
-					chart.$chipHoverPriceMarker = null;
 					if (!chipsEnabled || chipHoverState?.chart !== chart) return;
 					const bin = chipBins[chipHoverState.binIndex];
 					if (!bin || !chart.chartArea || !chart.scales?.y) return;
 					const marker = resolveChipHoverPriceMarker(chart, chipBins);
 					const bounds = getChipPanelBounds(chart);
 					if (!marker) return;
-					chart.$chipHoverPriceMarker = marker;
 					chart.ctx.save();
 					chart.ctx.strokeStyle = theme.muted;
 					chart.ctx.globalAlpha = 0.56;
@@ -1492,7 +1577,6 @@
 					chart.ctx.lineTo(bounds.right, marker.y);
 					chart.ctx.stroke();
 					chart.ctx.restore();
-					drawSolidPriceHoverMarker(chart.ctx, marker, seriesColor);
 				},
 			};
 			const dynamicScaleWidthPlugin = {

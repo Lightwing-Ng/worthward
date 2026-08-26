@@ -1,4 +1,4 @@
-/* Code version: v1.167.75 */
+/* Code version: v1.167.80 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2007,6 +2007,35 @@ test('places the Ticker comparison mode above Period and Show chips below Period
     expect(placement.modeNextId).toBe('period_panel');
 });
 
+test('matches the Ticker comparison Period trigger width to the range Mode width', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
+
+    const periodTrigger = page.locator(
+        'xpath=/html/body/main/div/section/section/div/aside/form/div[5]/div/div[1]/button',
+    );
+    const rangeMode = page.locator(
+        'xpath=/html/body/main/div/section/section/div/aside/form/div[4]/div',
+    );
+    await expect(periodTrigger).toBeVisible();
+    await expect(rangeMode).toBeVisible();
+
+    const widths = await Promise.all([
+        periodTrigger.evaluate((element) => element.getBoundingClientRect().width),
+        rangeMode.evaluate((element) => element.getBoundingClientRect().width),
+    ]);
+    expect(Math.abs(widths[0] - widths[1])).toBeLessThanOrEqual(0.5);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    await expect(periodTrigger).toBeVisible();
+    await expect(rangeMode).toBeVisible();
+    const narrowWidths = await Promise.all([
+        periodTrigger.evaluate((element) => element.getBoundingClientRect().width),
+        rangeMode.evaluate((element) => element.getBoundingClientRect().width),
+    ]);
+    expect(Math.abs(narrowWidths[0] - narrowWidths[1])).toBeLessThanOrEqual(0.5);
+});
+
 test('renders a cached OHLCV cost distribution on the price scale without category legends', async ({page}) => {
     let fallbackRequests = 0;
     await page.route('**/api/compare/chips**', async (route) => {
@@ -2135,8 +2164,8 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="price-relative-opacity"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="none"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-color-model="price-relative"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker="solid-price"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker-axis="shared-y-scale"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker="none"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker-axis="none"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-placement="panel-top-right"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-state="settled"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-progress="1.0000"]')).toHaveCount(4);
@@ -2255,27 +2284,10 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].alpha).toBeCloseTo(0.56, 2);
     expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].lineWidth).toBeLessThanOrEqual(1);
 
-    const hoveredPriceMarker = await firstChipCanvas.evaluate((canvas) => {
-        const chart = window.Chart.getChart(canvas);
-        const marker = chart?.$chipHoverPriceMarker;
-        const profile = chart?.$costDistribution;
-        const bin = profile?.distribution?.bins?.[profile?.distribution?.pocIndex];
-        return {
-            active: Boolean(marker),
-            price: marker?.price ?? null,
-            expectedPrice: bin?.price ?? null,
-            x: marker?.x ?? null,
-            expectedX: chart?.chartArea?.right ?? null,
-            y: marker?.y ?? null,
-            expectedY: bin ? profile.priceToCanvasY(bin.price) : null,
-            radius: marker?.radius ?? null,
-        };
-    });
-    expect(hoveredPriceMarker.active).toBe(true);
-    expect(hoveredPriceMarker.price).toBeCloseTo(hoveredPriceMarker.expectedPrice, 6);
-    expect(hoveredPriceMarker.x).toBeCloseTo(hoveredPriceMarker.expectedX, 3);
-    expect(hoveredPriceMarker.y).toBeCloseTo(hoveredPriceMarker.expectedY, 3);
-    expect(hoveredPriceMarker.radius).toBe(3);
+    const hoveredPriceMarker = await firstChipCanvas.evaluate((canvas) => (
+        window.Chart.getChart(canvas)?.$chipHoverPriceMarker || null
+    ));
+    expect(hoveredPriceMarker).toBeNull();
 
     await page.mouse.move(chipGeometry.alternateHoverX, chipGeometry.alternateHoverY);
     await expect(page.locator('.price-shared-tooltip')).toBeVisible();
@@ -2603,6 +2615,99 @@ test('uses range-wide OHLCV chips when Longbridge price buckets are too narrow',
     ));
     expect(chipShape.every((item) => item.source === 'ohlcv-estimate' && item.populatedBins > 10)).toBe(true);
     expect(fallbackRequests).toBe(1);
+});
+
+test('reuses the cached chip payload when removing an unchanged ticker', async ({page}) => {
+    let chipRequests = 0;
+    const tickers = ['SPY', 'QQQ', 'MU', 'DRAM'];
+    const start = Date.UTC(2025, 7, 25);
+    const buildCachedOhlcv = (tickerIndex) => Array.from({length: 90}, (_, rowIndex) => {
+        const close = 100 + (tickerIndex * 100) + (rowIndex * 0.8);
+        const date = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+        return {
+            t: `${date} 00:00`,
+            o: close - 1,
+            h: close + 3,
+            l: close - 3,
+            c: close,
+            v: 100_000 + ((rowIndex % 7) * 10_000),
+            synthetic: false,
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        chipRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    ohlcv: buildCachedOhlcv(tickerIndex),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=SPY&ticker=QQQ&ticker=MU&ticker=DRAM&range=2y');
+    await page.locator('label[for="show_chips"]').click();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    expect(chipRequests).toBe(1);
+
+    await page.locator('.ticker-field:nth-of-type(4) .ticker-remove').click();
+    await expect(page).toHaveURL(/ticker=SPY.*ticker=QQQ.*ticker=MU.*range=2y.*chips=1/);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
+    await expect(page.locator('[data-chip-loading-spinner]:not([hidden])')).toHaveCount(0);
+    expect(chipRequests).toBe(1);
+});
+
+test('reuses and narrows the cached chip payload when shortening Period', async ({page}) => {
+    let chipRequests = 0;
+    const tickers = ['SPY', 'QQQ', 'MU', 'DRAM'];
+    const start = Date.UTC(2024, 7, 26);
+    const buildCachedOhlcv = (tickerIndex) => Array.from({length: 730}, (_, rowIndex) => {
+        const close = 100 + (tickerIndex * 100) + (rowIndex * 0.3);
+        const date = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+        return {
+            t: `${date} 00:00`,
+            o: close - 1,
+            h: close + 3,
+            l: close - 3,
+            c: close,
+            v: 100_000 + ((rowIndex % 7) * 10_000),
+            synthetic: false,
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        chipRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    ohlcv: buildCachedOhlcv(tickerIndex),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=SPY&ticker=QQQ&ticker=MU&ticker=DRAM&range=2y');
+    await page.locator('label[for="show_chips"]').click();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    expect(chipRequests).toBe(1);
+
+    const periodTrigger = page.locator('#period_panel [data-shared-select-trigger]');
+    await expect(periodTrigger).toHaveAttribute('aria-label', 'Period: 2 years');
+    await periodTrigger.click();
+    await page.locator('#period_dropdown [role="option"][data-value="1y"]').click();
+    await expect(periodTrigger).toHaveAttribute('aria-label', 'Period: 1 year');
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    await expect(page.locator('[data-chip-loading-spinner]:not([hidden])')).toHaveCount(0);
+    expect(chipRequests).toBe(1);
 });
 
 test('ignores partial cached volume rows when loading the chip distribution', async ({page}) => {
