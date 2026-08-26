@@ -1,7 +1,9 @@
 """
 Market data retrieval services.
 
-Code version: v0.24.0
+Code version: v0.24.1
+
+- Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
   distribution calculations while preserving the selected close-price mode.
 """
@@ -1473,6 +1475,8 @@ def _apply_inferred_split_adjustments(dataset: pd.DataFrame) -> pd.DataFrame:
     for column in ("Open", "High", "Low", "Close"):
         if column in adjusted.columns:
             adjusted[column] = pd.to_numeric(adjusted[column], errors="coerce") / divisors
+    if "Volume" in adjusted.columns:
+        adjusted["Volume"] = pd.to_numeric(adjusted["Volume"], errors="coerce") * divisors
     return adjusted
 
 

@@ -1,8 +1,8 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.82.2
-- Changed: Price comparison prefers Longbridge trade statistics so each cost-profile bin can preserve Buy / Neutral / Sell flow categories, with daily OHLCV retained as the fallback.
+Code version: v0.82.5
+- Fixed: Multi-day Cost Distribution profiles normalize raw Longbridge OHLCV onto the chart's split-only price and share basis and never substitute narrow near-current trade statistics.
 - Fixed: Price comparison loads range-bounded Longbridge daily OHLCV in sequence
   when legacy local history lacks Volume, avoiding the CLI one-second rate limit.
 - Added: Price comparison exposes a Longbridge-backed trade-statistics chips view.
@@ -259,6 +259,7 @@ from app.services.market_data import (
     has_compare_overnight_market_data_source,
     infer_ticker_market,
     list_available_market_intervals,
+    normalize_history_frame,
     refresh_history_store,
     refresh_one_minute_store,
     refresh_one_minute_store_with_longbridge,
@@ -6204,6 +6205,11 @@ def build_web_runtime() -> WebRuntime:
             requested_end = pd.to_datetime(request.args.get("to", ""), errors="coerce")
             if pd.notna(requested_start) and pd.notna(requested_end) and requested_start > requested_end:
                 raise ValueError("Chip comparison start date must not be after its end date.")
+            prefers_range_aligned_ohlcv = (
+                pd.notna(requested_start)
+                and pd.notna(requested_end)
+                and requested_start.normalize() != requested_end.normalize()
+            )
 
             def run_with_rate_limit_retry(loader: Callable[[], Any]) -> Any:
                 for attempt in range(3):
@@ -6218,9 +6224,10 @@ def build_web_runtime() -> WebRuntime:
 
             def fetch_longbridge_ohlcv(ticker: str) -> dict[str, Any]:
                 since = requested_start.to_pydatetime() if pd.notna(requested_start) else None
-                dataset = run_with_rate_limit_retry(
+                raw_dataset = run_with_rate_limit_retry(
                     lambda: fetch_longbridge_daily_history(ticker, broker_settings, since=since)
                 )
+                dataset = normalize_history_frame(raw_dataset, ticker, interval="1d")
                 if dataset.empty or "Date" not in dataset.columns:
                     raise ValueError(f"No daily OHLCV returned for {ticker} via Longbridge.")
                 date_values = pd.to_datetime(dataset["Date"], errors="coerce")
@@ -6243,6 +6250,12 @@ def build_web_runtime() -> WebRuntime:
                 }
 
             def fetch_one(ticker: str) -> tuple[str, dict[str, Any] | None, str | None]:
+                if prefers_range_aligned_ohlcv:
+                    try:
+                        return ticker, fetch_longbridge_ohlcv(ticker), None
+                    except Exception as ohlcv_exc:  # noqa: BLE001
+                        LOGGER.info("No range-aligned Longbridge daily OHLCV returned for %s: %s", ticker, ohlcv_exc)
+                        return ticker, None, "No range-aligned chip distribution is available for this ticker."
                 try:
                     payload = run_with_rate_limit_retry(
                         lambda: fetch_longbridge_trade_stats(ticker, broker_settings)

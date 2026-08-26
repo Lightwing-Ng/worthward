@@ -1,4 +1,4 @@
-/* Code version: v0.22.4 */
+/* Code version: v0.22.5 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -20,6 +20,7 @@
 	const CHIP_HOVER_PRICE_MARKER_RADIUS = 3;
 	const CHIP_DISTRIBUTION_BIN_COUNT = 100;
 	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
+	const PRICE_LEVEL_MINIMUM_HISTORICAL_RANGE_COVERAGE = 0.35;
 	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
 	const CHIP_REVEAL_MOTION_NAME = "shared-bouncy-spring";
 	const CHIP_REVEAL_FALLBACK_DURATION = 620;
@@ -603,28 +604,47 @@
 		return distribution;
 	};
 
-	const getChipDistribution = (item, fallbackItem, period) => {
+	const getCachedOhlcvChipDistribution = (item, fallbackItem, period) => {
 		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
 		if (!calculator) return null;
-		const tradeRows = Array.isArray(fallbackItem?.trades) ? fallbackItem.trades : [];
-		if (tradeRows.length) {
-			const key = chipDistributionSignature(item?.ticker, period, "longbridge-trade-stats", tradeRows);
-			return chipDistributionCache.get(key) || cacheChipDistribution(
-				key,
-				calculator.calculatePriceLevelDistribution(tradeRows, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
-			);
-		}
 		const ohlcvSource = [item, fallbackItem]
 			.filter((candidate) => hasUsableOhlcv(candidate))
 			.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
-		if (ohlcvSource) {
-			const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv);
-			return chipDistributionCache.get(key) || cacheChipDistribution(
-				key,
-				calculator.calculateChipDistribution(ohlcvSource.ohlcv, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
-			);
+		if (!ohlcvSource) return null;
+		const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv);
+		return chipDistributionCache.get(key) || cacheChipDistribution(
+			key,
+			calculator.calculateChipDistribution(ohlcvSource.ohlcv, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
+		);
+	};
+
+	const hasRepresentativePriceLevelCoverage = (priceLevelDistribution, historicalDistribution) => {
+		const priceLevelMin = finiteNumber(priceLevelDistribution?.minPrice);
+		const priceLevelMax = finiteNumber(priceLevelDistribution?.maxPrice);
+		const historicalMin = finiteNumber(historicalDistribution?.minPrice);
+		const historicalMax = finiteNumber(historicalDistribution?.maxPrice);
+		if ([priceLevelMin, priceLevelMax, historicalMin, historicalMax].some((value) => value === null)) return true;
+		const historicalSpan = historicalMax - historicalMin;
+		if (!Number.isFinite(historicalSpan) || historicalSpan <= 0) return true;
+		const priceLevelSpan = Math.max(0, priceLevelMax - priceLevelMin);
+		return (priceLevelSpan / historicalSpan) >= PRICE_LEVEL_MINIMUM_HISTORICAL_RANGE_COVERAGE;
+	};
+
+	const getChipDistribution = (item, fallbackItem, period) => {
+		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		if (!calculator) return null;
+		const ohlcvDistribution = getCachedOhlcvChipDistribution(item, fallbackItem, period);
+		const tradeRows = Array.isArray(fallbackItem?.trades) ? fallbackItem.trades : [];
+		if (!tradeRows.length) return ohlcvDistribution;
+		const key = chipDistributionSignature(item?.ticker, period, "longbridge-trade-stats", tradeRows);
+		const priceLevelDistribution = chipDistributionCache.get(key) || cacheChipDistribution(
+			key,
+			calculator.calculatePriceLevelDistribution(tradeRows, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
+		);
+		if (!priceLevelDistribution || !hasRepresentativePriceLevelCoverage(priceLevelDistribution, ohlcvDistribution)) {
+			return ohlcvDistribution;
 		}
-		return null;
+		return priceLevelDistribution;
 	};
 
 	const getChipPanelWidth = (chart) => {

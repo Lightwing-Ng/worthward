@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.1
+Code version: v0.14.2
 """
 
 from __future__ import annotations
@@ -333,10 +333,7 @@ class ComparePageTests(unittest.TestCase):
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
             patch("app.web.runtime.fetch_longbridge_daily_history", side_effect=fetch_daily),
-            patch(
-                "app.web.runtime.fetch_longbridge_trade_stats",
-                side_effect=ValueError("Trade statistics are unavailable."),
-            ) as fetch_stats,
+            patch("app.web.runtime.fetch_longbridge_trade_stats") as fetch_stats,
             patch("app.web.runtime.time.sleep") as sleep,
         ):
             response = create_app().test_client().get(
@@ -358,8 +355,30 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(payload["series"][0]["ohlcv"][1]["v"], 1_200.0)
         self.assertEqual([ticker for ticker, _since in fetch_calls], ["AAPL", "NVDA"])
         self.assertTrue(all(str(since).startswith("2026-01-02") for _ticker, since in fetch_calls))
-        self.assertEqual(fetch_stats.call_count, 2)
+        fetch_stats.assert_not_called()
         sleep.assert_called_once_with(1.05)
+
+    def test_chips_api_does_not_substitute_trade_stats_for_multi_day_ohlcv(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+        with (
+            patch("app.web.runtime.load_broker_settings", return_value=settings),
+            patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch(
+                "app.web.runtime.fetch_longbridge_daily_history",
+                side_effect=ValueError("Daily history is unavailable."),
+            ),
+            patch("app.web.runtime.fetch_longbridge_trade_stats") as fetch_stats,
+            patch("app.web.runtime.time.sleep"),
+        ):
+            response = create_app().test_client().get(
+                "/api/compare/chips?ticker=AAPL&ticker=NVDA&from=2026-01-02&to=2026-01-05"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 502, payload)
+        self.assertFalse(payload["success"])
+        self.assertEqual(set(payload["errors"]), {"AAPL", "NVDA"})
+        fetch_stats.assert_not_called()
 
     def test_chips_api_prefers_ordered_longbridge_trade_stats(self) -> None:
         settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")

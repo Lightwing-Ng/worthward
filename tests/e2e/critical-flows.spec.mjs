@@ -1,4 +1,4 @@
-/* Code version: v1.167.74 */
+/* Code version: v1.167.75 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2476,6 +2476,9 @@ test('renders Longbridge price-level chips with price-relative colors', async ({
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
     await page.evaluate(() => {
+        window.ANTIGRAVITY_APP.chart.series.forEach((series) => {
+            series.ohlcv = [];
+        });
         const item = window.ANTIGRAVITY_APP.chart.series[0];
         item.prices = item.prices.map((_value, index, values) => (
             index === values.length - 1 ? 100.5 : 190 + (index * 0.01)
@@ -2545,6 +2548,61 @@ test('renders Longbridge price-level chips with price-relative colors', async ({
         paintedChipColors.expected.profit,
         paintedChipColors.expected.loss,
     ]));
+});
+
+test('uses range-wide OHLCV chips when Longbridge price buckets are too narrow', async ({page}) => {
+    let fallbackRequests = 0;
+    await page.route('**/api/compare/chips**', async (route) => {
+        fallbackRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: ['AAPL', 'QQQ', 'SPY', 'DRAM'].map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-trade-stats',
+                    trades: [
+                        {price: 100 + (tickerIndex * 100), buy: 120, neutral: 80, sell: 40},
+                        {price: 101 + (tickerIndex * 100), buy: 80, neutral: 120, sell: 60},
+                    ],
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
+    await page.evaluate(() => {
+        const start = Date.UTC(2026, 0, 2);
+        window.ANTIGRAVITY_APP.chart.series.forEach((item, tickerIndex) => {
+            const base = 100 + (tickerIndex * 100);
+            item.ohlcv = Array.from({length: 90}, (_, rowIndex) => {
+                const close = base + (rowIndex * 0.9);
+                const timestamp = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+                return {
+                    t: `${timestamp} 00:00`,
+                    o: close - 1,
+                    h: close + 3,
+                    l: close - 3,
+                    c: close,
+                    v: 100_000 + ((rowIndex % 7) * 10_000),
+                    synthetic: false,
+                };
+            });
+        });
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+    });
+
+    await page.locator('label[for="show_chips"]').click();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    const chipShape = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => ({
+            source: canvas.dataset.chipSource,
+            populatedBins: Number(canvas.dataset.chipPopulatedBinCount),
+        }))
+    ));
+    expect(chipShape.every((item) => item.source === 'ohlcv-estimate' && item.populatedBins > 10)).toBe(true);
+    expect(fallbackRequests).toBe(1);
 });
 
 test('ignores partial cached volume rows when loading the chip distribution', async ({page}) => {

@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.5
+Code version: v0.20.6
 """
 
 from __future__ import annotations
@@ -360,6 +360,24 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(result["Turnover"].tolist(), [102_000.0, 210_000.0])
         self.assertEqual(result["High"].tolist(), [104.0, 106.0])
         self.assertEqual(normalized["Volume"].tolist(), [1_000.0, 2_000.0])
+
+    def test_inferred_split_normalization_aligns_price_and_volume_share_basis(self) -> None:
+        dataset = pd.DataFrame({
+            "Date": pd.to_datetime(["2024-06-07", "2024-06-10"]),
+            "Open": [1_000.0, 100.0],
+            "High": [1_010.0, 101.0],
+            "Low": [990.0, 99.0],
+            "Close": [1_000.0, 100.0],
+            "Volume": [100_000.0, 1_000_000.0],
+        })
+
+        normalized = normalize_history_frame(dataset, "NVDA")
+
+        self.assertEqual(normalized["Open"].tolist(), [100.0, 100.0])
+        self.assertEqual(normalized["High"].tolist(), [101.0, 101.0])
+        self.assertEqual(normalized["Low"].tolist(), [99.0, 99.0])
+        self.assertEqual(normalized["Close"].tolist(), [100.0, 100.0])
+        self.assertEqual(normalized["Volume"].tolist(), [1_000_000.0, 1_000_000.0])
 
     def setUp(self) -> None:
         _reset_yfinance_rate_limit_backoff()

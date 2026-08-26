@@ -1,4 +1,4 @@
-{# Code version: v0.22.10 #}
+{# Code version: v0.22.11 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -287,7 +287,7 @@
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.2.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.22.4') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.22.5') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.39.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
