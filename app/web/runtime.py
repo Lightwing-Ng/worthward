@@ -1,7 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.81.4
+Code version: v0.82.2
+- Changed: Price comparison prefers Longbridge trade statistics so each cost-profile bin can preserve Buy / Neutral / Sell flow categories, with daily OHLCV retained as the fallback.
+- Fixed: Price comparison loads range-bounded Longbridge daily OHLCV in sequence
+  when legacy local history lacks Volume, avoiding the CLI one-second rate limit.
+- Added: Price comparison exposes a Longbridge-backed trade-statistics chips view.
 - Changed: Exact one-day US date constraints now reuse the existing comparison
   market-data fallback so an active trading day remains selectable when Yahoo
   or the local one-minute cache is behind the current session.
@@ -124,6 +128,9 @@ from app.web.request_security import validate_investment_browser_write_request
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
+    fetch_longbridge_daily_history,
+    fetch_longbridge_trade_stats,
+    has_longbridge_market_data_source,
     has_recent_one_minute_store,
     is_one_minute_store_fresh,
     one_minute_lookback_start,
@@ -447,6 +454,7 @@ class WebRuntime:
     symbol_search: Any
     date_constraints_api: Any
     compare_live_api: Any
+    compare_chips_api: Any
     trade_strategy_fields_api: Any
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
@@ -3265,6 +3273,10 @@ def build_web_runtime() -> WebRuntime:
         if extended_hours_value == "1":
             pairs.append(("extended-hours", "1"))
 
+        chips_value = request.args.get("chips", "").strip()
+        if normalized_view == "prices" and comparison_metric == "price" and chips_value == "1":
+            pairs.append(("chips", "1"))
+
         strategy_value = request.args.get("strategy", "").strip()
         if strategy_value:
             pairs.append(("strategy", strategy_value))
@@ -3324,6 +3336,7 @@ def build_web_runtime() -> WebRuntime:
             "include_extended_hours",
             "overnight",
             "include_overnight",
+            "chips",
             "strategy",
             "capital",
             "initial_capital",
@@ -3392,6 +3405,11 @@ def build_web_runtime() -> WebRuntime:
         is_market_cap_comparison = (
             current_view == "market-caps"
             or (current_view == "prices" and comparison_metric == "market-cap")
+        )
+        show_chips = (
+            current_view == "prices"
+            and comparison_metric == "price"
+            and parse_bool_flag("chips")
         )
         view_max_tickers = max_tickers_for_view(current_view, comparison_metric)
         requested_tickers = parse_requested_tickers(current_view, comparison_metric)
@@ -4953,6 +4971,7 @@ def build_web_runtime() -> WebRuntime:
             report_heading=report_heading,
             chart_heading=chart_heading,
             comparison_metric=comparison_metric,
+            show_chips=show_chips,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "prices", "portfolio", "dca", "backtest", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "investment", "backtest", "font-tokens", "color-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
@@ -4989,6 +5008,7 @@ def build_web_runtime() -> WebRuntime:
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",
                 "compareLive": "/api/compare/live",
+                "compareChips": "/api/compare/chips",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
@@ -6150,6 +6170,131 @@ def build_web_runtime() -> WebRuntime:
             )
             payload.message = f"{payload.message} {freshness_notice}".strip() if payload.message else freshness_notice
         return jsonify(date_constraint_payload_to_json(payload))
+
+    def compare_chips_api():
+        raw_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
+        if not raw_tickers:
+            repeated = str(request.args.get("tickers", "")).strip()
+            raw_tickers = [value.strip() for value in repeated.split(",") if value.strip()]
+        if len(raw_tickers) < MIN_TICKERS:
+            response = jsonify({"success": False, "error": "At least two tickers are required for chip comparison."})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+
+        try:
+            validated_tickers = list(dict.fromkeys(validate_ticker_or_raise(ticker) for ticker in raw_tickers))
+            if len(validated_tickers) < MIN_TICKERS:
+                raise ValueError("At least two distinct tickers are required for chip comparison.")
+            if len(validated_tickers) > MAX_TICKERS:
+                raise ValueError(f"Chip comparison supports at most {MAX_TICKERS} tickers.")
+
+            broker_settings = load_broker_settings()
+            if (
+                broker_settings.selected_broker != "longbridge"
+                or not has_longbridge_market_data_source(broker_settings)
+            ):
+                response = jsonify({
+                    "success": False,
+                    "error": "Configure Longbridge market data in Settings > Broker access to display chips.",
+                })
+                response.status_code = 503
+                return apply_no_store_headers(response)
+
+            requested_start = pd.to_datetime(request.args.get("from", ""), errors="coerce")
+            requested_end = pd.to_datetime(request.args.get("to", ""), errors="coerce")
+            if pd.notna(requested_start) and pd.notna(requested_end) and requested_start > requested_end:
+                raise ValueError("Chip comparison start date must not be after its end date.")
+
+            def run_with_rate_limit_retry(loader: Callable[[], Any]) -> Any:
+                for attempt in range(3):
+                    try:
+                        return loader()
+                    except Exception as exc:  # noqa: BLE001
+                        is_rate_limited = "429002" in str(exc) or "调用上限" in str(exc)
+                        if not is_rate_limited or attempt == 2:
+                            raise
+                        time.sleep(1.05)
+                raise RuntimeError("Longbridge rate-limit retry did not return a result.")
+
+            def fetch_longbridge_ohlcv(ticker: str) -> dict[str, Any]:
+                since = requested_start.to_pydatetime() if pd.notna(requested_start) else None
+                dataset = run_with_rate_limit_retry(
+                    lambda: fetch_longbridge_daily_history(ticker, broker_settings, since=since)
+                )
+                if dataset.empty or "Date" not in dataset.columns:
+                    raise ValueError(f"No daily OHLCV returned for {ticker} via Longbridge.")
+                date_values = pd.to_datetime(dataset["Date"], errors="coerce")
+                if getattr(date_values.dt, "tz", None) is not None:
+                    date_values = date_values.dt.tz_localize(None)
+                selected = dataset.loc[date_values.notna()].copy()
+                selected_dates = date_values.loc[date_values.notna()]
+                if pd.notna(requested_start):
+                    selected = selected.loc[selected_dates >= requested_start].copy()
+                    selected_dates = selected_dates.loc[selected_dates >= requested_start]
+                if pd.notna(requested_end):
+                    selected = selected.loc[selected_dates <= requested_end].copy()
+                ohlcv = build_series_payload(ticker, selected).ohlcv or []
+                if not any(float(row.get("v") or 0) > 0 for row in ohlcv):
+                    raise ValueError(f"No positive daily volume returned for {ticker} via Longbridge.")
+                return {
+                    "ticker": ticker,
+                    "source": "longbridge-daily-ohlcv",
+                    "ohlcv": ohlcv,
+                }
+
+            def fetch_one(ticker: str) -> tuple[str, dict[str, Any] | None, str | None]:
+                try:
+                    payload = run_with_rate_limit_retry(
+                        lambda: fetch_longbridge_trade_stats(ticker, broker_settings)
+                    )
+                    return ticker, {"ticker": ticker, "source": "longbridge-trade-stats", **payload}, None
+                except Exception as trade_stats_exc:  # noqa: BLE001
+                    LOGGER.info("No Longbridge trade statistics returned for %s: %s", ticker, trade_stats_exc)
+                try:
+                    return ticker, fetch_longbridge_ohlcv(ticker), None
+                except Exception as ohlcv_exc:  # noqa: BLE001
+                    LOGGER.info("No Longbridge daily OHLCV returned for %s: %s", ticker, ohlcv_exc)
+                    return ticker, None, "No chip distribution is available for this ticker."
+
+            results: dict[str, dict[str, Any] | None] = {}
+            errors: dict[str, str] = {}
+            for index, requested_ticker in enumerate(validated_tickers):
+                ticker, payload, error_message = fetch_one(requested_ticker)
+                if payload is not None:
+                    results[ticker] = payload
+                elif error_message:
+                    errors[ticker] = error_message
+                if index < len(validated_tickers) - 1:
+                    time.sleep(1.05)
+
+            ordered_series = [results[ticker] for ticker in validated_tickers if ticker in results]
+            if not ordered_series:
+                response = jsonify({
+                    "success": False,
+                    "error": "Longbridge returned no chip distribution for the selected tickers.",
+                    "errors": errors,
+                })
+                response.status_code = 502
+                return apply_no_store_headers(response)
+
+            return apply_no_store_headers(jsonify({
+                "success": True,
+                "series": ordered_series,
+                "errors": errors,
+                "fetchedAt": pd.Timestamp.now(tz="UTC").isoformat(),
+            }))
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Chip comparison request failed")
+            response = jsonify({
+                "success": False,
+                "error": "Chip comparison is temporarily unavailable. Try again later.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def compare_live_api():
         raw_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
@@ -8211,6 +8356,7 @@ def build_web_runtime() -> WebRuntime:
         symbol_search=symbol_search,
         date_constraints_api=date_constraints_api,
         compare_live_api=compare_live_api,
+        compare_chips_api=compare_chips_api,
         trade_strategy_fields_api=trade_strategy_fields_api,
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,

@@ -1,4 +1,4 @@
-/* Code version: v1.18.0 */
+/* Code version: v1.19.4 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -2431,6 +2431,23 @@ footer {
     height: 100% !important;
 }
 
+.price-subplot-chip-loading {
+    --price-chip-loading-panel-width: clamp(116px, 30%, 190px);
+    --loading-spinner-size: 20px;
+    position: absolute;
+    z-index: var(--layer-inline-overlay);
+    inset-block: 0;
+    inset-inline-end: 8px;
+    display: grid;
+    place-items: center;
+    width: var(--price-chip-loading-panel-width);
+    pointer-events: none;
+}
+
+.price-subplot-chip-loading[hidden] {
+    display: none;
+}
+
 .price-subplot-order-handle {
     --surface-resizer-handle-position: 50%;
     position: absolute;
@@ -2536,8 +2553,56 @@ body.is-price-subplot-reordering {
 }
 
 .price-shared-tooltip {
+	position: absolute;
+	z-index: var(--layer-chart-tooltip);
+}
+
+.price-shared-tooltip[data-tooltip-kind="chip"] {
+	--chart-tooltip-max-width: 320px;
+	box-sizing: border-box;
+	width: min(320px, calc(100% - 24px));
+	min-width: min(320px, calc(100% - 24px));
+	max-width: min(320px, calc(100% - 24px));
+}
+
+.price-shared-tooltip[data-tooltip-kind="chip"] .chart-tooltip-row {
+	grid-template-columns: 10px minmax(0, 1fr) max-content;
+	align-items: center;
+	block-size: 1.2em;
+}
+
+.price-shared-tooltip[data-tooltip-kind="chip"] .chart-tooltip-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.price-shared-tooltip[data-tooltip-kind="chip"] .chart-tooltip-value {
+	white-space: nowrap;
+}
+
+.chips-chart-status-region {
     position: absolute;
-    z-index: var(--layer-chart-tooltip);
+    z-index: var(--layer-inline-overlay);
+    inset-block-start: 34px;
+    inset-inline: 16px;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+}
+
+.chips-chart-status {
+    margin: 0;
+    max-width: min(420px, 100%);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--theme-panel) 86%, transparent);
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.chips-chart-status[data-state="error"] {
+    color: var(--theme-error-strong);
 }
 
 @media (min-width: 768px) {
@@ -2570,6 +2635,11 @@ body.is-price-subplot-reordering {
         grid-template-rows: repeat(var(--price-subplot-count), 190px);
         height: auto;
         min-height: 0;
+    }
+
+    .chips-chart-status-region {
+        inset-block-start: 30px;
+        inset-inline: 10px;
     }
 }
 

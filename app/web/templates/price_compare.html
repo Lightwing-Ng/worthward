@@ -1,4 +1,4 @@
-{# Code version: v0.4.2 #}
+{# Code version: v0.5.4 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -24,7 +24,7 @@
             <div class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <header class="report-card workspace-article-card workspace-summary-card">
                     <div class="report-heading-row workspace-result-heading-stack">
-                        <h2 class="report-heading" id="{{ comparison_heading_id }}">{{ chart_heading or (translate_ui('Market cap history') if is_market_cap_comparison else translate_ui('Price history')) }}</h2>
+                        <h2 class="report-heading" id="{{ comparison_heading_id }}" data-price-compare-heading data-price-heading="{{ translate_ui('Price history') }}" data-chips-heading="{{ translate_ui('Chip distribution') }}">{{ translate_ui('Market cap history') if is_market_cap_comparison else (chart_heading or translate_ui('Price history')) }}</h2>
                     </div>
                 </header>
                 {% if is_market_cap_comparison %}
@@ -47,11 +47,15 @@
                     <div id="price_subplot_region"
                          class="price-subplot-grid"
                          data-workspace-mask="price-subplots"
+                         data-price-chart-region
                         style="--price-subplot-count: {{ series | length }};">
                         {% for item in series %}
                         <section class="price-subplot" data-price-subplot data-ticker="{{ item.ticker }}">
                             <div class="price-subplot-canvas-wrap">
                                 <canvas id="price_subplot_{{ loop.index }}" data-price-subplot-canvas data-series-index="{{ loop.index0 }}"></canvas>
+                                <span class="price-subplot-chip-loading" data-chip-loading-spinner hidden aria-hidden="true">
+                                    <span class="suggestion-loading-spinner"></span>
+                                </span>
                             </div>
                             <button
                                 type="button"
@@ -63,6 +67,13 @@
                             ></button>
                         </section>
                         {% endfor %}
+                    </div>
+                    <div id="chips_chart_region"
+                         class="chips-chart-status-region"
+                         data-chips-chart-region
+                         {% if not show_chips %}hidden{% endif %}
+                         aria-live="polite">
+                        <p class="chips-chart-status" data-chips-chart-status role="status" aria-live="polite" hidden></p>
                     </div>
                     <p class="price-subplot-order-status" data-price-subplot-order-status aria-live="polite"></p>
                     {% else %}

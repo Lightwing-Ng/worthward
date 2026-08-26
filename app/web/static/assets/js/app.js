@@ -1,4 +1,4 @@
-/* Code version: v0.38.14 */
+/* Code version: v0.39.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4448,6 +4448,7 @@
     const extendedHoursField = $("[data-one-day-extended-hours-field]");
     const overnightInput = $("#include_overnight_hours");
     const overnightField = $("[data-one-day-overnight-field]");
+    const chipsInput = $("#show_chips");
     const priceOnlyInput = $("#price_only");
     const priceOnlyField = $("[data-price-only-field]");
     const includeDividendsInput = $("#include_dividends");
@@ -6828,6 +6829,12 @@
             returnMode: priceOnlyInput?.checked ? "price" : includeDividendsInput?.checked ? "dividends" : "total",
             extendedHours: Boolean(extendedHoursInput?.checked && !extendedHoursInput.disabled),
             overnight: Boolean(overnightInput?.checked && !overnightInput.disabled),
+            showChips: Boolean(
+                state.currentView === "prices"
+                && getComparisonMetric() === "price"
+                && chipsInput?.checked
+                && !chipsInput.disabled,
+            ),
             isPortfolio: isPortfolioView,
             allocation: isPortfolioView ? getPortfolioAllocationMode() : "weight",
             weights: portfolioEntries.map((entry) => Number.parseInt(entry.number.value, 10) || 0),

@@ -1,4 +1,4 @@
-/* Code version: v1.167.51 */
+/* Code version: v1.167.72 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -19,6 +19,105 @@ const tapAtCenter = async (page, locator) => {
     if (!box) throw new Error('Cannot tap an element without a layout box');
     await page.touchscreen.tap(box.x + (box.width / 2), box.y + (box.height / 2));
 };
+
+const readPriceLogoThemeAlignment = async (page) => page.evaluate(() => {
+    const themeRect = document.querySelector('#global_theme_toggle')?.getBoundingClientRect();
+    const themeCenterX = themeRect ? themeRect.left + (themeRect.width / 2) : null;
+    return {
+        themeCenterX,
+        logos: [...document.querySelectorAll('[data-price-subplot-canvas]')].map((canvas) => {
+            const chart = window.Chart.getChart(canvas);
+            const canvasRect = canvas.getBoundingClientRect();
+            const logo = chart?.$closingLogoPosition;
+            const viewportCenterX = logo
+                ? canvasRect.left + ((logo.x / chart.width) * canvasRect.width)
+                : null;
+            return {
+                ticker: canvas.closest('[data-price-subplot]')?.dataset.ticker || '',
+                viewportCenterX,
+                delta: viewportCenterX === null || themeCenterX === null
+                    ? null
+                    : viewportCenterX - themeCenterX,
+                contract: canvas.dataset.logoHorizontalAlignment,
+                clamped: canvas.dataset.logoHorizontalAlignmentClamped,
+            };
+        }),
+    };
+});
+
+const recordCostDistributionGuideStrokes = async (canvasLocator) => canvasLocator.evaluate((canvas) => {
+    const chart = window.Chart.getChart(canvas);
+    const profile = chart?.$costDistribution;
+    if (!chart || !profile) return null;
+    const context = chart.ctx;
+    const calls = [];
+    let path = [];
+    const originals = {
+        beginPath: context.beginPath,
+        moveTo: context.moveTo,
+        lineTo: context.lineTo,
+        stroke: context.stroke,
+    };
+    try {
+        context.beginPath = function beginPath() {
+            path = [];
+            return originals.beginPath.apply(this, arguments);
+        };
+        context.moveTo = function moveTo(x, y) {
+            path.push({operation: 'moveTo', x, y});
+            return originals.moveTo.apply(this, arguments);
+        };
+        context.lineTo = function lineTo(x, y) {
+            path.push({operation: 'lineTo', x, y});
+            return originals.lineTo.apply(this, arguments);
+        };
+        context.stroke = function stroke() {
+            calls.push({
+                path: path.map((point) => ({...point})),
+                alpha: this.globalAlpha,
+                dash: this.getLineDash(),
+                lineWidth: this.lineWidth,
+            });
+            return originals.stroke.apply(this, arguments);
+        };
+        chart.draw();
+    } finally {
+        context.beginPath = originals.beginPath;
+        context.moveTo = originals.moveTo;
+        context.lineTo = originals.lineTo;
+        context.stroke = originals.stroke;
+    }
+    const panelLeft = chart.chartArea.right + 10;
+    const panelRight = chart.width - 8;
+    const closeTo = (left, right) => Math.abs(left - right) <= 0.5;
+    const isTwoPointSegment = (call) => (
+        call.path.length === 2
+        && call.path[0].operation === 'moveTo'
+        && call.path[1].operation === 'lineTo'
+    );
+    const baselineStrokes = calls.filter((call) => (
+        isTwoPointSegment(call)
+        && closeTo(call.path[0].x, panelLeft)
+        && closeTo(call.path[1].x, panelLeft)
+        && closeTo(call.path[0].y, chart.chartArea.top)
+        && closeTo(call.path[1].y, chart.chartArea.bottom)
+    ));
+    const fullWidthHorizontalStrokes = calls.filter((call) => (
+        isTwoPointSegment(call)
+        && closeTo(call.path[0].x, chart.chartArea.left)
+        && closeTo(call.path[1].x, panelRight)
+        && closeTo(call.path[0].y, call.path[1].y)
+    ));
+    return {
+        baselineCount: baselineStrokes.length,
+        fullWidthHorizontalStrokes: fullWidthHorizontalStrokes.map((call) => ({
+            y: call.path[0].y,
+            alpha: call.alpha,
+            dash: call.dash,
+            lineWidth: call.lineWidth,
+        })),
+    };
+});
 
 const fulfillInertPriceLiveResponse = async (route, tickers = []) => {
     await route.fulfill({
@@ -1553,6 +1652,56 @@ test('keeps price subplot dates only on the bottom New York axis', async ({page}
     expect(axisVisibility).toEqual([false, false, true]);
 });
 
+test('keeps the bottom price axis on the shared range when its ticker starts later', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=MU&ticker=DRAM&ticker=STX&range=6mo');
+    await page.waitForFunction(() => (
+        [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+
+    const sharedRangeAxis = await page.evaluate(() => {
+        const series = window.ANTIGRAVITY_APP.chart.series;
+        const bottomIndex = series.length - 1;
+        const lateStartIndex = Math.max(1, Math.floor(series[bottomIndex].prices.length * 0.7));
+        window.ANTIGRAVITY_APP.chart.series = series.map((item, index) => index === bottomIndex ? {
+            ...item,
+            prices: item.prices.map((value, priceIndex) => priceIndex < lateStartIndex ? null : value),
+        } : item);
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        const topChart = window.Chart.getChart(canvases[0]);
+        const bottomCanvas = canvases.at(-1);
+        const bottomChart = window.Chart.getChart(bottomCanvas);
+        const lastIndex = bottomChart.data.labels.length - 1;
+        const topCallback = topChart.options.scales.x.ticks.callback;
+        const bottomCallback = bottomChart.options.scales.x.ticks.callback;
+        return {
+            visibility: canvases.map((canvas) => window.Chart.getChart(canvas).options.scales.x.display),
+            firstValidIndex: bottomChart.data.datasets[0].data.findIndex((value) => value !== null),
+            startLabel: bottomCallback(0, 0),
+            expectedStartLabel: topCallback(0, 0),
+            lateStartLabel: bottomCallback(lateStartIndex, lateStartIndex),
+            endLabel: bottomCallback(lastIndex, lastIndex),
+            expectedEndLabel: topCallback(lastIndex, lastIndex),
+            labelBasis: bottomCanvas.dataset.xAxisLabelBasis,
+            rangeStart: bottomCanvas.dataset.xAxisRangeStart,
+            rangeEnd: bottomCanvas.dataset.xAxisRangeEnd,
+            sharedStart: series[0].raw_dates[0],
+            sharedEnd: series[0].raw_dates.at(-1),
+        };
+    });
+
+    expect(sharedRangeAxis.visibility).toEqual([false, false, false, false, true]);
+    expect(sharedRangeAxis.firstValidIndex).toBeGreaterThan(0);
+    expect(sharedRangeAxis.startLabel).toBe(sharedRangeAxis.expectedStartLabel);
+    expect(sharedRangeAxis.lateStartLabel).toBe('');
+    expect(sharedRangeAxis.endLabel).toBe(sharedRangeAxis.expectedEndLabel);
+    expect(sharedRangeAxis.labelBasis).toBe('shared-range');
+    expect(sharedRangeAxis.rangeStart).toBe(sharedRangeAxis.sharedStart);
+    expect(sharedRangeAxis.rangeEnd).toBe(sharedRangeAxis.sharedEnd);
+});
+
 test('reorders price subplots and ticker fields without recreating charts', async ({page}) => {
     const liveRequests = [];
     page.on('request', (request) => {
@@ -1829,6 +1978,635 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
     expect(marketCapUrl.searchParams.get('metric')).toBe('market-cap');
     expect(marketCapUrl.searchParams.getAll('ticker')).toEqual(['AAPL', 'NVDA']);
     expect(marketCapUrl.searchParams.has('period')).toBe(false);
+});
+
+test('places the Ticker comparison mode above Period and Show chips below Period', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
+
+    const periodPanel = page.locator('#period_panel');
+    const rangeModeField = page.locator('.range-mode-field');
+    const chipsField = page.locator('[data-chips-field]');
+    await expect(periodPanel).toBeVisible();
+    await expect(rangeModeField).toBeVisible();
+    await expect(chipsField).toBeVisible();
+
+    const placement = await rangeModeField.evaluate((field) => {
+        const form = field.parentElement;
+        const period = form?.querySelector('#period_panel');
+        const chips = form?.querySelector('[data-chips-field]');
+        const children = form ? Array.from(form.children) : [];
+        return {
+            modeIndex: children.indexOf(field),
+            periodIndex: period ? children.indexOf(period) : -1,
+            chipsIndex: chips ? children.indexOf(chips) : -1,
+            modeNextId: field.nextElementSibling?.id || '',
+        };
+    });
+    expect(placement.modeIndex).toBeLessThan(placement.periodIndex);
+    expect(placement.periodIndex).toBeLessThan(placement.chipsIndex);
+    expect(placement.modeNextId).toBe('period_panel');
+});
+
+test('renders a cached OHLCV cost distribution on the price scale without category legends', async ({page}) => {
+    let fallbackRequests = 0;
+    await page.route('**/api/compare/chips**', async (route) => {
+        fallbackRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: [],
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
+    const serverOhlcv = await page.evaluate(() => window.ANTIGRAVITY_APP.chart.series.map((item) => ({
+        ticker: item.ticker,
+        rows: Array.isArray(item.ohlcv) ? item.ohlcv.length : 0,
+        positiveVolumeRows: Array.isArray(item.ohlcv)
+            ? item.ohlcv.filter((row) => Number(row.v) > 0).length
+            : 0,
+    })));
+    expect(serverOhlcv.map((item) => item.ticker)).toEqual(['AAPL', 'NVDA', 'MU', 'AMD']);
+    expect(
+        serverOhlcv.every((item) => item.rows > 80 && item.positiveVolumeRows > 80),
+        JSON.stringify(serverOhlcv),
+    ).toBe(true);
+    await page.evaluate(() => {
+        window.ANTIGRAVITY_APP.chart.series.forEach((item, itemIndex) => {
+            const start = Date.UTC(2026, 4, 1);
+            const basePrice = 100 + (itemIndex * 100);
+            const rows = Array.from({length: 90}, (_, rowIndex) => {
+                const center = basePrice + (rowIndex * 0.11) + (Math.sin(rowIndex / 5) * 5);
+                const timestamp = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+                return {
+                    t: `${timestamp} 00:00`,
+                    o: center - 1.2,
+                    h: center + 4.2,
+                    l: center - 4.4,
+                    c: center + 1.1,
+                    v: 100_000 + ((rowIndex % 11) * 35_000),
+                    synthetic: false,
+                };
+            });
+            item.ohlcv = rows;
+            item.raw_dates = rows.map((row) => row.t);
+            item.dates = rows.map((row) => row.t.slice(0, 10));
+            item.prices = rows.map((row) => row.c);
+            item.normalized_returns = rows.map((row) => ((row.c / rows[0].o) - 1) * 100);
+            item.candlestick_prices = null;
+        });
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+    });
+    const chipsInput = page.locator('#show_chips');
+    await expect(chipsInput).toBeVisible();
+    await expect(chipsInput).not.toBeChecked();
+    await expect(page.getByRole('heading', {name: 'Price history', exact: true, level: 2})).toBeVisible();
+    await expect(page.locator('[data-price-chart-region]')).toBeVisible();
+    await expect(page.locator('[data-chips-chart-region]')).toHaveAttribute('hidden');
+
+    const revealStart = await chipsInput.evaluate((input) => {
+        const readLogoPositions = () => [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .map((canvas) => window.Chart.getChart(canvas)?.$closingLogoPosition || null);
+        const before = readLogoPositions();
+        input.click();
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        return {
+            before,
+            after: canvases.map((canvas) => {
+                const chart = window.Chart.getChart(canvas);
+                return {
+                    state: canvas.dataset.chipRevealState,
+                    motion: canvas.dataset.chipRevealMotion,
+                    logoMotion: canvas.dataset.chipLogoMotion,
+                    profileProgress: Number(canvas.dataset.chipRevealProgress),
+                    logoProgress: Number(canvas.dataset.chipLogoProgress),
+                    logo: chart?.$chipRevealMotion || null,
+                };
+            }),
+        };
+    });
+    expect(revealStart.before).toHaveLength(4);
+    expect(revealStart.before.every(Boolean)).toBe(true);
+    expect(revealStart.after).toHaveLength(4);
+    expect(revealStart.after.every((item) => item.state === 'running')).toBe(true);
+    expect(revealStart.after.every((item) => item.motion === 'shared-bouncy-spring')).toBe(true);
+    expect(revealStart.after.every((item) => item.logoMotion === 'price-close-to-panel-top-right')).toBe(true);
+    expect(revealStart.after.every((item) => item.profileProgress === 0 && item.logoProgress === 0)).toBe(true);
+    revealStart.after.forEach((item, index) => {
+        expect(item.logo.active).toBe(true);
+        expect(item.logo.current.x).toBeCloseTo(item.logo.from.x, 4);
+        expect(item.logo.current.y).toBeCloseTo(item.logo.from.y, 4);
+        expect(item.logo.from.x).toBeCloseTo(revealStart.before[index].x, 4);
+        expect(item.logo.from.y).toBeCloseTo(revealStart.before[index].y, 4);
+        expect(item.logo.to.y).toBeLessThan(item.logo.from.y);
+    });
+    await expect.poll(async () => Number(
+        await page.locator('[data-price-subplot-canvas]').first().getAttribute('data-chip-reveal-progress'),
+    )).toBeGreaterThan(1);
+    const jellyFrame = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const motion = window.Chart.getChart(canvas)?.$chipRevealMotion;
+        return {
+            state: canvas.dataset.chipRevealState,
+            profileProgress: Number(canvas.dataset.chipRevealProgress),
+            logoProgress: Number(canvas.dataset.chipLogoProgress),
+            logo: motion,
+        };
+    });
+    expect(jellyFrame.state).toBe('running');
+    expect(jellyFrame.profileProgress).toBeGreaterThan(1);
+    expect(jellyFrame.logoProgress).toBeLessThanOrEqual(1);
+    expect(jellyFrame.logo.current.y).toBeGreaterThanOrEqual(jellyFrame.logo.to.y);
+    expect(jellyFrame.logo.current.y).toBeLessThanOrEqual(jellyFrame.logo.from.y);
+    await expect(chipsInput).toBeChecked();
+    await expect(page).toHaveURL(/chips=1/);
+    await expect(page.getByRole('heading', {name: 'Price history', exact: true, level: 2})).toBeVisible();
+    await expect(page.locator('[data-price-chart-region]')).toBeVisible();
+    await expect(page.locator('[data-chips-chart-region]')).not.toHaveAttribute('hidden');
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-distribution="1"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-bin-count="100"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-legend="0"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-baseline-line="none"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-current-price-line="hidden"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-line="muted-solid"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="category-opacity"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="buy-neutral-sell"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-color-model="flow-categories"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-placement="panel-top-right"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-state="settled"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-progress="1.0000"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-progress="1.0000"]')).toHaveCount(4);
+    await expect(page.locator('[data-chips-chart-canvas]')).toHaveCount(0);
+    expect(fallbackRequests).toBe(1);
+
+    const chipGeometry = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const rect = canvas.getBoundingClientRect();
+        const profile = chart.$costDistribution;
+        const bins = profile.distribution.bins;
+        const pocBin = bins.reduce((best, bin) => bin.weight > best.weight ? bin : best);
+        const alternateBin = bins
+            .filter((bin) => bin.weight > 0 && bin.index !== pocBin.index)
+            .reduce((best, bin) => !best || bin.normalizedWidth < best.normalizedWidth ? bin : best, null);
+        const panelLeft = chart.chartArea.right + 10;
+        const panelRight = chart.width - 8;
+        const chartToCssX = rect.width / chart.width;
+        const chartToCssY = rect.height / chart.height;
+        const pocY = profile.priceToCanvasY(pocBin.price);
+        return {
+            hoverX: rect.left + ((panelLeft + Math.max(2, ((panelRight - panelLeft) * pocBin.normalizedWidth * 0.5))) * chartToCssX),
+            hoverY: rect.top + (pocY * chartToCssY),
+            alternateHoverX: rect.left + ((panelLeft + 4) * chartToCssX),
+            alternateHoverY: rect.top + (profile.priceToCanvasY(alternateBin.price) * chartToCssY),
+            outsideHoverX: rect.left + 4,
+            outsideHoverY: Math.max(0, rect.top - 8),
+            normalizedWidth: pocBin.normalizedWidth,
+            pocPrice: pocBin.price,
+            reportedPocPrice: profile.statistics.pocPrice,
+            pocY,
+            directScaleY: chart.scales.y.getPixelForValue(pocBin.price),
+            panelLeft,
+            chartAreaRight: chart.chartArea.right,
+            panelRight,
+            chartWidth: chart.width,
+            chartDevicePixelRatio: chart.currentDevicePixelRatio,
+            windowDevicePixelRatio: window.devicePixelRatio,
+            backingWidth: canvas.width,
+            cssWidth: rect.width,
+        };
+    });
+    expect(chipGeometry.normalizedWidth).toBe(1);
+    expect(chipGeometry.pocPrice).toBe(chipGeometry.reportedPocPrice);
+    expect(chipGeometry.pocY).toBe(chipGeometry.directScaleY);
+    expect(chipGeometry.panelLeft).toBeGreaterThan(chipGeometry.chartAreaRight);
+    expect(chipGeometry.panelRight).toBeLessThanOrEqual(chipGeometry.chartWidth);
+    expect(chipGeometry.chartDevicePixelRatio).toBe(chipGeometry.windowDevicePixelRatio);
+    expect(chipGeometry.backingWidth).toBeGreaterThanOrEqual(chipGeometry.cssWidth * chipGeometry.windowDevicePixelRatio - 1);
+
+    const firstChipCanvas = page.locator('[data-price-subplot-canvas]').first();
+    const idleGuideStrokes = await recordCostDistributionGuideStrokes(firstChipCanvas);
+    expect(idleGuideStrokes).not.toBeNull();
+    expect(idleGuideStrokes.baselineCount).toBe(0);
+    expect(idleGuideStrokes.fullWidthHorizontalStrokes).toHaveLength(0);
+
+    await page.mouse.move(chipGeometry.hoverX, chipGeometry.hoverY);
+    await expect(page.locator('.price-shared-tooltip')).toBeVisible();
+    await expect(page.locator('.price-shared-tooltip')).toContainText('Estimated concentration');
+    await expect(page.locator('.price-shared-tooltip')).toContainText('POC');
+    await expect(page.locator('.price-shared-tooltip')).toContainText('70% cost range');
+    await expect(page.locator('.price-shared-tooltip')).toContainText('Buy / Neutral / Sell');
+    const chipTooltipLayout = await page.locator('.price-shared-tooltip').evaluate((tooltip) => {
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const rows = [...tooltip.querySelectorAll('.chart-tooltip-row')].map((row) => {
+            const label = row.querySelector('.chart-tooltip-label');
+            const value = row.querySelector('.chart-tooltip-value');
+            const labelRect = label.getBoundingClientRect();
+            const valueRect = value.getBoundingClientRect();
+            return {
+                childCount: row.children.length,
+                gridTemplateColumns: getComputedStyle(row).gridTemplateColumns,
+                rowHeight: row.getBoundingClientRect().height,
+                labelRight: labelRect.right,
+                valueLeft: valueRect.left,
+                valueHeight: valueRect.height,
+            };
+        });
+        return {
+            kind: tooltip.dataset.tooltipKind,
+            placement: tooltip.dataset.tooltipPlacement,
+            rect: {
+                left: tooltipRect.left,
+                top: tooltipRect.top,
+                right: tooltipRect.right,
+                bottom: tooltipRect.bottom,
+                width: tooltipRect.width,
+                height: tooltipRect.height,
+            },
+            rows,
+        };
+    });
+    expect(chipTooltipLayout.kind).toBe('chip');
+    expect(['above', 'below']).toContain(chipTooltipLayout.placement);
+    expect(chipTooltipLayout.rows).toHaveLength(8);
+    expect(chipTooltipLayout.rows.every((row) => row.childCount === 3)).toBe(true);
+    expect(chipTooltipLayout.rows.every((row) => row.gridTemplateColumns.split(' ').length === 3)).toBe(true);
+    expect(chipTooltipLayout.rows.every((row) => row.labelRight <= row.valueLeft)).toBe(true);
+    expect(chipTooltipLayout.rows.every((row) => row.valueHeight <= row.rowHeight)).toBe(true);
+    expect(chipTooltipLayout.rect.left).toBeGreaterThanOrEqual(0);
+    expect(chipTooltipLayout.rect.right).toBeLessThanOrEqual(1280);
+    const tooltipCursorGap = chipTooltipLayout.placement === 'above'
+        ? chipGeometry.hoverY - chipTooltipLayout.rect.bottom
+        : chipTooltipLayout.rect.top - chipGeometry.hoverY;
+    expect(tooltipCursorGap).toBeGreaterThanOrEqual(12);
+    expect(Math.abs(
+        ((chipTooltipLayout.rect.left + chipTooltipLayout.rect.right) / 2) - chipGeometry.hoverX,
+    )).toBeLessThanOrEqual(72);
+    const hoveredGuideStrokes = await recordCostDistributionGuideStrokes(firstChipCanvas);
+    expect(hoveredGuideStrokes.baselineCount).toBe(0);
+    expect(hoveredGuideStrokes.fullWidthHorizontalStrokes).toHaveLength(1);
+    expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].y).toBeCloseTo(chipGeometry.pocY, 3);
+    expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].dash).toEqual([]);
+    expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].alpha).toBeCloseTo(0.56, 2);
+    expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].lineWidth).toBeLessThanOrEqual(1);
+
+    await page.mouse.move(chipGeometry.alternateHoverX, chipGeometry.alternateHoverY);
+    await expect(page.locator('.price-shared-tooltip')).toBeVisible();
+    const alternateTooltipRect = await page.locator('.price-shared-tooltip').evaluate((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        return {width: rect.width, height: rect.height};
+    });
+    expect(Math.abs(alternateTooltipRect.width - chipTooltipLayout.rect.width)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(alternateTooltipRect.height - chipTooltipLayout.rect.height)).toBeLessThanOrEqual(0.1);
+
+    await page.mouse.move(chipGeometry.outsideHoverX, chipGeometry.outsideHoverY);
+    await expect(page.locator('.price-shared-tooltip')).not.toHaveClass(/is-visible/);
+    const fadingTooltipLayout = await page.locator('.price-shared-tooltip').evaluate((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        return {
+            kind: tooltip.dataset.tooltipKind,
+            width: rect.width,
+            height: rect.height,
+        };
+    });
+    expect(fadingTooltipLayout.kind).toBe('chip');
+    expect(Math.abs(fadingTooltipLayout.width - chipTooltipLayout.rect.width)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(fadingTooltipLayout.height - chipTooltipLayout.rect.height)).toBeLessThanOrEqual(0.1);
+
+    const pocPrices = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
+    ));
+    expect(pocPrices[1]).toBeGreaterThan(pocPrices[0] + 80);
+
+    const recalculatedPoc = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const previousPoc = Number(canvas.dataset.chipPocPrice);
+        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        item.ohlcv = item.ohlcv.map((row) => ({
+            ...row,
+            o: row.o + 30,
+            h: row.h + 30,
+            l: row.l + 30,
+            c: row.c + 30,
+        }));
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        return {previousPoc};
+    });
+    await expect(page.locator('[data-price-subplot-canvas]').first()).toHaveAttribute('data-chip-source', 'ohlcv-estimate');
+    const nextPoc = Number(await page.locator('[data-price-subplot-canvas]').first().getAttribute('data-chip-poc-price'));
+    expect(nextPoc).toBeGreaterThan(recalculatedPoc.previousPoc + 20);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await expect(page.locator('[data-price-chart-region]')).toBeVisible();
+    await expect(page.locator('[data-chips-chart-region]')).not.toHaveAttribute('hidden');
+    const narrowChipLayout = await page.evaluate(() => {
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')].map((canvas) => {
+            const rect = canvas.getBoundingClientRect();
+            return {left: rect.left, right: rect.right};
+        });
+        return {
+            viewportWidth: window.innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            canvases,
+        };
+    });
+    expect(narrowChipLayout.documentWidth).toBeLessThanOrEqual(narrowChipLayout.viewportWidth);
+    expect(narrowChipLayout.canvases.every(({left, right}) => left >= -1 && right <= narrowChipLayout.viewportWidth + 1)).toBe(true);
+
+    await chipsInput.evaluate((input) => input.click());
+    await expect(chipsInput).not.toBeChecked();
+    await expect(page).not.toHaveURL(/chips=1/);
+    await expect(page.getByRole('heading', {name: 'Price history', exact: true, level: 2})).toBeVisible();
+    await expect(page.locator('[data-price-chart-region]')).toBeVisible();
+    await expect(page.locator('[data-chips-chart-region]')).toHaveAttribute('hidden');
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-placement="price-close"]')).toHaveCount(4);
+});
+
+test('animates the five-ticker chip profile and logos with the shared jelly motion', async ({page}) => {
+    await page.route('**/api/compare/chips**', async (route) => {
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: ['SPY', 'QQQ', 'MU', 'DRAM', 'SKHY'].map((ticker, index) => ({
+                    ticker,
+                    source: 'longbridge-trade-stats',
+                    trades: [
+                        {price: 100 + (index * 100), buy: 120, neutral: 80, sell: 40},
+                        {price: 101 + (index * 100), buy: 90, neutral: 110, sell: 70},
+                    ],
+                })),
+                errors: {},
+            }),
+        });
+    });
+    await page.goto('/workspaces/prices?ticker=SPY&ticker=QQQ&ticker=MU&ticker=DRAM&ticker=SKHY&range=6mo');
+    const canvases = page.locator('[data-price-subplot-canvas]');
+    await expect(canvases).toHaveCount(5);
+    await expect.poll(() => canvases.evaluateAll((items) => items.every((canvas) => {
+        const position = window.Chart.getChart(canvas)?.$closingLogoPosition;
+        return Number.isFinite(position?.x) && Number.isFinite(position?.y);
+    }))).toBe(true);
+    const withoutChipsAlignment = await readPriceLogoThemeAlignment(page);
+    expect(Number.isFinite(withoutChipsAlignment.themeCenterX)).toBe(true);
+    expect(withoutChipsAlignment.logos).toHaveLength(5);
+    expect(withoutChipsAlignment.logos.every((item) => (
+        item.contract === 'global-theme-toggle-center'
+        && item.clamped === '0'
+        && Math.abs(item.delta) <= 0.1
+    ))).toBe(true);
+
+    const motionStart = await page.locator('#show_chips').evaluate((input) => {
+        const before = [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .map((canvas) => window.Chart.getChart(canvas).$closingLogoPosition);
+        input.click();
+        return {
+            before,
+            after: [...document.querySelectorAll('[data-price-subplot-canvas]')].map((canvas) => {
+                const chart = window.Chart.getChart(canvas);
+                return {
+                    state: canvas.dataset.chipRevealState,
+                    profileProgress: Number(canvas.dataset.chipRevealProgress),
+                    logoProgress: Number(canvas.dataset.chipLogoProgress),
+                    motion: chart.$chipRevealMotion,
+                };
+            }),
+        };
+    });
+    expect(motionStart.before).toHaveLength(5);
+    expect(motionStart.after).toHaveLength(5);
+    expect(motionStart.after.every((item) => (
+        item.state === 'running'
+        && item.profileProgress === 0
+        && item.logoProgress === 0
+    ))).toBe(true);
+    motionStart.after.forEach((item, index) => {
+        expect(item.motion.from.x).toBeCloseTo(motionStart.before[index].x, 4);
+        expect(item.motion.from.y).toBeCloseTo(motionStart.before[index].y, 4);
+        expect(item.motion.current.x).toBeCloseTo(item.motion.from.x, 4);
+        expect(item.motion.current.y).toBeCloseTo(item.motion.from.y, 4);
+        expect(item.motion.to.x).toBeCloseTo(item.motion.from.x, 4);
+    });
+
+    await expect.poll(async () => Number(
+        await canvases.first().getAttribute('data-chip-reveal-progress'),
+    )).toBeGreaterThan(1);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-state="settled"]')).toHaveCount(5);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-bin-count="100"]')).toHaveCount(5);
+    const finalLogos = await canvases.evaluateAll((items) => items.map((canvas) => {
+        const motion = window.Chart.getChart(canvas).$chipRevealMotion;
+        return {
+            current: motion.current,
+            target: motion.to,
+            profileProgress: Number(canvas.dataset.chipRevealProgress),
+            logoProgress: Number(canvas.dataset.chipLogoProgress),
+        };
+    }));
+    expect(finalLogos.every((item) => item.profileProgress === 1 && item.logoProgress === 1)).toBe(true);
+    finalLogos.forEach((item) => {
+        expect(item.current.x).toBeCloseTo(item.target.x, 4);
+        expect(item.current.y).toBeCloseTo(item.target.y, 4);
+    });
+    const alignedLogoX = finalLogos.map((item) => item.current.x);
+    expect(Math.max(...alignedLogoX) - Math.min(...alignedLogoX)).toBeLessThanOrEqual(0.5);
+    const withChipsAlignment = await readPriceLogoThemeAlignment(page);
+    expect(withChipsAlignment.logos).toHaveLength(5);
+    expect(withChipsAlignment.logos.every((item) => (
+        item.contract === 'global-theme-toggle-center'
+        && item.clamped === '0'
+        && Math.abs(item.delta) <= 0.1
+    ))).toBe(true);
+});
+
+test('renders Longbridge Buy / Neutral / Sell price-level chips as a stacked profile', async ({page}) => {
+    let fallbackRequests = 0;
+    const categories = [
+        {buy: 100, neutral: 200, sell: 300},
+        {buy: 220, neutral: 140, sell: 80},
+        {buy: 40, neutral: 90, sell: 170},
+    ];
+    await page.route('**/api/compare/chips**', async (route) => {
+        fallbackRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: ['AAPL', 'QQQ', 'SPY', 'DRAM'].map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-trade-stats',
+                    statistics: {average_price: 100 + (tickerIndex * 100), total_volume: 2_000},
+                    trades: categories.map((row, rowIndex) => ({
+                        price: 100 + (tickerIndex * 100) + rowIndex,
+                        ...row,
+                    })),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
+    await page.locator('label[for="show_chips"]').click();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="longbridge-trade-stats"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="buy-neutral-sell"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="category-opacity"]')).toHaveCount(4);
+    expect(fallbackRequests).toBe(1);
+
+    const categoryGeometry = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const profile = window.Chart.getChart(canvas).$costDistribution;
+        const bins = profile.distribution.bins.filter((bin) => bin.weight > 0);
+        const poc = bins.find((bin) => bin.index === profile.distribution.pocIndex);
+        return {
+            categoryTotals: profile.distribution.categoryTotals,
+            binCount: profile.distribution.bins.length,
+            pocSegments: {
+                buy: poc.buyWeight,
+                neutral: poc.neutralWeight,
+                sell: poc.sellWeight,
+            },
+            segmentWidthTotal: poc.normalizedBuyWidth + poc.normalizedNeutralWidth + poc.normalizedSellWidth,
+            normalizedWidth: poc.normalizedWidth,
+        };
+    });
+    expect(categoryGeometry.binCount).toBe(100);
+    expect(categoryGeometry.categoryTotals).toEqual({buy: 360, neutral: 430, sell: 550});
+    expect(categoryGeometry.pocSegments.buy).toBeGreaterThan(0);
+    expect(categoryGeometry.pocSegments.neutral).toBeGreaterThan(0);
+    expect(categoryGeometry.pocSegments.sell).toBeGreaterThan(0);
+    expect(categoryGeometry.segmentWidthTotal).toBeCloseTo(categoryGeometry.normalizedWidth, 8);
+});
+
+test('ignores partial cached volume rows when loading the chip distribution', async ({page}) => {
+    let fallbackRequests = 0;
+    const start = Date.UTC(2026, 4, 1);
+    const fallbackSeries = ['AAPL', 'QQQ', 'SPY', 'DRAM'].map((ticker, tickerIndex) => ({
+        ticker,
+        source: 'longbridge-daily-ohlcv',
+        ohlcv: Array.from({length: 90}, (_, rowIndex) => {
+            const close = 100 + (tickerIndex * 200) + (rowIndex * (0.7 + (tickerIndex * 0.08)));
+            const timestamp = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+            return {
+                t: `${timestamp} 00:00`,
+                o: close - 1.2,
+                h: close + 3.4,
+                l: close - 3.1,
+                c: close,
+                v: 100_000 + ((rowIndex % 9) * 15_000),
+                synthetic: false,
+            };
+        }),
+    }));
+    await page.route('**/api/compare/chips**', async (route) => {
+        fallbackRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({success: true, series: fallbackSeries, errors: {}}),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
+    const partialRows = await page.evaluate(() => {
+        window.ANTIGRAVITY_APP.chart.series
+            .filter((item) => ['QQQ', 'SPY'].includes(item.ticker))
+            .forEach((item) => {
+                item.ohlcv = item.ohlcv.map((row, rowIndex, rows) => ({
+                    ...row,
+                    v: rowIndex >= rows.length - 2 ? 100_000 : null,
+                }));
+            });
+        return window.ANTIGRAVITY_APP.chart.series
+            .filter((item) => ['QQQ', 'SPY'].includes(item.ticker))
+            .map((item) => item.ohlcv.filter((row) => Number(row.v) > 0).length);
+    });
+    expect(partialRows).toEqual([2, 2]);
+
+    await page.locator('label[for="show_chips"]').click();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    expect(fallbackRequests).toBe(1);
+
+    const expectedPocs = await page.evaluate((series) => series.map((item) => ({
+        ticker: item.ticker,
+        poc: window.ANTIGRAVITY_CHIP_DISTRIBUTION.calculateChipDistribution(item.ohlcv, {binCount: 100}).pocPrice,
+    })), fallbackSeries);
+    const actualPocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => ({
+            ticker: canvas.closest('[data-price-subplot]')?.dataset.ticker,
+            poc: Number(canvas.dataset.chipPocPrice),
+        }))
+    ));
+    ['QQQ', 'SPY'].forEach((ticker) => {
+        const actual = actualPocs.find((item) => item.ticker === ticker);
+        const expected = expectedPocs.find((item) => item.ticker === ticker);
+        expect(actual.poc).toBeCloseTo(expected.poc, 6);
+    });
+    expect(actualPocs.find((item) => item.ticker === 'QQQ').poc).toBeLessThan(700);
+    expect(actualPocs.find((item) => item.ticker === 'SPY').poc).toBeLessThan(900);
+});
+
+test('loads range-bounded Longbridge OHLCV when a legacy price cache has no volume', async ({page}) => {
+    let fallbackBounds = null;
+    let fallbackRequests = 0;
+    let releaseFallbackResponse;
+    const fallbackResponseGate = new Promise((resolve) => {
+        releaseFallbackResponse = resolve;
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        fallbackRequests += 1;
+        const url = new URL(route.request().url());
+        fallbackBounds = {from: url.searchParams.get('from'), to: url.searchParams.get('to')};
+        const tickers = url.searchParams.getAll('ticker');
+        const start = Date.UTC(2025, 7, 25);
+        await fallbackResponseGate;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    ohlcv: Array.from({length: 90}, (_, rowIndex) => {
+                        const close = 100 + (tickerIndex * 100) + (rowIndex * 0.5);
+                        return {
+                            t: `${new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10)} 00:00`,
+                            o: close - 1,
+                            h: close + 2,
+                            l: close - 2,
+                            c: close,
+                            v: 100_000 + (rowIndex * 1_000),
+                            synthetic: false,
+                        };
+                    }),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
+    const expectedBounds = await page.evaluate(() => {
+        const rows = window.ANTIGRAVITY_APP.chart.series.flatMap((item) => item.ohlcv || []);
+        const dates = rows.map((row) => String(row.t).slice(0, 10)).sort();
+        window.ANTIGRAVITY_APP.chart.series.forEach((item) => {
+            item.ohlcv = item.ohlcv.map((row) => ({...row, v: null}));
+        });
+        return {from: dates[0], to: dates[dates.length - 1]};
+    });
+
+    await page.locator('label[for="show_chips"]').click();
+    await expect.poll(() => fallbackBounds).toEqual(expectedBounds);
+    await expect(page.locator('[data-chip-loading-spinner]:not([hidden])')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot][aria-busy="true"]')).toHaveCount(4);
+    await expect(page.locator('[data-chips-chart-status]')).toHaveAttribute('data-state', 'loading');
+    await expect(page.locator('[data-chips-chart-status]')).toBeHidden();
+    await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
+    expect(fallbackRequests).toBe(1);
+    releaseFallbackResponse();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-bin-count="100"]')).toHaveCount(4);
+    await expect(page.locator('[data-chip-loading-spinner][hidden]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot][aria-busy="false"]')).toHaveCount(4);
+    await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
 });
 
 test('keeps the Price chart responsive when 1 year is submitted twice', async ({page}) => {
@@ -2540,6 +3318,64 @@ test('switches short price ranges and formats price axes by currency precision',
     await expect(page).toHaveURL(/range=3d/, {timeout: 30_000});
     await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await expect(page.locator('[data-shared-select-trigger-label]')).toHaveText('3 days');
+});
+
+test('sizes Price comparison y-axes from their rendered tick labels', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
+    await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('[data-price-subplot-canvas]'))));
+    await page.evaluate(() => {
+        const ranges = [
+            [220, 360],
+            [160, 240],
+            [0, 1_400],
+            [150, 600],
+        ];
+        window.ANTIGRAVITY_APP.chart.series = window.ANTIGRAVITY_APP.chart.series.map((item, index) => {
+            const [minimum, maximum] = ranges[index];
+            const sourcePrices = Array.isArray(item.prices) ? item.prices : [];
+            return {
+                ...item,
+                prices: sourcePrices.map((_value, priceIndex) => {
+                    const progress = sourcePrices.length > 1 ? priceIndex / (sourcePrices.length - 1) : 0;
+                    return minimum + ((maximum - minimum) * progress);
+                }),
+                candlestick_prices: [],
+            };
+        });
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+    });
+    await page.waitForFunction(() => (
+        document.querySelectorAll('[data-price-subplot-canvas]').length === 4
+        && [...document.querySelectorAll('[data-price-subplot-canvas]')].every((canvas) => Boolean(window.Chart.getChart(canvas)))
+    ));
+
+    const desktopAxes = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => {
+            const scale = window.Chart.getChart(canvas).scales.y;
+            const widestLabelWidth = Number(scale._labelSizes?.widest?.width) || 0;
+            const tickPadding = Number(scale.options?.ticks?.padding) || 0;
+            const borderWidth = scale.options?.border?.display === false ? 0 : 1;
+            return {
+                width: scale.width,
+                expectedWidth: Math.max(36, Math.ceil(widestLabelWidth + tickPadding + borderWidth + 2)),
+                chartAreaLeft: window.Chart.getChart(canvas).chartArea.left,
+            };
+        })
+    ));
+    expect(desktopAxes.length).toBe(4);
+    expect(desktopAxes.every(({width, expectedWidth}) => Math.abs(width - expectedWidth) < 0.01)).toBe(true);
+    expect(desktopAxes.every(({width}) => width < 92)).toBe(true);
+    expect(new Set(desktopAxes.map(({width}) => Math.round(width))).size).toBeGreaterThan(1);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await expect.poll(async () => page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => window.Chart.getChart(canvas).scales.y.width)
+    ))).toHaveLength(4);
+    const narrowLayout = await page.evaluate(() => ({
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+    }));
+    expect(narrowLayout.documentWidth).toBeLessThanOrEqual(narrowLayout.viewportWidth);
 });
 
 test('discards an obsolete live-price response after the selected range changes', async ({page}) => {

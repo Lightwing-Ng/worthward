@@ -1,9 +1,9 @@
 """
 Market data retrieval services.
 
-Code version: v0.23.0
-- Added: Callers can explicitly refresh a one-minute store from the configured
-  Longbridge source after validating that Yahoo omitted a required session.
+Code version: v0.24.0
+- Added: Price-series selection retains OHLCV metadata for Canvas cost
+  distribution calculations while preserving the selected close-price mode.
 """
 
 from __future__ import annotations
@@ -1489,12 +1489,21 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
         history = history.rename(columns={"Datetime": "Date"})
 
     required_columns = ["Date", "Close"]
-    ohlc_columns = ["Open", "High", "Low", "Adj Close", "Dividends", "Stock Splits"]
+    ohlcv_columns = [
+        "Open",
+        "High",
+        "Low",
+        "Adj Close",
+        "Volume",
+        "Turnover",
+        "Dividends",
+        "Stock Splits",
+    ]
     missing_required = [column for column in required_columns if column not in history.columns]
     if missing_required:
         raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_required)}.")
 
-    all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
+    all_to_keep = required_columns + [col for col in ohlcv_columns if col in history.columns]
     dataset = drop_duplicate_columns(history[all_to_keep].copy())
     if not is_intraday_market_interval(interval) and "Stock Splits" not in dataset.columns:
         dataset["Stock Splits"] = 0.0
@@ -1503,7 +1512,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
         dataset["Date"] = dates.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
     else:
         dataset["Date"] = pd.to_datetime(dataset["Date"], utc=True).dt.tz_convert(None)
-    for col in (ohlc_columns + ["Close"]):
+    for col in (ohlcv_columns + ["Close"]):
         if col in dataset.columns:
             dataset[col] = pd.to_numeric(dataset[col], errors="coerce")
 
@@ -1585,7 +1594,18 @@ def select_price_series(
 ) -> pd.DataFrame:
     normalized_dividend_mode = str(dividend_mode or ("reinvest" if include_dividends else "cash")).strip().lower()
     price_column = "Close"
-    cols = ["Date", "Open", "High", "Low", price_column, "Dividends", "Stock Splits"]
+    cols = [
+        "Date",
+        "Open",
+        "High",
+        "Low",
+        price_column,
+        "Volume",
+        "Turnover",
+        "Synthetic",
+        "Dividends",
+        "Stock Splits",
+    ]
     available_cols = [c for c in cols if c in dataset.columns]
     result = dataset[available_cols].copy()
     if normalized_dividend_mode == "reinvest":

@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.10.0
+Code version: v1.11.0
 """
 
 from __future__ import annotations
@@ -286,6 +286,8 @@ def build_style_token_rows(
                 {"value": "1d", "label": "1 day"},
                 {"value": "3d", "label": "3 days"},
                 {"value": "1w", "label": "1 week"},
+                {"value": "1mo", "label": "1 month"},
+                {"value": "3mo", "label": "3 months"},
                 {"value": "6mo", "label": "6 months"},
                 {"value": "1y", "label": "1 year"},
                 {"value": "2y", "label": "2 years"},

@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.3.0 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.4.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -19,7 +19,7 @@ const createRuntime = () => {
 test("publishes the canonical Workspace query contract", () => {
     const api = createRuntime();
 
-    assert.equal(api.VERSION, "v1.3.0");
+    assert.equal(api.VERSION, "v1.4.0");
     assert.deepEqual(Array.from(api.getParameterNames()), [
         "ticker",
         "metric",
@@ -32,6 +32,7 @@ test("publishes the canonical Workspace query contract", () => {
         "dividends",
         "extended-hours",
         "overnight",
+        "chips",
         "allocation",
         "weight",
         "shares",
@@ -84,6 +85,29 @@ test("uses price as the default Ticker comparison metric and serializes market c
             },
         ),
         "/workspaces/prices?ticker=NVDA&ticker=MSFT&metric=market-cap",
+    );
+});
+
+test("serializes and parses the price comparison chips switch", () => {
+    const api = createRuntime();
+    const parsed = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1",
+    );
+
+    assert.equal(parsed.showChips, true);
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/prices",
+            {
+                tickers: ["AAPL", "NVDA"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "1y",
+                comparisonMetric: "price",
+                showChips: true,
+            },
+        ),
+        "/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1",
     );
 });
 

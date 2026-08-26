@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.10.2
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -623,19 +623,22 @@ def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFr
 def align_many_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
     if not datasets:
         return []
-    merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
-    for index, dataset in enumerate(datasets[1:], start=1):
-        merged = pd.merge(
-            merged,
-            dataset[["Date", "Close"]].rename(columns={"Close": f"Close_{index}"}),
-            on="Date",
-            how="inner",
-        ).sort_values("Date")
-    if merged.empty:
+    common_dates = set(pd.to_datetime(datasets[0]["Date"], errors="coerce").dropna().tolist())
+    for dataset in datasets[1:]:
+        common_dates.intersection_update(
+            pd.to_datetime(dataset["Date"], errors="coerce").dropna().tolist()
+        )
+    if not common_dates:
         raise ValueError("The selected tickers do not share any common trading dates.")
+    common_axis = sorted(common_dates)
     return [
-        merged[["Date", f"Close_{index}"]].rename(columns={f"Close_{index}": "Close"}).copy()
-        for index in range(len(datasets))
+        dataset
+        .drop_duplicates(subset=["Date"], keep="last")
+        .set_index("Date")
+        .reindex(common_axis)
+        .rename_axis("Date")
+        .reset_index()
+        for dataset in datasets
     ]
 
 
@@ -650,7 +653,7 @@ def align_many_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> list[pd.
     if not union_dates:
         raise ValueError("The selected tickers do not have comparison data.")
     return [
-        dataset[["Date", "Close"]]
+        dataset
         .drop_duplicates(subset=["Date"], keep="last")
         .set_index("Date")
         .reindex(union_dates)
@@ -663,33 +666,7 @@ def align_many_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> list[pd.
 def align_many_intraday_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
     if not datasets:
         return []
-    price_columns = [
-        column
-        for column in ("Open", "High", "Low", "Close")
-        if all(column in dataset.columns for dataset in datasets)
-    ]
-    if "Close" not in price_columns:
-        price_columns.append("Close")
-    merged = datasets[0][["Date", *price_columns]].rename(
-        columns={column: f"{column}_0" for column in price_columns}
-    ).copy()
-    for index, dataset in enumerate(datasets[1:], start=1):
-        merged = pd.merge(
-            merged,
-            dataset[["Date", *price_columns]].rename(
-                columns={column: f"{column}_{index}" for column in price_columns}
-            ),
-            on="Date",
-            how="inner",
-        ).sort_values("Date")
-    if merged.empty:
-        raise ValueError("The selected tickers do not share any common trading dates.")
-    return [
-        merged[["Date", *[f"{column}_{index}" for column in price_columns]]].rename(
-            columns={f"{column}_{index}": column for column in price_columns}
-        ).copy()
-        for index in range(len(datasets))
-    ]
+    return align_many_datasets_on_common_dates(datasets)
 
 
 def align_intraday_datasets_for_compare(
@@ -962,8 +939,9 @@ def build_series_payload(
     has_intraday_timestamps = dataset["Date"].map(
         lambda value: pd.Timestamp(value).hour != 0 or pd.Timestamp(value).minute != 0
     ).any()
-    has_ohlc = has_intraday_timestamps and all(column in dataset.columns for column in ("Open", "High", "Low", "Close"))
-    baseline_source = dataset["Open"] if has_ohlc else dataset["Close"]
+    has_ohlc_columns = all(column in dataset.columns for column in ("Open", "High", "Low", "Close"))
+    has_intraday_ohlc = has_intraday_timestamps and has_ohlc_columns
+    baseline_source = dataset["Open"] if has_intraday_ohlc else dataset["Close"]
     baseline_values = pd.to_numeric(baseline_source, errors="coerce").dropna()
     if baseline_values.empty:
         raise ValueError(f"The selected range does not contain usable price data for {ticker}.")
@@ -972,7 +950,33 @@ def build_series_payload(
     normalized_returns = ((close_values / baseline_price) - 1.0) * 100.0
     candlestick_returns = None
     candlestick_prices = None
-    if has_ohlc:
+    ohlcv = None
+    if has_ohlc_columns:
+        has_volume = "Volume" in dataset.columns
+        has_synthetic = "Synthetic" in dataset.columns
+        volume_values = dataset["Volume"] if has_volume else [None] * len(dataset)
+        synthetic_values = dataset["Synthetic"] if has_synthetic else [False] * len(dataset)
+        ohlcv = []
+        for timestamp, open_value, high_value, low_value, close_value, volume_value, synthetic_value in zip(
+                dataset["Date"],
+                dataset["Open"],
+                dataset["High"],
+                dataset["Low"],
+                dataset["Close"],
+                volume_values,
+                synthetic_values,
+        ):
+            values = [open_value, high_value, low_value, close_value]
+            ohlcv.append({
+                "t": pd.Timestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
+                "o": round(float(open_value), 4) if pd.notna(values).all() else None,
+                "h": round(float(high_value), 4) if pd.notna(values).all() else None,
+                "l": round(float(low_value), 4) if pd.notna(values).all() else None,
+                "c": round(float(close_value), 4) if pd.notna(values).all() else None,
+                "v": round(float(volume_value), 4) if has_volume and pd.notna(volume_value) else None,
+                "synthetic": bool(synthetic_value) if has_synthetic and pd.notna(synthetic_value) else False,
+            })
+    if has_intraday_ohlc:
         candlestick_returns = []
         candlestick_prices = []
         has_volume = "Volume" in dataset.columns
@@ -1040,6 +1044,7 @@ def build_series_payload(
         glow=glow,
         candlestick_returns=candlestick_returns,
         candlestick_prices=candlestick_prices,
+        ohlcv=ohlcv,
         prices=[
             round(float(value), 4) if pd.notna(value) else None
             for value in close_values.tolist()

@@ -1,4 +1,4 @@
-{# Code version: v0.6.6 #}
+{# Code version: v0.6.7 #}
 
 {% macro render_notice_banner(
     title='',
@@ -159,9 +159,10 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', exact_single_date=false, exact_single_date_label='Trading date') -%}
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', exact_single_date=false, exact_single_date_label='Trading date', range_mode_after_period=false) -%}
 {% set range_mode_label = labels.mode if labels.mode is defined else "Mode" %}
 {% set selected_period_label = period_labels.get(period, period_labels.get(periods[0], labels.period) if periods else labels.period) %}
+{% if not range_mode_after_period %}
 <div class="field range-mode-field">
     <label for="range_period">{{ range_mode_label }}</label>
     {{ render_segmented_control(
@@ -175,6 +176,7 @@
         'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
     ) }}
 </div>
+{% endif %}
 <div class="field range-panel" id="period_panel" {% if range_mode == 'exact' %}hidden{% endif %}>
     <label for="period">{{ labels.period }}</label>
     <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="period">
@@ -207,6 +209,21 @@
         ></div>
         </div>
 </div>
+{% if range_mode_after_period %}
+<div class="field range-mode-field">
+    <label for="range_period">{{ range_mode_label }}</label>
+    {{ render_segmented_control(
+        "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
+        "range",
+        range_mode if range_mode == 'exact' else 'period',
+        [
+            {"id": "range_period", "value": "period", "label": labels.range_mode_period},
+            {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
+        ],
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
+    ) }}
+</div>
+{% endif %}
 <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
     {% set exact_trading_date = exact_start if exact_start else exact_end %}
     <div class="date-picker-grid" data-exact-range-date-grid{% if exact_single_date %} hidden{% endif %}>

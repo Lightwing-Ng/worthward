@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.13.1
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 import logging
+import math
 import os
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
@@ -480,6 +481,105 @@ def fetch_longbridge_market_cap_snapshot(ticker: str, settings: BrokerSettings) 
         [calc_index_enum.LastDone, calc_index_enum.TotalMarketValue],
     )
     return _normalize_longbridge_market_cap_row(rows[0] if rows else None, symbol)
+
+
+def _finite_trade_stats_number(value: object, *, minimum: float | None = None) -> float | None:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(normalized):
+        return None
+    if minimum is not None and normalized < minimum:
+        return None
+    return normalized
+
+
+def _normalize_longbridge_trade_stats_payload(
+        payload: object,
+        symbol: str,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    statistics = payload.get("statistics")
+    trades = payload.get("trades")
+    if not isinstance(statistics, dict) or not isinstance(trades, list):
+        return None
+
+    normalized_trades: list[dict[str, float]] = []
+    for row in trades:
+        if not isinstance(row, dict):
+            continue
+        price = _finite_trade_stats_number(row.get("price"), minimum=0)
+        buy = _finite_trade_stats_number(row.get("buy_amount"), minimum=0)
+        neutral = _finite_trade_stats_number(row.get("neutral_amount"), minimum=0)
+        sell = _finite_trade_stats_number(row.get("sell_amount"), minimum=0)
+        if None in {price, buy, neutral, sell}:
+            continue
+        normalized_trades.append({
+            "price": price,
+            "buy": buy,
+            "neutral": neutral,
+            "sell": sell,
+        })
+    if not normalized_trades:
+        return None
+
+    def statistic(name: str, *, minimum: float | None = None) -> float | None:
+        return _finite_trade_stats_number(statistics.get(name), minimum=minimum)
+
+    return {
+        "symbol": symbol,
+        "statistics": {
+            "average_price": statistic("avgprice", minimum=0),
+            "preclose": statistic("preclose", minimum=0),
+            "buy": statistic("buy", minimum=0),
+            "neutral": statistic("neutral", minimum=0),
+            "sell": statistic("sell", minimum=0),
+            "total_volume": statistic("total_amount", minimum=0),
+            "trades_count": statistic("trades_count", minimum=0),
+            "trade_dates": [
+                str(value).strip()
+                for value in statistics.get("trade_date", [])
+                if str(value).strip()
+            ],
+        },
+        "trades": normalized_trades,
+    }
+
+
+def _fetch_longbridge_cli_trade_stats(
+        symbol: str,
+        settings: BrokerSettings,
+) -> dict[str, Any] | None:
+    payload = run_longbridge_cli_json(
+        settings,
+        ["trade-stats", symbol, "--format", "json"],
+        timeout_seconds=20,
+    )
+    return _normalize_longbridge_trade_stats_payload(payload, symbol)
+
+
+def fetch_longbridge_trade_stats(ticker: str, settings: BrokerSettings) -> dict[str, Any]:
+    """Fetch and normalize Longbridge price-volume distribution data."""
+    if not has_longbridge_market_data_source(settings):
+        raise ValueError(
+            "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
+        )
+
+    symbol = normalize_longbridge_symbol(ticker)
+    cli_settings = settings
+    if not uses_longbridge_cli_oauth(settings):
+        cli_settings = replace(
+            settings,
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+            longbridge_cli_home=os.path.expanduser("~"),
+        )
+    normalized = _fetch_longbridge_cli_trade_stats(symbol, cli_settings)
+    if normalized is None:
+        raise ValueError(f"No trade statistics returned for {ticker} via Longbridge.")
+    return normalized
 
 
 def _resolve_daily_period(period_enum: Any) -> Any:

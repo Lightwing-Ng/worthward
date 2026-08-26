@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.8.3
+Code version: v0.8.4
 """
 
 from __future__ import annotations
@@ -49,6 +49,19 @@ class ComparisonServiceTests(unittest.TestCase):
 
         self.assertEqual(aligned_a["Date"].dt.strftime("%Y-%m-%d").tolist(), ["2026-01-03", "2026-01-06"])
         self.assertEqual(aligned_b["Date"].dt.strftime("%Y-%m-%d").tolist(), ["2026-01-03", "2026-01-06"])
+
+    def test_daily_alignment_preserves_ohlcv_columns_for_chip_distribution(self) -> None:
+        dataset_a = ohlc_frame_for_dates("AAPL", ["2026-01-02", "2026-01-03"])
+        dataset_b = ohlc_frame_for_dates("NVDA", ["2026-01-03", "2026-01-06"])
+        dataset_a["Volume"] = [1_000.0, 2_000.0]
+        dataset_b["Volume"] = [3_000.0, 4_000.0]
+
+        aligned_a, aligned_b = align_datasets_on_common_dates(dataset_a, dataset_b)
+
+        self.assertEqual(list(aligned_a.columns), ["Date", "Close", "Open", "High", "Low", "Volume"])
+        self.assertEqual(list(aligned_b.columns), ["Date", "Close", "Open", "High", "Low", "Volume"])
+        self.assertEqual(aligned_a["Volume"].tolist(), [2_000.0])
+        self.assertEqual(aligned_b["Volume"].tolist(), [3_000.0])
 
     def test_shift_intraday_compare_axis_preserves_geometry_on_live_trading_date(self) -> None:
         reference = pd.DataFrame(
@@ -151,6 +164,29 @@ class ComparisonServiceTests(unittest.TestCase):
             [
                 {"x": 0, "o": 100.0, "h": 103.0, "l": 99.0, "c": 102.0},
                 {"x": 1, "o": 102.0, "h": 104.0, "l": 101.0, "c": 103.0},
+            ],
+        )
+
+    def test_build_series_payload_includes_daily_ohlcv_for_chip_distribution(self) -> None:
+        dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-08-24", "2026-08-25"]),
+                "Open": [100.0, 102.0],
+                "High": [104.0, 106.0],
+                "Low": [98.0, 101.0],
+                "Close": [102.0, 105.0],
+                "Volume": [1_000.0, 2_000.0],
+            }
+        )
+
+        payload = build_series_payload("AAPL", dataset)
+
+        self.assertIsNone(payload.candlestick_prices)
+        self.assertEqual(
+            payload.ohlcv,
+            [
+                {"t": "2026-08-24 00:00", "o": 100.0, "h": 104.0, "l": 98.0, "c": 102.0, "v": 1_000.0, "synthetic": False},
+                {"t": "2026-08-25 00:00", "o": 102.0, "h": 106.0, "l": 101.0, "c": 105.0, "v": 2_000.0, "synthetic": False},
             ],
         )
 

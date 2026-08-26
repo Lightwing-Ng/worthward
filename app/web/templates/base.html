@@ -1,4 +1,4 @@
-{# Code version: v0.20.14 #}
+{# Code version: v0.22.8 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,7 +126,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.47.10') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.48.4') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
@@ -234,7 +234,8 @@
     "constraints": {"minTickers": min_tickers, "maxTickers": max_tickers},
     "base": {"currency": base_currency, "timezone": base_timezone},
     "chart": {"series": series, "profiles": profiles_json, "tradingDate": chart_trading_date},
-    "comparisonMetric": comparison_metric|default('price'),
+        "comparisonMetric": comparison_metric|default('price'),
+        "comparisonChips": show_chips|default(false),
     "portfolio": {"items": portfolio_items, "weights": portfolio_weights, "totalReturn": portfolio_total_return},
     "dcaResult": dca_result,
     "backtestResult": backtest_result,
@@ -278,16 +279,17 @@
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.3.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.4.0') }}"></script>
 {% endif %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.1') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.16.3') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.2.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.22.2') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.38.14') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.39.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.10.1') }}"></script>
 {% endif %}

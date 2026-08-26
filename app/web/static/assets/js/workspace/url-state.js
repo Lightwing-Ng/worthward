@@ -1,10 +1,10 @@
 /*
  * Canonical Workspace URL state parsing and serialization.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
  */
 (() => {
-    const VERSION = "v1.3.0";
+    const VERSION = "v1.4.0";
     const DEFAULT_PERIOD = "1y";
     const PERIOD_VALUES = new Set([
         "1d",
@@ -33,6 +33,7 @@
         "dividends",
         "extended-hours",
         "overnight",
+        "chips",
         "allocation",
         "weight",
         "shares",
@@ -72,6 +73,7 @@
         "include_extended_hours",
         "overnight",
         "include_overnight",
+        "chips",
         "allocation",
         "weight",
         "shares",
@@ -209,6 +211,7 @@
             includeDividends: returnMode === "dividends",
             extendedHours: parseFlag(params, "extended-hours", "extended_hours", "include_extended_hours"),
             overnight: parseFlag(params, "overnight", "include_overnight"),
+            showChips: parseFlag(params, "chips"),
             allocation,
             weights: values("weight"),
             shares: values("shares"),
@@ -295,6 +298,7 @@
         else if (returnMode === "dividends") params.set("dividends", "1");
         if (state.extendedHours) params.set("extended-hours", "1");
         if (state.overnight) params.set("overnight", "1");
+        if (state.showChips) params.set("chips", "1");
 
         if (state.isPortfolio) {
             const allocation = normalizeLower(state.allocation) === "shares" ? "shares" : "weight";

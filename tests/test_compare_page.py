@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.13.3
+Code version: v0.14.1
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import pandas as pd
 
 from app import create_app
 from app.core.date_display_settings import DateDisplaySettings
+from app.core.broker_settings import BrokerSettings
 from app.core.language_settings import LanguageSettings
 from app.models.schemas import SeriesPayload
 from tests.factories.market import close_frame_for_ticker, ohlc_frame_for_dates, quote_profile_stub
@@ -291,6 +292,103 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn(">价格历史</h2>", price_html)
         self.assertEqual(market_cap_response.status_code, 200)
         self.assertIn(">市值历史</h2>", market_cap_html)
+
+    def test_price_page_renders_chips_switch_only_for_price_metric(self) -> None:
+        client = create_app().test_client()
+        price_response = client.get("/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1")
+        market_cap_response = client.get(
+            "/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&chips=1"
+        )
+
+        price_html = price_response.get_data(as_text=True)
+        market_cap_html = market_cap_response.get_data(as_text=True)
+        self.assertEqual(price_response.status_code, 200)
+        self.assertRegex(
+            price_html,
+            r'id="show_chips" name="chips" type="checkbox" value="1"\s+checked',
+        )
+        self.assertIn('data-chips-chart-region', price_html)
+        self.assertIn('"comparisonChips": true', price_html)
+        self.assertRegex(price_html, r'data-chips-heading="Chip distribution"[^>]*>Price history</h2>')
+        self.assertEqual(market_cap_response.status_code, 200)
+        self.assertNotIn('id="show_chips"', market_cap_html)
+
+    def test_chips_api_returns_ordered_range_bounded_longbridge_ohlcv(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+        fetch_calls: list[tuple[str, object]] = []
+
+        def fetch_daily(ticker: str, _settings: BrokerSettings, since: object = None) -> pd.DataFrame:
+            fetch_calls.append((ticker, since))
+            offset = 0 if ticker == "AAPL" else 100
+            return pd.DataFrame({
+                "Date": pd.to_datetime(["2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06"]),
+                "Open": [99 + offset, 100 + offset, 102 + offset, 104 + offset],
+                "High": [101 + offset, 103 + offset, 105 + offset, 107 + offset],
+                "Low": [98 + offset, 99 + offset, 101 + offset, 103 + offset],
+                "Close": [100 + offset, 102 + offset, 104 + offset, 106 + offset],
+                "Volume": [900, 1_000, 1_200, 1_400],
+            })
+
+        with (
+            patch("app.web.runtime.load_broker_settings", return_value=settings),
+            patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch("app.web.runtime.fetch_longbridge_daily_history", side_effect=fetch_daily),
+            patch(
+                "app.web.runtime.fetch_longbridge_trade_stats",
+                side_effect=ValueError("Trade statistics are unavailable."),
+            ) as fetch_stats,
+            patch("app.web.runtime.time.sleep") as sleep,
+        ):
+            response = create_app().test_client().get(
+                "/api/compare/chips?ticker=AAPL&ticker=NVDA&from=2026-01-02&to=2026-01-05"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual([item["ticker"] for item in payload["series"]], ["AAPL", "NVDA"])
+        self.assertEqual([item["source"] for item in payload["series"]], [
+            "longbridge-daily-ohlcv",
+            "longbridge-daily-ohlcv",
+        ])
+        self.assertEqual([row["t"] for row in payload["series"][0]["ohlcv"]], [
+            "2026-01-02 00:00",
+            "2026-01-05 00:00",
+        ])
+        self.assertEqual(payload["series"][0]["ohlcv"][1]["v"], 1_200.0)
+        self.assertEqual([ticker for ticker, _since in fetch_calls], ["AAPL", "NVDA"])
+        self.assertTrue(all(str(since).startswith("2026-01-02") for _ticker, since in fetch_calls))
+        self.assertEqual(fetch_stats.call_count, 2)
+        sleep.assert_called_once_with(1.05)
+
+    def test_chips_api_prefers_ordered_longbridge_trade_stats(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+
+        def fetch_stats(ticker: str, _settings: BrokerSettings) -> dict[str, object]:
+            return {
+                "symbol": f"{ticker}.US",
+                "statistics": {"average_price": 100.0},
+                "trades": [{"price": 100.0, "buy": 1.0, "neutral": 2.0, "sell": 3.0}],
+            }
+
+        with (
+            patch("app.web.runtime.load_broker_settings", return_value=settings),
+            patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch("app.web.runtime.fetch_longbridge_daily_history") as fetch_daily,
+            patch("app.web.runtime.fetch_longbridge_trade_stats", side_effect=fetch_stats),
+            patch("app.web.runtime.time.sleep"),
+        ):
+            response = create_app().test_client().get(
+                "/api/compare/chips?ticker=AAPL&ticker=NVDA"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual([item["ticker"] for item in payload["series"]], ["AAPL", "NVDA"])
+        self.assertEqual(payload["series"][0]["source"], "longbridge-trade-stats")
+        self.assertEqual(payload["series"][0]["trades"][0]["sell"], 3.0)
+        fetch_daily.assert_not_called()
 
     def test_price_page_hides_overnight_for_korean_and_hong_kong_tickers(self) -> None:
         intraday_frames = {

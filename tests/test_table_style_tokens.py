@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.26."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.8.27."""
 
 from __future__ import annotations
 
@@ -122,6 +122,8 @@ def test_style_token_period_dropdown_demo_uses_the_standard_period_options() -> 
         ("1d", "1 day"),
         ("3d", "3 days"),
         ("1w", "1 week"),
+        ("1mo", "1 month"),
+        ("3mo", "3 months"),
         ("6mo", "6 months"),
         ("1y", "1 year"),
         ("2y", "2 years"),

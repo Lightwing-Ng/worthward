@@ -1,4 +1,4 @@
-"""Build the isolated deterministic market store used by Playwright. Code version: v1.1.0."""
+"""Build the isolated deterministic market store used by Playwright. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -47,10 +47,9 @@ def _complete_price_frame(ticker: str, dates: list[str], *, intraday: bool) -> p
     frame = ohlc_frame_for_dates(ticker, dates)
     frame["Adj Close"] = frame["Close"]
     frame["Dividends"] = 0.0
-    if intraday:
-        frame["Volume"] = 1_000.0
-        frame["Turnover"] = frame["Close"] * frame["Volume"]
-    else:
+    frame["Volume"] = 1_000.0
+    frame["Turnover"] = frame["Close"] * frame["Volume"]
+    if not intraday:
         frame["Stock Splits"] = 0.0
     return frame
 

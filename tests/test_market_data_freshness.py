@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.4
+Code version: v0.20.5
 """
 
 from __future__ import annotations
@@ -48,6 +48,8 @@ from app.services.market_data import (
     fetch_longbridge_realtime_quotes,
     fetch_yfinance_realtime_quotes,
     has_compare_overnight_market_data_source,
+    normalize_history_frame,
+    select_price_series,
     infer_ticker_market,
     refresh_history_store,
     refresh_one_minute_store,
@@ -337,6 +339,28 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+
+    def test_price_series_selection_preserves_ohlcv_metadata(self) -> None:
+        dataset = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-08-24", "2026-08-25"]),
+            "Open": [100.0, 102.0],
+            "High": [104.0, 106.0],
+            "Low": [98.0, 101.0],
+            "Close": [102.0, 105.0],
+            "Volume": [1_000.0, 2_000.0],
+            "Turnover": [102_000.0, 210_000.0],
+            "Dividends": [0.0, 0.0],
+            "Stock Splits": [0.0, 0.0],
+        })
+
+        result = select_price_series(dataset, False, dividend_mode="price")
+        normalized = normalize_history_frame(dataset, "AAPL")
+
+        self.assertEqual(result["Volume"].tolist(), [1_000.0, 2_000.0])
+        self.assertEqual(result["Turnover"].tolist(), [102_000.0, 210_000.0])
+        self.assertEqual(result["High"].tolist(), [104.0, 106.0])
+        self.assertEqual(normalized["Volume"].tolist(), [1_000.0, 2_000.0])
+
     def setUp(self) -> None:
         _reset_yfinance_rate_limit_backoff()
 

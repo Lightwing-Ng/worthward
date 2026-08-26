@@ -1,4 +1,4 @@
-/* Code version: v0.16.3 */
+/* Code version: v0.22.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -9,9 +9,19 @@
 	);
 
 	const REFRESH_MS = 45000;
-	const Y_AXIS_WIDTH = 92;
+	const Y_AXIS_MIN_WIDTH = 36;
 	const LOGO_SIZE = 20;
 	const RIGHT_GUTTER = 44;
+	const CHIP_PANEL_MIN_WIDTH = 116;
+	const CHIP_PANEL_MAX_WIDTH = 190;
+	const CHIP_PANEL_GAP = 10;
+	const CHIP_PANEL_RIGHT_PADDING = 8;
+	const CHIP_PANEL_TOP_PADDING = 8;
+	const CHIP_DISTRIBUTION_BIN_COUNT = 100;
+	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
+	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
+	const CHIP_REVEAL_MOTION_NAME = "shared-bouncy-spring";
+	const CHIP_REVEAL_FALLBACK_DURATION = 620;
 	const ONE_DAY_CANDLE_POLICY = Object.freeze({
 		version: "v1",
 		bodyStyle: "solid",
@@ -28,10 +38,25 @@
 	const LONG_RANGE_TOOLTIP_PERIODS = new Set(["6mo", "1y", "2y", "3y", "5y", "10y", "max"]);
 	const imageCache = new Map();
 	const priceCharts = new Map();
+	const chipsPayloadCache = new Map();
+	const chipDistributionCache = new Map();
 	let refreshTimer = 0;
 	let liveRequestSerial = 0;
 	let liveRequestController = null;
+	let chipsRequestSerial = 0;
+	let chipsRequestController = null;
+	let chipsRequestKeyInFlight = "";
 	let sharedHoverIndex = -1;
+	let chipHoverState = null;
+	let cancelChipRevealMotion = null;
+	let chipRevealLogoOrigins = new Map();
+	const chipRevealMotion = {
+		active: false,
+		generation: 0,
+		profileProgress: 1,
+		logoProgress: 1,
+		rawProgress: 1,
+	};
 	let teardownPriceSubplotOrdering = () => {};
 
 	const currencyForTicker = (ticker) => {
@@ -292,12 +317,24 @@
 		return showCurrency ? `${currency} ${formatted}` : formatted;
 	};
 
+	const getDynamicPriceYAxisWidth = (scale) => {
+		const widestLabelWidth = Number(scale?._labelSizes?.widest?.width) || 0;
+		const tickPadding = Number(scale?.options?.ticks?.padding) || 0;
+		const borderWidth = scale?.options?.border?.display === false ? 0 : 1;
+		return Math.max(
+			Y_AXIS_MIN_WIDTH,
+			Math.ceil(widestLabelWidth + tickPadding + borderWidth + 2),
+		);
+	};
+
 	const readTheme = () => {
 		const computed = getComputedStyle(document.body);
 		return {
 			text: computed.getPropertyValue("--theme-text").trim(),
 			muted: computed.getPropertyValue("--theme-muted").trim(),
 			accent: computed.getPropertyValue("--theme-accent-primary").trim(),
+			secondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
+			positive: computed.getPropertyValue("--theme-accent-positive").trim(),
 		};
 	};
 
@@ -345,10 +382,338 @@
 	const destroyPriceCharts = () => {
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			canvas.onmouseleave = null;
+			canvas.onpointermove = null;
 			window.Chart?.getChart?.(canvas)?.destroy();
 		});
 		priceCharts.clear();
 		sharedHoverIndex = -1;
+		chipHoverState = null;
+	};
+
+	const getChipsInput = () => document.querySelector("#show_chips");
+
+	const isChipsEnabled = () => {
+		if (!isPriceComparison()) return false;
+		const input = getChipsInput();
+		return input instanceof HTMLInputElement ? input.checked : Boolean(state.comparisonChips);
+	};
+
+	const constrainJellyTravel = (progress) => {
+		const numeric = Number(progress);
+		if (!Number.isFinite(numeric)) return 1;
+		if (numeric <= 1) return Math.max(0, numeric);
+		return Math.max(0.94, 1 - ((numeric - 1) * 0.16));
+	};
+
+	const syncChipRevealCanvasState = () => {
+		priceCharts.forEach((chart) => {
+			const canvas = chart?.canvas;
+			if (!(canvas instanceof HTMLCanvasElement)) return;
+			canvas.dataset.chipRevealState = chipRevealMotion.active ? "running" : "settled";
+			canvas.dataset.chipRevealProgress = chipRevealMotion.profileProgress.toFixed(4);
+			canvas.dataset.chipLogoProgress = chipRevealMotion.logoProgress.toFixed(4);
+		});
+	};
+
+	const redrawPriceCharts = () => {
+		syncChipRevealCanvasState();
+		priceCharts.forEach((chart) => {
+			if (!chart?.canvas?.isConnected || window.Chart?.getChart?.(chart.canvas) !== chart) return;
+			chart.draw();
+		});
+	};
+
+	const settleChipRevealMotion = () => {
+		chipRevealMotion.generation += 1;
+		cancelChipRevealMotion?.();
+		cancelChipRevealMotion = null;
+		chipRevealMotion.active = false;
+		chipRevealMotion.profileProgress = 1;
+		chipRevealMotion.logoProgress = 1;
+		chipRevealMotion.rawProgress = 1;
+		chipRevealLogoOrigins = new Map();
+	};
+
+	const prepareChipRevealMotion = () => {
+		settleChipRevealMotion();
+		if (window.AntigravityMotion?.isReducedMotion?.()) return false;
+		const origins = new Map();
+		priceCharts.forEach((chart, index) => {
+			const position = chart?.$closingLogoPosition;
+			if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+			origins.set(index, {
+				xRatio: position.x / Math.max(1, Number(chart.width) || 1),
+				yRatio: position.y / Math.max(1, Number(chart.height) || 1),
+			});
+		});
+		chipRevealLogoOrigins = origins;
+		chipRevealMotion.active = true;
+		chipRevealMotion.profileProgress = 0;
+		chipRevealMotion.logoProgress = 0;
+		chipRevealMotion.rawProgress = 0;
+		return true;
+	};
+
+	const startChipRevealMotion = () => {
+		if (!chipRevealMotion.active || !isChipsEnabled()) return;
+		const motion = window.AntigravityMotion;
+		const scheduler = motion?.scheduler;
+		if (!scheduler?.animate || !motion?.easing?.spring) {
+			settleChipRevealMotion();
+			redrawPriceCharts();
+			return;
+		}
+		const generation = chipRevealMotion.generation;
+		const springPreset = motion.springPresets?.bouncy;
+		cancelChipRevealMotion = scheduler.animate({
+			key: CHIP_REVEAL_MOTION_KEY,
+			duration: springPreset?.duration ?? CHIP_REVEAL_FALLBACK_DURATION,
+			ease: (progress) => motion.easing.spring(progress, springPreset),
+			update(easedProgress, rawProgress) {
+				if (generation !== chipRevealMotion.generation) return;
+				chipRevealMotion.profileProgress = Math.max(0, Number(easedProgress) || 0);
+				chipRevealMotion.logoProgress = constrainJellyTravel(easedProgress);
+				chipRevealMotion.rawProgress = Math.max(0, Math.min(1, Number(rawProgress) || 0));
+				redrawPriceCharts();
+			},
+			complete() {
+				if (generation !== chipRevealMotion.generation) return;
+				chipRevealMotion.active = false;
+				chipRevealMotion.profileProgress = 1;
+				chipRevealMotion.logoProgress = 1;
+				chipRevealMotion.rawProgress = 1;
+				chipRevealLogoOrigins = new Map();
+				cancelChipRevealMotion = null;
+				redrawPriceCharts();
+			},
+		});
+	};
+
+	const syncChipsPresentation = (enabled) => {
+		const priceRegion = document.querySelector("[data-price-chart-region]");
+		const chipsRegion = document.querySelector("[data-chips-chart-region]");
+		const heading = document.querySelector("[data-price-compare-heading]");
+		if (priceRegion instanceof HTMLElement) priceRegion.hidden = false;
+		if (chipsRegion instanceof HTMLElement) chipsRegion.hidden = !enabled;
+		if (heading instanceof HTMLElement) {
+			heading.textContent = heading.dataset.priceHeading || "Price history";
+		}
+	};
+
+	const formatChipVolumeFull = (value) => {
+		const numeric = finiteNumber(value);
+		if (numeric === null) return "—";
+		return new Intl.NumberFormat("en-US", {maximumFractionDigits: 0}).format(numeric);
+	};
+
+	const formatChipFlowMix = (bin) => {
+		const total = finiteNumber(bin?.weight);
+		if (total === null || total <= 0) return "—";
+		const formatShare = (value) => `${((Math.max(0, finiteNumber(value) || 0) / total) * 100).toFixed(0)}%`;
+		return `${formatShare(bin?.buyWeight)} / ${formatShare(bin?.neutralWeight)} / ${formatShare(bin?.sellWeight)}`;
+	};
+
+	const setChipsStatus = (message = "", stateName = "") => {
+		const isLoading = stateName === "loading";
+		document.querySelectorAll("[data-price-subplot]").forEach((section) => {
+			section.setAttribute("aria-busy", isLoading ? "true" : "false");
+			const spinner = section.querySelector("[data-chip-loading-spinner]");
+			if (spinner instanceof HTMLElement) spinner.hidden = !isLoading;
+		});
+		const status = document.querySelector("[data-chips-chart-status]");
+		if (!(status instanceof HTMLElement)) return;
+		status.textContent = message;
+		status.hidden = !message;
+		if (stateName) status.dataset.state = stateName;
+		else delete status.dataset.state;
+	};
+
+	const chipVisibleDateBounds = () => {
+		const dates = (state.chart?.series || [])
+			.flatMap((item) => Array.isArray(item?.ohlcv) ? item.ohlcv : [])
+			.map((row) => String(row?.t || "").slice(0, 10))
+			.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+			.sort();
+		return dates.length ? {from: dates[0], to: dates[dates.length - 1]} : {from: "", to: ""};
+	};
+
+	const chipsRequestKey = () => {
+		const tickers = (state.chart?.series || [])
+			.map((item) => String(item?.ticker || "").trim().toUpperCase())
+			.filter(Boolean)
+			.join("|");
+		const period = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
+			|| new URLSearchParams(window.location.search).get("period")?.toLowerCase()
+			|| "";
+		const {from, to} = chipVisibleDateBounds();
+		return [tickers, period, from, to].join("|");
+	};
+
+	const applyChipsPayload = (payload, requestKey) => {
+		if (!isChipsEnabled() || requestKey !== chipsRequestKey()) return;
+		const errors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
+		const errorTickers = Object.keys(errors);
+		setChipsStatus(
+			errorTickers.length
+				? `Chip data is unavailable for ${errorTickers.join(", ")}.`
+				: "",
+			errorTickers.length ? "error" : "",
+		);
+		renderPriceSubplots();
+	};
+
+	const usableOhlcvRowCount = (item) => (
+		Array.isArray(item?.ohlcv)
+			? item.ohlcv.filter((row) => (
+				row?.synthetic !== true
+				&& [row?.o, row?.h, row?.l, row?.c, row?.v].every((value) => finiteNumber(value) !== null)
+				&& finiteNumber(row.v) > 0
+			)).length
+			: 0
+	);
+
+	const hasUsableOhlcv = (item) => {
+		const totalRows = Array.isArray(item?.ohlcv) ? item.ohlcv.length : 0;
+		const usableRows = usableOhlcvRowCount(item);
+		if (!totalRows || !usableRows) return false;
+		if (totalRows <= 5) return usableRows === totalRows;
+		return usableRows >= Math.ceil(totalRows * 0.8);
+	};
+
+	const chipDistributionSignature = (ticker, period, source, rows) => [
+		String(ticker || "").trim().toUpperCase(),
+		String(period || ""),
+		source,
+		...(Array.isArray(rows) ? rows : []).map((row) => source === "ohlcv-estimate"
+			? [row?.t, row?.o, row?.h, row?.l, row?.c, row?.v, row?.synthetic === true ? 1 : 0].join(":")
+			: [row?.price, row?.buy, row?.neutral, row?.sell].join(":")),
+	].join("|");
+
+	const cacheChipDistribution = (key, distribution) => {
+		if (!distribution) return null;
+		chipDistributionCache.set(key, distribution);
+		while (chipDistributionCache.size > CHIP_DISTRIBUTION_CACHE_LIMIT) {
+			chipDistributionCache.delete(chipDistributionCache.keys().next().value);
+		}
+		return distribution;
+	};
+
+	const getChipDistribution = (item, fallbackItem, period) => {
+		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		if (!calculator) return null;
+		const tradeRows = Array.isArray(fallbackItem?.trades) ? fallbackItem.trades : [];
+		if (tradeRows.length) {
+			const key = chipDistributionSignature(item?.ticker, period, "longbridge-trade-stats", tradeRows);
+			return chipDistributionCache.get(key) || cacheChipDistribution(
+				key,
+				calculator.calculatePriceLevelDistribution(tradeRows, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
+			);
+		}
+		const ohlcvSource = [item, fallbackItem]
+			.filter((candidate) => hasUsableOhlcv(candidate))
+			.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
+		if (ohlcvSource) {
+			const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv);
+			return chipDistributionCache.get(key) || cacheChipDistribution(
+				key,
+				calculator.calculateChipDistribution(ohlcvSource.ohlcv, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
+			);
+		}
+		return null;
+	};
+
+	const getChipPanelWidth = (chart) => {
+		const chartWidth = Number(chart?.width || chart?.canvas?.clientWidth || 0);
+		if (!Number.isFinite(chartWidth) || chartWidth <= 0) return CHIP_PANEL_MIN_WIDTH;
+		return Math.round(Math.max(CHIP_PANEL_MIN_WIDTH, Math.min(CHIP_PANEL_MAX_WIDTH, chartWidth * 0.3)));
+	};
+
+	const getChipPanelBounds = (chart) => {
+		const canvasWidth = Number(chart?.width || chart?.canvas?.clientWidth || 0);
+		const left = Number(chart?.chartArea?.right || 0) + CHIP_PANEL_GAP;
+		const right = canvasWidth - CHIP_PANEL_RIGHT_PADDING;
+		return {left, right, width: Math.max(0, right - left)};
+	};
+
+	const getThemeAlignedLogoX = (chart) => {
+		const canvasWidth = Number(chart?.width || chart?.canvas?.clientWidth || 0);
+		const fallbackCanvasX = Math.max(
+			LOGO_SIZE / 2,
+			canvasWidth - CHIP_PANEL_RIGHT_PADDING - (LOGO_SIZE / 2),
+		);
+		const canvasRect = chart?.canvas?.getBoundingClientRect?.();
+		const themeRect = document.getElementById("global_theme_toggle")?.getBoundingClientRect?.();
+		if (!canvasRect || !themeRect || canvasRect.width <= 0 || themeRect.width <= 0 || canvasWidth <= 0) {
+			return {
+				canvasX: fallbackCanvasX,
+				anchorViewportX: null,
+				resolvedViewportX: null,
+				clamped: false,
+			};
+		}
+		const anchorViewportX = themeRect.left + (themeRect.width / 2);
+		const canvasScaleX = canvasWidth / canvasRect.width;
+		const requestedCanvasX = (anchorViewportX - canvasRect.left) * canvasScaleX;
+		const canvasX = Math.max(
+			LOGO_SIZE / 2,
+			Math.min(canvasWidth - (LOGO_SIZE / 2), requestedCanvasX),
+		);
+		return {
+			canvasX,
+			anchorViewportX,
+			resolvedViewportX: canvasRect.left + ((canvasX / canvasWidth) * canvasRect.width),
+			clamped: Math.abs(canvasX - requestedCanvasX) > 0.01,
+		};
+	};
+
+	const loadChips = async () => {
+		if (!isChipsEnabled() || !state.endpoints?.compareChips) return;
+		const requestKey = chipsRequestKey();
+		const cached = chipsPayloadCache.get(requestKey);
+		if (cached) {
+			applyChipsPayload(cached, requestKey);
+			return;
+		}
+		if (chipsRequestController && chipsRequestKeyInFlight === requestKey) return;
+		const requestSerial = ++chipsRequestSerial;
+		chipsRequestController?.abort();
+		const requestController = new AbortController();
+		chipsRequestController = requestController;
+		chipsRequestKeyInFlight = requestKey;
+		setChipsStatus("", "loading");
+		const params = new URLSearchParams();
+		(state.chart?.series || []).forEach((item) => {
+			const ticker = String(item?.ticker || "").trim();
+			if (ticker) params.append("ticker", ticker);
+		});
+		const {from, to} = chipVisibleDateBounds();
+		if (from && to) {
+			params.set("from", from);
+			params.set("to", to);
+		}
+		try {
+			const response = await fetch(`${state.endpoints.compareChips}?${params.toString()}`, {
+				headers: {Accept: "application/json"},
+				signal: requestController.signal,
+			});
+			const payload = await response.json();
+			if (requestSerial !== chipsRequestSerial || requestKey !== chipsRequestKey() || !isChipsEnabled()) return;
+			if (!response.ok || !payload.success || !Array.isArray(payload.series)) {
+				setChipsStatus(payload.error || "Chip distribution is unavailable.", "error");
+				return;
+				}
+				chipsPayloadCache.set(requestKey, payload);
+			applyChipsPayload(payload, requestKey);
+		} catch (error) {
+			if (error?.name === "AbortError") return;
+			if (requestSerial !== chipsRequestSerial || !isChipsEnabled()) return;
+			setChipsStatus("Chip distribution is unavailable.", "error");
+		} finally {
+			if (chipsRequestController === requestController) {
+				chipsRequestController = null;
+				chipsRequestKeyInFlight = "";
+			}
+		}
 	};
 
 	const escapeTooltipHtml = (value) => String(value ?? "")
@@ -400,6 +765,8 @@
 		if (tooltip instanceof HTMLElement) return tooltip;
 		tooltip = document.createElement("div");
 		tooltip.className = "chart-tooltip price-shared-tooltip";
+		tooltip.dataset.tooltipKind = "shared";
+		delete tooltip.dataset.tooltipPlacement;
 		tooltip.innerHTML = '<div class="chart-tooltip-date"></div><div class="chart-tooltip-list"></div>';
 		surface.appendChild(tooltip);
 		return tooltip;
@@ -415,6 +782,7 @@
 	const hideSharedHover = () => {
 		if (sharedHoverIndex < 0 && !document.querySelector(".price-shared-tooltip.is-visible")) return;
 		sharedHoverIndex = -1;
+		chipHoverState = null;
 		document.querySelector(".price-shared-tooltip")?.classList.remove("is-visible");
 		drawSharedHoverGuides();
 	};
@@ -425,9 +793,11 @@
 			return;
 		}
 		sharedHoverIndex = dataIndex;
+		chipHoverState = null;
 		const tooltip = getOrCreateSharedTooltip();
 		const surface = tooltip?.parentElement;
 		if (!(tooltip instanceof HTMLElement) || !(surface instanceof HTMLElement)) return;
+		tooltip.dataset.tooltipKind = "shared";
 		const rawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
 		const fallbackDates = Array.isArray(series[0]?.dates) ? series[0].dates : [];
 		const rawDate = rawDates[dataIndex] || fallbackDates[dataIndex] || "";
@@ -469,6 +839,111 @@
 		left = Math.max(padding, Math.min(left, surfaceRect.width - tooltipRect.width - padding));
 		let top = anchorY - (tooltipRect.height / 2);
 		top = Math.max(padding, Math.min(top, surfaceRect.height - tooltipRect.height - padding));
+		tooltip.style.left = `${Math.round(left)}px`;
+		tooltip.style.top = `${Math.round(top)}px`;
+		drawSharedHoverGuides();
+	};
+
+	const getChipBinIndexAtPoint = (chart, distribution, event) => {
+		const bins = Array.isArray(distribution?.bins) ? distribution.bins : [];
+		if (!bins.length || !chart?.chartArea || !chart.scales?.y) return -1;
+		const pointerX = finiteNumber(event?.x);
+		const pointerY = finiteNumber(event?.y);
+		const bounds = getChipPanelBounds(chart);
+		if (pointerX === null || pointerY === null
+			|| pointerX < bounds.left || pointerX > bounds.right
+			|| pointerY < chart.chartArea.top || pointerY > chart.chartArea.bottom) return -1;
+		const barHitRadius = Math.max(7, (chart.chartArea.height / bins.length) * 2);
+		let closestIndex = -1;
+		let closestDistance = Number.POSITIVE_INFINITY;
+		bins.forEach((bin, binIndex) => {
+			if (bin.weight <= 0) return;
+			const y = chart.scales.y.getPixelForValue(bin.price);
+			const distance = Math.abs(y - pointerY);
+			if (Number.isFinite(distance) && distance < closestDistance) {
+				closestDistance = distance;
+				closestIndex = binIndex;
+			}
+		});
+		return closestDistance <= barHitRadius ? closestIndex : -1;
+	};
+
+	const formatChipPriceRange = (range, currency) => (
+		Array.isArray(range) && range.every((value) => finiteNumber(value) !== null)
+			? `${formatPrice(range[0], currency, false)}–${formatPrice(range[1], currency, false)}`
+			: "—"
+	);
+
+	const updateChipHover = (binIndex, chart, event, {ticker, distribution, statistics, currentPrice, currency}) => {
+		const bin = distribution?.bins?.[binIndex];
+		if (!bin || !(chart?.canvas instanceof HTMLCanvasElement)) {
+			hideSharedHover();
+			return;
+		}
+		const tooltip = getOrCreateSharedTooltip();
+		const surface = tooltip?.parentElement;
+		if (!(tooltip instanceof HTMLElement) || !(surface instanceof HTMLElement)) return;
+		tooltip.dataset.tooltipKind = "chip";
+		delete tooltip.dataset.tooltipPlacement;
+		sharedHoverIndex = -1;
+		chipHoverState = {chart, binIndex};
+		const theme = readTheme();
+		const dateElement = tooltip.querySelector(".chart-tooltip-date");
+		const listElement = tooltip.querySelector(".chart-tooltip-list");
+		if (dateElement) {
+			dateElement.innerHTML = `<span class="chart-tooltip-primary-date">${escapeTooltipHtml(`${ticker} ${formatPrice(bin.price, currency, false)}`)}</span>`;
+		}
+		if (listElement) {
+			const entries = [
+				["Estimated concentration", `${(bin.normalizedWidth * 100).toFixed(1)}% of POC`, theme.text],
+				["Estimated volume", `${formatChipVolumeFull(bin.weight)} shares`, theme.text],
+				["Buy / Neutral / Sell", formatChipFlowMix(bin), theme.text],
+				["POC", formatPrice(statistics?.pocPrice, currency, false), theme.accent],
+				["Average cost", formatPrice(statistics?.weightedAverageCost, currency, false), theme.text],
+				["Profit ratio", statistics?.profitRatio === null || statistics?.profitRatio === undefined ? "—" : `${(statistics.profitRatio * 100).toFixed(1)}%`, theme.positive],
+				["70% cost range", formatChipPriceRange(statistics?.costRange70, currency), theme.muted],
+				["90% cost range", formatChipPriceRange(statistics?.costRange90, currency), theme.muted],
+			];
+			listElement.innerHTML = entries.map(([label, value, color]) => `
+				<div class="chart-tooltip-row">
+					<span class="chart-tooltip-dot" style="background:${escapeTooltipHtml(color)}"></span>
+					<span class="chart-tooltip-label">${escapeTooltipHtml(label)}</span>
+					<span class="chart-tooltip-value">${escapeTooltipHtml(value)}</span>
+				</div>
+			`).join("");
+		}
+
+		tooltip.classList.add("is-visible");
+		const surfaceRect = surface.getBoundingClientRect();
+		const canvasRect = chart.canvas.getBoundingClientRect();
+		const tooltipRect = tooltip.getBoundingClientRect();
+		const pointerX = finiteNumber(event?.x);
+		const pointerY = finiteNumber(event?.y);
+		const cursorX = canvasRect.left - surfaceRect.left + (pointerX ?? chart.chartArea.right);
+		const cursorY = canvasRect.top - surfaceRect.top + (pointerY ?? chart.scales.y.getPixelForValue(bin.price));
+		const padding = 12;
+		const gap = 14;
+		const minLeft = padding;
+		const maxLeft = Math.max(minLeft, surfaceRect.width - tooltipRect.width - padding);
+		const left = Math.max(minLeft, Math.min(cursorX - (tooltipRect.width / 2), maxLeft));
+		const minTop = padding;
+		const maxTop = Math.max(minTop, surfaceRect.height - tooltipRect.height - padding);
+		const aboveTop = cursorY - tooltipRect.height - gap;
+		const belowTop = cursorY + gap;
+		const canPlaceAbove = aboveTop >= minTop;
+		const canPlaceBelow = belowTop <= maxTop;
+		const preferAbove = cursorY > (surfaceRect.height / 2);
+		let placement = preferAbove ? "above" : "below";
+		let top = preferAbove ? aboveTop : belowTop;
+		if (placement === "above" && !canPlaceAbove && canPlaceBelow) {
+			placement = "below";
+			top = belowTop;
+		} else if (placement === "below" && !canPlaceBelow && canPlaceAbove) {
+			placement = "above";
+			top = aboveTop;
+		}
+		top = Math.max(minTop, Math.min(top, maxTop));
+		tooltip.dataset.tooltipPlacement = placement;
 		tooltip.style.left = `${Math.round(left)}px`;
 		tooltip.style.top = `${Math.round(top)}px`;
 		drawSharedHoverGuides();
@@ -732,8 +1207,17 @@
 
 	const renderPriceSubplots = () => {
 		if (!isPriceComparison() || !window.Chart) return;
+		const chipsEnabled = isChipsEnabled();
+		syncChipsPresentation(chipsEnabled);
+		if (!chipsEnabled) setChipsStatus();
 		const series = Array.isArray(state.chart?.series) ? state.chart.series : [];
 		const profiles = Array.isArray(state.chart?.profiles) ? state.chart.profiles : [];
+		const chipPayload = chipsEnabled ? chipsPayloadCache.get(chipsRequestKey()) : null;
+		const chipSeriesByTicker = new Map(
+			(Array.isArray(chipPayload?.series) ? chipPayload.series : [])
+				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]),
+		);
+		let shouldLoadFallbackChips = chipsEnabled && !chipPayload;
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
 		const requestedPeriod = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
@@ -780,6 +1264,9 @@
 			const prices = Array.isArray(item.prices) ? item.prices.map(finiteNumber) : [];
 			const rawDates = Array.isArray(item.raw_dates) ? item.raw_dates : [];
 			const labels = rawDates.length ? rawDates : (item.dates || []);
+			const sharedXAxisDates = sharedRawDates.length === labels.length ? sharedRawDates : rawDates;
+			const sharedRangeFirstIndex = 0;
+			const sharedRangeLastIndex = Math.max(0, labels.length - 1);
 			const validIndexes = prices.flatMap((value, valueIndex) => value === null ? [] : [valueIndex]);
 			if (!validIndexes.length) return;
 			const firstIndex = validIndexes[0];
@@ -815,7 +1302,32 @@
 			const candlePricePadding = candlePriceMin !== null && candlePriceMax !== null
 				? Math.max((candlePriceMax - candlePriceMin) * 0.06, Math.abs(candlePriceMax) * 0.001)
 				: 0;
+			const fallbackChipItem = chipSeriesByTicker.get(String(item.ticker || "").trim().toUpperCase());
+			const chipDistribution = chipsEnabled
+				? getChipDistribution(item, fallbackChipItem, requestedPeriod)
+				: null;
+			const chipBins = Array.isArray(chipDistribution?.bins) ? chipDistribution.bins : [];
+			const chipStatistics = chipsEnabled
+				? window.ANTIGRAVITY_CHIP_DISTRIBUTION?.calculateChipStatistics(chipDistribution, lastPrice)
+				: null;
+			const chipPriceMin = finiteNumber(chipDistribution?.minPrice);
+			const chipPriceMax = finiteNumber(chipDistribution?.maxPrice);
+			const axisPriceValues = [candlePriceMin, candlePriceMax, chipPriceMin, chipPriceMax]
+				.filter((value) => value !== null);
+			const axisPriceMin = axisPriceValues.length ? Math.min(...axisPriceValues) : null;
+			const axisPriceMax = axisPriceValues.length ? Math.max(...axisPriceValues) : null;
+			const chipPricePadding = chipPriceMin !== null && chipPriceMax !== null
+				? Math.max((chipPriceMax - chipPriceMin) * 0.02, Math.abs(chipPriceMax) * 0.001)
+				: 0;
+			const axisPricePadding = chipBins.length
+				? Math.max(candlePricePadding, chipPricePadding)
+				: candlePricePadding;
+			const suggestedPriceMin = axisPriceMin === null ? undefined : axisPriceMin - axisPricePadding;
+			const suggestedPriceMax = axisPriceMax === null ? undefined : axisPriceMax + axisPricePadding;
 			canvas.dataset.chartRenderMode = hasOneDayCandlesticks ? "candlestick" : "line";
+			canvas.dataset.xAxisLabelBasis = sharedRawDates.length === labels.length ? "shared-range" : "subplot-range";
+			canvas.dataset.xAxisRangeStart = sharedXAxisDates[sharedRangeFirstIndex] || "";
+			canvas.dataset.xAxisRangeEnd = sharedXAxisDates[sharedRangeLastIndex] || "";
 			canvas.dataset.candlePolicy = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.version : "";
 			canvas.dataset.candleBodyStyle = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.bodyStyle : "";
 			canvas.dataset.candleWidthBasis = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.widthBasis : "";
@@ -829,20 +1341,162 @@
 			canvas.dataset.oneDaySessionDividers = String(oneDayUsSessionDividerIndexes.length);
 			canvas.dataset.oneDaySessionDividerIndexes = oneDayUsSessionDividerIndexes.map(({leftIndex, rightIndex}) => `${leftIndex}:${rightIndex}`).join(",");
 			canvas.dataset.oneDaySessionDividerLineStyle = oneDayUsSessionDividerIndexes.length ? "solid-session-divider" : "";
+			canvas.dataset.chipDistribution = chipsEnabled ? "1" : "0";
+			canvas.dataset.chipSource = chipDistribution?.source || "";
+			canvas.dataset.chipBinCount = String(chipBins.length);
+			canvas.dataset.chipRowCount = String(chipBins.length);
+			canvas.dataset.chipPopulatedBinCount = String(chipBins.filter((bin) => bin.weight > 0).length);
+			canvas.dataset.chipPocPrice = finiteNumber(chipStatistics?.pocPrice)?.toFixed(6) || "";
+			canvas.dataset.chipWeightedAverageCost = finiteNumber(chipStatistics?.weightedAverageCost)?.toFixed(6) || "";
+			canvas.dataset.chipProfitRatio = finiteNumber(chipStatistics?.profitRatio)?.toFixed(6) || "";
+			canvas.dataset.chipCostRange70 = Array.isArray(chipStatistics?.costRange70) ? chipStatistics.costRange70.join(":") : "";
+			canvas.dataset.chipCostRange90 = Array.isArray(chipStatistics?.costRange90) ? chipStatistics.costRange90.join(":") : "";
+			canvas.dataset.chipLegend = "0";
+			canvas.dataset.chipBaselineLine = chipsEnabled ? "none" : "";
+			canvas.dataset.chipCurrentPriceLine = chipsEnabled ? "hidden" : "";
+			canvas.dataset.chipHoverLine = chipsEnabled ? "muted-solid" : "";
+			canvas.dataset.chipPocStyle = chipsEnabled ? "category-opacity" : "";
+			canvas.dataset.chipCategoryStack = chipsEnabled ? "buy-neutral-sell" : "";
+			canvas.dataset.chipColorModel = chipsEnabled ? "flow-categories" : "";
+			canvas.dataset.chipLogoPlacement = chipsEnabled ? "panel-top-right" : "price-close";
+			canvas.dataset.chipRevealMotion = chipsEnabled ? CHIP_REVEAL_MOTION_NAME : "";
+			canvas.dataset.chipRevealState = chipsEnabled
+				? (chipRevealMotion.active ? "running" : "settled")
+				: "off";
+			canvas.dataset.chipRevealProgress = chipsEnabled ? chipRevealMotion.profileProgress.toFixed(4) : "";
+			canvas.dataset.chipLogoMotion = chipsEnabled ? "price-close-to-panel-top-right" : "";
+			canvas.dataset.chipLogoProgress = chipsEnabled ? chipRevealMotion.logoProgress.toFixed(4) : "";
 
-			const fixedScaleWidthPlugin = {
-				id: `priceFixedScaleWidth${index}`,
+			const chipDistributionLayoutPlugin = {
+				id: `priceChipDistributionLayout${index}`,
+				beforeLayout(chart) {
+					const currentPadding = chart.options.layout?.padding || {};
+					chart.options.layout.padding = {
+						...currentPadding,
+						top: chipsEnabled ? CHIP_PANEL_TOP_PADDING : 8,
+						right: chipsEnabled ? getChipPanelWidth(chart) + CHIP_PANEL_GAP + CHIP_PANEL_RIGHT_PADDING : RIGHT_GUTTER,
+					};
+				},
+			};
+			const chipDistributionPlugin = {
+				id: `priceChipDistribution${index}`,
+				beforeDatasetsDraw(chart) {
+					if (!chipsEnabled || !chipBins.length || !chart.chartArea || !chart.scales?.y) return;
+					const bounds = getChipPanelBounds(chart);
+					const ctx = chart.ctx;
+					ctx.save();
+					ctx.beginPath();
+					ctx.rect(bounds.left, chart.chartArea.top, bounds.width, chart.chartArea.height);
+					ctx.clip();
+					chipBins.forEach((bin) => {
+						if (bin.weight <= 0 || bounds.width <= 0) return;
+						const topY = chart.scales.y.getPixelForValue(bin.high);
+						const bottomY = chart.scales.y.getPixelForValue(bin.low);
+						if (![topY, bottomY].every(Number.isFinite)) return;
+						const clippedTop = Math.max(chart.chartArea.top, Math.min(topY, bottomY));
+						const clippedBottom = Math.min(chart.chartArea.bottom, Math.max(topY, bottomY));
+						const rawHeight = clippedBottom - clippedTop;
+						if (rawHeight <= 0) return;
+						const verticalGap = Math.min(0.5, rawHeight * 0.08);
+						const barHeight = Math.max(0.75, rawHeight - verticalGap);
+						const barY = clippedTop + ((rawHeight - barHeight) / 2);
+						const normalizedSegments = [
+							{width: finiteNumber(bin.normalizedBuyWidth) || 0, color: theme.positive},
+							{width: finiteNumber(bin.normalizedNeutralWidth) || 0, color: theme.muted},
+							{width: finiteNumber(bin.normalizedSellWidth) || 0, color: theme.secondary},
+						];
+						if (normalizedSegments.every(({width}) => width <= 0)) {
+							normalizedSegments[1].width = Math.max(0, Math.min(1, finiteNumber(bin.normalizedWidth) || 0));
+						}
+						let segmentX = bounds.left;
+						const revealScale = chipRevealMotion.active
+							? chipRevealMotion.profileProgress
+							: 1;
+						normalizedSegments.forEach(({width, color}) => {
+							const segmentWidth = bounds.width * Math.max(0, Math.min(1, width)) * revealScale;
+							if (segmentWidth <= 0) return;
+							ctx.fillStyle = color;
+							ctx.globalAlpha = bin.index === chipDistribution.pocIndex ? 0.68 : 0.52;
+							ctx.fillRect(segmentX, barY, segmentWidth, barHeight);
+							segmentX += segmentWidth;
+						});
+					});
+					ctx.restore();
+
+				},
+				afterDatasetsDraw(chart) {
+					if (!chipsEnabled || chipHoverState?.chart !== chart) return;
+					const bin = chipBins[chipHoverState.binIndex];
+					if (!bin || !chart.chartArea || !chart.scales?.y) return;
+					const y = chart.scales.y.getPixelForValue(bin.price);
+					const bounds = getChipPanelBounds(chart);
+					if (!Number.isFinite(y)) return;
+					chart.ctx.save();
+					chart.ctx.strokeStyle = theme.muted;
+					chart.ctx.globalAlpha = 0.56;
+					chart.ctx.lineWidth = Math.max(0.75, 1 / Math.max(window.devicePixelRatio || 1, 1));
+					chart.ctx.setLineDash([]);
+					chart.ctx.beginPath();
+					chart.ctx.moveTo(chart.chartArea.left, y);
+					chart.ctx.lineTo(bounds.right, y);
+					chart.ctx.stroke();
+					chart.ctx.restore();
+				},
+			};
+			const dynamicScaleWidthPlugin = {
+				id: `priceDynamicScaleWidth${index}`,
 				beforeUpdate(chart) {
-					if (chart.options.scales?.y) chart.options.scales.y.afterFit = (scale) => { scale.width = Y_AXIS_WIDTH; };
+					if (chart.options.scales?.y) {
+						chart.options.scales.y.afterFit = (scale) => {
+							scale.width = getDynamicPriceYAxisWidth(scale);
+						};
+					}
 				},
 			};
 			const closingLogoPlugin = {
 				id: `priceClosingLogo${index}`,
 				afterDatasetsDraw(chart) {
+					if (!chart.chartArea || lastPrice === null) return;
+					const horizontalAlignment = getThemeAlignedLogoX(chart);
+					const priceClosePosition = {
+						x: horizontalAlignment.canvasX,
+						y: chart.scales.y.getPixelForValue(lastPrice),
+					};
+					const panelPosition = {
+						x: horizontalAlignment.canvasX,
+						y: chart.chartArea.top + (LOGO_SIZE / 2),
+					};
+					const origin = chipsEnabled ? chipRevealLogoOrigins.get(index) : null;
+					const sourcePosition = origin ? {
+						x: origin.xRatio * chart.width,
+						y: origin.yRatio * chart.height,
+					} : priceClosePosition;
+					const targetPosition = chipsEnabled ? panelPosition : priceClosePosition;
+					const motionProgress = chipsEnabled && chipRevealMotion.active
+						? chipRevealMotion.logoProgress
+						: 1;
+					const centerX = sourcePosition.x + ((targetPosition.x - sourcePosition.x) * motionProgress);
+					const centerY = sourcePosition.y + ((targetPosition.y - sourcePosition.y) * motionProgress);
+					if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
+					chart.$closingLogoPosition = {x: centerX, y: centerY};
+					chart.$closingLogoAlignment = horizontalAlignment;
+					chart.canvas.dataset.logoHorizontalAlignment = "global-theme-toggle-center";
+					chart.canvas.dataset.logoHorizontalCenterX = centerX.toFixed(3);
+					chart.canvas.dataset.logoHorizontalAnchorViewportX = Number.isFinite(horizontalAlignment.anchorViewportX)
+						? horizontalAlignment.anchorViewportX.toFixed(3)
+						: "";
+					chart.canvas.dataset.logoHorizontalAlignmentClamped = horizontalAlignment.clamped ? "1" : "0";
+					chart.$chipRevealMotion = chipsEnabled ? {
+						active: chipRevealMotion.active,
+						profileProgress: chipRevealMotion.profileProgress,
+						logoProgress: motionProgress,
+						rawProgress: chipRevealMotion.rawProgress,
+						from: sourcePosition,
+						to: targetPosition,
+						current: {x: centerX, y: centerY},
+					} : null;
 					const image = loadLogo(profile.logo_url, chart);
-					if (!image?.complete || !image.naturalWidth || !chart.chartArea || lastPrice === null) return;
-					const centerX = chart.chartArea.right + 10 + (LOGO_SIZE / 2);
-					const centerY = chart.scales.y.getPixelForValue(lastPrice);
+					if (!image?.complete || !image.naturalWidth) return;
 					const drawX = centerX - (LOGO_SIZE / 2);
 					const drawY = centerY - (LOGO_SIZE / 2);
 					chart.ctx.save();
@@ -1074,6 +1728,19 @@
 					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot() && marketSessionEvents.length ? 22 : 4, left: 0}},
 					interaction: {mode: "index", intersect: false},
 					onHover(event, activeElements, chartInstance) {
+						const chipBinIndex = chipsEnabled
+							? getChipBinIndexAtPoint(chartInstance, chipDistribution, event)
+							: -1;
+						if (chipBinIndex >= 0) {
+							updateChipHover(chipBinIndex, chartInstance, event, {
+								ticker: item.ticker,
+								distribution: chipDistribution,
+								statistics: chipStatistics,
+								currentPrice: lastPrice,
+								currency,
+							});
+							return;
+						}
 						if (!activeElements.length) {
 							hideSharedHover();
 							return;
@@ -1104,15 +1771,15 @@
 								if (marketSessionEvents.length) return "";
 								if (isShortMultiDayRange) return dayLabelByIndex.get(tickIndex) || "";
 								if (singleDayLabelIndexes.has(tickIndex)) return formatSingleDayXAxisValue(rawDates[tickIndex]);
-								return tickIndex === firstIndex || tickIndex === lastIndex
-										? formatXAxisValue(rawDates[tickIndex], intraday)
+								return tickIndex === sharedRangeFirstIndex || tickIndex === sharedRangeLastIndex
+										? formatXAxisValue(sharedXAxisDates[tickIndex] || rawDates[tickIndex], intraday)
 										: "";
 								},
 							},
 						},
 						y: {
-							suggestedMin: candlePriceMin === null ? undefined : candlePriceMin - candlePricePadding,
-							suggestedMax: candlePriceMax === null ? undefined : candlePriceMax + candlePricePadding,
+							suggestedMin: suggestedPriceMin,
+							suggestedMax: suggestedPriceMax,
 							grid: {display: false},
 							border: {display: false},
 							ticks: {
@@ -1123,11 +1790,41 @@
 						},
 					},
 				},
-				plugins: [fixedScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
+				plugins: [chipDistributionLayoutPlugin, chipDistributionPlugin, dynamicScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
 			});
+			chart.$costDistribution = chipsEnabled && chipDistribution ? {
+				distribution: chipDistribution,
+				statistics: chipStatistics,
+				currentPrice: lastPrice,
+				priceToCanvasY: (price) => chart.scales.y.getPixelForValue(price),
+			} : null;
 			priceCharts.set(index, chart);
+			canvas.onpointermove = (event) => {
+				if (!chipsEnabled || !chipBins.length) return;
+				const rect = canvas.getBoundingClientRect();
+				const scaleX = chart.width / Math.max(rect.width, 1);
+				const scaleY = chart.height / Math.max(rect.height, 1);
+				const point = {
+					x: (event.clientX - rect.left) * scaleX,
+					y: (event.clientY - rect.top) * scaleY,
+				};
+				const chipBinIndex = getChipBinIndexAtPoint(chart, chipDistribution, point);
+				if (chipBinIndex >= 0) {
+					updateChipHover(chipBinIndex, chart, point, {
+						ticker: item.ticker,
+						distribution: chipDistribution,
+						statistics: chipStatistics,
+						currentPrice: lastPrice,
+						currency,
+					});
+				} else if (chipHoverState?.chart === chart) {
+					hideSharedHover();
+				}
+			};
 			canvas.onmouseleave = hideSharedHover;
 		});
+		if (chipsEnabled && !shouldLoadFallbackChips) setChipsStatus();
+		if (chipsEnabled && shouldLoadFallbackChips && !chipPayload) void loadChips();
 	};
 
 	const formatLocalIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -1185,7 +1882,34 @@
 		}
 	};
 
+	const bindChipsToggle = () => {
+		const input = getChipsInput();
+		if (!(input instanceof HTMLInputElement) || input.dataset.bound === "1") return;
+		input.dataset.bound = "1";
+		input.addEventListener("change", () => {
+			const shouldStartChipReveal = input.checked ? prepareChipRevealMotion() : false;
+			if (!input.checked) settleChipRevealMotion();
+			state.comparisonChips = input.checked;
+			const url = new URL(window.location.href);
+			if (input.checked) url.searchParams.set("chips", "1");
+			else url.searchParams.delete("chips");
+			window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+			teardownPriceSubplotOrdering();
+			teardownPriceSubplotOrdering = () => {};
+			liveRequestSerial += 1;
+			liveRequestController?.abort();
+			liveRequestController = null;
+			chipsRequestSerial += 1;
+			chipsRequestController?.abort();
+			chipsRequestController = null;
+			renderPriceSubplots();
+			if (shouldStartChipReveal) startChipRevealMotion();
+			teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
+		});
+	};
+
 	bootstrap.initPriceCompareWorkspace = () => {
+		bindChipsToggle();
 		teardownPriceSubplotOrdering();
 		teardownPriceSubplotOrdering = () => {};
 		liveRequestSerial += 1;
@@ -1207,6 +1931,8 @@
 	bootstrap.buildPriceMarketSessionEvents = buildMarketSessionEvents;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);
+		chipsRequestController?.abort();
+		settleChipRevealMotion();
 		teardownPriceSubplotOrdering();
 		destroyPriceCharts();
 	}, {once: true});

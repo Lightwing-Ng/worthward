@@ -1,7 +1,7 @@
 """
 Tests for shared workspace range-option policy.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ class RangeOptionTests(unittest.TestCase):
 
         periods = build_supported_periods_from_dates(dates)
 
-        self.assertEqual(periods, ["6mo", "1y", "2y", "3y", "5y", "10y", "max"])
+        self.assertEqual(periods, ["1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max"])
 
     def test_comparison_uses_union_history_without_shortening_for_new_listing(self) -> None:
         union_dates = pd.Series(pd.to_datetime(["2014-03-27", "2024-08-01", "2026-03-27"]))
@@ -32,7 +32,10 @@ class RangeOptionTests(unittest.TestCase):
 
         periods = build_supported_compare_periods(union_dates, intraday_sets)
 
-        self.assertEqual(periods, ["1d", "3d", "1w", "6mo", "1y", "2y", "3y", "5y", "10y", "max"])
+        self.assertEqual(
+            periods,
+            ["1d", "3d", "1w", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max"],
+        )
 
     def test_unsupported_requested_period_falls_back_to_rendered_max_option(self) -> None:
         with patch("app.services.range_options.format_display_date", return_value="1 Jan 2018"):

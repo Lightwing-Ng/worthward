@@ -1,7 +1,7 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.10.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -25,11 +25,13 @@ from app.infrastructure.broker_market_data import (
     _candlestick_rows_to_frame,
     _daily_candlestick_rows_to_frame,
     _normalize_longbridge_market_cap_row,
+    _normalize_longbridge_trade_stats_payload,
     _normalize_longbridge_trade_session,
     _parse_longbridge_timestamp,
     _resolve_longbridge_daily_adjust_type,
     classify_one_minute_store_status,
     fetch_longbridge_market_cap_snapshot,
+    fetch_longbridge_trade_stats,
     fetch_longbridge_compare_one_day_history,
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
@@ -119,6 +121,65 @@ class BrokerMarketDataTests(unittest.TestCase):
         self.assertEqual(_normalize_longbridge_trade_session("TradeSession.Normal"), "intraday")
         self.assertEqual(_normalize_longbridge_trade_session("Overnight"), "overnight")
         self.assertEqual(_normalize_longbridge_trade_session(None), "")
+
+    def test_longbridge_trade_stats_normalization_preserves_price_volume_buckets(self) -> None:
+        payload = {
+            "statistics": {
+                "avgprice": "311.80",
+                "preclose": "309.350",
+                "buy": "2922660",
+                "neutral": "8842674",
+                "sell": "3130996",
+                "total_amount": "14896330",
+                "trades_count": "658071",
+                "trade_date": ["1787544000"],
+            },
+            "trades": [
+                {
+                    "price": "313.350",
+                    "buy_amount": "434",
+                    "neutral_amount": "113",
+                    "sell_amount": "356",
+                },
+                {"price": "bad", "buy_amount": "1", "neutral_amount": "1", "sell_amount": "1"},
+            ],
+        }
+
+        normalized = _normalize_longbridge_trade_stats_payload(payload, "AAPL.US")
+
+        self.assertIsNotNone(normalized)
+        assert normalized is not None
+        self.assertEqual(normalized["symbol"], "AAPL.US")
+        self.assertEqual(normalized["statistics"]["average_price"], 311.8)
+        self.assertEqual(normalized["trades"], [{
+            "price": 313.35,
+            "buy": 434.0,
+            "neutral": 113.0,
+            "sell": 356.0,
+        }])
+
+    def test_fetch_longbridge_trade_stats_uses_cli_trade_stats_command(self) -> None:
+        with patch(
+            "app.infrastructure.broker_market_data.run_longbridge_cli_json",
+            return_value={
+                "statistics": {"avgprice": "100", "trade_date": []},
+                "trades": [{
+                    "price": "100",
+                    "buy_amount": "1",
+                    "neutral_amount": "2",
+                    "sell_amount": "3",
+                }],
+            },
+        ) as cli_mock:
+            result = fetch_longbridge_trade_stats("AAPL", self._longbridge_settings())
+
+        self.assertEqual(result["symbol"], "AAPL.US")
+        self.assertEqual(result["trades"][0]["sell"], 3.0)
+        cli_mock.assert_called_once_with(
+            self._longbridge_settings(),
+            ["trade-stats", "AAPL.US", "--format", "json"],
+            timeout_seconds=20,
+        )
 
     def _assert_isolated_store_path(self, path: Path) -> None:
         for production_root in (BASE_DIR / "market_store", BASE_DIR / "settings_store"):
