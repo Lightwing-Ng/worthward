@@ -1,4 +1,4 @@
-/* Code version: v0.22.2 */
+/* Code version: v0.22.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -17,6 +17,7 @@
 	const CHIP_PANEL_GAP = 10;
 	const CHIP_PANEL_RIGHT_PADDING = 8;
 	const CHIP_PANEL_TOP_PADDING = 8;
+	const CHIP_HOVER_PRICE_MARKER_RADIUS = 3;
 	const CHIP_DISTRIBUTION_BIN_COUNT = 100;
 	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
 	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
@@ -506,11 +507,15 @@
 		return new Intl.NumberFormat("en-US", {maximumFractionDigits: 0}).format(numeric);
 	};
 
-	const formatChipFlowMix = (bin) => {
-		const total = finiteNumber(bin?.weight);
-		if (total === null || total <= 0) return "—";
-		const formatShare = (value) => `${((Math.max(0, finiteNumber(value) || 0) / total) * 100).toFixed(0)}%`;
-		return `${formatShare(bin?.buyWeight)} / ${formatShare(bin?.neutralWeight)} / ${formatShare(bin?.sellWeight)}`;
+	const chipBinIsLoss = (bin, currentPrice) => {
+		const price = finiteNumber(bin?.price);
+		const current = finiteNumber(currentPrice);
+		return price !== null && current !== null && price >= current;
+	};
+
+	const formatChipPosition = (bin, currentPrice) => {
+		if (finiteNumber(bin?.price) === null || finiteNumber(currentPrice) === null) return "—";
+		return chipBinIsLoss(bin, currentPrice) ? "Loss" : "Profit";
 	};
 
 	const setChipsStatus = (message = "", stateName = "") => {
@@ -633,6 +638,32 @@
 		const left = Number(chart?.chartArea?.right || 0) + CHIP_PANEL_GAP;
 		const right = canvasWidth - CHIP_PANEL_RIGHT_PADDING;
 		return {left, right, width: Math.max(0, right - left)};
+	};
+
+	const resolveChipHoverPriceMarker = (chart, chipBins) => {
+		if (chipHoverState?.chart !== chart || !chart?.chartArea || !chart.scales?.y) return null;
+		const bin = chipBins?.[chipHoverState.binIndex];
+		const price = finiteNumber(bin?.price);
+		const rawY = price === null ? null : chart.scales.y.getPixelForValue(price);
+		if (price === null || !Number.isFinite(rawY)) return null;
+		const pointHoverRadius = finiteNumber(chart.data?.datasets?.[0]?.pointHoverRadius);
+		return {
+			price,
+			x: chart.chartArea.right,
+			y: Math.max(chart.chartArea.top, Math.min(chart.chartArea.bottom, rawY)),
+			radius: Math.max(2, pointHoverRadius ?? CHIP_HOVER_PRICE_MARKER_RADIUS),
+		};
+	};
+
+	const drawSolidPriceHoverMarker = (ctx, marker, color) => {
+		if (!ctx || !marker || !Number.isFinite(marker.x) || !Number.isFinite(marker.y)) return;
+		ctx.save();
+		ctx.fillStyle = color;
+		ctx.globalAlpha = 1;
+		ctx.beginPath();
+		ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
 	};
 
 	const getThemeAlignedLogoX = (chart) => {
@@ -897,7 +928,7 @@
 			const entries = [
 				["Estimated concentration", `${(bin.normalizedWidth * 100).toFixed(1)}% of POC`, theme.text],
 				["Estimated volume", `${formatChipVolumeFull(bin.weight)} shares`, theme.text],
-				["Buy / Neutral / Sell", formatChipFlowMix(bin), theme.text],
+				["Position", formatChipPosition(bin, currentPrice), chipBinIsLoss(bin, currentPrice) ? theme.secondary : theme.positive],
 				["POC", formatPrice(statistics?.pocPrice, currency, false), theme.accent],
 				["Average cost", formatPrice(statistics?.weightedAverageCost, currency, false), theme.text],
 				["Profit ratio", statistics?.profitRatio === null || statistics?.profitRatio === undefined ? "—" : `${(statistics.profitRatio * 100).toFixed(1)}%`, theme.positive],
@@ -1355,9 +1386,11 @@
 			canvas.dataset.chipBaselineLine = chipsEnabled ? "none" : "";
 			canvas.dataset.chipCurrentPriceLine = chipsEnabled ? "hidden" : "";
 			canvas.dataset.chipHoverLine = chipsEnabled ? "muted-solid" : "";
-			canvas.dataset.chipPocStyle = chipsEnabled ? "category-opacity" : "";
-			canvas.dataset.chipCategoryStack = chipsEnabled ? "buy-neutral-sell" : "";
-			canvas.dataset.chipColorModel = chipsEnabled ? "flow-categories" : "";
+			canvas.dataset.chipPocStyle = chipsEnabled ? "price-relative-opacity" : "";
+			canvas.dataset.chipCategoryStack = chipsEnabled ? "none" : "";
+			canvas.dataset.chipColorModel = chipsEnabled ? "price-relative" : "";
+			canvas.dataset.chipHoverMarker = chipsEnabled ? "solid-price" : "";
+			canvas.dataset.chipHoverMarkerAxis = chipsEnabled ? "shared-y-scale" : "";
 			canvas.dataset.chipLogoPlacement = chipsEnabled ? "panel-top-right" : "price-close";
 			canvas.dataset.chipRevealMotion = chipsEnabled ? CHIP_REVEAL_MOTION_NAME : "";
 			canvas.dataset.chipRevealState = chipsEnabled
@@ -1400,14 +1433,10 @@
 						const verticalGap = Math.min(0.5, rawHeight * 0.08);
 						const barHeight = Math.max(0.75, rawHeight - verticalGap);
 						const barY = clippedTop + ((rawHeight - barHeight) / 2);
-						const normalizedSegments = [
-							{width: finiteNumber(bin.normalizedBuyWidth) || 0, color: theme.positive},
-							{width: finiteNumber(bin.normalizedNeutralWidth) || 0, color: theme.muted},
-							{width: finiteNumber(bin.normalizedSellWidth) || 0, color: theme.secondary},
-						];
-						if (normalizedSegments.every(({width}) => width <= 0)) {
-							normalizedSegments[1].width = Math.max(0, Math.min(1, finiteNumber(bin.normalizedWidth) || 0));
-						}
+						const normalizedSegments = [{
+							width: Math.max(0, Math.min(1, finiteNumber(bin.normalizedWidth) || 0)),
+							color: chipBinIsLoss(bin, lastPrice) ? theme.secondary : theme.positive,
+						}];
 						let segmentX = bounds.left;
 						const revealScale = chipRevealMotion.active
 							? chipRevealMotion.profileProgress
@@ -1425,22 +1454,25 @@
 
 				},
 				afterDatasetsDraw(chart) {
+					chart.$chipHoverPriceMarker = null;
 					if (!chipsEnabled || chipHoverState?.chart !== chart) return;
 					const bin = chipBins[chipHoverState.binIndex];
 					if (!bin || !chart.chartArea || !chart.scales?.y) return;
-					const y = chart.scales.y.getPixelForValue(bin.price);
+					const marker = resolveChipHoverPriceMarker(chart, chipBins);
 					const bounds = getChipPanelBounds(chart);
-					if (!Number.isFinite(y)) return;
+					if (!marker) return;
+					chart.$chipHoverPriceMarker = marker;
 					chart.ctx.save();
 					chart.ctx.strokeStyle = theme.muted;
 					chart.ctx.globalAlpha = 0.56;
 					chart.ctx.lineWidth = Math.max(0.75, 1 / Math.max(window.devicePixelRatio || 1, 1));
 					chart.ctx.setLineDash([]);
 					chart.ctx.beginPath();
-					chart.ctx.moveTo(chart.chartArea.left, y);
-					chart.ctx.lineTo(bounds.right, y);
+					chart.ctx.moveTo(chart.chartArea.left, marker.y);
+					chart.ctx.lineTo(bounds.right, marker.y);
 					chart.ctx.stroke();
 					chart.ctx.restore();
+					drawSolidPriceHoverMarker(chart.ctx, marker, seriesColor);
 				},
 			};
 			const dynamicScaleWidthPlugin = {

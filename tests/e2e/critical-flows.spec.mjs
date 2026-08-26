@@ -1,4 +1,4 @@
-/* Code version: v1.167.72 */
+/* Code version: v1.167.74 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2132,9 +2132,11 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-price-subplot-canvas][data-chip-baseline-line="none"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-current-price-line="hidden"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-line="muted-solid"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="category-opacity"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="buy-neutral-sell"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-color-model="flow-categories"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="price-relative-opacity"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="none"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-color-model="price-relative"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker="solid-price"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-hover-marker-axis="shared-y-scale"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-placement="panel-top-right"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-state="settled"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-progress="1.0000"]')).toHaveCount(4);
@@ -2197,7 +2199,8 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('.price-shared-tooltip')).toContainText('Estimated concentration');
     await expect(page.locator('.price-shared-tooltip')).toContainText('POC');
     await expect(page.locator('.price-shared-tooltip')).toContainText('70% cost range');
-    await expect(page.locator('.price-shared-tooltip')).toContainText('Buy / Neutral / Sell');
+    await expect(page.locator('.price-shared-tooltip')).toContainText('Position');
+    await expect(page.locator('.price-shared-tooltip')).not.toContainText('Buy / Neutral / Sell');
     const chipTooltipLayout = await page.locator('.price-shared-tooltip').evaluate((tooltip) => {
         const tooltipRect = tooltip.getBoundingClientRect();
         const rows = [...tooltip.querySelectorAll('.chart-tooltip-row')].map((row) => {
@@ -2252,6 +2255,28 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].alpha).toBeCloseTo(0.56, 2);
     expect(hoveredGuideStrokes.fullWidthHorizontalStrokes[0].lineWidth).toBeLessThanOrEqual(1);
 
+    const hoveredPriceMarker = await firstChipCanvas.evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const marker = chart?.$chipHoverPriceMarker;
+        const profile = chart?.$costDistribution;
+        const bin = profile?.distribution?.bins?.[profile?.distribution?.pocIndex];
+        return {
+            active: Boolean(marker),
+            price: marker?.price ?? null,
+            expectedPrice: bin?.price ?? null,
+            x: marker?.x ?? null,
+            expectedX: chart?.chartArea?.right ?? null,
+            y: marker?.y ?? null,
+            expectedY: bin ? profile.priceToCanvasY(bin.price) : null,
+            radius: marker?.radius ?? null,
+        };
+    });
+    expect(hoveredPriceMarker.active).toBe(true);
+    expect(hoveredPriceMarker.price).toBeCloseTo(hoveredPriceMarker.expectedPrice, 6);
+    expect(hoveredPriceMarker.x).toBeCloseTo(hoveredPriceMarker.expectedX, 3);
+    expect(hoveredPriceMarker.y).toBeCloseTo(hoveredPriceMarker.expectedY, 3);
+    expect(hoveredPriceMarker.radius).toBe(3);
+
     await page.mouse.move(chipGeometry.alternateHoverX, chipGeometry.alternateHoverY);
     await expect(page.locator('.price-shared-tooltip')).toBeVisible();
     const alternateTooltipRect = await page.locator('.price-shared-tooltip').evaluate((tooltip) => {
@@ -2274,6 +2299,9 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     expect(fadingTooltipLayout.kind).toBe('chip');
     expect(Math.abs(fadingTooltipLayout.width - chipTooltipLayout.rect.width)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(fadingTooltipLayout.height - chipTooltipLayout.rect.height)).toBeLessThanOrEqual(0.1);
+    await expect.poll(async () => firstChipCanvas.evaluate((canvas) => (
+        window.Chart.getChart(canvas)?.$chipHoverPriceMarker || null
+    ))).toBeNull();
 
     const pocPrices = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
@@ -2419,7 +2447,7 @@ test('animates the five-ticker chip profile and logos with the shared jelly moti
     ))).toBe(true);
 });
 
-test('renders Longbridge Buy / Neutral / Sell price-level chips as a stacked profile', async ({page}) => {
+test('renders Longbridge price-level chips with price-relative colors', async ({page}) => {
     let fallbackRequests = 0;
     const categories = [
         {buy: 100, neutral: 200, sell: 300},
@@ -2447,10 +2475,18 @@ test('renders Longbridge Buy / Neutral / Sell price-level chips as a stacked pro
     });
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
+    await page.evaluate(() => {
+        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        item.prices = item.prices.map((_value, index, values) => (
+            index === values.length - 1 ? 100.5 : 190 + (index * 0.01)
+        ));
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+    });
     await page.locator('label[for="show_chips"]').click();
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="longbridge-trade-stats"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="buy-neutral-sell"]')).toHaveCount(4);
-    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="category-opacity"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-category-stack="none"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-color-model="price-relative"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-poc-style="price-relative-opacity"]')).toHaveCount(4);
     expect(fallbackRequests).toBe(1);
 
     const categoryGeometry = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
@@ -2460,21 +2496,55 @@ test('renders Longbridge Buy / Neutral / Sell price-level chips as a stacked pro
         return {
             categoryTotals: profile.distribution.categoryTotals,
             binCount: profile.distribution.bins.length,
-            pocSegments: {
-                buy: poc.buyWeight,
-                neutral: poc.neutralWeight,
-                sell: poc.sellWeight,
-            },
-            segmentWidthTotal: poc.normalizedBuyWidth + poc.normalizedNeutralWidth + poc.normalizedSellWidth,
             normalizedWidth: poc.normalizedWidth,
+            currentPrice: profile.currentPrice,
+            hasProfitBin: bins.some((bin) => bin.price < profile.currentPrice),
+            hasLossBin: bins.some((bin) => bin.price >= profile.currentPrice),
         };
     });
     expect(categoryGeometry.binCount).toBe(100);
     expect(categoryGeometry.categoryTotals).toEqual({buy: 360, neutral: 430, sell: 550});
-    expect(categoryGeometry.pocSegments.buy).toBeGreaterThan(0);
-    expect(categoryGeometry.pocSegments.neutral).toBeGreaterThan(0);
-    expect(categoryGeometry.pocSegments.sell).toBeGreaterThan(0);
-    expect(categoryGeometry.segmentWidthTotal).toBeCloseTo(categoryGeometry.normalizedWidth, 8);
+    expect(categoryGeometry.normalizedWidth).toBe(1);
+    expect(categoryGeometry.hasProfitBin).toBe(true);
+    expect(categoryGeometry.hasLossBin).toBe(true);
+
+    const paintedChipColors = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const context = chart.ctx;
+        const tokenContext = document.createElement('canvas').getContext('2d');
+        const normalize = (value) => {
+            tokenContext.fillStyle = value;
+            return tokenContext.fillStyle;
+        };
+        const expected = {
+            profit: normalize(getComputedStyle(document.body).getPropertyValue('--theme-accent-positive').trim()),
+            loss: normalize(getComputedStyle(document.body).getPropertyValue('--theme-accent-secondary').trim()),
+        };
+        const panelLeft = chart.chartArea.right + 10;
+        const calls = [];
+        const originalFillRect = context.fillRect;
+        context.fillRect = function fillRect(x, y, width, height) {
+            if (x >= panelLeft && y >= chart.chartArea.top && y <= chart.chartArea.bottom) {
+                calls.push({style: this.fillStyle, x, y, width, height});
+            }
+            return originalFillRect.apply(this, arguments);
+        };
+        try {
+            chart.draw();
+        } finally {
+            context.fillRect = originalFillRect;
+        }
+        return {
+            expected,
+            actual: [...new Set(calls.map((call) => call.style))],
+            barCount: calls.length,
+        };
+    });
+    expect(paintedChipColors.barCount).toBeGreaterThan(0);
+    expect(paintedChipColors.actual).toEqual(expect.arrayContaining([
+        paintedChipColors.expected.profit,
+        paintedChipColors.expected.loss,
+    ]));
 });
 
 test('ignores partial cached volume rows when loading the chip distribution', async ({page}) => {
