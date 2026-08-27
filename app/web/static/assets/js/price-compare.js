@@ -1,4 +1,4 @@
-/* Code version: v0.22.11 */
+/* Code version: v0.22.12 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -520,12 +520,18 @@
 		return chipBinIsLoss(bin, currentPrice) ? "Loss" : "Profit";
 	};
 
-	const setChipsStatus = (message = "", stateName = "") => {
+	const setChipsStatus = (message = "", stateName = "", {tickers = []} = {}) => {
 		const isLoading = stateName === "loading";
+		const loadingTickers = new Set((Array.isArray(tickers) ? tickers : [])
+			.map((ticker) => String(ticker || "").trim().toUpperCase())
+			.filter(Boolean));
+		const hasScopedLoading = isLoading && loadingTickers.size > 0;
 		document.querySelectorAll("[data-price-subplot]").forEach((section) => {
-			section.setAttribute("aria-busy", isLoading ? "true" : "false");
+			const ticker = String(section.dataset.ticker || "").trim().toUpperCase();
+			const sectionIsLoading = isLoading && (!hasScopedLoading || loadingTickers.has(ticker));
+			section.setAttribute("aria-busy", sectionIsLoading ? "true" : "false");
 			const spinner = section.querySelector("[data-chip-loading-spinner]");
-			if (spinner instanceof HTMLElement) spinner.hidden = !isLoading;
+			if (spinner instanceof HTMLElement) spinner.hidden = !sectionIsLoading;
 		});
 		const status = document.querySelector("[data-chips-chart-status]");
 		if (!(status instanceof HTMLElement)) return;
@@ -574,6 +580,16 @@
 			chipsPayloadCache.delete(chipsPayloadCache.keys().next().value);
 		}
 		return payload;
+	};
+
+	const chipPayloadIncludesTickers = (payload, requestedTickers) => {
+		const seriesTickers = new Set((Array.isArray(payload?.series) ? payload.series : [])
+			.map((item) => String(item?.ticker || "").trim().toUpperCase())
+			.filter(Boolean));
+		const errorTickers = new Set(Object.keys(payload?.errors && typeof payload.errors === "object" ? payload.errors : {})
+			.map((ticker) => String(ticker || "").trim().toUpperCase())
+			.filter(Boolean));
+		return requestedTickers.every((ticker) => seriesTickers.has(ticker) || errorTickers.has(ticker));
 	};
 
 	const subsetCachedChipsPayload = (payload, requestedTickers) => {
@@ -626,10 +642,10 @@
 	};
 
 	const getCachedChipsPayload = (requestKey) => {
-		const direct = chipsPayloadCache.get(requestKey);
-		if (direct) return direct;
 		const requested = parseChipsRequestKey(requestKey);
 		if (!requested?.tickers.length) return null;
+		const direct = chipsPayloadCache.get(requestKey);
+		if (direct && chipPayloadIncludesTickers(direct, requested.tickers)) return direct;
 		for (const [cachedKey, payload] of chipsPayloadCache.entries()) {
 			if (cachedKey === requestKey) continue;
 			const cached = parseChipsRequestKey(cachedKey);
@@ -650,6 +666,57 @@
 			if (reusable) return cacheChipsPayload(requestKey, reusable);
 		}
 		return null;
+	};
+
+	const getCachedChipEntriesForRequest = (requestKey, requestedTickers) => {
+		const requested = parseChipsRequestKey(requestKey);
+		if (!requested?.tickers.length) return new Map();
+		const requestedSet = new Set(requestedTickers);
+		const reusable = new Map();
+		const cachedEntries = [...chipsPayloadCache.entries()].reverse();
+		cachedEntries.forEach(([cachedKey, payload]) => {
+			const cached = parseChipsRequestKey(cachedKey);
+			if (!cached || cached.period !== requested.period || cached.from !== requested.from || cached.to !== requested.to) return;
+			const seriesByTicker = new Map((Array.isArray(payload?.series) ? payload.series : [])
+				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]));
+			const errors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
+			seriesByTicker.forEach((item, ticker) => {
+				if (requestedSet.has(ticker)) reusable.set(ticker, {item});
+			});
+			Object.entries(errors).forEach(([ticker, error]) => {
+				const normalizedTicker = String(ticker || "").trim().toUpperCase();
+				if (requestedSet.has(normalizedTicker) && !reusable.has(normalizedTicker)) {
+					reusable.set(normalizedTicker, {error});
+				}
+			});
+		});
+		return reusable;
+	};
+
+	const mergeCachedChipPayload = (requestKey, requestedTickers, payload) => {
+		const reusable = getCachedChipEntriesForRequest(requestKey, requestedTickers);
+		const incomingSeriesByTicker = new Map((Array.isArray(payload?.series) ? payload.series : [])
+			.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]));
+		const incomingErrors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
+		const mergedSeries = [];
+		const mergedErrors = {};
+		requestedTickers.forEach((ticker) => {
+			const incomingItem = incomingSeriesByTicker.get(ticker);
+			const cachedItem = reusable.get(ticker)?.item;
+			if (incomingItem || cachedItem) {
+				mergedSeries.push(incomingItem || cachedItem);
+				return;
+			}
+			const incomingErrorKey = Object.keys(incomingErrors).find((key) => String(key || "").trim().toUpperCase() === ticker);
+			const cachedError = reusable.get(ticker)?.error;
+			if (incomingErrorKey) mergedErrors[ticker] = incomingErrors[incomingErrorKey];
+			else if (cachedError !== undefined) mergedErrors[ticker] = cachedError;
+		});
+		return {
+			...payload,
+			series: mergedSeries,
+			errors: mergedErrors,
+		};
 	};
 
 	const applyChipsPayload = (payload, requestKey) => {
@@ -817,23 +884,32 @@
 	const loadChips = async () => {
 		if (!isChipsEnabled() || !state.endpoints?.compareChips) return;
 		const requestKey = chipsRequestKey();
+		const requestedTickers = (state.chart?.series || [])
+			.map((item) => String(item?.ticker || "").trim().toUpperCase())
+			.filter(Boolean);
+		if (!requestedTickers.length) return;
 		const cached = getCachedChipsPayload(requestKey);
 		if (cached) {
 			applyChipsPayload(cached, requestKey);
 			return;
 		}
+		const cachedEntries = getCachedChipEntriesForRequest(requestKey, requestedTickers);
+		const missingTickers = requestedTickers.filter((ticker) => !cachedEntries.has(ticker));
+		if (!missingTickers.length) return;
 		if (chipsRequestController && chipsRequestKeyInFlight === requestKey) return;
 		const requestSerial = ++chipsRequestSerial;
 		chipsRequestController?.abort();
 		const requestController = new AbortController();
 		chipsRequestController = requestController;
 		chipsRequestKeyInFlight = requestKey;
-		setChipsStatus("", "loading");
+		setChipsStatus("", "loading", {tickers: missingTickers});
 		const params = new URLSearchParams();
-		(state.chart?.series || []).forEach((item) => {
-			const ticker = String(item?.ticker || "").trim();
-			if (ticker) params.append("ticker", ticker);
-		});
+		const requestTickers = [...missingTickers];
+		if (requestTickers.length === 1) {
+			const anchorTicker = requestedTickers.find((ticker) => cachedEntries.has(ticker));
+			if (anchorTicker) requestTickers.push(anchorTicker);
+		}
+		requestTickers.forEach((ticker) => params.append("ticker", ticker));
 		const {from, to} = chipVisibleDateBounds();
 		if (from && to) {
 			params.set("from", from);
@@ -849,9 +925,10 @@
 			if (!response.ok || !payload.success || !Array.isArray(payload.series)) {
 				setChipsStatus(payload.error || "Chip distribution is unavailable.", "error");
 				return;
-				}
-				cacheChipsPayload(requestKey, payload);
-			applyChipsPayload(payload, requestKey);
+			}
+			const mergedPayload = mergeCachedChipPayload(requestKey, requestedTickers, payload);
+			cacheChipsPayload(requestKey, mergedPayload);
+			applyChipsPayload(mergedPayload, requestKey);
 		} catch (error) {
 			if (error?.name === "AbortError") return;
 			if (requestSerial !== chipsRequestSerial || !isChipsEnabled()) return;
@@ -1362,11 +1439,26 @@
 		const profiles = Array.isArray(state.chart?.profiles) ? state.chart.profiles : [];
 		const chipRequestKey = chipsRequestKey();
 		const chipPayload = chipsEnabled ? getCachedChipsPayload(chipRequestKey) : null;
+		const requestedTickers = series
+			.map((item) => String(item?.ticker || "").trim().toUpperCase())
+			.filter(Boolean);
+		const cachedChipEntries = chipsEnabled
+			? getCachedChipEntriesForRequest(chipRequestKey, requestedTickers)
+			: new Map();
 		const chipSeriesByTicker = new Map(
 			(Array.isArray(chipPayload?.series) ? chipPayload.series : [])
 				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]),
 		);
-		let shouldLoadFallbackChips = chipsEnabled && !chipPayload;
+		const chipErrorsByTicker = new Set(Object.keys(chipPayload?.errors && typeof chipPayload.errors === "object" ? chipPayload.errors : {})
+			.map((ticker) => String(ticker || "").trim().toUpperCase()));
+		cachedChipEntries.forEach((entry, ticker) => {
+			if (entry?.item && !chipSeriesByTicker.has(ticker)) chipSeriesByTicker.set(ticker, entry.item);
+			if (entry?.error !== undefined && !chipSeriesByTicker.has(ticker)) chipErrorsByTicker.add(ticker);
+		});
+		const hasCompleteChipPayload = requestedTickers.every((ticker) => (
+			chipSeriesByTicker.has(ticker) || chipErrorsByTicker.has(ticker)
+		));
+		let shouldLoadFallbackChips = chipsEnabled && !hasCompleteChipPayload;
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
 		const requestedPeriod = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period

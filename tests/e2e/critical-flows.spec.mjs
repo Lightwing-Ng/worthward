@@ -1,4 +1,4 @@
-/* Code version: v1.167.83 */
+/* Code version: v1.167.84 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2701,6 +2701,81 @@ test('reuses the cached chip payload when removing an unchanged ticker', async (
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
     await expect(page.locator('[data-chip-loading-spinner]:not([hidden])')).toHaveCount(0);
     expect(chipRequests).toBe(1);
+});
+
+test('reuses unchanged chip profiles and scopes replacement loading to the new ticker', async ({page}) => {
+    const initialTickers = ['SPY', 'QQQ', 'MU'];
+    const chipRequests = [];
+    let releaseReplacementResponse;
+    const replacementResponseGate = new Promise((resolve) => {
+        releaseReplacementResponse = resolve;
+    });
+    const start = Date.UTC(2025, 7, 25);
+    const buildCachedOhlcv = (tickerIndex) => Array.from({length: 90}, (_, rowIndex) => {
+        const close = 100 + (tickerIndex * 100) + (rowIndex * 0.8);
+        const date = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
+        return {
+            t: `${date} 00:00`,
+            o: close - 1,
+            h: close + 3,
+            l: close - 3,
+            c: close,
+            v: 100_000 + ((rowIndex % 7) * 10_000),
+            synthetic: false,
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        const tickers = new URL(route.request().url()).searchParams.getAll('ticker');
+        chipRequests.push(tickers);
+        if (chipRequests.length === 1) {
+            await route.fulfill({
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    success: true,
+                    series: initialTickers.map((ticker, tickerIndex) => ({
+                        ticker,
+                        source: 'longbridge-daily-ohlcv',
+                        ohlcv: buildCachedOhlcv(tickerIndex),
+                    })),
+                    errors: {},
+                }),
+            });
+            return;
+        }
+        await replacementResponseGate;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    ohlcv: buildCachedOhlcv(ticker === 'DRAM' ? 3 : 0),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=SPY&ticker=QQQ&ticker=MU&range=2y&chips=1');
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
+    expect(chipRequests).toEqual([initialTickers]);
+
+    await page.locator('#ticker_2').fill('DRAM');
+    await page.locator('#ticker_2').press('Enter');
+    await expect(page).toHaveURL(/ticker=SPY.*ticker=DRAM.*ticker=MU.*range=2y.*chips=1/);
+    await expect.poll(() => chipRequests.length).toBe(2);
+    expect(chipRequests[1]).toEqual(['DRAM', 'SPY']);
+    await expect(page.locator('[data-price-subplot][aria-busy="true"]')).toHaveCount(1);
+    await expect(page.locator('[data-price-subplot][aria-busy="true"]')).toHaveAttribute('data-ticker', 'DRAM');
+    await expect(page.locator('[data-price-subplot][data-ticker="SPY"][aria-busy="false"]')).toHaveCount(1);
+    await expect(page.locator('[data-price-subplot][data-ticker="MU"][aria-busy="false"]')).toHaveCount(1);
+    await expect(page.locator('[data-price-subplot][data-ticker="SPY"] [data-chip-loading-spinner][hidden]')).toHaveCount(1);
+    await expect(page.locator('[data-price-subplot][data-ticker="MU"] [data-chip-loading-spinner][hidden]')).toHaveCount(1);
+
+    releaseReplacementResponse();
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
+    await expect(page.locator('[data-chip-loading-spinner][hidden]')).toHaveCount(3);
 });
 
 test('reuses and narrows the cached chip payload when shortening Period', async ({page}) => {
