@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.9
+Code version: v0.5.10
 """
 
 from __future__ import annotations
@@ -486,7 +486,6 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("tokens", "權杖", "令牌"),
         ("Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full", "Yahoo Mail 個人帳戶使用 SMTP 時需要應用程式密碼。請保持 STARTTLS 啟用，並使用完整的", "Yahoo Mail 个人账户使用 SMTP 时需要应用密码。请保持 STARTTLS 启用，并使用完整的"),
         ("address with the generated app password.", "地址及已產生的應用程式密碼。", "地址及已生成的应用密码。"),
-        ("Tooltip", "工具提示", "工具提示"),
         ("Close price", "收市價", "收盘价"),
         ("Investment Holdings allocation badge", "投資持倉配置徽章", "投资持仓配置徽章"),
         ("Pagination", "分頁", "分页"),

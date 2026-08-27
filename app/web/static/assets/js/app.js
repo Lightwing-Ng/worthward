@@ -1,4 +1,4 @@
-/* Code version: v0.39.0 */
+/* Code version: v0.39.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -827,6 +827,7 @@
         tickers: {title: labels.dock_tickers || "Return comparison"},
         prices: {title: labels.dock_ticker_comparison || "Ticker comparison"},
         portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
+        dca: {title: labels.dock_dca || "Dollar-cost averaging"},
         backtest: {title: labels.dock_backtest || "Backtest"},
     });
 
@@ -850,10 +851,12 @@
 
     const buildNavigationSidebar = (targetView, targetSection) => {
         let title = "Workspaces";
-        let items = Object.entries(WORKSPACE_NAVIGATION_PROFILES).map(([key, profile]) => ({
-            key,
-            label: profile.title,
-        }));
+        let items = Object.entries(WORKSPACE_NAVIGATION_PROFILES)
+            .filter(([key]) => key !== "dca")
+            .map(([key, profile]) => ({
+                key,
+                label: profile.title,
+            }));
         let activeKey = targetView;
         if (targetView === "settings") {
             title = labels.settings_title || "Settings";
