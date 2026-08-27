@@ -3622,7 +3622,7 @@ test('switches short price ranges and formats price axes by currency precision',
     await expect(page.locator('[data-shared-select-trigger-label]')).toHaveText('3 days');
 });
 
-test('sizes Price comparison y-axes from their rendered tick labels', async ({page}) => {
+test('sizes Price comparison y-axes to the widest rendered labels for strict shared x alignment', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
     await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('[data-price-subplot-canvas]'))));
     await page.evaluate(() => {
@@ -3665,9 +3665,10 @@ test('sizes Price comparison y-axes from their rendered tick labels', async ({pa
         })
     ));
     expect(desktopAxes.length).toBe(4);
-    expect(desktopAxes.every(({width, expectedWidth}) => Math.abs(width - expectedWidth) < 0.01)).toBe(true);
+    const sharedWidth = Math.max(...desktopAxes.map(({expectedWidth}) => expectedWidth));
+    expect(desktopAxes.every(({width}) => Math.abs(width - sharedWidth) < 0.01)).toBe(true);
     expect(desktopAxes.every(({width}) => width < 92)).toBe(true);
-    expect(new Set(desktopAxes.map(({width}) => Math.round(width))).size).toBeGreaterThan(1);
+    expect(new Set(desktopAxes.map(({chartAreaLeft}) => Math.round(chartAreaLeft))).size).toBe(1);
 
     await page.setViewportSize({width: 390, height: 844});
     await expect.poll(async () => page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (

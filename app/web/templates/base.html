@@ -287,7 +287,7 @@
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.3.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.22.10') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.22.11') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.39.1') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}

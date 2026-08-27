@@ -1,4 +1,4 @@
-/* Code version: v0.22.10 */
+/* Code version: v0.22.11 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -1404,6 +1404,7 @@
 		const theme = readTheme();
 		hideSharedHover();
 		destroyPriceCharts();
+		let sharedYAxisWidth = Y_AXIS_MIN_WIDTH;
 
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			const index = Number.parseInt(canvas.dataset.seriesIndex || "", 10);
@@ -1600,9 +1601,17 @@
 				beforeUpdate(chart) {
 					if (chart.options.scales?.y) {
 						chart.options.scales.y.afterFit = (scale) => {
-							scale.width = getDynamicPriceYAxisWidth(scale);
+							const naturalWidth = getDynamicPriceYAxisWidth(scale);
+							chart.$naturalPriceYAxisWidth = naturalWidth;
+							scale.width = Math.max(sharedYAxisWidth, naturalWidth);
 						};
 					}
+				},
+				afterLayout(chart) {
+					canvas.dataset.xAxisAlignment = "strict-shared-timeline";
+					canvas.dataset.sharedYAxisWidth = Number(chart.scales?.y?.width || 0).toFixed(3);
+					canvas.dataset.chartAreaLeft = Number(chart.chartArea?.left || 0).toFixed(3);
+					canvas.dataset.chartAreaRight = Number(chart.chartArea?.right || 0).toFixed(3);
 				},
 			};
 			const closingLogoPlugin = {
@@ -1975,6 +1984,11 @@
 			};
 			canvas.onmouseleave = hideSharedHover;
 		});
+		sharedYAxisWidth = Math.max(
+			Y_AXIS_MIN_WIDTH,
+			...[...priceCharts.values()].map((chart) => Number(chart.$naturalPriceYAxisWidth) || Y_AXIS_MIN_WIDTH),
+		);
+		priceCharts.forEach((chart) => chart.update("none"));
 		if (chipsEnabled && !shouldLoadFallbackChips) setChipsStatus();
 		if (chipsEnabled && shouldLoadFallbackChips && !chipPayload) void loadChips();
 	};
