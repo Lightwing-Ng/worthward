@@ -332,6 +332,10 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch(
+                "app.web.runtime.fetch_longbridge_circulating_shares",
+                return_value={"AAPL": 10_000.0, "NVDA": 20_000.0},
+            ),
             patch("app.web.runtime.fetch_longbridge_daily_history", side_effect=fetch_daily),
             patch("app.web.runtime.fetch_longbridge_trade_stats") as fetch_stats,
             patch("app.web.runtime.time.sleep") as sleep,
@@ -353,6 +357,8 @@ class ComparePageTests(unittest.TestCase):
             "2026-01-05 00:00",
         ])
         self.assertEqual(payload["series"][0]["ohlcv"][1]["v"], 1_200.0)
+        self.assertEqual(payload["series"][0]["circulatingShares"], 10_000.0)
+        self.assertEqual(payload["series"][0]["shareBasis"], "longbridge-static-circulating-shares")
         self.assertEqual([ticker for ticker, _since in fetch_calls], ["AAPL", "NVDA"])
         self.assertTrue(all(str(since).startswith("2026-01-02") for _ticker, since in fetch_calls))
         fetch_stats.assert_not_called()
@@ -363,6 +369,7 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch("app.web.runtime.fetch_longbridge_circulating_shares", return_value={}),
             patch(
                 "app.web.runtime.fetch_longbridge_daily_history",
                 side_effect=ValueError("Daily history is unavailable."),
@@ -393,6 +400,7 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch("app.web.runtime.fetch_longbridge_circulating_shares", return_value={}),
             patch("app.web.runtime.fetch_longbridge_daily_history") as fetch_daily,
             patch("app.web.runtime.fetch_longbridge_trade_stats", side_effect=fetch_stats),
             patch("app.web.runtime.time.sleep"),

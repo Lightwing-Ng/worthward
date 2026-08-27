@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.11.0
+Code version: v0.11.1
 """
 
 from __future__ import annotations
@@ -953,21 +953,24 @@ def build_series_payload(
     ohlcv = None
     if has_ohlc_columns:
         has_volume = "Volume" in dataset.columns
+        has_turnover = "Turnover" in dataset.columns
         has_synthetic = "Synthetic" in dataset.columns
         volume_values = dataset["Volume"] if has_volume else [None] * len(dataset)
+        turnover_values = dataset["Turnover"] if has_turnover else [None] * len(dataset)
         synthetic_values = dataset["Synthetic"] if has_synthetic else [False] * len(dataset)
         ohlcv = []
-        for timestamp, open_value, high_value, low_value, close_value, volume_value, synthetic_value in zip(
+        for timestamp, open_value, high_value, low_value, close_value, volume_value, turnover_value, synthetic_value in zip(
                 dataset["Date"],
                 dataset["Open"],
                 dataset["High"],
                 dataset["Low"],
                 dataset["Close"],
                 volume_values,
+                turnover_values,
                 synthetic_values,
         ):
             values = [open_value, high_value, low_value, close_value]
-            ohlcv.append({
+            row = {
                 "t": pd.Timestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
                 "o": round(float(open_value), 4) if pd.notna(values).all() else None,
                 "h": round(float(high_value), 4) if pd.notna(values).all() else None,
@@ -975,7 +978,10 @@ def build_series_payload(
                 "c": round(float(close_value), 4) if pd.notna(values).all() else None,
                 "v": round(float(volume_value), 4) if has_volume and pd.notna(volume_value) else None,
                 "synthetic": bool(synthetic_value) if has_synthetic and pd.notna(synthetic_value) else False,
-            })
+            }
+            if has_turnover:
+                row["turnover"] = round(float(turnover_value), 6) if pd.notna(turnover_value) else None
+            ohlcv.append(row)
     if has_intraday_ohlc:
         candlestick_returns = []
         candlestick_prices = []

@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.14.0
+Code version: v0.15.0
 """
 
 from __future__ import annotations
@@ -481,6 +481,87 @@ def fetch_longbridge_market_cap_snapshot(ticker: str, settings: BrokerSettings) 
         [calc_index_enum.LastDone, calc_index_enum.TotalMarketValue],
     )
     return _normalize_longbridge_market_cap_row(rows[0] if rows else None, symbol)
+
+
+def _normalize_longbridge_static_row(row: object, symbol: str) -> dict[str, Any] | None:
+    """Normalize Longbridge static share metadata for the optional chip-survival model."""
+    if isinstance(row, dict):
+        circulating_shares = row.get("circ._shares")
+        if circulating_shares is None:
+            circulating_shares = row.get("circulating_shares", row.get("circulatingShares"))
+        total_shares = row.get("total_shares", row.get("totalShares"))
+    else:
+        circulating_shares = getattr(row, "circ._shares", None)
+        if circulating_shares is None:
+            circulating_shares = getattr(row, "circulating_shares", getattr(row, "circulatingShares", None))
+        total_shares = getattr(row, "total_shares", getattr(row, "totalShares", None))
+    normalized_circulating_shares = _finite_trade_stats_number(circulating_shares, minimum=0)
+    if normalized_circulating_shares is None or normalized_circulating_shares <= 0:
+        return None
+    normalized_total_shares = _finite_trade_stats_number(total_shares, minimum=0)
+    return {
+        "symbol": symbol,
+        "circulating_shares": normalized_circulating_shares,
+        "total_shares": normalized_total_shares,
+    }
+
+
+def _fetch_longbridge_cli_circulating_shares(
+        symbols: list[str],
+        settings: BrokerSettings,
+) -> dict[str, dict[str, Any]]:
+    payload = run_longbridge_cli_json(
+        settings,
+        ["static", *symbols, "--format", "json"],
+        timeout_seconds=20,
+    )
+    rows = payload if isinstance(payload, list) else []
+    normalized: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or "").strip().upper()
+        if symbol not in symbols:
+            continue
+        item = _normalize_longbridge_static_row(row, symbol)
+        if item is not None:
+            normalized[symbol] = item
+    return normalized
+
+
+def fetch_longbridge_circulating_shares(
+        tickers: list[str],
+        settings: BrokerSettings,
+) -> dict[str, float]:
+    """Fetch current circulating shares without making chip loading depend on the metadata call."""
+    if not has_longbridge_market_data_source(settings):
+        raise ValueError(
+            "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
+        )
+    ticker_symbols = {
+        normalize_ticker(ticker): normalize_longbridge_symbol(ticker)
+        for ticker in tickers
+        if str(ticker or "").strip()
+    }
+    if not ticker_symbols:
+        return {}
+    cli_settings = settings
+    if not uses_longbridge_cli_oauth(settings):
+        cli_settings = replace(
+            settings,
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+            longbridge_cli_home=os.path.expanduser("~"),
+        )
+    static_rows = _fetch_longbridge_cli_circulating_shares(
+        list(dict.fromkeys(ticker_symbols.values())),
+        cli_settings,
+    )
+    return {
+        ticker: static_rows[symbol]["circulating_shares"]
+        for ticker, symbol in ticker_symbols.items()
+        if symbol in static_rows
+    }
 
 
 def _finite_trade_stats_number(value: object, *, minimum: float | None = None) -> float | None:

@@ -1,4 +1,4 @@
-/* Code version: v1.167.81 */
+/* Code version: v1.167.82 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2196,6 +2196,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-chips-chart-region]')).not.toHaveAttribute('hidden');
     await expect(page.locator('[data-price-subplot-canvas][data-chip-distribution="1"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-cost-range-method="shortest-contiguous-high-density"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-bin-count="100"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-legend="0"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-baseline-line="none"]')).toHaveCount(4);
@@ -2880,6 +2881,34 @@ test('loads range-bounded Longbridge OHLCV when a legacy price cache has no volu
     await expect(page.locator('[data-chip-loading-spinner][hidden]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot][aria-busy="false"]')).toHaveCount(4);
     await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
+});
+
+test('exposes turnover-survival metadata and dense cost ranges in the browser bundle', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
+
+    const result = await page.evaluate(() => {
+        const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+        const distribution = calculator.calculateChipDistribution([
+            {t: '2026-08-20', o: 100, h: 100, l: 100, c: 100, v: 100},
+            {t: '2026-08-21', o: 200, h: 200, l: 200, c: 200, v: 100},
+        ], {binCount: 100, circulatingShares: 1_000});
+        const statistics = calculator.calculateChipStatistics(distribution, 150);
+        return {
+            model: distribution.model,
+            decayApplied: distribution.decayApplied,
+            totalInputVolume: distribution.totalInputVolume,
+            totalWeight: distribution.totalWeight,
+            costRangeMethod: statistics.costRangeMethod,
+        };
+    });
+
+    expect(result).toEqual({
+        model: 'turnover-survival',
+        decayApplied: true,
+        totalInputVolume: 200,
+        totalWeight: 190,
+        costRangeMethod: 'shortest-contiguous-high-density',
+    });
 });
 
 test('keeps the Price chart responsive when 1 year is submitted twice', async ({page}) => {

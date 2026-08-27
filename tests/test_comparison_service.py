@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.8.4
+Code version: v0.8.5
 """
 
 from __future__ import annotations
@@ -189,6 +189,23 @@ class ComparisonServiceTests(unittest.TestCase):
                 {"t": "2026-08-25 00:00", "o": 102.0, "h": 106.0, "l": 101.0, "c": 105.0, "v": 2_000.0, "synthetic": False},
             ],
         )
+
+    def test_build_series_payload_preserves_turnover_for_chip_survival(self) -> None:
+        dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-08-24"]),
+                "Open": [100.0],
+                "High": [104.0],
+                "Low": [98.0],
+                "Close": [102.0],
+                "Volume": [1_000.0],
+                "Turnover": [100_500.0],
+            }
+        )
+
+        payload = build_series_payload("AAPL", dataset)
+
+        self.assertEqual(payload.ohlcv[0]["turnover"], 100_500.0)
 
     def test_latest_common_start_uses_most_recent_listing_date(self) -> None:
         datasets = [

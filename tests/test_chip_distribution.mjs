@@ -1,4 +1,4 @@
-/* Tests for chip distribution calculations. Code version: v0.2.0 */
+/* Tests for chip distribution calculations. Code version: v0.3.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,8 +48,9 @@ test('calculates weighted cost, profit ratio, and central cost ranges separately
     assert.ok(statistics.weightedAverageCost < distribution.maxPrice);
     assert.ok(statistics.profitRatio > 0 && statistics.profitRatio < 1);
     assert.ok(statistics.costRange70[0] < statistics.costRange70[1]);
-    assert.ok(statistics.costRange90[0] <= statistics.costRange70[0]);
-    assert.ok(statistics.costRange90[1] >= statistics.costRange70[1]);
+    assert.ok(Number.isFinite(statistics.costRange90[0]));
+    assert.ok(Number.isFinite(statistics.costRange90[1]));
+    assert.equal(statistics.costRangeMethod, 'shortest-contiguous-high-density');
     assert.equal(calculator.calculateChipStatistics(distribution, null).profitRatio, null);
 });
 
@@ -86,6 +87,42 @@ test('uses the neutral category for OHLCV estimates without fabricating trade di
 		&& bin.sellWeight === 0
 		&& bin.neutralWeight === bin.weight
 	)));
+});
+
+test('applies turnover-based chip survival when circulating shares are available', () => {
+    const distribution = calculator.calculateChipDistribution([
+        {t: '2026-08-20', o: 100, h: 100, l: 100, c: 100, v: 100},
+        {t: '2026-08-21', o: 200, h: 200, l: 200, c: 200, v: 100},
+    ], {binCount: 100, circulatingShares: 1_000});
+
+    assert.equal(distribution.model, 'turnover-survival');
+    assert.equal(distribution.decayApplied, true);
+    assert.equal(distribution.shareBasis, 'circulating-shares');
+    assert.equal(distribution.totalInputVolume, 200);
+    assert.equal(distribution.totalWeight, 190);
+    assert.ok(Math.abs(distribution.averageTurnoverRate - 0.1) < 1e-12);
+    const firstPriceBin = distribution.bins.find((bin) => bin.low <= 100 && 100 <= bin.high);
+    const secondPriceBin = distribution.bins.find((bin) => bin.low <= 200 && 200 <= bin.high);
+    assert.ok(firstPriceBin);
+    assert.ok(secondPriceBin);
+    assert.ok(Math.abs(firstPriceBin.weight - 90) < 1e-8);
+    assert.ok(Math.abs(secondPriceBin.weight - 100) < 1e-8);
+});
+
+test('uses the shortest contiguous high-density intervals for cost ranges', () => {
+    const distribution = calculator.calculatePriceLevelDistribution([
+        {price: 100, neutral: 80},
+        {price: 101, neutral: 80},
+        {price: 102, neutral: 80},
+        {price: 200, neutral: 10},
+    ], {binCount: 80});
+    const statistics = calculator.calculateChipStatistics(distribution, 150);
+
+    assert.equal(statistics.costRangeMethod, 'shortest-contiguous-high-density');
+    assert.ok(statistics.costRange70[0] >= 100);
+    assert.ok(statistics.costRange70[1] < 110);
+    assert.ok(statistics.costRange90[0] >= 100);
+    assert.ok(statistics.costRange90[1] < 110);
 });
 
 test('rejects unusable rows, clamps bin counts, and supports flat-price candles', () => {

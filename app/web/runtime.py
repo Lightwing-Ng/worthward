@@ -1,9 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.82.6
+Code version: v0.82.7
 - Fixed: Exact current-day comparisons now resolve each ticker's live trading date in its own market timezone, so US series remain populated when an Asia/Shanghai date is already the next calendar day in New York.
 - Fixed: Multi-day Cost Distribution profiles normalize raw Longbridge OHLCV onto the chart's split-only price and share basis and never substitute narrow near-current trade statistics.
+- Added: Chip distribution payloads include optional current Longbridge circulating-share metadata for turnover-aware chip survival estimation.
 - Fixed: Price comparison loads range-bounded Longbridge daily OHLCV in sequence
   when legacy local history lacks Volume, avoiding the CLI one-second rate limit.
 - Added: Price comparison exposes a Longbridge-backed trade-statistics chips view.
@@ -130,6 +131,7 @@ from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
     fetch_longbridge_daily_history,
+    fetch_longbridge_circulating_shares,
     fetch_longbridge_trade_stats,
     has_longbridge_market_data_source,
     has_recent_one_minute_store,
@@ -6243,6 +6245,14 @@ def build_web_runtime() -> WebRuntime:
                 and pd.notna(requested_end)
                 and requested_start.normalize() != requested_end.normalize()
             )
+            try:
+                circulating_shares_by_ticker = fetch_longbridge_circulating_shares(
+                    validated_tickers,
+                    broker_settings,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.info("No Longbridge circulating-share metadata returned for chip comparison: %s", exc)
+                circulating_shares_by_ticker = {}
 
             def run_with_rate_limit_retry(loader: Callable[[], Any]) -> Any:
                 for attempt in range(3):
@@ -6276,11 +6286,16 @@ def build_web_runtime() -> WebRuntime:
                 ohlcv = build_series_payload(ticker, selected).ohlcv or []
                 if not any(float(row.get("v") or 0) > 0 for row in ohlcv):
                     raise ValueError(f"No positive daily volume returned for {ticker} via Longbridge.")
-                return {
+                payload = {
                     "ticker": ticker,
                     "source": "longbridge-daily-ohlcv",
                     "ohlcv": ohlcv,
                 }
+                circulating_shares = circulating_shares_by_ticker.get(normalize_ticker(ticker))
+                if circulating_shares:
+                    payload["circulatingShares"] = circulating_shares
+                    payload["shareBasis"] = "longbridge-static-circulating-shares"
+                return payload
 
             def fetch_one(ticker: str) -> tuple[str, dict[str, Any] | None, str | None]:
                 if prefers_range_aligned_ohlcv:

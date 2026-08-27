@@ -1,7 +1,7 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.11.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -25,12 +25,14 @@ from app.infrastructure.broker_market_data import (
     _candlestick_rows_to_frame,
     _daily_candlestick_rows_to_frame,
     _normalize_longbridge_market_cap_row,
+    _normalize_longbridge_static_row,
     _normalize_longbridge_trade_stats_payload,
     _normalize_longbridge_trade_session,
     _parse_longbridge_timestamp,
     _resolve_longbridge_daily_adjust_type,
     classify_one_minute_store_status,
     fetch_longbridge_market_cap_snapshot,
+    fetch_longbridge_circulating_shares,
     fetch_longbridge_trade_stats,
     fetch_longbridge_compare_one_day_history,
     fetch_longbridge_daily_history,
@@ -178,6 +180,43 @@ class BrokerMarketDataTests(unittest.TestCase):
         cli_mock.assert_called_once_with(
             self._longbridge_settings(),
             ["trade-stats", "AAPL.US", "--format", "json"],
+            timeout_seconds=20,
+        )
+
+    def test_longbridge_static_normalization_reads_circulating_shares(self) -> None:
+        normalized = _normalize_longbridge_static_row(
+            {
+                "symbol": "AAPL.US",
+                "circ._shares": "14569173520",
+                "total_shares": "14594180000",
+            },
+            "AAPL.US",
+        )
+
+        self.assertEqual(normalized["symbol"], "AAPL.US")
+        self.assertEqual(normalized["circulating_shares"], 14_569_173_520.0)
+        self.assertEqual(normalized["total_shares"], 14_594_180_000.0)
+
+    def test_fetch_longbridge_circulating_shares_uses_cli_static_command(self) -> None:
+        with patch(
+            "app.infrastructure.broker_market_data.run_longbridge_cli_json",
+            return_value=[
+                {"symbol": "AAPL.US", "circ._shares": "14569173520"},
+                {"symbol": "000660.KS", "circ._shares": "728000000"},
+            ],
+        ) as cli_mock:
+            result = fetch_longbridge_circulating_shares(
+                ["AAPL", "000660.KS"],
+                self._longbridge_settings(),
+            )
+
+        self.assertEqual(result, {
+            "AAPL": 14_569_173_520.0,
+            "000660.KS": 728_000_000.0,
+        })
+        cli_mock.assert_called_once_with(
+            self._longbridge_settings(),
+            ["static", "AAPL.US", "000660.KS", "--format", "json"],
             timeout_seconds=20,
         )
 

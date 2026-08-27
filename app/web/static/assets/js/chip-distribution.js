@@ -1,4 +1,4 @@
-/* Code version: v0.2.0 */
+/* Code version: v0.3.0 */
 (() => {
 	const DEFAULT_BIN_COUNT = 100;
 	const MIN_BIN_COUNT = 80;
@@ -35,7 +35,16 @@
 		return categories;
 	};
 
-	const createDistribution = ({minPrice, maxPrice, binCount, weights, categoryWeights, source, estimated}) => {
+	const createDistribution = ({
+		minPrice,
+		maxPrice,
+		binCount,
+		weights,
+		categoryWeights,
+		source,
+		estimated,
+		metadata = {},
+	}) => {
 		const resolvedMaxPrice = maxPrice > minPrice
 			? maxPrice
 			: minPrice + Math.max(Math.abs(minPrice) * 1e-6, 1e-6);
@@ -73,6 +82,7 @@
 			null,
 		);
 		return {
+			...metadata,
 			source,
 			estimated,
 			binCount,
@@ -92,16 +102,44 @@
 		};
 	};
 
-	const normalizeOhlcvRows = (rows) => (Array.isArray(rows) ? rows : [])
-		.map((row) => ({
-			timestamp: row?.t ?? row?.timestamp ?? row?.date ?? null,
-			open: finiteNumber(row?.o ?? row?.open),
-			high: finiteNumber(row?.h ?? row?.high),
-			low: finiteNumber(row?.l ?? row?.low),
-			close: finiteNumber(row?.c ?? row?.close),
-			volume: finiteNumber(row?.v ?? row?.volume),
-			synthetic: row?.synthetic === true,
-		}))
+	const normalizeTurnoverRate = (value, unit = "ratio") => {
+		const numeric = finiteNumber(value);
+		if (numeric === null || numeric < 0) return null;
+		const ratio = String(unit).toLowerCase() === "percent" ? numeric / 100 : numeric;
+		return Math.max(0, Math.min(1, ratio));
+	};
+
+	const normalizeOhlcvRows = (rows, {
+		circulatingShares = null,
+		floatShares = null,
+		turnoverRateUnit = "ratio",
+	} = {}) => {
+		const defaultShares = finiteNumber(circulatingShares ?? floatShares);
+		return (Array.isArray(rows) ? rows : [])
+			.map((row) => {
+				const volume = finiteNumber(row?.v ?? row?.volume);
+				const rowShares = finiteNumber(
+					row?.circulatingShares
+					?? row?.circulating_shares
+					?? defaultShares,
+				);
+				const explicitTurnoverRate = row?.turnoverRate ?? row?.turnover_rate;
+				const turnoverRate = explicitTurnoverRate !== undefined
+					? normalizeTurnoverRate(explicitTurnoverRate, turnoverRateUnit)
+					: rowShares !== null && rowShares > 0 && volume !== null
+						? normalizeTurnoverRate(volume / rowShares)
+						: null;
+				return {
+					timestamp: row?.t ?? row?.timestamp ?? row?.date ?? null,
+					open: finiteNumber(row?.o ?? row?.open),
+					high: finiteNumber(row?.h ?? row?.high),
+					low: finiteNumber(row?.l ?? row?.low),
+					close: finiteNumber(row?.c ?? row?.close),
+					volume,
+					turnoverRate,
+					synthetic: row?.synthetic === true,
+				};
+			})
 		.filter((row) => (
 			!row.synthetic
 			&& [row.open, row.high, row.low, row.close, row.volume].every((value) => value !== null)
@@ -109,9 +147,20 @@
 			&& row.low > 0
 			&& row.high >= row.low
 		));
+	};
 
-	const calculateChipDistribution = (rows, {binCount = DEFAULT_BIN_COUNT} = {}) => {
-		const candles = normalizeOhlcvRows(rows);
+	const calculateChipDistribution = (rows, {
+		binCount = DEFAULT_BIN_COUNT,
+		circulatingShares = null,
+		floatShares = null,
+		turnoverRateUnit = "ratio",
+		shareBasis = "",
+	} = {}) => {
+		const candles = normalizeOhlcvRows(rows, {
+			circulatingShares,
+			floatShares,
+			turnoverRateUnit,
+		});
 		if (!candles.length) return null;
 		const resolvedBinCount = clampBinCount(binCount);
 		const minPrice = Math.min(...candles.map((row) => row.low));
@@ -119,8 +168,19 @@
 		const priceSpan = Math.max(maxPrice - minPrice, Math.abs(minPrice) * 1e-6, 1e-6);
 		const binSize = priceSpan / resolvedBinCount;
 		const weights = Array(resolvedBinCount).fill(0);
+		const survivalReady = candles.every((candle) => candle.turnoverRate !== null);
+		let totalInputVolume = 0;
+		let turnoverRateTotal = 0;
 
 		candles.forEach((candle) => {
+			if (survivalReady) {
+				const retention = 1 - candle.turnoverRate;
+				for (let index = 0; index < weights.length; index += 1) {
+					weights[index] *= retention;
+				}
+				turnoverRateTotal += candle.turnoverRate;
+			}
+			totalInputVolume += candle.volume;
 			const typicalPrice = (candle.high + candle.low + candle.close) / 3;
 			const candleRange = Math.max(candle.high - candle.low, binSize);
 			const sigma = Math.max(candleRange / 3, binSize * MIN_SIGMA_BINS);
@@ -158,6 +218,7 @@
 			});
 		});
 
+		const resolvedShares = finiteNumber(circulatingShares ?? floatShares);
 		return createDistribution({
 			minPrice,
 			maxPrice,
@@ -170,6 +231,14 @@
 			},
 			source: "ohlcv-estimate",
 			estimated: true,
+			metadata: {
+				model: survivalReady ? "turnover-survival" : "ohlcv-estimate",
+				decayApplied: survivalReady,
+				shareBasis: survivalReady ? (shareBasis || (resolvedShares ? "circulating-shares" : "turnover-rate")) : "",
+				circulatingShares: resolvedShares,
+				totalInputVolume,
+				averageTurnoverRate: survivalReady ? turnoverRateTotal / candles.length : null,
+			},
 		});
 	};
 
@@ -218,18 +287,30 @@
 		});
 	};
 
-	const weightedQuantile = (bins, quantile, totalWeight) => {
+	const shortestWeightedRange = (bins, fraction, totalWeight) => {
 		if (!bins.length || totalWeight <= 0) return null;
-		const target = Math.max(0, Math.min(1, quantile)) * totalWeight;
-		let cumulative = 0;
-		for (const bin of bins) {
-			const previous = cumulative;
-			cumulative += bin.weight;
-			if (cumulative < target || bin.weight <= 0) continue;
-			const fraction = Math.max(0, Math.min(1, (target - previous) / bin.weight));
-			return bin.low + ((bin.high - bin.low) * fraction);
+		const target = Math.max(0, Math.min(1, fraction)) * totalWeight;
+		let best = null;
+		for (let start = 0; start < bins.length; start += 1) {
+			let accumulated = 0;
+			for (let end = start; end < bins.length; end += 1) {
+				accumulated += Math.max(0, bins[end].weight || 0);
+				if (accumulated < target) continue;
+				const low = bins[start].low;
+				const high = bins[end].high;
+				const width = Math.max(0, high - low);
+				const density = accumulated / Math.max(width, 1e-12);
+				if (
+					!best
+					|| width < best.width - 1e-12
+					|| (Math.abs(width - best.width) <= 1e-12 && density > best.density)
+				) {
+					best = {low, high, width, density};
+				}
+				break;
+			}
 		}
-		return bins[bins.length - 1].high;
+		return best ? [best.low, best.high] : null;
 	};
 
 	const calculateChipStatistics = (distribution, currentPrice) => {
@@ -255,14 +336,9 @@
 			pocPrice: finiteNumber(distribution.pocPrice),
 			weightedAverageCost,
 			profitRatio: current === null ? null : profitableWeight / totalWeight,
-			costRange70: [
-				weightedQuantile(bins, 0.15, totalWeight),
-				weightedQuantile(bins, 0.85, totalWeight),
-			],
-			costRange90: [
-				weightedQuantile(bins, 0.05, totalWeight),
-				weightedQuantile(bins, 0.95, totalWeight),
-			],
+			costRange70: shortestWeightedRange(bins, 0.70, totalWeight) || [null, null],
+			costRange90: shortestWeightedRange(bins, 0.90, totalWeight) || [null, null],
+			costRangeMethod: "shortest-contiguous-high-density",
 			totalWeight,
 		};
 	};

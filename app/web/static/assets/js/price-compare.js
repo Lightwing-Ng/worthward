@@ -1,4 +1,4 @@
-/* Code version: v0.22.9 */
+/* Code version: v0.22.10 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -683,10 +683,12 @@
 		return usableRows >= Math.ceil(totalRows * 0.8);
 	};
 
-	const chipDistributionSignature = (ticker, period, source, rows) => [
+	const chipDistributionSignature = (ticker, period, source, rows, modelInputs = {}) => [
 		String(ticker || "").trim().toUpperCase(),
 		String(period || ""),
 		source,
+		finiteNumber(modelInputs.circulatingShares) ?? "",
+		String(modelInputs.shareBasis || ""),
 		...(Array.isArray(rows) ? rows : []).map((row) => source === "ohlcv-estimate"
 			? [row?.t, row?.o, row?.h, row?.l, row?.c, row?.v, row?.synthetic === true ? 1 : 0].join(":")
 			: [row?.price, row?.buy, row?.neutral, row?.sell].join(":")),
@@ -708,10 +710,19 @@
 			.filter((candidate) => hasUsableOhlcv(candidate))
 			.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
 		if (!ohlcvSource) return null;
-		const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv);
+		const metadataSource = [ohlcvSource, item, fallbackItem]
+			.find((candidate) => finiteNumber(candidate?.circulatingShares) !== null) || {};
+		const modelInputs = {
+			circulatingShares: finiteNumber(metadataSource.circulatingShares),
+			shareBasis: metadataSource.shareBasis || "",
+		};
+		const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv, modelInputs);
 		return chipDistributionCache.get(key) || cacheChipDistribution(
 			key,
-			calculator.calculateChipDistribution(ohlcvSource.ohlcv, {binCount: CHIP_DISTRIBUTION_BIN_COUNT}),
+			calculator.calculateChipDistribution(ohlcvSource.ohlcv, {
+				binCount: CHIP_DISTRIBUTION_BIN_COUNT,
+				...modelInputs,
+			}),
 		);
 	};
 
@@ -1033,7 +1044,7 @@
 		if (listElement) {
 			const entries = [
 				["Estimated concentration", `${(bin.normalizedWidth * 100).toFixed(1)}% of POC`, theme.text],
-				["Estimated volume", `${formatChipVolumeFull(bin.weight)} shares`, theme.text],
+				[distribution?.decayApplied ? "Estimated surviving chips" : "Estimated volume", `${formatChipVolumeFull(bin.weight)} shares`, theme.text],
 				["Position", formatChipPosition(bin, currentPrice), chipBinIsLoss(bin, currentPrice) ? theme.secondary : theme.positive],
 				["POC", formatPrice(statistics?.pocPrice, currency, false), theme.accent],
 				["Average cost", formatPrice(statistics?.weightedAverageCost, currency, false), theme.text],
@@ -1481,6 +1492,11 @@
 			canvas.dataset.oneDaySessionDividerLineStyle = oneDayUsSessionDividerIndexes.length ? "solid-session-divider" : "";
 			canvas.dataset.chipDistribution = chipsEnabled ? "1" : "0";
 			canvas.dataset.chipSource = chipDistribution?.source || "";
+			canvas.dataset.chipModel = chipDistribution?.model || "";
+			canvas.dataset.chipDecayApplied = chipDistribution?.decayApplied ? "1" : "0";
+			canvas.dataset.chipShareBasis = chipDistribution?.shareBasis || "";
+			canvas.dataset.chipAverageTurnoverRate = finiteNumber(chipDistribution?.averageTurnoverRate)?.toFixed(6) || "";
+			canvas.dataset.chipCostRangeMethod = chipStatistics?.costRangeMethod || "";
 			canvas.dataset.chipBinCount = String(chipBins.length);
 			canvas.dataset.chipRowCount = String(chipBins.length);
 			canvas.dataset.chipPopulatedBinCount = String(chipBins.filter((bin) => bin.weight > 0).length);
