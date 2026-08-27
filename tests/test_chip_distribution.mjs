@@ -1,4 +1,4 @@
-/* Tests for chip distribution calculations. Code version: v0.3.0 */
+/* Tests for chip distribution calculations. Code version: v0.3.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,6 +107,21 @@ test('applies turnover-based chip survival when circulating shares are available
     assert.ok(secondPriceBin);
     assert.ok(Math.abs(firstPriceBin.weight - 90) < 1e-8);
     assert.ok(Math.abs(secondPriceBin.weight - 100) < 1e-8);
+});
+
+test('falls back to the full OHLCV profile when turnover reaches saturation', () => {
+    const distribution = calculator.calculateChipDistribution([
+        {t: '2026-08-20', o: 100, h: 110, l: 90, c: 105, v: 110},
+        {t: '2026-08-21', o: 190, h: 210, l: 190, c: 200, v: 110},
+    ], {binCount: 100, circulatingShares: 100});
+
+    assert.equal(distribution.model, 'ohlcv-estimate');
+    assert.equal(distribution.decayApplied, false);
+    assert.equal(distribution.shareBasis, '');
+    assert.equal(distribution.totalInputVolume, 220);
+    assert.ok(Math.abs(distribution.totalWeight - 220) < 1e-8);
+    assert.equal(distribution.averageTurnoverRate, null);
+    assert.ok(distribution.bins.filter((bin) => bin.weight > 0).length > 10);
 });
 
 test('uses the shortest contiguous high-density intervals for cost ranges', () => {

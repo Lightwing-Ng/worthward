@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
 	const DEFAULT_BIN_COUNT = 100;
 	const MIN_BIN_COUNT = 80;
@@ -169,11 +169,14 @@
 		const binSize = priceSpan / resolvedBinCount;
 		const weights = Array(resolvedBinCount).fill(0);
 		const survivalReady = candles.every((candle) => candle.turnoverRate !== null);
+		const hasSaturatedTurnoverRate = survivalReady
+			&& candles.some((candle) => candle.turnoverRate >= 1);
+		const applyTurnoverSurvival = survivalReady && !hasSaturatedTurnoverRate;
 		let totalInputVolume = 0;
 		let turnoverRateTotal = 0;
 
 		candles.forEach((candle) => {
-			if (survivalReady) {
+			if (applyTurnoverSurvival) {
 				const retention = 1 - candle.turnoverRate;
 				for (let index = 0; index < weights.length; index += 1) {
 					weights[index] *= retention;
@@ -232,12 +235,12 @@
 			source: "ohlcv-estimate",
 			estimated: true,
 			metadata: {
-				model: survivalReady ? "turnover-survival" : "ohlcv-estimate",
-				decayApplied: survivalReady,
-				shareBasis: survivalReady ? (shareBasis || (resolvedShares ? "circulating-shares" : "turnover-rate")) : "",
+				model: applyTurnoverSurvival ? "turnover-survival" : "ohlcv-estimate",
+				decayApplied: applyTurnoverSurvival,
+				shareBasis: applyTurnoverSurvival ? (shareBasis || (resolvedShares ? "circulating-shares" : "turnover-rate")) : "",
 				circulatingShares: resolvedShares,
 				totalInputVolume,
-				averageTurnoverRate: survivalReady ? turnoverRateTotal / candles.length : null,
+				averageTurnoverRate: applyTurnoverSurvival ? turnoverRateTotal / candles.length : null,
 			},
 		});
 	};

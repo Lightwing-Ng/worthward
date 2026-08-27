@@ -1,4 +1,4 @@
-/* Code version: v1.167.82 */
+/* Code version: v1.167.83 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2909,6 +2909,73 @@ test('exposes turnover-survival metadata and dense cost ranges in the browser bu
         totalWeight: 190,
         costRangeMethod: 'shortest-contiguous-high-density',
     });
+});
+
+test('keeps a range-wide chip profile when turnover reaches saturation', async ({page}) => {
+    let chipRequests = 0;
+    const tickers = ['000660.KS', 'SKHY', 'DRAM'];
+    const buildOhlcv = (tickerIndex, startDate, rowCount) => Array.from({length: rowCount}, (_, rowIndex) => {
+        const base = [100, 200, 45][tickerIndex];
+        const close = base + (rowIndex * 0.55);
+        const date = new Date(Date.parse(`${startDate}T00:00:00Z`) + (rowIndex * 86_400_000))
+            .toISOString()
+            .slice(0, 10);
+        return {
+            t: `${date} 00:00`,
+            o: close - 0.5,
+            h: close + 1.5,
+            l: close - 1.5,
+            c: close,
+            v: 110,
+            synthetic: false,
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        chipRequests += 1;
+        const requestUrl = new URL(route.request().url());
+        const isThreeMonthRange = requestUrl.searchParams.get('from') === '2026-05-26';
+        const startDate = isThreeMonthRange ? '2026-05-26' : '2026-07-27';
+        const rowCount = isThreeMonthRange ? 65 : 23;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    circulatingShares: 100,
+                    shareBasis: 'longbridge-static-circulating-shares',
+                    ohlcv: buildOhlcv(tickerIndex, startDate, rowCount),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&range=1mo&chips=1');
+    const readChipState = () => page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => ({
+            ticker: canvas.closest('[data-price-subplot]')?.dataset.ticker,
+            source: canvas.dataset.chipSource,
+            model: canvas.dataset.chipModel,
+            populatedBins: Number(canvas.dataset.chipPopulatedBinCount),
+        }))
+    ));
+    await expect.poll(async () => (await readChipState()).filter((item) => item.source === 'ohlcv-estimate')).toHaveLength(3);
+    expect((await readChipState()).find((item) => item.ticker === 'DRAM')).toMatchObject({
+        model: 'ohlcv-estimate',
+    });
+    expect((await readChipState()).find((item) => item.ticker === 'DRAM').populatedBins).toBeGreaterThan(10);
+
+    const periodTrigger = page.locator('#period_panel [data-shared-select-trigger]');
+    await periodTrigger.click();
+    await page.locator('#period_dropdown [role="option"][data-value="3mo"]').click();
+    await expect(page).toHaveURL(/range=3mo.*chips=1/);
+    await expect.poll(async () => (await readChipState()).filter((item) => item.source === 'ohlcv-estimate')).toHaveLength(3);
+    const threeMonthDram = (await readChipState()).find((item) => item.ticker === 'DRAM');
+    expect(threeMonthDram).toMatchObject({model: 'ohlcv-estimate'});
+    expect(threeMonthDram.populatedBins).toBeGreaterThan(10);
+    expect(chipRequests).toBe(2);
 });
 
 test('keeps the Price chart responsive when 1 year is submitted twice', async ({page}) => {
