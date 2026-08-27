@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.36.1
+Code version: v0.36.2
+- Added: Re-importing a complete GainsKeeper window replaces every matching
+  provisional IBKR web-paste row and remains transaction-idempotent.
 - Added: Schwab dividend and NRA tax-adjustment coverage now asserts explicit
   withholding classification, date-only timestamp provenance, and cash values.
 - Added: Schwab imports with a separate intraday datetime column retain that
@@ -8298,6 +8300,84 @@ Fees: 0.0"""
             self.assertTrue(
                 merged["summary"]["position_snapshot_authoritative"]
             )
+
+    def test_ibkr_gainskeeper_reimport_replaces_all_matching_web_rows(self) -> None:
+        web_payload = build_investment_payload_from_ibkr_web_pasted_text(
+            trade_notifications_text=InvestmentImportTests._ibkr_web_trade_notifications_text(),
+        )
+        gainskeeper_transactions = []
+        for index, web_record in enumerate(web_payload["transactions"], start=1):
+            gainskeeper_record = deepcopy(web_record)
+            source_datetime_raw = (
+                gainskeeper_record["datetime"]
+                .replace("-", "")
+                .replace(" ", "")
+                .replace(":", "")
+            )
+            gainskeeper_record["source"] = {
+                "file_kind": "gainskeeper",
+                "source_format": "ofx_gkx",
+                "fitid": f"REIMPORT-FITID-{index}",
+                "account": "U00000001",
+                "source_datetime_raw": source_datetime_raw,
+                "has_intraday_timestamp": True,
+                "gkx_transaction_tag": (
+                    "SELLSTOCK"
+                    if gainskeeper_record["type"] == "sell"
+                    else "BUYSTOCK"
+                ),
+            }
+            gainskeeper_transactions.append(gainskeeper_record)
+        gainskeeper_payload = {
+            "schema_version": "3.0.0",
+            "generator": {
+                "name": "ibkr_gainskeeper_ofx_to_investment_json",
+                "generated_at": "2026-07-30T00:00:00Z",
+            },
+            "broker": "ibkr",
+            "account": "U00000001",
+            "summary": {},
+            "position_snapshot": {},
+            "performance_snapshot": {},
+            "transactions": gainskeeper_transactions,
+        }
+
+        first_merge = merge_investment_payloads(web_payload, gainskeeper_payload)
+        second_merge = merge_investment_payloads(
+            first_merge,
+            deepcopy(gainskeeper_payload),
+        )
+        authoritative_rows = [
+            record
+            for record in first_merge["transactions"]
+            if record.get("type") in {"buy", "sell"}
+        ]
+
+        self.assertEqual(len(authoritative_rows), len(web_payload["transactions"]))
+        self.assertEqual(
+            {record["source"]["file_kind"] for record in authoritative_rows},
+            {"gainskeeper"},
+        )
+        self.assertEqual(
+            {
+                record["source"]["fitid"]
+                for record in authoritative_rows
+            },
+            {f"REIMPORT-FITID-{index}" for index in range(1, 7)},
+        )
+        self.assertEqual(
+            first_merge["summary"]["incremental_import"]["added_record_count"],
+            0,
+        )
+        self.assertEqual(
+            second_merge["summary"]["incremental_import"]["added_record_count"],
+            0,
+        )
+        self.assertEqual(
+            second_merge["summary"]["incremental_import"]["duplicate_record_count"],
+            len(gainskeeper_transactions),
+        )
+        self.assertEqual(first_merge["transactions"], second_merge["transactions"])
 
     def test_ibkr_gainskeeper_artifact_captures_ofx_period_and_generation_time(
         self,

@@ -1,7 +1,8 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.82.5
+Code version: v0.82.6
+- Fixed: Exact current-day comparisons now resolve each ticker's live trading date in its own market timezone, so US series remain populated when an Asia/Shanghai date is already the next calendar day in New York.
 - Fixed: Multi-day Cost Distribution profiles normalize raw Longbridge OHLCV onto the chart's split-only price and share basis and never substitute narrow near-current trade statistics.
 - Fixed: Price comparison loads range-bounded Longbridge daily OHLCV in sequence
   when legacy local history lacks Volume, avoiding the CLI one-second rate limit.
@@ -73,7 +74,7 @@ Code version: v0.82.5
 
 from __future__ import annotations
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 from http.client import RemoteDisconnected
 import json
 import logging
@@ -1713,6 +1714,33 @@ def build_web_runtime() -> WebRuntime:
             return "Asia/Qatar"
         return "America/New_York"
 
+    def resolve_compare_market_trading_date(
+            ticker: str,
+            requested_trading_date: object,
+            *,
+            display_trading_date: object,
+    ) -> date:
+        """Map a current comparison date to the ticker's local market date."""
+        requested_date = pd.to_datetime(requested_trading_date, errors="coerce")
+        display_date = pd.to_datetime(display_trading_date, errors="coerce")
+        if pd.isna(requested_date) or pd.isna(display_date):
+            raise ValueError(
+                f"Invalid compare trading date: {requested_trading_date}."
+            )
+        requested_date_value = requested_date.date()
+        if requested_date_value != display_date.date():
+            return requested_date_value
+        current_timestamp = pd.Timestamp.now(tz="Asia/Shanghai")
+        if infer_ticker_market(ticker) == "US":
+            session_state = nyse_market_session_state(
+                reference=current_timestamp,
+                include_overnight=False,
+            )
+            if str(session_state.get("session", "")) in {"pre", "intraday", "post"}:
+                return pd.Timestamp(session_state["session_date"]).date()
+            return latest_completed_nyse_trading_day(reference=current_timestamp).date()
+        return current_timestamp.tz_convert(market_timezone_for_ticker(ticker)).date()
+
     def market_close_minute_for_ticker(ticker: str) -> int | None:
         market = infer_ticker_market(ticker)
         if market in {"KR", "JP"}:
@@ -2182,9 +2210,14 @@ def build_web_runtime() -> WebRuntime:
             current_live_session_date = parsed_live_session_date.date()
 
         if target_date_value == current_live_session_date:
+            market_trading_date = resolve_compare_market_trading_date(
+                ticker,
+                target_date_value,
+                display_trading_date=current_live_session_date,
+            )
             return load_live_compare_one_day_intraday_dataset(
                 ticker,
-                live_trading_date=target_date_value,
+                live_trading_date=market_trading_date,
                 include_extended_hours_flag=include_extended_hours_flag,
                 include_overnight_flag=include_overnight_flag,
                 force_refresh=force_refresh,
@@ -6368,6 +6401,11 @@ def build_web_runtime() -> WebRuntime:
                 live_sources: list[str] = []
                 intraday_datasets: list[pd.DataFrame] = []
                 for ticker in validated_tickers:
+                    market_live_trading_date = resolve_compare_market_trading_date(
+                        ticker,
+                        live_trading_date,
+                        display_trading_date=current_live_session_date,
+                    )
                     intraday_dataset = fetch_history(
                         ticker,
                         include_dividends=False,
@@ -6377,7 +6415,7 @@ def build_web_runtime() -> WebRuntime:
                     intraday_dataset, source = append_live_compare_intraday_dataset(
                         ticker,
                         intraday_dataset,
-                        live_trading_date=live_trading_date,
+                        live_trading_date=market_live_trading_date,
                         include_extended_hours_flag=include_extended_hours_flag,
                         force_refresh=force_refresh,
                     )
@@ -6488,9 +6526,14 @@ def build_web_runtime() -> WebRuntime:
             mapped_live_datasets: list[pd.DataFrame] = []
             for reference_dataset, ticker in zip(reference_aligned_datasets, validated_tickers):
                 try:
+                    market_live_trading_date = resolve_compare_market_trading_date(
+                        ticker,
+                        live_trading_date,
+                        display_trading_date=current_live_session_date,
+                    )
                     live_dataset, source = load_live_compare_one_day_intraday_dataset(
                         ticker,
-                        live_trading_date=live_trading_date,
+                        live_trading_date=market_live_trading_date,
                         include_extended_hours_flag=include_extended_hours_flag,
                         force_refresh=force_refresh,
                         include_overnight_flag=include_overnight_flag,

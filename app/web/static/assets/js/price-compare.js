@@ -1,4 +1,4 @@
-/* Code version: v0.22.8 */
+/* Code version: v0.22.9 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -1844,7 +1844,7 @@
 						pointHoverRadius: 3,
 						showLine: !hasOneDayCandlesticks,
 						tension: 0,
-						spanGaps: false,
+						spanGaps: !intraday,
 						segment: {
 							borderColor(context) {
 								if (!intraday) return seriesColor;

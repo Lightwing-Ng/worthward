@@ -1,4 +1,4 @@
-/* Code version: v1.167.80 */
+/* Code version: v1.167.81 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -1650,6 +1650,46 @@ test('keeps price subplot dates only on the bottom New York axis', async ({page}
         canvases.map((canvas) => window.Chart.getChart(canvas).options.scales.x.display)
     ));
     expect(axisVisibility).toEqual([false, false, true]);
+});
+
+test('connects daily price points across market-calendar gaps without filling missing history', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&range=6mo');
+    await page.waitForFunction(() => (
+        [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+
+    const dailyGapContract = await page.evaluate(() => {
+        const series = window.ANTIGRAVITY_APP.chart.series;
+        const target = series.find((item) => item.ticker === '000660.KS') || series[0];
+        const prices = [...target.prices];
+        const gapIndex = prices.findIndex((value, index) => (
+            index > 0
+            && index < prices.length - 1
+            && value !== null
+            && prices[index - 1] !== null
+            && prices[index + 1] !== null
+        ));
+        if (gapIndex < 0) throw new Error('The fixture needs three adjacent daily price points.');
+        prices[gapIndex] = null;
+        target.prices = prices;
+        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        const canvas = document.querySelector('[data-price-subplot-canvas]');
+        const chart = window.Chart.getChart(canvas);
+        return {
+            gapIndex,
+            before: chart.data.datasets[0].data[gapIndex - 1],
+            gap: chart.data.datasets[0].data[gapIndex],
+            after: chart.data.datasets[0].data[gapIndex + 1],
+            spanGaps: chart.data.datasets[0].spanGaps,
+        };
+    });
+
+    expect(dailyGapContract.gapIndex).toBeGreaterThan(0);
+    expect(dailyGapContract.before).not.toBeNull();
+    expect(dailyGapContract.gap).toBeNull();
+    expect(dailyGapContract.after).not.toBeNull();
+    expect(dailyGapContract.spanGaps).toBe(true);
 });
 
 test('keeps the bottom price axis on the shared range when its ticker starts later', async ({page}) => {

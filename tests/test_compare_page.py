@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.2
+Code version: v0.14.3
 """
 
 from __future__ import annotations
@@ -584,6 +584,66 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(exact_day_fetch_mock.call_args.args[0], "000660.KS")
         korean_series = next(item for item in payload["series"] if item["ticker"] == "000660.KS")
         self.assertTrue(any(value is not None for value in korean_series["prices"]))
+
+    def test_live_compare_api_maps_current_display_date_to_each_market_timezone(self) -> None:
+        reference_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-07-13 20:00", "2026-07-14 02:30"],
+            ),
+            "QQQ": ohlc_frame_for_dates(
+                "QQQ",
+                ["2026-07-14 09:30", "2026-07-14 15:59"],
+            ),
+        }
+        live_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-08-26 20:00", "2026-08-27 02:30"],
+            ),
+            "QQQ": ohlc_frame_for_dates(
+                "QQQ",
+                ["2026-08-26 09:30", "2026-08-26 15:59"],
+            ),
+        }
+        local_frames = {
+            ticker: pd.concat([reference_frames[ticker], live_frames[ticker]], ignore_index=True)
+            for ticker in reference_frames
+        }
+
+        def _fetch_history(ticker: str, *_args: object, **_kwargs: object) -> pd.DataFrame:
+            return local_frames[ticker]
+
+        with _write_intraday_stores(local_frames) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_extended_history",
+                    side_effect=ValueError("The isolated test uses local market-date caches."),
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.refresh_one_minute_store"),
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-08-27 12:00", tz="Asia/Shanghai"),
+                ),
+            ):
+                response = create_app().test_client().get(
+                    "/api/compare/live?ticker=000660.KS&ticker=QQQ&period=1d"
+                    "&axis_date=2026-07-14&live_date=2026-08-27&refresh=0"
+                )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["liveDate"], "2026-08-27")
+        self.assertEqual(payload["sources"], {"000660.KS": "local", "QQQ": "local"})
+        for item in payload["series"]:
+            self.assertTrue(any(value is not None for value in item["prices"]), item["ticker"])
 
     def test_one_day_price_page_keeps_new_us_listing_pending_before_first_quote(self) -> None:
         def _fetch_history(
