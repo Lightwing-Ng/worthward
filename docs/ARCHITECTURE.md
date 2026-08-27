@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.44.0`
+Documentation version: `v1.44.1`
 
 ## Holdings P&L display contract
 
@@ -240,6 +240,10 @@ second broker balance ledger. Its accounting boundaries are explicit:
   the current Holdings endpoint. If a current cash-equivalent quote is valid,
   both surfaces use that quote; the historical money-market anchor is only a
   fallback when no usable live price exists.
+- A current broker cash snapshot may project onto the latest broker row for
+  Holdings, but HSBC settlement-boundary corrections must use that row's
+  pre-projection broker ledger. Current presentation state must never enter the
+  historical aggregate correction base or cancel earlier settled proceeds.
 - Daily security valuation uses an end-of-day close on a split-only basis and
   a dynamic end-of-day position converted to that same split basis. Reverse
   splits use a factor below one. Dividend cash stays in the cash ledger and

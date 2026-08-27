@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.22.0`
+Documentation version: `v1.22.1`
 
 ## Supported commands
 
@@ -123,8 +123,10 @@ Current suite inventory remeasured on 14 Aug 2026:
   continuity, dated ending-cash boundaries, exact signed HSBC settlement
   accruals, and equality between the final chart point and the current Holdings
   endpoint. The overlap regression keeps a payable active until its own
-  settlement date, and the cash-equivalent endpoint regression verifies that
-  Overview and Holdings use the same valid live quote.
+  settlement date, the mixed-broker regression prevents a later current HSBC
+  cash projection from cancelling earlier settled sale proceeds, and the
+  cash-equivalent endpoint regression verifies that Overview and Holdings use
+  the same valid live quote.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade

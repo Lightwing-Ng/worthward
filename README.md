@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.81.1`
+Documentation version: `v2.81.2`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -345,6 +345,9 @@ remain explicitly provisional.
   visible pending settlements are applied exactly once, and retained foreign
   cash is converted with the dated project FX history. This estimated current
   amount is marked as provisional in the browser.
+- Historical HSBC settlement corrections use the broker ledger before any
+  current-cash presentation projection, so a later mixed-broker refresh cannot
+  cancel sale proceeds that were already settled on an earlier date.
 - Cash-only non-USD captures remain separate by source account kind and
   currency; they cannot replace an unrelated portfolio snapshot.
 - Account validation is opt-in through local environment variables. No account

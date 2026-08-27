@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.232.8`
+Documentation version: `v1.232.9`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -60,6 +60,9 @@ references, transaction descriptions, or copied statement content.
 - HSBC settled-order balances use the final chronological principal or fee
   posting. When copy/paste order conflicts with the official USD Savings CSV,
   the CSV's continuous balance sequence is authoritative.
+- Current broker cash snapshots are presentation endpoints. HSBC historical
+  settlement corrections use the pre-projection broker ledger, so a later
+  mixed-broker current cash refresh cannot cancel earlier settled proceeds.
 
 ## Security
 

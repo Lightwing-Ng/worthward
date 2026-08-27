@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.5
+ * Code version: v2.129.6
+ * - Fixed: HSBC settlement replay now derives boundary corrections from the
+ *   pre-current-snapshot broker ledger, preventing a later authoritative cash
+ *   projection from removing settled sale proceeds from mixed-broker history.
  * - Fixed: Browser replay now honors Schwab date-only same-day execution
  *   metadata, so a user-confirmed Buy-before-Sell sequence survives restart.
  * - Changed: Linked dividend and withholding rows display their canonical
@@ -366,7 +369,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.25.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.25.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -399,7 +402,7 @@ import {
     getInvestmentHistoryTotalPages,
     isInvestmentHistoryDisplayHidden,
     selectVisibleInvestmentHistoryTransactions,
-} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
+} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.1';
 import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
@@ -409,10 +412,10 @@ import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
     renderNumericDisplayContent as renderWorkspaceMetricValueContent,
-} from './numeric-display.js?v=numeric-display-v1.0.0';
+} from './numeric-display.js?v=numeric-display-v1.1.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.129.2',
+    entry: 'v2.129.6',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -16986,6 +16989,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const brokerSettlementAccruals = getBrokerSettlementAccruals(brokerCode);
                 const rawAggregateBalances = latestRawAggregateBalances;
                 const rawBrokerBalances = latestRawBrokerBalances.get(brokerCode)
+                    || txn?.calculated_broker_cash_by_currency
                     || txn?.broker_cash_by_currency
                     || {};
                 const rawAggregateRunningCash = Number(
@@ -17169,7 +17173,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     );
                     latestRawBrokerBalances.set(
                         brokerCode,
-                        cloneCashLedgerBalances(txn?.broker_cash_by_currency || {}),
+                        // Current cash is projected onto the latest broker row
+                        // for Holdings. Settlement corrections must instead
+                        // use the immutable pre-projection replay balance.
+                        cloneCashLedgerBalances(
+                            txn?.calculated_broker_cash_by_currency
+                            || txn?.broker_cash_by_currency
+                            || {},
+                        ),
                     );
                     (settlementAccrualsByOwnerTransactionIndex.get(event.index) || []).forEach(
                         (boundary) => {

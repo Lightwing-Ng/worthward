@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.50.0`
+Documentation version: `v1.50.1`
+
+- Fixed: Mixed-broker Overview replay now calculates HSBC settlement
+  boundaries from the pre-current-snapshot broker ledger. A later current cash
+  projection can no longer remove earlier settled sale proceeds from historical
+  aggregate Cash or create a false equity cliff, while the final point remains
+  equal to Holdings.
 
 - Fixed: HSBC current Cash now starts from the posted USD Savings ledger
   balance, applies visible pending settlements exactly once, and converts each

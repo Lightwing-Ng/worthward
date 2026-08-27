@@ -7314,15 +7314,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.128.3',
+        entry: 'v2.129.6',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.108.0',
+        dataUtils: 'v1.109.0',
         importFeedback: 'v1.8.5',
-        layout: 'v1.1.0',
+        layout: 'v1.1.2',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
-        numericDisplay: 'v1.0.0',
-        stockDetails: 'v0.25.1',
+        numericDisplay: 'v1.1.0',
+        stockDetails: 'v0.25.2',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.1',
         urlState: 'v1.2.0',
@@ -7330,7 +7330,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.25.1';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.25.2';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -9058,6 +9058,216 @@ test('sums HSBC, IBKR, and Schwab current cash before adding holdings equity', a
     );
     await expect(cash).toHaveAttribute('data-investment-live-display', '24,350.22');
     await expect(totalEquity).toHaveAttribute('data-investment-live-display', '25,004.12');
+});
+
+test('keeps mixed-broker aggregate cash continuous when current HSBC cash postdates its latest trade', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr', 'schwab'],
+        startingCash: 0,
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-20',
+                datetime: '2026-08-20 19:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 10_000,
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-20',
+                datetime: '2026-08-20 19:01:00',
+                type: 'transfer_in',
+                ticker: 'SGOV',
+                currency: 'USD',
+                quantity: 100,
+                amount: 0,
+            },
+            {
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-20',
+                datetime: '2026-08-20 19:02:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 1_000,
+            },
+            {
+                broker: 'schwab',
+                account: 'SCHWAB-TEST',
+                date: '2026-08-20',
+                datetime: '2026-08-20 19:03:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 500,
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-21',
+                datetime: '2026-08-21 20:00:00',
+                type: 'sell',
+                ticker: 'SGOV',
+                currency: 'USD',
+                quantity: 100,
+                price: 100,
+                amount: 10_000,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'S-SGOV',
+                    cash_settlement_date: '2026-08-24',
+                    cash_settlement_amount_raw: '10000.00',
+                    cash_settlement_balance_after_raw: '20000.00',
+                    cash_settlement_postings: [{
+                        date: '2026-08-24',
+                        amount_raw: '10000.00',
+                        balance_after_raw: '20000.00',
+                        source_file_kind: 'hsbc_usd_savings_csv',
+                        ledger_sequence: 201,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-24',
+                datetime: '2026-08-24 20:00:00',
+                type: 'buy',
+                ticker: 'EUV',
+                currency: 'USD',
+                quantity: 10,
+                price: 100,
+                amount: -1_000,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'P-EUV',
+                    cash_settlement_date: '2026-08-25',
+                    cash_settlement_amount_raw: '-1000.00',
+                    cash_settlement_balance_after_raw: '19000.00',
+                    cash_settlement_postings: [{
+                        date: '2026-08-25',
+                        amount_raw: '-1000.00',
+                        balance_after_raw: '19000.00',
+                        source_file_kind: 'hsbc_usd_savings_csv',
+                        ledger_sequence: 202,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-25',
+                datetime: '2026-08-25 20:00:00',
+                type: 'sell',
+                ticker: 'EUV',
+                currency: 'USD',
+                quantity: 5,
+                price: 100,
+                amount: 500,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'S-EUV',
+                    cash_settlement_date: '2026-08-26',
+                    cash_settlement_amount_raw: '500.00',
+                    cash_settlement_balance_after_raw: '19500.00',
+                    cash_settlement_postings: [{
+                        date: '2026-08-26',
+                        amount_raw: '500.00',
+                        balance_after_raw: '19500.00',
+                        source_file_kind: 'hsbc_usd_savings_csv',
+                        ledger_sequence: 203,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+            {
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-08-27',
+                datetime: '2026-08-27 02:43:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 0,
+            },
+        ],
+        priceHistoryByTicker: {
+            SGOV: [
+                {date: '2026-08-20', close: 100},
+                {date: '2026-08-21', close: 100},
+                {date: '2026-08-24', close: 100},
+                {date: '2026-08-25', close: 100},
+                {date: '2026-08-26', close: 100},
+                {date: '2026-08-27', close: 100},
+            ],
+            EUV: [
+                {date: '2026-08-24', close: 100},
+                {date: '2026-08-25', close: 100},
+                {date: '2026-08-26', close: 100},
+                {date: '2026-08-27', close: 100},
+            ],
+        },
+        summary: {
+            authoritative_current_cash_brokers: ['hsbc', 'ibkr', 'schwab'],
+        },
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc',
+                cash_snapshot_authoritative: true,
+                ending_cash: '19500.00',
+                ending_cash_base_currency: '19500.00',
+                ending_cash_by_currency: {USD: '19500.00'},
+                hsbc_cash_component_post_dates: {'USD:SAVINGS': '2026-08-26'},
+                hsbc_pending_settlement_cash: '0.00',
+                hsbc_pending_settlement_order_count: 0,
+            },
+            ibkr: {
+                broker: 'ibkr',
+                cash_snapshot_authoritative: true,
+                ending_cash: '1000.00',
+                ending_cash_as_of: '2026-08-27',
+                ending_cash_as_of_datetime: '2026-08-27 02:43:00',
+                ending_cash_by_currency: {USD: '1000.00'},
+            },
+            schwab: {
+                broker: 'schwab',
+                cash_snapshot_authoritative: true,
+                ending_cash: '500.00',
+                ending_cash_as_of: '2026-08-20',
+                ending_cash_by_currency: {USD: '500.00'},
+            },
+        },
+    });
+    await page.goto('/trade/investment?range=max');
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+
+    const replay = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        const points = (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            equity: Number(chart.data.datasets?.[0]?.data?.[index]),
+        }));
+        const holdingsTotal = Number(document.querySelector(
+            '#investment_holdings_panel [data-investment-live-field="summary_total_equity"]',
+        )?.dataset.investmentLiveNumber);
+        return {points, holdingsTotal};
+    });
+    const expectedEquity = 21_500;
+    ['2026-08-24', '2026-08-25', '2026-08-26'].forEach((date) => {
+        expect(replay.points.find((point) => point.date === date)?.equity).toBeCloseTo(
+            expectedEquity,
+            8,
+        );
+    });
+    expect(replay.points.at(-1)?.equity).toBeCloseTo(replay.holdingsTotal, 8);
 });
 
 test('keeps HSBC pending-sell cash source-bounded in history and equity', async ({page}) => {
