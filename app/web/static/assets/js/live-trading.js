@@ -1,12 +1,15 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.13.2
+ * Code version: v1.14.0
+ * - Changed: Intraday stock-price y-axis labels now reuse the shared
+ *   three-digit integer and sub-100 two-decimal contract.
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
     const state = window.ANTIGRAVITY_APP || {};
+    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
     const endpoints = state.endpoints || {};
     const orderEndpoint = endpoints.liveTradingOrder || "/api/live-trading/orders";
     const positionsEndpoint = endpoints.liveTradingPositions || "/api/live-trading/positions";
@@ -517,6 +520,18 @@ document.addEventListener("DOMContentLoaded", () => {
         minimumFractionDigits: 2,
         maximumFractionDigits: 4,
     });
+    const formatStockPriceAxisValue = (value) => {
+        if (typeof chartAxis.formatStockPriceAxisValue === "function") {
+            return chartAxis.formatStockPriceAxisValue(value);
+        }
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return "";
+        const fractionDigits = Math.abs(numericValue) >= 100 ? 0 : 2;
+        return numericValue.toLocaleString("en-US", {
+            minimumFractionDigits: fractionDigits,
+            maximumFractionDigits: fractionDigits,
+        });
+    };
     const formatPriceInputValue = (value) => {
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue) || numericValue <= 0) {
@@ -1825,7 +1840,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             padding: 0,
                             callback(value, index, ticks) {
                                 if (index === 0 || index === ticks.length - 1) return "";
-                                return priceFormatter.format(Number(value));
+                                return formatStockPriceAxisValue(value);
                             },
                         },
                     },

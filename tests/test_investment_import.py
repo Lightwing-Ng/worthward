@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.36.2
+Code version: v0.37.0
+- Added: IBKR Your Holdings clipboard captures produce validated cash and
+  position boundaries, retain raw evidence, and reject cross-account pairing.
 - Added: Re-importing a complete GainsKeeper window replaces every matching
   provisional IBKR web-paste row and remains transaction-idempotent.
 - Added: Schwab dividend and NRA tax-adjustment coverage now asserts explicit
@@ -7346,6 +7348,79 @@ Fees: 0.10"""
             {"NVDA": "2", "QQQI": "1.25"},
         )
         self.assertTrue(payload["summary"]["position_snapshot_authoritative"])
+
+    def test_ibkr_web_paste_parses_and_retains_your_holdings_capture(self) -> None:
+        holdings_text = """Search
+Account
+U00000001
+USD
+1,234.56
+Settled Cash
+456.78
+Your Holdings
+Instrument Position Last Change % Cost Basis Market Value Avg Price Daily P&L Unrealized P&L
+ALFA
+ALFA EXAMPLE FUND
+27 15.00 +0.10% 390 USD 405.00 USD 14.44 USD +1.00 USD +15.00 USD
+BETA
+BETA EXAMPLE COMPANY
+3.9179 96.55 0.00% 263.37 USD 378.08 USD 67.22 USD -0.20 USD +115.00 USD
+Cash Holdings
+USD (base currency) 456.78
+Total Cash (in USD) 456.78
+Data powered by"""
+
+        payload = build_investment_payload_from_ibkr_web_pasted_text(
+            trade_notifications_text=(
+                InvestmentImportTests._ibkr_current_web_trade_notifications_text()
+            ),
+            holdings_text=holdings_text,
+        )
+
+        self.assertEqual(payload["ending_cash"], "456.78")
+        self.assertEqual(payload["ending_cash_by_currency"], {"USD": "456.78"})
+        self.assertEqual(
+            {
+                ticker: snapshot["quantity"]
+                for ticker, snapshot in payload["position_snapshot"].items()
+            },
+            {"ALFA": "27", "BETA": "3.9179"},
+        )
+        self.assertEqual(len(payload["source_artifacts"]), 2)
+        holdings_artifact = payload["source_artifacts"][1]
+        self.assertEqual(holdings_artifact["source_kind"], "ibkr_web_holdings_text")
+        self.assertEqual(holdings_artifact["bundle_role"], "holdings_snapshot")
+        self.assertEqual(
+            base64.b64decode(holdings_artifact["content_base64"]).decode("utf-8"),
+            holdings_text,
+        )
+        self.assertEqual(
+            payload["summary"]["calibration_evidence_source"],
+            "ibkr_web_holdings_text",
+        )
+        self.assertEqual(
+            payload["datetime_policy"]["source_timezone"],
+            "Asia/Hong_Kong",
+        )
+
+    def test_ibkr_web_paste_rejects_holdings_from_another_account(self) -> None:
+        holdings_text = """Account
+U00000002
+Your Holdings
+Instrument Position Last
+ALFA
+ALFA EXAMPLE FUND
+1 10.00 0.00%
+Cash Holdings
+USD (base currency) 10.00"""
+
+        with self.assertRaisesRegex(ValueError, "different accounts"):
+            build_investment_payload_from_ibkr_web_pasted_text(
+                trade_notifications_text=(
+                    InvestmentImportTests._ibkr_current_web_trade_notifications_text()
+                ),
+                holdings_text=holdings_text,
+            )
 
     def test_ibkr_compact_orders_paste_imports_only_filled_trade_without_fabricating_fee(self) -> None:
         text = """Search

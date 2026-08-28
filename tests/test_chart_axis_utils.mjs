@@ -1,8 +1,9 @@
-/* Shared chart axis helper contracts. Code version: v1.1.1 */
+/* Shared chart axis helper contracts. Code version: v1.2.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -107,10 +108,51 @@ test('exposes a versioned shared chart axis API', () => {
     assert.match(utils.CHART_AXIS_UTILS_VERSION, /^v\d+\.\d+\.\d+$/);
     assert.equal(typeof utils.buildTickIndexSet, 'function');
     assert.equal(typeof utils.sortedTickIndexes, 'function');
+    assert.equal(typeof utils.formatStockPriceAxisValue, 'function');
     assert.equal(typeof utils.buildAllInEquitySeries, 'function');
     assert.equal(typeof utils.readThemeTokens, 'function');
     assert.equal(typeof utils.readThemeToken, 'function');
     assert.equal(typeof utils.normalizeSafeImageUrl, 'function');
+});
+
+test('formats every stock-price y axis with one project-wide precision contract', () => {
+    assert.equal(utils.STOCK_PRICE_INTEGER_THRESHOLD, 100);
+    assert.equal(utils.formatStockPriceAxisValue(1_234), '1,234');
+    assert.equal(utils.formatStockPriceAxisValue(567), '567');
+    assert.equal(utils.formatStockPriceAxisValue(100), '100');
+    assert.equal(utils.formatStockPriceAxisValue(99.5), '99.50');
+    assert.equal(utils.formatStockPriceAxisValue(12.5), '12.50');
+    assert.equal(utils.formatStockPriceAxisValue(5.5), '5.50');
+    assert.equal(utils.formatStockPriceAxisValue(-567), '-567');
+    assert.equal(utils.formatStockPriceAxisValue(-12.5), '-12.50');
+});
+
+test('adds a currency prefix only when a stock-price axis requests it', () => {
+    assert.equal(
+        utils.formatStockPriceAxisValue(1_234, {currency: 'KRW', showCurrency: true}),
+        'KRW 1,234',
+    );
+    assert.equal(
+        utils.formatStockPriceAxisValue(12.5, {currency: 'USD', showCurrency: false}),
+        '12.50',
+    );
+    assert.equal(utils.formatStockPriceAxisValue(Number.NaN), '');
+    assert.equal(utils.formatStockPriceAxisValue('unavailable'), '');
+});
+
+test('every stock-price chart consumer delegates its y-axis labels to the shared formatter', async () => {
+    const consumerPaths = [
+        'app/web/static/assets/js/backtest.js',
+        'app/web/static/assets/js/dca.js',
+        'app/web/static/assets/js/price-compare.js',
+        'app/web/static/assets/js/live-trading.js',
+        'app/web/static/assets/js/investment/stock-details.js',
+        'app/web/static/assets/js/settings.js',
+    ];
+    for (const consumerPath of consumerPaths) {
+        const source = await readFile(path.join(root, consumerPath), 'utf8');
+        assert.match(source, /chartAxis\.formatStockPriceAxisValue/, consumerPath);
+    }
 });
 
 test('normalizeSafeImageUrl permits only HTTP(S) and controlled local logo paths', () => {

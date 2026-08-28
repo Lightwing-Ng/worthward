@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.44.1`
+Documentation version: `v1.47.0`
 
 ## Holdings P&L display contract
 
@@ -35,9 +35,13 @@ same-minute split fills that share an account, ticker, quantity, price, side,
 and venue. The only exception is a compact Orders aggregate that declares the
 same number of same-page fill details and closes exactly on quantity, gross,
 commission, and net amount; the aggregate is the canonical representation and
-the alternate full-page rows are removed. An optional user-entered cash and position boundary is accepted at
-the latest captured fill time without an account-specific calibration record or
-synthetic transactions; because the pasted page is not a complete ledger
+the alternate full-page rows are removed. An optional paired Your Holdings
+clipboard capture supplies the cash and position boundary at the latest
+captured fill time. The server extracts the base-currency Cash Holdings row and
+each Instrument/Position row, requires the same IBKR account as Trade
+Notifications, and retains the raw holdings page as separate immutable
+evidence. This boundary creates neither an account-specific calibration record
+nor synthetic transactions; because the pasted pages are not a complete ledger
 history, the resulting snapshot remains partial-history evidence for P&L
 validation.
 
@@ -104,6 +108,22 @@ browser-local overrides remain in localStorage and never enter `settings_store/`
 ```
 
 Older `/compare`, `/portfolio`, `/backtest`, `/workspaces/market-caps`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects. The former market-cap route redirects to `/workspaces/prices?metric=market-cap` while preserving canonical query state.
+
+## Shared stock-price axis labels
+
+Every chart whose Y-axis represents a stock price delegates label formatting to
+`ANTIGRAVITY_CHART_AXIS.formatStockPriceAxisValue`. Absolute prices at or above
+`100` render as grouped integers, such as `1,234` or `567`; lower prices render
+with exactly two decimals, such as `12.50` or `5.50`. Price comparison,
+Backtest and DCA price subplots, Live trading candlesticks, Investment Stock
+details, and their Settings share previews use this contract. Equity, return,
+market-cap, volume, and share-count axes retain their domain-specific formats.
+
+## Price comparison cost-distribution snapshots
+
+The Price comparison Canvas owns both the price series and the optional right-side estimated Cost Distribution. The idle profile represents the complete selected OHLCV range. While the shared price crosshair is active, every subplot switches to a cumulative snapshot containing only OHLCV rows at or before the crosshair timestamp. Snapshot distributions retain the complete range's price-bin domain, so the shared Y-axis and bar-price positions never move while the cursor scrubs horizontally.
+
+Snapshot calculation remains separate from rendering. The calculator accepts an optional enclosing price domain, while `price-compare.js` owns timestamp truncation, per-subplot bounded LRU caches, animation-frame coalescing, POC/statistics refresh, and restoration of the complete profile on pointer exit. Canvas plugins read the chart's active distribution state instead of capturing one immutable initial profile. The active snapshot's last known price controls the established magenta underwater and green profitable chip colors. Longbridge `trade-stats` has no historical timestamp dimension and therefore remains an idle price-level fallback; hover snapshots use range-aligned OHLCV whenever it is available.
 
 The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
@@ -429,7 +449,7 @@ sets of values.
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing theme-token consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing consumers keep local fallbacks if the shared script is unavailable.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.ANTIGRAVITY_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.

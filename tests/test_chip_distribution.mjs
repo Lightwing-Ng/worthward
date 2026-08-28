@@ -1,4 +1,4 @@
-/* Tests for chip distribution calculations. Code version: v0.3.1 */
+/* Tests for chip distribution calculations. Code version: v0.4.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -122,6 +122,28 @@ test('falls back to the full OHLCV profile when turnover reaches saturation', ()
     assert.ok(Math.abs(distribution.totalWeight - 220) < 1e-8);
     assert.equal(distribution.averageTurnoverRate, null);
     assert.ok(distribution.bins.filter((bin) => bin.weight > 0).length > 10);
+});
+
+test('keeps hover snapshots on the full-range price domain without future volume', () => {
+    const rows = [
+        {t: '2026-08-20', o: 98, h: 104, l: 96, c: 102, v: 1_000},
+        {t: '2026-08-21', o: 101, h: 108, l: 99, c: 106, v: 1_200},
+        {t: '2026-08-22', o: 198, h: 206, l: 194, c: 202, v: 20_000},
+    ];
+    const fullDistribution = calculator.calculateChipDistribution(rows, {binCount: 100});
+    const snapshot = calculator.calculateChipDistribution(rows.slice(0, 2), {
+        binCount: 100,
+        priceMin: fullDistribution.minPrice,
+        priceMax: fullDistribution.maxPrice,
+    });
+
+    assert.equal(snapshot.priceDomainFixed, true);
+    assert.equal(snapshot.minPrice, fullDistribution.minPrice);
+    assert.equal(snapshot.maxPrice, fullDistribution.maxPrice);
+    assert.ok(Math.abs(snapshot.totalWeight - 2_200) < 1e-8);
+    assert.ok(snapshot.pocPrice < 120);
+    assert.ok(fullDistribution.pocPrice > 180);
+    assert.equal(snapshot.bins.filter((bin) => bin.price > 180 && bin.weight > 0).length, 0);
 });
 
 test('uses the shortest contiguous high-density intervals for cost ranges', () => {

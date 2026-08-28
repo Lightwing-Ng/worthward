@@ -1,7 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.129.6
+ * Code version: v2.132.0
+ * - Changed: Stock-details price axes now load the shared project-wide
+ *   stock-price number-format contract.
+ * - Fixed: Import-complete transfer review now compares the refreshed ledger
+ *   with the pending source keys captured before submission, preventing old
+ *   Unbound rows from being reported as work created by the latest import.
+ * - Changed: IBKR Web paste now accepts the full Your Holdings page as the
+ *   optional cash and position boundary, replacing manual calibration inputs.
  * - Fixed: HSBC settlement replay now derives boundary corrections from the
  *   pre-current-snapshot broker ledger, preventing a later authoritative cash
  *   projection from removing settled sale proceeds from mixed-broker history.
@@ -346,8 +353,10 @@ import {
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildSchwabImportFeedbackMessage,
+    countNewInvestmentPendingTransferRows,
+    getInvestmentPendingTransferSourceKeys,
     resolveInvestmentImportFeedbackSummary,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.8.5';
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.9.0';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     animateLocalStorePaginationIndicator,
@@ -369,7 +378,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.25.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.26.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -415,7 +424,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.1.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.129.6',
+    entry: 'v2.132.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -495,13 +504,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
     const ibkrTradeNotificationsTextInput = document.getElementById('ibkr_trade_notifications_text');
     const ibkrTradeNotificationsDateInput = document.getElementById('ibkr_trade_notifications_date');
-    const ibkrTradeNotificationsCashInput = document.getElementById('ibkr_trade_notifications_cash');
-    const ibkrTradeNotificationsPositionsInput = document.getElementById('ibkr_trade_notifications_positions');
-    const ibkrPositionCalibrationTable = document.getElementById('investment_import_calibration_table');
-    const ibkrPositionCalibrationTableBody = document.getElementById('investment_import_calibration_table_body');
     const ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
     const ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
     const ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
+    const ibkrHoldingsTextInput = document.getElementById('ibkr_holdings_text');
+    const ibkrHoldingsDisplay = document.getElementById('ibkr_holdings_display');
+    const ibkrHoldingsPasteButton = document.getElementById('ibkr_holdings_paste_button');
+    const ibkrHoldingsTextStatus = document.getElementById('ibkr_holdings_text_status');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
@@ -9015,239 +9024,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(panel instanceof HTMLElement)) return;
             panel.hidden = panel.dataset.ibkrImportModePanel !== selectedMode;
         });
-        if (selectedMode === 'web_paste') {
-            renderIbkrPositionCalibrationTable();
-        }
-    }
-
-    function parseCalibrationNumericText(value) {
-        const normalized = String(value ?? '').trim().replace(/,/g, '');
-        if (!normalized || !/^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))$/.test(normalized)) {
-            return null;
-        }
-        const sign = normalized.startsWith('-') ? '-' : '';
-        const unsigned = normalized.replace(/^[+-]/, '');
-        const [integerPart = '0', fractionPart = ''] = unsigned.split('.');
-        return {
-            normalized,
-            sign,
-            integerPart: integerPart.replace(/^0+(?=\d)/, '') || '0',
-            fractionPart,
-        };
-    }
-
-    function groupCalibrationInteger(value) {
-        return String(value || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    }
-
-    function formatCalibrationCashValue(value) {
-        const parsed = parseCalibrationNumericText(value);
-        if (!parsed) return String(value ?? '').trim() ? String(value).trim() : '';
-        return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}.${parsed.fractionPart.slice(0, 2).padEnd(2, '0')}`;
-    }
-
-    function formatCalibrationQuantityValue(value) {
-        const parsed = parseCalibrationNumericText(value);
-        if (!parsed) return String(value ?? '').trim() ? String(value).trim() : '';
-        if (!parsed.fractionPart) {
-            return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}`;
-        }
-        const fractionDigits = Math.max(4, parsed.fractionPart.length);
-        return `${parsed.sign}${groupCalibrationInteger(parsed.integerPart)}.${parsed.fractionPart.padEnd(fractionDigits, '0')}`;
-    }
-
-    function normalizeCalibrationSubmissionValue(value) {
-        const parsed = parseCalibrationNumericText(value);
-        if (!parsed || parsed.sign === '-') return '';
-        const fraction = parsed.fractionPart.replace(/0+$/, '');
-        return `${parsed.integerPart}${fraction ? `.${fraction}` : ''}`;
-    }
-
-    function normalizeCalibrationCurrencyCode(value) {
-        const normalized = String(value ?? '').trim().toUpperCase();
-        return /^[A-Z]{3,6}$/.test(normalized) ? normalized : '';
-    }
-
-    function readIbkrCalibrationHoldings(holdings) {
-        if (!holdings || typeof holdings !== 'object' || Array.isArray(holdings)) return [];
-        const rows = [];
-        const seenTickers = new Set();
-        Object.entries(holdings).forEach(([rawTicker, position]) => {
-            const ticker = getInvestmentCanonicalTicker(rawTicker);
-            const rawQuantity = position && typeof position === 'object'
-                ? position.quantity
-                : position;
-            const quantity = Number(String(rawQuantity ?? '').replace(/,/g, '').trim());
-            if (
-                !ticker
-                || !Number.isFinite(quantity)
-                || Math.abs(quantity) <= 1e-9
-                || seenTickers.has(ticker)
-            ) return;
-            seenTickers.add(ticker);
-            rows.push(ticker);
-        });
-        return rows;
-    }
-
-    function getIbkrTradeNotificationCashCurrencies(rawText) {
-        const text = normalizeClipboardText(rawText);
-        const currencies = [];
-        if (/(?:\bHKD\b|HK\$|Hong Kong Dollar|港元|港币)/i.test(text)) {
-            currencies.push('HKD');
-        }
-        if (/(?:\bCNH\b|\bCNY\b|\bRMB\b|Renminbi|Offshore RMB|人民币|离岸人民币)/i.test(text)) {
-            currencies.push('CNH');
-        }
-        return currencies;
-    }
-
-    function getCurrentIbkrCalibrationRows() {
-        const selectedBroker = getSelectedInvestmentImportBroker();
-        const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[selectedBroker];
-        const latestProcessed = [...investmentProcessedTransactionsCache].reverse().find((txn) => (
-            normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === selectedBroker
-        ));
-        const positionSnapshot = brokerSummary?.position_snapshot;
-        const tickers = [];
-        const seenTickers = new Set();
-        [
-            positionSnapshot,
-            latestProcessed?.broker_holdings,
-            latestProcessed?.calculated_broker_holdings,
-        ].forEach((holdings) => {
-            readIbkrCalibrationHoldings(holdings).forEach((ticker) => {
-                if (seenTickers.has(ticker)) return;
-                seenTickers.add(ticker);
-                tickers.push(ticker);
-            });
-        });
-
-        const currencies = [];
-        const seenCurrencies = new Set();
-        const addCurrency = (rawCurrency) => {
-            const currency = normalizeCalibrationCurrencyCode(rawCurrency);
-            if (!currency || seenCurrencies.has(currency)) return;
-            seenCurrencies.add(currency);
-            currencies.push(currency);
-        };
-        addCurrency('USD');
-        getIbkrTradeNotificationCashCurrencies(ibkrTradeNotificationsTextInput?.value || '')
-            .forEach((currency) => addCurrency(currency));
-
-        return [
-            ...currencies.map((currency) => ({
-                asset: `Cash (${currency})`,
-                currency,
-                isCash: true,
-                key: `cash:${currency}`,
-            })),
-            ...tickers.map((ticker) => ({
-                asset: ticker,
-                currency: '',
-                isCash: false,
-                key: `security:${ticker}`,
-            })),
-        ];
-    }
-
-    function syncIbkrPositionCalibrationInputs() {
-        if (!(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const cashBalances = {};
-        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row][data-asset-kind="cash"]').forEach((row) => {
-            const currency = normalizeCalibrationCurrencyCode(row.dataset.currency);
-            const cashField = row.querySelector('[data-ibkr-calibration-cash]');
-            const cashValue = normalizeCalibrationSubmissionValue(cashField?.value || '');
-            if (currency && cashValue) cashBalances[currency] = cashValue;
-        });
-        if (ibkrTradeNotificationsCashInput instanceof HTMLInputElement) {
-            ibkrTradeNotificationsCashInput.value = cashBalances.USD || '';
-        }
-        const cashBalancesInput = document.getElementById('ibkr_trade_notifications_cash_balances');
-        if (cashBalancesInput instanceof HTMLInputElement) {
-            cashBalancesInput.value = JSON.stringify(cashBalances);
-        }
-        if (ibkrTradeNotificationsPositionsInput instanceof HTMLTextAreaElement) {
-            const positionLines = Array.from(
-                ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row][data-asset-kind="security"]')
-            ).map((row) => {
-                const ticker = normalizeInvestmentTicker(row.dataset.asset);
-                const quantityField = row.querySelector('[data-ibkr-calibration-quantity]');
-                const quantity = normalizeCalibrationSubmissionValue(quantityField?.value || '');
-                return ticker && quantity ? `${ticker} ${quantity}` : '';
-            }).filter(Boolean);
-            ibkrTradeNotificationsPositionsInput.value = positionLines.join('\n');
-        }
-    }
-
-    function renderIbkrPositionCalibrationTable() {
-        if (!(ibkrPositionCalibrationTable instanceof HTMLElement)
-            || !(ibkrPositionCalibrationTableBody instanceof HTMLElement)) return;
-        const existingValuesByKey = new Map();
-        ibkrPositionCalibrationTableBody.querySelectorAll('[data-ibkr-calibration-row]').forEach((row) => {
-            const quantityField = row.querySelector('[data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]');
-            const key = row.dataset.assetKind === 'cash'
-                ? `cash:${normalizeCalibrationCurrencyCode(row.dataset.currency)}`
-                : `security:${normalizeInvestmentTicker(row.dataset.asset)}`;
-            if (key && quantityField instanceof HTMLInputElement) existingValuesByKey.set(key, quantityField.value);
-        });
-        const rows = getCurrentIbkrCalibrationRows().map((row) => ({
-            ...row,
-            quantity: existingValuesByKey.get(row.key) || '',
-        }));
-
-        ibkrPositionCalibrationTableBody.innerHTML = rows.map((row, index) => {
-            const quantityValue = row.isCash
-                ? formatCalibrationCashValue(row.quantity)
-                : formatCalibrationQuantityValue(row.quantity);
-            return `
-                <tr data-ibkr-calibration-row
-                    data-asset-kind="${row.isCash ? 'cash' : 'security'}"
-                    data-asset="${escapeHtml(row.isCash ? row.asset : row.asset)}"
-                    ${row.isCash ? `data-currency="${escapeHtml(row.currency)}"` : ''}>
-                    <td class="investment-import-calibration-cell investment-import-calibration-cell-number">${index + 1}</td>
-                    <td class="investment-import-calibration-cell investment-import-calibration-cell-asset">
-                        ${row.isCash
-                            ? `<span class="investment-import-calibration-asset">${escapeHtml(row.asset)}</span>`
-                            : `<span class="investment-import-calibration-asset"
-                                      data-ibkr-calibration-asset
-                                      aria-label="Asset row ${index}">${escapeHtml(formatInvestmentTickerForDisplay(row.asset))}</span>`}
-                    </td>
-                    <td class="investment-import-calibration-cell investment-import-calibration-cell-quantity">
-                        <input class="settings-form-control numeric-input-control investment-import-calibration-input"
-                               type="text"
-                               inputmode="decimal"
-                               autocomplete="off"
-                               ${row.isCash ? 'data-ibkr-calibration-cash' : 'data-ibkr-calibration-quantity'}
-                               aria-label="${escapeHtml(row.isCash ? `${row.asset} amount` : `${row.asset} quantity`)}"
-                               value="${escapeHtml(quantityValue)}"
-                               placeholder="Optional">
-                    </td>
-                </tr>
-            `;
-        }).join('');
-        if (ibkrPositionCalibrationTableBody.dataset.bound !== '1') {
-            ibkrPositionCalibrationTableBody.dataset.bound = '1';
-            ibkrPositionCalibrationTableBody.addEventListener('input', (event) => {
-                const field = event.target;
-                if (!(field instanceof HTMLInputElement) || !field.matches('[data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]')) return;
-                clearImportFeedback();
-                syncIbkrPositionCalibrationInputs();
-            });
-            ibkrPositionCalibrationTableBody.addEventListener('blur', (event) => {
-                const field = event.target;
-                if (!(field instanceof HTMLInputElement)) return;
-                if (field.matches('[data-ibkr-calibration-cash]')) {
-                    field.value = formatCalibrationCashValue(field.value);
-                } else if (field.matches('[data-ibkr-calibration-quantity]')) {
-                    field.value = formatCalibrationQuantityValue(field.value);
-                } else {
-                    return;
-                }
-                syncIbkrPositionCalibrationInputs();
-            }, true);
-        }
-        syncIbkrPositionCalibrationInputs();
     }
 
     function syncHsbcImportModePanels() {
@@ -9319,6 +9095,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return getIbkrTradeNotificationsReadiness(rawText).ready;
     }
 
+    function getIbkrHoldingsReadiness(rawText) {
+        const text = normalizeClipboardText(rawText);
+        if (!text) return {ready: false, reason: 'empty', positionCount: 0};
+        const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+        const holdingsIndex = lines.findIndex((line) => /^Your Holdings$/i.test(line));
+        const cashIndex = lines.findIndex((line, index) => (
+            index > holdingsIndex && /^Cash Holdings$/i.test(line)
+        ));
+        const accountCount = new Set(
+            Array.from(text.matchAll(/\bU\d{6,12}\b/gi), (match) => match[0].toUpperCase()),
+        ).size;
+        let positionCount = 0;
+        if (holdingsIndex >= 0 && cashIndex > holdingsIndex) {
+            for (let index = holdingsIndex + 1; index + 2 < cashIndex; index += 1) {
+                if (
+                    /^[A-Z][A-Z0-9.-]{0,14}$/.test(lines[index])
+                    && /[A-Z]/i.test(lines[index + 1])
+                    && /^[+]?[\d,]+(?:\.\d+)?\s+[-+]?\d/.test(lines[index + 2])
+                ) {
+                    positionCount += 1;
+                }
+            }
+        }
+        const hasNativeCash = /(?:^|\n)\s*[A-Z]{3,6}\s+\(base currency\)\s+[+-]?[\d,]+(?:\.\d+)?(?:\s|$)/i.test(text);
+        const ready = accountCount === 1
+            && holdingsIndex >= 0
+            && cashIndex > holdingsIndex
+            && positionCount > 0
+            && hasNativeCash;
+        return {ready, reason: ready ? 'ready' : 'invalid_format', positionCount};
+    }
+
     function syncIbkrTradeNotificationsDisplay() {
         if (!(ibkrTradeNotificationsDisplay instanceof HTMLInputElement)) {
             return;
@@ -9357,6 +9165,38 @@ document.addEventListener('DOMContentLoaded', () => {
         ibkrTradeNotificationsDisplay.title = text;
     }
 
+    function syncIbkrHoldingsDisplay() {
+        if (!(ibkrHoldingsDisplay instanceof HTMLInputElement)) return;
+        const text = normalizeClipboardText(ibkrHoldingsTextInput?.value || '');
+        if (ibkrHoldingsPasteButton instanceof HTMLButtonElement) {
+            const isPasted = Boolean(text);
+            ibkrHoldingsPasteButton.classList.toggle('is-pasted', isPasted);
+            ibkrHoldingsPasteButton.setAttribute(
+                'aria-label',
+                isPasted
+                    ? 'IBKR Your Holdings page text pasted'
+                    : 'Paste IBKR Your Holdings page text from clipboard',
+            );
+            ibkrHoldingsPasteButton.setAttribute(
+                'title',
+                isPasted ? 'IBKR Your Holdings text pasted' : 'Paste from clipboard',
+            );
+        }
+        if (!text) {
+            ibkrHoldingsDisplay.value = '';
+            ibkrHoldingsDisplay.title = '';
+            return;
+        }
+        const validation = getIbkrHoldingsReadiness(text);
+        const positionLabel = validation.positionCount === 1
+            ? '1 position'
+            : `${validation.positionCount.toLocaleString('en-US')} positions`;
+        const lineCount = countClipboardLines(text).toLocaleString('en-US');
+        const charCount = text.length.toLocaleString('en-US');
+        ibkrHoldingsDisplay.value = `IBKR Your Holdings · ${positionLabel} · ${lineCount} lines · ${charCount} chars · ${validation.ready ? 'Ready' : 'Check format'}`;
+        ibkrHoldingsDisplay.title = text;
+    }
+
     async function pasteIbkrTradeNotificationsFromClipboard() {
         if (!navigator.clipboard?.readText) {
             setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
@@ -9373,7 +9213,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             ibkrTradeNotificationsTextInput.value = text;
             syncIbkrTradeNotificationsDisplay();
-            renderIbkrPositionCalibrationTable();
+            syncImportValidationState();
+            clearImportFeedback();
+        } catch (_error) {
+            setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
+        }
+    }
+
+    async function pasteIbkrHoldingsFromClipboard() {
+        if (!navigator.clipboard?.readText) {
+            setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
+            return;
+        }
+        try {
+            const text = normalizeClipboardText(await navigator.clipboard.readText());
+            if (!text) {
+                setImportFeedback('Clipboard is empty.', 'error');
+                return;
+            }
+            if (!(ibkrHoldingsTextInput instanceof HTMLTextAreaElement)) return;
+            ibkrHoldingsTextInput.value = text;
+            syncIbkrHoldingsDisplay();
             syncImportValidationState();
             clearImportFeedback();
         } catch (_error) {
@@ -9941,7 +9801,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (isBocHk
                         ? 'Imports one or more BOCHK Consolidated Statement PDFs, preserving HKD Savings, HKD Current, CNH (printed CNY/RMB), and USD subaccounts in the local ledger without clearing existing records.'
                         : (isIbkrWebPaste
-                            ? 'Paste the IBKR Trade Notifications page for an immediate provisional sync. Matching CSV or GainsKeeper files imported later replace the rounded web values.'
+                            ? 'Paste the IBKR Trade Notifications page for an immediate provisional sync. Optionally paste the full Your Holdings page to capture validated cash and positions without manual entry. Matching CSV or GainsKeeper files imported later replace rounded trade values.'
                         : (isIbkrGainskeeper
                             ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
@@ -12695,6 +12555,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ).trim();
         const ibkrTradeNotificationsReady = isIbkrWebPaste
             && isLikelyIbkrTradeNotificationsText(ibkrTradeNotificationsText);
+        const ibkrHoldingsText = String(ibkrHoldingsTextInput?.value || '').trim();
+        const ibkrHoldingsReady = !ibkrHoldingsText
+            || getIbkrHoldingsReadiness(ibkrHoldingsText).ready;
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
@@ -12749,7 +12612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
             || gainskeeperReady
-            || ibkrTradeNotificationsReady
+            || (ibkrTradeNotificationsReady && ibkrHoldingsReady)
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
@@ -12768,6 +12631,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(
             ibkrTradeNotificationsTextStatus,
             Boolean(ibkrTradeNotificationsReady),
+        );
+        setImportStatusIcon(
+            ibkrHoldingsTextStatus,
+            Boolean(ibkrHoldingsText && ibkrHoldingsReady),
         );
 
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
@@ -12898,11 +12765,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         setTimeout(() => {
             formContainer.style.opacity = '1';
-            renderIbkrPositionCalibrationTable();
             window.setTimeout(syncInvestmentImportContainerHeight, 180);
-            window.setTimeout(renderIbkrPositionCalibrationTable, 180);
             window.setTimeout(syncInvestmentImportContainerHeight, 360);
-            window.setTimeout(renderIbkrPositionCalibrationTable, 360);
         }, 50);
     }
 
@@ -13029,10 +12893,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             investmentUrlStateApplying = previousUrlStateApplying;
         }
-        clearStaleTransferReviewFeedback();
+        const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
+            ? [...investmentProcessedTransactionsCache]
+            : [];
+        clearStaleTransferReviewFeedback(processedTransactions);
         applyInvestmentUrlStateFromLocation({render: true});
         scheduleInvestmentSegmentedPillUpdate();
-        return { data, valuationStatus };
+        return { data, valuationStatus, processedTransactions };
     }
 
     bindInvestmentHistoryPagination();
@@ -13047,6 +12914,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bindInvestmentExportButton();
     syncInvestmentImportMode();
     syncIbkrTradeNotificationsDisplay();
+    syncIbkrHoldingsDisplay();
     syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
     // Re-force shared select refresh (the broker dropdown uses the backtest-shared-select machinery).
@@ -13108,9 +12976,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ibkrTradeNotificationsTextInput.addEventListener('input', () => {
             clearImportFeedback();
             syncIbkrTradeNotificationsDisplay();
-            if (getSelectedIbkrImportMode() === 'web_paste') {
-                renderIbkrPositionCalibrationTable();
-            }
+            syncImportValidationState();
+        });
+    }
+    if (ibkrHoldingsTextInput) {
+        ibkrHoldingsTextInput.addEventListener('input', () => {
+            clearImportFeedback();
+            syncIbkrHoldingsDisplay();
             syncImportValidationState();
         });
     }
@@ -13123,14 +12995,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-    if (ibkrTradeNotificationsCashInput) {
-        ibkrTradeNotificationsCashInput.addEventListener('input', () => {
-            clearImportFeedback();
-        });
-    }
     if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
         ibkrTradeNotificationsPasteButton.addEventListener('click', () => {
             pasteIbkrTradeNotificationsFromClipboard();
+        });
+    }
+    if (ibkrHoldingsPasteButton instanceof HTMLButtonElement) {
+        ibkrHoldingsPasteButton.addEventListener('click', () => {
+            pasteIbkrHoldingsFromClipboard();
         });
     }
     [
@@ -13251,23 +13123,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         'ibkr_trade_notifications_date',
                         String(ibkrTradeNotificationsDateInput?.value || '').trim(),
                     );
-                    const tradeNotificationsCash = String(
-                        ibkrTradeNotificationsCashInput?.value || ''
-                    ).trim();
-                    if (tradeNotificationsCash) {
-                        formData.append(
-                            'ibkr_trade_notifications_cash',
-                            tradeNotificationsCash,
+                    const holdingsText = String(ibkrHoldingsTextInput?.value || '').trim();
+                    if (holdingsText && !getIbkrHoldingsReadiness(holdingsText).ready) {
+                        setImportFeedback(
+                            'The pasted text does not look like the IBKR Your Holdings page.',
+                            'error',
                         );
+                        return;
                     }
-                    const tradeNotificationsPositions = String(
-                        ibkrTradeNotificationsPositionsInput?.value || ''
-                    ).trim();
-                    if (tradeNotificationsPositions) {
-                        formData.append(
-                            'ibkr_trade_notifications_positions',
-                            tradeNotificationsPositions,
-                        );
+                    if (holdingsText) {
+                        formData.append('ibkr_holdings_text', holdingsText);
                     }
                 } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
@@ -13419,6 +13284,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            const pendingTransferSourceKeysBeforeImport = (
+                getInvestmentPendingTransferSourceKeys(investmentProcessedTransactionsCache)
+            );
             investmentImportInFlight = true;
             syncImportValidationState();
             showInvestmentImportProgressModal(
@@ -13454,14 +13322,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     closeInvestmentImportForm();
                     setImportFeedback('Import committed. Refreshing the transaction table…', 'loading');
                     try {
-                        const { data: refreshedInvestmentData, valuationStatus } = await fetchInvestmentData({
+                        const {
+                            data: refreshedInvestmentData,
+                            valuationStatus,
+                            processedTransactions: refreshedProcessedTransactions,
+                        } = await fetchInvestmentData({
                             expectedStoreVersion: result.investment_store_version,
                         });
                         const feedbackImportSummary = resolveInvestmentImportFeedbackSummary({
                             refreshedSummary: refreshedInvestmentData?.summary,
                             importSummary: result.summary,
                         });
-                        const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
+                        const pendingTransferCount = countNewInvestmentPendingTransferRows({
+                            beforeSourceKeys: pendingTransferSourceKeysBeforeImport,
+                            refreshedTransactions: refreshedProcessedTransactions,
+                        });
                         const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
                         if (valuationNotice) {
                             setImportFeedback(
@@ -17504,9 +17379,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
         investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
-        if (getSelectedIbkrImportMode() === 'web_paste') {
-            renderIbkrPositionCalibrationTable();
-        }
         investmentReplaySnapshotsCache = Array.isArray(hsbcSettlementReplaySnapshots)
             ? hsbcSettlementReplaySnapshots
             : investmentProcessedTransactionsCache;
@@ -17711,9 +17583,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentProcessedTransactionsCache !== processed) {
             investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
             refreshInvestmentAvailableBrokerCodes();
-            if (getSelectedIbkrImportMode() === 'web_paste') {
-                renderIbkrPositionCalibrationTable();
-            }
         }
         if (activeInvestmentView === 'metrics') {
             ensureInvestmentMetricsBrokerScope();

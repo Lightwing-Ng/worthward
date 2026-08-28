@@ -1,4 +1,4 @@
-{# Code version: v1.11.0 #}
+{# Code version: v1.11.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -245,5 +245,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script type="module" src="{{ url_for('static', filename='assets/js/live-trading.js', v=version ~ '-live-trading-v1.13.2') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/live-trading.js', v=version ~ '-live-trading-v1.14.0') }}"></script>
 {% endblock %}

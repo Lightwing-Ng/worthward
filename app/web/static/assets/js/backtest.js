@@ -1,4 +1,4 @@
-/* Code version: v0.5.9 */
+/* Code version: v0.6.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -157,10 +157,24 @@
 		chart.options.scales.y.max = nextScale.max;
 	};
 
-	const formatBacktestYAxisTick = (value, index, ticks, fractionDigits) => {
+	const formatStockPriceAxisValue = (value) => {
+		if (typeof chartAxis.formatStockPriceAxisValue === "function") {
+			return chartAxis.formatStockPriceAxisValue(value);
+		}
+		const numericValue = Number(value);
+		if (!Number.isFinite(numericValue)) return "";
+		const fractionDigits = Math.abs(numericValue) >= 100 ? 0 : 2;
+		return numericValue.toLocaleString("en-US", {
+			minimumFractionDigits: fractionDigits,
+			maximumFractionDigits: fractionDigits,
+		});
+	};
+
+	const formatBacktestYAxisTick = (value, index, ticks, fractionDigits, valueFormatter = null) => {
 		if (index === 0 || index === ticks.length - 1) return "";
 		const numericValue = Number(value);
 		if (!Number.isFinite(numericValue)) return String(value ?? "");
+		if (typeof valueFormatter === "function") return valueFormatter(numericValue);
 		return numericValue.toLocaleString("en-US", {
 			minimumFractionDigits: fractionDigits,
 			maximumFractionDigits: fractionDigits,
@@ -534,12 +548,12 @@
 			},
 		};
 
-		const buildYAxisTicks = (fractionDigits) => ({
+		const buildYAxisTicks = (fractionDigits, valueFormatter = null) => ({
 			color: resolvedTheme.muted,
 			display: true,
 			padding: 8,
 			callback(value, index, ticks) {
-				return formatBacktestYAxisTick(value, index, ticks, fractionDigits);
+				return formatBacktestYAxisTick(value, index, ticks, fractionDigits, valueFormatter);
 			},
 		});
 
@@ -848,7 +862,7 @@
 					y: {
 						...commonOptions.scales.y,
 						...priceYScale,
-						ticks: buildYAxisTicks(2),
+						ticks: buildYAxisTicks(2, formatStockPriceAxisValue),
 					},
 				},
 			},

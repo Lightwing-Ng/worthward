@@ -1,7 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.82.7
+Code version: v0.83.1
+- Removed: Unreachable direct investment-ledger writes and the retired
+  standalone market-cap template mapping.
+- Changed: IBKR Web paste accepts a full Your Holdings clipboard capture as
+  the optional cash and position boundary instead of requiring manual fields.
 - Fixed: Exact current-day comparisons now resolve each ticker's live trading date in its own market timezone, so US series remain populated when an Asia/Shanghai date is already the next calendar day in New York.
 - Fixed: Multi-day Cost Distribution profiles normalize raw Longbridge OHLCV onto the chart's split-only price and share basis and never substitute narrow near-current trade statistics.
 - Added: Chip distribution payloads include optional current Longbridge circulating-share metadata for turnover-aware chip survival estimation.
@@ -318,7 +322,6 @@ from app.infrastructure.storage import (
     resolve_known_ticker_company_name,
     record_ticker_usage,
     record_strategy_usage,
-    save_investment_store_payload,
     top_used_strategies,
     update_investment_store_payload,
     verify_investment_source_artifacts,
@@ -1040,13 +1043,6 @@ def build_web_runtime() -> WebRuntime:
                 load_investment_store_payload(INVESTMENT_STORE_PATH)
             )
         )
-
-    def write_investment_payload(payload: dict[str, Any]) -> None:
-        normalized_payload = refresh_investment_security_transfer_reconciliation(
-            normalize_investment_payload_tickers(payload)
-        )
-        save_investment_store_payload(cast(dict[str, Any], normalized_payload), INVESTMENT_STORE_PATH)
-        invalidate_investment_transactions_cache()
 
     def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
         def is_test_account_identifier(value: object) -> bool:
@@ -4895,7 +4891,6 @@ def build_web_runtime() -> WebRuntime:
 
         template_name = {
             "tickers": "compare.html",
-            "market-caps": "market_cap_compare.html",
             "prices": "price_compare.html",
             "portfolio": "portfolio.html",
             "dca": "dca.html",
@@ -7109,6 +7104,9 @@ def build_web_runtime() -> WebRuntime:
                     trade_notifications_text = str(
                         request.form.get("ibkr_trade_notifications_text", "")
                     ).strip()
+                    holdings_text = str(
+                        request.form.get("ibkr_holdings_text", "")
+                    ).strip()
                     trade_notifications_date = str(
                         request.form.get("ibkr_trade_notifications_date", "")
                     ).strip()
@@ -7150,6 +7148,7 @@ def build_web_runtime() -> WebRuntime:
                         "web_pasted_text",
                         trade_notifications_text=trade_notifications_text,
                         trade_date=trade_notifications_date or None,
+                        holdings_text=holdings_text or None,
                         ending_cash=trade_notifications_cash or None,
                         ending_cash_by_currency=ending_cash_by_currency,
                         position_snapshot_text=trade_notifications_positions or None,
@@ -7166,6 +7165,11 @@ def build_web_runtime() -> WebRuntime:
                         "as an intraday boundary after the latest pasted fill. Exact pasted text is "
                         "retained locally as SHA-256-verified immutable evidence."
                     )
+                    if holdings_text:
+                        success_message += (
+                            " The pasted Your Holdings page supplied the validated current "
+                            "cash and position boundary and was retained as separate immutable evidence."
+                        )
                     imported_summary = imported_payload.get("summary")
                     if isinstance(imported_summary, dict) and imported_summary.get(
                         "position_snapshot_authoritative"

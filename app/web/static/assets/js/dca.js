@@ -1,4 +1,4 @@
-/* Code version: v0.1.21 */
+/* Code version: v0.1.23 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -181,12 +181,23 @@
             minimumFractionDigits: digits,
             maximumFractionDigits: digits,
         }).format(value);
-        const buildYAxisTicks = (fractionDigits) => ({
+        const formatStockPriceAxisValue = (value) => {
+            if (typeof chartAxis.formatStockPriceAxisValue === "function") {
+                return chartAxis.formatStockPriceAxisValue(value);
+            }
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) return "";
+            return formatMoney(numericValue, Math.abs(numericValue) >= 100 ? 0 : 2);
+        };
+        const buildYAxisTicks = (fractionDigits, valueFormatter = null) => ({
             color: resolvedTheme.muted,
             display: true,
             padding: 8,
             callback(value) {
-                return formatMoney(Number(value || 0), fractionDigits);
+                const numericValue = Number(value || 0);
+                return typeof valueFormatter === "function"
+                    ? valueFormatter(numericValue)
+                    : formatMoney(numericValue, fractionDigits);
             },
         });
         const escapeHtml = (value) => String(value)
@@ -362,7 +373,7 @@
                     y: {
                         ...commonOptions.scales.y,
                         ...priceYScale,
-                        ticks: buildYAxisTicks(2),
+                        ticks: buildYAxisTicks(2, formatStockPriceAxisValue),
                     },
                 },
             },

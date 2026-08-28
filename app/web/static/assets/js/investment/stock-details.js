@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.25.2
+ * Code version: v0.26.0
+ * - Changed: Stock-details price-axis labels now reuse the shared grouped
+ *   integer and sub-100 two-decimal display contract.
  * - Changed: Stock details imports the browser replay and linked-distribution
  *   display contract used by the Investment transaction history.
  * - Fixed: Average-price chart points and tooltip snapshots now use the
@@ -110,7 +112,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.25.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.26.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -2337,10 +2339,13 @@ export function createInvestmentStockDetailsUtils({
             }, 0);
             return maxFractionDigits > 0 ? Math.max(1, maxFractionDigits) : 0;
         };
-        const formatStockDetailsYAxisTickLabel = (value, ticks) => {
+        const formatStockDetailsYAxisTickLabel = (value) => {
             const numericValue = Number(value);
             if (!Number.isFinite(numericValue)) return '';
-            const fractionDigits = resolveStockDetailsYAxisFractionDigits(ticks);
+            if (typeof chartAxis.formatStockPriceAxisValue === 'function') {
+                return chartAxis.formatStockPriceAxisValue(numericValue);
+            }
+            const fractionDigits = Math.abs(numericValue) >= 100 ? 0 : 2;
             return new Intl.NumberFormat('en-US', {
                 minimumFractionDigits: fractionDigits,
                 maximumFractionDigits: fractionDigits,

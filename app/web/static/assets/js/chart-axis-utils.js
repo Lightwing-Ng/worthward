@@ -1,7 +1,9 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Added: Shared stock-price y-axis labels use grouped integers at or above
+ *   100 and fixed two-decimal labels below 100.
  */
 (function bootstrapChartAxisUtils(globalScope) {
     "use strict";
@@ -9,6 +11,15 @@
     const WIDE_CHART_BREAKPOINT_PX = 768;
     const WIDE_MAX_TICK_COUNT = 4;
     const NARROW_MAX_TICK_COUNT = 3;
+    const STOCK_PRICE_INTEGER_THRESHOLD = 100;
+    const STOCK_PRICE_INTEGER_FORMATTER = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    });
+    const STOCK_PRICE_DECIMAL_FORMATTER = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
     const CONTROLLED_RELATIVE_IMAGE_PATH_PREFIXES = Object.freeze([
         "/market-store/logos/",
         "/api/market-store/logos/",
@@ -38,6 +49,24 @@
     const sortedTickIndexes = (count, plotWidth) => (
         Array.from(buildTickIndexSet(count, plotWidth)).sort((left, right) => left - right)
     );
+
+    /**
+     * Format stock-price y-axis labels independently from currency minor units.
+     * Three-or-more-digit prices use integers; lower prices retain two decimals.
+     */
+    const formatStockPriceAxisValue = (value, options = {}) => {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return "";
+        const formatter = Math.abs(numericValue) >= STOCK_PRICE_INTEGER_THRESHOLD
+            ? STOCK_PRICE_INTEGER_FORMATTER
+            : STOCK_PRICE_DECIMAL_FORMATTER;
+        const formattedValue = formatter.format(numericValue);
+        const resolvedOptions = options && typeof options === "object" ? options : {};
+        const currency = String(resolvedOptions.currency || "").trim();
+        return resolvedOptions.showCurrency && currency
+            ? `${currency} ${formattedValue}`
+            : formattedValue;
+    };
 
     /**
      * Build the standard buy-and-hold comparison series used by Backtest.
@@ -117,13 +146,15 @@
 
     const api = Object.freeze({
         WIDE_CHART_BREAKPOINT_PX,
+        STOCK_PRICE_INTEGER_THRESHOLD,
         buildTickIndexSet,
         sortedTickIndexes,
+        formatStockPriceAxisValue,
         buildAllInEquitySeries,
         readThemeToken,
         readThemeTokens,
         normalizeSafeImageUrl,
-        CHART_AXIS_UTILS_VERSION: "v1.1.0",
+        CHART_AXIS_UTILS_VERSION: "v1.2.0",
     });
 
     globalScope.ANTIGRAVITY_CHART_AXIS = api;

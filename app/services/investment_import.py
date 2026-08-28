@@ -1,7 +1,10 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.101.0
+Code version: v0.102.0
+- Changed: IBKR Web paste can now parse a full Your Holdings clipboard
+  capture into its optional cash and position boundary, preserving the raw
+  snapshot as immutable source evidence and rejecting account mismatches.
 - Fixed: Schwab date-only same-day buy and sell rows now follow the
   export's source chronology instead of cash-safety ordering; an explicit
   user-confirmed sequence remains authoritative across re-imports.
@@ -376,7 +379,7 @@ IBKR_WEB_CAPTURE_METADATA_FIELDS = (
 )
 DEFAULT_CONVENTION_TIME = "20:00:00"
 DEFAULT_CONVENTION_TIMEZONE = "America/New_York"
-IBKR_WEB_DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
+IBKR_WEB_DISPLAY_TIMEZONE = ZoneInfo("Asia/Hong_Kong")
 IBKR_WEB_LEDGER_TIMEZONE = ZoneInfo(DEFAULT_CONVENTION_TIMEZONE)
 IBKR_WEB_TRADE_SUMMARY_PATTERN = re.compile(
     r"^(?P<action>Bot|Bought|Sold)\s+"
@@ -12689,7 +12692,7 @@ def _parse_ibkr_web_trade_notifications(
                 "execution_occurrence": occurrence_index + 1,
                 "venue": venue,
                 "source_datetime_raw": source_datetime_raw,
-                "source_timezone": "Asia/Shanghai",
+                "source_timezone": "Asia/Hong_Kong",
                 "has_intraday_timestamp": True,
                 "provisional_until_file_import": True,
             },
@@ -12861,7 +12864,7 @@ def _parse_ibkr_web_compact_trade_notifications(
                 "execution_key": execution_key,
                 "venue": venue,
                 "source_datetime_raw": f"{parsed_trade_date.isoformat()}, {displayed_time}",
-                "source_timezone": "Asia/Shanghai",
+                "source_timezone": "Asia/Hong_Kong",
                 "has_intraday_timestamp": True,
                 "fee_missing_from_capture": True,
                 "provisional_until_file_import": True,
@@ -12921,10 +12924,114 @@ def _parse_ibkr_web_compact_trade_notifications(
     return account, records
 
 
+def _parse_ibkr_web_holdings_capture(
+    raw_text: str,
+) -> tuple[str, dict[str, str], str]:
+    """Parse the account, native cash, and open positions from Your Holdings."""
+    normalized_text = str(raw_text or "").strip()
+    if not normalized_text:
+        raise ValueError("Please paste the IBKR Your Holdings page text.")
+    lines = [
+        normalized
+        for raw_line in normalized_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        for normalized in [_normalize_whitespace(raw_line)]
+        if normalized
+    ]
+    holdings_index = next(
+        (index for index, line in enumerate(lines) if line.casefold() == "your holdings"),
+        -1,
+    )
+    cash_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if index > holdings_index and line.casefold() == "cash holdings"
+        ),
+        -1,
+    )
+    if holdings_index < 0 or cash_index <= holdings_index:
+        raise ValueError(
+            "The pasted IBKR holdings text must contain both Your Holdings and Cash Holdings."
+        )
+
+    accounts = {
+        match.group(0).upper()
+        for match in re.finditer(r"\bU\d{6,12}\b", normalized_text, re.IGNORECASE)
+    }
+    if len(accounts) != 1:
+        raise ValueError(
+            "The pasted IBKR holdings text must identify exactly one IBKR account."
+        )
+    account = next(iter(accounts))
+
+    position_row_pattern = re.compile(
+        r"^(?P<quantity>[+-]?[\d,]+(?:\.\d+)?)\s+[-+]?\d"
+    )
+    positions: dict[str, str] = {}
+    excluded_tickers = {"USD", "HKD", "CNH", "CNY", "RMB", "ME", "IBOT"}
+    for index in range(holdings_index + 1, cash_index - 2):
+        raw_ticker = lines[index].upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", raw_ticker):
+            continue
+        ticker = normalize_ticker(raw_ticker)
+        if not ticker or ticker in excluded_tickers:
+            continue
+        description = lines[index + 1]
+        position_match = position_row_pattern.match(lines[index + 2])
+        if not re.search(r"[A-Za-z]", description) or position_match is None:
+            continue
+        quantity = _parse_decimal_text_or_none(position_match.group("quantity"))
+        if quantity is None or not quantity.is_finite() or quantity < ZERO:
+            raise ValueError(
+                f"The pasted IBKR holdings text contains an invalid {ticker} position."
+            )
+        if ticker in positions:
+            raise ValueError(
+                f"The pasted IBKR holdings text repeats the {ticker} position."
+            )
+        positions[ticker] = _decimal_to_str(quantity) or "0"
+    if not positions:
+        raise ValueError(
+            "The pasted IBKR holdings text does not contain a recognizable Instrument and Position row."
+        )
+
+    cash_row_pattern = re.compile(
+        r"^(?P<currency>[A-Z]{3,6})\s+\(base currency\)\s+"
+        r"(?P<amount>[+-]?[\d,]+(?:\.\d+)?)$",
+        re.IGNORECASE,
+    )
+    cash_balances: dict[str, str] = {}
+    for line in lines[cash_index + 1:]:
+        match = cash_row_pattern.fullmatch(line)
+        if match is None:
+            continue
+        currency = match.group("currency").upper()
+        amount = _parse_decimal_text_or_none(match.group("amount"))
+        if amount is None or not amount.is_finite():
+            raise ValueError(
+                f"The pasted IBKR holdings text contains an invalid {currency} cash balance."
+            )
+        if currency in cash_balances:
+            raise ValueError(
+                f"The pasted IBKR holdings text repeats the {currency} cash balance."
+            )
+        cash_balances[currency] = _decimal_to_str(amount) or "0"
+    if not cash_balances:
+        raise ValueError(
+            "The pasted IBKR holdings text does not contain a base-currency Cash Holdings row."
+        )
+
+    position_snapshot_text = "\n".join(
+        f"{ticker} {quantity}" for ticker, quantity in positions.items()
+    )
+    return account, cash_balances, position_snapshot_text
+
+
 def build_investment_payload_from_ibkr_web_pasted_text(
     *,
     trade_notifications_text: str,
     trade_date: str | None = None,
+    holdings_text: str | None = None,
     ending_cash: str | None = None,
     ending_cash_by_currency: dict[str, Any] | None = None,
     ending_cash_as_of_datetime: str | None = None,
@@ -12947,6 +13054,26 @@ def build_investment_payload_from_ibkr_web_pasted_text(
             normalized_text,
             trade_date=trade_date,
         )
+    normalized_holdings_text = str(holdings_text or "").strip()
+    if normalized_holdings_text:
+        if (
+            _normalize_text(ending_cash)
+            or _normalize_currency_balance_map(ending_cash_by_currency)
+            or _normalize_text(position_snapshot_text)
+        ):
+            raise ValueError(
+                "Use either the IBKR Your Holdings page text or legacy manual cash and position values, not both."
+            )
+        holdings_account, parsed_cash_balances, parsed_positions = (
+            _parse_ibkr_web_holdings_capture(normalized_holdings_text)
+        )
+        if not _accounts_are_compatible("ibkr", account, holdings_account):
+            raise ValueError(
+                "The IBKR Trade Notifications and Your Holdings captures belong to different accounts."
+            )
+        ending_cash_by_currency = parsed_cash_balances
+        ending_cash = parsed_cash_balances.get("USD")
+        position_snapshot_text = parsed_positions
     evidence_bytes = normalized_text.encode("utf-8")
     content_sha256 = hashlib.sha256(evidence_bytes).hexdigest()
     transaction_dates = [
@@ -12978,6 +13105,35 @@ def build_investment_payload_from_ibkr_web_pasted_text(
         "content_encoding": "base64",
         "content_base64": base64.b64encode(evidence_bytes).decode("ascii"),
     }
+    source_artifacts = [source_artifact]
+    if normalized_holdings_text:
+        holdings_evidence_bytes = normalized_holdings_text.encode("utf-8")
+        holdings_sha256 = hashlib.sha256(holdings_evidence_bytes).hexdigest()
+        source_artifact["related_sha256"] = holdings_sha256
+        source_artifacts.append({
+            "evidence_schema_version": "1.0",
+            "sha256": holdings_sha256,
+            "byte_count": len(holdings_evidence_bytes),
+            "filename": f"ibkr-web-holdings-{holdings_sha256[:12]}.txt",
+            "filenames": [f"ibkr-web-holdings-{holdings_sha256[:12]}.txt"],
+            "broker": "ibkr",
+            "account": account,
+            "source_kind": "ibkr_web_holdings_text",
+            "bundle_id": holdings_sha256,
+            "bundle_ids": [holdings_sha256],
+            "bundle_role": "holdings_snapshot",
+            "capture_scope": "current_account_snapshot",
+            "capture_role": "cash_and_positions_boundary",
+            "snapshot_relationship": "calibrates_trade_notifications_capture",
+            "related_sha256": content_sha256,
+            "statement_title": "IBKR Your Holdings",
+            "statement_period": "",
+            "statement_period_start": "",
+            "statement_period_end": "",
+            "statement_generated_at": "",
+            "content_encoding": "base64",
+            "content_base64": base64.b64encode(holdings_evidence_bytes).decode("ascii"),
+        })
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generator": {
@@ -12992,10 +13148,10 @@ def build_investment_payload_from_ibkr_web_pasted_text(
                 "America/New_York calendar date converted from the IBKR web display time."
             ),
             "datetime_field_meaning": (
-                "Intraday fill time converted from Asia/Shanghai to America/New_York."
+                "Intraday fill time converted from Asia/Hong_Kong to America/New_York."
             ),
             "timezone": DEFAULT_CONVENTION_TIMEZONE,
-            "source_timezone": "Asia/Shanghai",
+            "source_timezone": "Asia/Hong_Kong",
             "source_has_intraday_timestamp": True,
         },
         "summary": _build_summary(
@@ -13012,7 +13168,7 @@ def build_investment_payload_from_ibkr_web_pasted_text(
         "ending_cash": None,
         "position_snapshot": {},
         "performance_snapshot": {},
-        "source_artifacts": [source_artifact],
+        "source_artifacts": source_artifacts,
         "transactions": transactions,
     }
     for transaction in payload["transactions"]:
@@ -13128,6 +13284,10 @@ def build_investment_payload_from_ibkr_web_pasted_text(
                     "comparison_scope": "user_confirmed_current_position_snapshot",
                     "history_complete": False,
                 })
+        if normalized_holdings_text:
+            payload["summary"]["calibration_evidence_source"] = (
+                "ibkr_web_holdings_text"
+            )
     _attach_broker_summaries(payload)
     normalize_investment_payload_tickers(payload)
     payload["summary"]["json_size_bytes"] = len(

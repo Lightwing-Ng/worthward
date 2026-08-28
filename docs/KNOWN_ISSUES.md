@@ -1,12 +1,18 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.232.9`
+Documentation version: `v1.234.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
 references, transaction descriptions, or copied statement content.
 
 ## Investment imports
+
+- Import-complete `Transfer review` feedback is scoped to source rows that
+  became actionable during that import. Pre-existing `Unbound` rows remain
+  available in Transaction history but are not repeated as work created by an
+  unrelated later import; the comparison uses the completed post-commit
+  transaction render rather than a pre-import frontend count.
 
 - Schwab transaction exports classify `Non-Qualified Div` as dividend income
   and `NRA Tax Adj` or related withholding-tax actions as
@@ -33,13 +39,16 @@ references, transaction descriptions, or copied statement content.
   quantity, and gross trade value reconcile exactly. GainsKeeper commission
   and net-cash values remain authoritative when they differ from the web
   aggregate.
-- The optional cash and position boundary is user-entered at import time. It
-  is dated to the captured fill boundary and never creates synthetic trades.
+- The optional cash and position boundary comes from a paired IBKR Your
+  Holdings page paste. Its account must match Trade Notifications; its raw
+  text is retained as immutable evidence, it is dated to the captured fill
+  boundary, and it never creates synthetic trades.
 - When a Trade Notifications page mixes current-day time-only rows with dated
   history, select the displayed Hong Kong page date. It fills only the omitted
   current-day dates; dated rows remain independent broker evidence.
-- Position boundary text accepts one ticker and non-negative quantity per line.
-  Invalid or duplicate lines fail closed.
+- Your Holdings parsing requires one account, recognizable Instrument/Position
+  rows, and a base-currency Cash Holdings row. Invalid, duplicate, or
+  cross-account evidence fails closed.
 - Broker account validation is opt-in through local environment configuration;
   no personal account number is stored in source code.
 - Local source artifacts may contain sensitive financial evidence. Keep the

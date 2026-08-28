@@ -1,7 +1,10 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.8.5
+ * Code version: v1.9.0
+ * - Fixed: Import-complete transfer review is scoped to rows that became
+ *   actionable during the completed import, so pre-existing Unbound rows from
+ *   an older frontend cache cannot reappear as a new import warning.
  * - Changed: HSBC cash feedback now describes the signed net amount of visible
  *   unsettled buy and sell orders, while explicitly excluding unposted sell
  *   clearing fees and other settlement adjustments.
@@ -19,7 +22,34 @@
  * - Added: HSBC feedback states the authoritative transferable cash and the net pending-order display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.8.5';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.9.0';
+
+export function getInvestmentPendingTransferSourceKeys(processedTransactions = []) {
+    return new Set(
+        (Array.isArray(processedTransactions) ? processedTransactions : [])
+            .filter((transaction) => (
+                transaction?.manual_internal_transfer_needs_binding === true
+                && Number(transaction?.manual_internal_transfer_candidate_count || 0) > 0
+            ))
+            .map((transaction) => String(
+                transaction?.manual_internal_transfer_source_key
+                || transaction?.manual_internal_transfer_key
+                || '',
+            ).trim())
+            .filter(Boolean),
+    );
+}
+
+export function countNewInvestmentPendingTransferRows({
+    beforeSourceKeys = [],
+    refreshedTransactions = [],
+} = {}) {
+    const previousKeys = beforeSourceKeys instanceof Set
+        ? beforeSourceKeys
+        : new Set(Array.isArray(beforeSourceKeys) ? beforeSourceKeys : []);
+    const refreshedKeys = getInvestmentPendingTransferSourceKeys(refreshedTransactions);
+    return [...refreshedKeys].filter((sourceKey) => !previousKeys.has(sourceKey)).length;
+}
 
 export function resolveInvestmentImportFeedbackSummary({
     refreshedSummary = null,
@@ -77,8 +107,11 @@ export function buildIbkrImportFeedbackMessage({
         );
     }
     if (pendingTransferCount > 0) {
+        const transferReviewState = pendingTransferCount === 1
+            ? 'row became newly actionable and remains'
+            : 'rows became newly actionable and remain';
         items.push(
-            `<u>Transfer review</u>: <strong>${pendingTransferCount.toLocaleString('en-US')} internal-transfer ${pendingTransferCount === 1 ? 'row remains' : 'rows remain'} marked Unbound in Transaction history.</strong> Review only those rows; already-bound transfers require no further action.`
+            `<u>Transfer review</u>: <strong>${pendingTransferCount.toLocaleString('en-US')} internal-transfer ${transferReviewState} marked Unbound in Transaction history.</strong> Review only those newly affected rows; pre-existing and already-bound transfers require no further action.`
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();

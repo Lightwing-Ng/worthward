@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.8.5 */
+/* Tests for Investment import-feedback markup. Code version: v1.9.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,6 +8,8 @@ import {
     buildIbkrImportFeedbackMessage,
     buildInvestmentImportFeedbackListHtml,
     buildSchwabImportFeedbackMessage,
+    countNewInvestmentPendingTransferRows,
+    getInvestmentPendingTransferSourceKeys,
     resolveInvestmentImportFeedbackSummary,
 } from '../app/web/static/assets/js/investment/import-feedback.js';
 
@@ -21,7 +23,54 @@ function escapeHtml(value) {
 }
 
 test('module exposes a semantic cache-busting version', () => {
-    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.8.5');
+    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.9.0');
+});
+
+test('pending transfer source keys include only actionable Unbound rows', () => {
+    const keys = getInvestmentPendingTransferSourceKeys([
+        {
+            manual_internal_transfer_source_key: 'pending-a',
+            manual_internal_transfer_needs_binding: true,
+            manual_internal_transfer_candidate_count: 2,
+        },
+        {
+            manual_internal_transfer_source_key: 'bound-b',
+            manual_internal_transfer_needs_binding: false,
+            manual_internal_transfer_candidate_count: 1,
+        },
+        {
+            manual_internal_transfer_source_key: 'candidate-free-c',
+            manual_internal_transfer_needs_binding: true,
+            manual_internal_transfer_candidate_count: 0,
+        },
+    ]);
+
+    assert.deepEqual([...keys], ['pending-a']);
+});
+
+test('completed import counts only newly actionable transfer rows', () => {
+    const beforeSourceKeys = new Set(['stale-a', 'stale-b', 'stale-c']);
+    const refreshedTransactions = [
+        ...[...beforeSourceKeys].map((sourceKey) => ({
+            manual_internal_transfer_source_key: sourceKey,
+            manual_internal_transfer_needs_binding: true,
+            manual_internal_transfer_candidate_count: 1,
+        })),
+        {
+            manual_internal_transfer_source_key: 'new-d',
+            manual_internal_transfer_needs_binding: true,
+            manual_internal_transfer_candidate_count: 2,
+        },
+    ];
+
+    assert.equal(countNewInvestmentPendingTransferRows({
+        beforeSourceKeys,
+        refreshedTransactions: refreshedTransactions.slice(0, 3),
+    }), 0);
+    assert.equal(countNewInvestmentPendingTransferRows({
+        beforeSourceKeys,
+        refreshedTransactions,
+    }), 1);
 });
 
 test('feedback summary prefers the freshly reloaded merged ledger', () => {
@@ -66,8 +115,8 @@ test('IBKR feedback preserves verified source-evidence copy and singular transfe
     assert.match(message, /This run parsed <strong>12,345<\/strong> records, added <strong>1,234<\/strong>, and treated <strong>11,111<\/strong> as already present\./);
     assert.match(message, /SHA-256-verified immutable evidence/);
     assert.match(message, /Transfer review/);
-    assert.match(message, /<strong>1 internal-transfer row remains marked Unbound in Transaction history\.<\/strong>/);
-    assert.match(message, /already-bound transfers require no further action/);
+    assert.match(message, /<strong>1 internal-transfer row became newly actionable and remains marked Unbound in Transaction history\.<\/strong>/);
+    assert.match(message, /pre-existing and already-bound transfers require no further action/);
     assert.doesNotMatch(message, /Immediate action/);
     assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
 });
@@ -79,8 +128,8 @@ test('IBKR feedback escapes refresh and valuation notices while pluralizing tran
         pendingTransferCount: 2,
     }, {escapeHtml});
 
-    assert.match(message, /<strong>2 internal-transfer rows remain marked Unbound in Transaction history\.<\/strong>/);
-    assert.match(message, /Review only those rows/);
+    assert.match(message, /<strong>2 internal-transfer rows became newly actionable and remain marked Unbound in Transaction history\.<\/strong>/);
+    assert.match(message, /Review only those newly affected rows/);
     assert.doesNotMatch(message, /Immediate action/);
     assert.doesNotMatch(message, /notice-floating-banner-emphasis-danger/);
     assert.match(message, /&lt;rebuild&gt;&amp; retry/);

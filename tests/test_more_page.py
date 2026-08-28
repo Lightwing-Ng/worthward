@@ -1,7 +1,9 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.25.1
+Code version: v0.26.0
+- Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
+  capture as the current cash and position boundary.
 - Added: HSBC USD Savings settlement-only cash refreshes are accepted by
   route prevalidation without requiring Portfolio and Order Status text.
 """
@@ -1680,10 +1682,26 @@ Fees: 0.12
         ) / f"{artifact['storage_key']}.bin"
         self.assertTrue(evidence_path.exists())
 
-    def test_ibkr_current_web_paste_route_commits_split_fills_and_calibration(
+    def test_ibkr_current_web_paste_route_commits_split_fills_and_holdings_snapshot(
         self,
     ) -> None:
         client = create_app().test_client()
+        holdings_text = """Account
+U00000001
+Your Holdings
+Instrument Position Last Change %
+BETA
+BETA EXAMPLE COMPANY
+27 10.00 0.00%
+ALFA
+ALFA EXAMPLE FUND
+9 11.00 0.00%
+GAMMA
+GAMMA EXAMPLE FUND
+4.25 12.00 0.00%
+Cash Holdings
+USD (base currency) 123.45
+Total Cash (in USD) 123.45"""
 
         with patch(
             "app.web.runtime.ensure_latest_investment_daily_caches",
@@ -1698,8 +1716,7 @@ Fees: 0.12
                     "ibkr_trade_notifications_text": (
                         self._build_ibkr_current_web_trade_notifications_text()
                     ),
-                    "ibkr_trade_notifications_cash": "123.45",
-                    "ibkr_trade_notifications_positions": "BETA 27\nALFA 9\nGAMMA 4.25",
+                    "ibkr_holdings_text": holdings_text,
                 },
                 content_type="multipart/form-data",
             )
@@ -1711,6 +1728,7 @@ Fees: 0.12
             "user-confirmed current IBKR position snapshot",
             response_payload["message"],
         )
+        self.assertIn("pasted Your Holdings page", response_payload["message"])
         stored = load_investment_store_payload(self.investment_store_path)
         self.assertEqual(len(stored["transactions"]), 5)
         self.assertEqual(
@@ -1761,6 +1779,10 @@ Fees: 0.12
         self.assertEqual(
             stored["broker_summaries"]["ibkr"]["ending_cash"],
             "123.45",
+        )
+        self.assertEqual(
+            {artifact["source_kind"] for artifact in stored["source_artifacts"]},
+            {"ibkr_web_trade_notifications_text", "ibkr_web_holdings_text"},
         )
 
         net_amounts = [

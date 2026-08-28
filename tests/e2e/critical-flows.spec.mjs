@@ -1,4 +1,4 @@
-/* Code version: v1.167.84 */
+/* Code version: v1.171.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -157,6 +157,9 @@ const mockInvestmentReadApis = async (page, {
     brokerSummaries = {},
     positionSnapshot = null,
 } = {}) => {
+    const readTransactions = () => (
+        typeof transactions === 'function' ? transactions() : transactions
+    );
     const readRealtimeQuotes = () => (
         typeof realtimeQuotes === 'function' ? realtimeQuotes() : realtimeQuotes
     );
@@ -172,7 +175,7 @@ const mockInvestmentReadApis = async (page, {
             contentType: 'application/json',
             body: JSON.stringify({
                 success: true,
-                transactions,
+                transactions: readTransactions(),
                 starting_cash: startingCash,
                 base_currency: 'USD',
                 brokers,
@@ -1652,6 +1655,40 @@ test('keeps price subplot dates only on the bottom New York axis', async ({page}
     expect(axisVisibility).toEqual([false, false, true]);
 });
 
+test('formats every price-comparison y axis with the shared stock-price contract', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=QQQ&ticker=SPY&period=1y');
+    await page.waitForFunction(() => (
+        [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+
+    const highPriceContract = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const callback = chart.options.scales.y.ticks.callback;
+        return {
+            helperVersion: window.ANTIGRAVITY_CHART_AXIS?.CHART_AXIS_UTILS_VERSION || '',
+            samples: [1234, 567, 12.5, 5.5].map((value) => callback(value, 1, [{}, {}, {}])),
+            labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
+        };
+    });
+    expect(highPriceContract.helperVersion).toBe('v1.2.0');
+    expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
+    expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
+
+    await page.goto('/workspaces/prices?ticker=DRAM&ticker=SKHY&period=6mo');
+    await page.waitForFunction(() => (
+        [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+    const lowPriceLabels = await page.locator('[data-price-subplot][data-ticker="DRAM"] [data-price-subplot-canvas]').evaluate((canvas) => (
+        window.Chart.getChart(canvas).scales.y.ticks
+            .map((tick) => String(tick.label ?? ''))
+            .filter(Boolean)
+    ));
+    expect(lowPriceLabels.length).toBeGreaterThan(0);
+    expect(lowPriceLabels.every((label) => /^-?\d{1,2}\.\d{2}$/.test(label))).toBe(true);
+});
+
 test('connects daily price points across market-calendar gaps without filling missing history', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&range=6mo');
     await page.waitForFunction(() => (
@@ -2108,7 +2145,12 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
             const start = Date.UTC(2026, 4, 1);
             const basePrice = 100 + (itemIndex * 100);
             const rows = Array.from({length: 90}, (_, rowIndex) => {
-                const center = basePrice + (rowIndex * 0.11) + (Math.sin(rowIndex / 5) * 5);
+                const isHighVolumePhase = rowIndex >= 45 && rowIndex < 75;
+                const phaseOffset = rowIndex < 45 ? 0 : (isHighVolumePhase ? 70 : 20);
+                const center = basePrice
+                    + phaseOffset
+                    + ((rowIndex % 45) * 0.11)
+                    + (Math.sin(rowIndex / 5) * 5);
                 const timestamp = new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10);
                 return {
                     t: `${timestamp} 00:00`,
@@ -2116,7 +2158,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
                     h: center + 4.2,
                     l: center - 4.4,
                     c: center + 1.1,
-                    v: 100_000 + ((rowIndex % 11) * 35_000),
+                    v: (isHighVolumePhase ? 900_000 : 100_000) + ((rowIndex % 11) * 35_000),
                     synthetic: false,
                 };
             });
@@ -2213,6 +2255,77 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-progress="1.0000"]')).toHaveCount(4);
     await expect(page.locator('[data-chips-chart-canvas]')).toHaveCount(0);
     expect(fallbackRequests).toBe(1);
+
+    const fullRangePocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
+    ));
+    const historicalHoverPoint = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const rect = canvas.getBoundingClientRect();
+        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const dataIndex = 30;
+        return {
+            dataIndex,
+            x: rect.left + (chart.scales.x.getPixelForValue(dataIndex) * (rect.width / chart.width)),
+            y: rect.top + (chart.scales.y.getPixelForValue(item.prices[dataIndex]) * (rect.height / chart.height)),
+            outsideX: rect.left + 4,
+            outsideY: Math.max(0, rect.top - 8),
+        };
+    });
+    await page.mouse.move(historicalHoverPoint.x, historicalHoverPoint.y);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-snapshot-mode="cumulative-hover"]')).toHaveCount(4);
+    await expect(page.locator(`[data-price-subplot-canvas][data-chip-snapshot-index="${historicalHoverPoint.dataIndex}"]`)).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-snapshot-rows="31"]')).toHaveCount(4);
+    const historicalSnapshots = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => {
+            const chart = window.Chart.getChart(canvas);
+            return {
+                date: canvas.dataset.chipSnapshotDate,
+                poc: Number(canvas.dataset.chipPocPrice),
+                cacheSize: chart.$costDistributionContext.snapshots.size,
+                totalWeight: chart.$costDistribution.distribution.totalWeight,
+            };
+        })
+    ));
+    historicalSnapshots.forEach((snapshot, index) => {
+        expect(snapshot.date).toBe('2026-05-31 00:00');
+        expect(snapshot.poc).toBeLessThan(fullRangePocs[index] - 40);
+        expect(snapshot.totalWeight).toBeGreaterThan(0);
+        expect(snapshot.cacheSize).toBe(1);
+    });
+
+    await page.mouse.move(historicalHoverPoint.x, historicalHoverPoint.y + 4);
+    await expect.poll(() => page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => (
+        window.Chart.getChart(canvas).$costDistributionContext.snapshots.size
+    ))).toBe(1);
+
+    const laterHoverPoint = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const rect = canvas.getBoundingClientRect();
+        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const dataIndex = 70;
+        return {
+            dataIndex,
+            x: rect.left + (chart.scales.x.getPixelForValue(dataIndex) * (rect.width / chart.width)),
+            y: rect.top + (chart.scales.y.getPixelForValue(item.prices[dataIndex]) * (rect.height / chart.height)),
+        };
+    });
+    await page.mouse.move(laterHoverPoint.x, laterHoverPoint.y);
+    await expect(page.locator(`[data-price-subplot-canvas][data-chip-snapshot-index="${laterHoverPoint.dataIndex}"]`)).toHaveCount(4);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-snapshot-rows="71"]')).toHaveCount(4);
+    const laterPocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
+    ));
+    laterPocs.forEach((poc, index) => {
+        expect(poc).toBeGreaterThan(historicalSnapshots[index].poc + 40);
+    });
+
+    await page.mouse.move(historicalHoverPoint.outsideX, historicalHoverPoint.outsideY);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-snapshot-mode="full-range"]')).toHaveCount(4);
+    const restoredPocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
+    ));
+    restoredPocs.forEach((poc, index) => expect(poc).toBeCloseTo(fullRangePocs[index], 6));
 
     const chipGeometry = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
         const chart = window.Chart.getChart(canvas);
@@ -4190,33 +4303,12 @@ test('validates the investment import flow without mutating the local store', as
     });
     await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"]')).toBeVisible();
     await expect(page.locator('#ibkr_trade_notifications_text')).toBeEditable();
+    await expect(page.locator('#ibkr_holdings_text')).toBeEditable();
     await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
     await expect(page.locator('#ibkr_trade_notifications_date')).toHaveAttribute('type', 'hidden');
     await expect(page.getByRole('textbox', {name: 'Type page date'})).toBeVisible();
-    await expect(page.locator('[data-ibkr-calibration-table]')).toBeVisible();
-    await expect(page.locator('[data-ibkr-calibration-table] thead th')).toHaveText(['No.', 'Asset', 'Cash / quantity']);
-    await expect(page.locator('[data-ibkr-calibration-row]')).toHaveCount(5);
-    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)']);
-    await page.locator('#ibkr_trade_notifications_text').fill('HKD 1,000.00\nCNY 2,000.00');
-    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)', 'Cash (HKD)', 'Cash (CNH)']);
-    await page.locator('#ibkr_trade_notifications_text').fill('');
-    await expect(page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset')).toHaveText(['Cash (USD)']);
-    expect(await page.locator('[data-ibkr-calibration-row]').first().locator('td').first().evaluate((cell) => getComputedStyle(cell).textAlign)).toBe('center');
-    await expect(page.locator('[data-ibkr-calibration-asset]')).toHaveCount(4);
-    expect(await page.locator('[data-ibkr-calibration-asset]').evaluateAll((fields) => fields.map((field) => field.textContent.trim()))).toEqual(['QQQI', 'DRAM', 'IBKR', 'NVDA']);
-    await expect(page.locator('select[data-ibkr-calibration-asset]')).toHaveCount(0);
-    expect(await page.locator('[data-ibkr-calibration-quantity]').evaluateAll((fields) => fields.map((field) => field.value))).toEqual(['', '', '', '']);
-    const calibrationCashFields = page.locator('[data-ibkr-calibration-cash]');
-    await calibrationCashFields.first().fill('3323.1');
-    await calibrationCashFields.first().blur();
-    await expect(calibrationCashFields.first()).toHaveValue('3,323.10');
-    await expect(page.locator('#ibkr_trade_notifications_cash')).toHaveValue('3323.1');
-    await expect(page.locator('#ibkr_trade_notifications_cash_balances')).toHaveValue('{"USD":"3323.1"}');
-    const calibrationQuantityFields = page.locator('[data-ibkr-calibration-quantity]');
-    await calibrationQuantityFields.first().fill('1.2');
-    await calibrationQuantityFields.first().blur();
-    await expect(calibrationQuantityFields.first()).toHaveValue('1.2000');
-    await expect(page.locator('#ibkr_trade_notifications_positions')).toHaveValue('QQQI 1.2');
+    await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"] .investment-import-label-step')).toHaveText(['➊', '➋', '➌']);
+    await expect(page.locator('[data-ibkr-calibration-table], [data-ibkr-calibration-row], [data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]')).toHaveCount(0);
     const stickyImportMode = await page.locator('#investment_import_ibkr_mode').evaluate((mode) => {
         const stack = mode.closest('.investment-import-stack');
         if (!(stack instanceof HTMLElement)) return null;
@@ -4265,6 +4357,19 @@ test('validates the investment import flow without mutating the local store', as
     await page.locator('#ibkr_trade_notifications_paste_button').click();
     await expect(page.locator('#ibkr_trade_notifications_paste_button')).toHaveClass(/is-pasted/);
     await expect(page.locator('#investment_import_feedback')).toBeHidden();
+    await page.locator('#ibkr_holdings_text').evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                readText: async () => `Search\nAccount\nU00000001\nUSD\n1,234.56\nSettled Cash\n456.78\nYour Holdings\nInstrument Position Last Change %\nALFA\nALFA EXAMPLE FUND\n27 15.00 +0.10%\nBETA\nBETA EXAMPLE COMPANY\n3.9179 96.55 0.00%\nCash Holdings\nUSD (base currency) 456.78\nTotal Cash (in USD) 456.78\nData powered by`,
+            },
+        });
+    });
+    await page.locator('#ibkr_holdings_paste_button').click();
+    await expect(page.locator('#ibkr_holdings_paste_button')).toHaveClass(/is-pasted/);
+    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/IBKR Your Holdings · 2 positions .* Ready/);
+    await expect(page.locator('#ibkr_holdings_text_status')).toHaveClass(/is-visible/);
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
 
     await page.route('**/api/investment/imports/zircon-hk/validate', async (route) => {
         await route.fulfill({
@@ -4448,17 +4553,8 @@ test('keeps the IBKR file inputs compact', async ({page}) => {
     await expect(page.locator('#gainskeeper_files')).toHaveCSS('height', '30px');
 });
 
-test('shows only pasted-evidence non-USD cash rows in IBKR calibration', async ({page}) => {
-    await mockInvestmentReadApis(page, {
-        transactions: [],
-        brokerSummaries: {
-            ibkr: {
-                ending_cash_by_currency: {USD: '3323.1', HKD: '1000', CNH: '2000'},
-                position_snapshot_authoritative: true,
-                position_snapshot: {},
-            },
-        },
-    });
+test('validates the optional IBKR Your Holdings paste without manual calibration fields', async ({page}) => {
+    await mockInvestmentReadApis(page);
     await page.setViewportSize({width: 825, height: 773});
     await page.goto('/trade/investment');
     await page.locator('#toggle_form_button').click();
@@ -4469,24 +4565,97 @@ test('shows only pasted-evidence non-USD cash rows in IBKR calibration', async (
     await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
 
     await expect(page.locator('#ibkr_trade_notifications_display')).toHaveCSS('height', '30px');
+    await expect(page.locator('#ibkr_holdings_display')).toHaveCSS('height', '30px');
     await expect(page.locator(
         '#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value'
     )).toHaveCSS('height', '30px');
-
-    const cashAssets = page.locator('[data-ibkr-calibration-row][data-asset-kind="cash"] .investment-import-calibration-asset');
-    await expect(cashAssets).toHaveText(['Cash (USD)']);
+    await expect(page.locator('[data-ibkr-calibration-row], #ibkr_trade_notifications_cash, #ibkr_trade_notifications_positions')).toHaveCount(0);
 
     await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
-        input.value = 'Portfolio\nHKD 1,000.00\nCNY 2,000.00';
+        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n1/2/2025, 8:00 PM\n10.00\n10\nFees: 0.10';
         input.dispatchEvent(new Event('input', {bubbles: true}));
     });
-    await expect(cashAssets).toHaveText(['Cash (USD)', 'Cash (HKD)', 'Cash (CNH)']);
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
 
-    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
-        input.value = '';
+    await page.locator('#ibkr_holdings_text').evaluate((input) => {
+        input.value = 'Portfolio\nCash 123.45';
         input.dispatchEvent(new Event('input', {bubbles: true}));
     });
-    await expect(cashAssets).toHaveText(['Cash (USD)']);
+    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/Check format/);
+    await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
+
+    await page.locator('#ibkr_holdings_text').evaluate((input) => {
+        input.value = 'Account\nU00000001\nYour Holdings\nInstrument Position Last\nALFA\nALFA EXAMPLE FUND\n1 10.00 0.00%\nCash Holdings\nUSD (base currency) 123.45';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/1 position .* Ready/);
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+});
+
+test('omits pre-existing Unbound rows from a later IBKR import banner', async ({page}) => {
+    const transactions = [
+        {
+            ledger_no: 8_001,
+            broker: 'ibkr',
+            account: 'U00000001',
+            date: '2026-08-20',
+            type: 'withdrawal',
+            currency: 'USD',
+            amount: -1_000,
+            description: 'Existing transfer outflow',
+        },
+        {
+            ledger_no: 8_002,
+            broker: 'hsbc',
+            account: '000-000000-000',
+            date: '2026-08-20',
+            type: 'deposit',
+            currency: 'USD',
+            amount: 1_000,
+            description: 'Existing transfer deposit',
+        },
+    ];
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'hsbc'],
+        transactions: () => transactions,
+    });
+    await page.route('**/api/investment/transactions*', async (route) => {
+        if (route.request().method() === 'GET') {
+            await route.fallback();
+            return;
+        }
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                message: 'Imported 1 IBKR web transaction.',
+                freshness_refresh_failures: [],
+                summary: {
+                    incremental_import: {
+                        imported_record_count: 1,
+                        added_record_count: 0,
+                        duplicate_record_count: 1,
+                    },
+                },
+            }),
+        });
+    });
+
+    await page.goto('/trade/investment');
+    await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
+    await page.locator('#toggle_form_button').click();
+    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
+    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
+        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n8/20/2026, 8:00 PM\n10.00\n10\nFees: 0.10';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+    await page.locator('#investment_import_submit_button').click();
+
+    await expect(page.locator('#investment_import_feedback')).toBeVisible();
+    await expect(page.locator('#investment_import_feedback_message')).toContainText('IBKR import complete');
+    await expect(page.locator('#investment_import_feedback_message')).not.toContainText('Transfer review');
+    await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
 });
 
 test('validates HSBC cash-only paste and USD settlement refresh separately from the full snapshot', async ({page}) => {
@@ -7457,15 +7626,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.129.6',
+        entry: 'v2.132.0',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
-        importFeedback: 'v1.8.5',
+        importFeedback: 'v1.9.0',
         layout: 'v1.1.2',
         pagination: 'v1.4.0',
         realtime: 'v1.3.1',
         numericDisplay: 'v1.1.0',
-        stockDetails: 'v0.25.2',
+        stockDetails: 'v0.26.0',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.1',
         urlState: 'v1.2.0',
@@ -7473,12 +7642,12 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.25.2';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.26.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/import-feedback.js')
-            && url.searchParams.get('v') === 'investment-import-feedback-v1.8.5';
+            && url.searchParams.get('v') === 'investment-import-feedback-v1.9.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -12465,6 +12634,13 @@ test('draws the exact-price horizontal hover guide across every stock-details ra
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
 
     const canvas = page.locator('.investment-stock-details-price-chart-canvas');
+    await expect.poll(() => canvas.evaluate((element) => Boolean(element._investmentStockDetailsChart))).toBe(true);
+    const stockPriceAxisSamples = await canvas.evaluate((element) => {
+        const chart = element._investmentStockDetailsChart;
+        const callback = chart.options.scales.y.ticks.callback;
+        return [1234, 567, 12.5, 5.5].map((value) => callback(value, 1, [{}, {}, {}]));
+    });
+    expect(stockPriceAxisSamples).toEqual(['1,234', '567', '12.50', '5.50']);
     const ranges = ['1w', '3m', 'ytd', '1y', 'max', 'auto'];
     for (const range of ranges) {
         await canvas.evaluate((element) => {
@@ -15195,6 +15371,11 @@ test('formats Backtest price and equity axes with distinct precision', async ({p
             return {
                 labels: chart.scales?.y?.ticks?.map((tick) => String(tick.label ?? '')).filter(Boolean) || [],
                 width: chart.scales?.y?.width || 0,
+                samples: selector === '#tradePriceChart'
+                    ? [1234, 567, 12.5, 5.5].map((value) => (
+                        chart.options.scales.y.ticks.callback(value, 1, [{}, {}, {}])
+                    ))
+                    : [],
             };
         };
         return {
@@ -15210,9 +15391,16 @@ test('formats Backtest price and equity axes with distinct precision', async ({p
         }).toBe(true);
 
         const axes = await readAxes();
-        const priceTickPattern = /^-?\d{1,3}(,\d{3})*\.\d{2}$/;
+        const priceIntegerPattern = /^-?\d{1,3}(,\d{3})*$/;
+        const priceDecimalPattern = /^-?\d{1,2}\.\d{2}$/;
         const equityTickPattern = /^-?\d{1,3}(,\d{3})*$/;
-        expect(axes.price?.labels.every((label) => priceTickPattern.test(label))).toBe(true);
+        expect(axes.price?.labels.every((label) => {
+            const numericValue = Number(label.replaceAll(',', ''));
+            return Math.abs(numericValue) >= 100
+                ? priceIntegerPattern.test(label)
+                : priceDecimalPattern.test(label);
+        })).toBe(true);
+        expect(axes.price?.samples).toEqual(['1,234', '567', '12.50', '5.50']);
         expect(axes.equity?.labels.every((label) => equityTickPattern.test(label))).toBe(true);
         expect(axes.price?.width).toBeGreaterThanOrEqual(72);
         expect(axes.equity?.width).toBeGreaterThanOrEqual(72);

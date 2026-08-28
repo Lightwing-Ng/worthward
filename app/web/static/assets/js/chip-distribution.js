@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.4.0 */
 (() => {
 	const DEFAULT_BIN_COUNT = 100;
 	const MIN_BIN_COUNT = 80;
@@ -155,6 +155,8 @@
 		floatShares = null,
 		turnoverRateUnit = "ratio",
 		shareBasis = "",
+		priceMin = null,
+		priceMax = null,
 	} = {}) => {
 		const candles = normalizeOhlcvRows(rows, {
 			circulatingShares,
@@ -163,8 +165,17 @@
 		});
 		if (!candles.length) return null;
 		const resolvedBinCount = clampBinCount(binCount);
-		const minPrice = Math.min(...candles.map((row) => row.low));
-		const maxPrice = Math.max(...candles.map((row) => row.high));
+		const observedMinPrice = Math.min(...candles.map((row) => row.low));
+		const observedMaxPrice = Math.max(...candles.map((row) => row.high));
+		const requestedMinPrice = finiteNumber(priceMin);
+		const requestedMaxPrice = finiteNumber(priceMax);
+		const usesFixedPriceDomain = requestedMinPrice !== null
+			&& requestedMaxPrice !== null
+			&& requestedMaxPrice > requestedMinPrice
+			&& requestedMinPrice <= observedMinPrice
+			&& requestedMaxPrice >= observedMaxPrice;
+		const minPrice = usesFixedPriceDomain ? requestedMinPrice : observedMinPrice;
+		const maxPrice = usesFixedPriceDomain ? requestedMaxPrice : observedMaxPrice;
 		const priceSpan = Math.max(maxPrice - minPrice, Math.abs(minPrice) * 1e-6, 1e-6);
 		const binSize = priceSpan / resolvedBinCount;
 		const weights = Array(resolvedBinCount).fill(0);
@@ -237,6 +248,7 @@
 			metadata: {
 				model: applyTurnoverSurvival ? "turnover-survival" : "ohlcv-estimate",
 				decayApplied: applyTurnoverSurvival,
+				priceDomainFixed: usesFixedPriceDomain,
 				shareBasis: applyTurnoverSurvival ? (shareBasis || (resolvedShares ? "circulating-shares" : "turnover-rate")) : "",
 				circulatingShares: resolvedShares,
 				totalInputVolume,

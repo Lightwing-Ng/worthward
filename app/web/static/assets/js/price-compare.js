@@ -1,7 +1,8 @@
-/* Code version: v0.22.12 */
+/* Code version: v0.24.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
+	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 	if (!state) return;
 	const isPriceComparison = () => (
 		state.currentView === "prices"
@@ -20,6 +21,7 @@
 	const CHIP_HOVER_PRICE_MARKER_RADIUS = 3;
 	const CHIP_DISTRIBUTION_BIN_COUNT = 100;
 	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
+	const CHIP_SNAPSHOT_CACHE_LIMIT = 48;
 	const CHIPS_PAYLOAD_CACHE_LIMIT = 64;
 	const PRICE_LEVEL_MINIMUM_HISTORICAL_RANGE_COVERAGE = 0.35;
 	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
@@ -51,6 +53,10 @@
 	let chipsRequestKeyInFlight = "";
 	let sharedHoverIndex = -1;
 	let chipHoverState = null;
+	let activeChipSnapshotIndex = -1;
+	let activeChipSnapshotDate = "";
+	let pendingChipSnapshot = null;
+	let chipSnapshotFrame = 0;
 	let cancelChipRevealMotion = null;
 	let chipRevealLogoOrigins = new Map();
 	const chipRevealMotion = {
@@ -312,11 +318,14 @@
 	const formatPriceAxis = (value, currency, showCurrency) => {
 		const numeric = finiteNumber(value);
 		if (numeric === null) return "";
-		if (typeof bootstrap.currencyDisplay?.formatAxis === "function") {
-			return bootstrap.currencyDisplay.formatAxis(numeric, currency, showCurrency);
+		if (typeof chartAxis.formatStockPriceAxisValue === "function") {
+			return chartAxis.formatStockPriceAxisValue(numeric, {currency, showCurrency});
 		}
-		const fractionDigits = ["JPY", "KRW"].includes(currency) ? 0 : 2;
-		const formatted = numeric.toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: fractionDigits});
+		const fractionDigits = Math.abs(numeric) >= 100 ? 0 : 2;
+		const formatted = numeric.toLocaleString("en-US", {
+			minimumFractionDigits: fractionDigits,
+			maximumFractionDigits: fractionDigits,
+		});
 		return showCurrency ? `${currency} ${formatted}` : formatted;
 	};
 
@@ -770,19 +779,25 @@
 		return distribution;
 	};
 
-	const getCachedOhlcvChipDistribution = (item, fallbackItem, period) => {
-		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
-		if (!calculator) return null;
-		const ohlcvSource = [item, fallbackItem]
-			.filter((candidate) => hasUsableOhlcv(candidate))
-			.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
-		if (!ohlcvSource) return null;
+	const resolveOhlcvChipSource = (item, fallbackItem) => [item, fallbackItem]
+		.filter((candidate) => hasUsableOhlcv(candidate))
+		.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
+
+	const resolveChipModelInputs = (ohlcvSource, item, fallbackItem) => {
 		const metadataSource = [ohlcvSource, item, fallbackItem]
 			.find((candidate) => finiteNumber(candidate?.circulatingShares) !== null) || {};
-		const modelInputs = {
+		return {
 			circulatingShares: finiteNumber(metadataSource.circulatingShares),
 			shareBasis: metadataSource.shareBasis || "",
 		};
+	};
+
+	const getCachedOhlcvChipDistribution = (item, fallbackItem, period) => {
+		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		if (!calculator) return null;
+		const ohlcvSource = resolveOhlcvChipSource(item, fallbackItem);
+		if (!ohlcvSource) return null;
+		const modelInputs = resolveChipModelInputs(ohlcvSource, item, fallbackItem);
 		const key = chipDistributionSignature(item.ticker, period, "ohlcv-estimate", ohlcvSource.ohlcv, modelInputs);
 		return chipDistributionCache.get(key) || cacheChipDistribution(
 			key,
@@ -820,6 +835,154 @@
 			return ohlcvDistribution;
 		}
 		return priceLevelDistribution;
+	};
+
+	const normalizeChipSnapshotTimestamp = (value) => {
+		const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+		if (!match) return "";
+		return `${match[1]}-${match[2]}-${match[3]} ${match[4] || "00"}:${match[5] || "00"}`;
+	};
+
+	const findSnapshotCurrentPrice = (prices, dataIndex, rows) => {
+		for (let index = Math.min(dataIndex, prices.length - 1); index >= 0; index -= 1) {
+			const value = finiteNumber(prices[index]);
+			if (value !== null) return value;
+		}
+		return finiteNumber(rows[rows.length - 1]?.c ?? rows[rows.length - 1]?.close);
+	};
+
+	const createChipSnapshotContext = ({
+		item,
+		fallbackItem,
+		period,
+		prices,
+		fullState,
+	}) => {
+		const ohlcvSource = resolveOhlcvChipSource(item, fallbackItem);
+		const historicalDistribution = getCachedOhlcvChipDistribution(item, fallbackItem, period);
+		if (!ohlcvSource || !historicalDistribution) return null;
+		const datedRows = ohlcvSource.ohlcv
+			.map((row) => ({row, timestamp: normalizeChipSnapshotTimestamp(row?.t ?? row?.timestamp ?? row?.date)}))
+			.filter(({timestamp}) => timestamp)
+			.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+		if (!datedRows.length) return null;
+		return {
+			datedRows,
+			prices,
+			modelInputs: resolveChipModelInputs(ohlcvSource, item, fallbackItem),
+			priceMin: historicalDistribution.minPrice,
+			priceMax: historicalDistribution.maxPrice,
+			fullState,
+			snapshots: new Map(),
+		};
+	};
+
+	const getChipSnapshotState = (context, dataIndex, cutoffDate) => {
+		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		const cutoffTimestamp = normalizeChipSnapshotTimestamp(cutoffDate);
+		if (!calculator || !context || !cutoffTimestamp) return null;
+		const cacheKey = `${dataIndex}:${cutoffTimestamp}`;
+		const cached = context.snapshots.get(cacheKey);
+		if (cached) {
+			context.snapshots.delete(cacheKey);
+			context.snapshots.set(cacheKey, cached);
+			return cached;
+		}
+		const rows = context.datedRows
+			.filter(({timestamp}) => timestamp <= cutoffTimestamp)
+			.map(({row}) => row);
+		const distribution = rows.length
+			? calculator.calculateChipDistribution(rows, {
+				binCount: CHIP_DISTRIBUTION_BIN_COUNT,
+				...context.modelInputs,
+				priceMin: context.priceMin,
+				priceMax: context.priceMax,
+			})
+			: null;
+		const currentPrice = findSnapshotCurrentPrice(context.prices, dataIndex, rows);
+		const snapshot = {
+			distribution,
+			statistics: calculator.calculateChipStatistics(distribution, currentPrice),
+			currentPrice,
+			snapshotMode: "cumulative-hover",
+			snapshotIndex: dataIndex,
+			snapshotDate: cutoffTimestamp,
+			snapshotRows: rows.length,
+		};
+		context.snapshots.set(cacheKey, snapshot);
+		while (context.snapshots.size > CHIP_SNAPSHOT_CACHE_LIMIT) {
+			context.snapshots.delete(context.snapshots.keys().next().value);
+		}
+		return snapshot;
+	};
+
+	const withChipPriceMapping = (chart, state) => state ? {
+		...state,
+		priceToCanvasY: (price) => chart.scales.y.getPixelForValue(price),
+	} : null;
+
+	const syncChipDistributionDataset = (canvas, state) => {
+		const distribution = state?.distribution;
+		const statistics = state?.statistics;
+		const bins = Array.isArray(distribution?.bins) ? distribution.bins : [];
+		canvas.dataset.chipSource = distribution?.source || "";
+		canvas.dataset.chipModel = distribution?.model || "";
+		canvas.dataset.chipDecayApplied = distribution?.decayApplied ? "1" : "0";
+		canvas.dataset.chipShareBasis = distribution?.shareBasis || "";
+		canvas.dataset.chipAverageTurnoverRate = finiteNumber(distribution?.averageTurnoverRate)?.toFixed(6) || "";
+		canvas.dataset.chipCostRangeMethod = statistics?.costRangeMethod || "";
+		canvas.dataset.chipBinCount = String(bins.length);
+		canvas.dataset.chipRowCount = String(bins.length);
+		canvas.dataset.chipPopulatedBinCount = String(bins.filter((bin) => bin.weight > 0).length);
+		canvas.dataset.chipPocPrice = finiteNumber(statistics?.pocPrice)?.toFixed(6) || "";
+		canvas.dataset.chipWeightedAverageCost = finiteNumber(statistics?.weightedAverageCost)?.toFixed(6) || "";
+		canvas.dataset.chipProfitRatio = finiteNumber(statistics?.profitRatio)?.toFixed(6) || "";
+		canvas.dataset.chipCostRange70 = Array.isArray(statistics?.costRange70) ? statistics.costRange70.join(":") : "";
+		canvas.dataset.chipCostRange90 = Array.isArray(statistics?.costRange90) ? statistics.costRange90.join(":") : "";
+		canvas.dataset.chipSnapshotMode = state?.snapshotMode || "full-range";
+		canvas.dataset.chipSnapshotIndex = Number.isInteger(state?.snapshotIndex) ? String(state.snapshotIndex) : "";
+		canvas.dataset.chipSnapshotDate = state?.snapshotDate || "";
+		canvas.dataset.chipSnapshotRows = String(Math.max(0, Number(state?.snapshotRows) || 0));
+	};
+
+	const applyChipSnapshot = (dataIndex, cutoffDate) => {
+		activeChipSnapshotIndex = dataIndex;
+		activeChipSnapshotDate = cutoffDate;
+		priceCharts.forEach((chart) => {
+			const context = chart.$costDistributionContext;
+			if (!context) return;
+			const snapshot = getChipSnapshotState(context, dataIndex, cutoffDate);
+			if (!snapshot) return;
+			chart.$costDistribution = withChipPriceMapping(chart, snapshot);
+			syncChipDistributionDataset(chart.canvas, snapshot);
+		});
+		drawSharedHoverGuides();
+	};
+
+	const scheduleChipSnapshot = (dataIndex, cutoffDate) => {
+		if (activeChipSnapshotIndex === dataIndex && activeChipSnapshotDate === cutoffDate) return;
+		pendingChipSnapshot = {dataIndex, cutoffDate};
+		if (chipSnapshotFrame) return;
+		chipSnapshotFrame = window.requestAnimationFrame(() => {
+			chipSnapshotFrame = 0;
+			const pending = pendingChipSnapshot;
+			pendingChipSnapshot = null;
+			if (pending) applyChipSnapshot(pending.dataIndex, pending.cutoffDate);
+		});
+	};
+
+	const restoreFullChipDistributions = () => {
+		if (chipSnapshotFrame) window.cancelAnimationFrame(chipSnapshotFrame);
+		chipSnapshotFrame = 0;
+		pendingChipSnapshot = null;
+		activeChipSnapshotIndex = -1;
+		activeChipSnapshotDate = "";
+		priceCharts.forEach((chart) => {
+			const fullState = chart.$costDistributionContext?.fullState;
+			if (!fullState) return;
+			chart.$costDistribution = withChipPriceMapping(chart, fullState);
+			syncChipDistributionDataset(chart.canvas, fullState);
+		});
 	};
 
 	const getChipPanelWidth = (chart) => {
@@ -1005,9 +1168,11 @@
 	};
 
 	const hideSharedHover = () => {
-		if (sharedHoverIndex < 0 && !document.querySelector(".price-shared-tooltip.is-visible")) return;
+		const hasChipSnapshot = activeChipSnapshotIndex >= 0 || Boolean(pendingChipSnapshot) || chipSnapshotFrame > 0;
+		if (sharedHoverIndex < 0 && !chipHoverState && !hasChipSnapshot && !document.querySelector(".price-shared-tooltip.is-visible")) return;
 		sharedHoverIndex = -1;
 		chipHoverState = null;
+		restoreFullChipDistributions();
 		document.querySelector(".price-shared-tooltip")?.classList.remove("is-visible");
 		drawSharedHoverGuides();
 	};
@@ -1026,6 +1191,7 @@
 		const rawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
 		const fallbackDates = Array.isArray(series[0]?.dates) ? series[0].dates : [];
 		const rawDate = rawDates[dataIndex] || fallbackDates[dataIndex] || "";
+		if (rawDate) scheduleChipSnapshot(dataIndex, rawDate);
 		const dateElement = tooltip.querySelector(".chart-tooltip-date");
 		const listElement = tooltip.querySelector(".chart-tooltip-list");
 		if (dateElement) dateElement.innerHTML = formatSharedTooltipDate(
@@ -1552,6 +1718,24 @@
 			const chipStatistics = chipsEnabled
 				? window.ANTIGRAVITY_CHIP_DISTRIBUTION?.calculateChipStatistics(chipDistribution, lastPrice)
 				: null;
+			const fullChipState = chipDistribution ? {
+				distribution: chipDistribution,
+				statistics: chipStatistics,
+				currentPrice: lastPrice,
+				snapshotMode: "full-range",
+				snapshotIndex: null,
+				snapshotDate: "",
+				snapshotRows: resolveOhlcvChipSource(item, fallbackChipItem)?.ohlcv?.length || 0,
+			} : null;
+			const chipSnapshotContext = chipsEnabled && fullChipState
+				? createChipSnapshotContext({
+					item,
+					fallbackItem: fallbackChipItem,
+					period: requestedPeriod,
+					prices,
+					fullState: fullChipState,
+				})
+				: null;
 			const chipPriceMin = finiteNumber(chipDistribution?.minPrice);
 			const chipPriceMax = finiteNumber(chipDistribution?.maxPrice);
 			const axisPriceValues = [candlePriceMin, candlePriceMax, chipPriceMin, chipPriceMax]
@@ -1630,14 +1814,17 @@
 			const chipDistributionPlugin = {
 				id: `priceChipDistribution${index}`,
 				beforeDatasetsDraw(chart) {
-					if (!chipsEnabled || !chipBins.length || !chart.chartArea || !chart.scales?.y) return;
+					const activeState = chart.$costDistribution || fullChipState;
+					const activeDistribution = activeState?.distribution;
+					const activeBins = Array.isArray(activeDistribution?.bins) ? activeDistribution.bins : [];
+					if (!chipsEnabled || !activeBins.length || !chart.chartArea || !chart.scales?.y) return;
 					const bounds = getChipPanelBounds(chart);
 					const ctx = chart.ctx;
 					ctx.save();
 					ctx.beginPath();
 					ctx.rect(bounds.left, chart.chartArea.top, bounds.width, chart.chartArea.height);
 					ctx.clip();
-					chipBins.forEach((bin) => {
+					activeBins.forEach((bin) => {
 						if (bin.weight <= 0 || bounds.width <= 0) return;
 						const topY = chart.scales.y.getPixelForValue(bin.high);
 						const bottomY = chart.scales.y.getPixelForValue(bin.low);
@@ -1651,7 +1838,7 @@
 						const barY = clippedTop + ((rawHeight - barHeight) / 2);
 						const normalizedSegments = [{
 							width: Math.max(0, Math.min(1, finiteNumber(bin.normalizedWidth) || 0)),
-							color: chipBinIsLoss(bin, lastPrice) ? theme.secondary : theme.positive,
+							color: chipBinIsLoss(bin, activeState.currentPrice) ? theme.secondary : theme.positive,
 						}];
 						let segmentX = bounds.left;
 						const revealScale = chipRevealMotion.active
@@ -1661,7 +1848,7 @@
 							const segmentWidth = bounds.width * Math.max(0, Math.min(1, width)) * revealScale;
 							if (segmentWidth <= 0) return;
 							ctx.fillStyle = color;
-							ctx.globalAlpha = bin.index === chipDistribution.pocIndex ? 0.68 : 0.52;
+							ctx.globalAlpha = bin.index === activeDistribution.pocIndex ? 0.68 : 0.52;
 							ctx.fillRect(segmentX, barY, segmentWidth, barHeight);
 							segmentX += segmentWidth;
 						});
@@ -1671,9 +1858,11 @@
 				},
 				afterDatasetsDraw(chart) {
 					if (!chipsEnabled || chipHoverState?.chart !== chart) return;
-					const bin = chipBins[chipHoverState.binIndex];
+					const activeDistribution = (chart.$costDistribution || fullChipState)?.distribution;
+					const activeBins = Array.isArray(activeDistribution?.bins) ? activeDistribution.bins : [];
+					const bin = activeBins[chipHoverState.binIndex];
 					if (!bin || !chart.chartArea || !chart.scales?.y) return;
-					const marker = resolveChipHoverPriceMarker(chart, chipBins);
+					const marker = resolveChipHoverPriceMarker(chart, activeBins);
 					const bounds = getChipPanelBounds(chart);
 					if (!marker) return;
 					chart.ctx.save();
@@ -1981,15 +2170,17 @@
 					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot() && marketSessionEvents.length ? 22 : 4, left: 0}},
 					interaction: {mode: "index", intersect: false},
 					onHover(event, activeElements, chartInstance) {
+						const activeCostState = chartInstance.$costDistribution || fullChipState;
+						const activeDistribution = activeCostState?.distribution;
 						const chipBinIndex = chipsEnabled
-							? getChipBinIndexAtPoint(chartInstance, chipDistribution, event)
+							? getChipBinIndexAtPoint(chartInstance, activeDistribution, event)
 							: -1;
 						if (chipBinIndex >= 0) {
 							updateChipHover(chipBinIndex, chartInstance, event, {
 								ticker: item.ticker,
-								distribution: chipDistribution,
-								statistics: chipStatistics,
-								currentPrice: lastPrice,
+								distribution: activeDistribution,
+								statistics: activeCostState?.statistics,
+								currentPrice: activeCostState?.currentPrice,
 								currency,
 							});
 							return;
@@ -2045,15 +2236,17 @@
 				},
 				plugins: [chipDistributionLayoutPlugin, chipDistributionPlugin, dynamicScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
 			});
-			chart.$costDistribution = chipsEnabled && chipDistribution ? {
-				distribution: chipDistribution,
-				statistics: chipStatistics,
-				currentPrice: lastPrice,
-				priceToCanvasY: (price) => chart.scales.y.getPixelForValue(price),
-			} : null;
+			chart.$costDistributionContext = chipSnapshotContext;
+			chart.$costDistribution = chipsEnabled && fullChipState
+				? withChipPriceMapping(chart, fullChipState)
+				: null;
+			if (chart.$costDistribution) syncChipDistributionDataset(canvas, fullChipState);
 			priceCharts.set(index, chart);
 			canvas.onpointermove = (event) => {
-				if (!chipsEnabled || !chipBins.length) return;
+				const activeCostState = chart.$costDistribution || fullChipState;
+				const activeDistribution = activeCostState?.distribution;
+				const activeBins = Array.isArray(activeDistribution?.bins) ? activeDistribution.bins : [];
+				if (!chipsEnabled || !activeBins.length) return;
 				const rect = canvas.getBoundingClientRect();
 				const scaleX = chart.width / Math.max(rect.width, 1);
 				const scaleY = chart.height / Math.max(rect.height, 1);
@@ -2061,13 +2254,13 @@
 					x: (event.clientX - rect.left) * scaleX,
 					y: (event.clientY - rect.top) * scaleY,
 				};
-				const chipBinIndex = getChipBinIndexAtPoint(chart, chipDistribution, point);
+				const chipBinIndex = getChipBinIndexAtPoint(chart, activeDistribution, point);
 				if (chipBinIndex >= 0) {
 					updateChipHover(chipBinIndex, chart, point, {
 						ticker: item.ticker,
-						distribution: chipDistribution,
-						statistics: chipStatistics,
-						currentPrice: lastPrice,
+						distribution: activeDistribution,
+						statistics: activeCostState?.statistics,
+						currentPrice: activeCostState?.currentPrice,
 						currency,
 					});
 				} else if (chipHoverState?.chart === chart) {

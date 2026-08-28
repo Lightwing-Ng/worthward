@@ -1,4 +1,4 @@
-/* Code version: v0.21.6 */
+/* Code version: v0.22.0 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
 import {
@@ -8,6 +8,7 @@ import {
 
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
     let settingsContext = null;
     let localStorePaginationRequest = null;
     let localStorePaginationRequestGeneration = 0;
@@ -1807,7 +1808,19 @@ import {
             : ["1 Jan 2026", "27 Mar 2026", "18 Jun 2026"];
 
         context.font = labelFont;
-        const formatShareChartAxisValue = (value) => value.toLocaleString("en-US");
+        const formatShareChartAxisValue = (value) => {
+            if (isStockDetailsChart || isTradePriceChart) {
+                if (typeof chartAxis.formatStockPriceAxisValue === "function") {
+                    return chartAxis.formatStockPriceAxisValue(value);
+                }
+                const fractionDigits = Math.abs(value) >= 100 ? 0 : 2;
+                return value.toLocaleString("en-US", {
+                    minimumFractionDigits: fractionDigits,
+                    maximumFractionDigits: fractionDigits,
+                });
+            }
+            return value.toLocaleString("en-US");
+        };
         const yAxisLabelWidth = Math.max(
             ...yAxisValues.map((value) => context.measureText(formatShareChartAxisValue(value)).width),
             0,

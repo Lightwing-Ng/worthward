@@ -1,4 +1,4 @@
-/* Code version: v1.75.54 */
+/* Code version: v1.76.0 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4555,72 +4555,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-import-paste-button.is-pasted .investment-import-paste-button-icon {
     mask-image: url("/static/images/checkmark.circle.fill.green.svg");
     -webkit-mask-image: url("/static/images/checkmark.circle.fill.green.svg");
-}
-
-.investment-import-calibration-table-shell {
-    width: 100%;
-    max-height: min(34vh, 360px);
-    overflow: auto;
-    border-radius: 10px;
-    background: var(--panel-strong);
-    scrollbar-gutter: stable;
-}
-
-.investment-import-calibration-table {
-    --scrollable-data-table-min-width: 0px;
-    min-width: 0;
-    table-layout: fixed;
-}
-
-.investment-import-calibration-column-number {
-    width: 12%;
-}
-
-.investment-import-calibration-column-asset {
-    width: 48%;
-}
-
-.investment-import-calibration-column-quantity {
-    width: 40%;
-}
-
-.investment-import-calibration-table th,
-.investment-import-calibration-table td {
-    box-sizing: border-box;
-}
-
-.investment-import-calibration-table th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.investment-import-calibration-cell {
-    vertical-align: middle;
-}
-
-.settings-table.investment-import-calibration-table .investment-import-calibration-cell-number {
-    text-align: center;
-}
-
-.investment-import-calibration-cell-quantity {
-    text-align: right;
-}
-
-.investment-import-calibration-input {
-    width: 100%;
-    min-width: 0;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.investment-import-calibration-asset {
-    width: 100%;
-    min-width: 0;
-}
-
-.investment-import-calibration-table tbody tr:first-child {
-    background: color-mix(in srgb, var(--theme-accent-primary) 7%, transparent);
 }
 
 .investment-import-code-textarea {
