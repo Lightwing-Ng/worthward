@@ -1,8 +1,9 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.5.2
-- Changed: Longbridge HTTP requests now reuse the verified proxy-aware transport.
+Code version: v0.5.3
+- Removed: The unused Bearer-token REST asset transport. Account assets use
+  the Longbridge CLI, while order operations use the supported SDK boundary.
 """
 
 from __future__ import annotations
@@ -10,10 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from importlib import import_module
-import json
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request
 
 from app.core.broker_settings import (
     BrokerSettings,
@@ -22,10 +20,6 @@ from app.core.broker_settings import (
     uses_longbridge_cli_oauth,
 )
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
-from app.infrastructure.runtime_network import open_scoped_network_url as urlopen
-
-LONGBRIDGE_OPENAPI_BASE_URL = "https://openapi.longbridge.com"
-LONGBRIDGE_OPENAPI_TIMEOUT_SECONDS = 8
 
 
 @dataclass(frozen=True)
@@ -138,78 +132,6 @@ def _extract_position_channels(response: Any) -> list[Any]:
         return list(response)
 
     return []
-
-
-def _read_json_payload(response: Any) -> dict[str, Any]:
-    charset = "utf-8"
-    try:
-        charset = response.headers.get_content_charset("utf-8") or "utf-8"
-    except Exception:
-        charset = "utf-8"
-    raw_body = response.read()
-    try:
-        return json.loads(raw_body.decode(charset) if raw_body else "{}")
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Longbridge returned an invalid JSON response.") from exc
-
-
-def _extract_longbridge_error_message(payload: Any, fallback: str) -> str:
-    if isinstance(payload, dict):
-        message = _first_non_empty_string([
-            payload.get("message"),
-            payload.get("msg"),
-            _get_mapping_or_attr(payload.get("error"), "message"),
-            payload.get("detail"),
-        ])
-        if message:
-            return message
-    return fallback
-
-
-def _call_longbridge_asset_api(
-    settings: BrokerSettings,
-    path: str,
-) -> dict[str, Any]:
-    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
-    if not access_token:
-        raise ValueError("Save your Longbridge Access Token first.")
-
-    request_obj = Request(
-        f"{LONGBRIDGE_OPENAPI_BASE_URL}{path}",
-        headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {access_token}",
-            "User-Agent": "antigravity/1.0",
-        },
-    )
-
-    try:
-        with urlopen(request_obj, timeout=LONGBRIDGE_OPENAPI_TIMEOUT_SECONDS) as response:
-            payload = _read_json_payload(response)
-    except HTTPError as exc:
-        error_payload: dict[str, Any] = {}
-        try:
-            error_payload = _read_json_payload(exc)
-        except RuntimeError:
-            error_payload = {}
-        status_message = _extract_longbridge_error_message(
-            error_payload,
-            f"Longbridge request failed with HTTP {exc.code}.",
-        )
-        raise RuntimeError(status_message) from exc
-    except URLError as exc:
-        raise RuntimeError("Unable to reach Longbridge OpenAPI right now.") from exc
-
-    code = payload.get("code")
-    try:
-        is_success = int(code) == 0
-    except (TypeError, ValueError):
-        is_success = False
-    if not is_success:
-        raise RuntimeError(_extract_longbridge_error_message(payload, "Longbridge request failed."))
-
-    data = payload.get("data")
-    return data if isinstance(data, dict) else {}
 
 
 def _load_longbridge_trade_api() -> tuple[Any, Any, Any, Any, Any]:

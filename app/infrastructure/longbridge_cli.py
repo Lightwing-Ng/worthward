@@ -1,7 +1,9 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.5.0
+Code version: v0.6.0
+- Removed: The retired raw authorization-code login path. Browser OAuth is the
+  only application-owned authentication entrypoint.
 """
 
 from __future__ import annotations
@@ -157,21 +159,6 @@ def get_longbridge_cli_auth_status(settings: BrokerSettings) -> dict[str, Any]:
         timeout_seconds=20,
     )
     return payload if isinstance(payload, dict) else {}
-
-
-def authenticate_longbridge_cli_with_auth_code(settings: BrokerSettings, auth_code: str) -> tuple[bool, str]:
-    normalized_auth_code = str(auth_code or "").strip()
-    if not normalized_auth_code:
-        return False, "Longbridge authorization code is required."
-
-    result = run_longbridge_cli(
-        settings,
-        ["auth", "login", "--auth-code", normalized_auth_code],
-        timeout_seconds=30,
-    )
-    if result.exit_code != 0:
-        return False, result.stderr or result.stdout or "Longbridge CLI authentication failed."
-    return True, result.stdout or "Longbridge CLI authentication succeeded."
 
 
 def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, str]:
