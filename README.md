@@ -1,13 +1,13 @@
 # antigravity
 
-Documentation version: `v2.83.0`
+Documentation version: `v2.85.2`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
 ## What the app does
 
 - Compare up to 5 tickers over the same window on a normalized return basis
-- Use `Ticker comparison` to compare original price scales for up to 5 tickers or historical market-cap series for up to 10 tickers. Price mode can overlay an OHLCV-derived estimated cost distribution on the right side of each price canvas; hovering a price cross-section updates every profile to the cumulative estimate from the selected range start through the shared vertical guide. This remains a historical volume-profile estimate, not shareholder-level holding data. Market-cap series use same-date daily FX closes for non-USD listings while retaining USD and New York wall time; direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it.
+- Use `Ticker comparison` to compare original price scales for up to 5 tickers or historical market-cap series for up to 10 tickers. Price mode can overlay an OHLCV-derived estimated cost distribution on the right side of each price canvas; hovering a price cross-section updates every profile to the cumulative estimate from the selected range start through the shared vertical guide. This remains a historical volume-profile estimate, not shareholder-level holding data. Market-cap series use same-date daily FX closes for non-USD listings while retaining USD and New York wall time; direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it. The unified Market cap canvas keeps absolute USD values and uses a logarithmic Y axis only when positive values span at least a 6:1 ratio; narrower peer groups stay linear, and nonpositive unknown-history placeholders render as gaps rather than false zero market caps.
 - Build weighted portfolios with custom allocations
 - Simulate dollar-cost averaging from the Backtest strategy selector with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
@@ -23,6 +23,9 @@ Documentation version: `v2.83.0`
 - Filter Transaction history by broker, currency, type, date, and unresolved internal-transfer status; HSBC USD, HKD, and CNH cash remains scoped by source account
 - Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, cash-equivalent instruments, local cache maintenance, strategy metadata, export-image profiles, and design tokens from `Settings`
+- Use a conservative OpenAI Site tools (WebMCP) adapter for bounded capability discovery,
+  current-page metadata, and allowlisted same-origin navigation without exposing financial records,
+  broker authorization, settings writes, cache mutation, or live orders
 
 ## Runtime requirements
 
@@ -110,7 +113,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Return comparison`
   Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
 - `Ticker comparison`
-  Use the Price metric to review up to 5 tickers on separate charts using their original market-price scales, or the Market cap metric to compare up to 10 historical series. The Price-only `Show chips` control derives an estimated cost distribution from the selected historical OHLCV range, distributes each candle's volume across its low-to-high interval, and renders the result in a cached right-side Canvas profile that shares the price scale. Hovering the price plot truncates each ticker's OHLCV at the shared crosshair timestamp and redraws every profile as the cumulative estimate from the visible range start through that timestamp. Snapshot bins retain the full-range price domain to prevent vertical drift, are recalculated at most once per animation frame, and use a bounded per-subplot cache so repeated hover positions do not recompute. Leaving the chart restores the complete selected-range profile. The profile reports estimated POC, weighted average cost, profit ratio, and central 70% and 90% cost ranges. When a single ticker changes, same-period and same-date chip profiles for unchanged tickers are reused; the Longbridge request is limited to the new ticker plus one cached ticker to satisfy the API's minimum request size, and loading is scoped to the changed subplot. When a legacy local history file has no Volume column, the app requests range-bounded Longbridge daily OHLCV sequentially, retries the documented one-second rate limit, and uses `trade-stats` only as a final recent-price-level fallback. Market-cap history uses cached prices and point-in-time yfinance shares with SEC company-facts, filing-level XBRL, and Form N-PORT fallbacks. Non-US quote currencies use same-date daily Yahoo FX closes for USD conversion. Longbridge is optional and can cross-check or replace only the latest trading-day point. The canonical route is `/workspaces/prices`; `?metric=market-cap` selects Market cap, while `/workspaces/market-caps` remains a compatibility redirect.
+  Use the Price metric to review up to 5 tickers on separate charts using their original market-price scales, or the Market cap metric to compare up to 10 historical series. Switching the metric keeps the current sidebar and chart context mounted while the target result hydrates, so the selected segmented pill completes its existing elastic motion without a document reload. A busy metric request can be cancelled by closing its progress dialog and choosing the latest metric intent; invalid ticker sets are rejected before the metric state changes, and a Price switch with more than 5 selected tickers stays in Market cap mode with an explicit validation prompt instead of silently discarding selections. Comparison workspace links also retain their per-view remembered query during the brief page-script loading gap, so a fast click cannot fall back to a blank default workspace. The Price-only `Show chips` control derives an estimated cost distribution from the selected historical OHLCV range, distributes each candle's volume across its low-to-high interval, and renders the result in a cached right-side Canvas profile that shares the price scale. Hovering the price plot truncates each ticker's OHLCV at the shared crosshair timestamp and redraws every profile as the cumulative estimate from the visible range start through that timestamp. Snapshot bins retain the full-range price domain to prevent vertical drift, are recalculated at most once per animation frame, and use a bounded per-subplot cache so repeated hover positions do not recompute. Leaving the chart restores the complete selected-range profile. The profile reports estimated POC, weighted average cost, profit ratio, and central 70% and 90% cost ranges. When a single ticker changes, same-period and same-date chip profiles for unchanged tickers are reused; the Longbridge request is limited to the new ticker plus one cached ticker to satisfy the API's minimum request size, and loading is scoped to the changed subplot. When a legacy local history file has no Volume column, the app requests range-bounded Longbridge daily OHLCV sequentially, retries the documented one-second rate limit, and uses `trade-stats` only as a final recent-price-level fallback. Market-cap history uses cached prices and point-in-time yfinance shares with SEC company-facts, filing-level XBRL, and Form N-PORT fallbacks. Non-US quote currencies use same-date daily Yahoo FX closes for USD conversion. Longbridge is optional and can cross-check or replace only the latest trading-day point. The canonical route is `/workspaces/prices`; `?metric=market-cap` selects Market cap, while `/workspaces/market-caps` remains a compatibility redirect.
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
@@ -527,6 +530,7 @@ docs/README.md                  -> Documentation authority, ownership, and clean
 docs/AGENTS.md                  -> Agent workflow, safety, and quality boundaries
 docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and invariants
 docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
+docs/AGENT_OPTIMIZATION.md      -> OpenAI Site tools adapter, privacy boundary, and verification
 docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
 docs/COMPATIBILITY.md           -> Canonical routes, aliases, retired renderers, and reserved source
 docs/HANDOFF_TEMPLATE.md        -> Required agent handoff evidence structure
@@ -562,6 +566,7 @@ ownership, cleanup classes, and the required reading path:
 - [Canonical agent operating guide](docs/AGENTS.md)
 - [Architecture guide](docs/ARCHITECTURE.md)
 - [Testing guide](docs/TESTING.md)
+- [OpenAI Site tools and Agent Optimization](docs/AGENT_OPTIMIZATION.md)
 - [Known issues and operating constraints](docs/KNOWN_ISSUES.md)
 - [Compatibility routes and reserved source](docs/COMPATIBILITY.md)
 - [Shared UI workflow](docs/SHARED_UI_WORKFLOW.md) (required only for shared UI work)

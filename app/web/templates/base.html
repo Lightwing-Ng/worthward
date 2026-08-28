@@ -1,4 +1,4 @@
-{# Code version: v0.24.4 #}
+{# Code version: v0.25.3 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,10 +126,11 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.51.0') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.51.1') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
 </head>
 <body>
+{% include "_agent_optimization.html" %}
 <div class="shared-select-overlay" data-shared-select-overlay></div>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
@@ -270,6 +271,79 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
+<script>
+    // Code version: v0.1.1
+    (() => {
+        const appState = window.ANTIGRAVITY_APP || {};
+        const comparisonViews = new Set(["tickers", "prices"]);
+        const currentView = String(appState.currentView || "").trim().toLowerCase();
+        if (!comparisonViews.has(currentView)) return;
+        const viewFromPath = (path) => {
+            const normalizedPath = String(path || "").toLowerCase();
+            if (normalizedPath === "/workspaces/compare" || normalizedPath.startsWith("/workspaces/compare/")) return "tickers";
+            if (normalizedPath === "/compare" || normalizedPath.startsWith("/compare/")) return "tickers";
+            if (normalizedPath === "/workspaces/prices" || normalizedPath.startsWith("/workspaces/prices/")) return "prices";
+            if (normalizedPath === "/workspaces/market-caps" || normalizedPath.startsWith("/workspaces/market-caps/")) return "prices";
+            return null;
+        };
+        const canonicalize = (rawUrl) => {
+            try {
+                const url = new URL(rawUrl, window.location.origin);
+                const view = viewFromPath(url.pathname);
+                if (!view) return "";
+                const period = url.searchParams.get("period");
+                if (period && !url.searchParams.has("range")) {
+                    url.searchParams.delete("period");
+                    if (period !== "1y") url.searchParams.set("range", period);
+                }
+                ["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"].forEach((key) => {
+                    url.searchParams.delete(key);
+                });
+                const search = url.searchParams.toString();
+                return `${url.pathname}${search ? `?${search}` : ""}${url.hash || ""}`;
+            } catch (_error) {
+                return "";
+            }
+        };
+        const readMemory = () => {
+            try {
+                const value = JSON.parse(window.sessionStorage.getItem("antigravity:view-memory") || "{}");
+                return value && typeof value === "object" ? value : {};
+            } catch (_error) {
+                return {};
+            }
+        };
+        const writeMemory = (memory) => {
+            try {
+                window.sessionStorage.setItem("antigravity:view-memory", JSON.stringify(memory));
+            } catch (_error) {
+            }
+        };
+        const currentUrl = canonicalize(window.location.href);
+        if (currentUrl) {
+            const memory = readMemory();
+            memory[currentView] = currentUrl;
+            memory.workspace = currentUrl;
+            writeMemory(memory);
+        }
+        document.addEventListener("click", (event) => {
+            if (document.body?.dataset.optimisticNavigationBound === "1") return;
+            const link = event.target?.closest?.(".workspace-mode-nav a[href]");
+            if (!(link instanceof HTMLAnchorElement)) return;
+            const targetView = viewFromPath(new URL(link.href, window.location.origin).pathname);
+            if (!targetView || targetView === currentView) return;
+            const memory = readMemory();
+            const rememberedUrl = memory[targetView];
+            const fallbackUrl = canonicalize(link.href);
+            const nextUrl = rememberedUrl && viewFromPath(new URL(rememberedUrl, window.location.origin).pathname) === targetView
+                ? rememberedUrl
+                : fallbackUrl;
+            if (!nextUrl || nextUrl === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
+            event.preventDefault();
+            window.location.assign(nextUrl);
+        }, true);
+    })();
+</script>
 <script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.1.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.4') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.1.0') }}"></script>
@@ -289,9 +363,9 @@
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.4.1') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.24.1') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.41.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.43.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
-<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.10.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.6.1') }}"></script>

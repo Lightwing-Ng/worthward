@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.10
+Code version: v0.5.11
 """
 
 from __future__ import annotations
@@ -142,6 +142,9 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Price performance", "價格表現", "价格表现"),
         ("Price history", "價格歷史", "价格历史"),
         ("Ticker comparison", "股票代號比較", "股票代码比较"),
+        ("Price comparisons support up to 5 tickers. Remove an extra ticker before switching.", "價格比較最多支援 5 個股票代號。切換前請移除多餘的股票代號。", "价格比较最多支持 5 个股票代码。切换前请移除多余的股票代码。"),
+        ("Resolve the highlighted ticker before switching metrics.", "切換指標前請先修正醒目的股票代號。", "切换指标前请先修正突出显示的股票代码。"),
+        ("Complete the required comparison fields before switching metrics.", "切換指標前請先完成必要的比較欄位。", "切换指标前请先完成必要的比较字段。"),
         ("Calculating market-cap history", "正在計算市值歷史", "正在计算市值历史"),
         ("Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment.", "正在合併所選區間的歷史價格與時點在外流通股數。較長區間可能需要一些時間。", "正在合并所选区间的历史价格与时点流通股数。较长区间可能需要一些时间。"),
         ("Updating price history", "正在更新價格歷史", "正在更新价格历史"),

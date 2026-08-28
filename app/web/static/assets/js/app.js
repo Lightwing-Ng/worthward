@@ -1,4 +1,4 @@
-/* Code version: v0.41.0 */
+/* Code version: v0.43.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -45,7 +45,8 @@
     const isDcaView = state.currentView === "dca";
     const isDcaStrategy = isBacktestView && state.selectedStrategyId === "dca";
     const MIN_TICKERS = constraints?.minTickers || 2;
-    const MAX_TICKERS = constraints?.maxTickers || 5;
+    const PRICE_COMPARISON_MAX_TICKERS = 5;
+    let MAX_TICKERS = constraints?.maxTickers || PRICE_COMPARISON_MAX_TICKERS;
     const minimumRequiredTickers = (isBacktestView || isDcaView) ? 1 : MIN_TICKERS;
     const getMinimumRequiredTickers = () => {
         if (!isBacktestView) return minimumRequiredTickers;
@@ -2335,6 +2336,68 @@
         currentMain.replaceWith(nextMain.cloneNode(true));
     };
 
+    const hydratePriceComparisonWorkspace = (workspacePanel, nextWorkspacePanel) => {
+        const currentShell = workspacePanel.querySelector(".price-compare-workspace");
+        const nextShell = nextWorkspacePanel.querySelector(".price-compare-workspace");
+        if (!(currentShell instanceof HTMLElement) || !(nextShell instanceof HTMLElement)) {
+            hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
+            return;
+        }
+
+        currentShell.className = nextShell.className;
+        currentShell.setAttribute(
+            "aria-labelledby",
+            nextShell.getAttribute("aria-labelledby") || "ticker_comparison_heading",
+        );
+
+        const currentTitleCard = currentShell.querySelector(".workspace-mode-title-card");
+        const nextTitleCard = nextShell.querySelector(".workspace-mode-title-card");
+        if (currentTitleCard && nextTitleCard) {
+            replaceDomRegion(currentTitleCard, nextTitleCard);
+        }
+
+        const currentControls = currentShell.querySelector(".workspace-mode-controls-surface");
+        const nextControls = nextShell.querySelector(".workspace-mode-controls-surface");
+        if (currentControls && nextControls) {
+            currentControls.setAttribute(
+                "aria-labelledby",
+                nextControls.getAttribute("aria-labelledby") || "ticker_comparison_heading",
+            );
+        }
+
+        const nextMetricInput = nextShell.querySelector("[data-comparison-metric-input]:checked");
+        const nextMetric = normalizeComparisonMetric(nextMetricInput?.value);
+        const currentMetricShell = currentShell.querySelector("[data-comparison-metric-switch]");
+        if (currentMetricShell instanceof HTMLElement) {
+            const currentMetricInputs = Array.from(
+                currentMetricShell.querySelectorAll("[data-comparison-metric-input]"),
+            );
+            currentMetricInputs.forEach((input) => {
+                if (input instanceof HTMLInputElement) {
+                    input.checked = normalizeComparisonMetric(input.value) === nextMetric;
+                }
+            });
+            syncSegmentedControlLayout(currentMetricShell, {
+                activeValue: nextMetric,
+                activeIndex: nextMetric === "market-cap" ? 1 : 0,
+            });
+        }
+
+        const currentChipsField = currentShell.querySelector("[data-chips-field]");
+        const nextChipsField = nextShell.querySelector("[data-chips-field]");
+        if (currentChipsField instanceof HTMLElement && nextChipsField instanceof HTMLElement) {
+            currentChipsField.hidden = nextChipsField.hidden;
+            const currentChipsInput = currentChipsField.querySelector("[data-chips-input]");
+            const nextChipsInput = nextChipsField.querySelector("[data-chips-input]");
+            if (currentChipsInput instanceof HTMLInputElement && nextChipsInput instanceof HTMLInputElement) {
+                currentChipsInput.checked = nextChipsInput.checked;
+                currentChipsInput.disabled = nextChipsInput.disabled;
+            }
+        }
+
+        hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
+    };
+
     const applyPendingWorkspaceMarkup = () => {
         if (state.currentView === "tickers") {
             applyComparePendingState();
@@ -2516,7 +2579,9 @@
             }
         } else if (state.currentView === "backtest") {
             hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
-        } else if (["prices", "dca"].includes(state.currentView)) {
+        } else if (state.currentView === "prices") {
+            hydratePriceComparisonWorkspace(workspacePanel, nextWorkspacePanel);
+        } else if (state.currentView === "dca") {
             hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
         } else {
             workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
@@ -2526,6 +2591,13 @@
         if (nextState) {
             window.ANTIGRAVITY_APP = nextState;
             Object.assign(state, nextState);
+            if (state.currentView === "prices") {
+                const nextMaxTickers = Number.parseInt(nextState.constraints?.maxTickers, 10);
+                MAX_TICKERS = Number.isFinite(nextMaxTickers)
+                    ? Math.max(MIN_TICKERS, nextMaxTickers)
+                    : PRICE_COMPARISON_MAX_TICKERS;
+                updateAddButtonState();
+            }
         }
         document.title = doc.title || document.title;
         window.history.replaceState({}, "", nextUrl);
@@ -4363,6 +4435,16 @@
         workspaceModalOverlay.hidden = true;
     };
 
+    const cancelActiveWorkspaceSubmission = () => {
+        if (!isSubmittingWithOverlay) return false;
+        workspaceSubmitToken += 1;
+        abortActiveWorkspaceHydration();
+        isSubmittingWithOverlay = false;
+        setFormBusyState(false);
+        hideWorkspaceModal();
+        return true;
+    };
+
     const scheduleCompareOverlay = () => {
         if (compareOverlayTimer) window.clearTimeout(compareOverlayTimer);
         compareOverlayTimer = window.setTimeout(() => {
@@ -4379,6 +4461,11 @@
         }
         return false;
     };
+
+    const didCompareRequestChangeMetric = (currentParams, nextParams) => (
+        normalizeComparisonMetric(currentParams.get("metric"))
+        !== normalizeComparisonMetric(nextParams.get("metric"))
+    );
 
     const attachRemoveHandlers = () => {
         $$(".ticker-remove").forEach((button) => {
@@ -4516,6 +4603,26 @@
     const getComparisonMetric = () => {
         const selectedInput = comparisonMetricInputs.find((input) => input.checked);
         return normalizeComparisonMetric(selectedInput?.value || state.comparisonMetric);
+    };
+    const clearComparisonMetricValidation = () => {
+        document.querySelectorAll("[data-comparison-metric-validation]").forEach((node) => {
+            node.hidden = true;
+            node.textContent = "";
+        });
+    };
+    const showComparisonMetricValidation = (message) => {
+        const field = document.querySelector("[data-comparison-metric-field]");
+        if (!(field instanceof HTMLElement) || !message) return;
+        let feedback = field.querySelector("[data-comparison-metric-validation]");
+        if (!(feedback instanceof HTMLElement)) {
+            feedback = document.createElement("p");
+            feedback.className = "comparison-metric-validation";
+            feedback.dataset.comparisonMetricValidation = "";
+            feedback.setAttribute("role", "alert");
+            field.appendChild(feedback);
+        }
+        feedback.textContent = message;
+        feedback.hidden = false;
     };
     const periodPanel = $("#period_panel");
     const exactPanel = $("#exact_panel");
@@ -7222,15 +7329,91 @@
         input.addEventListener("change", () => {
             if (!input.checked || state.currentView !== "prices") return;
             const nextMetric = normalizeComparisonMetric(input.value);
-            if (nextMetric === normalizeComparisonMetric(state.comparisonMetric)) return;
+            const previousMetric = normalizeComparisonMetric(state.comparisonMetric);
+            if (nextMetric === previousMetric) return;
+            if (isSubmittingWithOverlay) cancelActiveWorkspaceSubmission();
+
+            const restoreMetricSelection = () => {
+                comparisonMetricInputs.forEach((candidate) => {
+                    candidate.checked = normalizeComparisonMetric(candidate.value) === previousMetric;
+                });
+                const metricShell = input.closest("[data-comparison-metric-switch]");
+                if (metricShell instanceof HTMLElement) {
+                    syncSegmentedControlLayout(metricShell, {
+                        activeValue: previousMetric,
+                        activeIndex: previousMetric === "market-cap" ? 1 : 0,
+                    });
+                }
+            };
+
+            if (nextMetric === "price" && getFilledTickers().length > PRICE_COMPARISON_MAX_TICKERS) {
+                restoreMetricSelection();
+                showComparisonMetricValidation(
+                    translateUi("Price comparisons support up to 5 tickers. Remove an extra ticker before switching."),
+                );
+                return;
+            }
+            if (!canAutoSubmit()) {
+                restoreMetricSelection();
+                validateAllTickerInputs();
+                const invalidInput = getTickerInputs().find((candidate) => (
+                    !candidate.checkValidity() || candidate.dataset.unknown === "1"
+                ));
+                if (invalidInput) showTickerValidationTooltip(invalidInput);
+                showComparisonMetricValidation(
+                    invalidInput
+                        ? translateUi("Resolve the highlighted ticker before switching metrics.")
+                        : translateUi("Complete the required comparison fields before switching metrics."),
+                );
+                return;
+            }
+            clearComparisonMetricValidation();
             state.comparisonMetric = nextMetric;
             if (autoSubmitTimer) {
                 window.clearTimeout(autoSubmitTimer);
                 autoSubmitTimer = null;
             }
+
+            const metricShell = input.closest("[data-comparison-metric-switch]");
+            if (metricShell instanceof HTMLElement) {
+                syncSegmentedControlLayout(metricShell, {
+                    activeValue: nextMetric,
+                    activeIndex: nextMetric === "market-cap" ? 1 : 0,
+                });
+            }
+
+            const chipsField = document.querySelector("[data-chips-field]");
+            const metricChipsInput = chipsField?.querySelector("[data-chips-input]");
+            if (chipsField instanceof HTMLElement) {
+                const isPriceMetric = nextMetric === "price";
+                chipsField.hidden = !isPriceMetric;
+                if (metricChipsInput instanceof HTMLInputElement) {
+                    metricChipsInput.disabled = !isPriceMetric;
+                    if (!isPriceMetric) metricChipsInput.checked = false;
+                }
+            }
+
+            delete bootstrap.chartWorkspaceRefreshTransition;
+            clearWorkspaceChartTransitionRequest();
+            requestWorkspaceChartTransition("comparison-metric");
+            showImmediateRangeLoadingDialog();
+
             const nextUrl = buildCleanWorkspaceUrl();
             const currentUrl = `${window.location.pathname}${window.location.search}`;
-            if (nextUrl !== currentUrl) window.location.assign(nextUrl);
+            if (nextUrl === currentUrl) {
+                hideWorkspaceModal();
+                return;
+            }
+
+            const requiresPriceLimitReload = (
+                nextMetric === "price"
+                && getFilledTickers().length > PRICE_COMPARISON_MAX_TICKERS
+            );
+            if (!form || requiresPriceLimitReload) {
+                window.requestAnimationFrame(() => window.location.assign(nextUrl));
+                return;
+            }
+            form.requestSubmit();
         });
     });
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
@@ -8316,6 +8499,13 @@
                     loadingSpinner: true,
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
+            } else if (
+                state.currentView === "prices"
+                && !missingLocalTickers.length
+                && didCompareRequestChangeMetric(currentParams, nextParams)
+            ) {
+                delete bootstrap.chartWorkspaceRefreshTransition;
+                showImmediateRangeLoadingDialog();
             } else if (
                 ["tickers", "prices"].includes(state.currentView)
                 && !missingLocalTickers.length

@@ -1,4 +1,4 @@
-/* Code version: v0.17.8 */
+/* Code version: v0.17.9 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1673,6 +1673,19 @@ input[type="number"],
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
 .range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); font-weight: var(--font-weight-bold); letter-spacing: 0; }
+.segmented-control-option:has(input:focus-visible) > span,
+.range-mode-option:has(input:focus-visible) > span {
+	outline: 3px solid color-mix(in srgb, var(--theme-primary) 78%, transparent);
+	outline-offset: 2px;
+}
+.comparison-metric-validation {
+	margin: 6px auto 0;
+	max-width: 320px;
+	color: var(--theme-warning-text);
+	font-size: var(--font-tooltip);
+	line-height: 1.35;
+	text-align: center;
+}
 .range-mode-shell > .segmented-control-option input:checked + span { color: var(--theme-muted); }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
 .segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,

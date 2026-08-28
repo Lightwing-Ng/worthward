@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.23.3`
+Documentation version: `v1.25.1`
 
 ## Supported commands
 
@@ -38,6 +38,16 @@ Run the complete quality gate:
 ./scripts/check.sh
 ```
 
+Run the OpenAI Site tools contract, Flask rendering, and random-port disposable-browser layers:
+
+```bash
+node --test tests/test_agent_optimization.mjs
+./scripts/test.sh \
+  tests/test_agent_optimization.py \
+  tests/test_agent_optimization_browser.py
+./scripts/test_e2e.sh tests/e2e/agent-optimization.spec.mjs
+```
+
 The complete gate runs, in order:
 
 1. Full Ruff static checks for `main.py`, `app`, `strategies`, `tests`, and
@@ -60,7 +70,7 @@ diagnostic evidence, not a repository fixture.
 Baseline remeasured on 28 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and
 coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `71.90%` (`coverage.json`
+- Total combined statement-and-branch coverage: `71.92%` (`coverage.json`
   reports `20,331` covered lines of `26,841` statements and `6,994` covered
   branches of `11,162`).
 - `app/services/dca.py`: `97.6%`, with recurring schedule, contribution
@@ -91,8 +101,9 @@ Recently strengthened coverage:
   store writes.
 
 JavaScript source coverage is measured by Node's built-in test runner for the
-first-party modules loaded by direct Node suites. The current baseline is
-`50.32%` lines, `71.04%` branches, and `84.81%` functions. The gate enforces
+first-party modules loaded by direct Node suites. The current baseline, remeasured on
+28 Aug 2026 after adding the Agent Optimization runtime, is `51.41%` lines, `71.01%`
+branches, and `85.45%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -104,12 +115,12 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 Current suite inventory remeasured on 28 Aug 2026:
 
-- 867 Python tests collected; the latest full Python run reports 861 passed and
+- 873 Python tests collected; the latest full Python run reports 867 passed and
   6 skipped.
-- 260 Node unit tests (`npm run test:js`), including shared chart-axis theme
-  fallback priority and direct Investment module coverage.
-- 249 Playwright test cases passed through `./scripts/check.sh` on 28 Aug 2026,
-  including parameterized viewport coverage.
+- 269 Node unit tests (`npm run test:js`), including the 9 shared Agent Optimization contract
+  cases, shared chart-axis theme fallback priority, and direct Investment module coverage.
+- 252 Playwright test cases passed through `./scripts/test_e2e.sh` on 28 Aug 2026,
+  including the 2 Agent Optimization cases and parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
@@ -120,6 +131,13 @@ Current suite inventory remeasured on 28 Aug 2026:
   privacy-safe historical records, JavaScript and E2E resource versions,
   tracked E2E assets, CSS import-manifest integrity, and retired-entrypoint or
   unsafe-transport tombstones.
+- `tests/test_agent_optimization.py`, `tests/test_agent_optimization_browser.py`, and
+  `tests/test_agent_optimization.mjs`: manifest, schema, registration, security, unsupported-client,
+  and random-port browser lifecycle contracts.
+- `tests/e2e/agent-optimization.spec.mjs`: project Playwright coverage for top-level Site tool
+  discovery, execution, navigation, fresh-document registration, and narrow-screen fallback.
+- `tests/e2e/price-comparison.spec.mjs`: adaptive Market cap linear/logarithmic scale selection,
+  absolute-value preservation, missing-history gaps, and visible tier separation.
 - `tests/test_compatibility_routes.py`: canonical destinations for the
   documented compatibility redirect families.
 - `tests/test_e2e_locking.py`: host-level E2E ownership across worktrees,

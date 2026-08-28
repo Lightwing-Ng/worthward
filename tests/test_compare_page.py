@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.4
+Code version: v0.14.5
 """
 
 from __future__ import annotations
@@ -293,7 +293,7 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(market_cap_response.status_code, 200)
         self.assertIn(">市值历史</h2>", market_cap_html)
 
-    def test_price_page_renders_chips_switch_only_for_price_metric(self) -> None:
+    def test_price_page_keeps_the_chips_switch_mounted_for_metric_hydration(self) -> None:
         client = create_app().test_client()
         price_response = client.get("/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1")
         market_cap_response = client.get(
@@ -312,7 +312,20 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('"comparisonChips": true', price_html)
         self.assertRegex(price_html, r'data-chips-heading="Chip distribution"[^>]*>Price history</h2>')
         self.assertEqual(market_cap_response.status_code, 200)
-        self.assertNotIn('id="show_chips"', market_cap_html)
+        self.assertRegex(
+            market_cap_html,
+            r'<div class="field field-checkbox field-switch comparison-chips-field" data-chips-field hidden>',
+        )
+        self.assertRegex(
+            market_cap_html,
+            r'id="show_chips" name="chips" type="checkbox" value="1" disabled data-chips-input',
+        )
+        self.assertNotRegex(
+            market_cap_html,
+            r'id="show_chips" name="chips" type="checkbox" value="1"\s+checked',
+        )
+        self.assertNotIn('data-chips-chart-region', market_cap_html)
+        self.assertIn('"comparisonChips": false', market_cap_html)
 
     def test_chips_api_returns_ordered_range_bounded_longbridge_ohlcv(self) -> None:
         settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")

@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.7.0
+Code version: v1.8.0
 """
 
 from __future__ import annotations
@@ -130,6 +130,26 @@ class OptimisticNavigationTests(unittest.TestCase):
             "const scheduleAutoSubmit", 1
         )[0]
         self.assertNotIn("!hasInitialResult", can_auto_submit)
+
+    def test_price_metric_switch_hydrates_in_place_and_preserves_the_selected_pill(self) -> None:
+        source = APP_JS.read_text(encoding="utf-8")
+        metric_handler = source.split("comparisonMetricInputs.forEach((input) => {", 1)[1].split(
+            "[exactStartInput, exactEndInput, exactTradingDateInput]",
+            1,
+        )[0]
+        hydration_helper = source.split("const hydratePriceComparisonWorkspace =", 1)[1].split(
+            "const applyPendingWorkspaceMarkup",
+            1,
+        )[0]
+
+        self.assertIn('syncSegmentedControlLayout(metricShell, {', metric_handler)
+        self.assertIn('showImmediateRangeLoadingDialog();', metric_handler)
+        self.assertIn('requestWorkspaceChartTransition("comparison-metric");', metric_handler)
+        self.assertIn('form.requestSubmit();', metric_handler)
+        self.assertIn('const requiresPriceLimitReload = (', metric_handler)
+        self.assertIn('hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);', hydration_helper)
+        self.assertIn('currentChipsField.hidden = nextChipsField.hidden;', hydration_helper)
+        self.assertNotIn('workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;', hydration_helper)
 
     def test_waiting_states_share_the_vector_ticker_spinner(self) -> None:
         app_source = APP_JS.read_text(encoding="utf-8")

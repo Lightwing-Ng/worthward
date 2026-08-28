@@ -1,4 +1,4 @@
-/* Code version: v0.10.1 */
+/* Code version: v0.11.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -20,6 +20,7 @@
 		{ minutes: 16 * 60, timeLabel: "16:00", align: "right" },
 	]);
 	const MAX_INTRADAY_CONNECTED_GAP_MINUTES = 5;
+	const MARKET_CAP_LOG_SCALE_MIN_RATIO = 6;
 
 	const readThemeToken = (computed, tokenName) => (
 		typeof chartAxis.readThemeToken === "function"
@@ -144,6 +145,13 @@
 			.filter((value) => value !== null);
 	};
 
+	const normalizeMarketCapChartValues = (values) => (
+		(Array.isArray(values) ? values : []).map((value) => {
+			const numeric = toFiniteChartNumber(value);
+			return numeric !== null && numeric > 0 ? numeric : null;
+		})
+	);
+
 	const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
 		const values = collectFiniteValues(datasets);
 		if (!values.length) return {};
@@ -167,6 +175,33 @@
 		return {
 			min: rawMin - dataPadding,
 			max: rawMax + dataPadding,
+			rawMin,
+			rawMax,
+		};
+	};
+
+	const buildMarketCapYScale = (canvas, datasets, paddingPx) => {
+		const linearScale = buildPixelPaddedYScale(canvas, datasets, paddingPx);
+		const positiveValues = collectFiniteValues(datasets).filter((value) => value > 0);
+		if (positiveValues.length < 2) return { type: "linear", ...linearScale };
+
+		const rawMin = Math.min(...positiveValues);
+		const rawMax = Math.max(...positiveValues);
+		const valueRatio = rawMax / rawMin;
+		if (!Number.isFinite(valueRatio) || valueRatio < MARKET_CAP_LOG_SCALE_MIN_RATIO) {
+			return { type: "linear", ...linearScale };
+		}
+
+		const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
+		const safePaddingPx = Math.max(0, paddingPx);
+		const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+		const logMin = Math.log10(rawMin);
+		const logMax = Math.log10(rawMax);
+		const logPadding = (logMax - logMin) * (safePaddingPx / usableHeight);
+		return {
+			type: "logarithmic",
+			min: 10 ** (logMin - logPadding),
+			max: 10 ** (logMax + logPadding),
 			rawMin,
 			rawMax,
 		};
@@ -1201,7 +1236,9 @@
 		};
 
 		const targetSeriesByIndex = series.map((item) => (
-			isMarketCapView ? (item.market_caps || []) : item.normalized_returns
+			isMarketCapView
+				? normalizeMarketCapChartValues(item.market_caps)
+				: item.normalized_returns
 		));
 		const candlestickSeriesByIndex = series.map((item) => (
 			Array.isArray(item?.candlestick_returns)
@@ -1209,11 +1246,12 @@
 				: []
 		));
 		const shouldAnimateRefreshTransition = Boolean(refreshTransition) && !hasIntradayLabels;
-		const chartYScale = buildPixelPaddedYScale(
-			canvas,
-			hasOneDayCandlesticks ? candlestickSeriesByIndex : targetSeriesByIndex,
-			chartYPaddingPx,
-		);
+		const yScaleSeries = hasOneDayCandlesticks ? candlestickSeriesByIndex : targetSeriesByIndex;
+		const chartYScale = isMarketCapView
+			? buildMarketCapYScale(canvas, yScaleSeries, chartYPaddingPx)
+			: buildPixelPaddedYScale(canvas, yScaleSeries, chartYPaddingPx);
+		const marketCapScaleType = isMarketCapView ? (chartYScale.type || "linear") : "";
+		canvas.dataset.marketCapScale = marketCapScaleType;
 		const axisFontSize = readPxToken(canvas, "--workspace-share-chart-axis-font-size", 12);
 		const xAxisBottomPadding = isCompareOneDayRange || isCompareShortMultiDayRange
 			? Math.max(30, Math.round(axisFontSize * 3.1))
@@ -1224,17 +1262,21 @@
 				labels,
 				datasets: series.map((item, index) => {
 					const strokeColor = item.color || resolvedTheme.accentPrimary || theme.accent_primary;
+					const targetValues = targetSeriesByIndex[index] || [];
+					const alignedValues = refreshTransition
+						? buildAlignedSeries(
+							previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
+							previousSeriesMap.get(item.ticker)?.values || [],
+							labels,
+							targetValues,
+						)
+						: targetValues;
 					return {
 						...baseDatasetStyle,
 						label: item.ticker,
-						data: refreshTransition
-							? buildAlignedSeries(
-								previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
-								previousSeriesMap.get(item.ticker)?.values || [],
-								labels,
-								isMarketCapView ? (item.market_caps || []) : item.normalized_returns,
-							)
-							: (isMarketCapView ? (item.market_caps || []) : item.normalized_returns),
+						data: isMarketCapView
+							? normalizeMarketCapChartValues(alignedValues)
+							: alignedValues,
 						borderColor: strokeColor,
 						pointHoverBackgroundColor: strokeColor,
 						shadowColor: hexToRgba(strokeColor, 0.4),
@@ -1302,6 +1344,7 @@
 						ticks: {
 							color: resolvedTheme.muted,
 							padding: 10,
+							...(marketCapScaleType === "logarithmic" ? { maxTicksLimit: 7 } : {}),
 							font: {
 								family: 'GDS Transport, Helvetica Neue, Arial, sans-serif',
 								size: readPxToken(canvas, '--workspace-share-chart-axis-font-size', 12),
@@ -1337,9 +1380,9 @@
 					const startSeries = startSeriesByIndex[datasetIndex] || [];
 					const targetSeries = targetSeriesByIndex[datasetIndex] || [];
 					dataset.data = targetSeries.map((targetValue, valueIndex) => {
-						const startValue = Number(startSeries[valueIndex]);
-						const endValue = Number(targetValue);
-						if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return progress >= 1 ? targetValue : startSeries[valueIndex] ?? targetValue;
+						const startValue = toFiniteChartNumber(startSeries[valueIndex]);
+						const endValue = toFiniteChartNumber(targetValue);
+						if (startValue === null || endValue === null) return progress >= 1 ? targetValue : startSeries[valueIndex] ?? targetValue;
 						return startValue + ((endValue - startValue) * progress);
 					});
 				});

@@ -1,4 +1,4 @@
-{# Code version: v0.4.3 #}
+{# Code version: v0.4.5 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set portfolio_allocation_mode = portfolio_allocation_mode if current_view == "portfolio" and portfolio_allocation_mode is defined else "weight" %}
 {% set portfolio_allocation_mode = "shares" if portfolio_allocation_mode == "shares" else "weight" %}
@@ -79,7 +79,7 @@
                 {"id": "comparison_metric_price", "value": "price", "label": translate_ui("Price"), "input_attrs": "data-comparison-metric-input"},
                 {"id": "comparison_metric_market_cap", "value": "market-cap", "label": translate_ui("Market cap"), "input_attrs": "data-comparison-metric-input"},
             ],
-            'data-comparison-metric-switch data-active="' ~ selected_comparison_metric ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if selected_comparison_metric == "market-cap" else 0) ~ ';"'
+            'data-comparison-metric-switch data-active="' ~ selected_comparison_metric ~ '" data-option-count="2" role="radiogroup" aria-label="' ~ translate_ui('Comparison metric') ~ '" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if selected_comparison_metric == "market-cap" else 0) ~ ';"'
         ) }}
     </div>
     {% endif %}
@@ -96,14 +96,14 @@
         "Trading date",
         false
     ) }}
-    {% if current_view == "prices" and selected_comparison_metric == "price" %}
-    <div class="field field-checkbox field-switch comparison-chips-field" data-chips-field>
+    {% if current_view == "prices" %}
+    <div class="field field-checkbox field-switch comparison-chips-field" data-chips-field{% if selected_comparison_metric != "price" %} hidden{% endif %}>
         {{ render_switch(
             "show_chips",
             "Position distribution",
             "chips",
-            checked=show_chips,
-            input_attrs='data-chips-input aria-controls="chips_chart_region"'
+            checked=show_chips and selected_comparison_metric == "price",
+            input_attrs=('disabled ' if selected_comparison_metric != 'price' else '') ~ 'data-chips-input aria-controls="chips_chart_region"'
         ) }}
     </div>
     {% endif %}

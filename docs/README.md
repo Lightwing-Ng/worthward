@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.0.2`
+Documentation version: `v1.1.0`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -19,9 +19,10 @@ the same change.
 | 3 | [`../README.md`](../README.md) | Operator-facing setup, supported features, and current routes |
 | 4 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime boundaries, data ownership, and domain invariants |
 | 5 | [`TESTING.md`](TESTING.md) | Supported commands, isolation, measured baselines, and test topology |
-| 6 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Current limitations and operating constraints |
-| 7 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Canonical routes, retained aliases, retired renderers, and reserved assets |
-| 8 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
+| 6 | [`AGENT_OPTIMIZATION.md`](AGENT_OPTIMIZATION.md) | OpenAI Site tools adapter, privacy boundary, compatibility, and verification |
+| 7 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Current limitations and operating constraints |
+| 8 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Canonical routes, retained aliases, retired renderers, and reserved assets |
+| 9 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
 
 [`INVESTMENT_FRONTEND_CHANGELOG.md`](INVESTMENT_FRONTEND_CHANGELOG.md) is a
 historical record. It can explain why a change was made, but it is not a current
@@ -40,6 +41,8 @@ Component documentation applies only within its directory:
   Testing, Known Issues, and Compatibility.
 - Shared UI work: also read `SHARED_UI_WORKFLOW.md` and the external shared UI
   ledger named there.
+- Site tools, WebMCP, or agent-facing metadata work: also read
+  `AGENT_OPTIMIZATION.md` and the canonical shared contract it names.
 - CSS, font, or icon work: also read the nearest component README or catalog.
 - Investment import or accounting work: re-read the relevant Architecture and
   Testing sections before touching persistence.

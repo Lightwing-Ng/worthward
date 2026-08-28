@@ -1,4 +1,4 @@
-/* Code version: v1.173.0 */
+/* Code version: v1.174.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2023,6 +2023,12 @@ test('keeps ticker identity visible and range pills interactive on price perform
 test('switches the Ticker comparison metric at the requested sidebar position', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
 
+    const marketCapResponse = await page.request.get(
+        '/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA',
+    );
+    expect(marketCapResponse.ok()).toBe(true);
+    const marketCapHtml = await marketCapResponse.text();
+
     const metricField = page.locator('xpath=/html/body/main/div/section/section/div/aside/form/div[3]');
     await expect(metricField).toHaveAttribute('data-comparison-metric-field', '');
     const placement = await metricField.evaluate((field) => ({
@@ -2040,23 +2046,53 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
     await expect(priceMetric).toBeChecked();
     await expect(marketCapMetric).not.toBeChecked();
     const pricePillColor = await metricSwitch.evaluate((element) => getComputedStyle(element, '::before').backgroundColor);
+    const priceSelectedLabelColor = await metricSwitch.locator('label[for="comparison_metric_price"] span').evaluate(
+        (label) => getComputedStyle(label).color,
+    );
     expect(pricePillColor).toBe('rgb(0, 85, 204)');
     expect(await page.evaluate(() => window.ANTIGRAVITY_APP.constraints.maxTickers)).toBe(5);
 
-    const isMarketCapNavigation = (request) => {
-        const url = new URL(request.url());
-        return url.pathname === '/workspaces/prices' && url.searchParams.get('metric') === 'market-cap';
-    };
-    const marketCapNavigation = page.waitForRequest(isMarketCapNavigation);
+    await page.evaluate(() => {
+        window.__priceMetricForm = document.querySelector('form.controls');
+    });
+    const navigationEntryCount = await page.evaluate(() => performance.getEntriesByType('navigation').length);
+
     await page.route('**/workspaces/prices?*', async (route) => {
-        if (isMarketCapNavigation(route.request())) {
-            await route.abort();
+        const url = new URL(route.request().url());
+        if (url.pathname === '/workspaces/prices' && url.searchParams.get('metric') === 'market-cap') {
+            await new Promise((resolve) => setTimeout(resolve, 900));
+            await route.fulfill({status: 200, contentType: 'text/html', body: marketCapHtml});
             return;
         }
         await route.continue();
     });
+
     await metricSwitch.locator('label[for="comparison_metric_market_cap"]').click();
-    const marketCapUrl = new URL((await marketCapNavigation).url());
+
+    await expect(marketCapMetric).toBeChecked();
+    await expect(metricSwitch).toHaveAttribute('data-active', 'market-cap');
+    await expect(page.locator('#workspace_modal_overlay')).toBeVisible();
+    await expect(page.locator('#workspace_modal_overlay .workspace-modal-title')).toHaveText(
+        'Calculating market-cap history',
+    );
+    await expect(page.getByRole('heading', {name: 'Price history', exact: true, level: 2})).toBeVisible();
+    expect(await metricSwitch.evaluate((element) => getComputedStyle(element, '::before').backgroundColor)).toBe(
+        'rgb(0, 85, 204)',
+    );
+    await expect.poll(() => metricSwitch.locator('label[for="comparison_metric_market_cap"] span').evaluate(
+        (label) => getComputedStyle(label).color,
+    )).toBe(priceSelectedLabelColor);
+
+    await expect(page).toHaveURL(/metric=market-cap/);
+    await expect(page.getByRole('heading', {name: 'Market cap history', exact: true, level: 2})).toBeVisible();
+    await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
+    await expect(page.locator('[data-chips-field]')).toBeHidden();
+    await expect(page.locator('[data-chips-input]')).toBeDisabled();
+    expect(await page.evaluate(() => window.ANTIGRAVITY_APP.constraints.maxTickers)).toBe(10);
+    expect(await page.evaluate(() => document.querySelector('form.controls') === window.__priceMetricForm)).toBe(true);
+    expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(navigationEntryCount);
+
+    const marketCapUrl = new URL(page.url());
     expect(marketCapUrl.searchParams.get('metric')).toBe('market-cap');
     expect(marketCapUrl.searchParams.getAll('ticker')).toEqual(['AAPL', 'NVDA']);
     expect(marketCapUrl.searchParams.has('period')).toBe(false);
@@ -7734,7 +7770,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.10.1');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.11.1');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');

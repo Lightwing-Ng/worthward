@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.47.1`
+Documentation version: `v1.49.2`
 
 ## Holdings P&L display contract
 
@@ -86,6 +86,26 @@ calendar and completed-session calculations therefore live in
 `app/core/market_calendar.py`; `app/services/date_constraints.py` re-exports
 their established public names for compatibility.
 
+## OpenAI Site tools and Agent Optimization boundary
+
+Every canonical human page that extends `base.html` includes one static project manifest from
+`_agent_optimization.html`. The byte-identical shared runtime in
+`app/web/static/assets/js/agent-optimization.js` validates that manifest and conditionally registers
+three OpenAI Site tools through `document.modelContext.registerTool`.
+
+The v1 tools expose only bounded capability metadata, bounded current-page metadata, and navigation
+to a manifest-owned same-origin route. They never serialize `ANTIGRAVITY_APP`, chart series,
+investment records, credentials, CSRF tokens, broker state, or settings values. They do not call a
+Flask mutation endpoint. The Live trading PIN template does not extend `base.html` and remains
+outside the Site tools surface. When WebMCP is unavailable or a document is framed, registration is
+a no-op and the human interface remains complete.
+
+Normal navigation may execute the destination page's existing market-data flow, so the navigation
+tool declares a visible page change and normal page load. It does not claim that navigation is
+network-free. The cross-project naming, schema, result, effects, security, evaluation, and promotion
+rules live in `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`; project-specific routes and
+evidence live in [AGENT_OPTIMIZATION.md](AGENT_OPTIMIZATION.md).
+
 ## Canonical navigation
 
 ```text
@@ -148,6 +168,10 @@ available within the calculated viewport range while delegating scrollbar
 painting to the native browser surface.
 
 Return comparison and Ticker comparison share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Ticker comparison defaults to Price and retains the existing 5-ticker price-subplot contract; its `metric=market-cap` mode reuses the comparison controls and range workflow while allowing 10 tickers. Market-cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts and filing-level XBRL as rate-limit fallbacks. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. Non-US market caps are converted at the same-date daily Yahoo FX close into the immutable USD base currency; the comparison axis remains America/New_York. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates.
+
+Price and Market cap reuse one mounted sidebar form during same-page metric hydration. The selected metric, title, result main, Price-only chips availability, and 5-versus-10 ticker constraint synchronize from the returned canonical document without replacing the form or creating another document navigation. Metric intent is latest-wins: closing the progress dialog and selecting the other metric cancels the stale hydration token before starting the new request. Invalid ticker sets are rejected before mutating the selected metric, and a request that would move more than 5 Market cap tickers into Price stays in Market cap mode with a validation prompt rather than silently dropping the extra selections. The segmented metric shell exposes a radiogroup label and visible keyboard focus ring while retaining the existing elastic pill motion. A small pre-app navigation guard records comparison URLs and preserves the target workspace's remembered query if a user activates a workspace link during the page-script loading gap; once the full app binding is ready, the normal optimistic navigation path remains authoritative.
+
+The Market cap canvas preserves every positive value as an absolute USD amount. When the visible positive maximum is at least 6 times the positive minimum, the Y scale becomes logarithmic so materially different capitalization tiers remain readable; a narrower span keeps the ordinary linear scale. Zero or negative placeholders mean unavailable history and are converted to Canvas gaps only at the presentation boundary. They are never rendered as a zero market cap or used to expand the logarithmic domain. Tooltip values remain absolute and currency-prefixed under both scale types.
 
 ## Data ownership
 

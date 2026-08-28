@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ DOCUMENTATION_ENTRYPOINTS = (
     PROJECT_ROOT / "docs/AGENTS.md",
     PROJECT_ROOT / "docs/ARCHITECTURE.md",
     PROJECT_ROOT / "docs/TESTING.md",
+    PROJECT_ROOT / "docs/AGENT_OPTIMIZATION.md",
     PROJECT_ROOT / "docs/KNOWN_ISSUES.md",
     PROJECT_ROOT / "docs/COMPATIBILITY.md",
     PROJECT_ROOT / "docs/HANDOFF_TEMPLATE.md",
@@ -52,6 +53,7 @@ VERSIONED_DOCUMENTS = (
     PROJECT_ROOT / "docs/README.md",
     PROJECT_ROOT / "docs/ARCHITECTURE.md",
     PROJECT_ROOT / "docs/TESTING.md",
+    PROJECT_ROOT / "docs/AGENT_OPTIMIZATION.md",
     PROJECT_ROOT / "docs/KNOWN_ISSUES.md",
     PROJECT_ROOT / "docs/COMPATIBILITY.md",
     PROJECT_ROOT / "docs/HANDOFF_TEMPLATE.md",

@@ -1,0 +1,84 @@
+{# Code version: v1.0.0 #}
+<script id="agent_optimization_manifest" type="application/json">{{ {
+    "contractVersion": "1.0.0",
+    "profile": "openai-site-tools-2026-08-28",
+    "status": "project-convention",
+    "site": {
+        "id": "antigravity",
+        "name": "antigravity",
+        "description": "A local market-analysis, portfolio, investment-record, and strategy-backtesting console.",
+        "privacyBoundary": "Investment records, broker access, settings, credentials, and live-trading state remain behind the existing application routes and are not returned by the v1 Site tools."
+    },
+    "capabilities": [
+        {
+            "id": "market_analysis",
+            "label": "Market analysis",
+            "description": "Compare ticker prices, returns, and market capitalization through the existing workspace interface."
+        },
+        {
+            "id": "portfolio_analysis",
+            "label": "Portfolio analysis",
+            "description": "Inspect weighted or share-based portfolio scenarios through the existing workspace interface."
+        },
+        {
+            "id": "backtesting",
+            "label": "Backtesting",
+            "description": "Configure and run supported strategy backtests through the existing workspace interface."
+        },
+        {
+            "id": "investment_review",
+            "label": "Investment review",
+            "description": "Review protected investment records through the existing authenticated application interface."
+        },
+        {
+            "id": "configuration",
+            "label": "Configuration",
+            "description": "Review application settings without granting Site tools direct settings-write authority."
+        }
+    ],
+    "navigation": [
+        {
+            "id": "ticker_comparison",
+            "label": "Ticker comparison",
+            "description": "Open the canonical ticker-comparison workspace without changing saved data.",
+            "path": "/workspaces/compare"
+        },
+        {
+            "id": "price_comparison",
+            "label": "Price comparison",
+            "description": "Open the canonical price-comparison workspace without changing saved data.",
+            "path": "/workspaces/prices"
+        },
+        {
+            "id": "market_cap_comparison",
+            "label": "Market-cap comparison",
+            "description": "Open the price workspace in market-cap mode without changing saved data.",
+            "path": "/workspaces/prices?metric=market-cap"
+        },
+        {
+            "id": "portfolio_workspace",
+            "label": "Portfolio workspace",
+            "description": "Open the canonical portfolio workspace without writing investment records.",
+            "path": "/workspaces/portfolio"
+        },
+        {
+            "id": "backtest_workspace",
+            "label": "Backtest workspace",
+            "description": "Open the canonical Backtest workspace without submitting a live trade.",
+            "path": "/workspaces/backtest"
+        },
+        {
+            "id": "investment_workspace",
+            "label": "Investment workspace",
+            "description": "Open the protected Investment workspace without importing or modifying records.",
+            "path": "/trade/investment"
+        },
+        {
+            "id": "settings",
+            "label": "Settings",
+            "description": "Open the About settings page without changing persisted configuration.",
+            "path": "/settings/about"
+        }
+    ]
+}|tojson }}</script>
+<script src="{{ url_for('static', filename='assets/js/agent-optimization.js', v=version ~ '-agent-optimization-v1.0.0') }}"></script>
