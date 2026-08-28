@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.11.1
+Code version: v0.11.2
 """
 
 from __future__ import annotations
@@ -277,11 +277,6 @@ def _market_session_segments(ticker: str | None = None) -> list[tuple[int, int]]
     if market == "SG":
         return [(9 * 60, (12 * 60) - 1), (13 * 60, (17 * 60) - 1)]
     return [(_market_session_open_minute(ticker), _market_session_close_minute(ticker))]
-
-
-def _timestamp_to_compare_axis(timestamp: object, ticker: str | None = None) -> pd.Timestamp:
-    del ticker
-    return _timestamp_as_new_york(timestamp).tz_localize(None)
 
 
 def prepare_intraday_dataset_for_compare(

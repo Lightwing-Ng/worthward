@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.2.0
+# Code version: v1.4.0
 
 set -euo pipefail
 
@@ -9,6 +9,20 @@ source "$ROOT_DIR/scripts/resolve_python.sh"
 PYTHON_BIN="$(resolve_python_bin)"
 RUNTIME_ROOT="$ROOT_DIR/test-results/runtime-store"
 APP_PID=""
+
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
+	exit 1
+fi
+
+if [[ -z "${ANTIGRAVITY_E2E_LOCK_TOKEN:-}" ]]; then
+	exec "$PYTHON_BIN" "$ROOT_DIR/scripts/e2e_lock.py" run \
+		--root "$ROOT_DIR" -- "$ROOT_DIR/scripts/run_e2e_app.sh" "$@"
+fi
+
+if ! "$PYTHON_BIN" "$ROOT_DIR/scripts/e2e_lock.py" verify --root "$ROOT_DIR"; then
+	exit 73
+fi
 
 cleanup() {
 	if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
@@ -25,19 +39,29 @@ cleanup() {
 	esac
 }
 
-trap cleanup EXIT INT TERM
-
-if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
-	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
-	exit 1
-fi
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ -d "$RUNTIME_ROOT" ]]; then
 	find "$RUNTIME_ROOT" -depth -delete
 fi
 mkdir -p "$RUNTIME_ROOT"
-mkdir -p "$RUNTIME_ROOT/market_store"
-cp -R "$ROOT_DIR/market_store/logos" "$RUNTIME_ROOT/market_store/logos"
+mkdir -p "$RUNTIME_ROOT/market_store/logos"
+TRACKED_LOGO_COUNT=0
+while IFS= read -r -d '' logo_path; do
+	if [[ ! -f "$ROOT_DIR/$logo_path" ]]; then
+		continue
+	fi
+	logo_directory="${logo_path%/*}"
+	mkdir -p "$RUNTIME_ROOT/$logo_directory"
+	cp "$ROOT_DIR/$logo_path" "$RUNTIME_ROOT/$logo_path"
+	TRACKED_LOGO_COUNT=$((TRACKED_LOGO_COUNT + 1))
+done < <(git -C "$ROOT_DIR" ls-files -z -- market_store/logos)
+if (( TRACKED_LOGO_COUNT == 0 )); then
+	echo "No tracked E2E logo assets were found." >&2
+	exit 1
+fi
 mkdir -p "$RUNTIME_ROOT/settings_store"
 
 export ANTIGRAVITY_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"

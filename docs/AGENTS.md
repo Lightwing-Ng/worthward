@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.2.0-agent-contract.4`
+Policy version: `v1.3.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -18,6 +18,10 @@ discovery. This file remains the canonical guide.
 - Use American English for code comments and repository documentation.
 - Follow the existing file-level `Code version:` convention for versioned source files. Do not bump it for comments, formatting, or documentation-only edits. Bump the patch component for a behavior-preserving refactor or localized bug fix, for example `v0.25.2` to `v0.25.3`. Bump the minor component and reset the patch component for a module-local public behavior, validation, persistence, security, or API-contract change, for example `v0.25.2` to `v0.26.0`. Bump the major component and reset lower components only for a coordinated cross-module breaking contract or schema migration. Increment exactly one component per coherent change and never skip versions merely to reflect task size.
 - For a versioned Markdown document, bump its documentation version whenever factual or contractual content changes. Record test baselines only from a dated command result, never from an estimate.
+- Treat [`README.md`](README.md) as the documentation map and ownership
+  registry. Ignored, unreferenced, or old-looking files are not automatically
+  disposable; classify protected state, generated output, compatibility
+  source, and reserved assets before removal.
 - Investment equity replay is a high-risk accounting boundary. The replay
   timeline is ordered by the broker ledger booking date, with execution
   datetime used only as a same-day tie-breaker. A future-dated settlement
@@ -40,7 +44,10 @@ discovery. This file remains the canonical guide.
 
 ## Required workflow
 
-1. Read [`README.md`](../README.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TESTING.md`](TESTING.md), and [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) before a cross-cutting change.
+1. Read the documentation map in [`README.md`](README.md), then read the root
+   [`README.md`](../README.md), [`ARCHITECTURE.md`](ARCHITECTURE.md),
+   [`TESTING.md`](TESTING.md), [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), and
+   [`COMPATIBILITY.md`](COMPATIBILITY.md) before a cross-cutting change.
 2. Read [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) before changing a shared UI
    pattern, then read the single local synchronization ledger at
    `/Users/example/Desktop/SHARED_UI_SYNC.md`. `antigravity` is the canonical complete
@@ -63,6 +70,14 @@ discovery. This file remains the canonical guide.
    - Treat `/workspaces/market-caps` as a compatibility redirect and test it as a redirect rather than a canonical renderer.
 6. Run the smallest relevant test first, then `./scripts/check.sh` before handoff.
 7. Record intentional behavior changes in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) or the relevant domain documentation.
+8. Before deleting generated output, check active process ownership with `ps`
+   and `lsof`. Port `8688` is normally user-owned; isolated E2E owns `8699` and
+   `test-results/runtime-store`. Never clean a live test directory or reuse an
+   arbitrary existing server for the complete gate.
+9. Use [`HANDOFF_TEMPLATE.md`](HANDOFF_TEMPLATE.md) for the final evidence
+   record. Include exact commands, exit status, test counts, preserved dirty
+   changes, service ownership, protected-store impact, and recoverable cleanup
+   locations.
 
 ## Quality boundaries
 
@@ -71,3 +86,6 @@ discovery. This file remains the canonical guide.
 - Browser tests must not submit a real broker import or live order. Intercept the request or stop at client-side readiness.
 - Keep E2E tests deterministic and independent of remote market-data availability.
 - The current coverage baseline and improvement targets are documented in [`TESTING.md`](TESTING.md).
+- Historical changelogs and ignored local Markdown reports are not current
+  contracts. Do not copy private ledger acceptance values into versioned
+  documentation or infer current behavior from a historical entry.

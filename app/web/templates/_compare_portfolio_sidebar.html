@@ -1,4 +1,4 @@
-{# Code version: v0.4.2 #}
+{# Code version: v0.4.3 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set portfolio_allocation_mode = portfolio_allocation_mode if current_view == "portfolio" and portfolio_allocation_mode is defined else "weight" %}
 {% set portfolio_allocation_mode = "shares" if portfolio_allocation_mode == "shares" else "weight" %}
@@ -100,7 +100,7 @@
     <div class="field field-checkbox field-switch comparison-chips-field" data-chips-field>
         {{ render_switch(
             "show_chips",
-            "Show chips",
+            "Position distribution",
             "chips",
             checked=show_chips,
             input_attrs='data-chips-input aria-controls="chips_chart_region"'

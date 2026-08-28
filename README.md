@@ -1,12 +1,8 @@
 # antigravity
 
-Documentation version: `v2.82.0`
+Documentation version: `v2.83.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
-
-## Screenshot
-
-![](https://i.imgur.com/Z1GLmfD.png)
 
 ## What the app does
 
@@ -33,8 +29,8 @@ Documentation version: `v2.82.0`
 - Python `3.13` or `3.14`
 - Dependencies from `requirements.txt`
 - `pyarrow` for parquet persistence
+- Node.js `22` for the JavaScript and browser quality gate
 - Optional Longbridge credentials for broker-backed market-data fallback
-- Optional `tradingview_ta` if you want TradingView timing analysis
 - Yahoo Mail app password for SMTP alerts
 
 The supported launch and test workflows use host Python `3.13` or `3.14`.
@@ -362,12 +358,12 @@ remain explicitly provisional.
 - Every trade, charge, and dividend in the legacy paired path must reconcile to a same-date and same-amount USD cash posting. The statement import fails closed when reconciliation is incomplete.
 - Historical statement snapshots do not replace a newer copy/paste Portfolio or posted-ledger cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
 - When a historical HSBC statement overlaps an existing cash-account import, the same-account event is deduplicated by date, type, currency, signed amount, and occurrence count. Existing USD cash rows remain the current snapshot, while statement-only HKD and CNH rows are added to the ledger.
-- The read-only validator can independently audit the four official account CSVs with `--official-csv-dir`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.parquet`.
+- The read-only validator can independently audit the four official account CSVs with `python3 scripts/validate_hsbc_statement_import.py /path/to/statements --official-csv-dir /path/to/official-csvs`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.parquet`.
 
 ### BOCHK statement import
 
 - BOCHK mode accepts one or more `Consolidated Statement` PDFs in a single batch. Later batches are merged incrementally, and re-uploading the same PDF is idempotent.
-- The customer number is retained as the parent account, while each full deposit-account number, short subaccount number, account type, source currency, and statement balance remain attached to the imported rows. In particular, subaccount `0079` keeps its `CNY` and `USD` sections separate; HKD subaccounts such as `0066` are never collapsed into an unrelated account at parse time.
+- The customer number is retained as the parent account, while each full deposit-account number, short subaccount number, account type, source currency, and statement balance remain attached to the imported rows. A short subaccount that contains multiple currency sections keeps them separate, and one HKD subaccount is never collapsed into another account at parse time.
 - BOCHK statement currencies remain source currencies: `HKD`, `CNY`, and `USD` are not converted or relabeled. No securities positions or trades are created.
 - The securities cash-balance section is accepted only when it contains no non-zero activity. A non-zero securities cash row fails closed so the statement cannot silently discard securities activity.
 - Flow amounts are classified with stable printed-column boundaries and each subaccount's running balance. Right-aligned withdrawals are retained, while ambiguous rows, balance discontinuities, and page headers outside the transaction-detail region fail closed.
@@ -527,10 +523,13 @@ AGENTS.md                       -> Root compatibility pointer to docs/AGENTS.md
 main.py                         -> Flask runtime entry point
 config.toml                     -> App metadata, defaults, server bind, labels, and integration settings
 README.md                       -> Project documentation
+docs/README.md                  -> Documentation authority, ownership, and cleanup map
 docs/AGENTS.md                  -> Agent workflow, safety, and quality boundaries
 docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and invariants
 docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
 docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
+docs/COMPATIBILITY.md           -> Canonical routes, aliases, retired renderers, and reserved source
+docs/HANDOFF_TEMPLATE.md        -> Required agent handoff evidence structure
 docs/INVESTMENT_FRONTEND_CHANGELOG.md -> Historical Investment frontend changes
 requirements.txt                -> Python runtime, test, coverage, and static-check dependency pins
 scripts/setup_python.sh         -> Supported host-Python dependency installer
@@ -549,22 +548,34 @@ app/web/static/                 -> CSS, JavaScript, and image assets
 strategies/                     -> Strategy framework, loader, backtest engine, and algorithms
 market_store/                   -> Local market history, profile, and logo caches
 settings_store/                 -> Runtime-generated local settings, investment ledger, and search caches
+outputs/                        -> Ignored, potentially sensitive local review output; never canonical docs
+tmp/                            -> Ignored disposable task scratch; clean only when no active owner remains
 ```
 
 ## Agent documentation
 
-Agents should use these authoritative documents for persistent context, contracts, workflow, and project memory:
+Agents should begin with the documentation map, which defines authority,
+ownership, cleanup classes, and the required reading path:
 
 - [Root agent compatibility pointer](AGENTS.md)
+- [Documentation map and repository ownership](docs/README.md)
 - [Canonical agent operating guide](docs/AGENTS.md)
 - [Architecture guide](docs/ARCHITECTURE.md)
 - [Testing guide](docs/TESTING.md)
-- [Known issues and behavior history](docs/KNOWN_ISSUES.md)
-- [Investment frontend changelog](docs/INVESTMENT_FRONTEND_CHANGELOG.md) (optional historical reference)
+- [Known issues and operating constraints](docs/KNOWN_ISSUES.md)
+- [Compatibility routes and reserved source](docs/COMPATIBILITY.md)
+- [Shared UI workflow](docs/SHARED_UI_WORKFLOW.md) (required only for shared UI work)
+- [Agent handoff template](docs/HANDOFF_TEMPLATE.md)
+- [Investment frontend changelog](docs/INVESTMENT_FRONTEND_CHANGELOG.md) (historical reference only)
 
 ## Versioning note
 
-The version displayed in the web UI comes from `config.toml` under `[app].version`. The documentation version markers in this README and `docs/*.md` track document revisions independently and are not expected to match the application version. Some Python files also contain file-level `Code version:` comments; those are source-file revision markers, not the app metadata shown in the interface.
+The version displayed in the web UI comes from `config.toml` under
+`[app].version`. Change that release metadata only as part of an explicit
+application release. The documentation version markers in this README and
+`docs/*.md` track document revisions independently and are not expected to
+match the application version. File-level `Code version:` comments are source
+revision markers, not the app metadata shown in the interface.
 
 ## Running tests
 

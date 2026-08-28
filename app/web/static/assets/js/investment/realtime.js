@@ -1,7 +1,7 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.1
+ * Code version: v1.3.2
  * - Fixed: Holdings live values retain their CSS-owned geometry instead of
  *   adding content-measured minimum dimensions during quote updates.
  * - Changed: Every quote poll now awaits the market-session refresh before
@@ -11,9 +11,9 @@
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
-import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.0.0';
+import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.1.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.1';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.2';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,

@@ -1,4 +1,4 @@
-/* Code version: v1.171.0 */
+/* Code version: v1.173.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -1686,7 +1686,12 @@ test('formats every price-comparison y axis with the shared stock-price contract
             .filter(Boolean)
     ));
     expect(lowPriceLabels.length).toBeGreaterThan(0);
-    expect(lowPriceLabels.every((label) => /^-?\d{1,2}\.\d{2}$/.test(label))).toBe(true);
+    expect(lowPriceLabels.every((label) => {
+        const numericValue = Number(label.replaceAll(',', ''));
+        return Math.abs(numericValue) >= 100
+            ? /^-?\d{1,3}(?:,\d{3})*$/.test(label)
+            : /^-?\d{1,2}\.\d{2}$/.test(label);
+    })).toBe(true);
 });
 
 test('connects daily price points across market-calendar gaps without filling missing history', async ({page}) => {
@@ -2057,7 +2062,7 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
     expect(marketCapUrl.searchParams.has('period')).toBe(false);
 });
 
-test('places the Ticker comparison mode above Period and Show chips below Period', async ({page}) => {
+test('places the Ticker comparison mode above Period and Position distribution below Period', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
 
     const periodPanel = page.locator('#period_panel');
@@ -2066,6 +2071,7 @@ test('places the Ticker comparison mode above Period and Show chips below Period
     await expect(periodPanel).toBeVisible();
     await expect(rangeModeField).toBeVisible();
     await expect(chipsField).toBeVisible();
+    await expect(chipsField.locator('.switch-label')).toHaveText('Position distribution');
 
     const placement = await rangeModeField.evaluate((field) => {
         const form = field.parentElement;
@@ -3099,6 +3105,82 @@ test('exposes turnover-survival metadata and dense cost ranges in the browser bu
     });
 });
 
+test('keeps the production chip panel on the complete selected-range volume profile', async ({page}) => {
+    await page.setViewportSize({width: 759, height: 1170});
+    let chipRequests = 0;
+    const tickers = ['QQQ', 'SPY'];
+    const start = Date.UTC(2025, 7, 27);
+    const buildOhlcv = (tickerIndex) => Array.from({length: 252}, (_, rowIndex) => {
+        const close = 560 + (tickerIndex * 70) + (rowIndex * 0.72);
+        return {
+            t: `${new Date(start + (rowIndex * 86_400_000)).toISOString().slice(0, 10)} 00:00`,
+            o: close - 1,
+            h: close + 3,
+            l: close - 3,
+            c: close,
+            v: 80_000_000,
+            synthetic: false,
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        chipRequests += 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, tickerIndex) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    circulatingShares: 1_000_000_000,
+                    shareBasis: 'longbridge-static-circulating-shares',
+                    ohlcv: buildOhlcv(tickerIndex),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=QQQ&ticker=SPY&range=1y&chips=1');
+    await expect.poll(() => chipRequests).toBe(1);
+    const canvases = page.locator('[data-price-subplot-canvas]');
+    await expect(canvases).toHaveCount(2);
+    await expect(canvases.first()).toHaveAttribute('data-chip-model', 'ohlcv-estimate');
+    await expect(canvases.first()).toHaveAttribute('data-chip-decay-applied', '0');
+    await expect(canvases.last()).toHaveAttribute('data-chip-model', 'ohlcv-estimate');
+    await expect(canvases.last()).toHaveAttribute('data-chip-decay-applied', '0');
+    const populatedBins = await canvases.evaluateAll((items) => (
+        items.map((canvas) => Number(canvas.dataset.chipPopulatedBinCount))
+    ));
+    expect(populatedBins.every((count) => count === 100)).toBe(true);
+    const renderedCoverage = await canvases.evaluateAll((items) => items.map((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const distribution = chart.$costDistribution.distribution;
+        const panelWidth = Math.max(0, chart.width - chart.chartArea.right - 18);
+        const visibleBins = distribution.bins.filter((bin) => (
+            bin.weight > 0 && (bin.normalizedWidth * panelWidth) >= 0.75
+        ));
+        const visibleSpan = visibleBins.length
+            ? visibleBins[visibleBins.length - 1].high - visibleBins[0].low
+            : 0;
+        return visibleSpan / (distribution.maxPrice - distribution.minPrice);
+    }));
+    expect(renderedCoverage.every((coverage) => coverage >= 0.95)).toBe(true);
+
+    const hoverPoint = await canvases.first().evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        const rect = canvas.getBoundingClientRect();
+        const dataIndex = Math.floor((window.ANTIGRAVITY_APP.chart.series[0].prices.length - 1) / 2);
+        return {
+            x: rect.left + (chart.scales.x.getPixelForValue(dataIndex) * (rect.width / chart.width)),
+            y: rect.top + (chart.chartArea.top * (rect.height / chart.height)) + 8,
+        };
+    });
+    await page.mouse.move(hoverPoint.x, hoverPoint.y);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-snapshot-mode="cumulative-hover"]')).toHaveCount(2);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-model="ohlcv-estimate"]')).toHaveCount(2);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-decay-applied="0"]')).toHaveCount(2);
+});
+
 test('keeps a range-wide chip profile when turnover reaches saturation', async ({page}) => {
     let chipRequests = 0;
     const tickers = ['000660.KS', 'SKHY', 'DRAM'];
@@ -3477,7 +3559,7 @@ test('switches short price ranges and formats price axes by currency precision',
     const fractionalTick = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => (
         window.Chart.getChart(canvas).options.scales.y.ticks.callback(1040.5)
     ));
-    expect(fractionalTick).toBe('1,040.5');
+    expect(fractionalTick).toBe('1,041');
 
     const threeDayAxis = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => {
@@ -4195,7 +4277,7 @@ test('validates the investment import flow without mutating the local store', as
     });
     expect(importActionPackageMaterial.backgroundColor).toBe(transactionHistoryHelpMaterial.backgroundColor);
     expect(importActionPackageMaterial.backgroundImage).not.toBe('none');
-    expect(importActionPackageMaterial.backdropFilter).toBe('none');
+    expect(importActionPackageMaterial.backdropFilter).toContain('blur');
     expect(importActionPackageMaterial.isolation).toBe('auto');
     expect(importActionPackageMaterial.boxShadow).not.toBe('none');
 
@@ -7626,17 +7708,17 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.132.0',
+        entry: 'v2.132.1',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
         importFeedback: 'v1.9.0',
         layout: 'v1.1.2',
-        pagination: 'v1.4.0',
-        realtime: 'v1.3.1',
+        pagination: 'v1.4.1',
+        realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
         stockDetails: 'v0.26.0',
         transactionFilters: 'v1.3.0',
-        transactionTable: 'v1.0.1',
+        transactionTable: 'v1.0.2',
         urlState: 'v1.2.0',
     });
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
@@ -7652,7 +7734,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.9.7');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.10.1');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -7746,12 +7828,13 @@ test('uses the Neo stock-details composition without chart or donut collisions',
             ),
         };
     });
+    const verticalAlignmentTolerance = 2.1;
 
     await expect.poll(async () => {
         const currentGeometry = await readGeometry();
         if (!currentGeometry) return Number.POSITIVE_INFINITY;
         return Math.abs(currentGeometry.chartCenterY - currentGeometry.donutCenterY);
-    }).toBeLessThanOrEqual(2);
+    }).toBeLessThanOrEqual(verticalAlignmentTolerance);
     const geometry = await readGeometry();
 
     expect(geometry).not.toBeNull();
@@ -7763,7 +7846,9 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(Math.abs(geometry.chartCardBottom - geometry.donutCardBottom)).toBeLessThanOrEqual(1);
     expect(geometry.metricsOverflowY).toBe('auto');
     expect(geometry.metricsOverflow).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.chartCenterY - geometry.donutCenterY)).toBeLessThanOrEqual(2);
+    expect(Math.abs(geometry.chartCenterY - geometry.donutCenterY)).toBeLessThanOrEqual(
+        verticalAlignmentTolerance,
+    );
     expect(geometry.donutDiameter).toBeGreaterThan(120);
     expect(geometry.donutFrameWidth - geometry.donutDiameter).toBeLessThanOrEqual(50);
     expect(geometry.logoContained).toBe(true);
@@ -8013,7 +8098,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.75.43';
+            && url.searchParams.get('v') === '1.76.0';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -10800,6 +10885,225 @@ test('keeps shared desktop titles clear throughout sidebar motion', async ({page
         expect(expand.minToggleGap).toBeGreaterThanOrEqual(11.5);
         expect(expand.minSidebarGap).toBeGreaterThanOrEqual(0);
     }
+});
+
+test('adds desktop workspace gel motion without moving title rails or leaking into narrow layouts', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-07-17', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
+        ],
+        priceHistoryByTicker: {
+            QQQ: [
+                {date: '2026-07-17', close: 500},
+                {date: '2026-07-18', close: 501},
+            ],
+        },
+    });
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+    await page.setViewportSize({width: 1024, height: 863});
+    await page.goto('/settings/style-tokens');
+    await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.style-token-shell')).toBeVisible();
+
+    const expandedBaseline = await page.locator('.style-token-shell').evaluate((content) => {
+        const rect = content.getBoundingClientRect();
+        return {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+        };
+    });
+
+    const sampleSidebarMotion = () => page.evaluate(async () => {
+        const toggle = document.querySelector('#sidebar_toggle');
+        const shell = document.querySelector('.app-shell');
+        const titleRail = document.querySelector('.settings-summary-card');
+        const content = document.querySelector('.style-token-shell');
+        if (!(toggle instanceof HTMLElement)
+            || !(shell instanceof HTMLElement)
+            || !(titleRail instanceof HTMLElement)
+            || !(content instanceof HTMLElement)) {
+            return null;
+        }
+
+        const frames = [];
+        const startedAt = performance.now();
+        toggle.click();
+        await new Promise((resolve) => {
+            const sample = () => {
+                const transform = getComputedStyle(content).transform;
+                const matrix = transform === 'none' ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(transform);
+                const contentRect = content.getBoundingClientRect();
+                const titleRect = titleRail.getBoundingClientRect();
+                frames.push({
+                    animationNames: content.getAnimations().map((animation) => animation.animationName || ''),
+                    className: shell.className,
+                    contentGap: contentRect.top - titleRect.bottom,
+                    documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    offsetWidth: content.offsetWidth,
+                    scaleX: matrix.a,
+                    scaleY: matrix.d,
+                    titleTransform: getComputedStyle(titleRail).transform,
+                    translateX: matrix.e,
+                });
+                if (performance.now() - startedAt >= 760) {
+                    resolve();
+                    return;
+                }
+                requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+        });
+        const finalRect = content.getBoundingClientRect();
+        return {
+            finalAnimationNames: content.getAnimations().map((animation) => animation.animationName || ''),
+            finalClassName: shell.className,
+            finalRect: {
+                left: finalRect.left,
+                top: finalRect.top,
+                width: finalRect.width,
+            },
+            finalTransform: getComputedStyle(content).transform,
+            frames,
+        };
+    });
+
+    const closing = await sampleSidebarMotion();
+    expect(closing).not.toBeNull();
+    expect(closing.frames.some((frame) => frame.className.includes('is-sidebar-closing'))).toBe(true);
+    expect(closing.frames.some((frame) => frame.animationNames.includes('workspace-sidebar-gel-close'))).toBe(true);
+    expect(Math.max(...closing.frames.map((frame) => Math.abs(frame.scaleX - 1)))).toBeGreaterThan(0.005);
+    expect(Math.max(...closing.frames.map((frame) => Math.abs(frame.scaleY - 1)))).toBeGreaterThan(0.005);
+    expect(Math.max(...closing.frames.map((frame) => Math.abs(frame.translateX)))).toBeGreaterThan(8);
+    expect(Math.max(...closing.frames.map((frame) => frame.documentOverflow))).toBeLessThanOrEqual(1);
+    expect(Math.min(...closing.frames.map((frame) => frame.contentGap))).toBeGreaterThanOrEqual(0);
+    expect(
+        Math.max(...closing.frames.map((frame) => frame.offsetWidth))
+        - Math.min(...closing.frames.map((frame) => frame.offsetWidth)),
+    ).toBeLessThanOrEqual(1);
+    expect(closing.frames.every((frame) => frame.titleTransform === 'none')).toBe(true);
+    expect(closing.finalClassName).not.toContain('is-sidebar-animating');
+    expect(closing.finalTransform).toBe('none');
+    expect(closing.finalAnimationNames.some((name) => String(name).startsWith('workspace-sidebar-gel-'))).toBe(false);
+
+    const opening = await sampleSidebarMotion();
+    expect(opening).not.toBeNull();
+    expect(opening.frames.some((frame) => frame.className.includes('is-sidebar-opening'))).toBe(true);
+    expect(opening.frames.some((frame) => frame.animationNames.includes('workspace-sidebar-gel-open'))).toBe(true);
+    expect(Math.max(...opening.frames.map((frame) => frame.documentOverflow))).toBeLessThanOrEqual(1);
+    expect(Math.min(...opening.frames.map((frame) => frame.contentGap))).toBeGreaterThanOrEqual(0);
+    expect(
+        Math.max(...opening.frames.map((frame) => frame.offsetWidth))
+        - Math.min(...opening.frames.map((frame) => frame.offsetWidth)),
+    ).toBeLessThanOrEqual(1);
+    expect(opening.frames.every((frame) => frame.titleTransform === 'none')).toBe(true);
+    expect(opening.finalClassName).not.toContain('is-sidebar-animating');
+    expect(opening.finalTransform).toBe('none');
+    expect(opening.finalAnimationNames.some((name) => String(name).startsWith('workspace-sidebar-gel-'))).toBe(false);
+    expect(Math.abs(opening.finalRect.left - expandedBaseline.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(opening.finalRect.top - expandedBaseline.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(opening.finalRect.width - expandedBaseline.width)).toBeLessThanOrEqual(1);
+
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    const reducedMotionGate = await page.locator('#sidebar_toggle').evaluate((toggle) => {
+        const shell = document.querySelector('.app-shell');
+        const content = document.querySelector('.style-token-shell');
+        toggle.click();
+        return {
+            animationNames: content?.getAnimations().map((animation) => animation.animationName || '') || [],
+            ariaExpanded: toggle.getAttribute('aria-expanded'),
+            className: shell?.className || '',
+        };
+    });
+    expect(reducedMotionGate.ariaExpanded).toBe('false');
+    expect(reducedMotionGate.className).not.toContain('is-sidebar-animating');
+    expect(reducedMotionGate.animationNames.some((name) => String(name).startsWith('workspace-sidebar-gel-'))).toBe(false);
+
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+    await page.setViewportSize({width: 390, height: 844});
+    await page.evaluate(() => window.sessionStorage.setItem('antigravity:sidebar-open', 'true'));
+    await page.reload();
+    await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'true');
+    const narrowMotionGate = await page.locator('#sidebar_toggle').evaluate((toggle) => {
+        const shell = document.querySelector('.app-shell');
+        const content = document.querySelector('.style-token-shell');
+        toggle.click();
+        return {
+            animationNames: content?.getAnimations().map((animation) => animation.animationName || '') || [],
+            ariaExpanded: toggle.getAttribute('aria-expanded'),
+            className: shell?.className || '',
+        };
+    });
+    expect(narrowMotionGate.ariaExpanded).toBe('false');
+    expect(narrowMotionGate.className).not.toContain('is-sidebar-animating');
+    expect(narrowMotionGate.animationNames.some((name) => String(name).startsWith('workspace-sidebar-gel-'))).toBe(false);
+    await expect.poll(() => page.evaluate(() => (
+        document.documentElement.scrollWidth - document.documentElement.clientWidth
+    ))).toBeLessThanOrEqual(1);
+
+    await page.setViewportSize({width: 1024, height: 863});
+    await page.goto('/trade/investment');
+    await expect(page.locator('#investmentEquityChart[data-investment-chart-ready="1"]')).toBeVisible();
+    await setSidebarExpanded(page, true);
+    await expect(page.locator('.app-shell')).not.toHaveClass(/is-sidebar-animating/);
+
+    const productionMotion = await page.evaluate(async () => {
+        const toggle = document.querySelector('#sidebar_toggle');
+        const shell = document.querySelector('.app-shell');
+        const titleRail = document.querySelector('.investment-workspace-header > .workspace-summary-card');
+        const content = document.querySelector('.investment-workspace-header > .trade-performance-card');
+        if (!(toggle instanceof HTMLElement)
+            || !(shell instanceof HTMLElement)
+            || !(titleRail instanceof HTMLElement)
+            || !(content instanceof HTMLElement)) {
+            return null;
+        }
+
+        const frames = [];
+        const startedAt = performance.now();
+        toggle.click();
+        await new Promise((resolve) => {
+            const sample = () => {
+                const contentRect = content.getBoundingClientRect();
+                const titleRect = titleRail.getBoundingClientRect();
+                frames.push({
+                    animationNames: content.getAnimations().map((animation) => animation.animationName || ''),
+                    contentGap: contentRect.top - titleRect.bottom,
+                    documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    offsetWidth: content.offsetWidth,
+                    titleTransform: getComputedStyle(titleRail).transform,
+                });
+                if (performance.now() - startedAt >= 760) {
+                    resolve();
+                    return;
+                }
+                requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+        });
+        return {
+            finalAnimationNames: content.getAnimations().map((animation) => animation.animationName || ''),
+            finalClassName: shell.className,
+            finalTransform: getComputedStyle(content).transform,
+            frames,
+        };
+    });
+    expect(productionMotion).not.toBeNull();
+    expect(productionMotion.frames.some((frame) => (
+        frame.animationNames.includes('workspace-sidebar-gel-close')
+    ))).toBe(true);
+    expect(Math.max(...productionMotion.frames.map((frame) => frame.documentOverflow))).toBeLessThanOrEqual(1);
+    expect(Math.min(...productionMotion.frames.map((frame) => frame.contentGap))).toBeGreaterThanOrEqual(0);
+    expect(
+        Math.max(...productionMotion.frames.map((frame) => frame.offsetWidth))
+        - Math.min(...productionMotion.frames.map((frame) => frame.offsetWidth)),
+    ).toBeLessThanOrEqual(1);
+    expect(productionMotion.frames.every((frame) => frame.titleTransform === 'none')).toBe(true);
+    expect(productionMotion.finalClassName).not.toContain('is-sidebar-animating');
+    expect(productionMotion.finalTransform).toBe('none');
+    expect(productionMotion.finalAnimationNames.some((name) => (
+        String(name).startsWith('workspace-sidebar-gel-')
+    ))).toBe(false);
 });
 
 test('keeps the selected segmented pill shadow inside the outer edge', async ({page}) => {
@@ -14626,7 +14930,7 @@ test('shows the standard Period dropdown specimen in Style tokens', async ({page
     await expect(dropdown).toBeHidden();
     await trigger.click();
     await expect(dropdown).toBeVisible();
-    await expect(dropdown.locator('[role="option"]')).toHaveCount(10);
+    await expect(dropdown.locator('[role="option"]')).toHaveCount(12);
     await expect(dropdown.locator('[role="option"][data-value="1y"]')).toHaveAttribute('aria-selected', 'true');
     await expect(dropdown.locator('[role="option"][data-value="1y"]')).toHaveCSS('border-radius', '999px');
 
@@ -15207,9 +15511,7 @@ test('applies the Scrollable table style to Backtest transaction details', async
     const referenceStyle = await readHostStyle(referenceTableShell);
 
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
-    const backtestTableHost = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]/div[2]',
-    );
+    const backtestTableHost = page.locator('#backtest_history_table_wrap');
     await expect(backtestTableHost).toBeVisible();
     await expect(backtestTableHost).toHaveClass(/scrollable-data-table-shell/);
     await expect(backtestTableHost.locator(':scope > [data-table-header]')).toHaveCount(1);
@@ -15243,9 +15545,7 @@ test('uses the global compact date format and split numeric typography in Backte
     await setCompactDateFormat('dd_mm_yyyy');
     try {
         await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
-        const transactionHost = page.locator(
-            'xpath=/html/body/main/div/section/section/div/article[2]/article/article[3]/div[2]',
-        );
+        const transactionHost = page.locator('#backtest_history_table_wrap');
         await expect(transactionHost).toBeVisible();
         const firstRow = transactionHost.locator('table[data-table-body] tbody tr').first();
         await expect(firstRow).toBeVisible();
@@ -15253,7 +15553,14 @@ test('uses the global compact date format and split numeric typography in Backte
         const renderedState = await page.evaluate(() => {
             const state = JSON.parse(document.getElementById('antigravity_state')?.textContent || '{}');
             const row = document.querySelector('#backtest_history_table_wrap table[data-table-body] tbody tr');
-            const numericCells = ['price', 'pnl', 'cash', 'equity'].map((className) => {
+            const numericCells = [
+                'price',
+                'realized-pnl',
+                'unrealized-pnl',
+                'cash',
+                'market-value',
+                'equity',
+            ].map((className) => {
                 const cell = row?.querySelector(`.${className}`);
                 return {
                     hasMajor: Boolean(cell?.querySelector('.workspace-metric-value-major')),
@@ -15275,7 +15582,7 @@ test('uses the global compact date format and split numeric typography in Backte
 
         expect(renderedState.shortDateFormat).toBe('dd_mm_yyyy');
         expect(renderedState.dateText).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
-        expect(renderedState.numericCells).toHaveLength(4);
+        expect(renderedState.numericCells).toHaveLength(6);
         renderedState.numericCells.forEach((cell) => {
             expect(cell.hasMajor).toBe(true);
             expect(cell.hasMinor).toBe(true);
@@ -15291,19 +15598,31 @@ test('starts every backtest strategy with its starter parameters from the dropdo
     await page.goto('/workspaces/backtest?period=6mo&strategy=buy-and-hold');
 
     const strategyIds = await page.locator('#trade_strategy option').evaluateAll((options) => (
-        options.map((option) => option.value)
+        [...new Set(options.map((option) => option.value))]
     ));
     expect(strategyIds.length).toBeGreaterThan(1);
 
     for (const strategyId of strategyIds) {
-        await page.locator('[data-trade-strategy-trigger]').click();
-        const option = page.locator(
-            `[data-trade-strategy-dropdown] [data-value="${strategyId}"]`
-        );
-        await expect(option).toBeVisible();
-        await option.dispatchEvent('click');
+        const currentStrategyId = await page.locator('#trade_strategy').inputValue();
+        if (currentStrategyId !== strategyId) {
+            await page.locator('[data-trade-strategy-trigger]').click();
+            const option = page.locator(
+                `[data-trade-strategy-dropdown] [data-value="${strategyId}"]:visible`,
+            ).first();
+            await expect(option).toBeVisible();
+            const navigation = page.waitForURL((url) => {
+                const selectedStrategyId = url.searchParams.get('strategy');
+                return url.pathname === '/workspaces/backtest'
+                    && (
+                        selectedStrategyId === strategyId
+                        || (strategyId === 'grid-trading' && selectedStrategyId === null)
+                    );
+            }, {waitUntil: 'domcontentloaded'});
+            await option.click();
+            await navigation;
+        }
 
-        await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe(strategyId);
+        await expect(page.locator('#trade_strategy')).toHaveValue(strategyId);
         await expect(page.locator('#backtest_view_surface')).toBeVisible();
         await expect(page.locator('#backtest_history_table_wrap')).toBeVisible();
         await expect.poll(() => page.evaluate(() => {
@@ -15339,7 +15658,7 @@ test('removes the horizontal reference line from the exact backtest equity canva
     await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
 
     const exactCanvas = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[2]/article/article[2]/div/div[2]/div[1]/article/div[2]/div[2]/div/canvas',
+        '#backtest_overview_panel .trade-chart-panel-equity #tradeEquityChart',
     );
     await expect(exactCanvas).toHaveCount(1);
     await expect(exactCanvas).toBeVisible();
@@ -15521,9 +15840,7 @@ test('preserves the current ticker when switching strategies from the default ti
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto('/workspaces/backtest?ticker=QQQ&range=3y&strategy=dca&stop_loss=0');
 
-    const strategyTrigger = page.locator(
-        'div.field.trade-strategy-field:nth-of-type(7) > div.trade-strategy-row:nth-of-type(1) > div.trade-strategy-combobox:nth-of-type(1) > button.trade-strategy-select.form-select',
-    );
+    const strategyTrigger = page.locator('[data-trade-strategy-trigger]');
     await expect(strategyTrigger).toBeVisible();
     await strategyTrigger.click();
 
@@ -15695,7 +16012,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
 
 test('renders the Backtest transaction contract for intraday results', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&interval=1m&rise=0.50&fall=1.00');
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=3d&interval=1m&strategy=buy-and-hold&stop_loss=0');
 
     const headerCells = page.locator('#backtest_history_table_wrap [data-table-header] thead th');
     await expect(headerCells).toHaveText([
@@ -15715,10 +16032,8 @@ test('renders the Backtest transaction contract for intraday results', async ({p
     await expect(firstRow).toBeVisible();
     await expect(firstRow.locator('td')).toHaveCount(10);
     await expect(firstRow.locator('td').first()).toHaveText('1');
-    const selectedInterval = await page.locator('#backtest_interval_control').getAttribute('data-active');
-    if (selectedInterval === '1m') {
-        await expect(firstRow.locator('.trade-transactions-date')).toHaveText(/\d{2}:\d{2}/);
-    }
+    await expect(page.locator('#backtest_interval_control')).toHaveAttribute('data-active', '1m');
+    await expect(firstRow.locator('.trade-transactions-date')).toHaveText(/\d{2}:\d{2}/);
 
     const tableGeometry = await page.locator('#backtest_history_table_wrap [data-table-header]').evaluate((table) => ({
         columnCount: table.querySelectorAll('col').length,

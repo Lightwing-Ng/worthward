@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.234.0`
+Documentation version: `v1.234.2`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -52,7 +52,10 @@ references, transaction descriptions, or copied statement content.
 - Broker account validation is opt-in through local environment configuration;
   no personal account number is stored in source code.
 - Local source artifacts may contain sensitive financial evidence. Keep the
-  local settings store and exported statements outside Git and backups.
+  local settings store and exported statements outside Git and unencrypted or
+  shared backups. Preserve a binary-safe encrypted local backup when recovery
+  is required; do not discard the only evidence sidecar for a ledger that may
+  receive later imports.
 
 ## Accounting behavior
 
@@ -73,10 +76,21 @@ references, transaction descriptions, or copied statement content.
   settlement corrections use the pre-projection broker ledger, so a later
   mixed-broker current cash refresh cannot cancel earlier settled proceeds.
 
+## Local store housekeeping
+
+- A machine-local `market_store/` can contain Finder-style collision names such
+  as `*_1m-2.parquet` or `*_1m-3.parquet`. Canonical path resolvers do not read
+  those names, but that alone does not prove that their bytes are disposable.
+  Treat every non-bundled market file as protected local data: verify lineage,
+  compare it with the canonical cache, and obtain explicit user authorization
+  before removing it. Zero-byte companion locks follow the same ownership
+  boundary while a writer may be active.
+
 ## Security
 
-- Live Trading requires a PIN and access token supplied through local
-  environment configuration. The repository configuration contains no default
-  PIN.
+- Browser Live Trading requires the configured PIN and establishes a signed
+  browser session. Non-browser clients require the configured strong access
+  token. A request is authorized by one of those boundaries, not by both at
+  once; the repository contains neither a default PIN nor a default token.
 - IBKR remains file-import-only. No broker session, credential, market-data,
   or order-routing transport is implemented.

@@ -1,5 +1,32 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
+import fs from 'node:fs';
 import {defineConfig, devices} from '@playwright/test';
+
+function requireE2ELock() {
+    const lockFile = process.env.ANTIGRAVITY_E2E_LOCK_FILE;
+    const lockRoot = process.env.ANTIGRAVITY_E2E_LOCK_ROOT;
+    const lockToken = process.env.ANTIGRAVITY_E2E_LOCK_TOKEN;
+    if (!lockFile || !lockRoot || !lockToken) {
+        throw new Error(
+            'Playwright must run through ./scripts/test_e2e.sh so it can own the isolated runtime.',
+        );
+    }
+
+    let owner;
+    try {
+        owner = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    } catch {
+        throw new Error('The inherited Playwright E2E lock is not readable.');
+    }
+    const currentRoot = fs.realpathSync(process.cwd());
+    if (fs.realpathSync(lockRoot) !== currentRoot
+        || fs.realpathSync(owner.root) !== currentRoot
+        || owner.token !== lockToken) {
+        throw new Error('The inherited Playwright E2E lock does not match this repository.');
+    }
+}
+
+requireE2ELock();
 
 export default defineConfig({
     testDir: './tests/e2e',

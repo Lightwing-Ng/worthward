@@ -1,6 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.50.1`
+Documentation version: `v1.51.0`
+
+This is a historical record, not a current implementation contract. Entries
+may be superseded by later source code, tests, Architecture, or Known Issues.
+It must not contain user account identifiers, real balances, position
+quantities, portfolio size, transaction dates, or a private acceptance
+portfolio. Record only privacy-safe behavior invariants.
 
 - Fixed: Mixed-broker Overview replay now calculates HSBC settlement
   boundaries from the pre-current-snapshot broker ledger. A later current cash
@@ -16,9 +22,9 @@ Documentation version: `v1.50.1`
   unresolved, such as a fee scheduled to post on the following day. FX
   conversion alone is deterministic and does not add a marker; initial and
   realtime Holdings and Metrics rendering share the same contract.
-- Fixed: The user-verified IBKR current Cash boundary is `$950.49`. The latest
-  exact-time Transaction history row, Holdings, and Metrics now agree on that
-  value while rows before the snapshot boundary keep their historical replay.
+- Fixed: An evidence-backed IBKR current Cash boundary is shared by the latest
+  exact-time Transaction history row, Holdings, and Metrics, while rows before
+  the snapshot boundary keep their historical replay.
 
 - Changed: Stock-details buy and sell points now render as volume-scaled
   glowing zones. Nearby same-side points use distance-weighted fluid adhesion
@@ -73,8 +79,8 @@ Documentation version: `v1.50.1`
 - Changed: IBKR web-paste current-position calibration now removes the
   misleading currency column, labels cash as `Cash (USD)` or another native
   currency, and unions the authoritative snapshot with pre-snapshot calculated
-  holdings and cash currencies. A newly calculated NVDA holding or CNH balance
-  therefore receives its own verification row.
+  holdings and cash currencies. A newly calculated holding or distinct cash
+  currency therefore receives its own verification row.
 
 - Added: Investment Metrics now shows Cash, Market value, and Total equity cards. They reuse the current Holdings valuation and realtime quote update path, including broker-scoped refreshes.
 
@@ -277,21 +283,21 @@ Documentation version: `v1.50.1`
 
 - Fixed: Matched future HSBC SEC postings now accrue as exact signed
   trade-date receivables or payables and clear only at their own settlement
-  boundaries. Overlapping 22–24 Jun 2026 buys can no longer create a false
-  one-day equity cliff by omitting or prematurely clearing the later payable.
+  boundaries. Overlapping multi-day buys can no longer create a false one-day
+  equity cliff by omitting or prematurely clearing a later payable.
 
 - Fixed: The realtime Overview endpoint now uses the same valid live quote as
   Holdings for cash-equivalent securities. A historical money-market anchor
   remains a fallback only when no live price is available.
 
-- Fixed: SGOV realized P&L includes both attributed HSBC corporate-event
-  dividends. A later generic cash merge can no longer downgrade an evidenced
-  HSBC dividend to a deposit and silently remove it from ticker-level income.
+- Fixed: Realized P&L includes every attributed, evidenced corporate-event
+  dividend. A later generic cash merge can no longer downgrade one to a deposit
+  and silently remove it from ticker-level income.
 
 - Fixed: Holdings and Stock details accept an explicit expected-share
-  attestation for a user-verified open tax-lot history. HSBC DRAM and EUV
-  realized P&L again aggregate with IBKR while every broker and account retains
-  an independent lot inventory.
+  attestation for an evidence-backed open tax-lot history. Cross-broker realized
+  P&L aggregates only after every broker and account retains an independent lot
+  inventory.
 
 - Fixed: Neutral Holdings daily-change badges again use the active theme
   background for text, rendering white in light mode and black in dark mode.
@@ -348,24 +354,23 @@ Documentation version: `v1.50.1`
   price or remembered quote.
 
 - Fixed: Moving the Investment split fully upward now preserves the Holdings
-  column-and-summary layer plus the first real holding row, so a position such
-  as DRAM cannot be clipped beneath the fixed header.
+  column-and-summary layer plus the first real holding row, so a position cannot
+  be clipped beneath the fixed header.
 
-- Fixed: Cash-equivalent tickers such as SGOV now use the money-market identity
-  formatter for dividend and other cash-flow descriptions, so HSBC corporate
-  event payments remain visibly linked to SGOV in Transaction History.
+- Fixed: Configured cash-equivalent tickers now use the money-market identity
+  formatter for dividend and other cash-flow descriptions, so corporate-event
+  payments remain visibly linked to their security in Transaction History.
 
 - Fixed: Ticker-level split-factor consensus now repairs an isolated noisy
   inference on a pre-split fill, preventing a phantom Longbridge HK position
   after the position is flat.
 
 - Fixed: Investment equity replay now follows ledger booking dates before
-  execution timestamps, so the 10 May 2023 SPYM position is not carried into
-  the wrong day.
+  execution timestamps, so a position is not carried into the wrong ledger day.
 
-- Fixed: Future-dated HSBC settlement balances no longer overwrite execution-day
-  cash. The 1–2 Jul 2026 BOXX settlement sequence remains continuous through
-  the sale and later buys.
+- Fixed: Future-dated HSBC settlement balances no longer overwrite
+  execution-day cash. An overlapping cross-day settlement sequence remains
+  continuous through a sale and later buys.
 
 - Fixed: Confirmed internal-transfer bridges are history-only. Current Holdings
   cash and equity remain broker-authoritative, while the final chart point is
@@ -446,15 +451,15 @@ Documentation version: `v1.50.1`
 - Fixed: IBKR `Realized Summary` foreign-currency cash flows now reach the
   internal-transfer candidate menu as exact native `CNH`/`HKD` records after
   their base-currency `Transaction History` equivalents are safely replaced.
-  June 2026 BOCHK/HSBC funding legs remain available for manual binding, with
-  no automatic counterpart selection.
+  Cross-bank funding legs remain available for manual binding, with no
+  automatic counterpart selection.
 
 - Fixed: Futu (HK) `TRANSFER FROM HK STOCKS ACCOUNT` rows now preserve Futu
   subaccount cash while removing the internal movement from All brokers equity,
   the daily transfer series, and funding metrics.
 
-- Fixed: Negative Longbridge (HK) cash reversals, including the 17 Apr 2024
-  returned-cheque record, no longer appear as internal-transfer deposit sources.
+- Fixed: Negative Longbridge (HK) cash reversals, including a returned-cheque
+  record, no longer appear as internal-transfer deposit sources.
 
 - Fixed: A dated Longbridge (HK) deposit can bind to the matching BOCHK
   withdrawal, with any difference shown as a transfer fee.
@@ -549,7 +554,7 @@ architectural boundary summary so code navigation begins at the imports.
 
 - Changed: Unresolved transfer binding controls now use a transparent 10px-radius
   magenta border. Description wording standardizes `eDDA`, `KOL Rewards · ...`,
-  and Longbridge SG's TQQQ cash-dividend spacing while retaining imported details.
+  and broker-specific cash-dividend spacing while retaining imported details.
 
 - Added: Binding an internal transfer now uses the shared workspace Modal dialog
   with a rotating loading indicator and a notice that the rebuild may take up to
@@ -706,22 +711,22 @@ architectural boundary summary so code navigation begins at the imports.
   clamp to the viewport. The Metrics grid can scroll at narrow widths without
   clipping or creating a false scroll range from tooltip content.
 
-- Verified: A complete read-only pass over all 41 non-money-market stock and ETF
+- Verified: A complete read-only pass over all non-money-market stock and ETF
   rows confirms that Holdings, Stock details, and the calculation engine agree
   at two decimal places. The audited fourth Stock-details action is Export
   Transactions; Realized P&L remains a persistent metric card.
 - Tested: Synthetic multi-account round trips remain consistent across the
   calculation engine and the Holdings and Stock details surfaces. Broker
   contributions stay scoped before aggregation.
-- Documented: DRAM, BOXX, and EUV retain `partial` calculation status because
-  rolling HSBC Order Status history cannot supply a verified account result.
-  Their displayed values therefore include complete accounts only; no local
-  estimate from incomplete HSBC history is added.
+- Documented: Scopes backed only by rolling broker history retain `partial`
+  calculation status when that evidence cannot supply a verified account
+  result. Displayed values include complete accounts only; no local estimate
+  from incomplete history is added.
 - Fixed: Stock-details identity for every configured money-market fund now uses
   the same positive green token logo as Holdings instead of rendering the raw
   black SVG asset.
-- Fixed: Franklin's money-market symbol now displays its canonical `005276756`
-  ticker while retaining the standard full fund name.
+- Fixed: The configured fund registry displays each canonical money-market
+  symbol while retaining its standard full fund name.
 
 - Changed: Stock-details exact-price hover badges now reuse the Holdings
   allocation badge's shared 2px corner radius while preserving the existing
@@ -731,7 +736,7 @@ architectural boundary summary so code navigation begins at the imports.
   chart area, independently of the average-cost curve's visible range.
 
 - Fixed: Stock-details daily-chart tooltips now carry weekend and market-holiday
-  position changes to the following visible market close, so QQQI and other
+  position changes to the following visible market close, so affected
   securities show the correct point-in-time position on hover.
 
 - Fixed: Explicit, evidence-backed account history attestations allow otherwise
@@ -741,8 +746,8 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: The final Holdings broker-rewards row now keeps its label and description
   on one compact line, so a table without pagination no longer ends in an
   oversized visual chin.
-- Fixed: Account-scoped broker calibrations restore closed Longbridge HK and
-  HSBC realized P&L rows, preserve SQQQ's broker-reported negative sign, and avoid adding ticker cash
+- Fixed: Account-scoped broker calibrations restore closed realized-P&L rows,
+  preserve broker-reported negative signs, and avoid adding ticker cash
   adjustments when the broker total already includes them.
 - Fixed: Realized P&L now replays inside broker-account security scopes, uses
   broker-reported closed-lot P&L without a second fee deduction, and aggregates
@@ -759,7 +764,8 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: Investment ticker logos now use only the backend-resolved local asset URL. A missing logo renders the established placeholder without speculative `.svg` or `.png` requests, and Investment images load eagerly so Chromium-based browsers do not emit deferred lazy-load intervention diagnostics.
 - Added: Open Holdings rows now show non-zero daily realized and unrealized P&L beneath their cumulative values in solid positive/negative badges with aligned decimal points.
 - Fixed: Holdings allocation badges now render their text with the active theme background color, producing white text in light mode and dark text in dark mode without changing the established color-token contract.
-- Fixed: Holdings now supplies canonical issuer or fund names for AAPL, BOXX, MU, NVDA, QQQ, QCOM, TQQQ, and TSM when a local market profile contains only its ticker placeholder.
+- Fixed: Holdings supplies canonical issuer or fund names when a local market
+  profile contains only its ticker placeholder.
 - Fixed: The Holdings summary uses sentence case for Total equity and keeps the Cash through Cumulative P&L values on one shared right edge after live-number transitions reserve different widths.
 - Added: Holdings now includes a live Market value column between Position and Realized P&L. Its 70%–80% horizontal track and numeric right edge match Transaction history at every supported width; the two P&L columns remain equal and the percent column uses the remaining compact track.
 - Added: Holdings now displays Cash equivalents between Cash and Total equity, combining cash with the current market value of configured cash-equivalent positions and refreshing the total with live quotes.

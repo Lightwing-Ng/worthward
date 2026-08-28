@@ -1,6 +1,6 @@
-/* Code version: v0.22.0 */
+/* Code version: v0.22.1 */
 
-import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.0.0';
+import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.1.0';
 import {
     buildSettingsUrl,
     parseSettingsUrlState,

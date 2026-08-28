@@ -55,3 +55,12 @@ jobs:
           name: python-coverage-${{ matrix.python-version }}
           path: coverage.json
           if-no-files-found: warn
+
+      - name: Upload Playwright failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-failure-${{ matrix.python-version }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -58,8 +58,6 @@ market_store/logos/*
 !market_store/logos/brokers/Longbridge.png
 !market_store/logos/dollarsign.ring.svg
 !market_store/logos/money-market-fund.ring.svg
-debug-frontend-fetch-aborts.md
-Longbridge_OpenAPI_Complete_Asset_Inspection_Manual_for_Agents.md
 settings_store/
 node_modules/
 coverage.json
@@ -77,15 +75,4 @@ test-results/
 # Local verification artifacts and user-provided transaction material.
 /outputs/
 /tmp/
-# Ignore accidental duplicate copies created by workspace file collisions.
-**/* [0-9]*
 /.codex_tmp/
-/body.html
-/main_rows.json
-/verify_results_full.json
-/coverage*.json
-/dump_body.mjs
-/generate_report.mjs
-/run_verify*.mjs
-/verify*.mjs
-/_r2_*.cjs

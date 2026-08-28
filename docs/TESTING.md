@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.22.1`
+Documentation version: `v1.23.3`
 
 ## Supported commands
 
@@ -13,6 +13,10 @@ Install all runtime and development dependencies:
 The supported host interpreters are Python `3.13` and `3.14`. On Windows,
 install the same dependencies with `py -3.14 -m pip install -r
 requirements.txt`.
+
+The JavaScript toolchain requires Node.js `22`. The setup script validates the
+major version, installs the exact lockfile with `npm ci`, and installs the
+Playwright Chromium runtime.
 
 Run Python tests only:
 
@@ -36,7 +40,8 @@ Run the complete quality gate:
 
 The complete gate runs, in order:
 
-1. Full Ruff static checks for `app`, `strategies`, `tests`, and `scripts`.
+1. Full Ruff static checks for `main.py`, `app`, `strategies`, `tests`, and
+   `scripts`.
 2. JavaScript syntax checks.
 3. Python tests with branch coverage.
 4. Node unit tests with source coverage thresholds.
@@ -46,15 +51,21 @@ GitHub Actions runs this same script on every push and pull request through
 `.github/workflows/quality.yml`. The workflow uses Node.js 22 for first-party
 tests and Node.js 24-based `v7` releases of the official checkout, setup, and
 artifact actions.
+Failed CI browser runs upload `test-results/` as a seven-day
+`playwright-failure-<python-version>` artifact. The artifact is
+diagnostic evidence, not a repository fixture.
 
 ## Coverage baseline
 
-Baseline remeasured on 14 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
+Baseline remeasured on 28 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and
+coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `69.94%` (`coverage.json`
-  reports `18,497` covered lines of `25,067` statements and `6,280` covered
-  branches of `10,360`).
-- `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
+- Total combined statement-and-branch coverage: `71.90%` (`coverage.json`
+  reports `20,331` covered lines of `26,841` statements and `6,994` covered
+  branches of `11,162`).
+- `app/services/dca.py`: `97.6%`, with recurring schedule, contribution
+  accounting, dividend, normalization, and error paths covered by
+  deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
@@ -62,26 +73,26 @@ Baseline remeasured on 14 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- The next project target is `70%`, followed by measured module-level improvements.
+- The next project target is `75%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
-- `app/services/investment_import.py`: `69.4%`, with broker-specific
+- `app/services/investment_import.py`: `71.0%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 Recently strengthened coverage:
 
-- `app/services/live_trading.py`: `73.9%`, with offline CLI OAuth, legacy SDK,
-  order-validation, and API authorization-contract paths covered without a
-  real account request or order.
-- `app/infrastructure/broker_market_data.py`: `53.9%`, with offline Longbridge
+- `app/services/live_trading.py`: `83.5%`, with offline CLI OAuth, the supported
+  SDK order boundary, order validation, and API authorization contracts covered
+  without a real account request or order.
+- `app/infrastructure/broker_market_data.py`: `55.6%`, with offline Longbridge
   CLI normalization, candlestick adapters, one-minute cache freshness, and
   fail-closed refresh/status paths covered without live network or production
   store writes.
 
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
-`47.02%` lines, `71.62%` branches, and `83.73%` functions. The gate enforces
+`50.32%` lines, `71.04%` branches, and `84.81%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -91,19 +102,28 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 14 Aug 2026:
+Current suite inventory remeasured on 28 Aug 2026:
 
-- 744 Python tests collected; the latest full Python run reports 738 passed,
-  6 skipped, and 126 subtests passed.
-- 216 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 867 Python tests collected; the latest full Python run reports 861 passed and
+  6 skipped.
+- 260 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 167 Playwright test cases passed through `./scripts/check.sh` on 14 Aug 2026,
+- 249 Playwright test cases passed through `./scripts/check.sh` on 28 Aug 2026,
   including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
 - `tests/test_*.py`: Python unit and Flask integration tests.
-- `tests/test_app_startup.py`: fail-closed application-startup source-evidence scans.
+- `tests/test_app_startup.py`: portable startup contracts that do not require
+  local source-evidence stores.
+- `tests/test_repository_contracts.py`: documentation links and versions,
+  privacy-safe historical records, JavaScript and E2E resource versions,
+  tracked E2E assets, CSS import-manifest integrity, and retired-entrypoint or
+  unsafe-transport tombstones.
+- `tests/test_compatibility_routes.py`: canonical destinations for the
+  documented compatibility redirect families.
+- `tests/test_e2e_locking.py`: host-level E2E ownership across worktrees,
+  fail-closed direct invocation, and no-cleanup-on-lock-conflict behavior.
 - `tests/test_debug_reporting.py`: opt-in local debug endpoint validation and
   sensitive-data redaction.
 - `tests/test_longbridge_cli.py`: Longbridge CLI path safety and client-safe
@@ -210,13 +230,15 @@ Current suite inventory remeasured on 14 Aug 2026:
   a quote poll; the same assertion covers all duplicated fixed and scrollable
   Holdings row layers.
 
-All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
+All test sources must be committed to Git. Do not add `tests/` back to
+`.gitignore`.
 
 ## Browser test isolation
 
 Playwright starts a dedicated app server on `127.0.0.1:8699` through
-`scripts/run_e2e_app.sh`. The launcher copies only bundled logo assets, then
-builds fixed daily, one-minute, profile, and market-cap fixtures inside
+`scripts/run_e2e_app.sh`. The launcher copies only Git-tracked bundled logo
+assets that still exist in the working tree, then builds fixed daily,
+one-minute, profile, and market-cap fixtures inside
 `test-results/runtime-store`. It points both application stores at that isolated
 runtime and disables remote market access for the process. Browser checks
 therefore use the same deterministic history on local machines and clean GitHub
@@ -224,9 +246,19 @@ runners without reading or copying production Parquet stores. Normal manual
 launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
 
-The investment-import E2E verifies broker selection, file readiness, submit
-enablement, and the Zircon (HK) prevalidation success state but does not submit the
-form. This prevents mutation of the real local investment store.
+Only one browser suite may own port `8699` at a time. Always start it through
+`./scripts/test_e2e.sh` or through `./scripts/check.sh`; a direct
+`npx playwright test` invocation is rejected. The wrapper acquires a host-level
+`fcntl` lock scoped to the current macOS user and port `8699`, so separate Git
+worktrees cannot clean or replace one another's isolated runtime. A competing
+runner exits with status `73` before changing any E2E files. Process listings
+and port checks are useful diagnostics, but they are not a substitute for this
+lock.
+
+Investment-import E2E verifies broker selection, file readiness, submit
+enablement, and Zircon (HK) prevalidation. Tests that click Submit intercept and
+fulfill the write request in Playwright; no browser import request reaches the
+isolated backend, much less the user's investment store.
 
 The generic manual-workbook unit suite verifies paired currency conversions:
 exactly two Forex trade component rows must share broker, account, timestamp,
@@ -290,8 +322,8 @@ with `verify=False`, an unverified SSL context, or a process-wide TLS patch.
 
 ## Longbridge realtime quote contract
 
-- Current CLI OAuth and legacy SDK payload shapes are covered without making a
-  real broker request.
+- Current CLI OAuth and supported SDK response shapes are covered without
+  making a real broker request.
 - A regular-session CLI quote remains usable when the provider omits a quote
   timestamp. The timestamp stays explicitly unknown while the independently
   known New York session date is retained.

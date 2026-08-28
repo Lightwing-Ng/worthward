@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.47.0`
+Documentation version: `v1.47.1`
 
 ## Holdings P&L display contract
 
@@ -107,7 +107,11 @@ and Dark values are rendered from the versioned theme configuration, while
 browser-local overrides remain in localStorage and never enter `settings_store/`.
 ```
 
-Older `/compare`, `/portfolio`, `/backtest`, `/workspaces/market-caps`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects. The former market-cap route redirects to `/workspaces/prices?metric=market-cap` while preserving canonical query state.
+Older route aliases are compatibility redirects, not independent renderers. The
+complete matrix and removal rules live in
+[`COMPATIBILITY.md`](COMPATIBILITY.md). The former market-cap route redirects
+to `/workspaces/prices?metric=market-cap` while preserving canonical query
+state.
 
 ## Shared stock-price axis labels
 
@@ -380,7 +384,12 @@ sets of values.
   typed workbook builder. The `No specified broker` import selector is a
   broker-neutral entrypoint to that shared parser; each workbook row, rather
   than the selector, remains authoritative for broker identity.
-- Investment source evidence is immutable, SHA-256-addressed, capacity-bounded, and verified under the ledger lock before persistence and at application startup. A ledger manifest must never retain raw uploaded Base64 bytes.
+- Investment source evidence is immutable, SHA-256-addressed, capacity-bounded,
+  and verified under the ledger lock at the import commit and persisted-readback
+  boundary. Application startup and read-only ledger browsing intentionally
+  require only the portable Parquet ledger; an explicit verifier checks the
+  sidecar when evidence validation or a later import is required. A ledger
+  manifest must never retain raw uploaded Base64 bytes.
 - Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
 - `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.
 - Evidence materialization, persisted-manifest verification, and `clear_investment_store` evidence-directory removal all hold the same reentrant `market_store_file_lock(parquet_path)`. A per-artifact file lock is supplementary and must never replace the ledger lock for an operation that changes or validates the manifest-to-directory relationship.
@@ -410,7 +419,16 @@ sets of values.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
 - HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
-- BOCHK imports accept one or more full Consolidated Statement PDFs per batch. The customer number is the parent account, while full deposit-account numbers and short subaccount identifiers remain source-scoped. HKD Savings and HKD Current remain distinct subaccounts; `0079` printed CNY/RMB (canonical CNH) and USD sections are separate cash ledgers, with the printed marker retained as raw provenance. The parser anchors the rightmost amount as the balance, reconciles each subaccount's running balance, rejects composite page-header continuations, and fails closed on non-zero securities cash activity because this adapter is cash-only. Its period/count/balance metadata is broker-scoped so it survives a mixed ledger.
+- BOCHK imports accept one or more full Consolidated Statement PDFs per batch.
+  The customer number is the parent account, while full deposit-account numbers
+  and short subaccount identifiers remain source-scoped. HKD Savings and HKD
+  Current remain distinct subaccounts; separate CNY/RMB (canonical CNH) and USD
+  sections under one printed short marker remain separate cash ledgers, with
+  that marker retained as raw provenance. The parser anchors the rightmost
+  amount as the balance, reconciles each subaccount's running balance, rejects
+  composite page-header continuations, and fails closed on non-zero securities
+  cash activity because this adapter is cash-only. Its period/count/balance
+  metadata is broker-scoped so it survives a mixed ledger.
 - The browser UI exposes only the BOCHK PDF path. The backend retains a tested legacy fallback for `broker=boc_hk` with `zircon_hk_transactions_xlsx`; this compatibility path must not be removed as part of PDF UI changes.
 - Canonical tickers are market-qualified only when the market needs to be
   distinguished: US securities are bare (`META`), Hong Kong uses `.HK`,
@@ -472,7 +490,9 @@ assembled browser behavior.
 JavaScript syntax checks, Python coverage, Node tests with source coverage, and
 isolated Chromium E2E tests. `.github/workflows/quality.yml` invokes the same
 script on pushes and pull requests, so CI does not maintain a parallel test
-definition.
+definition. The E2E launcher copies only Git-tracked logo assets into its
+isolated runtime; it must not attach to an arbitrary existing server. CI retains
+Playwright failure evidence when the browser stage fails.
 
 ## Known structural debt
 
@@ -481,3 +501,10 @@ definition.
 composition are still large. Extend the parser registry and tested JavaScript
 module boundaries instead of adding route-level dispatch or another cohesive
 feature implementation directly to those files.
+
+`tests/e2e/critical-flows.spec.mjs` is also an oversized aggregation point.
+Place new coverage in domain-focused Playwright files for comparison,
+portfolio, Backtest, Investment, Live Trading, or Settings behavior instead of
+continuing to grow the shared critical-flow file. Splitting the existing file
+requires a dedicated behavior-preserving change with an unchanged collected
+test inventory.

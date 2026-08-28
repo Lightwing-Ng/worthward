@@ -1,4 +1,4 @@
-/* Tests for chip distribution calculations. Code version: v0.4.0 */
+/* Tests for chip distribution calculations. Code version: v0.4.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,6 +107,32 @@ test('applies turnover-based chip survival when circulating shares are available
     assert.ok(secondPriceBin);
     assert.ok(Math.abs(firstPriceBin.weight - 90) < 1e-8);
     assert.ok(Math.abs(secondPriceBin.weight - 100) < 1e-8);
+});
+
+test('keeps the complete selected-range volume profile when turnover survival is disabled', () => {
+    const rows = Array.from({length: 120}, (_, index) => {
+        const close = 560 + (index * 1.5);
+        return {
+            t: `2026-${String(1 + Math.floor(index / 28)).padStart(2, '0')}-${String(1 + (index % 28)).padStart(2, '0')}`,
+            o: close - 1,
+            h: close + 3,
+            l: close - 3,
+            c: close,
+            v: 80_000_000,
+        };
+    });
+    const distribution = calculator.calculateChipDistribution(rows, {
+        binCount: 100,
+        circulatingShares: 1_000_000_000,
+        turnoverSurvival: false,
+    });
+
+    assert.equal(distribution.model, 'ohlcv-estimate');
+    assert.equal(distribution.decayApplied, false);
+    assert.equal(distribution.shareBasis, '');
+    assert.ok(Math.abs(distribution.totalWeight - (rows.length * 80_000_000)) < 1e-5);
+    assert.equal(distribution.bins.filter((bin) => bin.weight > 0).length, 100);
+    assert.ok(distribution.bins.every((bin) => bin.normalizedWidth > 0.01));
 });
 
 test('falls back to the full OHLCV profile when turnover reaches saturation', () => {

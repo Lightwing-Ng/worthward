@@ -1,9 +1,10 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.6.4
+Code version: v0.7.0
 - Added: parallel, transport-aware dependency self-checks for Settings.
-- Removed: TradingView from the Settings network self-check; timing analysis remains available to its feature path.
+- Removed: The retired TradingView analysis and unused legacy connectivity
+  cache accessors.
 - Added: bounded diagnostics for proxy, TLS, authentication, and configuration failures.
 """
 
@@ -12,7 +13,6 @@ from __future__ import annotations
 import contextlib
 from concurrent.futures import (
     ThreadPoolExecutor,
-    TimeoutError as FuturesTimeoutError,
     as_completed,
 )
 from http.client import RemoteDisconnected
@@ -47,10 +47,6 @@ GOOGLE_HK_PING_URLS = (
     "https://www.google.com.hk/",
     "https://www.google.com/",
 )
-CHATGPT_PING_URLS = (
-    "https://chatgpt.com/",
-    "https://chat.openai.com/",
-)
 SEC_PING_URL = "https://data.sec.gov/submissions/CIK0000320193.json"
 SEC_FACTS_PING_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json"
 SEC_WEB_PING_URL = "https://www.sec.gov/robots.txt"
@@ -64,12 +60,8 @@ REMOTE_MARKET_STALE_GRACE_SECONDS = 3600
 REMOTE_MARKET_ACCESS_ENV = "ANTIGRAVITY_REMOTE_MARKET_ACCESS"
 REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
-GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS = 300
-GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS = 60
 _remote_market_access_cache: tuple[float, float, bool] | None = None
 _remote_logo_access_cache: tuple[float, float, bool] | None = None
-_google_hk_access_cache: tuple[float, float, bool] | None = None
-_chatgpt_access_cache: tuple[float, float, bool] | None = None
 
 _NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
 _NETWORK_SECRET_QUERY_PATTERN = re.compile(
@@ -588,13 +580,6 @@ def _cached_connectivity_value(
     return None
 
 
-def _cache_checked_at(cache_entry: tuple[float, float, bool] | None) -> float | None:
-    if cache_entry is None:
-        return None
-    _, checked_at, _ = cache_entry
-    return checked_at
-
-
 def _cache_result(value: bool) -> tuple[float, float, bool]:
     return monotonic(), time(), value
 
@@ -705,123 +690,7 @@ def has_remote_logo_access() -> bool:
     return False
 
 
-def _probe_http_endpoints(remote_urls: tuple[str, ...]) -> bool:
-    for remote_url in remote_urls:
-        request_obj = Request(
-            remote_url,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        try:
-            with urlopen(request_obj, timeout=4) as response:
-                if response.status < 500:
-                    return True
-        except (HTTPError, URLError, TimeoutError, ValueError, RemoteDisconnected):
-            continue
-    return False
-
-
-def has_google_hk_access() -> bool:
-    global _google_hk_access_cache
-
-    cached_value = _cached_connectivity_value(
-        _google_hk_access_cache,
-        success_ttl=GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS,
-        failure_ttl=GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS,
-    )
-    if cached_value is not None:
-        return cached_value
-
-    is_available = _probe_http_endpoints(GOOGLE_HK_PING_URLS)
-    _google_hk_access_cache = _cache_result(is_available)
-    return is_available
-
-
-def has_chatgpt_access() -> bool:
-    global _chatgpt_access_cache
-
-    cached_value = _cached_connectivity_value(
-        _chatgpt_access_cache,
-        success_ttl=GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS,
-        failure_ttl=GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS,
-    )
-    if cached_value is not None:
-        return cached_value
-
-    is_available = _probe_http_endpoints(CHATGPT_PING_URLS)
-    _chatgpt_access_cache = _cache_result(is_available)
-    return is_available
-
-
-def _normalize_tradingview_section(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): section_value for key, section_value in value.items()}
-
-
-def fetch_tradingview_metrics(
-        symbol: str,
-        *,
-        screener: str = "america",
-        exchange: str = "NASDAQ",
-        timeout_seconds: float = 3.0,
-) -> dict[str, object]:
-    """Fetch a broad set of TradingView TA metrics for a ticker."""
-    from tradingview_ta import Interval, TA_Handler
-
-    handler = TA_Handler(
-        symbol=symbol,
-        screener=screener,
-        exchange=exchange,
-        interval=Interval.INTERVAL_1_DAY,
-    )
-    if timeout_seconds <= 0:
-        analysis = handler.get_analysis()
-    else:
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(handler.get_analysis)
-        try:
-            analysis = future.result(timeout=timeout_seconds)
-        except FuturesTimeoutError as exc:
-            future.cancel()
-            raise TimeoutError(
-                f"TradingView metrics request timed out after {timeout_seconds:.1f} seconds."
-            ) from exc
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
-
-    summary = _normalize_tradingview_section(analysis.summary)
-    oscillators = _normalize_tradingview_section(analysis.oscillators)
-    moving_averages = _normalize_tradingview_section(analysis.moving_averages)
-    indicators = _normalize_tradingview_section(analysis.indicators)
-
-    payload: dict[str, object] = {
-        "symbol": symbol,
-        "screener": screener,
-        "exchange": exchange,
-        "summary": summary,
-        "oscillators": oscillators,
-        "moving_averages": moving_averages,
-        "indicators": indicators,
-    }
-    return payload
-
-
 def reset_connectivity_caches() -> None:
     global _remote_market_access_cache, _remote_logo_access_cache
-    global _google_hk_access_cache, _chatgpt_access_cache
     _remote_market_access_cache = None
     _remote_logo_access_cache = None
-    _google_hk_access_cache = None
-    _chatgpt_access_cache = None
-
-
-def last_remote_market_check_at() -> float | None:
-    return _cache_checked_at(_remote_market_access_cache)
-
-
-def last_remote_logo_check_at() -> float | None:
-    return _cache_checked_at(_remote_logo_access_cache)
-
-
-def last_google_hk_check_at() -> float | None:
-    return _cache_checked_at(_google_hk_access_cache)

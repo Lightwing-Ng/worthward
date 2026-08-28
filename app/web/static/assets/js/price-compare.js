@@ -1,4 +1,4 @@
-/* Code version: v0.24.0 */
+/* Code version: v0.24.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -765,6 +765,7 @@
 		source,
 		finiteNumber(modelInputs.circulatingShares) ?? "",
 		String(modelInputs.shareBasis || ""),
+		modelInputs.turnoverSurvival === false ? "range-volume" : "turnover-survival",
 		...(Array.isArray(rows) ? rows : []).map((row) => source === "ohlcv-estimate"
 			? [row?.t, row?.o, row?.h, row?.l, row?.c, row?.v, row?.synthetic === true ? 1 : 0].join(":")
 			: [row?.price, row?.buy, row?.neutral, row?.sell].join(":")),
@@ -789,6 +790,9 @@
 		return {
 			circulatingShares: finiteNumber(metadataSource.circulatingShares),
 			shareBasis: metadataSource.shareBasis || "",
+			// The visible panel is a cumulative selected-range volume profile. Automatic
+			// turnover decay can erase older traversed prices from the rendered profile.
+			turnoverSurvival: false,
 		};
 	};
 

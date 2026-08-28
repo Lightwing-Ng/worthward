@@ -1,4 +1,4 @@
-/* Code version: v0.4.0 */
+/* Code version: v0.4.1 */
 (() => {
 	const DEFAULT_BIN_COUNT = 100;
 	const MIN_BIN_COUNT = 80;
@@ -155,6 +155,7 @@
 		floatShares = null,
 		turnoverRateUnit = "ratio",
 		shareBasis = "",
+		turnoverSurvival = true,
 		priceMin = null,
 		priceMax = null,
 	} = {}) => {
@@ -182,7 +183,9 @@
 		const survivalReady = candles.every((candle) => candle.turnoverRate !== null);
 		const hasSaturatedTurnoverRate = survivalReady
 			&& candles.some((candle) => candle.turnoverRate >= 1);
-		const applyTurnoverSurvival = survivalReady && !hasSaturatedTurnoverRate;
+		const applyTurnoverSurvival = turnoverSurvival !== false
+			&& survivalReady
+			&& !hasSaturatedTurnoverRate;
 		let totalInputVolume = 0;
 		let turnoverRateTotal = 0;
 

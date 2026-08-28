@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.5.1
+# Code version: v0.6.0
 
 set -euo pipefail
 
@@ -28,13 +28,19 @@ echo "Using host Python: $PYTHON_BIN"
 "$PYTHON_BIN" -m pip install --upgrade pip
 "$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements.txt"
 
-if command -v npm >/dev/null 2>&1; then
-	(cd "$ROOT_DIR" && npm install)
-	(cd "$ROOT_DIR" && npx playwright install chromium)
-else
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 	echo "Node.js/npm is required for JavaScript and browser tests." >&2
 	exit 1
 fi
+
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [[ "$NODE_MAJOR" != "22" ]]; then
+	echo "Expected Node.js 22 for the quality gate, but got $(node --version)." >&2
+	exit 1
+fi
+
+(cd "$ROOT_DIR" && npm ci)
+(cd "$ROOT_DIR" && npx playwright install chromium)
 
 echo
 echo "Host Python is ready."

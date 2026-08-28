@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.4.0
+# Code version: v1.5.0
 
 set -euo pipefail
 
@@ -31,7 +31,7 @@ cd "$ROOT_DIR"
 echo "Quality gate configuration: Python=$PYTHON_BIN, coverage minimum=${COVERAGE_MINIMUM}%"
 
 echo "[1/5] Python static checks"
-"$PYTHON_BIN" -m ruff check app strategies tests scripts
+"$PYTHON_BIN" -m ruff check main.py app strategies tests scripts
 
 echo "[2/5] JavaScript syntax checks"
 JS_FILE_COUNT=0

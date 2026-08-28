@@ -1,4 +1,4 @@
-/* Code version: v0.39.1 */
+/* Code version: v0.41.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1305,7 +1305,19 @@
     const appSidebar = $("#app_sidebar");
     const sidebarBackdrop = $("#sidebar_backdrop");
     const mobileSidebarMedia = responsive.media("sidebarOverlayMax");
+    const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sidebarGelAnimationNames = new Set([
+        "workspace-sidebar-gel-open",
+        "workspace-sidebar-gel-close",
+    ]);
+    const sidebarGelCandidateSelector = [
+        ".workspace-mobile-summary-shell[data-mobile-summary-fixed] > :not(.workspace-summary-card)",
+        ".settings-workspace-header > :not(.settings-summary-card)",
+    ].join(", ");
+    const sidebarGelTargetSelector = "[data-sidebar-gel-content]";
     let isSidebarOpen = true;
+    let sidebarGelMotionResetTimer = 0;
+    let sidebarGelMotionEndHandler = null;
 
     const readSidebarMemory = () => {
         try {
@@ -1322,6 +1334,60 @@
             window.sessionStorage.setItem(SIDEBAR_MEMORY_KEY, String(Boolean(value)));
         } catch (_error) {
         }
+    };
+
+    const clearSidebarGelMotion = (shell = appShell) => {
+        if (sidebarGelMotionResetTimer) {
+            window.clearTimeout(sidebarGelMotionResetTimer);
+            sidebarGelMotionResetTimer = 0;
+        }
+        if (shell && sidebarGelMotionEndHandler) {
+            shell.removeEventListener("animationend", sidebarGelMotionEndHandler);
+        }
+        sidebarGelMotionEndHandler = null;
+        shell?.classList.remove("is-sidebar-animating", "is-sidebar-opening", "is-sidebar-closing");
+    };
+
+    const syncSidebarGelTargets = (shell = appShell) => {
+        if (!shell) return [];
+        const targets = Array.from(shell.querySelectorAll(sidebarGelCandidateSelector));
+        targets.forEach((target) => target.setAttribute("data-sidebar-gel-content", ""));
+        return targets;
+    };
+
+    const setSidebarGelMotionState = (direction, shell = appShell) => {
+        clearSidebarGelMotion(shell);
+        const motion = window.AntigravityMotion;
+        const targets = syncSidebarGelTargets(shell);
+        if (
+            !shell
+            || !direction
+            || mobileSidebarMedia.matches
+            || reducedMotionMedia.matches
+            || motion?.isReducedMotion?.()
+            || !targets.length
+            || !shell.querySelector(sidebarGelTargetSelector)
+        ) {
+            return;
+        }
+
+        // Flush the cleared animation state before applying the new direction so
+        // rapid reversals cannot inherit stale classes or completion handlers.
+        void shell.offsetWidth;
+        shell.classList.add(
+            "is-sidebar-animating",
+            direction === "opening" ? "is-sidebar-opening" : "is-sidebar-closing",
+        );
+        sidebarGelMotionEndHandler = (event) => {
+            if (!sidebarGelAnimationNames.has(event.animationName)) return;
+            clearSidebarGelMotion(shell);
+        };
+        shell.addEventListener("animationend", sidebarGelMotionEndHandler);
+        const fallbackDuration = Number(motion?.durations?.spatial) || 560;
+        sidebarGelMotionResetTimer = window.setTimeout(
+            () => clearSidebarGelMotion(shell),
+            fallbackDuration + 120,
+        );
     };
 
     const applySidebarState = (nextIsOpen, shell = appShell, sidebar = appSidebar, toggle = sidebarToggle, backdrop = sidebarBackdrop) => {
@@ -1348,29 +1414,34 @@
 
     let sidebarFlipCancel = null;
     const applySidebarStateWithMotion = (nextIsOpen) => {
+        const commitSidebarState = () => {
+            applySidebarState(nextIsOpen);
+            setSidebarGelMotionState(nextIsOpen ? "opening" : "closing");
+        };
         // During expansion the sidebar occupies the final layout slot immediately;
         // keeping the title in that slot prevents it from crossing the glass panel.
         if (nextIsOpen) {
             sidebarFlipCancel?.();
             sidebarFlipCancel = null;
-            applySidebarState(nextIsOpen);
+            commitSidebarState();
             return;
         }
         const targets = $$(".workspace-summary-card .report-heading, .workspace-mode-title-card .report-heading, .settings-summary-card .report-heading")
             .filter((element) => element.getClientRects().length > 0);
         const motion = window.AntigravityMotion;
         if (!motion?.flip || !targets.length) {
-            applySidebarState(nextIsOpen);
+            commitSidebarState();
             return;
         }
         sidebarFlipCancel?.();
-        sidebarFlipCancel = motion.flip(targets, () => applySidebarState(nextIsOpen), {
+        sidebarFlipCancel = motion.flip(targets, commitSidebarState, {
             duration: motion.durations.spatial,
             easing: motion.easingTokens?.emphasized,
         });
     };
 
     if (sidebarToggle && appSidebar && appShell) {
+        syncSidebarGelTargets();
         applySidebarState(readSidebarMemory());
         sidebarToggle.addEventListener("click", () => {
             applySidebarStateWithMotion(!isSidebarOpen);
@@ -1390,14 +1461,22 @@
 
     if (typeof mobileSidebarMedia.addEventListener === "function") {
         mobileSidebarMedia.addEventListener("change", () => {
+            clearSidebarGelMotion();
             applySidebarState(isSidebarOpen);
             scheduleMobilePageBottomPaddingSync();
         });
     } else if (typeof mobileSidebarMedia.addListener === "function") {
         mobileSidebarMedia.addListener(() => {
+            clearSidebarGelMotion();
             applySidebarState(isSidebarOpen);
             scheduleMobilePageBottomPaddingSync();
         });
+    }
+
+    if (typeof reducedMotionMedia.addEventListener === "function") {
+        reducedMotionMedia.addEventListener("change", () => clearSidebarGelMotion());
+    } else if (typeof reducedMotionMedia.addListener === "function") {
+        reducedMotionMedia.addListener(() => clearSidebarGelMotion());
     }
 
     const getTickerFields = () => $$(".ticker-field");
@@ -4759,7 +4838,9 @@
             dropdown.style.maxHeight = 'none';
             dropdown.style.height = 'auto';
 
-            const measuredWidth = Math.max(triggerWidth, dropdown.getBoundingClientRect().width);
+            const measuredWidth = isTradeStrategyField
+                ? triggerWidth
+                : Math.max(triggerWidth, dropdown.getBoundingClientRect().width);
             const boundedWidth = Math.min(maxWidth, measuredWidth);
             const boundedLeft = Math.min(
                 Math.max(viewportLeft + viewportEdge, triggerRect.left),

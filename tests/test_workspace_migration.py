@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.5.1
+Code version: v1.7.0
 """
 
 from __future__ import annotations
@@ -209,6 +209,49 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertIn("transition-delay: 90ms", collapsed_motion)
         self.assertIn("translateY(0)", open_motion)
         self.assertIn("transition-delay: 140ms", open_motion)
+
+    def test_sidebar_gel_motion_reuses_best_shared_physics_without_layout_geometry(self) -> None:
+        app_source = APP_JS.read_text(encoding="utf-8")
+        motion_source = MOTION_CSS.read_text(encoding="utf-8")
+
+        for token in (
+            '"workspace-sidebar-gel-open"',
+            '"workspace-sidebar-gel-close"',
+            'mobileSidebarMedia.matches',
+            'reducedMotionMedia.matches',
+            'motion?.isReducedMotion?.()',
+            'const sidebarGelTargetSelector = "[data-sidebar-gel-content]";',
+            'target.setAttribute("data-sidebar-gel-content", "")',
+            'setSidebarGelMotionState(nextIsOpen ? "opening" : "closing")',
+            'clearSidebarGelMotion();',
+        ):
+            self.assertIn(token, app_source)
+
+        for token in (
+            ".app-shell.is-sidebar-animating",
+            "[data-sidebar-gel-content]",
+            "animation-timing-function: var(--motion-bouncy);",
+            "transform-origin: left top;",
+            "@keyframes workspace-sidebar-gel-open",
+            "@keyframes workspace-sidebar-gel-close",
+            "translate3d(12px, 0, 0) scale3d(0.984, 1.024, 1)",
+            "translate3d(-5px, 0, 0) scale3d(1.01, 0.992, 1)",
+            "translate3d(2px, 0, 0) scale3d(0.997, 1.004, 1)",
+        ):
+            self.assertIn(token, motion_source)
+
+        gel_contract = motion_source.split(
+            "/*\n * Keep title rails geometrically stable",
+            1,
+        )[1].split("@media (prefers-reduced-motion: reduce)", 1)[0]
+        for forbidden_layout_rule in (
+            "grid-template-columns",
+            "padding:",
+            "position: absolute",
+            "transform-origin: left center",
+            "width:",
+        ):
+            self.assertNotIn(forbidden_layout_rule, gel_contract)
 
     def _assert_workspace_contract(self, html: str, *, control_class: str) -> None:
         sidebar_html = _slice_between(

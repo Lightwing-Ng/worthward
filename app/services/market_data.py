@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.24.1
+Code version: v0.24.2
 
 - Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
@@ -1409,14 +1409,6 @@ def drop_duplicate_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if not frame.columns.has_duplicates:
         return frame
     return frame.loc[:, ~frame.columns.duplicated()].copy()
-
-
-def _normalize_store_frame_for_compare(frame: pd.DataFrame) -> pd.DataFrame:
-    normalized = drop_duplicate_columns(frame.copy())
-    if "Date" in normalized.columns:
-        normalized["Date"] = pd.to_datetime(normalized["Date"], errors="coerce")
-    normalized = normalized.sort_values("Date").reset_index(drop=True)
-    return normalized
 
 
 def _infer_split_factor(previous_close: float, current_prices: list[float]) -> float | None:

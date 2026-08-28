@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.3.0 */
 
 /* Shared waiting indicator: a resolution-independent SVG arc with rounded caps. */
 .suggestion-loading-spinner {
@@ -26,7 +26,78 @@
 	backface-visibility: hidden;
 }
 
+/*
+ * Keep title rails geometrically stable while the content layer responds to a
+ * desktop sidebar reflow with a restrained squash, overshoot, and settle.
+ */
+.app-shell.is-sidebar-animating [data-sidebar-gel-content] {
+	animation-duration: var(--sidebar-layout-transition-duration, var(--motion-duration-spatial));
+	animation-fill-mode: both;
+	animation-timing-function: var(--motion-bouncy);
+	backface-visibility: hidden;
+	transform-origin: left top;
+	will-change: transform;
+}
+
+.app-shell.is-sidebar-opening [data-sidebar-gel-content] {
+	animation-name: workspace-sidebar-gel-open;
+}
+
+.app-shell.is-sidebar-closing [data-sidebar-gel-content] {
+	animation-name: workspace-sidebar-gel-close;
+}
+
+@keyframes workspace-sidebar-gel-open {
+	0% {
+		transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+	}
+
+	32% {
+		transform: translate3d(12px, 0, 0) scale3d(0.984, 1.024, 1);
+	}
+
+	56% {
+		transform: translate3d(-5px, 0, 0) scale3d(1.01, 0.992, 1);
+	}
+
+	76% {
+		transform: translate3d(2px, 0, 0) scale3d(0.997, 1.004, 1);
+	}
+
+	100% {
+		transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+	}
+}
+
+@keyframes workspace-sidebar-gel-close {
+	0% {
+		transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+	}
+
+	32% {
+		transform: translate3d(-12px, 0, 0) scale3d(0.984, 1.024, 1);
+	}
+
+	56% {
+		transform: translate3d(5px, 0, 0) scale3d(1.01, 0.992, 1);
+	}
+
+	76% {
+		transform: translate3d(-2px, 0, 0) scale3d(0.997, 1.004, 1);
+	}
+
+	100% {
+		transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
+	[data-sidebar-gel-content] {
+		animation: none !important;
+		transform: none !important;
+		will-change: auto;
+	}
+
 	.suggestion-loading-spinner {
 		animation: none;
 	}

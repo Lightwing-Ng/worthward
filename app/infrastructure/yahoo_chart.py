@@ -1,7 +1,7 @@
 """
 Direct Yahoo Chart API transport for daily and intraday market history fallback.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -27,15 +27,6 @@ def _bounded_values(values: object, expected_length: int) -> list[object | None]
     if not isinstance(values, list):
         return [None] * expected_length
     return [*values[:expected_length], *([None] * max(0, expected_length - len(values)))]
-
-
-def _daily_index(timestamps: list[object], timezone_name: str) -> pd.DatetimeIndex:
-    parsed = pd.to_datetime(timestamps, unit="s", utc=True, errors="coerce")
-    try:
-        localized = parsed.tz_convert(timezone_name)
-    except (KeyError, TypeError, ValueError):
-        localized = parsed
-    return localized.tz_localize(None).normalize()
 
 
 def _event_date(timestamp: object, timezone_name: str) -> pd.Timestamp | None:

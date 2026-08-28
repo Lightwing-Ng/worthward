@@ -1,4 +1,4 @@
-/* Code version: v0.17.7 */
+/* Code version: v0.17.8 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -882,6 +882,7 @@ input[type="number"],
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:hover,
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:focus,
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:focus-visible {
+	border: 0 !important;
 	border-color: transparent !important;
 }
 .trade-strategy-trigger-label {

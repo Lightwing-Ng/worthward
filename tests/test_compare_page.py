@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.3
+Code version: v0.14.4
 """
 
 from __future__ import annotations
@@ -307,6 +307,7 @@ class ComparePageTests(unittest.TestCase):
             price_html,
             r'id="show_chips" name="chips" type="checkbox" value="1"\s+checked',
         )
+        self.assertIn('<span class="switch-label">Position distribution</span>', price_html)
         self.assertIn('data-chips-chart-region', price_html)
         self.assertIn('"comparisonChips": true', price_html)
         self.assertRegex(price_html, r'data-chips-heading="Chip distribution"[^>]*>Price history</h2>')

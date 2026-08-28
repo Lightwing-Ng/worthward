@@ -2,8 +2,9 @@
 Shared web runtime and route handlers.
 
 Code version: v0.83.1
-- Removed: Unreachable direct investment-ledger writes and the retired
-  standalone market-cap template mapping.
+- Removed: Unreachable direct investment-ledger writes, superseded intraday and
+  background-refresh helpers, and the retired standalone market-cap template
+  mapping.
 - Changed: IBKR Web paste accepts a full Your Holdings clipboard capture as
   the optional cash and position boundary instead of requiring manual fields.
 - Fixed: Exact current-day comparisons now resolve each ticker's live trading date in its own market timezone, so US series remain populated when an Asia/Shanghai date is already the next calendar day in New York.
@@ -876,7 +877,6 @@ def build_web_runtime() -> WebRuntime:
             if not is_configured_money_market_ticker(ticker)
         ]
 
-    investment_daily_refresh_lock = threading.Lock()
     investment_realtime_quote_cache_lock = threading.Lock()
     investment_realtime_quote_cache: dict[tuple[str, ...], tuple[float, list[dict[str, object]]]] = {}
 
@@ -1143,16 +1143,6 @@ def build_web_runtime() -> WebRuntime:
             if ticker_actions:
                 actions[ticker] = ticker_actions
         return actions
-
-    def refresh_investment_open_tickers_in_background(tickers: list[str]) -> None:
-        if not investment_daily_refresh_lock.acquire(blocking=False):
-            return
-        try:
-            ensure_latest_investment_daily_caches(
-                exclude_configured_money_market_tickers(tickers)
-            )
-        finally:
-            investment_daily_refresh_lock.release()
 
     def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1659,10 +1649,6 @@ def build_web_runtime() -> WebRuntime:
             for trading_date in payload.trading_dates
             if start_date <= pd.to_datetime(trading_date).date() <= end_date
         ]
-
-    def slice_intraday_dataset_to_trading_date(dataset: pd.DataFrame, trading_date: object) -> pd.DataFrame:
-        target_date = pd.to_datetime(trading_date).date()
-        return dataset[dataset["Date"].dt.date == target_date].copy()
 
     def market_timezone_for_ticker(ticker: str) -> str:
         market = infer_ticker_market(ticker)

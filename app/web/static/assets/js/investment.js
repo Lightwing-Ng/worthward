@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.132.0
+ * Code version: v2.132.1
  * - Changed: Stock-details price axes now load the shared project-wide
  *   stock-price number-format contract.
  * - Fixed: Import-complete transfer review now compares the refreshed ledger
@@ -364,7 +364,7 @@ import {
     buildInvestmentHistoryPagination,
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
-} from './investment/pagination.js?v=investment-pagination-v1.4.0';
+} from './investment/pagination.js?v=investment-pagination-v1.4.1';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
@@ -383,7 +383,7 @@ import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.1';
+} from './investment/realtime.js?v=investment-realtime-v1.3.2';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -411,7 +411,7 @@ import {
     getInvestmentHistoryTotalPages,
     isInvestmentHistoryDisplayHidden,
     selectVisibleInvestmentHistoryTransactions,
-} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.1';
+} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.2';
 import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
@@ -424,7 +424,7 @@ import {
 } from './numeric-display.js?v=numeric-display-v1.1.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.132.0',
+    entry: 'v2.132.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
