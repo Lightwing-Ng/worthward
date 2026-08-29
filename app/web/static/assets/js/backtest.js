@@ -1,4 +1,4 @@
-/* Code version: v0.12.2 */
+/* Code version: v0.13.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -415,19 +415,9 @@
 			: buildAllInSeries(open, close, initialCapital);
 
 		const fixedYAxisWidth = 72;
-		const probabilityForecastLanePlugin = {
-			id: "backtestProbabilityForecastLanePlugin",
-			beforeLayout(chart) {
-				if (!strategyPresentation || !chart?.options?.layout?.padding) return;
-				const widthFraction = Number(strategyPresentation.width_fraction);
-				if (!(widthFraction > 0)) return;
-				const availableWidth = Math.max(0, Number(chart.width || 0) - fixedYAxisWidth);
-				chart.options.layout.padding.right = availableWidth
-					* (widthFraction / (1 + widthFraction));
-			},
-		};
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
+		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
 		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
 		let priceChartYPadding = chartYPaddingPx;
 		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
@@ -477,13 +467,37 @@
 		`;
 		tradeChartStack.appendChild(tooltip);
 		const probabilityTooltip = strategyPresentation ? document.createElement("div") : null;
+		const probabilityScrollSpacer = strategyPresentation ? document.createElement("span") : null;
+		if (probabilityScrollSpacer) {
+			probabilityScrollSpacer.className = "backtest-probability-scroll-spacer";
+			probabilityScrollSpacer.dataset.backtestProbabilityScrollSpacer = "";
+			probabilityScrollSpacer.setAttribute("aria-hidden", "true");
+			tradeChartStack.appendChild(probabilityScrollSpacer);
+		}
 		if (probabilityTooltip) {
 			probabilityTooltip.className = "chart-tooltip backtest-probability-tooltip";
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
 			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-tooltip-transparency",
+				`${strategyPresentation.tooltip_transparency_pct}%`,
+			);
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-tooltip-radius",
+				`${strategyPresentation.tooltip_radius_px}px`,
+			);
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-cell-radius",
+				`${strategyPresentation.cell_radius_px}px`,
+			);
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-grid-padding",
+				`${strategyPresentation.padding_px}px`,
+			);
 			probabilityTooltip.innerHTML = '<div class="backtest-probability-grid" data-backtest-probability-grid></div>';
+			probabilityTooltip.hidden = true;
 			tradeChartStack.appendChild(probabilityTooltip);
 		}
 
@@ -506,6 +520,10 @@
 		let layoutFrameId = null;
 		let layoutObserver = null;
 		let themeCleanup = null;
+		let probabilityScrollTarget = 0;
+		let probabilityScrollVelocity = 0;
+		let probabilityScrollLastTimestamp = null;
+		let probabilityScrollCleanup = null;
 		const requestControllerAnimationFrame = (callback) => {
 			if (controllerDestroyed) return null;
 			let frameId = null;
@@ -520,6 +538,114 @@
 			if (frameId === null || frameId === undefined) return;
 			window.cancelAnimationFrame(frameId);
 			controllerAnimationFrames.delete(frameId);
+		};
+		const setProbabilityScrollExtent = (scrollDistance) => {
+			if (!probabilityScrollSpacer) return;
+			const distance = Math.max(0, Number(scrollDistance) || 0);
+			probabilityScrollSpacer.style.display = "block";
+			probabilityScrollSpacer.style.left = `${Math.max(0, tradeChartStack.clientWidth + distance - 1)}px`;
+		};
+		const completeProbabilityScroll = () => {
+			probabilityScrollLastTimestamp = null;
+			probabilityScrollCleanup = null;
+			probabilityScrollVelocity = 0;
+			tradeChartStack.scrollLeft = probabilityScrollTarget;
+			if (probabilityScrollTarget <= 0.01) {
+				tradeChartStack.scrollLeft = 0;
+				tradeChartStack.classList.remove("has-probability-scroll");
+				tradeChartStack.dataset.probabilityPanState = probabilityTooltip?.classList.contains("is-visible")
+					? (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
+					: "idle";
+				if (probabilityScrollSpacer) probabilityScrollSpacer.style.display = "none";
+			} else {
+				tradeChartStack.classList.add("has-probability-scroll");
+				tradeChartStack.dataset.probabilityPanState = pinState.mode === "pinned"
+					? "pinned-pan"
+					: "tracking-pan";
+				setProbabilityScrollExtent(probabilityScrollTarget);
+			}
+		};
+		const setProbabilityScrollTarget = (targetValue) => {
+			if (!strategyPresentation) return;
+			probabilityScrollTarget = Math.ceil(Math.max(0, Number(targetValue) || 0));
+			tradeChartStack.dataset.probabilityPanTarget = String(probabilityScrollTarget);
+			tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";
+			tradeChartStack.dataset.probabilityPanState = probabilityScrollTarget > 0
+				? (pinState.mode === "pinned" ? "pinned-pan" : "tracking-pan")
+				: (
+					tradeChartStack.scrollLeft > 0.01
+						? "returning"
+						: (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
+				);
+			setProbabilityScrollExtent(Math.max(tradeChartStack.scrollLeft, probabilityScrollTarget));
+			tradeChartStack.classList.toggle(
+				"has-probability-scroll",
+				probabilityScrollTarget > 0.01 || tradeChartStack.scrollLeft > 0.01,
+			);
+			if (
+				Math.abs(tradeChartStack.scrollLeft - probabilityScrollTarget) <= 0.01
+				&& Math.abs(probabilityScrollVelocity) <= 0.01
+			) {
+				completeProbabilityScroll();
+				return;
+			}
+			if (probabilityScrollCleanup) return;
+			const motion = window.AntigravityMotion;
+			const scheduler = motion?.scheduler;
+			if (!scheduler?.frame) {
+				completeProbabilityScroll();
+				return;
+			}
+			const preset = motion.springPresets?.bouncy || {
+				mass: 1,
+				stiffness: 180,
+				damping: 18,
+			};
+			probabilityScrollCleanup = scheduler.frame(
+				"backtest-probability-scroll",
+				(timestamp, reducedMotion) => {
+					if (controllerDestroyed) return false;
+					if (reducedMotion) {
+						completeProbabilityScroll();
+						return false;
+					}
+					if (probabilityScrollLastTimestamp === null) {
+						probabilityScrollLastTimestamp = timestamp;
+						return true;
+					}
+					const elapsedSeconds = Math.min(
+						1 / 30,
+						Math.max(1 / 240, (timestamp - probabilityScrollLastTimestamp) / 1000),
+					);
+					probabilityScrollLastTimestamp = timestamp;
+					const current = tradeChartStack.scrollLeft;
+					const displacement = current - probabilityScrollTarget;
+					const acceleration = (
+						(-Number(preset.stiffness) * displacement)
+						- (Number(preset.damping) * probabilityScrollVelocity)
+					) / Math.max(0.001, Number(preset.mass) || 1);
+					probabilityScrollVelocity += acceleration * elapsedSeconds;
+					let next = current + (probabilityScrollVelocity * elapsedSeconds);
+					const crossedTarget = (
+						(current <= probabilityScrollTarget && next >= probabilityScrollTarget)
+						|| (current >= probabilityScrollTarget && next <= probabilityScrollTarget)
+					);
+					if (crossedTarget) {
+						next = probabilityScrollTarget;
+						probabilityScrollVelocity = 0;
+					}
+					setProbabilityScrollExtent(Math.max(next, probabilityScrollTarget));
+					tradeChartStack.scrollLeft = Math.max(0, next);
+					if (
+						Math.abs(tradeChartStack.scrollLeft - probabilityScrollTarget) <= 0.1
+						&& Math.abs(probabilityScrollVelocity) <= 0.1
+					) {
+						completeProbabilityScroll();
+						return false;
+					}
+					return true;
+				},
+			);
 		};
 
 		const parseRawDate = (value) => {
@@ -779,7 +905,7 @@
 			if (!canvas || !point) return null;
 			const canvasRect = canvas.getBoundingClientRect();
 			return {
-				x: canvasRect.left - stackRect.left + point.x,
+				x: canvasRect.left - stackRect.left + tradeChartStack.scrollLeft + point.x,
 				y: canvasRect.top - stackRect.top + point.y,
 			};
 		};
@@ -840,7 +966,12 @@
 
 		const hideProbabilityTooltip = () => {
 			probabilityTooltip?.classList.remove("is-visible");
+			if (probabilityTooltip) {
+				probabilityTooltip.hidden = true;
+				probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
+			}
 			if (priceChart) priceChart._activeBacktestProbabilityGridBounds = null;
+			setProbabilityScrollTarget(0);
 		};
 
 		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
@@ -859,22 +990,24 @@
 				hideProbabilityTooltip();
 				return false;
 			}
+			setProbabilityScrollExtent(tradeChartStack.scrollLeft);
+			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
+			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
+			if (!(stepPixels > 0)) {
+				hideProbabilityTooltip();
+				return false;
+			}
 			const geometry = probabilityGridApi.computeGridGeometry?.({
 				chartArea: priceChart.chartArea,
 				anchorX: pricePoint.x,
 				anchorY: pricePoint.y,
-				rowsAbove: strategyPresentation.rows_above,
-				rowsBelow: strategyPresentation.rows_below,
 				widthFraction: strategyPresentation.width_fraction,
-				maxCellPx: 10,
+				gapPx: strategyPresentation.gap_px,
+				paddingPx: strategyPresentation.padding_px,
+				minCellPx: strategyPresentation.min_cell_px,
+				stepPixels,
 			});
 			if (!geometry) {
-				hideProbabilityTooltip();
-				return false;
-			}
-			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
-			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
-			if (!(stepPixels > 0)) {
 				hideProbabilityTooltip();
 				return false;
 			}
@@ -922,6 +1055,7 @@
 				node.title = `${(cell.probability * 100).toFixed(2)}%`;
 			});
 			grid.dataset.columnCount = String(geometry.columnCount);
+			grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			grid.dataset.rowCount = String(geometry.rowCount);
 			grid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${geometry.cellSize}px)`;
 			grid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${geometry.cellSize}px)`;
@@ -929,7 +1063,7 @@
 			grid.style.padding = `${geometry.padding}px`;
 
 			const canvasRect = priceCanvas.getBoundingClientRect();
-			const canvasOffsetX = canvasRect.left - stackRect.left;
+			const canvasOffsetX = canvasRect.left - stackRect.left + tradeChartStack.scrollLeft;
 			const canvasOffsetY = canvasRect.top - stackRect.top;
 			probabilityTooltip.style.left = `${canvasOffsetX + geometry.left}px`;
 			probabilityTooltip.style.top = `${canvasOffsetY + geometry.top}px`;
@@ -937,12 +1071,16 @@
 			probabilityTooltip.style.height = `${geometry.height}px`;
 			probabilityTooltip.dataset.direction = geometry.direction;
 			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
+			probabilityTooltip.dataset.transparency = "90%";
+			probabilityTooltip.hidden = false;
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
 				"aria-label",
 				`${labels[index] || "Selected date"}, ${formatMoney(anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability above the selected price on the next bar`,
 			);
 			probabilityTooltip.classList.add("is-visible");
+			const tooltipContentRight = canvasOffsetX + geometry.left + geometry.width;
+			setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);
 			priceChart._activeBacktestProbabilityGridBounds = {
 				...geometry,
 				canvasOffsetX,
@@ -951,7 +1089,10 @@
 				intersectionX: pricePoint.x,
 				intersectionY: pricePoint.y,
 				maxProbability: Math.max(...cells.map((cell) => cell.probability)),
+				daysPerColumn: geometry.daysPerColumn,
+				slotWidth: geometry.slotWidth,
 				stepPixels,
+				targetScrollLeft: probabilityScrollTarget,
 			};
 			return true;
 		};
@@ -996,6 +1137,7 @@
 			}
 			hideProbabilityTooltip();
 			const relativeX = hoverLinePosition.x;
+			const visualRelativeX = relativeX - tradeChartStack.scrollLeft;
 			const relativeY = tooltipAnchorPosition.y;
 			const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
@@ -1018,8 +1160,11 @@
 			if (dots[3]) dots[3].style.backgroundColor = allInReferenceColor;
 			if (dots[4]) dots[4].style.backgroundColor = versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
 			const tooltipWidth = tooltip.offsetWidth || 220;
-			const rightSpace = stackRect.width - relativeX;
-			const left = rightSpace >= tooltipWidth + 20 ? relativeX + 14 : Math.max(12, relativeX - tooltipWidth - 14);
+			const rightSpace = stackRect.width - visualRelativeX;
+			const visualLeft = rightSpace >= tooltipWidth + 20
+				? visualRelativeX + 14
+				: Math.max(12, visualRelativeX - tooltipWidth - 14);
+			const left = visualLeft + tradeChartStack.scrollLeft;
 			const tooltipHeight = tooltip.offsetHeight || 156;
 			const padding = 12;
 			let top = relativeY - (tooltipHeight / 2);
@@ -1117,27 +1262,35 @@
 				scheduleHoverSync(nearestIndex, canvas, chart);
 			}, { signal });
 
-			canvas.addEventListener("mouseleave", () => {
-				if (!chart || !chart.ctx) return;
-				if (pinState.mode === "pinned") return;
-				scheduleHoverSync(null, canvas, chart);
-			}, { signal });
+			if (canvas !== priceCanvas || !strategyPresentation) {
+				canvas.addEventListener("mouseleave", () => {
+					if (!chart || !chart.ctx) return;
+					if (pinState.mode === "pinned") return;
+					scheduleHoverSync(null, canvas, chart);
+				}, { signal });
+			}
 
 			if (canvas === priceCanvas && strategyPresentation) {
 				canvas.addEventListener("click", (event) => {
 					if (!chart || !chart.ctx) return;
 					cancelScheduledHoverSync();
 					const nearestIndex = resolveNearestHoverIndex(chart, event);
-					const point = Number.isInteger(nearestIndex)
-						? chart.getDatasetMeta(0)?.data?.[nearestIndex]
+					const trackedIndex = pinState.mode !== "pinned"
+						&& activePriceOverlay
+						&& probabilityTooltip?.classList.contains("is-visible")
+						&& Number.isInteger(activeIndex)
+						? activeIndex
+						: nearestIndex;
+					const point = Number.isInteger(trackedIndex)
+						? chart.getDatasetMeta(0)?.data?.[trackedIndex]
 						: null;
 					const canvasRect = canvas.getBoundingClientRect();
 					const pointerY = event.clientY - canvasRect.top;
-					const isCurveClick = Number.isInteger(nearestIndex)
+					const isCurveClick = Number.isInteger(trackedIndex)
 						&& probabilityGridApi.isPointNearCurve?.(pointerY, point?.y, 14);
 					const probabilityRendered = isCurveClick
 						? renderProbabilityTooltip(
-							nearestIndex,
+							trackedIndex,
 							tradeChartStack.getBoundingClientRect(),
 							point,
 						)
@@ -1145,9 +1298,9 @@
 					if (probabilityRendered) {
 						pinState = probabilityGridApi.reducePinState?.(
 							pinState,
-							{type: "pin", index: nearestIndex},
-						) || {mode: "pinned", activeIndex: nearestIndex};
-						syncHoverState(nearestIndex, canvas, chart);
+							{type: "pin", index: trackedIndex},
+						) || {mode: "pinned", activeIndex: trackedIndex};
+						syncHoverState(trackedIndex, canvas, chart);
 						return;
 					}
 					if (pinState.mode === "pinned") {
@@ -1157,9 +1310,9 @@
 					} else if (isCurveClick) {
 						pinState = probabilityGridApi.reducePinState?.(
 							pinState,
-							{type: "track", index: nearestIndex},
-						) || {mode: "tracking", activeIndex: nearestIndex};
-						syncHoverState(nearestIndex, canvas, chart);
+							{type: "track", index: trackedIndex},
+						) || {mode: "tracking", activeIndex: trackedIndex};
+						syncHoverState(trackedIndex, canvas, chart);
 					}
 				}, { signal });
 			}
@@ -1246,7 +1399,6 @@
 				candlestickPlugin,
 				tradeMarkerPlugin,
 				priceHoverOverlayPlugin,
-				...(strategyPresentation ? [probabilityForecastLanePlugin] : []),
 			],
 		});
 
@@ -1303,10 +1455,7 @@
 					y: { ...commonOptions.scales.y, ...equityYScale },
 				},
 			},
-			plugins: [
-				xAxisLabelPlugin,
-				...(strategyPresentation ? [probabilityForecastLanePlugin] : []),
-			],
+			plugins: [xAxisLabelPlugin],
 		});
 
 		const initTransactionsPagination = () => {
@@ -1438,17 +1587,30 @@
 
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
+		if (strategyPresentation) {
+			tradeChartStack.addEventListener("mouseleave", () => {
+				if (!priceChart?.ctx || pinState.mode === "pinned") return;
+				cancelScheduledHoverSync();
+				pinState = probabilityGridApi.reducePinState?.(pinState, {type: "clear"})
+					|| {mode: "tracking", activeIndex: null};
+				syncHoverState(null, priceCanvas, priceChart);
+			}, {signal: documentController.signal});
+		}
 		const resolvePriceChartYPadding = () => {
 			if (!strategyPresentation || !priceChart?.chartArea) return chartYPaddingPx;
 			const chartArea = priceChart.chartArea;
+			const pricePoints = priceChart.getDatasetMeta(0)?.data || [];
+			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(pricePoints, 0);
+			if (!(stepPixels > 0)) return chartYPaddingPx;
 			const gridGeometry = probabilityGridApi.computeGridGeometry?.({
 				chartArea,
 				anchorX: chartArea.left,
 				anchorY: (chartArea.top + chartArea.bottom) / 2,
-				rowsAbove: strategyPresentation.rows_above,
-				rowsBelow: strategyPresentation.rows_below,
 				widthFraction: strategyPresentation.width_fraction,
-				maxCellPx: 10,
+				gapPx: strategyPresentation.gap_px,
+				paddingPx: strategyPresentation.padding_px,
+				minCellPx: strategyPresentation.min_cell_px,
+				stepPixels,
 			});
 			const gridHalfHeight = Number(gridGeometry?.height) / 2;
 			if (!(gridHalfHeight > 0)) return chartYPaddingPx;
@@ -1555,10 +1717,21 @@
 				controllerAnimationFrames.forEach((frameId) => window.cancelAnimationFrame(frameId));
 				controllerAnimationFrames.clear();
 				controllerTaskCleanups.splice(0).forEach((cleanup) => cleanup());
+				probabilityScrollCleanup?.();
+				probabilityScrollCleanup = null;
+				probabilityScrollTarget = 0;
+				probabilityScrollVelocity = 0;
+				probabilityScrollLastTimestamp = null;
+				tradeChartStack.scrollLeft = 0;
+				tradeChartStack.classList.remove("has-probability-field", "has-probability-scroll");
+				delete tradeChartStack.dataset.probabilityPanState;
+				delete tradeChartStack.dataset.probabilityPanTarget;
+				delete tradeChartStack.dataset.probabilityPanMotion;
 				activateBacktestRows([], null);
 				hoverLine.remove();
 				tooltip.remove();
 				probabilityTooltip?.remove();
+				probabilityScrollSpacer?.remove();
 				priceChart?.destroy?.();
 				equityChart?.destroy?.();
 				if (bootstrap.backtestHoverController === hoverController) {

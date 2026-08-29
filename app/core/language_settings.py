@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.12
+Code version: v0.5.14
 """
 
 from __future__ import annotations
@@ -162,8 +162,8 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Ticker", "股票代號", "股票代码"),
         ("Strategy", "策略", "策略"),
         ("Initial capital (USD)", "初始資金（USD）", "初始资金（USD）"),
-        ("Stop loss", "止損", "止损"),
-        ("Allow sell signals to close below the entry price.", "允許賣出訊號在低於入場價格時平倉。", "允许卖出信号在低于入场价格时平仓。"),
+        ("Allow algorithmic stop-loss exits", "允許演算法止損", "允许算法止损"),
+        ("Allow strategy sell or cover signals to close a position when the exit price represents a loss relative to the entry price. This price-only check excludes dividends and total return. This setting does not add a separate fixed-price stop.", "允許策略的賣出或回補訊號在出場價格相對入場價格構成價格虧損時平倉。此判斷僅比較價格，不包含股息或總回報。此設定不會新增獨立的固定價格止損。", "允许策略的卖出或回补信号在退出价格相对入场价格构成价格亏损时平仓。此判断仅比较价格，不包含股息或总回报。此设置不会添加单独的固定价格止损。"),
         ("Performance", "表現", "表现"),
         ("Trade actions and net asset curve", "交易操作及淨資產曲線", "交易操作及净资产曲线"),
         ("Metrics", "指標", "指标"),

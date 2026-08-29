@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.6
+Code version: v0.21.0
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from app.services.market_data import (
     normalize_history_frame,
     select_price_series,
     infer_ticker_market,
+    load_local_one_minute_history,
     refresh_history_store,
     refresh_one_minute_store,
     refresh_one_minute_store_with_longbridge,
@@ -58,6 +59,7 @@ from app.services.market_data import (
     supports_compare_overnight,
     yfinance_lookup_symbol,
 )
+from app.services.market_freshness import ensure_latest_backtest_intraday_cache
 from tests.factories.market import close_frame_for_ticker, market_frame, ohlc_frame_for_dates, quote_profile_stub
 
 
@@ -339,6 +341,56 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+
+    def test_local_one_minute_loader_normalizes_in_memory_without_writing(self) -> None:
+        dataset = ohlc_frame_for_dates(
+            "NVDA",
+            ["2026-08-28 09:30", "2026-08-28 09:31"],
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "NVDA_1m.parquet"
+            dataset.to_parquet(path, index=False)
+            before_bytes = path.read_bytes()
+            before_mtime = path.stat().st_mtime_ns
+            with (
+                patch(
+                    "app.services.market_data.market_ticker_store_aliases",
+                    return_value=("NVDA",),
+                ),
+                patch(
+                    "app.services.market_data.history_store_path_for_interval",
+                    return_value=path,
+                ),
+                patch("app.services.market_data.write_parquet_atomic") as write_mock,
+            ):
+                result = load_local_one_minute_history("NVDA")
+
+            self.assertEqual(len(result), 2)
+            self.assertEqual(path.read_bytes(), before_bytes)
+            self.assertEqual(path.stat().st_mtime_ns, before_mtime)
+            write_mock.assert_not_called()
+
+    def test_intraday_only_backtest_refresh_reports_failure_without_daily_access(self) -> None:
+        with (
+            patch(
+                "app.services.market_freshness.is_one_minute_store_fresh",
+                return_value=False,
+            ),
+            patch(
+                "app.services.market_freshness.refresh_one_minute_store",
+                side_effect=ValueError("rate limited"),
+            ) as refresh_mock,
+            patch(
+                "app.services.market_freshness.ensure_fresh_history_store",
+            ) as daily_refresh_mock,
+        ):
+            result = ensure_latest_backtest_intraday_cache("NVDA")
+
+        self.assertEqual(result["ticker"], "NVDA")
+        self.assertFalse(result["intraday_refreshed"])
+        self.assertEqual(result["intraday_error"], "rate limited")
+        refresh_mock.assert_called_once_with("NVDA")
+        daily_refresh_mock.assert_not_called()
 
     def test_price_series_selection_preserves_ohlcv_metadata(self) -> None:
         dataset = pd.DataFrame({

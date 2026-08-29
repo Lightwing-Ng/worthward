@@ -1,11 +1,12 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.6.1
+Code version: v0.7.2
 """
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import unittest
 from unittest.mock import Mock, patch
 
@@ -13,18 +14,50 @@ import pandas as pd
 
 from app import create_app
 from app.core.config import COMPARE_PERIODS_1D
+from app.core.language_settings import LanguageSettings, translate_labels
 from app.web.runtime import (
     _load_strategy_market_datasets,
     _resolve_strategy_provider_end,
 )
+from strategies.algorithms.strategy_bayesian_price_field import BayesianPriceFieldStrategy
+from strategies.base import StrategySignalResult
 from strategies.loader import list_enabled_strategies
 from tests.factories.market import (
     FakeStrategy,
     backtest_result,
     fetch_history_stub,
     market_frame,
+    ohlc_frame_for_dates,
     quote_profile_stub,
 )
+
+
+class _InputAttributesParser(HTMLParser):
+    """Capture one input element by its exact id."""
+
+    def __init__(self, element_id: str) -> None:
+        super().__init__()
+        self.element_id = element_id
+        self.attributes: dict[str, str | None] | None = None
+
+    def handle_starttag(
+            self,
+            tag: str,
+            attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag != "input" or self.attributes is not None:
+            return
+        attributes = dict(attrs)
+        if attributes.get("id") == self.element_id:
+            self.attributes = attributes
+
+
+def _input_attributes_by_id(html: str, element_id: str) -> dict[str, str | None]:
+    parser = _InputAttributesParser(element_id)
+    parser.feed(html)
+    if parser.attributes is None:
+        raise AssertionError(f"Input #{element_id} was not rendered.")
+    return parser.attributes
 
 
 class BacktestPageTests(unittest.TestCase):
@@ -78,7 +111,48 @@ class BacktestPageTests(unittest.TestCase):
         self.assertNotIn('<p class="chart-heading">Transaction details</p>', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
+        self.assertIn("Allow algorithmic stop-loss exits", html)
+        self.assertIn(
+            'title="Allow strategy sell or cover signals to close a position when the exit price '
+            'represents a loss relative to the entry price. This price-only check excludes dividends '
+            'and total return. '
+            'This setting does not add a separate fixed-price stop."',
+            html,
+        )
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
+
+    def test_backtest_stop_loss_copy_has_default_chinese_translations(self) -> None:
+        labels = {
+            "backtest_stop_loss": "Allow algorithmic stop-loss exits",
+            "backtest_stop_loss_help": (
+                "Allow strategy sell or cover signals to close a position when the exit price "
+                "represents a loss relative to the entry price. This price-only check excludes "
+                "dividends and total return. "
+                "This setting does not add a separate fixed-price stop."
+            ),
+        }
+
+        traditional = translate_labels(
+            labels,
+            LanguageSettings(language="zh_hant_hk"),
+        )
+        simplified = translate_labels(
+            labels,
+            LanguageSettings(language="zh_hans_cn"),
+        )
+
+        self.assertEqual(traditional["backtest_stop_loss"], "允許演算法止損")
+        self.assertEqual(simplified["backtest_stop_loss"], "允许算法止损")
+        self.assertEqual(
+            traditional["backtest_stop_loss_help"],
+            "允許策略的賣出或回補訊號在出場價格相對入場價格構成價格虧損時平倉。"
+            "此判斷僅比較價格，不包含股息或總回報。此設定不會新增獨立的固定價格止損。",
+        )
+        self.assertEqual(
+            simplified["backtest_stop_loss_help"],
+            "允许策略的卖出或回补信号在退出价格相对入场价格构成价格亏损时平仓。"
+            "此判断仅比较价格，不包含股息或总回报。此设置不会添加单独的固定价格止损。",
+        )
 
     def test_strategy_owned_loader_none_fails_closed_without_generic_fallback(self) -> None:
         strategy = FakeStrategy()
@@ -313,10 +387,13 @@ class BacktestPageTests(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(run_backtest.call_args.kwargs["stop_loss_enabled"])
-        self.assertNotIn(
-            'id="stop_loss" name="stop_loss" type="checkbox" value="1"\n                       checked',
-            html,
-        )
+        self.assertIn('<input type="hidden" name="stop_loss" value="0">', html)
+        self.assertIn("Allow algorithmic stop-loss exits", html)
+        stop_loss_attributes = _input_attributes_by_id(html, "stop_loss")
+        self.assertEqual(stop_loss_attributes.get("type"), "checkbox")
+        self.assertEqual(stop_loss_attributes.get("name"), "stop_loss")
+        self.assertEqual(stop_loss_attributes.get("value"), "1")
+        self.assertNotIn("checked", stop_loss_attributes)
 
     def test_backtest_page_limits_intraday_period_options_to_available_history(self) -> None:
         def _fetch_history(
@@ -352,6 +429,116 @@ class BacktestPageTests(unittest.TestCase):
         self.assertNotIn('<option value="1w"', html)
         self.assertIn('"backtestPeriodOptions"', html)
         self.assertIn('"1m": ["1d"]', html)
+
+    def test_bayesian_one_minute_execution_keeps_daily_model_and_uses_smart_max_period(self) -> None:
+        strategy = BayesianPriceFieldStrategy()
+        daily_dataset = ohlc_frame_for_dates(
+            "NVDA",
+            ["2026-08-28", "2026-08-31", "2026-09-01"],
+        )
+        daily_dataset.attrs["market_data_source"] = "longbridge-cli"
+        daily_signals = daily_dataset.copy()
+        daily_signals["buy_signal"] = [True, False, False]
+        daily_signals["sell_signal"] = [False, False, False]
+        strategy.load_market_datasets = Mock(return_value=[daily_dataset])
+        strategy.compute_signals = Mock(return_value=StrategySignalResult(
+            frame=daily_signals,
+            buy_signal_column="buy_signal",
+            sell_signal_column="sell_signal",
+            required_execution_mode="next_open",
+            presentation={"schema": "bayesian-price-field/v1"},
+        ))
+        intraday_dataset = ohlc_frame_for_dates(
+            "NVDA",
+            [
+                "2026-08-28 15:58",
+                "2026-08-28 15:59",
+                "2026-08-31 15:58",
+                "2026-08-31 15:59",
+                "2026-09-01 15:58",
+                "2026-09-01 15:59",
+            ],
+        )
+
+        with (
+            patch(
+                "app.web.runtime.load_local_one_minute_history",
+                return_value=intraday_dataset,
+            ) as load_local_history,
+            patch("app.web.runtime.fetch_history") as fetch_history,
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=strategy),
+            patch(
+                "app.web.runtime.ensure_latest_backtest_intraday_cache",
+                return_value={
+                    "ticker": "NVDA",
+                    "intraday_refreshed": False,
+                    "intraday_error": "rate limited",
+                },
+            ) as refresh_intraday,
+            patch(
+                "app.web.runtime.list_available_market_intervals",
+                return_value=["1d", "1m"],
+            ),
+            patch(
+                "app.web.runtime.build_supported_periods_for_history_store",
+                return_value=["1d", "3d", "1w", "1mo", "3mo", "max"],
+            ),
+            patch(
+                "app.web.runtime.run_single_ticker_backtest",
+                return_value=backtest_result(intraday=True),
+            ) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=NVDA&strategy=bayesian-price-field"
+                "&period=1y&interval=1m&capital=10000"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="max" selected>', html)
+        self.assertIn('id="backtest_interval_1m"', html)
+        self.assertIn('id="backtest_interval_1m" name="interval" type="radio" value="1m" checked', html)
+        self.assertIn(
+            "Daily Bayesian model; the probability field is available at 1d.",
+            html,
+        )
+        self.assertIn(
+            "Could not refresh the latest 1m cache automatically, so the "
+            "backtest reused the newest local intraday data when available.",
+            html,
+        )
+        strategy.load_market_datasets.assert_called_once()
+        self.assertEqual(
+            strategy.load_market_datasets.call_args.kwargs["interval"],
+            "1d",
+        )
+        strategy.compute_signals.assert_called_once()
+        model_input, model_params = strategy.compute_signals.call_args.args
+        pd.testing.assert_frame_equal(
+            model_input.reset_index(drop=True),
+            daily_dataset.reset_index(drop=True),
+        )
+        self.assertTrue(
+            model_input["Date"].eq(model_input["Date"].dt.normalize()).all()
+        )
+        self.assertEqual(model_params, strategy.normalize_params({}))
+        refresh_intraday.assert_called_once_with("NVDA")
+        load_local_history.assert_called_once_with("NVDA")
+        fetch_history.assert_not_called()
+        bridged_result = run_backtest.call_args.args[0]
+        self.assertEqual(bridged_result.presentation, {})
+        self.assertEqual(bridged_result.metadata["model_interval"], "1d")
+        self.assertEqual(bridged_result.metadata["execution_interval"], "1m")
+        self.assertEqual(
+            bridged_result.frame.loc[
+                bridged_result.frame["buy_signal"],
+                "Date",
+            ].tolist(),
+            [pd.Timestamp("2026-08-28 15:59")],
+        )
 
     def test_backtest_page_uses_shared_comparison_period_options_for_daily_interval(self) -> None:
         with (

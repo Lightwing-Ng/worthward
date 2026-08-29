@@ -1,4 +1,4 @@
-/* Code version: v0.23.0 */
+/* Code version: v0.24.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -67,6 +67,7 @@
 	--layout-glass-border-width: 1px;
 	--layout-content-width: 640px;
 	--layout-control-width: 384px;
+	--layout-physical-effect-bleed: 48px;
 	--page-edge-pad: 10px;
 	--layout-edge-gap: var(--page-edge-pad);
 	--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);

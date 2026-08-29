@@ -1,7 +1,7 @@
 """
 Reusable market freshness helpers.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -85,13 +85,27 @@ def ensure_latest_backtest_caches(ticker: str) -> dict[str, str | bool | None]:
     except Exception as exc:
         result["daily_error"] = str(exc)
 
+    result.update(ensure_latest_backtest_intraday_cache(normalized_ticker))
+
+    return result
+
+
+def ensure_latest_backtest_intraday_cache(
+        ticker: str,
+) -> dict[str, str | bool | None]:
+    """Refresh only the one-minute cache required by a mixed-frequency run."""
+    normalized_ticker = normalize_ticker(ticker)
+    result: dict[str, str | bool | None] = {
+        "ticker": normalized_ticker,
+        "intraday_refreshed": False,
+        "intraday_error": None,
+    }
     try:
         if not is_one_minute_store_fresh(normalized_ticker):
             refresh_one_minute_store(normalized_ticker)
             result["intraday_refreshed"] = True
     except Exception as exc:
         result["intraday_error"] = str(exc)
-
     return result
 
 

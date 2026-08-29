@@ -5,7 +5,14 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.4.0
+Code version: v1.6.0
+- Added: Daily posterior signals may execute on real one-minute bars through a
+  causal final-bar to next-session-open bridge without fabricating minute-level
+  posterior values.
+- Changed: The declarative presentation contract now fixes a 36 by 12
+  probability field, integer-trading-day slots, concentric 8 px padding, and
+  the strategy-private 90% transparent material geometry.
+- Changed: NVDA is the default research ticker for this strategy.
 - Changed: Auto and CPU now use NumPy directly for this small-matrix
   walk-forward workload; only an explicit GPU request imports Torch and probes
   Apple MPS or CUDA.
@@ -37,6 +44,7 @@ from ..base import (
     StrategySignalResult,
     StrategySupportMatrix,
 )
+from ..interval_bridge import DAILY_CLOSE_TO_NEXT_SESSION_OPEN
 
 
 _PREDICTION_MEAN_COLUMN = "bayesian_predictive_mean"
@@ -700,7 +708,12 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         short=False,
         required_tickers=1,
     )
-    strategy_supported_intervals = ("1d",)
+    strategy_supported_intervals = ("1d", "1m")
+    strategy_model_interval_overrides = {"1m": "1d"}
+    strategy_signal_bridges = {"1m": DAILY_CLOSE_TO_NEXT_SESSION_OPEN}
+    strategy_interval_notices = {
+        "1m": "Daily Bayesian model; the probability field is available at 1d.",
+    }
     strategy_market_data_source = "longbridge-cli"
     backtest_cacheable = False
 
@@ -708,7 +721,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         self._warmup_bundle: object | None = None
 
     def get_default_tickers(self) -> tuple[str, ...]:
-        return ("AAPL",)
+        return ("NVDA",)
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
@@ -1039,7 +1052,15 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "model_version": _MODEL_VERSION,
             "rows_above": 6,
             "rows_below": 6,
+            "columns": 36,
             "width_fraction": 0.25,
+            "gap_px": 3,
+            "padding_px": 8,
+            "min_cell_px": 4,
+            "cell_radius_px": 2,
+            "tooltip_radius_px": 10,
+            "tooltip_transparency_pct": 90,
+            "time_quantization": "integer-trading-days",
             "distribution_kind": "normal-log-return",
             "step_unit": "trading-day",
             "predictive_mean": _json_number_list(output[_PREDICTION_MEAN_COLUMN]),

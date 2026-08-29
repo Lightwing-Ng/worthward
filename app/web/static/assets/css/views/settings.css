@@ -1,4 +1,4 @@
-/* Code version: v0.24.2 */
+/* Code version: v0.25.0 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -108,8 +108,26 @@
     --settings-shell-gap: 8px;
     --settings-shell-content-max-width: var(--layout-content-width);
     gap: var(--settings-shell-gap);
+    overflow: visible;
+}
+
+/* Code version: v1.0.0
+ * One explicit scrollport owns Settings overflow. Its start-side and bottom
+ * bleed preserve elevated-card ink without moving the 640px / 384px anchors.
+ */
+.settings-content-scrollport {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--settings-shell-gap);
+    min-width: 0;
+    min-height: 0;
+    margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));
+    padding-inline-start: var(--layout-physical-effect-bleed);
+    padding-block-end: var(--layout-physical-effect-bleed);
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -163,8 +181,8 @@
     --settings-shell-gap: 10px;
 }
 
-.settings-shell-network > .settings-action-package,
-.settings-shell-network > .settings-general-panel-network,
+.settings-shell-network > .settings-content-scrollport > .settings-action-package,
+.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network,
 .settings-shell-network .settings-service-row,
 .settings-shell-material-tokens > .style-token-shell,
 .settings-shell-material-tokens .style-token-card {
@@ -187,24 +205,24 @@
     max-width: 100%;
 }
 
-.settings-general-shell > .settings-general-panel,
-.settings-shell-backtest > .settings-general-panel,
-.settings-shell-investment > .settings-general-panel {
+.settings-general-shell > .settings-content-scrollport > .settings-general-panel,
+.settings-shell-backtest > .settings-content-scrollport > .settings-general-panel,
+.settings-shell-investment > .settings-content-scrollport > .settings-general-panel {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-strategies > .settings-summary {
+.settings-shell-strategies > .settings-content-scrollport > .settings-summary {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-local-market-store > .settings-summary {
+.settings-shell-local-market-store > .settings-content-scrollport > .settings-summary {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-local-market-store > .local-store-table-shell {
+.settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
     align-self: flex-start;
@@ -3155,7 +3173,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     margin-bottom: 0;
 }
 
-.settings-about-shell > .about-section {
+.settings-about-shell > .settings-content-scrollport > .about-section {
     margin-bottom: 0;
 }
 
@@ -3275,7 +3293,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     white-space: nowrap;
 }
 
-.settings-about-shell > .about-disclaimer {
+.settings-about-shell > .settings-content-scrollport > .about-disclaimer {
     margin-top: 0;
 }
 
@@ -3292,7 +3310,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
         padding-bottom: 0;
     }
 
-    .settings-about-shell::after {
+    .settings-about-shell > .settings-content-scrollport::after {
         content: "";
         display: block;
         flex: 0 0 var(--workspace-mobile-surface-bottom-pad);
@@ -3377,17 +3395,17 @@ div.style-token-modal-demo::-webkit-scrollbar,
         min-height: 0;
     }
 
-    .settings-workspace-header > .settings-surface > .settings-body {
+    .settings-workspace-header > .settings-content-scrollport > .settings-surface > .settings-body {
         padding-top: 0;
     }
 }
 
-.settings-workspace-header > .settings-surface {
+.settings-workspace-header > .settings-content-scrollport > .settings-surface {
     padding-top: 0;
 }
 
 @media (max-width: 767px) {
-    .settings-workspace-header > .settings-surface {
+    .settings-workspace-header > .settings-content-scrollport > .settings-surface {
         flex: 1 1 auto;
         min-height: 0;
     }
@@ -3721,9 +3739,9 @@ div.style-token-modal-demo::-webkit-scrollbar,
         margin-top: 0;
     }
 
-    .settings-workspace-header {
+    .settings-content-scrollport {
         scroll-padding-bottom: var(--workspace-mobile-surface-bottom-pad);
-        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
+        padding-bottom: max(var(--layout-physical-effect-bleed), var(--workspace-mobile-surface-bottom-pad));
     }
 
     .settings-about-shell {

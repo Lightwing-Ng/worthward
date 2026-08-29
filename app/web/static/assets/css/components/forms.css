@@ -1,4 +1,4 @@
-/* Code version: v0.18.1 */
+/* Code version: v0.19.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -9,7 +9,6 @@
 	--trade-control-inline-gap: var(--sidebar-form-inline-gap);
 	--strategy-param-field-height: var(--numeric-input-control-height);
 	--strategy-param-control-height: var(--numeric-input-control-height);
-	--strategy-param-scrollbar-idle-ms: 720;
 	--ticker-control-width: 80%;
 	--ticker-suggestions-radius: 10px;
 	--ticker-validation-arrow-size: 12px;
@@ -1144,21 +1143,18 @@ input[type="number"],
 	animation: strategyParamsAccelerate 320ms var(--motion-inertial);
 }
 .trade-strategy-params-popover {
-	position: absolute;
-	top: calc(100% + 4px);
-	left: 0;
-	right: 0;
+	position: static;
+	margin-top: 4px;
 	padding: 10px;
 	overflow-x: hidden;
 	overflow-x: clip;
-	overflow-y: hidden;
+	overflow-y: visible;
 	border-radius: var(--radius-soft);
 	background: var(--glass-popover-background);
 	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
 	backdrop-filter: var(--glass-popover-blur);
 	-webkit-backdrop-filter: var(--glass-popover-blur);
 	border: 1px solid var(--theme-glass-highlight);
-	z-index: var(--layer-inline-overlay);
 }
 
 .trade-controls:has(.trade-strategy-field.is-open),
@@ -1188,46 +1184,9 @@ input[type="number"],
 	width: 100%;
 	min-width: 0;
 	gap: 10px;
-	max-height: min(420px, 58vh);
-	overflow-x: hidden;
-	overflow-y: hidden;
+	max-height: none;
+	overflow: visible;
 	padding-right: 0;
-	scrollbar-width: thin;
-	scrollbar-gutter: stable both-edges;
-	scrollbar-color: transparent transparent;
-	-webkit-overflow-scrolling: touch;
-	overscroll-behavior: contain;
-}
-.trade-strategy-params-grid.is-scrollable {
-	overflow-y: auto;
-}
-.trade-strategy-params-grid::-webkit-scrollbar {
-	width: 8px;
-}
-.trade-strategy-params-grid::-webkit-scrollbar-thumb {
-	background: transparent;
-	border-radius: var(--radius-pill);
-}
-.trade-strategy-params-grid.is-scrolling {
-	scrollbar-width: thin;
-	scrollbar-color: var(--theme-muted-translucent) transparent;
-}
-.trade-strategy-params-grid.is-scrolling::-webkit-scrollbar {
-	width: 8px;
-}
-.trade-strategy-params-grid::-webkit-scrollbar-track {
-	background: transparent;
-	margin: 4px 0;
-}
-.trade-strategy-params-grid::-webkit-scrollbar-thumb {
-	background: transparent;
-	border-radius: var(--radius-pill);
-}
-.trade-strategy-params-grid::-webkit-scrollbar-corner {
-	background: transparent;
-}
-.trade-strategy-params-grid.is-scrolling::-webkit-scrollbar-thumb {
-	background: var(--theme-muted-translucent);
 }
 .trade-strategy-params-grid:empty {
 	display: none;
@@ -1495,26 +1454,29 @@ input[type="number"],
 }
 .suggestions.is-open,
 .trade-strategy-dropdown:not([hidden]),
-.trade-strategy-params-popover:not([hidden]),
 .date-picker-popover:not([hidden]) {
 	transform-origin: top center;
 	animation: workspace-popover-gel-in 260ms var(--motion-bouncy) both;
 	will-change: transform, opacity, filter;
 }
-.trade-strategy-params-popover.is-flipped:not([hidden]) {
-	transform-origin: bottom center;
-	animation-name: workspace-popover-gel-in-up;
+@keyframes strategy-params-flow-in {
+	0% { opacity: 0; transform: scaleY(0.96); clip-path: inset(0 0 100% 0); filter: saturate(82%); }
+	68% { opacity: 1; transform: scaleY(1.005); clip-path: inset(0); filter: saturate(108%); }
+	100% { opacity: 1; transform: scaleY(1); clip-path: inset(0); filter: saturate(100%); }
 }
-@keyframes workspace-popover-gel-in-up {
-	0% { opacity: 0; transform: translateY(9px) scale(0.955); filter: saturate(82%); }
-	68% { opacity: 1; transform: translateY(-1px) scale(1.012); filter: saturate(108%); }
-	100% { opacity: 1; transform: translateY(0) scale(1); filter: saturate(100%); }
+.trade-strategy-params-popover:not([hidden]) {
+	transform-origin: top center;
+	animation: strategy-params-flow-in 260ms var(--motion-bouncy) both;
+	will-change: transform, opacity, filter, clip-path;
 }
 @media (prefers-reduced-motion: reduce) {
 	.suggestions.is-open,
 	.trade-strategy-dropdown:not([hidden]),
-	.trade-strategy-params-popover:not([hidden]),
 	.date-picker-popover:not([hidden]) {
+		animation-duration: 1ms;
+		animation-timing-function: linear;
+	}
+	.trade-strategy-params-popover:not([hidden]) {
 		animation-duration: 1ms;
 		animation-timing-function: linear;
 	}

@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.1.10
+Code version: v0.3.1
 """
 
 from pathlib import Path
@@ -138,18 +138,32 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.24.2");' in app_css
-    assert "v0.56.7" in app_css
+    assert '@import url("./views/settings.css?v=0.25.0");' in app_css
+    assert '@import url("./foundation/tokens.css?v=0.24.0");' in app_css
+    assert "v0.58.0" in app_css
 
 
 def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> None:
+    tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
     backtest_layout = _read(ASSET_ROOT / "js/backtest/layout.js")
+    probability_grid = _read(ASSET_ROOT / "js/backtest/probability-grid.js")
+    backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
 
     for fragment in (
         '.classList.toggle("has-probability-field", Boolean(strategyPresentation))',
         '.classList.remove("has-probability-field")',
+        'probabilityScrollSpacer.className = "backtest-probability-scroll-spacer";',
+        'probabilityScrollTarget = Math.ceil(Math.max(0, Number(targetValue) || 0));',
+        'tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";',
+        "const motion = window.AntigravityMotion;",
+        "const preset = motion.springPresets?.bouncy || {",
+        '"backtest-probability-scroll",',
+        "x: canvasRect.left - stackRect.left + tradeChartStack.scrollLeft + point.x,",
+        "const canvasOffsetX = canvasRect.left - stackRect.left + tradeChartStack.scrollLeft;",
+        "setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);",
+        'tradeChartStack.classList.remove("has-probability-field", "has-probability-scroll");',
     ):
         assert fragment in backtest_script
 
@@ -162,8 +176,58 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "min-height: var(--backtest-probability-narrow-results-min-height);",
         ".backtest-results-stack.has-probability-field .trade-chart-stack {",
         "min-height: var(--backtest-probability-narrow-chart-stage-min-height);",
+        ".trade-chart-stack.has-probability-scroll {",
+        "overflow-x: auto;",
+        "scrollbar-width: thin;",
+        ".trade-chart-stack.has-probability-scroll::-webkit-scrollbar {",
+        "height: 6px;",
+        ".backtest-probability-scroll-spacer {",
+        ".backtest-probability-tooltip.chart-tooltip {",
+        "--backtest-probability-tooltip-transparency: 90%;",
+        "--backtest-probability-tooltip-radius: 10px;",
+        "--backtest-probability-cell-radius: 2px;",
+        "--backtest-probability-grid-padding: 8px;",
+        "transparent var(--backtest-probability-tooltip-transparency),",
+        "background-image: none;",
+        "border: 0;",
+        "box-shadow: none;",
+        "backdrop-filter: none;",
+        "-webkit-backdrop-filter: none;",
+        ".backtest-probability-tooltip.chart-tooltip[hidden] {",
+        "display: none;",
+        ".backtest-probability-tooltip[data-pinned=\"true\"] {",
     ):
         assert fragment in trade_css
+
+    for fragment in (
+        "const DEFAULT_ROWS_ABOVE = 6;",
+        "const DEFAULT_ROWS_BELOW = 6;",
+        "const DEFAULT_COLUMN_COUNT = 36;",
+        "const DEFAULT_GAP_PX = 3;",
+        "const DEFAULT_PADDING_PX = 8;",
+        "const DEFAULT_MIN_CELL_PX = 4;",
+        "const DEFAULT_CELL_RADIUS_PX = 2;",
+        "const DEFAULT_TOOLTIP_RADIUS_PX = 10;",
+        "const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 90;",
+        'time_quantization: "integer-trading-days",',
+        "const slotWidth = daysPerColumn * normalizedStepPixels;",
+        "const cellSize = slotWidth - gap;",
+        "const horizon = (visualColumn + 1) * daysPerColumn;",
+        'direction: "right",',
+    ):
+        assert fragment in probability_grid
+
+    assert "--backtest-probability-tooltip-transparency" not in tokens
+    assert "--backtest-probability-tooltip-radius" not in tokens
+    assert "--backtest-probability-cell-radius" not in tokens
+
+    price_panel = backtest_template.index('<div class="trade-chart-panel">')
+    price_canvas = backtest_template.index('<canvas id="tradePriceChart"></canvas>')
+    equity_panel = backtest_template.index(
+        '<div class="trade-chart-panel trade-chart-panel-equity">'
+    )
+    equity_canvas = backtest_template.index('<canvas id="tradeEquityChart"></canvas>')
+    assert price_panel < price_canvas < equity_panel < equity_canvas
 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
     investment_layout = _read(ASSET_ROOT / "js/investment/layout.js")
@@ -178,6 +242,7 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
     for fragment in (
         "--layout-content-width: 640px;",
         "--layout-control-width: 384px;",
+        "--layout-physical-effect-bleed: 48px;",
         "--settings-general-option-max-width: var(--layout-content-width);",
         "--settings-action-package-max-width: var(--layout-content-width);",
         "--settings-form-shell-max-width: var(--layout-content-width);",
@@ -190,20 +255,26 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
     for fragment in (
         "--settings-shell-content-max-width: var(--layout-content-width);",
         ".settings-shell-material-tokens,\n.settings-shell-strategies {",
-        ".settings-shell-network > .settings-action-package,",
+        ".settings-shell-network > .settings-content-scrollport > .settings-action-package,",
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;\n}",
+        ".settings-content-scrollport {",
+        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
+        "padding-inline-start: var(--layout-physical-effect-bleed);",
+        "overflow-x: hidden;\n    overflow-y: auto;",
         "width: min(100%, var(--layout-control-width));",
         "max-width: var(--layout-control-width);",
         "grid-template-columns: minmax(0, 1fr);",
         "width: min(100%, var(--layout-content-width));",
-        ".settings-shell-investment > .settings-general-panel {",
-        ".settings-shell-strategies > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-investment > .settings-content-scrollport > .settings-general-panel {",
+        ".settings-shell-strategies > .settings-content-scrollport > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
         "width: min(100%, var(--settings-shell-content-max-width));\n    max-width: 100%;\n    border-radius: var(--radius-panel);",
-        ".settings-shell-local-market-store > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
-        ".settings-shell-local-market-store > .local-store-table-shell {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-local-market-store > .settings-content-scrollport > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell {\n    width: min(100%, var(--settings-shell-content-max-width));",
         ".font-preview-card {\n    border: 0;\n}",
     ):
         assert fragment in settings_css
+
+    assert 'class="settings-content-scrollport" data-settings-content-scrollport' in settings_template
 
     intro_position = settings_template.index('class="settings-color-token-intro settings-card"')
     sidebar_position = settings_template.index('class="settings-color-token-sidebar"')
@@ -222,6 +293,26 @@ def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     assert "max-width: var(--settings-form-control-max-width);" in forms_css
     assert "width: min(320px, 100%);" in forms_css
     assert "max-width: 320px;" in forms_css
+
+
+def test_strategy_parameters_reveal_downward_without_crossing_the_strategy_row() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+
+    popover_rule = forms_css[
+        forms_css.index(".trade-strategy-params-popover {"):
+        forms_css.index(".trade-controls:has(.trade-strategy-field.is-open)")
+    ]
+    assert "position: static;" in popover_rule
+    assert "margin-top: 4px;" in popover_rule
+
+    animation = forms_css[
+        forms_css.index("@keyframes strategy-params-flow-in {"):
+        forms_css.index("@media (prefers-reduced-motion: reduce)")
+    ]
+    assert "clip-path: inset(0 0 100% 0);" in animation
+    assert "transform-origin: top center;" in animation
+    assert "animation: strategy-params-flow-in" in animation
+    assert "translateY(-" not in animation
 
 
 def test_broker_select_options_are_name_only() -> None:

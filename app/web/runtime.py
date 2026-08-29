@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.85.1
+Code version: v0.86.0
+- Added: Backtest strategies may keep a daily model while executing causal
+  signals on real one-minute bars through a declared interval bridge.
 - Fixed: Relative Backtest provider windows now end on the selected ticker's
   market-local trading date instead of the global New York calendar date.
 - Changed: Strategy-owned market-data loaders now fail closed on absent,
@@ -189,6 +191,10 @@ from app.core.email_settings import (
     test_smtp_connection,
 )
 from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
+from strategies.interval_bridge import (
+    DAILY_CLOSE_TO_NEXT_SESSION_OPEN,
+    bridge_daily_signals_to_intraday,
+)
 from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
 from app.infrastructure.connectivity import (
     has_remote_market_access,
@@ -275,6 +281,7 @@ from app.services.market_data import (
     has_compare_overnight_market_data_source,
     infer_ticker_market,
     list_available_market_intervals,
+    load_local_one_minute_history,
     normalize_history_frame,
     refresh_history_store,
     refresh_one_minute_store,
@@ -286,6 +293,7 @@ from app.services.market_data import (
     supports_compare_overnight,
 )
 from app.services.market_freshness import (
+    ensure_latest_backtest_intraday_cache,
     ensure_latest_daily_caches,
     ensure_latest_investment_daily_caches,
     extract_open_investment_tickers,
@@ -373,6 +381,9 @@ from app.web.market_history import (
     align_datasets_on_common_dates,
     build_supported_periods_for_history_store,
     extract_union_dates,
+    market_trading_dates_for_history,
+    slice_intraday_history_for_exact_range,
+    slice_intraday_history_for_period,
 )
 from app.web.strategy_forms import (
     build_strategy_form_fields as build_strategy_form_fields_for_strategy,
@@ -521,6 +532,67 @@ def _load_strategy_market_datasets(
                 f"{declared_source!r}."
             )
     return datasets
+
+
+def _strategy_model_interval(strategy: object, execution_interval: str) -> str:
+    """Resolve a strategy's model interval without changing legacy strategies."""
+    getter = getattr(strategy, "get_model_interval", None)
+    model_interval = (
+        getter(execution_interval)
+        if callable(getter)
+        else execution_interval
+    )
+    normalized = str(model_interval or "").strip().lower()
+    if normalized not in {"1d", "1m"}:
+        raise ValueError("Strategy model interval is invalid.")
+    return normalized
+
+
+def _strategy_signal_bridge(strategy: object, execution_interval: str) -> str | None:
+    """Resolve an optional model-to-execution signal bridge."""
+    getter = getattr(strategy, "get_signal_bridge", None)
+    bridge = getter(execution_interval) if callable(getter) else None
+    normalized = str(bridge or "").strip().lower()
+    return normalized or None
+
+
+def _strategy_interval_notice(strategy: object, execution_interval: str) -> str | None:
+    """Resolve optional mixed-frequency context for the rendered workspace."""
+    getter = getattr(strategy, "get_interval_notice", None)
+    notice = getter(execution_interval) if callable(getter) else None
+    normalized = str(notice or "").strip()
+    return normalized or None
+
+
+def _strategy_supported_execution_intervals(
+        strategy: object,
+        tickers: list[str],
+) -> list[str]:
+    """Intersect strategy execution capabilities with required local data."""
+    getter = getattr(strategy, "get_supported_intervals", None)
+    declared = set(getter() if callable(getter) else ("1d", "1m"))
+    uses_strategy_market_data = str(
+        getattr(strategy, "strategy_market_data_source", "default")
+    ).strip().lower() != "default"
+    local_options = {
+        ticker: set(list_available_market_intervals(ticker))
+        for ticker in tickers
+    }
+    supported: list[str] = []
+    for execution_interval in ("1d", "1m"):
+        if execution_interval not in declared:
+            continue
+        model_interval = _strategy_model_interval(strategy, execution_interval)
+        strategy_owns_execution_data = (
+            uses_strategy_market_data
+            and model_interval == execution_interval
+        )
+        if strategy_owns_execution_data or all(
+            execution_interval in local_options[ticker]
+            for ticker in tickers
+        ):
+            supported.append(execution_interval)
+    return supported or ["1d"]
 
 
 @dataclass(frozen=True)
@@ -2733,10 +2805,6 @@ def build_web_runtime() -> WebRuntime:
             if uses_strategy_market_data
             else [ensure_latest_backtest_caches(ticker) for ticker in validated_tickers]
         )
-        backtest_cache_refresh = {
-            "daily_error": any(bool(refresh.get("daily_error")) for refresh in refreshes),
-            "intraday_error": any(bool(refresh.get("intraday_error")) for refresh in refreshes),
-        }
         price_only = request.args.get("return", "").strip().lower() == "price" or parse_bool_flag("price_only", "price_return_only")
         include_dividends = False if price_only else (
             request.args.get("return", "").strip().lower() == "dividends"
@@ -2747,27 +2815,45 @@ def build_web_runtime() -> WebRuntime:
             default=bool(defaults.get("backtest_stop_loss", True)),
         )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        get_supported_intervals = getattr(strategy, "get_supported_intervals", None)
-        strategy_intervals = set(
-            get_supported_intervals()
-            if callable(get_supported_intervals)
-            else ("1d", "1m")
+        supported_intervals = _strategy_supported_execution_intervals(
+            strategy,
+            validated_tickers,
         )
-        interval_options = (
-            [list(strategy_intervals) for _ticker in validated_tickers]
-            if uses_strategy_market_data
-            else [list_available_market_intervals(ticker) for ticker in validated_tickers]
-        )
-        supported_intervals = [
-            interval
-            for interval in ("1d", "1m")
-            if interval in strategy_intervals and all(interval in options for options in interval_options)
-        ] or ["1d"]
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
             requested_interval = "1m"
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
+        if range_mode != "exact" and requested_interval == "1m":
+            intraday_periods = build_supported_periods_for_history_store(
+                validated_tickers[0],
+                "1m",
+            )
+            period, _ = resolve_requested_period_from_supported(
+                period,
+                intraday_periods,
+            )
+        model_interval = _strategy_model_interval(strategy, requested_interval)
+        signal_bridge = _strategy_signal_bridge(strategy, requested_interval)
+        if model_interval != requested_interval and not signal_bridge:
+            raise ValueError(
+                "A mixed-frequency Backtest strategy must declare a signal bridge."
+            )
+        if uses_strategy_market_data and signal_bridge and requested_interval == "1m":
+            refreshes = [
+                ensure_latest_backtest_intraday_cache(ticker)
+                for ticker in validated_tickers
+            ]
+        backtest_cache_refresh = {
+            "daily_error": any(
+                bool(refresh.get("daily_error"))
+                for refresh in refreshes
+            ),
+            "intraday_error": any(
+                bool(refresh.get("intraday_error"))
+                for refresh in refreshes
+            ),
+        }
         provider_end = (
             pd.Timestamp(exact_end)
             if range_mode == "exact" and exact_end
@@ -2778,20 +2864,41 @@ def build_web_runtime() -> WebRuntime:
             if range_mode == "exact" and exact_start
             else provider_end - PERIOD_OFFSETS.get(period, pd.DateOffset(years=10))
         )
+        if requested_interval == "1m" and range_mode != "exact":
+            provider_start = max(
+                provider_start,
+                one_minute_lookback_start()
+                .tz_convert(NEW_YORK_TIMEZONE)
+                .tz_localize(None)
+                .normalize(),
+            )
         strategy_datasets = _load_strategy_market_datasets(
             strategy,
             validated_tickers,
-            interval=requested_interval,
+            interval=model_interval,
             start=provider_start,
             end=provider_end,
             params=selected_strategy_params,
         )
-        trade_datasets = strategy_datasets if strategy_datasets is not None else [
-            fetch_history(
-                ticker,
-                False,
-                interval=requested_interval,
-                dividend_mode="price",
+        model_dataset = None
+        if strategy_datasets is not None:
+            model_dataset = (
+                combine_backtest_datasets(strategy_datasets)
+                if required_tickers > 1
+                else strategy_datasets[0]
+            )
+        trade_datasets = strategy_datasets if (
+            strategy_datasets is not None and model_interval == requested_interval
+        ) else [
+            (
+                load_local_one_minute_history(ticker)
+                if signal_bridge and requested_interval == "1m"
+                else fetch_history(
+                    ticker,
+                    False,
+                    interval=requested_interval,
+                    dividend_mode="price",
+                )
             )
             for ticker in validated_tickers
         ]
@@ -2806,27 +2913,62 @@ def build_web_runtime() -> WebRuntime:
         )
 
         if requested_interval == "1m":
-            six_months_ago = one_minute_lookback_start().tz_localize(None)
+            six_months_ago = (
+                one_minute_lookback_start()
+                .tz_convert(NEW_YORK_TIMEZONE)
+                .tz_localize(None)
+            )
             trade_dataset = trade_dataset[trade_dataset["Date"] >= six_months_ago]
 
+        constraint_dataset = (
+            pd.DataFrame({
+                "Date": market_trading_dates_for_history(
+                    trade_dataset,
+                    validated_tickers[0],
+                ),
+            })
+            if requested_interval == "1m"
+            else trade_dataset
+        )
         date_constraints = build_date_constraint_payload(
-            trade_dataset,
+            constraint_dataset,
             requested_start=exact_start or None,
             requested_end=exact_end or None,
         )
         if range_mode == "exact":
             if not date_constraints.trading_dates:
                 raise ValueError("The selected exact range does not contain trading dates.")
-            trade_dataset = slice_dataset_to_exact_range(
-                trade_dataset,
-                date_constraints.adjusted_start,
-                date_constraints.adjusted_end,
+            trade_dataset = (
+                slice_intraday_history_for_exact_range(
+                    trade_dataset,
+                    validated_tickers[0],
+                    date_constraints.adjusted_start,
+                    date_constraints.adjusted_end,
+                )
+                if requested_interval == "1m"
+                else slice_dataset_to_exact_range(
+                    trade_dataset,
+                    date_constraints.adjusted_start,
+                    date_constraints.adjusted_end,
+                )
             )
             if trade_dataset.empty:
                 raise ValueError("The selected exact range does not contain trading dates.")
         else:
             common_end_date = trade_dataset["Date"].max()
-            trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
+            trade_dataset = (
+                slice_intraday_history_for_period(
+                    trade_dataset,
+                    validated_tickers[0],
+                    period,
+                )
+                if requested_interval == "1m"
+                else slice_dataset_for_period(
+                    trade_dataset,
+                    period,
+                    common_end_date,
+                )
+            )
 
         backtest_initial_capital = max(
             parse_float_value(
@@ -2836,7 +2978,46 @@ def build_web_runtime() -> WebRuntime:
             1.0,
         )
 
-        signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
+        if signal_bridge:
+            if model_dataset is None:
+                raise ValueError("The interval bridge requires a strategy model dataset.")
+            execution_trading_dates = market_trading_dates_for_history(
+                trade_dataset,
+                validated_tickers[0],
+            )
+            model_dates = pd.to_datetime(
+                model_dataset["Date"],
+                errors="coerce",
+            )
+            if model_dates.isna().any():
+                raise ValueError("The strategy model dataset contains an invalid timestamp.")
+            if model_dates.dt.tz is not None:
+                model_dates = model_dates.dt.tz_localize(None)
+            execution_start = execution_trading_dates.min().normalize()
+            execution_end = execution_trading_dates.max().normalize()
+            visible_model_dataset = model_dataset.loc[
+                model_dates.dt.normalize().between(execution_start, execution_end)
+            ].copy()
+            if visible_model_dataset.empty:
+                raise ValueError(
+                    "The strategy model data does not overlap the execution range."
+                )
+            daily_signal_result = strategy.compute_signals(
+                visible_model_dataset,
+                selected_strategy_params,
+            )
+            if signal_bridge != DAILY_CLOSE_TO_NEXT_SESSION_OPEN:
+                raise ValueError(f"Unsupported strategy signal bridge: {signal_bridge}.")
+            signal_result = bridge_daily_signals_to_intraday(
+                daily_signal_result,
+                trade_dataset,
+                execution_trading_dates,
+            )
+        else:
+            signal_result = strategy.compute_signals(
+                trade_dataset,
+                selected_strategy_params,
+            )
         if hasattr(signal_result, "metadata") and isinstance(signal_result.metadata, dict):
             signal_result.metadata["tickers"] = validated_tickers
         backtest_result = run_single_ticker_backtest(
@@ -2848,6 +3029,9 @@ def build_web_runtime() -> WebRuntime:
             include_cash_dividends=not price_only,
             stop_loss_enabled=stop_loss_enabled,
         )
+        interval_notice = _strategy_interval_notice(strategy, requested_interval)
+        if interval_notice:
+            backtest_result["strategy_interval_notice"] = interval_notice
         return (
             backtest_result,
             validated_tickers[0],
@@ -3745,32 +3929,14 @@ def build_web_runtime() -> WebRuntime:
         supported_intervals = ["1d"]
         if current_view in BACKTEST_VIEWS and requested_tickers:
             try:
-                get_supported_intervals = getattr(
+                validated_interval_tickers = [
+                    validate_ticker_or_raise(ticker)
+                    for ticker in requested_tickers[:strategy_required_tickers]
+                ]
+                supported_intervals = _strategy_supported_execution_intervals(
                     selected_strategy_runtime,
-                    "get_supported_intervals",
-                    None,
+                    validated_interval_tickers,
                 )
-                strategy_intervals = set(
-                    get_supported_intervals()
-                    if callable(get_supported_intervals)
-                    else ("1d", "1m")
-                )
-                uses_strategy_market_data = str(
-                    getattr(selected_strategy_runtime, "strategy_market_data_source", "default")
-                ).strip().lower() != "default"
-                interval_options = (
-                    [list(strategy_intervals) for _ticker in requested_tickers[:strategy_required_tickers]]
-                    if uses_strategy_market_data
-                    else [
-                        list_available_market_intervals(validate_ticker_or_raise(ticker))
-                        for ticker in requested_tickers[:strategy_required_tickers]
-                    ]
-                )
-                supported_intervals = [
-                    interval
-                    for interval in ("1d", "1m")
-                    if interval in strategy_intervals and all(interval in options for options in interval_options)
-                ] or ["1d"]
             except ValueError:
                 pass
 
@@ -3928,7 +4094,13 @@ def build_web_runtime() -> WebRuntime:
             else list(SUPPORTED_PERIODS_1D)
         )
 
-        if period not in supported_periods:
+        if (
+            period not in supported_periods
+            and not (
+                current_view in BACKTEST_VIEWS
+                and requested_interval == "1m"
+            )
+        ):
             period = supported_periods[0] if supported_periods else DEFAULT_PERIOD
 
         def handle_fetch_history_failure(
@@ -4042,8 +4214,22 @@ def build_web_runtime() -> WebRuntime:
                         trade_dataset,
                         selected_strategy_id,
                         selected_strategy_params,
-                        _,
+                        run_refresh_status,
                     ) = _run_backtest_from_request()
+                    if backtest_market_refresh is None:
+                        backtest_market_refresh = {
+                            "daily_error": bool(run_refresh_status.get("daily_error")),
+                            "intraday_error": bool(run_refresh_status.get("intraday_error")),
+                        }
+                    else:
+                        backtest_market_refresh["daily_error"] = bool(
+                            backtest_market_refresh.get("daily_error")
+                            or run_refresh_status.get("daily_error")
+                        )
+                        backtest_market_refresh["intraday_error"] = bool(
+                            backtest_market_refresh.get("intraday_error")
+                            or run_refresh_status.get("intraday_error")
+                        )
                     if strategy_cacheable:
                         _cached_backtest[cache_key] = (
                             backtest_result, trade_ticker, requested_interval, date_constraints,
@@ -4060,11 +4246,13 @@ def build_web_runtime() -> WebRuntime:
                     "1d": list(COMPARE_PERIODS_1D),
                     "1m": build_supported_periods_for_history_store(trade_ticker, "1m"),
                 }
-                if requested_interval == "1m" and not trade_dataset.empty:
-                    backtest_periods_by_interval["1m"] = build_supported_periods_from_dates(
-                        trade_dataset["Date"],
-                        interval="1m",
-                    )
+                interval_notice = (
+                    str(backtest_result.get("strategy_interval_notice", "")).strip()
+                    if isinstance(backtest_result, dict)
+                    else ""
+                )
+                if interval_notice:
+                    notice = f"{notice} {interval_notice}" if notice else interval_notice
                 if backtest_market_refresh:
                     refresh_notices: list[str] = []
                     if backtest_market_refresh.get("daily_error"):
@@ -4081,23 +4269,33 @@ def build_web_runtime() -> WebRuntime:
                             notice = refresh_notice
                         else:
                             notice += " " + refresh_notice
+                visible_backtest_dates = (
+                    market_trading_dates_for_history(trade_dataset, trade_ticker)
+                    if requested_interval == "1m"
+                    else pd.to_datetime(trade_dataset["Date"], errors="coerce")
+                )
+                visible_start = visible_backtest_dates.min()
+                visible_end = visible_backtest_dates.max()
                 supported_periods = backtest_periods_by_interval.get(requested_interval, list(SUPPORTED_PERIODS_1D))
                 period, period_notice = resolve_requested_period_from_supported(
                     period,
                     supported_periods,
-                    earliest_available=trade_dataset["Date"].min() if not trade_dataset.empty else None,
+                    earliest_available=visible_start if not trade_dataset.empty else None,
                 )
                 if period_notice and notice is None:
                     notice = period_notice
                 elif period_notice:
                     notice += " " + period_notice
-                exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
-                exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
+                exact_start_value = pd.Timestamp(visible_start).strftime("%Y-%m-%d")
+                exact_end_value = pd.Timestamp(visible_end).strftime("%Y-%m-%d")
                 if range_mode == "exact":
                     period_label = "Exact range"
                 else:
                     period_label = format_period_label(period)
-                display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
+                display_range = (
+                    f"{format_display_date(visible_start)} - "
+                    f"{format_display_date(visible_end)}"
+                )
             elif current_view == "dca":
                 if requested_tickers:
                     dca_ticker = validate_ticker_or_raise(requested_tickers[0])

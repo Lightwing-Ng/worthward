@@ -1,8 +1,8 @@
 [app]
 name = "antigravity"
-version = "v2.59.0"
+version = "v2.59.2"
 debug = false
-updated_on = "3 Aug 2026"
+updated_on = "29 Aug 2026"
 
 [server]
 host = "0.0.0.0"
@@ -82,8 +82,8 @@ backtest_detail = "Backtest result"
 backtest_detail_placeholder = "Run a backtest to inspect performance metrics and chart output."
 backtest_ticker = "Ticker"
 backtest_strategy = "Strategy"
-backtest_stop_loss = "Stop loss"
-backtest_stop_loss_help = "Allow sell signals to close below the entry price."
+backtest_stop_loss = "Allow algorithmic stop-loss exits"
+backtest_stop_loss_help = "Allow strategy sell or cover signals to close a position when the exit price represents a loss relative to the entry price. This price-only check excludes dividends and total return. This setting does not add a separate fixed-price stop."
 backtest_capital = "Initial capital (USD)"
 backtest_backtest = "Backtest"
 backtest_metrics = "Performance"

@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.4.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -141,8 +141,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(metadata.name, "Bayesian Price Field")
         self.assertEqual(metadata.category, "machine-learning")
         self.assertEqual(metadata.display_order, 42)
-        self.assertEqual(strategy.get_default_tickers(), ("AAPL",))
-        self.assertEqual(strategy.get_supported_intervals(), ("1d",))
+        self.assertEqual(strategy.get_default_tickers(), ("NVDA",))
+        self.assertEqual(strategy.get_supported_intervals(), ("1d", "1m"))
+        self.assertEqual(strategy.get_model_interval("1d"), "1d")
+        self.assertEqual(strategy.get_model_interval("1m"), "1d")
+        self.assertEqual(
+            strategy.get_signal_bridge("1m"),
+            "daily-close-to-next-session-open",
+        )
+        self.assertEqual(
+            strategy.get_interval_notice("1m"),
+            "Daily Bayesian model; the probability field is available at 1d.",
+        )
         self.assertEqual(strategy.strategy_market_data_source, "longbridge-cli")
         self.assertFalse(strategy.backtest_cacheable)
 
@@ -402,7 +412,15 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["model_version"], _MODEL_VERSION)
         self.assertEqual(presentation["rows_above"], 6)
         self.assertEqual(presentation["rows_below"], 6)
+        self.assertEqual(presentation["columns"], 36)
         self.assertEqual(presentation["width_fraction"], 0.25)
+        self.assertEqual(presentation["gap_px"], 3)
+        self.assertEqual(presentation["padding_px"], 8)
+        self.assertEqual(presentation["min_cell_px"], 4)
+        self.assertEqual(presentation["cell_radius_px"], 2)
+        self.assertEqual(presentation["tooltip_radius_px"], 10)
+        self.assertEqual(presentation["tooltip_transparency_pct"], 90)
+        self.assertEqual(presentation["time_quantization"], "integer-trading-days")
         self.assertEqual(len(presentation["predictive_mean"]), len(result.frame))
         self.assertEqual(len(presentation["predictive_scale"]), len(result.frame))
         self.assertEqual(len(presentation["probability_up"]), len(result.frame))

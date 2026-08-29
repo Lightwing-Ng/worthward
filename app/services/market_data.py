@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.24.2
+Code version: v0.25.0
 
 - Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
@@ -1619,6 +1619,41 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
     return _download_daily_history_with_fallback(
         normalized_ticker,
         period="max",
+    )
+
+
+def load_local_one_minute_history(ticker: str) -> pd.DataFrame:
+    """Read and normalize an existing one-minute cache without writing it."""
+    normalized_ticker = normalize_ticker(ticker)
+    path = next(
+        (
+            candidate_path
+            for candidate in market_ticker_store_aliases(normalized_ticker)
+            if (
+                candidate_path := history_store_path_for_interval(candidate, "1m")
+            ).exists()
+            and candidate_path.stat().st_size > 0
+        ),
+        history_store_path_for_interval(normalized_ticker, "1m"),
+    )
+    if not path.exists() or path.stat().st_size == 0:
+        raise ValueError(
+            f"Local 1-minute market data for {normalized_ticker} is unavailable."
+        )
+    with market_store_file_lock(path):
+        dataset = pd.read_parquet(path)
+    normalized_dataset = normalize_one_minute_store_frame(
+        dataset,
+        normalized_ticker,
+    )
+    if normalized_dataset.empty:
+        raise ValueError(
+            f"Local 1-minute market data for {normalized_ticker} is empty."
+        )
+    return select_price_series(
+        normalized_dataset,
+        include_dividends=False,
+        dividend_mode="price",
     )
 
 

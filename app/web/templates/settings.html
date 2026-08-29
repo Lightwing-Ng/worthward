@@ -1,4 +1,4 @@
-{# Code version: v0.12.21 #}
+{# Code version: v0.13.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -106,6 +106,10 @@
             <p class="report-heading">{{ settings_title }}</p>
         </div>
     </article>
+
+    {% if settings_section != "style-tokens" %}
+    <div class="settings-content-scrollport" data-settings-content-scrollport>
+    {% endif %}
 
     {% if settings_section == "about" %}
     <article class="report-card workspace-content-card about-section settings-reading-guard">
@@ -1728,6 +1732,9 @@
             {% endfor %}
             </div>
     </section>
+    {% endif %}
+    {% if settings_section != "style-tokens" %}
+    </div>
     {% endif %}
 </section>
 {% endblock %}

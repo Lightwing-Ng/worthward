@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -143,6 +143,9 @@ class BaseStrategy:
     strategy_display_order: int = 9999
     strategy_supports: StrategySupportMatrix = StrategySupportMatrix()
     strategy_supported_intervals: tuple[str, ...] = ("1d", "1m")
+    strategy_model_interval_overrides: dict[str, str] = {}
+    strategy_signal_bridges: dict[str, str] = {}
+    strategy_interval_notices: dict[str, str] = {}
     strategy_market_data_source: str = "default"
     backtest_cacheable: bool = True
 
@@ -201,13 +204,49 @@ class BaseStrategy:
         return max(1, int(supports.required_tickers or (2 if supports.multi_ticker else 1)))
 
     def get_supported_intervals(self) -> tuple[str, ...]:
-        """Return the market-data intervals this strategy can calculate."""
+        """Return the execution intervals exposed by Backtest."""
         supported = tuple(
             interval
             for interval in self.strategy_supported_intervals
             if interval in {"1d", "1m"}
         )
         return supported or ("1d",)
+
+    def get_model_interval(self, execution_interval: str) -> str:
+        """Resolve the strategy-model interval for an execution interval."""
+        normalized_execution = str(execution_interval or "").strip().lower()
+        if normalized_execution not in self.get_supported_intervals():
+            raise ValueError(
+                f"{self.strategy_id or type(self).__name__} does not support "
+                f"execution interval {normalized_execution or 'missing'}."
+            )
+        model_interval = str(
+            self.strategy_model_interval_overrides.get(
+                normalized_execution,
+                normalized_execution,
+            )
+        ).strip().lower()
+        if model_interval not in {"1d", "1m"}:
+            raise ValueError(
+                f"{self.strategy_id or type(self).__name__} has an invalid model interval."
+            )
+        return model_interval
+
+    def get_signal_bridge(self, execution_interval: str) -> str | None:
+        """Return the declared causal signal bridge for an execution interval."""
+        normalized_execution = str(execution_interval or "").strip().lower()
+        bridge = str(
+            self.strategy_signal_bridges.get(normalized_execution, "")
+        ).strip().lower()
+        return bridge or None
+
+    def get_interval_notice(self, execution_interval: str) -> str | None:
+        """Return user-facing context for a mixed-frequency execution interval."""
+        normalized_execution = str(execution_interval or "").strip().lower()
+        notice = str(
+            self.strategy_interval_notices.get(normalized_execution, "")
+        ).strip()
+        return notice or None
 
     def load_market_datasets(
             self,

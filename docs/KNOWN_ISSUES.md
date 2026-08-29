@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.234.2`
+Documentation version: `v1.235.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -85,6 +85,15 @@ references, transaction descriptions, or copied statement content.
   compare it with the canonical cache, and obtain explicit user authorization
   before removing it. Zero-byte companion locks follow the same ownership
   boundary while a writer may be active.
+
+## Backtest interval constraints
+
+- Bayesian Price Field remains a daily posterior model. Its `1m` option uses
+  real local one-minute bars only for execution prices and the equity axis;
+  the daily probability field is intentionally unavailable in that mode.
+- One-minute Backtest history follows the local store retention window. A
+  longer selected Period is automatically reduced to the final available
+  one-minute option, normally `max`, rather than fabricating older minute bars.
 
 ## Security
 

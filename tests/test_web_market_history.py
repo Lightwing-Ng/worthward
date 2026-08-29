@@ -1,6 +1,6 @@
 """Tests for read-only web market-history helpers.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -19,8 +19,11 @@ from app.web.market_history import (
     build_supported_periods_for_history_store,
     extract_shared_dates,
     extract_union_dates,
+    market_trading_dates_for_history,
+    slice_intraday_history_for_exact_range,
+    slice_intraday_history_for_period,
 )
-from tests.factories.market import close_frame_for_dates, market_frame
+from tests.factories.market import close_frame_for_dates, market_frame, ohlc_frame_for_dates
 
 
 class WebMarketHistoryTests(unittest.TestCase):
@@ -80,6 +83,52 @@ class WebMarketHistoryTests(unittest.TestCase):
 
             self.assertEqual(periods, ["max"])
             self.assertEqual(path.read_bytes(), before_bytes)
+
+    def test_hong_kong_intraday_periods_use_exchange_dates_across_new_york_midnight(self) -> None:
+        dataset = ohlc_frame_for_dates(
+            "7709.HK",
+            [
+                "2026-07-13 21:30",
+                "2026-07-14 03:59",
+                "2026-07-14 21:30",
+                "2026-07-15 03:59",
+            ],
+        )
+        original = dataset.copy(deep=True)
+        trading_dates = market_trading_dates_for_history(dataset, "7709.HK")
+
+        self.assertEqual(
+            trading_dates.dt.strftime("%Y-%m-%d").tolist(),
+            ["2026-07-14", "2026-07-14", "2026-07-15", "2026-07-15"],
+        )
+        sliced = slice_intraday_history_for_period(dataset, "7709.HK", "1d")
+        self.assertEqual(
+            sliced["Date"].tolist(),
+            list(pd.to_datetime(["2026-07-14 21:30", "2026-07-15 03:59"])),
+        )
+        self.assertEqual(len(slice_intraday_history_for_period(dataset, "7709.HK", "3d")), 4)
+        self.assertEqual(len(slice_intraday_history_for_period(dataset, "7709.HK", "max")), 4)
+        exact = slice_intraday_history_for_exact_range(
+            dataset,
+            "7709.HK",
+            "2026-07-15",
+            "2026-07-15",
+        )
+        self.assertEqual(exact["Date"].tolist(), sliced["Date"].tolist())
+        self.assertNotIn("Synthetic", exact.columns)
+        pd.testing.assert_frame_equal(dataset, original)
+
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "historical" / "7709.HK_1m.parquet"
+            path.parent.mkdir(parents=True)
+            dataset.to_parquet(path, index=False)
+            with (
+                patch("app.web.market_history.market_ticker_store_aliases", return_value=("7709.HK",)),
+                patch("app.web.market_history.intraday_history_store_path_for", return_value=path),
+            ):
+                periods = build_supported_periods_for_history_store("7709.HK", "1m")
+
+        self.assertEqual(periods, ["1d"])
 
 
 if __name__ == "__main__":

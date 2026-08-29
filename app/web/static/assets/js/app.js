@@ -1,4 +1,4 @@
-/* Code version: v0.44.1 */
+/* Code version: v0.45.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -7127,7 +7127,7 @@
                 } else {
                     replacePeriodOptions(
                         tickerPeriodOptions[nextInterval] || state.backtestPeriodOptions?.[nextInterval] || ["1d"],
-                        nextInterval === "1m" ? "1d" : "max",
+                        nextInterval === "1m" ? null : "max",
                     );
                 }
             }
@@ -7481,7 +7481,7 @@
         const interval = event.target.value;
         syncBacktestIntervalSegmentedControl();
         const nextPeriods = state.backtestPeriodOptions?.[interval] || (interval === "1m" ? ["1d"] : ["1d"]);
-        replacePeriodOptions(nextPeriods, interval === "1m" ? "1d" : "max");
+        replacePeriodOptions(nextPeriods, interval === "1m" ? null : "max");
         // Force full reload for interval change to refresh sidebar period options
         scheduleAutoSubmit(20);
     }));
@@ -7678,7 +7678,6 @@
     };
     let strategySwitchAnimationTimer = null;
     let strategyFieldsRequestToken = 0;
-    let strategyScrollbarIdleTimer = 0;
     let pendingBacktestStrategyNavigation = false;
 
     const scheduleStrategyParamSubmit = (delay = 160) => {
@@ -7702,76 +7701,19 @@
     };
 
     const positionTradeStrategyPanel = () => {
-        const {field, panel} = getTradeStrategyRefs();
+        const {panel} = getTradeStrategyRefs();
         if (!(panel instanceof HTMLElement) || panel.hidden) return;
-        if (!(field instanceof HTMLElement)) return;
-        const panelStyles = getComputedStyle(panel);
-        const panelAnchor = field.querySelector(".trade-strategy-row");
-        const anchorRect = panelAnchor instanceof HTMLElement ? panelAnchor.getBoundingClientRect() : field.getBoundingClientRect();
-        const visualViewport = window.visualViewport;
-        const viewportTop = Number(visualViewport?.offsetTop) || 0;
-        const viewportHeight = Number(visualViewport?.height) || window.innerHeight || 0;
-        const viewportBottom = viewportTop + viewportHeight;
-        const viewportEdge = 12;
-        const placementGap = SIDEBAR_OVERLAY_GAP_PX;
-        const availableAbove = Math.max(0, anchorRect.top - viewportTop - viewportEdge - placementGap);
-        const availableBelow = Math.max(0, viewportBottom - anchorRect.bottom - viewportEdge - placementGap);
-        const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
-        if (panelGrid instanceof HTMLElement) {
-            const verticalChrome = (Number.parseFloat(panelStyles.paddingTop) || 0)
-                + (Number.parseFloat(panelStyles.paddingBottom) || 0)
-                + (Number.parseFloat(panelStyles.borderTopWidth) || 0)
-                + (Number.parseFloat(panelStyles.borderBottomWidth) || 0);
-            const gridRect = panelGrid.getBoundingClientRect();
-            const contentHeight = Math.ceil(Math.max(
-                panelGrid.scrollHeight,
-                ...Array.from(panelGrid.children).map((child) => (
-                    Math.max(0, child.getBoundingClientRect().bottom - gridRect.top)
-                )),
-            ));
-            const naturalPanelHeight = contentHeight + verticalChrome;
-            const placeAbove = availableBelow < naturalPanelHeight && availableAbove > availableBelow;
-            const availableHeight = placeAbove ? availableAbove : availableBelow;
-            const gridMaxHeight = Math.max(0, availableHeight - verticalChrome);
-            panelGrid.style.maxHeight = `${Math.round(gridMaxHeight)}px`;
-            const needsScroll = contentHeight > Math.round(gridMaxHeight);
-            panelGrid.classList.toggle("is-scrollable", needsScroll);
-            if (!needsScroll) {
-                panelGrid.classList.remove("is-scrolling");
-                if (strategyScrollbarIdleTimer) {
-                    window.clearTimeout(strategyScrollbarIdleTimer);
-                    strategyScrollbarIdleTimer = 0;
-                }
-            }
-            panel.classList.toggle("is-flipped", placeAbove);
-            panel.style.top = placeAbove ? "auto" : `calc(100% + ${placementGap}px)`;
-            panel.style.bottom = placeAbove ? `calc(100% + ${placementGap}px)` : "auto";
-            panel.style.transformOrigin = placeAbove ? "bottom center" : "top center";
-            const desiredPanelHeight = Math.min(availableHeight, naturalPanelHeight);
-            panel.style.height = `${Math.round(desiredPanelHeight)}px`;
-            panel.style.maxHeight = `${Math.round(availableHeight)}px`;
-            return;
-        }
         panel.classList.remove("is-flipped");
         panel.style.top = "";
         panel.style.bottom = "";
         panel.style.transformOrigin = "";
         panel.style.height = "";
         panel.style.maxHeight = "";
-    };
-
-    const setStrategyPanelScrollingState = () => {
-        const {panel} = getTradeStrategyRefs();
-        if (!(panel instanceof HTMLElement)) return;
-        const grid = panel.querySelector("[data-trade-strategy-params-grid]");
-        if (!(grid instanceof HTMLElement)) return;
-        if (!grid.classList.contains("is-scrollable")) return;
-        grid.classList.add("is-scrolling");
-        const idleMs = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--strategy-param-scrollbar-idle-ms")) || 720;
-        if (strategyScrollbarIdleTimer) window.clearTimeout(strategyScrollbarIdleTimer);
-        strategyScrollbarIdleTimer = window.setTimeout(() => {
-            grid.classList.remove("is-scrolling");
-        }, idleMs);
+        const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
+        if (panelGrid instanceof HTMLElement) {
+            panelGrid.style.maxHeight = "";
+            panelGrid.classList.remove("is-scrollable", "is-scrolling");
+        }
     };
 
     const setTradeStrategyPanelOpen = (isOpen) => {
@@ -7804,10 +7746,8 @@
 
     const initStrategyParamControls = (root = document) => {
         const panelGrid = root.querySelector?.("[data-trade-strategy-params-grid]");
-        if (panelGrid instanceof HTMLElement && panelGrid.dataset.strategyScrollBound !== "1") {
-            panelGrid.dataset.strategyScrollBound = "1";
+        if (panelGrid instanceof HTMLElement) {
             panelGrid.classList.remove("is-scrolling");
-            panelGrid.addEventListener("scroll", setStrategyPanelScrollingState, {passive: true});
         }
         const fields = Array.from(root.querySelectorAll("[data-strategy-param-key]"));
         fields.forEach((field) => {
@@ -8312,7 +8252,6 @@
     window.addEventListener("resize", () => {
         getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));
         positionTradeStrategyDropdown();
-        positionTradeStrategyPanel();
     });
     document.addEventListener("scroll", (event) => {
         // Scrolling a portalled menu must not remeasure and reposition the menu.
@@ -8324,7 +8263,6 @@
         }
         getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));
         positionTradeStrategyDropdown();
-        positionTradeStrategyPanel();
     }, true);
     document.addEventListener("click", (event) => {
         const {field} = getTradeStrategyRefs();
