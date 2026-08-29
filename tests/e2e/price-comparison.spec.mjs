@@ -1,4 +1,4 @@
-/* Code version: v0.1.1 */
+/* Code version: v0.1.2 */
 import {expect, test} from '@playwright/test';
 
 test('separates wide market-cap magnitudes without transforming their absolute values', async ({page}) => {
@@ -69,4 +69,52 @@ test('separates wide market-cap magnitudes without transforming their absolute v
     expect(Math.min(...chartState.pixelGaps)).toBeGreaterThan(20);
     expect(chartState.peerScaleType).toBe('linear');
     expect(chartState.peerScaleContract).toBe('linear');
+});
+
+test('uses the primary-blue token for Price curves while preserving the Market cap palette', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&range=2y&chips=1');
+    await page.waitForFunction(() => (
+        document.querySelectorAll('[data-price-subplot-canvas]').length === 2
+        && [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+
+    const priceState = await page.evaluate(() => {
+        const state = window.ANTIGRAVITY_APP;
+        const primary = getComputedStyle(document.body).getPropertyValue('--theme-accent-primary').trim();
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        return {
+            primary,
+            tickers: canvases.map((canvas) => canvas.closest('[data-price-subplot]')?.dataset.ticker || ''),
+            canvasColors: canvases.map((canvas) => canvas.dataset.seriesColor),
+            chartColors: canvases.map((canvas) => window.Chart.getChart(canvas).data.datasets[0].borderColor),
+            comparisonMetric: state.comparisonMetric,
+            comparisonChips: state.comparisonChips,
+        };
+    });
+
+    expect(priceState.tickers).toEqual(['AAPL', 'NVDA']);
+    expect(priceState.comparisonMetric).toBe('price');
+    expect(priceState.comparisonChips).toBe(true);
+    expect(priceState.canvasColors).toEqual([priceState.primary, priceState.primary]);
+    expect(priceState.chartColors).toEqual([priceState.primary, priceState.primary]);
+
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&range=2y');
+    await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('#returnsChart'))));
+    const marketCapState = await page.evaluate(() => {
+        const state = window.ANTIGRAVITY_APP;
+        const chart = window.Chart.getChart(document.querySelector('#returnsChart'));
+        return {
+            seriesColors: state.chart.series.map((item) => item.color),
+            chartColors: chart.data.datasets.map((dataset) => dataset.borderColor),
+            primary: state.theme.accent_primary,
+            secondary: state.theme.accent_secondary,
+        };
+    });
+
+    expect(marketCapState.chartColors).toEqual(marketCapState.seriesColors);
+    expect(marketCapState.chartColors).toEqual([
+        marketCapState.primary,
+        marketCapState.secondary,
+    ]);
 });

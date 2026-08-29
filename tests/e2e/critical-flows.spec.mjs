@@ -1,4 +1,4 @@
-/* Code version: v1.174.0 */
+/* Code version: v1.174.1 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -3651,7 +3651,11 @@ test('switches short price ranges and formats price axes by currency precision',
         && item.seriesColor === item.borderColor
     ))).toBe(true);
     expect(new Set(oneDayRenderModes.map((item) => item.candleWidth)).size).toBe(1);
-    expect(new Set(oneDayRenderModes.map((item) => item.seriesColor)).size).toBe(3);
+    const expectedPriceSeriesColor = await page.evaluate(() => (
+        getComputedStyle(document.body).getPropertyValue('--theme-accent-primary').trim()
+    ));
+    expect(new Set(oneDayRenderModes.map((item) => item.seriesColor)).size).toBe(1);
+    expect(oneDayRenderModes.every((item) => item.seriesColor === expectedPriceSeriesColor)).toBe(true);
 
     const oneDayAxisLabels = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => {

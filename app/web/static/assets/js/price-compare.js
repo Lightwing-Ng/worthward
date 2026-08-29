@@ -1,4 +1,4 @@
-/* Code version: v0.24.1 */
+/* Code version: v0.24.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -1698,7 +1698,7 @@
 				])
 				: []);
 			const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
-			const seriesColor = item.color || theme.accent;
+			const seriesColor = theme.accent || "#0055cc";
 			const priceCandles = Array.isArray(item.candlestick_prices) ? item.candlestick_prices : [];
 			const hasOneDayCandlesticks = requestedPeriod === "1d"
 				&& priceCandles.length === labels.length
