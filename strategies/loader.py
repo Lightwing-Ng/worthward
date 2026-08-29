@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v0.4.1
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ def _build_strategy_catalog() -> list[dict[str, Any]]:
                 class_name=strategy_class.__name__,
                 default_params=strategy.get_startup_params(),
                 default_tickers=strategy.get_default_tickers(),
+                supported_intervals=strategy.get_supported_intervals(),
             )
         )
     return sorted(catalog, key=lambda item: (item.get("ui", {}).get("display_order", 9999), item.get("name", "")))
@@ -55,7 +56,7 @@ def _build_strategy_catalog() -> list[dict[str, Any]]:
 
 def load_strategy_registry() -> dict[str, Any]:
     return {
-        "version": "v2.1.0",
+        "version": "v2.2.0",
         "strategies": _build_strategy_catalog(),
     }
 

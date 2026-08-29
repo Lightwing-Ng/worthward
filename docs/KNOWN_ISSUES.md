@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.235.0`
+Documentation version: `v1.235.2`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -90,10 +90,18 @@ references, transaction descriptions, or copied statement content.
 
 - Bayesian Price Field remains a daily posterior model. Its `1m` option uses
   real local one-minute bars only for execution prices and the equity axis;
-  the daily probability field is intentionally unavailable in that mode.
+  the daily probability field is intentionally unavailable in that mode. Daily
+  signals and intraday bars map through the ticker exchange's local trading
+  dates, so Asian sessions are not shifted by UTC or New York midnight.
 - One-minute Backtest history follows the local store retention window. A
   longer selected Period is automatically reduced to the final available
   one-minute option, normally `max`, rather than fabricating older minute bars.
+- Multi-ticker strategies expose `1m` only when every required ticker has real
+  one-minute history and the complete required set shares at least one Period;
+  the browser intersects Period choices across that ordered set.
+- Bayesian one-minute execution refreshes only its required one-minute cache.
+  If refresh fails, Backtest reports the failure before read-only reuse of an
+  existing cache; without an existing cache, the request fails closed.
 
 ## Security
 

@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -116,14 +116,17 @@ class StrategyMetadata:
             class_name: str,
             default_params: dict[str, Any],
             default_tickers: Sequence[str] = (),
+            supported_intervals: Sequence[str] = ("1d",),
     ) -> dict[str, Any]:
+        supports = asdict(self.supports)
+        supports["execution_intervals"] = list(supported_intervals)
         return {
             "id": self.strategy_id,
             "name": self.name,
             "description": self.description,
             "category": self.category,
             "enabled": self.enabled,
-            "supports": asdict(self.supports),
+            "supports": supports,
             "default_params": default_params,
             "default_tickers": list(default_tickers),
             "module": module,

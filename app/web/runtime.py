@@ -143,6 +143,7 @@ from app.core.live_trading_security import (
 )
 from app.web.request_security import validate_investment_browser_write_request
 from app.infrastructure.broker_market_data import (
+    NEW_YORK_TIMEZONE,
     classify_daily_store_status,
     classify_one_minute_store_status,
     fetch_longbridge_daily_history,

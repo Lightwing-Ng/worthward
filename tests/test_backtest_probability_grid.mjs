@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.5.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.7.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,14 +17,26 @@ const presentation = {
     renderer: 'probability-grid-v1',
     rows_above: 6,
     rows_below: 6,
+    columns: 36,
     width_fraction: 0.25,
+    gap_px: 3,
+    padding_px: 8,
+    min_cell_px: 4,
+    cell_radius_px: 2,
+    tooltip_radius_px: 10,
+    tooltip_transparency_pct: 50,
+    cell_opacity_mapping: 'instant-contrast-power-v1',
+    cell_opacity_exponent: 1.6,
+    cell_opacity_tail_ratio: 0.02,
+    time_quantization: 'integer-trading-days',
     data_keys: rawDates,
     predictive_mean: [0.001, null, -0.002],
     predictive_scale: [0.02, null, 0.03],
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.5.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.7.0');
+    assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
 test('accepts only the versioned Bayesian presentation schema', () => {
@@ -38,7 +50,10 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 2);
     assert.equal(normalized.tooltip_radius_px, 10);
-    assert.equal(normalized.tooltip_transparency_pct, 90);
+    assert.equal(normalized.tooltip_transparency_pct, 50);
+    assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
+    assert.equal(normalized.cell_opacity_exponent, 1.6);
+    assert.equal(normalized.cell_opacity_tail_ratio, 0.02);
     assert.equal(normalized.time_quantization, 'integer-trading-days');
     assert.deepEqual(normalized.data_keys, rawDates);
     assert.deepEqual(normalized.predictive_mean, [0.001, null, -0.002]);
@@ -46,13 +61,120 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
 });
 
-test('normalizes every Bayesian field to the fixed six-up and six-down row contract', () => {
+test('preserves bounded strategy-owned symmetric geometry and material values', () => {
     const normalized = grid.normalizePresentation(
-        {...presentation, rows_above: 2, rows_below: 11},
+        {
+            ...presentation,
+            rows_above: 9,
+            rows_below: 9,
+            columns: 18,
+            gap_px: 2.5,
+            padding_px: 6,
+            min_cell_px: 3,
+            cell_radius_px: 1.5,
+            tooltip_radius_px: 12,
+            tooltip_transparency_pct: 75,
+            cell_opacity_exponent: 2.4,
+            cell_opacity_tail_ratio: 0.05,
+            width_fraction: 0.3,
+        },
+        {raw_dates: rawDates, length: rawDates.length},
+    );
+    assert.equal(normalized.rows_above, 9);
+    assert.equal(normalized.rows_below, 9);
+    assert.equal(normalized.columns, 18);
+    assert.equal(normalized.gap_px, 2.5);
+    assert.equal(normalized.padding_px, 6);
+    assert.equal(normalized.min_cell_px, 3);
+    assert.equal(normalized.cell_radius_px, 1.5);
+    assert.equal(normalized.tooltip_radius_px, 12);
+    assert.equal(normalized.tooltip_transparency_pct, 75);
+    assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
+    assert.equal(normalized.cell_opacity_exponent, 2.4);
+    assert.equal(normalized.cell_opacity_tail_ratio, 0.05);
+    assert.equal(normalized.width_fraction, 0.3);
+
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 120,
+        columnCount: normalized.columns,
+        gapPx: normalized.gap_px,
+        minCellPx: normalized.min_cell_px,
+        paddingPx: normalized.padding_px,
+        rowsAbove: normalized.rows_above,
+        rowsBelow: normalized.rows_below,
+        stepPixels: 4,
+        widthFraction: normalized.width_fraction,
+    });
+    assert.equal(geometry.columnCount, 18);
+    assert.equal(geometry.rowsAbove, 9);
+    assert.equal(geometry.rowsBelow, 9);
+    assert.equal(geometry.rowCount, 18);
+    assert.equal(geometry.gap, 2.5);
+    assert.equal(geometry.padding, 6);
+    assert.equal(geometry.widthTarget, 360);
+    const horizontalGuideY = geometry.top
+        + geometry.padding
+        + (geometry.rowsAbove * geometry.cellSize)
+        + ((geometry.rowsAbove - 0.5) * geometry.gap);
+    assert.equal(horizontalGuideY, geometry.anchorY);
+});
+
+test('bounds untrusted strategy-owned tooltip geometry and rejects asymmetric rows', () => {
+    const normalized = grid.normalizePresentation(
+        {
+            ...presentation,
+            rows_above: 0,
+            rows_below: 100,
+            columns: 0,
+            gap_px: -1,
+            padding_px: 100,
+            min_cell_px: 0,
+            cell_radius_px: -1,
+            tooltip_radius_px: 100,
+            tooltip_transparency_pct: 200,
+            cell_opacity_mapping: 'untrusted-mapping',
+            cell_opacity_exponent: 100,
+            cell_opacity_tail_ratio: 1,
+            width_fraction: 1,
+        },
         {raw_dates: rawDates, length: rawDates.length},
     );
     assert.equal(normalized.rows_above, 6);
     assert.equal(normalized.rows_below, 6);
+    assert.equal(normalized.columns, 1);
+    assert.equal(normalized.gap_px, 0);
+    assert.equal(normalized.padding_px, 64);
+    assert.equal(normalized.min_cell_px, 1);
+    assert.equal(normalized.cell_radius_px, 0);
+    assert.equal(normalized.tooltip_radius_px, 64);
+    assert.equal(normalized.tooltip_transparency_pct, 100);
+    assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
+    assert.equal(normalized.cell_opacity_exponent, 4);
+    assert.equal(normalized.cell_opacity_tail_ratio, 0.25);
+    assert.equal(normalized.width_fraction, 0.5);
+
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 800, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 120,
+        rowsAbove: 2,
+        rowsBelow: 11,
+        stepPixels: 4,
+    });
+    assert.equal(geometry.rowsAbove, 6);
+    assert.equal(geometry.rowsBelow, 6);
+    assert.equal(geometry.rowCount, 12);
+    const horizontalGuideY = geometry.top
+        + geometry.padding
+        + (geometry.rowsAbove * geometry.cellSize)
+        + ((geometry.rowsAbove - 0.5) * geometry.gap);
+    assert.equal(horizontalGuideY, geometry.anchorY);
+    assert.equal(
+        grid.computeMaximumGridHalfHeight({rowsAbove: 2, rowsBelow: 11}),
+        grid.computeMaximumGridHalfHeight({rowsAbove: 6, rowsBelow: 6}),
+    );
 });
 
 test('fails closed when Bayesian prediction keys do not exactly match the chart time axis', () => {
@@ -162,6 +284,13 @@ test('reserves the maximum symmetric half-height around an extreme price anchor'
         paddingPx: 8,
         maxCellPx: 10,
     }), 84.5);
+    assert.equal(grid.computeMaximumGridHalfHeight({
+        rowsAbove: 2,
+        rowsBelow: 2,
+        gapPx: 2,
+        paddingPx: 6,
+        maxCellPx: 8,
+    }), 25);
 });
 
 test('derives one trading-step width from actual Chart.js dataset points', () => {
@@ -178,7 +307,43 @@ test('uses one robust dataset-wide step instead of an anchor-local hover step', 
     assert.equal(grid.resolveDatasetStepPixels(points, 3), 12);
 });
 
-test('builds square probability cells with six green and six red rows', () => {
+test('maps each hover field through its own nonlinear winner and invisible tail', () => {
+    const first = grid.computeInstantOpacityProfile(
+        [0, 0.005, 0.01, 0.1, 0.5],
+        {exponent: 1.6, tailRatio: 0.02},
+    );
+    const second = grid.computeInstantOpacityProfile(
+        [0, 0.0025, 0.005, 0.05, 0.25],
+        {exponent: 1.6, tailRatio: 0.02},
+    );
+    assert.deepEqual(
+        first.map((entry) => entry.opacity),
+        second.map((entry) => entry.opacity),
+    );
+    assert.deepEqual(first.slice(0, 3).map((entry) => entry.opacity), [0, 0, 0]);
+    assert.equal(first.at(-1).displayIntensity, 1);
+    assert.equal(first.at(-1).opacity, 1);
+    assert.ok(first[3].displayIntensity > 0 && first[3].displayIntensity < 1);
+    assert.ok(first[3].opacity > 0 && first[3].opacity < first[3].displayIntensity);
+    assert.ok(Math.abs(
+        first[3].opacity - Math.pow(first[3].displayIntensity, 1.6)
+    ) <= 1e-12);
+    assert.deepEqual(
+        grid.computeInstantOpacityProfile([0, 0, 0]).map((entry) => entry.opacity),
+        [0, 0, 0],
+    );
+    assert.deepEqual(
+        grid.computeInstantOpacityProfile([0.2, 0.2]).map((entry) => entry.opacity),
+        [1, 1],
+    );
+    assert.deepEqual(
+        grid.computeInstantOpacityProfile([Number.NaN, -1, Number.POSITIVE_INFINITY])
+            .map((entry) => entry.opacity),
+        [0, 0, 0],
+    );
+});
+
+test('builds square probability cells with six green and six red nonlinear rows', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
         anchorX: 200,
@@ -192,6 +357,8 @@ test('builds square probability cells with six green and six red rows', () => {
         scale: 0.02,
         stepPixels: 2,
         valueForPixel: (pixel) => 109 - (pixel * 0.1),
+        opacityExponent: 1.6,
+        opacityTailRatio: 0.02,
     });
     assert.equal(cells.length, 12 * 36);
     assert.equal(cells.filter((cell) => cell.sign === 'up').length, 6 * 36);
@@ -199,7 +366,8 @@ test('builds square probability cells with six green and six red rows', () => {
     assert.ok(cells.every((cell) => cell.size === geometry.cellSize));
     assert.ok(cells.every((cell) => cell.size >= 4));
     assert.ok(cells.every((cell) => cell.probability >= 0 && cell.probability <= 1));
-    assert.ok(cells.every((cell) => cell.opacity === cell.probability));
+    assert.ok(cells.every((cell) => cell.displayIntensity >= 0 && cell.displayIntensity <= 1));
+    assert.ok(cells.every((cell) => cell.opacity >= 0 && cell.opacity <= 1));
     assert.ok(cells.every((cell) => cell.centerX > geometry.anchorX));
     assert.ok(cells.every((cell) => (
         cell.horizon === (cell.column + 1) * geometry.daysPerColumn
@@ -209,7 +377,16 @@ test('builds square probability cells with six green and six red rows', () => {
     assert.ok(cells.every((cell) => cell.slotWidth === geometry.slotWidth));
     assert.equal(cells[0].x, geometry.anchorX + geometry.padding);
     assert.equal(cells[1].x - cells[0].x, geometry.slotWidth);
-    assert.ok(Math.max(...cells.map((cell) => cell.opacity)) < 1);
+    assert.equal(Math.max(...cells.map((cell) => cell.opacity)), 1);
+    assert.equal(Math.min(...cells.map((cell) => cell.opacity)), 0);
+    assert.ok(cells.some((cell) => (
+        cell.displayIntensity > 0
+        && cell.displayIntensity < 1
+        && Math.abs(cell.opacity - cell.displayIntensity) > 1e-6
+    )));
+    const winnerProbability = Math.max(...cells.map((cell) => cell.probability));
+    assert.ok(cells.filter((cell) => cell.probability === winnerProbability)
+        .every((cell) => cell.opacity === 1));
 });
 
 test('evaluates probability mass at complete one-day and two-day horizons', () => {

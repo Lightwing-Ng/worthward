@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.6.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.7.0."""
 
 from __future__ import annotations
 
@@ -419,7 +419,13 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["min_cell_px"], 4)
         self.assertEqual(presentation["cell_radius_px"], 2)
         self.assertEqual(presentation["tooltip_radius_px"], 10)
-        self.assertEqual(presentation["tooltip_transparency_pct"], 90)
+        self.assertEqual(presentation["tooltip_transparency_pct"], 50)
+        self.assertEqual(
+            presentation["cell_opacity_mapping"],
+            "instant-contrast-power-v1",
+        )
+        self.assertEqual(presentation["cell_opacity_exponent"], 1.6)
+        self.assertEqual(presentation["cell_opacity_tail_ratio"], 0.02)
         self.assertEqual(presentation["time_quantization"], "integer-trading-days")
         self.assertEqual(len(presentation["predictive_mean"]), len(result.frame))
         self.assertEqual(len(presentation["predictive_scale"]), len(result.frame))

@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.5.0
+ * Code version: v0.7.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -17,14 +17,56 @@
     const DEFAULT_MIN_CELL_PX = 4;
     const DEFAULT_CELL_RADIUS_PX = 2;
     const DEFAULT_TOOLTIP_RADIUS_PX = 10;
-    const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 90;
+    const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;
+    const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";
+    const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;
+    const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
     const DEFAULT_MAX_CELL_PX = 10;
+
+    const GEOMETRY_LIMITS = Object.freeze({
+        cellRadius: Object.freeze([0, 32]),
+        columns: Object.freeze([1, 72]),
+        gap: Object.freeze([0, 24]),
+        minCell: Object.freeze([1, 32]),
+        opacityExponent: Object.freeze([1.1, 4]),
+        opacityTailRatio: Object.freeze([0, 0.25]),
+        padding: Object.freeze([0, 64]),
+        rows: Object.freeze([1, 24]),
+        tooltipRadius: Object.freeze([0, 64]),
+        transparency: Object.freeze([0, 100]),
+    });
 
     const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
     const finiteOrNull = (value) => {
         if (value === null || value === undefined || value === "") return null;
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : null;
+    };
+    const boundedNumber = (value, fallback, [minimum, maximum]) => {
+        const numeric = finiteOrNull(value);
+        return numeric === null ? fallback : clamp(numeric, minimum, maximum);
+    };
+    const boundedInteger = (value, fallback, limits) => {
+        const numeric = finiteOrNull(value);
+        return numeric !== null && Number.isInteger(numeric)
+            ? clamp(numeric, limits[0], limits[1])
+            : fallback;
+    };
+    const normalizeSymmetricRows = (rowsAbove, rowsBelow) => {
+        const normalizedAbove = boundedInteger(
+            rowsAbove,
+            DEFAULT_ROWS_ABOVE,
+            GEOMETRY_LIMITS.rows,
+        );
+        const normalizedBelow = boundedInteger(
+            rowsBelow,
+            DEFAULT_ROWS_BELOW,
+            GEOMETRY_LIMITS.rows,
+        );
+        if (normalizedAbove !== normalizedBelow) {
+            return Object.freeze({rowsAbove: DEFAULT_ROWS_ABOVE, rowsBelow: DEFAULT_ROWS_BELOW});
+        }
+        return Object.freeze({rowsAbove: normalizedAbove, rowsBelow: normalizedBelow});
     };
 
     const normalizeExpectedSeriesContract = (expectedRawDatesOrOptions, expectedLength) => {
@@ -77,20 +119,44 @@
                 || dataKeys.some((key, index) => key !== expected.rawDates[index])
             ) return null;
         }
-        const widthFraction = clamp(Number(value.width_fraction) || DEFAULT_WIDTH_FRACTION, 0.1, 0.5);
+        const widthFraction = boundedNumber(value.width_fraction, DEFAULT_WIDTH_FRACTION, [0.1, 0.5]);
+        const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);
         return Object.freeze({
             ...value,
             schema: PRESENTATION_SCHEMA,
             renderer: RENDERER_ID,
-            rows_above: DEFAULT_ROWS_ABOVE,
-            rows_below: DEFAULT_ROWS_BELOW,
-            columns: DEFAULT_COLUMN_COUNT,
-            gap_px: DEFAULT_GAP_PX,
-            padding_px: DEFAULT_PADDING_PX,
-            min_cell_px: DEFAULT_MIN_CELL_PX,
-            cell_radius_px: DEFAULT_CELL_RADIUS_PX,
-            tooltip_radius_px: DEFAULT_TOOLTIP_RADIUS_PX,
-            tooltip_transparency_pct: DEFAULT_TOOLTIP_TRANSPARENCY_PCT,
+            rows_above: symmetricRows.rowsAbove,
+            rows_below: symmetricRows.rowsBelow,
+            columns: boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns),
+            gap_px: boundedNumber(value.gap_px, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap),
+            padding_px: boundedNumber(value.padding_px, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding),
+            min_cell_px: boundedNumber(value.min_cell_px, DEFAULT_MIN_CELL_PX, GEOMETRY_LIMITS.minCell),
+            cell_radius_px: boundedNumber(
+                value.cell_radius_px,
+                DEFAULT_CELL_RADIUS_PX,
+                GEOMETRY_LIMITS.cellRadius,
+            ),
+            tooltip_radius_px: boundedNumber(
+                value.tooltip_radius_px,
+                DEFAULT_TOOLTIP_RADIUS_PX,
+                GEOMETRY_LIMITS.tooltipRadius,
+            ),
+            tooltip_transparency_pct: boundedNumber(
+                value.tooltip_transparency_pct,
+                DEFAULT_TOOLTIP_TRANSPARENCY_PCT,
+                GEOMETRY_LIMITS.transparency,
+            ),
+            cell_opacity_mapping: CELL_OPACITY_MAPPING,
+            cell_opacity_exponent: boundedNumber(
+                value.cell_opacity_exponent,
+                DEFAULT_CELL_OPACITY_EXPONENT,
+                GEOMETRY_LIMITS.opacityExponent,
+            ),
+            cell_opacity_tail_ratio: boundedNumber(
+                value.cell_opacity_tail_ratio,
+                DEFAULT_CELL_OPACITY_TAIL_RATIO,
+                GEOMETRY_LIMITS.opacityTailRatio,
+            ),
             time_quantization: "integer-trading-days",
             width_fraction: widthFraction,
             predictive_mean: predictiveMean,
@@ -127,6 +193,9 @@
         gapPx = DEFAULT_GAP_PX,
         paddingPx = DEFAULT_PADDING_PX,
         minCellPx = DEFAULT_MIN_CELL_PX,
+        rowsAbove = DEFAULT_ROWS_ABOVE,
+        rowsBelow = DEFAULT_ROWS_BELOW,
+        columnCount = DEFAULT_COLUMN_COUNT,
         stepPixels,
     } = {}) => {
         const left = Number(chartArea?.left);
@@ -140,25 +209,30 @@
             || right <= left || bottom <= top || !(normalizedStepPixels > 0)) {
             return null;
         }
-        const rowCount = DEFAULT_ROWS_ABOVE + DEFAULT_ROWS_BELOW;
+        const symmetricRows = normalizeSymmetricRows(rowsAbove, rowsBelow);
+        const normalizedRowsAbove = symmetricRows.rowsAbove;
+        const normalizedRowsBelow = symmetricRows.rowsBelow;
+        const normalizedColumnCount = boundedInteger(
+            columnCount,
+            DEFAULT_COLUMN_COUNT,
+            GEOMETRY_LIMITS.columns,
+        );
+        const rowCount = normalizedRowsAbove + normalizedRowsBelow;
         const plotWidth = right - left;
-        const targetWidth = plotWidth * clamp(Number(widthFraction), 0.1, 0.5);
-        const gapCandidate = Number(gapPx);
-        const gap = Number.isFinite(gapCandidate) ? Math.max(0, gapCandidate) : DEFAULT_GAP_PX;
-        const paddingCandidate = Number(paddingPx);
-        const padding = Number.isFinite(paddingCandidate)
-            ? Math.max(0, paddingCandidate)
-            : DEFAULT_PADDING_PX;
-        const minimumCellCandidate = Number(minCellPx);
-        const minimumCell = Number.isFinite(minimumCellCandidate)
-            ? Math.max(DEFAULT_MIN_CELL_PX, minimumCellCandidate)
-            : DEFAULT_MIN_CELL_PX;
+        const targetWidth = plotWidth * boundedNumber(widthFraction, DEFAULT_WIDTH_FRACTION, [0.1, 0.5]);
+        const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
+        const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
+        const minimumCell = boundedNumber(
+            minCellPx,
+            DEFAULT_MIN_CELL_PX,
+            GEOMETRY_LIMITS.minCell,
+        );
 
         // One slot is the visible square plus its following gap. Quantizing the
         // whole slot prevents spacing from accumulating a fractional-day drift.
         const preferredSlotWidth = Math.max(
             0,
-            (targetWidth - (2 * padding) + gap) / DEFAULT_COLUMN_COUNT,
+            (targetWidth - (2 * padding) + gap) / normalizedColumnCount,
         );
         const preferredDaysPerColumn = Math.max(
             0,
@@ -174,16 +248,15 @@
         const daysPerColumn = Math.max(preferredDaysPerColumn, minimumDaysPerColumn);
         const slotWidth = daysPerColumn * normalizedStepPixels;
         const cellSize = slotWidth - gap;
-        const columnCount = DEFAULT_COLUMN_COUNT;
         const width = (2 * padding)
-            + (columnCount * cellSize)
-            + ((columnCount - 1) * gap);
+            + (normalizedColumnCount * cellSize)
+            + ((normalizedColumnCount - 1) * gap);
         const height = (2 * padding) + (rowCount * cellSize) + ((rowCount - 1) * gap);
         return Object.freeze({
             anchorX: x,
             anchorY: y,
             cellSize,
-            columnCount,
+            columnCount: normalizedColumnCount,
             daysPerColumn,
             direction: "right",
             exceedsPreferredWidth: width > (targetWidth + 1e-9),
@@ -192,8 +265,8 @@
             left: x,
             padding,
             rowCount,
-            rowsAbove: DEFAULT_ROWS_ABOVE,
-            rowsBelow: DEFAULT_ROWS_BELOW,
+            rowsAbove: normalizedRowsAbove,
+            rowsBelow: normalizedRowsBelow,
             slotWidth,
             stepPixels: normalizedStepPixels,
             top: y - (height / 2),
@@ -203,14 +276,17 @@
     };
 
     const computeMaximumGridHalfHeight = ({
+        rowsAbove = DEFAULT_ROWS_ABOVE,
+        rowsBelow = DEFAULT_ROWS_BELOW,
         gapPx = DEFAULT_GAP_PX,
         paddingPx = DEFAULT_PADDING_PX,
         maxCellPx = DEFAULT_MAX_CELL_PX,
     } = {}) => {
-        const rowCount = DEFAULT_ROWS_ABOVE + DEFAULT_ROWS_BELOW;
-        const gap = Math.max(0, Number(gapPx) || DEFAULT_GAP_PX);
-        const padding = Math.max(0, Number(paddingPx) || DEFAULT_PADDING_PX);
-        const cellSize = Math.max(1, Number(maxCellPx) || DEFAULT_MAX_CELL_PX);
+        const symmetricRows = normalizeSymmetricRows(rowsAbove, rowsBelow);
+        const rowCount = symmetricRows.rowsAbove + symmetricRows.rowsBelow;
+        const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
+        const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
+        const cellSize = boundedNumber(maxCellPx, DEFAULT_MAX_CELL_PX, [1, 64]);
         return padding + (
             (rowCount * cellSize) + ((rowCount - 1) * gap)
         ) / 2;
@@ -260,6 +336,69 @@
         return clamp(normalCdf(upperZ) - normalCdf(lowerZ), 0, 1);
     };
 
+    const computeInstantOpacityProfile = (
+        probabilities,
+        {
+            exponent = DEFAULT_CELL_OPACITY_EXPONENT,
+            tailRatio = DEFAULT_CELL_OPACITY_TAIL_RATIO,
+        } = {},
+    ) => {
+        if (!Array.isArray(probabilities) || !probabilities.length) return [];
+        const sanitized = probabilities.map((value) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? clamp(numeric, 0, 1) : 0;
+        });
+        const maximumProbability = Math.max(...sanitized);
+        if (!(maximumProbability > 0)) {
+            return sanitized.map((probability) => Object.freeze({
+                displayIntensity: 0,
+                opacity: 0,
+                probability,
+            }));
+        }
+        const minimumProbability = Math.min(...sanitized);
+        const normalizedExponent = boundedNumber(
+            exponent,
+            DEFAULT_CELL_OPACITY_EXPONENT,
+            GEOMETRY_LIMITS.opacityExponent,
+        );
+        const normalizedTailRatio = boundedNumber(
+            tailRatio,
+            DEFAULT_CELL_OPACITY_TAIL_RATIO,
+            GEOMETRY_LIMITS.opacityTailRatio,
+        );
+        const baseline = Math.max(
+            minimumProbability,
+            maximumProbability * normalizedTailRatio,
+        );
+        const visibleRange = maximumProbability - baseline;
+        if (!(visibleRange > Math.max(Number.EPSILON, maximumProbability * 1e-12))) {
+            return sanitized.map((probability) => {
+                const isMaximum = probability === maximumProbability;
+                return Object.freeze({
+                    displayIntensity: isMaximum ? 1 : 0,
+                    opacity: isMaximum ? 1 : 0,
+                    probability,
+                });
+            });
+        }
+        return sanitized.map((probability) => {
+            if (probability === maximumProbability) {
+                return Object.freeze({displayIntensity: 1, opacity: 1, probability});
+            }
+            const displayIntensity = probability <= baseline
+                ? 0
+                : clamp((probability - baseline) / visibleRange, 0, 1);
+            return Object.freeze({
+                displayIntensity,
+                opacity: displayIntensity > 0
+                    ? Math.pow(displayIntensity, normalizedExponent)
+                    : 0,
+                probability,
+            });
+        });
+    };
+
     const buildProbabilityCells = ({
         geometry,
         anchorPrice,
@@ -267,6 +406,8 @@
         scale,
         stepPixels,
         valueForPixel,
+        opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
+        opacityTailRatio = DEFAULT_CELL_OPACITY_TAIL_RATIO,
     } = {}) => {
         const normalizedStepPixels = Number(stepPixels);
         const geometryStepPixels = Number(geometry?.stepPixels);
@@ -319,9 +460,14 @@
                 });
             }
         }
-        return cells.map((cell) => ({
+        const opacityProfile = computeInstantOpacityProfile(
+            cells.map((cell) => cell.probability),
+            {exponent: opacityExponent, tailRatio: opacityTailRatio},
+        );
+        return cells.map((cell, index) => ({
             ...cell,
-            opacity: cell.probability,
+            displayIntensity: opacityProfile[index]?.displayIntensity || 0,
+            opacity: opacityProfile[index]?.opacity || 0,
             size: geometry.cellSize,
             symmetryOffset: (cell.y + (geometry.cellSize / 2)) - (geometry.top + centralGapCenter),
         }));
@@ -353,10 +499,12 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.5.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.7.0",
+        CELL_OPACITY_MAPPING,
         PRESENTATION_SCHEMA,
         RENDERER_ID,
         buildProbabilityCells,
+        computeInstantOpacityProfile,
         computeMaximumGridHalfHeight,
         computeGridGeometry,
         isPointNearCurve,

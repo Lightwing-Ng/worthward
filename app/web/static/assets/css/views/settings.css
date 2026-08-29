@@ -1,4 +1,4 @@
-/* Code version: v0.25.0 */
+/* Code version: v0.25.1 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -184,7 +184,7 @@
 .settings-shell-network > .settings-content-scrollport > .settings-action-package,
 .settings-shell-network > .settings-content-scrollport > .settings-general-panel-network,
 .settings-shell-network .settings-service-row,
-.settings-shell-material-tokens > .style-token-shell,
+.settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,
 .settings-shell-material-tokens .style-token-card {
     overflow: visible;
 }

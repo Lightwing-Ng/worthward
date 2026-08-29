@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.28.0`
+Documentation version: `v1.28.3`
 
 ## Supported commands
 
@@ -203,18 +203,19 @@ Current suite inventory remeasured on 28 Aug 2026:
   sections, language tabs, pagination, default omission, and legacy aliases.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
-- `tests/test_backtest_probability_grid.mjs`: deterministic schema and date-key validation; the fixed 36-column by 12-row contract; stable median point-spacing resolution; integer-trading-day slots with a one-day minimum; gap-aware 1:1 square geometry; the 4 px minimum cell, 2 px cell radius, 10 px field radius, and 8 px concentric padding; exact price/time mapping; absolute probability opacity; curve-hit; and pin-state contracts for Bayesian Backtest overlays. The dedicated Chromium flow uses `NVDA` and also starts from a fresh 375 px viewport to verify the private `alpha: 0.10` non-blurred, borderless, shadowless material without changing standard Frosted Glass tokens; stable field width while tracking; right-side placement; exact content-space mapping before and after scrolling; the shared Motion Core bouncy spring's minimum left shift; conditional bottom scrollbar; zero-position reset; reserved result, chart-stage, resizer, and history geometry; price-extreme containment; narrow-screen price-span readability; and tracking, pinned, blank-clear, Escape-clear, and summary-hover remapping after resize.
+- `tests/test_backtest_probability_grid.mjs`: deterministic schema and date-key validation; the strategy-owned, bounded, symmetric tooltip geometry and material contract; direct geometry and maximum-height fallback for asymmetric row requests; the current 36-column by 12-row defaults; stable median point-spacing resolution; integer-trading-day slots with a one-day minimum; gap-aware 1:1 square geometry; the 4 px minimum cell, 2 px cell radius, 10 px field radius, and 8 px concentric padding; exact price/time mapping; absolute probability opacity; curve-hit; and pin-state contracts for Bayesian Backtest overlays. The dedicated Chromium flow uses `NVDA` and also starts from a fresh 375 px viewport to verify the private `alpha: 0.10` non-blurred, borderless, shadowless material without changing standard Frosted Glass tokens; stable field width while tracking; right-side placement; exact content-space mapping before and after scrolling; the shared Motion Core bouncy spring's minimum left shift; conditional bottom scrollbar; zero-position reset; reserved result, chart-stage, resizer, and history geometry; price-extreme containment; narrow-screen price-span readability; tracking, pinned, blank-clear, Escape-clear, and summary-hover remapping after resize; and a non-default symmetric Python presentation reaching the rendered grid geometry, radii, padding, 75%-transparent private material, and DOM metadata.
 - `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, timestamp bounds, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
 - `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, daily-model and one-minute-execution capability declarations, walk-forward no-lookahead, causal volume-at-price distribution, P/E and option staleness, persistent threshold intent, finite aligned 36-column by 12-row presentation, integer-trading-day and private-material metadata, factor status and coverage, execution mode, model fingerprint, direct NumPy selection without Torch imports for `Auto`/`CPU`, explicit-GPU MPS/CUDA selection and fallback, and warmup-provider contracts.
-- `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session or duplicate-timestamp behavior.
-- `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute result notices, default-on and explicit-off algorithmic stop-loss semantics, and Simplified or Traditional Chinese stop-loss copy.
-- `tests/e2e/critical-flows.spec.mjs`: the Backtest control regression uses the exact 972 by 841 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844.
+- `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
+- `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-on and explicit-off algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.
+- `tests/e2e/critical-flows.spec.mjs`: the Backtest control regression uses the exact 972 by 841 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844. A separate interval regression selects `1 year`, restores `1m`, proves the smart fallback to the final available Period option, and verifies that `Allow algorithmic stop-loss exits` is enabled by default. Mocked-presence regressions verify repeated ticker parameters, all-required-ticker `1m` gating, intersected Period lists, and that a delayed older response cannot override the latest ordered ticker snapshot.
+- `tests/test_backtest_interval_sync_contract.mjs`: deterministic browser-state helper coverage verifies complete required-ticker snapshots, ordered Period intersections, strategy-declared interval capability, and monotonic stale-response rejection before state mutation.
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
 - `tests/test_settings_url_state.py`: Flask route redirects and server-rendered
   Settings tab state for canonical and legacy URLs.
 - `tests/test_investment_settings.py`: isolated persistence and normalization
   tests for the Settings Investment cost-basis preference.
-- `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
+- `tests/test_web_market_history.py`: extracted, read-only local-history date, exchange-local trading-date, exact-range slicing, and supported-period helpers.
 - `tests/test_web_strategy_forms.py`: pure strategy grouping, field-schema,
   injected factory, and Settings catalog presentation contracts.
 - `tests/test_live_trading_orders.py`: PIN-session-or-token authorization,
@@ -312,8 +313,10 @@ measurements deterministic.
 
 Longbridge one-minute-store tests also prove that an unreadable existing cache,
 including a cache that becomes unreadable while a refresh is in flight, raises
-without calling the atomic parquet writer. Tests compare the isolated file's
-exact bytes before and after the attempt and compare valid cached frames with
+without calling the atomic parquet writer. The Bayesian Backtest path refreshes
+only the one-minute cache and reports a failed refresh before using an existing
+cache through the read-only loader. Tests compare the isolated file's exact
+bytes before and after the attempt and compare valid cached frames with
 `pd.testing.assert_frame_equal`.
 
 Flask integration tests that exercise investment import or transaction loading patch both `INVESTMENT_STORE_PATH` and `INVESTMENT_TRANSACTIONS_CACHE_PATH` to a per-test temporary directory. A regression assertion compares the real parquet bytes before and after a synthetic IBKR import.

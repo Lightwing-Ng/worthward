@@ -1,4 +1,4 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.15.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -478,6 +478,13 @@
 			probabilityTooltip.className = "chart-tooltip backtest-probability-tooltip";
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
 			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
+			probabilityTooltip.dataset.cellOpacityMapping = strategyPresentation.cell_opacity_mapping;
+			probabilityTooltip.dataset.cellOpacityExponent = String(
+				strategyPresentation.cell_opacity_exponent,
+			);
+			probabilityTooltip.dataset.cellOpacityTailRatio = String(
+				strategyPresentation.cell_opacity_tail_ratio,
+			);
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
 			probabilityTooltip.style.setProperty(
@@ -1001,10 +1008,13 @@
 				chartArea: priceChart.chartArea,
 				anchorX: pricePoint.x,
 				anchorY: pricePoint.y,
+				columnCount: strategyPresentation.columns,
 				widthFraction: strategyPresentation.width_fraction,
 				gapPx: strategyPresentation.gap_px,
 				paddingPx: strategyPresentation.padding_px,
 				minCellPx: strategyPresentation.min_cell_px,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
 				stepPixels,
 			});
 			if (!geometry) {
@@ -1018,6 +1028,8 @@
 				scale,
 				stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
+				opacityExponent: strategyPresentation.cell_opacity_exponent,
+				opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
 			}) || [];
 			if (!cells.length) {
 				hideProbabilityTooltip();
@@ -1048,6 +1060,8 @@
 				node.dataset.column = String(cell.column);
 				node.dataset.horizon = String(cell.horizon);
 				node.dataset.probability = String(cell.probability);
+				node.dataset.displayIntensity = String(cell.displayIntensity);
+				node.dataset.opacity = String(cell.opacity);
 				node.dataset.row = String(cell.row);
 				node.style.gridColumn = String(cell.column + 1);
 				node.style.gridRow = String(cell.row + 1);
@@ -1071,7 +1085,7 @@
 			probabilityTooltip.style.height = `${geometry.height}px`;
 			probabilityTooltip.dataset.direction = geometry.direction;
 			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
-			probabilityTooltip.dataset.transparency = "90%";
+			probabilityTooltip.dataset.transparency = `${strategyPresentation.tooltip_transparency_pct}%`;
 			probabilityTooltip.hidden = false;
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
@@ -1089,6 +1103,12 @@
 				intersectionX: pricePoint.x,
 				intersectionY: pricePoint.y,
 				maxProbability: Math.max(...cells.map((cell) => cell.probability)),
+				minProbability: Math.min(...cells.map((cell) => cell.probability)),
+				maxOpacity: Math.max(...cells.map((cell) => cell.opacity)),
+				minOpacity: Math.min(...cells.map((cell) => cell.opacity)),
+				cellOpacityMapping: strategyPresentation.cell_opacity_mapping,
+				cellOpacityExponent: strategyPresentation.cell_opacity_exponent,
+				cellOpacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
 				daysPerColumn: geometry.daysPerColumn,
 				slotWidth: geometry.slotWidth,
 				stepPixels,
@@ -1606,10 +1626,13 @@
 				chartArea,
 				anchorX: chartArea.left,
 				anchorY: (chartArea.top + chartArea.bottom) / 2,
+				columnCount: strategyPresentation.columns,
 				widthFraction: strategyPresentation.width_fraction,
 				gapPx: strategyPresentation.gap_px,
 				paddingPx: strategyPresentation.padding_px,
 				minCellPx: strategyPresentation.min_cell_px,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
 				stepPixels,
 			});
 			const gridHalfHeight = Number(gridGeometry?.height) / 2;

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.7.2
+Code version: v0.7.3
 """
 
 from __future__ import annotations
@@ -621,6 +621,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(payload["required_tickers"], 2)
         self.assertEqual(payload["default_tickers"], ["QQQ", "TQQQ"])
         self.assertTrue(payload["supports"]["multi_ticker"])
+        self.assertEqual(payload["supports"]["execution_intervals"], ["1d", "1m"])
         self.assertIn('name="drawdown_pct"', payload["html"])
 
     def test_every_enabled_strategy_starts_with_its_default_parameters(self) -> None:
@@ -710,6 +711,7 @@ class BacktestPageTests(unittest.TestCase):
         payload = response.get_json()
         self.assertTrue(payload["is_tunable"])
         self.assertEqual(payload["required_tickers"], 1)
+        self.assertEqual(payload["supports"]["execution_intervals"], ["1d"])
         self.assertIn('name="amount"', payload["html"])
         self.assertIn('name="frequency"', payload["html"])
 

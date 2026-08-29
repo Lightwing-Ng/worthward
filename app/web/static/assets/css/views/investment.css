@@ -1,4 +1,4 @@
-/* Code version: v1.78.1 */
+/* Code version: v1.78.2 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4041,7 +4041,7 @@ body.is-investment-import-modal-open #global_quick_actions {
 }
 
 .investment-history-empty-state {
-    width: min(100%, 384px);
+    width: min(100%, var(--layout-control-width));
     margin: 0 auto;
     display: grid;
     gap: 8px;

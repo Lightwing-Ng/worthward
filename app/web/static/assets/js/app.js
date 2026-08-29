@@ -1,4 +1,4 @@
-/* Code version: v0.45.0 */
+/* Code version: v0.46.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -152,6 +152,7 @@
     let validTradingDateSet = null;
     let dateConstraintAvailability = {};
     let dateConstraintsRequestId = 0;
+    let backtestIntervalRequestToken = 0;
     const portfolioWeightState = {
         clock: 0,
         touchedAtByIndex: {},
@@ -5370,6 +5371,14 @@
     const getBacktestIntervalShell = () => document.querySelector("[data-backtest-interval-shell]");
     const getBacktestIntervalInputs = () => Array.from(document.querySelectorAll("[data-backtest-interval-input]"))
         .filter((input) => input instanceof HTMLInputElement);
+    const strategyDeclaresBacktestInterval = (interval) => {
+        const input = getBacktestIntervalInputs().find((candidate) => candidate.value === interval);
+        if (!(input instanceof HTMLInputElement)) return false;
+        const declaredIntervals = Array.isArray(state.strategySupports?.execution_intervals)
+            ? state.strategySupports.execution_intervals
+            : [];
+        return declaredIntervals.includes(interval);
+    };
     const getDcaFrequencyShell = () => document.querySelector("[data-dca-frequency-shell]");
     const getDcaFrequencyInputs = () => Array.from(document.querySelectorAll("[data-dca-frequency-input]"))
         .filter((input) => input instanceof HTMLInputElement);
@@ -5672,7 +5681,8 @@
         getBacktestIntervalInputs().forEach((input) => {
             const option = input.closest(".segmented-control-option");
             if (!(option instanceof HTMLElement)) return;
-            const isSupported = input.value !== "1m" || has1m;
+            const isSupported = input.value !== "1m"
+                || (strategyDeclaresBacktestInterval("1m") && has1m);
             input.disabled = !isSupported;
             option.hidden = !isSupported;
         });
@@ -7081,42 +7091,93 @@
             periodSelect.appendChild(el);
         });
         const allowed = nextOptions.map((option) => option.value);
-        if (!allowed.includes(periodSelect.value)) {
-            periodSelect.value = preferredFallback && allowed.includes(preferredFallback)
+        periodSelect.value = allowed.includes(currentPeriod)
+            ? currentPeriod
+            : preferredFallback && allowed.includes(preferredFallback)
                 ? preferredFallback
                 : allowed[allowed.length - 1];
-        }
         refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
     };
 
+    const getRequiredBacktestTickerSnapshot = (requiredTickerCount = getMinimumRequiredTickers()) => (
+        getTickerInputs()
+            .slice(0, requiredTickerCount)
+            .map((input) => sanitizeTicker(input.value.trim()))
+            .filter(Boolean)
+    );
+
+    const backtestTickerSnapshotsMatch = (left, right) => (
+        left.length === right.length
+        && left.every((ticker, index) => ticker === right[index])
+    );
+
+    const intersectBacktestPeriodOptions = (payload, tickerSnapshot) => {
+        const periodOptions = payload?.periodOptions && typeof payload.periodOptions === "object"
+            ? payload.periodOptions
+            : {};
+        const tickerOptions = tickerSnapshot.map((ticker) => periodOptions[ticker] || {});
+        const shared = {};
+        ["1d", "1m"].forEach((interval) => {
+            const firstOptions = Array.isArray(tickerOptions[0]?.[interval])
+                ? tickerOptions[0][interval]
+                : [];
+            shared[interval] = firstOptions.filter((period) => tickerOptions.every((options) => (
+                Array.isArray(options?.[interval]) && options[interval].includes(period)
+            )));
+        });
+        return shared;
+    };
+
+    const canApplyBacktestIntervalResponse = (requestToken, requiredTickerCount, tickerSnapshot) => (
+        requestToken === backtestIntervalRequestToken
+        && requiredTickerCount === getMinimumRequiredTickers()
+        && backtestTickerSnapshotsMatch(tickerSnapshot, getRequiredBacktestTickerSnapshot())
+    );
+
     const syncBacktestIntervals = async () => {
         if (!isBacktestView) return;
-        const tickerInput = getTickerInputs()[0];
-        if (!tickerInput) return;
-        const ticker = sanitizeTicker(tickerInput.value.trim());
-        if (!ticker) return;
+        const requestToken = ++backtestIntervalRequestToken;
+        const requiredTickerCount = getMinimumRequiredTickers();
+        const tickerSnapshot = getRequiredBacktestTickerSnapshot(requiredTickerCount);
+        if (tickerSnapshot.length < requiredTickerCount) {
+            const currentInterval = getSelectedBacktestInterval();
+            setBacktestIntervalAvailability(false);
+            if (currentInterval === "1m") setBacktestIntervalValue("1d");
+            return;
+        }
 
         try {
-            const params = new URLSearchParams({ticker});
+            const params = new URLSearchParams();
+            tickerSnapshot.forEach((ticker) => params.append("ticker", ticker));
             const response = await fetch(`${endpoints.marketStorePresence}?${params.toString()}`, {credentials: "same-origin"});
             if (!response.ok) return;
             const payload = await response.json();
-            const has1m = payload.has1m && payload.has1m[ticker];
-            const tickerPeriodOptions = payload.periodOptions?.[ticker] || {};
-            if (tickerPeriodOptions && Object.keys(tickerPeriodOptions).length) {
-                state.backtestPeriodOptions = tickerPeriodOptions;
-            }
+            if (!canApplyBacktestIntervalResponse(requestToken, requiredTickerCount, tickerSnapshot)) return;
+
+            const sharedPeriodOptions = intersectBacktestPeriodOptions(payload, tickerSnapshot);
+            state.backtestPeriodOptions = {
+                ...(state.backtestPeriodOptions || {}),
+                ...(sharedPeriodOptions["1d"].length ? {"1d": sharedPeriodOptions["1d"]} : {}),
+                "1m": sharedPeriodOptions["1m"],
+            };
+            const hasAllRequiredTickers = tickerSnapshot.length === requiredTickerCount;
+            const has1m = strategyDeclaresBacktestInterval("1m")
+                && hasAllRequiredTickers
+                && tickerSnapshot.every((ticker) => payload.has1m?.[ticker] === true)
+                && sharedPeriodOptions["1m"].length > 0;
 
             const intervalInputs = getBacktestIntervalInputs();
             if (intervalInputs.length) {
                 const currentInterval = getSelectedBacktestInterval();
-                setBacktestIntervalAvailability(Boolean(has1m));
+                setBacktestIntervalAvailability(has1m);
                 const nextInterval = currentInterval === "1m" && !has1m ? "1d" : currentInterval;
                 setBacktestIntervalValue(nextInterval);
 
                 if (currentInterval === "1m" && !has1m) {
                     replacePeriodOptions(
-                        tickerPeriodOptions["1d"] || state.backtestPeriodOptions?.["1d"] || ["1d"],
+                        sharedPeriodOptions["1d"].length
+                            ? sharedPeriodOptions["1d"]
+                            : state.backtestPeriodOptions?.["1d"] || ["1d"],
                         "1d",
                     );
                     const nextInput = getBacktestIntervalInputs().find((input) => input.value === "1d");
@@ -7126,7 +7187,9 @@
                     nextInput?.dispatchEvent(new Event("change", {bubbles: true}));
                 } else {
                     replacePeriodOptions(
-                        tickerPeriodOptions[nextInterval] || state.backtestPeriodOptions?.[nextInterval] || ["1d"],
+                        sharedPeriodOptions[nextInterval]?.length
+                            ? sharedPeriodOptions[nextInterval]
+                            : state.backtestPeriodOptions?.[nextInterval] || ["1d"],
                         nextInterval === "1m" ? null : "max",
                     );
                 }
@@ -8228,6 +8291,7 @@
                 renderTradeStrategyDropdown();
                 pulseStrategySwitch();
                 await refreshTradeStrategyFields(select.value);
+                await syncBacktestIntervals();
                 if (!form) return;
                 pendingBacktestStrategyNavigation = isBacktestView;
                 window.setTimeout(() => form.requestSubmit(), 72);

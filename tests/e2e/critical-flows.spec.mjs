@@ -1,4 +1,4 @@
-/* Code version: v1.185.0 */
+/* Code version: v1.186.2 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -801,7 +801,7 @@ test('keeps Settings card effects visible without clipping scrollable internals'
 
     await page.goto('/settings/material-tokens');
     const materialOverflow = await page.evaluate(() => ({
-        shell: getComputedStyle(document.querySelector('.settings-shell-material-tokens > .style-token-shell')).overflow,
+        shell: getComputedStyle(document.querySelector('.settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell')).overflow,
         card: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-card')).overflow,
         demo: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-demo')).overflow,
     }));
@@ -916,7 +916,9 @@ test('hydrates the network self-check and uses the standard Settings action pack
 
     await page.goto('/settings/network');
 
-    const actionPackage = page.locator('main > div > section > section > section').filter({has: page.locator('[data-network-refresh-button]')});
+    const actionPackage = page.locator(
+        '.settings-shell-network > .settings-content-scrollport > .settings-action-package',
+    ).filter({has: page.locator('[data-network-refresh-button]')});
     await expect(actionPackage).toHaveCount(1);
     await expect(actionPackage.locator('.settings-service-name')).toHaveText('Network self-check');
     await expect(actionPackage.locator('.settings-action-package-form')).toHaveCSS('justify-self', 'end');
@@ -8550,7 +8552,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.1';
+            && url.searchParams.get('v') === '1.78.2';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -16015,12 +16017,124 @@ test('switches an unsupported 1 year Backtest period to the available 1m maximum
     await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=buy-and-hold');
 
     await expect(page.locator('#period')).toHaveValue('1y');
+    await expect(page.locator('#stop_loss')).toBeChecked();
+    await expect(page.locator('label[for="stop_loss"]')).toContainText('Allow algorithmic stop-loss exits');
+    await expect.poll(() => page.evaluate(() => (
+        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+    ))).toEqual(['1d', '3d', 'max']);
+    await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
     await page.locator('label[for="backtest_interval_1m"]').click();
 
     await expect(page.locator('#period')).toHaveValue('max');
     await expect(page).toHaveURL(/interval=1m/);
     await expect(page).toHaveURL(/range=max/);
     await expect(page.locator('#backtest_interval_1m')).toBeChecked();
+});
+
+test('intersects 1m availability across every required Backtest ticker', async ({page}) => {
+    const presenceSnapshots = [];
+    await page.route('**/api/market-store/presence?*', async (route) => {
+        const tickers = new URL(route.request().url()).searchParams.getAll('ticker');
+        presenceSnapshots.push(tickers);
+        const periodOptions = Object.fromEntries(tickers.map((ticker) => [ticker, {
+            '1d': ['1d', '1mo', '1y', 'max'],
+            '1m': ticker === 'TQQQ' ? ['1d', 'max'] : ['1d', '3d', 'max'],
+        }]));
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                tickers,
+                missingHistory: [],
+                has1m: Object.fromEntries(tickers.map((ticker) => [ticker, ticker !== 'TQQQ'])),
+                periodOptions,
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=buy-and-hold');
+    await page.locator('#trade_strategy').evaluate((select) => {
+        select.value = 'leveraged-rotation';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+
+    await expect.poll(() => presenceSnapshots.find((tickers) => tickers.length === 2) || null).toEqual([
+        'QQQ',
+        'TQQQ',
+    ]);
+    await expect.poll(() => page.evaluate(() => (
+        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+    ))).toEqual(['1d', 'max']);
+    await expect(page.locator('#backtest_interval_1m')).toBeDisabled();
+    await expect(page.locator('label[for="backtest_interval_1m"]')).toBeHidden();
+});
+
+test('keeps the latest Backtest interval state when an older presence response arrives late', async ({page}) => {
+    await page.goto(
+        '/workspaces/backtest?ticker=QQQ&ticker=TQQQ&range=1y&strategy=leveraged-rotation',
+    );
+    const hydrationHtml = await page.content();
+    await page.route('**/workspaces/backtest?*', async (route) => {
+        if (route.request().headers()['x-requested-with'] === 'workspace-hydrate') {
+            await route.fulfill({contentType: 'text/html', body: hydrationHtml});
+            return;
+        }
+        await route.continue();
+    });
+
+    let releaseOlderResponse;
+    const olderResponseGate = new Promise((resolve) => {
+        releaseOlderResponse = resolve;
+    });
+    const presenceSnapshots = [];
+    let olderResponseFulfilled = false;
+    await page.route('**/api/market-store/presence?*', async (route) => {
+        const tickers = new URL(route.request().url()).searchParams.getAll('ticker');
+        presenceSnapshots.push(tickers);
+        const isOlderRequest = tickers[0] === 'AAPL';
+        if (isOlderRequest) await olderResponseGate;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                tickers,
+                missingHistory: [],
+                has1m: Object.fromEntries(tickers.map((ticker) => [ticker, !isOlderRequest])),
+                periodOptions: Object.fromEntries(tickers.map((ticker) => [ticker, {
+                    '1d': ['1d', '1mo', '1y', 'max'],
+                    '1m': isOlderRequest
+                        ? []
+                        : ticker === 'TQQQ'
+                            ? ['1d', 'max']
+                            : ['1d', '3d', 'max'],
+                }])),
+            }),
+        });
+        if (isOlderRequest) olderResponseFulfilled = true;
+    });
+
+    const tickerInput = page.locator('#ticker_1');
+    await tickerInput.evaluate((input) => {
+        input.value = 'AAPL';
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await expect.poll(() => presenceSnapshots.some((tickers) => tickers.join('|') === 'AAPL|TQQQ')).toBe(true);
+
+    await tickerInput.evaluate((input) => {
+        input.value = 'NVDA';
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await expect.poll(() => presenceSnapshots.some((tickers) => tickers.join('|') === 'NVDA|TQQQ')).toBe(true);
+    await expect.poll(() => page.evaluate(() => (
+        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+    ))).toEqual(['1d', 'max']);
+    await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
+
+    releaseOlderResponse();
+    await expect.poll(() => olderResponseFulfilled).toBe(true);
+    await page.waitForTimeout(100);
+    await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
+    await expect.poll(() => page.evaluate(() => (
+        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+    ))).toEqual(['1d', 'max']);
 });
 
 test('applies the Scrollable table style to Backtest transaction details', async ({page}) => {
@@ -16163,6 +16277,14 @@ test('starts every backtest strategy with its starter parameters from the dropdo
                 const value = String(control.value || '').trim();
                 const defaultValue = String(control.dataset.default || '').trim();
                 if (value === defaultValue) return true;
+                if (control.dataset.strategyParamInput === 'boolean') {
+                    const normalizedDefault = defaultValue.toLowerCase();
+                    const isDefaultOn = ['1', 'true', 'on'].includes(normalizedDefault);
+                    const expectedValue = isDefaultOn
+                        ? control.dataset.switchOnValue
+                        : control.dataset.switchOffValue;
+                    return value === String(expectedValue || '').trim();
+                }
                 const numericValue = Number(value);
                 const numericDefault = Number(defaultValue);
                 return value !== ''
@@ -16878,26 +17000,45 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
         surface.scrollTop = 0;
     });
     await page.setViewportSize({width: 390, height: 844});
-    const mobileGeometry = await page.evaluate(() => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => {
         const panel = document.getElementById('trade_strategy_params_panel');
         const surface = document.querySelector('[data-backtest-parameter-panel]');
         const strategyRow = document.querySelector('[data-trade-strategy-field] .trade-strategy-row');
+        const scrollingElement = document.scrollingElement;
         if (!(panel instanceof HTMLElement)
             || !(surface instanceof HTMLElement)
-            || !(strategyRow instanceof HTMLElement)) return null;
+            || !(strategyRow instanceof HTMLElement)
+            || !(scrollingElement instanceof HTMLElement)) return null;
+        const scrollCandidates = [scrollingElement];
+        for (let candidate = panel.parentElement; candidate; candidate = candidate.parentElement) {
+            scrollCandidates.push(candidate);
+        }
         return {
-            horizontalOverflow: document.documentElement.scrollWidth
-                - document.documentElement.clientWidth,
-            panelTop: panel.getBoundingClientRect().top,
-            strategyBottom: strategyRow.getBoundingClientRect().bottom,
-            surfaceHeight: getComputedStyle(surface).height,
+            belowStrategy: panel.getBoundingClientRect().top
+                >= strategyRow.getBoundingClientRect().bottom + 3,
+            horizontalFits: document.documentElement.scrollWidth
+                <= document.documentElement.clientWidth,
+            hasVerticalScrollPath: scrollCandidates.some((candidate) => {
+                if (!(candidate instanceof HTMLElement)) return false;
+                const overflowY = getComputedStyle(candidate).overflowY;
+                return ['auto', 'scroll'].includes(overflowY)
+                    && candidate.scrollHeight > candidate.clientHeight;
+            }),
             surfaceOverflowY: getComputedStyle(surface).overflowY,
         };
+    })).toEqual({
+        belowStrategy: true,
+        hasVerticalScrollPath: true,
+        horizontalFits: true,
+        surfaceOverflowY: 'visible',
     });
-    expect(mobileGeometry).not.toBeNull();
-    expect(mobileGeometry.panelTop).toBeGreaterThanOrEqual(mobileGeometry.strategyBottom + 3);
-    expect(mobileGeometry.surfaceOverflowY).toBe('visible');
-    expect(mobileGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+
+    await lastParameter.scrollIntoViewIfNeeded();
+    await expect.poll(() => lastParameter.evaluate((field) => {
+        const rect = field.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight + 1;
+    })).toBe(true);
 });
 
 test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state accurate', async ({page}) => {
@@ -17126,7 +17267,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             min_cell_px: 4,
             cell_radius_px: 2,
             tooltip_radius_px: 10,
-            tooltip_transparency_pct: 90,
+            tooltip_transparency_pct: 50,
+            cell_opacity_mapping: 'instant-contrast-power-v1',
+            cell_opacity_exponent: 1.6,
+            cell_opacity_tail_ratio: 0.02,
             time_quantization: 'integer-trading-days',
             data_keys: [...rawDates],
             predictive_mean: rawDates.map((_, index) => (index < 3 ? null : 0.0015)),
@@ -17234,6 +17378,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const tooltipStyle = getComputedStyle(tooltip);
         const gridStyle = getComputedStyle(grid);
         const cellStyle = first ? getComputedStyle(first) : null;
+        const cellSamples = cells.map((cell) => ({
+            displayIntensity: Number(cell.dataset.displayIntensity),
+            inlineOpacity: Number(cell.dataset.opacity),
+            opacity: Number(getComputedStyle(cell).opacity),
+            probability: Number(cell.dataset.probability),
+        }));
+        const maximumProbability = Math.max(...cellSamples.map((cell) => cell.probability));
+        const opacityExponent = Number(tooltip.dataset.cellOpacityExponent);
         const colorCanvas = document.createElement('canvas');
         colorCanvas.width = 1;
         colorCanvas.height = 1;
@@ -17282,6 +17434,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             boxShadow: tooltipStyle.boxShadow,
             cellBorderRadius: cellStyle?.borderRadius,
             cellBorderWidth: cellStyle?.borderWidth,
+            cellTransitionDuration: cellStyle?.transitionDuration,
             cellCount: cells.length,
             cellMinimumSize: Math.min(...cells.map((cell) => cell.getBoundingClientRect().width)),
             cellSquareDelta: Math.max(...cells.map((cell) => {
@@ -17294,6 +17447,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             columns: new Set(cells.map((cell) => cell.dataset.column)).size,
             daysPerColumn: Number(grid.dataset.daysPerColumn),
             direction: bounds.direction,
+            dataTransparency: tooltip.dataset.transparency,
+            opacityMapping: tooltip.dataset.cellOpacityMapping,
+            opacityExponent,
+            opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
             domXPathStable: priceXPath === canvas && equityXPath === equityCanvas
                 && panelChildren.length === 2
                 && panelChildren[0].contains(canvas)
@@ -17312,16 +17469,34 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             )),
             horizontalGap: firstRect && nextColumnRect ? nextColumnRect.left - firstRect.right : null,
             intersectionDelta: Math.abs(bounds.intersectionY - guide.y),
-            maximumOpacity: Math.max(...cells.map((cell) => Number(getComputedStyle(cell).opacity))),
+            maximumOpacity: Math.max(...cellSamples.map((cell) => cell.opacity)),
+            minimumOpacity: Math.min(...cellSamples.map((cell) => cell.opacity)),
+            invisibleCellCount: cellSamples.filter((cell) => cell.opacity === 0).length,
+            nonlinearDistance: Math.max(...cellSamples
+                .filter((cell) => cell.displayIntensity > 0 && cell.displayIntensity < 1)
+                .map((cell) => Math.abs(cell.opacity - cell.displayIntensity))),
+            opacityCurveDelta: Math.max(...cellSamples.map((cell) => Math.abs(
+                cell.opacity - (cell.displayIntensity > 0
+                    ? Math.pow(cell.displayIntensity, opacityExponent)
+                    : 0)
+            ))),
+            opacityInlineDelta: Math.max(...cellSamples.map((cell) => (
+                Math.abs(cell.opacity - cell.inlineOpacity)
+            ))),
+            winnerOpacityDelta: Math.max(...cellSamples
+                .filter((cell) => cell.probability === maximumProbability)
+                .map((cell) => Math.abs(cell.opacity - 1))),
             minimumCenterOffset: Math.min(...cells.map((cell) => (
                 cell.getBoundingClientRect().left
                 + (cell.getBoundingClientRect().width / 2)
                 - (canvasRect.left + bounds.intersectionX)
             ))),
             opacity: Number(tooltipStyle.opacity),
-            opacityProbabilityDelta: Math.max(...cells.map((cell) => (
-                Math.abs(Number(getComputedStyle(cell).opacity) - Number(cell.dataset.probability))
-            ))),
+            rawProbabilityPreserved: cellSamples.every((cell) => (
+                Number.isFinite(cell.probability)
+                && cell.probability >= 0
+                && cell.probability <= 1
+            )),
             outerBorderRadius: tooltipStyle.borderRadius,
             rightwardStartDelta: Math.abs(tooltipRect.left - (canvasRect.left + bounds.intersectionX)),
             rows: new Set(cells.map((cell) => cell.dataset.row)).size,
@@ -17344,7 +17519,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     expect(contract).not.toBeNull();
     expect(contract.activeIndex).toBe(leftAnchor.index);
-    expect(contract.backgroundAlpha).toBeCloseTo(0.1, 2);
+    expect(contract.backgroundAlpha).toBeCloseTo(0.5, 2);
+    expect(contract.dataTransparency).toBe('50%');
     expect(contract.opacity).toBe(1);
     expect(contract.backgroundImage).toBe('none');
     expect(contract.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
@@ -17354,6 +17530,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.outerBorderRadius).toBe('10px');
     expect(contract.cellBorderRadius).toBe('2px');
     expect(contract.cellBorderWidth).toBe('0px');
+    expect(contract.cellTransitionDuration).toBe('0s');
     expect(contract.gridPadding).toEqual(['8px', '8px', '8px', '8px']);
     expect(contract.firstCellLeftInset).toBeCloseTo(8, 1);
     expect(contract.firstCellTopInset).toBeCloseTo(8, 1);
@@ -17378,9 +17555,17 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.minimumCenterOffset).toBeGreaterThan(0);
     expect(contract.centerDelta).toBeLessThanOrEqual(0.75);
     expect(contract.intersectionDelta).toBeLessThanOrEqual(0.01);
-    expect(contract.maximumOpacity).toBeGreaterThan(0);
-    expect(contract.maximumOpacity).toBeLessThan(1);
-    expect(contract.opacityProbabilityDelta).toBeLessThanOrEqual(1e-6);
+    expect(contract.opacityMapping).toBe('instant-contrast-power-v1');
+    expect(contract.opacityExponent).toBe(1.6);
+    expect(contract.opacityTailRatio).toBe(0.02);
+    expect(contract.maximumOpacity).toBe(1);
+    expect(contract.minimumOpacity).toBe(0);
+    expect(contract.invisibleCellCount).toBeGreaterThan(0);
+    expect(contract.nonlinearDistance).toBeGreaterThan(1e-4);
+    expect(contract.opacityCurveDelta).toBeLessThanOrEqual(1e-6);
+    expect(contract.opacityInlineDelta).toBeLessThanOrEqual(1e-6);
+    expect(contract.winnerOpacityDelta).toBeLessThanOrEqual(1e-6);
+    expect(contract.rawProbabilityPreserved).toBe(true);
     expect(Number.isFinite(contract.badgeLeft)).toBe(true);
     expect(contract.badgeRight).toBeGreaterThan(contract.badgeLeft);
     expect(Number.isFinite(contract.badgeValue)).toBe(true);
@@ -17412,6 +17597,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const equityCanvasElement = document.querySelector('#tradeEquityChart');
         const chart = window.Chart?.getChart?.(priceCanvasElement);
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
         if (!(stack instanceof HTMLElement)
             || !(priceCanvasElement instanceof HTMLCanvasElement)
             || !(equityCanvasElement instanceof HTMLCanvasElement)
@@ -17435,6 +17621,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && stack.children[1]?.contains(equityCanvasElement),
             equityLeft: equityRect.left,
             motion: stack.dataset.probabilityPanMotion,
+            maximumOpacity: cells.length
+                ? Math.max(...cells.map((cell) => Number(getComputedStyle(cell).opacity)))
+                : null,
+            minimumOpacity: cells.length
+                ? Math.min(...cells.map((cell) => Number(getComputedStyle(cell).opacity)))
+                : null,
+            invisibleCellCount: cells.filter((cell) => (
+                Number(getComputedStyle(cell).opacity) === 0
+            )).length,
             overflowX: getComputedStyle(stack).overflowX,
             pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             priceLeft: priceRect.left,
@@ -17452,6 +17647,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan).not.toBeNull();
     expect(rightPan.activeIndex).toBe(rightAnchor.index);
     expect(rightPan.target).toBeGreaterThan(0);
+    expect(rightPan.maximumOpacity).toBe(1);
+    expect(rightPan.minimumOpacity).toBe(0);
+    expect(rightPan.invisibleCellCount).toBeGreaterThan(0);
     expect(Math.abs(rightPan.scrollLeft - rightPan.target)).toBeLessThanOrEqual(0.75);
     expect(rightPan.targetFormulaDelta).toBeLessThanOrEqual(0.01);
     expect(rightPan.overflowX).toBe('auto');
@@ -17691,6 +17889,92 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         spacerCount: 1,
         tooltipCount: 1,
     });
+
+    await page.evaluate(() => {
+        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        if (!result?.strategy_presentation) {
+            throw new Error('Bayesian presentation is unavailable for custom material verification.');
+        }
+        result.strategy_presentation = {
+            ...result.strategy_presentation,
+            rows_above: 4,
+            rows_below: 4,
+            columns: 18,
+            width_fraction: 0.3,
+            gap_px: 2.5,
+            padding_px: 6,
+            min_cell_px: 3,
+            cell_radius_px: 1.5,
+            tooltip_radius_px: 12,
+            tooltip_transparency_pct: 75,
+            cell_opacity_exponent: 2.4,
+            cell_opacity_tail_ratio: 0.05,
+        };
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+    });
+    const customAnchor = await pointAt(0.05);
+    if (!customAnchor) throw new Error('Custom Bayesian hover anchor is unavailable.');
+    await page.mouse.move(customAnchor.x, customAnchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await waitForPanReset();
+    const customPresentation = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
+        const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        if (!(canvas instanceof HTMLCanvasElement) || !chart
+            || !(tooltip instanceof HTMLElement) || !(grid instanceof HTMLElement)
+            || !cells.length) return null;
+        const tooltipStyle = getComputedStyle(tooltip);
+        const firstCellStyle = getComputedStyle(cells[0]);
+        const canvasRect = canvas.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const bounds = chart._activeBacktestProbabilityGridBounds;
+        const guide = chart._activeBacktestPriceGuideBounds;
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = 1;
+        colorCanvas.height = 1;
+        const colorContext = colorCanvas.getContext('2d', {willReadFrequently: true});
+        colorContext.clearRect(0, 0, 1, 1);
+        colorContext.fillStyle = tooltipStyle.backgroundColor;
+        colorContext.fillRect(0, 0, 1, 1);
+        return {
+            backgroundAlpha: colorContext.getImageData(0, 0, 1, 1).data[3] / 255,
+            cellBorderRadius: firstCellStyle.borderRadius,
+            cellCount: cells.length,
+            centerDelta: Math.abs(
+                (tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + guide.y)
+            ),
+            columns: Number(grid.dataset.columnCount),
+            opacityExponent: Number(tooltip.dataset.cellOpacityExponent),
+            opacityMapping: tooltip.dataset.cellOpacityMapping,
+            opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
+            dataTransparency: tooltip.dataset.transparency,
+            gridPadding: getComputedStyle(grid).paddingTop,
+            outerBorderRadius: tooltipStyle.borderRadius,
+            rows: Number(grid.dataset.rowCount),
+            rowsAbove: bounds?.rowsAbove,
+            rowsBelow: bounds?.rowsBelow,
+        };
+    });
+    expect(customPresentation).toEqual(expect.objectContaining({
+        cellBorderRadius: '1.5px',
+        cellCount: 144,
+        columns: 18,
+        dataTransparency: '75%',
+        gridPadding: '6px',
+        opacityExponent: 2.4,
+        opacityMapping: 'instant-contrast-power-v1',
+        opacityTailRatio: 0.05,
+        outerBorderRadius: '12px',
+        rows: 8,
+        rowsAbove: 4,
+        rowsBelow: 4,
+    }));
+    expect(customPresentation.backgroundAlpha).toBeCloseTo(0.25, 2);
+    expect(customPresentation.centerDelta).toBeLessThanOrEqual(0.75);
 });
 
 const responsiveViewports = [

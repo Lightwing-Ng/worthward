@@ -1,7 +1,7 @@
 """
 Dollar-cost averaging strategy metadata and parameter contract.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ class DcaStrategy(BaseStrategy):
     strategy_description = "Invests a fixed amount on a weekly or monthly schedule and compares the result with an all-in purchase."
     strategy_category = "baseline"
     strategy_display_order = 60
+    strategy_supported_intervals = ("1d",)
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
         multi_ticker=False,

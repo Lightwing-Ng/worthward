@@ -5,13 +5,15 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.6.0
+Code version: v1.7.0
+- Changed: The private probability-field background is 50% transparent, and
+  its Python presentation owns the instantaneous nonlinear cell-opacity curve.
 - Added: Daily posterior signals may execute on real one-minute bars through a
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
 - Changed: The declarative presentation contract now fixes a 36 by 12
   probability field, integer-trading-day slots, concentric 8 px padding, and
-  the strategy-private 90% transparent material geometry.
+  the strategy-private material geometry.
 - Changed: NVDA is the default research ticker for this strategy.
 - Changed: Auto and CPU now use NumPy directly for this small-matrix
   walk-forward workload; only an explicit GPU request imports Torch and probes
@@ -1059,7 +1061,10 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "min_cell_px": 4,
             "cell_radius_px": 2,
             "tooltip_radius_px": 10,
-            "tooltip_transparency_pct": 90,
+            "tooltip_transparency_pct": 50,
+            "cell_opacity_mapping": "instant-contrast-power-v1",
+            "cell_opacity_exponent": 1.6,
+            "cell_opacity_tail_ratio": 0.02,
             "time_quantization": "integer-trading-days",
             "distribution_kind": "normal-log-return",
             "step_unit": "trading-day",

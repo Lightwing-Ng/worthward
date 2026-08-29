@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.3.1
+Code version: v0.3.5
 """
 
 from pathlib import Path
@@ -138,9 +138,10 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.25.0");' in app_css
+    assert '@import url("./views/settings.css?v=0.25.1");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.24.0");' in app_css
-    assert "v0.58.0" in app_css
+    assert '@import url("./views/investment.css?v=1.78.2");' in app_css
+    assert "v0.58.4" in app_css
 
 
 def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> None:
@@ -163,6 +164,12 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "x: canvasRect.left - stackRect.left + tradeChartStack.scrollLeft + point.x,",
         "const canvasOffsetX = canvasRect.left - stackRect.left + tradeChartStack.scrollLeft;",
         "setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);",
+        "columnCount: strategyPresentation.columns,",
+        "rowsAbove: strategyPresentation.rows_above,",
+        "rowsBelow: strategyPresentation.rows_below,",
+        "opacityExponent: strategyPresentation.cell_opacity_exponent,",
+        "opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,",
+        'probabilityTooltip.dataset.transparency = `${strategyPresentation.tooltip_transparency_pct}%`;',
         'tradeChartStack.classList.remove("has-probability-field", "has-probability-scroll");',
     ):
         assert fragment in backtest_script
@@ -183,7 +190,7 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "height: 6px;",
         ".backtest-probability-scroll-spacer {",
         ".backtest-probability-tooltip.chart-tooltip {",
-        "--backtest-probability-tooltip-transparency: 90%;",
+        "--backtest-probability-tooltip-transparency: 50%;",
         "--backtest-probability-tooltip-radius: 10px;",
         "--backtest-probability-cell-radius: 2px;",
         "--backtest-probability-grid-padding: 8px;",
@@ -196,6 +203,8 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         ".backtest-probability-tooltip.chart-tooltip[hidden] {",
         "display: none;",
         ".backtest-probability-tooltip[data-pinned=\"true\"] {",
+        ".backtest-probability-cell {",
+        "transition: none;",
     ):
         assert fragment in trade_css
 
@@ -208,11 +217,22 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const DEFAULT_MIN_CELL_PX = 4;",
         "const DEFAULT_CELL_RADIUS_PX = 2;",
         "const DEFAULT_TOOLTIP_RADIUS_PX = 10;",
-        "const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 90;",
+        "const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;",
+        'const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";',
+        "const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;",
+        "const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;",
+        "const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);",
+        "rows_above: symmetricRows.rowsAbove,",
+        "rows_below: symmetricRows.rowsBelow,",
+        "columns: boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns),",
+        "tooltip_transparency_pct: boundedNumber(",
+        "cell_opacity_exponent: boundedNumber(",
+        "cell_opacity_tail_ratio: boundedNumber(",
         'time_quantization: "integer-trading-days",',
         "const slotWidth = daysPerColumn * normalizedStepPixels;",
         "const cellSize = slotWidth - gap;",
         "const horizon = (visualColumn + 1) * daysPerColumn;",
+        "const opacityProfile = computeInstantOpacityProfile(",
         'direction: "right",',
     ):
         assert fragment in probability_grid
@@ -256,6 +276,7 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         "--settings-shell-content-max-width: var(--layout-content-width);",
         ".settings-shell-material-tokens,\n.settings-shell-strategies {",
         ".settings-shell-network > .settings-content-scrollport > .settings-action-package,",
+        ".settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,",
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;\n}",
         ".settings-content-scrollport {",
         "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
@@ -284,6 +305,7 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
 
 def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    investment_css = _read(ASSET_ROOT / "css/views/investment.css")
     macros = _read(TEMPLATE_ROOT / "_macros.html")
 
     assert "data-shared-select-kind=\"period\"" in macros
@@ -293,6 +315,8 @@ def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     assert "max-width: var(--settings-form-control-max-width);" in forms_css
     assert "width: min(320px, 100%);" in forms_css
     assert "max-width: 320px;" in forms_css
+    assert "width: min(100%, var(--layout-control-width));" in investment_css
+    assert "width: min(100%, 384px);" not in investment_css
 
 
 def test_strategy_parameters_reveal_downward_without_crossing_the_strategy_row() -> None:

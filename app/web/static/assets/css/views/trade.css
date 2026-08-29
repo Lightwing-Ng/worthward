@@ -1,4 +1,4 @@
-/* Code version: v3.36.0 */
+/* Code version: v3.37.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -763,7 +763,7 @@
 }
 
 .backtest-probability-tooltip.chart-tooltip {
-    --backtest-probability-tooltip-transparency: 90%;
+    --backtest-probability-tooltip-transparency: 50%;
     --backtest-probability-tooltip-radius: 10px;
     --backtest-probability-cell-radius: 2px;
     --backtest-probability-grid-padding: 8px;
@@ -810,7 +810,7 @@
     height: 100%;
     border: 0;
     border-radius: var(--backtest-probability-cell-radius);
-    transition: opacity 80ms linear;
+    transition: none;
 }
 
 .backtest-probability-cell.is-up {
