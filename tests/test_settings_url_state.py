@@ -45,12 +45,13 @@ class SettingsUrlStateRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
         self.assertIn(
-            'class="settings-language-tab segmented-control-option is-active" data-language-tab="history"',
+            'class="settings-language-tab segmented-control-option" data-language-tab="history"',
             body,
         )
+        self.assertIn('data-active="history"', body)
         self.assertIn('data-language-panel="history"', body)
         self.assertNotIn(
-            'class="settings-language-tab segmented-control-option is-active" data-language-tab="current"',
+            'data-language-tab="current" role="tab" aria-selected="true"',
             body,
         )
 

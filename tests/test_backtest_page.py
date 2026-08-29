@@ -1,18 +1,22 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.5.12
+Code version: v0.6.1
 """
 
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
 from app import create_app
 from app.core.config import COMPARE_PERIODS_1D
+from app.web.runtime import (
+    _load_strategy_market_datasets,
+    _resolve_strategy_provider_end,
+)
 from strategies.loader import list_enabled_strategies
 from tests.factories.market import (
     FakeStrategy,
@@ -75,6 +79,91 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
+
+    def test_strategy_owned_loader_none_fails_closed_without_generic_fallback(self) -> None:
+        strategy = FakeStrategy()
+        strategy.strategy_market_data_source = "longbridge-cli"
+        strategy.load_market_datasets = Mock(return_value=None)
+        with (
+            patch("app.web.runtime.fetch_history") as generic_fetch,
+            patch("app.web.runtime.instantiate_strategy", return_value=strategy),
+            patch("app.web.runtime.run_single_ticker_backtest") as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            "Unable to load this workspace. Check your local data and try again.",
+            response.get_data(as_text=True),
+        )
+        strategy.load_market_datasets.assert_called_once()
+        generic_fetch.assert_not_called()
+        run_backtest.assert_not_called()
+
+    def test_relative_strategy_provider_end_uses_the_ticker_market_date(self) -> None:
+        hong_kong_morning = pd.Timestamp("2026-08-28 09:30:00", tz="Asia/Hong_Kong")
+
+        resolved = _resolve_strategy_provider_end("700.HK", hong_kong_morning)
+
+        self.assertEqual(resolved, pd.Timestamp("2026-08-28"))
+        self.assertEqual(
+            hong_kong_morning.tz_convert("America/New_York").date().isoformat(),
+            "2026-08-27",
+        )
+
+    def test_strategy_owned_loader_source_mismatch_fails_closed(self) -> None:
+        strategy = FakeStrategy()
+        strategy.strategy_market_data_source = "longbridge-cli"
+        mismatched_dataset = market_frame("QQQ")
+        mismatched_dataset.attrs["market_data_source"] = "yfinance"
+        strategy.load_market_datasets = Mock(return_value=[mismatched_dataset])
+        with (
+            patch("app.web.runtime.fetch_history") as generic_fetch,
+            patch("app.web.runtime.instantiate_strategy", return_value=strategy),
+            patch("app.web.runtime.run_single_ticker_backtest") as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        strategy.load_market_datasets.assert_called_once()
+        generic_fetch.assert_not_called()
+        run_backtest.assert_not_called()
+
+    def test_strategy_owned_loader_rejects_empty_or_incomplete_datasets(self) -> None:
+        provider_start = pd.Timestamp("2026-01-01")
+        provider_end = pd.Timestamp("2026-08-29")
+        invalid_datasets = (
+            (pd.DataFrame(columns=["Date", "Close"]), "non-empty DataFrame"),
+            (
+                pd.DataFrame({"Date": pd.to_datetime(["2026-08-28"])}),
+                "missing Close",
+            ),
+        )
+        for dataset, expected_error in invalid_datasets:
+            dataset.attrs["market_data_source"] = "longbridge-cli"
+            strategy = FakeStrategy()
+            strategy.strategy_market_data_source = "longbridge-cli"
+            strategy.load_market_datasets = Mock(return_value=[dataset])
+            with (
+                self.subTest(expected_error=expected_error),
+                self.assertRaisesRegex(ValueError, expected_error),
+            ):
+                _load_strategy_market_datasets(
+                    strategy,
+                    ["QQQ"],
+                    interval="1d",
+                    start=provider_start,
+                    end=provider_end,
+                    params={},
+                )
 
     def test_backtest_history_xpath_target_owns_scrollable_table_shell(self) -> None:
         with (
@@ -349,6 +438,8 @@ class BacktestPageTests(unittest.TestCase):
 
     def test_every_enabled_strategy_starts_with_its_default_parameters(self) -> None:
         client = create_app().test_client()
+        bayesian_dataset = fetch_history_stub("AAPL", False)
+        bayesian_dataset.attrs["market_data_source"] = "longbridge-cli"
         for strategy in list_enabled_strategies():
             strategy_id = str(strategy["id"])
             if strategy_id == "dca":
@@ -360,6 +451,11 @@ class BacktestPageTests(unittest.TestCase):
                 patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
                 patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
                 patch("app.web.runtime.record_strategy_usage"),
+                patch(
+                    "strategies.algorithms.strategy_bayesian_price_field."
+                    "BayesianPriceFieldStrategy.load_market_datasets",
+                    return_value=[bayesian_dataset],
+                ),
             ):
                 response = client.get(
                     f"/workspaces/backtest?period=6mo&strategy={strategy_id}"

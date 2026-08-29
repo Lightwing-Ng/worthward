@@ -1,7 +1,9 @@
 """
 Broker-backed market data services.
 
-Code version: v0.15.0
+Code version: v0.15.1
+- Fixed: Canonical US share-class tickers such as BRK-B map back to the
+  dot-delimited Longbridge symbol form at the provider boundary.
 """
 
 from __future__ import annotations
@@ -398,6 +400,22 @@ def normalize_longbridge_symbol(ticker: str) -> str:
     if normalized_ticker.endswith(".SS"):
         symbol, _ = normalized_ticker.rsplit(".", 1)
         return f"{symbol}.SH"
+    dot_share_class_parts = normalized_ticker.rsplit(".", 1)
+    if (
+            len(dot_share_class_parts) == 2
+            and dot_share_class_parts[0].isalnum()
+            and 1 <= len(dot_share_class_parts[0]) <= 4
+            and dot_share_class_parts[1] in {"A", "B", "C"}
+    ):
+        return f"{normalized_ticker}.US"
+    share_class_parts = normalized_ticker.rsplit("-", 1)
+    if (
+            len(share_class_parts) == 2
+            and share_class_parts[0].isalnum()
+            and 1 <= len(share_class_parts[0]) <= 4
+            and share_class_parts[1] in {"A", "B", "C"}
+    ):
+        return f"{share_class_parts[0]}.{share_class_parts[1]}.US"
     if "." in normalized_ticker:
         return normalized_ticker
     return f"{normalized_ticker}.US"

@@ -1,7 +1,8 @@
-/* Code version: v1.19.4 */
+/* Code version: v1.21.1 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
+/* Keep Portfolio result metadata and share actions inside the 640px result card. */
 .chart-panel.workspace {
     overflow: visible;
 }
@@ -179,6 +180,12 @@
     flex: 1 1 auto;
 }
 
+.portfolio-workspace .workspace-mode-main > .workspace-header {
+    width: min(100%, var(--layout-content-width));
+    max-width: var(--layout-content-width);
+    align-self: flex-start;
+}
+
 @media (min-width: 768px) {
     .workspace > .workspace-header:first-child > .workspace-summary-card:first-child,
     .workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card,
@@ -282,12 +289,43 @@
 }
 
 .portfolio-summary {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
     margin-bottom: 0;
     padding: 0 0 4px;
+    overflow: visible;
+}
+
+.portfolio-summary-content-card {
+    overflow: visible;
+}
+
+#portfolio_summary_region {
+    position: relative;
+    width: calc(100% + var(--workspace-article-pad-inline) + var(--workspace-article-pad-inline));
+    margin-inline: calc(-1 * var(--workspace-article-pad-inline));
+    box-sizing: border-box;
+}
+
+.portfolio-summary-main {
+    margin-inline: var(--workspace-article-pad-inline);
+}
+
+.portfolio-summary-main > .portfolio-summary-range {
+    margin: 0 0 10px;
+}
+
+#portfolio_summary_region > .investment-share-actions[data-share-placement="summary-panel"] {
+    position: absolute;
+    top: 0;
+    right: var(--layout-edge-gap);
+    transform: none;
+    z-index: calc(var(--layer-surface-content) + 2);
+    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    height: var(--settings-round-icon-button-size);
 }
 
 .portfolio-summary-main {
@@ -2253,7 +2291,8 @@ footer {
 .settings-general-panel {
     display: grid;
     gap: var(--settings-general-panel-gap);
-    padding: var(--settings-general-panel-pad);
+    padding-block: var(--settings-general-panel-pad);
+    padding-inline: var(--settings-general-panel-pad);
     border-radius: var(--settings-general-card-radius);
     background: var(--settings-general-panel-background);
     border: var(--settings-general-panel-border);
@@ -2389,6 +2428,10 @@ footer {
 
 :is(.price-compare-workspace, .market-cap-compare-workspace) .workspace-mode-results-stack > .chart-surface {
     padding-inline: 12px;
+}
+
+.portfolio-workspace .workspace-mode-results-stack > .chart-surface {
+    padding-inline: var(--workspace-article-pad-inline);
 }
 
 .price-subplot-grid {

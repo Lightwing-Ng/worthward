@@ -1,4 +1,4 @@
-/* Code version: v1.174.1 */
+/* Code version: v1.183.16 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -329,6 +329,19 @@ test('switches Broker access between IBKR and Longbridge OAuth without credentia
     await expect(page.locator('[data-broker-fields="ibkr"] button')).toHaveCount(0);
 });
 
+test('keeps Broker access dropdown options as name-only rows', async ({page}) => {
+    await page.goto('/settings/broker-access');
+
+    const trigger = page.locator('[data-shared-select-kind="settings-broker"] [data-shared-select-trigger]');
+    await trigger.click();
+
+    const dropdown = page.locator('#selected_broker_dropdown');
+    await expect(dropdown).toBeVisible();
+    await expect(dropdown.locator('[role="option"]')).toHaveText(['IBKR', 'Longbridge']);
+    await expect(dropdown.locator('.trade-strategy-dropdown-desc')).toHaveCount(0);
+    await expect(dropdown.locator('.trade-strategy-dropdown-copy')).toHaveCount(0);
+});
+
 test('stacks Email SMTP action packages like the Broker access form', async ({page}) => {
     await page.goto('/settings/broker-access');
     const brokerFormLayout = await page.locator('.settings-shell-broker-access form.settings-form-shell').evaluate((form) => {
@@ -404,14 +417,45 @@ test('resolves Longbridge OAuth notice into verified connection feedback', async
         const icon = card.querySelector('.settings-action-package-icon-shell');
         const health = card.querySelector('[data-broker-connection-health]');
         const title = card.querySelector('.settings-service-name');
+        const feedback = card.querySelector('[data-broker-test-feedback]');
+        const feedbackIcon = card.querySelector('.settings-broker-test-feedback-icon');
+        const feedbackCopy = feedback?.querySelector('span:last-child');
+        const form = card.querySelector('.settings-action-package-form');
+        const cardBounds = card.getBoundingClientRect();
         const toBounds = (element) => {
             const bounds = element.getBoundingClientRect();
-            return {left: bounds.left, right: bounds.right};
+            const styles = getComputedStyle(element);
+            return {
+                left: bounds.left,
+                right: bounds.right,
+                top: bounds.top,
+                bottom: bounds.bottom,
+                width: bounds.width,
+                gridColumn: styles.gridColumn,
+                gridRow: styles.gridRow,
+            };
         };
-        return {icon: toBounds(icon), health: toBounds(health), title: toBounds(title)};
+        return {
+            icon: toBounds(icon),
+            health: toBounds(health),
+            title: toBounds(title),
+            feedback: toBounds(feedback),
+            feedbackIcon: toBounds(feedbackIcon),
+            feedbackCopy: toBounds(feedbackCopy),
+            form: toBounds(form),
+            card: {left: cardBounds.left, right: cardBounds.right},
+        };
     });
     expect(connectionLayout.health.left).toBeGreaterThanOrEqual(connectionLayout.icon.right);
     expect(connectionLayout.health.right).toBeLessThanOrEqual(connectionLayout.title.left);
+    expect(connectionLayout.feedback.gridColumn).toContain('1 / -1');
+    expect(connectionLayout.feedback.gridRow).toContain('3');
+    expect(Math.abs((connectionLayout.feedbackIcon.left + connectionLayout.feedbackIcon.width / 2) - (connectionLayout.icon.left + connectionLayout.icon.width / 2))).toBeLessThanOrEqual(1);
+    expect(connectionLayout.feedbackCopy.left).toBeGreaterThanOrEqual(connectionLayout.title.left);
+    expect(connectionLayout.feedback.right).toBeLessThanOrEqual(connectionLayout.card.right);
+    expect(connectionLayout.feedback.width).toBeGreaterThan(300);
+    expect(connectionLayout.feedback.bottom).toBeLessThanOrEqual(connectionLayout.form.top);
+    expect(connectionLayout.form.gridRow).toContain('4');
     expect(statusRequestCount).toBe(1);
     await expect(banner).toBeHidden({timeout: 8000});
 });
@@ -673,6 +717,125 @@ test('exposes paired Light and Dark color tokens with live tuning controls', asy
     await page.locator('[data-color-token-name="--theme-accent-positive"][data-color-token-mode="light"] [data-color-token-reset]').click();
     await expect(lightValue).toHaveValue('#16a34a');
     await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--theme-accent-positive').trim())).toBe('');
+});
+
+test('keeps Settings surfaces on the shared 640px content and 384px control tokens', async ({page}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({width: 1_280, height: 900});
+
+    const widthCases = [
+        ['/settings/about', '.about-section'],
+        ['/settings/backtest', '.settings-shell-backtest > .settings-general-panel'],
+        ['/settings/broker-access', '.settings-shell-broker-access .settings-action-package'],
+        ['/settings/cash-equivalents', '.cash-equivalents-card'],
+        ['/settings/clear-caches', '.settings-shell-clear-caches .settings-action-package'],
+        ['/settings/email-smtp', '.settings-shell-email-smtp .settings-action-package'],
+        ['/settings/font-tokens', '#primitive-scale'],
+        ['/settings/general', '.settings-general-shell > .settings-general-panel'],
+        ['/settings/investment', '.settings-shell-investment > .settings-general-panel'],
+        ['/settings/local-market-store', '.settings-shell-local-market-store > .local-store-maintain-card'],
+        ['/settings/local-market-store', '.settings-shell-local-market-store > .local-store-table-shell'],
+        ['/settings/material-tokens', '.settings-shell-material-tokens > .settings-summary-card'],
+        ['/settings/network', '.settings-shell-network > .settings-action-package'],
+        ['/settings/network', '.settings-shell-network > .settings-general-panel-network'],
+        ['/settings/strategies', '.settings-shell-strategies > .settings-summary-card'],
+        ['/settings/strategies', '.settings-shell-strategies > .settings-summary'],
+        ['/settings/strategies', '.settings-shell-strategies > .settings-strategy-card'],
+    ];
+
+    for (const [url, selector] of widthCases) {
+        await page.goto(url);
+        const width = await page.locator(selector).first().evaluate((element) => element.getBoundingClientRect().width);
+        expect(width, `${selector} on ${url}`).toBeCloseTo(640, 0);
+    }
+
+    await page.goto('/settings/general');
+    const dateControls = await page.locator('.settings-date-format-field [data-shared-select-trigger]').evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().width)
+    );
+    expect(dateControls).toEqual([384, 384]);
+
+    await page.goto('/settings/font-tokens');
+    const fontBorders = await page.locator('.font-token-panel').evaluateAll((elements) =>
+        elements.map((element) => getComputedStyle(element).borderTopWidth)
+    );
+    expect(fontBorders).toEqual(['0px', '0px', '0px']);
+
+    await page.goto('/settings/color-tokens');
+    const colorLayout = await page.locator('[data-color-token-layout]').evaluate((layout) => ({
+        width: layout.getBoundingClientRect().width,
+        children: [...layout.querySelector('.settings-color-token-content').children].map((element) => element.className),
+    }));
+    expect(colorLayout.width).toBeCloseTo(640, 0);
+    expect(colorLayout.children.slice(0, 2)).toEqual([
+        'settings-color-token-intro settings-card',
+        'settings-color-token-sidebar',
+    ]);
+
+    await page.goto('/settings/local-market-store');
+    const localStoreWidths = await page.evaluate(() => ({
+        summary: document.querySelector('.settings-shell-local-market-store > .settings-summary')
+            ?.getBoundingClientRect().width ?? 0,
+        tableShell: document.querySelector('.settings-shell-local-market-store > .local-store-table-shell')
+            ?.getBoundingClientRect().width ?? 0,
+        tableWrap: document.querySelector('#local_store_table_scroll')?.getBoundingClientRect().width ?? 0,
+    }));
+    expect(localStoreWidths.summary).toBeCloseTo(640, 0);
+    expect(localStoreWidths.tableShell).toBeCloseTo(640, 0);
+    expect(localStoreWidths.tableWrap).toBeCloseTo(640, 0);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto('/settings/color-tokens');
+    const narrowGeometry = await page.evaluate(() => ({
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        contentWidth: document.querySelector('[data-color-token-layout]')?.getBoundingClientRect().width ?? 0,
+        controlWidths: [...document.querySelectorAll('.settings-color-token-value')].map((element) => element.getBoundingClientRect().width),
+    }));
+    expect(narrowGeometry.documentOverflow).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.contentWidth).toBeLessThanOrEqual(370);
+    expect(Math.max(...narrowGeometry.controlWidths)).toBeLessThanOrEqual(370);
+});
+
+test('keeps Settings card effects visible without clipping scrollable internals', async ({page}) => {
+    await page.setViewportSize({width: 1_280, height: 900});
+
+    await page.goto('/settings/material-tokens');
+    const materialOverflow = await page.evaluate(() => ({
+        shell: getComputedStyle(document.querySelector('.settings-shell-material-tokens > .style-token-shell')).overflow,
+        card: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-card')).overflow,
+        demo: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-demo')).overflow,
+    }));
+    expect(materialOverflow).toEqual({shell: 'visible', card: 'visible', demo: 'visible'});
+
+    await page.goto('/settings/network');
+    const networkOverflow = await page.evaluate(() => ({
+        action: getComputedStyle(document.querySelector('.settings-shell-network > .settings-action-package')).overflow,
+        panel: getComputedStyle(document.querySelector('.settings-shell-network > .settings-general-panel-network')).overflow,
+        row: getComputedStyle(document.querySelector('.settings-shell-network .settings-service-row')).overflow,
+    }));
+    expect(networkOverflow).toEqual({action: 'visible', panel: 'visible', row: 'visible'});
+
+    await page.goto('/settings/strategies');
+    const strategyCard = page.locator('.settings-strategy-card').nth(1);
+    await strategyCard.locator('summary').click();
+    const strategyOverflow = await strategyCard.evaluate((card) => ({
+        card: getComputedStyle(card).overflow,
+        params: getComputedStyle(card.querySelector('.settings-strategy-params-shell')).overflow,
+        table: getComputedStyle(card.querySelector('.settings-strategy-params-table-wrap')).overflow,
+    }));
+    expect(strategyOverflow).toEqual({card: 'visible', params: 'visible', table: 'auto'});
+    await expect(page.locator('.settings-strategy-card').first()).toHaveCSS('overflow', 'visible');
+
+    await page.setViewportSize({width: 390, height: 844});
+    for (const url of ['/settings/material-tokens', '/settings/network', '/settings/strategies']) {
+        await page.goto(url);
+        const narrowOverflow = await page.evaluate(() => ({
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            shellWidth: document.querySelector('#settings_workspace_shell')?.getBoundingClientRect().width ?? 0,
+        }));
+        expect(narrowOverflow.documentOverflow, `${url} document overflow`).toBeLessThanOrEqual(1);
+        expect(narrowOverflow.shellWidth, `${url} shell width`).toBeLessThanOrEqual(370);
+    }
 });
 
 test('hydrates the network self-check and uses the standard Settings action package layout', async ({page}) => {
@@ -948,11 +1111,13 @@ test('anchors the comparison share control to the summary panel without overlapp
         const drawer = button?.closest('[data-share-drawer="tickers"]');
         const panel = document.querySelector('#compare_summary_panel');
         const chartSurface = document.querySelector('.workspace-mode-main > .workspace-header > .chart-surface');
+        const dateRange = document.querySelector('#compare_summary_date_range');
         const theme = document.querySelector('#global_theme_toggle');
         const rect = (element) => element?.getBoundingClientRect();
         const share = rect(button);
         const panelRect = rect(panel);
         const chartSurfaceRect = rect(chartSurface);
+        const dateRangeRect = rect(dateRange);
         const themeRect = rect(theme);
         const overlaps = share && themeRect
             ? share.left < themeRect.right
@@ -960,14 +1125,17 @@ test('anchors the comparison share control to the summary panel without overlapp
                 && share.top < themeRect.bottom
                 && share.bottom > themeRect.top
             : null;
-        const centerY = (box) => box.top + (box.height / 2);
-
         return {
             drawerIsDirectPanelChild: drawer?.parentElement === panel,
-            themeCenterDelta: share && themeRect ? Math.abs(centerY(share) - centerY(themeRect)) : null,
             overlapsTheme: overlaps,
-            shareRight: share?.right,
-            themeLeft: themeRect?.left,
+            shareCenterXDelta: share && themeRect
+                ? Math.abs((share.left + (share.width / 2)) - (themeRect.left + (themeRect.width / 2)))
+                : null,
+            shareTop: share?.top,
+            themeBottom: themeRect?.bottom,
+            dateInlineStart: dateRangeRect && panelRect
+                ? dateRangeRect.left - panelRect.left
+                : null,
             summaryWidthDelta: panelRect && chartSurfaceRect
                 ? Math.abs(panelRect.width - chartSurfaceRect.width)
                 : null,
@@ -975,42 +1143,203 @@ test('anchors the comparison share control to the summary panel without overlapp
     });
 
     expect(geometry.drawerIsDirectPanelChild).toBe(true);
-    expect(geometry.themeCenterDelta).toBeLessThanOrEqual(1);
     expect(geometry.overlapsTheme).toBe(false);
-    expect(geometry.shareRight).toBeLessThan(geometry.themeLeft);
+    expect(geometry.shareCenterXDelta).toBeLessThanOrEqual(1);
+    expect(geometry.shareTop).toBeGreaterThanOrEqual(geometry.themeBottom);
+    if (geometry.dateInlineStart !== null) {
+        expect(geometry.dateInlineStart).toBeCloseTo(12, 1);
+    }
     expect(geometry.summaryWidthDelta).toBeLessThanOrEqual(0.01);
 });
 
-test('stacks the portfolio date beneath the aligned summary title', async ({page}) => {
-    await page.setViewportSize({width: 1_024, height: 768});
+test('keeps shared shell anchors on the ten-pixel spatial grid across desktop and iPad', async ({page}) => {
+    for (const viewport of [
+        {width: 1280, height: 720},
+        {width: 768, height: 1024},
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('/workspaces/compare?ticker=SGOV&ticker=BOXX');
+        await page.evaluate(() => window.sessionStorage.setItem('antigravity:sidebar-open', 'true'));
+        await page.reload();
+        await setSidebarExpanded(page, true);
+        await page.waitForFunction(() => {
+            const sidebar = document.querySelector('#app_sidebar');
+            const dock = document.querySelector('.sidebar-dock');
+            if (!(sidebar instanceof HTMLElement) || !(dock instanceof HTMLElement)) return false;
+            const sidebarRect = sidebar.getBoundingClientRect();
+            const dockMatrix = new DOMMatrix(getComputedStyle(dock).transform);
+            return Math.abs(sidebarRect.left - 10) <= 1
+                && Number.parseFloat(getComputedStyle(sidebar).opacity) > 0.99
+                && dockMatrix.a > 0.99
+                && dockMatrix.d > 0.99;
+        });
+
+        const geometry = await page.evaluate(() => {
+            const sidebar = document.querySelector('#app_sidebar')?.getBoundingClientRect();
+            const sidebarTitle = document.querySelector('#app_sidebar .hero h1')?.getBoundingClientRect();
+            const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading')?.getBoundingClientRect();
+            const summaryTitle = document.querySelector('.workspace-mode-main .workspace-summary-card .report-heading')?.getBoundingClientRect();
+            const toggle = document.querySelector('#sidebar_toggle')?.getBoundingClientRect();
+            const dock = document.querySelector('.sidebar-dock')?.getBoundingClientRect();
+            const theme = document.querySelector('#global_theme_toggle')?.getBoundingClientRect();
+            const centerX = (rect) => rect.left + (rect.width / 2);
+            const centerY = (rect) => rect.top + (rect.height / 2);
+            const styles = document.querySelector('#app_sidebar')
+                ? getComputedStyle(document.querySelector('#app_sidebar'))
+                : null;
+            if (!sidebar || !sidebarTitle || !modeTitle || !summaryTitle || !toggle || !dock || !theme || !styles) {
+                return null;
+            }
+            return {
+                sidebarTopGap: sidebar.top,
+                sidebarLeftGap: sidebar.left,
+                sidebarBottomGap: window.innerHeight - sidebar.bottom,
+                sidebarRight: sidebar.right,
+                sidebarRadius: Number.parseFloat(styles.borderTopLeftRadius),
+                dockCenterDelta: Math.abs(centerX(dock) - centerX(sidebar)),
+                dockBottomGap: sidebar.bottom - dock.bottom,
+                toggleTop: toggle.top,
+                toggleLeft: toggle.left,
+                toggleRight: toggle.right,
+                toggleRightGap: sidebar.right - toggle.right,
+                themeTop: theme.top,
+                themeRightGap: window.innerWidth - theme.right,
+                toggleCenterY: centerY(toggle),
+                sidebarTitleCenterY: centerY(sidebarTitle),
+                modeTitleCenterY: centerY(modeTitle),
+                summaryTitleCenterY: centerY(summaryTitle),
+                themeCenterY: centerY(theme),
+                sidebarTitleCenterDelta: Math.abs(centerY(sidebarTitle) - centerY(toggle)),
+                modeTitleCenterDelta: Math.abs(centerY(modeTitle) - centerY(toggle)),
+                summaryTitleCenterDelta: Math.abs(centerY(summaryTitle) - centerY(toggle)),
+            };
+        });
+
+        expect(geometry).not.toBeNull();
+        for (const key of ['sidebarTopGap', 'sidebarLeftGap', 'sidebarBottomGap', 'sidebarRadius', 'dockBottomGap', 'toggleRightGap']) {
+            expect(Math.abs(geometry[key] - 10), `${key} at ${viewport.width}px: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(1);
+        }
+        expect(geometry.dockCenterDelta, `dock center at ${viewport.width}px: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.toggleTop - 20)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.themeTop - 20)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.themeRightGap - 20)).toBeLessThanOrEqual(1);
+        expect(geometry.sidebarTitleCenterDelta).toBeLessThanOrEqual(1);
+        expect(geometry.modeTitleCenterDelta).toBeLessThanOrEqual(1);
+        expect(geometry.summaryTitleCenterDelta).toBeLessThanOrEqual(1);
+
+        await setSidebarExpanded(page, false);
+        await page.waitForFunction(() => {
+            const sidebar = document.querySelector('#app_sidebar');
+            const toggle = document.querySelector('#sidebar_toggle');
+            const shell = document.querySelector('.app-shell');
+            if (!(sidebar instanceof HTMLElement) || !(toggle instanceof HTMLElement) || !(shell instanceof HTMLElement)) {
+                return false;
+            }
+            return shell.classList.contains('is-sidebar-collapsed')
+                && Number.parseFloat(getComputedStyle(sidebar).opacity) < 0.01
+                && Math.abs(toggle.getBoundingClientRect().left - (window.innerWidth <= 900 ? 10 : 20)) <= 1;
+        });
+        const collapsedGeometry = await page.evaluate(() => {
+            const toggle = document.querySelector('#sidebar_toggle')?.getBoundingClientRect();
+            const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading')?.getBoundingClientRect();
+            const summaryTitle = document.querySelector('.workspace-mode-main .workspace-summary-card .report-heading')?.getBoundingClientRect();
+            const theme = document.querySelector('#global_theme_toggle')?.getBoundingClientRect();
+            const centerY = (rect) => rect.top + (rect.height / 2);
+            const overlaps = (left, right) => left.left < right.right
+                && left.right > right.left
+                && left.top < right.bottom
+                && left.bottom > right.top;
+            if (!toggle || !modeTitle || !summaryTitle || !theme) return null;
+            return {
+                toggleTop: toggle.top,
+                themeTop: theme.top,
+                toggleCenterY: centerY(toggle),
+                modeTitleCenterY: centerY(modeTitle),
+                summaryTitleCenterY: centerY(summaryTitle),
+                themeCenterY: centerY(theme),
+                modeTitleCenterDelta: Math.abs(centerY(modeTitle) - centerY(toggle)),
+                summaryTitleCenterDelta: Math.abs(centerY(summaryTitle) - centerY(toggle)),
+                themeCenterDelta: Math.abs(centerY(theme) - centerY(toggle)),
+                modeTitleOverlapsToggle: overlaps(modeTitle, toggle),
+                summaryTitleOverlapsTheme: overlaps(summaryTitle, theme),
+                toggleOverlapsTheme: overlaps(toggle, theme),
+            };
+        });
+        expect(collapsedGeometry).not.toBeNull();
+        expect(Math.abs(collapsedGeometry.toggleTop - geometry.toggleTop)).toBeLessThanOrEqual(1);
+        expect(Math.abs(collapsedGeometry.themeTop - geometry.themeTop)).toBeLessThanOrEqual(1);
+        expect(Math.abs(collapsedGeometry.toggleCenterY - geometry.toggleCenterY)).toBeLessThanOrEqual(1);
+        expect(Math.abs(collapsedGeometry.modeTitleCenterY - geometry.modeTitleCenterY)).toBeLessThanOrEqual(1);
+        expect(Math.abs(collapsedGeometry.summaryTitleCenterY - geometry.summaryTitleCenterY)).toBeLessThanOrEqual(1);
+        expect(Math.abs(collapsedGeometry.themeCenterY - geometry.themeCenterY)).toBeLessThanOrEqual(1);
+        expect(collapsedGeometry.modeTitleCenterDelta).toBeLessThanOrEqual(1);
+        expect(collapsedGeometry.summaryTitleCenterDelta).toBeLessThanOrEqual(1);
+        expect(collapsedGeometry.themeCenterDelta).toBeLessThanOrEqual(1);
+        expect(collapsedGeometry.modeTitleOverlapsToggle).toBe(false);
+        expect(collapsedGeometry.summaryTitleOverlapsTheme).toBe(false);
+        expect(collapsedGeometry.toggleOverlapsTheme).toBe(false);
+    }
+});
+
+test('keeps Portfolio summary metadata and sharing inside the 640px result card', async ({page}) => {
+    await page.setViewportSize({width: 1_352, height: 1_050});
     await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
 
+    const summaryTitle = page.locator('.workspace-mode-main > .workspace-header > .workspace-summary-card .report-heading');
+    const resultCard = page.locator('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card');
     const range = page.locator('.portfolio-summary-range');
+    const shareButton = page.locator('#export_transactions_button');
+    await expect(summaryTitle).toHaveText('Portfolio summary');
     await expect(range).toBeVisible();
     await expect(range).not.toHaveText('');
+    await expect(resultCard).toContainText('Portfolio ending return');
+    await expect(shareButton).toBeVisible();
 
     const geometry = await page.evaluate(() => {
         const sidebarTitle = document.querySelector('#app_sidebar .hero h1').getBoundingClientRect();
         const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading').getBoundingClientRect();
-        const summaryTitle = document.querySelector('.workspace-mode-main .report-heading').getBoundingClientRect();
+        const summaryTitle = document.querySelector('.workspace-mode-main > .workspace-header > .workspace-summary-card').getBoundingClientRect();
+        const resultCard = document.querySelector('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card').getBoundingClientRect();
         const summaryRange = document.querySelector('.portfolio-summary-range').getBoundingClientRect();
+        const summaryMain = document.querySelector('.portfolio-summary-main');
+        const shareButton = document.querySelector('#export_transactions_button').getBoundingClientRect();
+        const shareResultCard = document.querySelector('#export_transactions_button').closest('.portfolio-summary-content-card');
         const toggle = document.querySelector('#sidebar_toggle').getBoundingClientRect();
-        const theme = document.querySelector('#global_theme_toggle').getBoundingClientRect();
         const centerY = (rect) => rect.top + (rect.height / 2);
         return {
             sidebarCenterDelta: Math.abs(centerY(sidebarTitle) - centerY(toggle)),
             modeCenterDelta: Math.abs(centerY(modeTitle) - centerY(toggle)),
-            summaryCenterDelta: Math.abs(centerY(summaryTitle) - centerY(theme)),
-            rangeLeftDelta: Math.abs(summaryRange.left - summaryTitle.left),
-            rangeVerticalGap: summaryRange.top - summaryTitle.bottom,
+            summaryWidth: summaryTitle.width,
+            resultWidth: resultCard.width,
+            rangeInsideResult: Boolean(summaryMain && summaryMain.contains(document.querySelector('.portfolio-summary-range'))),
+            shareInsideResult: shareResultCard === document.querySelector('.portfolio-summary-content-card'),
+            shareTopInset: shareButton.top - resultCard.top,
+            shareRightInset: resultCard.right - shareButton.right,
         };
     });
 
     expect(geometry.sidebarCenterDelta).toBeLessThanOrEqual(1);
     expect(geometry.modeCenterDelta).toBeLessThanOrEqual(1);
-    expect(geometry.summaryCenterDelta).toBeLessThanOrEqual(1);
-    expect(geometry.rangeLeftDelta).toBeLessThanOrEqual(1);
-    expect(geometry.rangeVerticalGap).toBeGreaterThanOrEqual(1);
+    expect(geometry.summaryWidth).toBeCloseTo(640, 0);
+    expect(geometry.resultWidth).toBeCloseTo(640, 0);
+    expect(geometry.rangeInsideResult).toBe(true);
+    expect(geometry.shareInsideResult).toBe(true);
+    expect(geometry.shareTopInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.shareRightInset).toBeGreaterThanOrEqual(8);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    await expect(page.locator('.portfolio-summary-range')).toBeVisible();
+    const narrowGeometry = await page.evaluate(() => {
+        const button = document.querySelector('#export_transactions_button')?.getBoundingClientRect();
+        const card = document.querySelector('.portfolio-summary-content-card')?.getBoundingClientRect();
+        return {
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+            shareInsideCard: Boolean(button && card && button.left >= card.left - 1 && button.right <= card.right + 1),
+        };
+    });
+    expect(narrowGeometry.noHorizontalOverflow).toBe(true);
+    expect(narrowGeometry.shareInsideCard).toBe(true);
 });
 
 test('matches the shared Compare Period dropdown width to its trigger', async ({page}) => {
@@ -1034,6 +1363,66 @@ test('matches the shared Compare Period dropdown width to its trigger', async ({
         dropdown: document.querySelector('#period_dropdown')?.getBoundingClientRect().width,
     }));
     expect(widths.dropdown).toBeCloseTo(widths.trigger, 5);
+});
+
+test('constrains the Portfolio Period dropdown to the shared 384px control token', async ({page}) => {
+    await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
+
+    const periodField = page.locator('#period_panel [data-shared-select-field]');
+    const periodTrigger = periodField.locator('[data-shared-select-trigger]');
+    const periodDropdown = page.locator('#period_dropdown');
+    await expect(periodField).toHaveCount(1);
+    await expect(periodTrigger).toHaveClass(/backtest-shared-select-trigger/);
+    await expect(periodDropdown).toHaveCount(1);
+
+    const desktopGeometry = await page.evaluate(() => {
+        const row = document.querySelector('#period_panel > .backtest-shared-select-row');
+        const trigger = document.querySelector('#period_panel [data-shared-select-trigger]');
+        const form = document.querySelector('form.portfolio-controls');
+        if (!row || !trigger || !form) return null;
+        const token = Number.parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--settings-form-control-max-width'));
+        return {
+            token,
+            rowWidth: row.getBoundingClientRect().width,
+            triggerWidth: trigger.getBoundingClientRect().width,
+            formWidth: form.getBoundingClientRect().width,
+        };
+    });
+    expect(desktopGeometry).not.toBeNull();
+    expect(desktopGeometry?.token).toBe(384);
+    expect(desktopGeometry?.rowWidth).toBeCloseTo(desktopGeometry?.triggerWidth, 5);
+    expect(desktopGeometry?.rowWidth).toBeLessThanOrEqual(desktopGeometry?.token + 0.5);
+    expect(desktopGeometry?.rowWidth).toBeLessThanOrEqual(desktopGeometry?.formWidth + 0.5);
+
+    await periodTrigger.click();
+    await expect(periodDropdown).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+        const trigger = document.querySelector('#period_panel [data-shared-select-trigger]');
+        const dropdown = document.querySelector('#period_dropdown');
+        if (!trigger || !dropdown) return Number.POSITIVE_INFINITY;
+        return Math.abs(trigger.getBoundingClientRect().width - dropdown.getBoundingClientRect().width);
+    })).toBeLessThan(0.01);
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload();
+    const narrowGeometry = await page.evaluate(() => {
+        const row = document.querySelector('#period_panel > .backtest-shared-select-row');
+        const trigger = document.querySelector('#period_panel [data-shared-select-trigger]');
+        const form = document.querySelector('form.portfolio-controls');
+        if (!row || !trigger || !form) return null;
+        return {
+            rowWidth: row.getBoundingClientRect().width,
+            triggerWidth: trigger.getBoundingClientRect().width,
+            formWidth: form.getBoundingClientRect().width,
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+    expect(narrowGeometry).not.toBeNull();
+    expect(narrowGeometry?.rowWidth).toBeCloseTo(narrowGeometry?.triggerWidth, 5);
+    expect(narrowGeometry?.rowWidth).toBeLessThanOrEqual(320.5);
+    expect(narrowGeometry?.rowWidth).toBeLessThanOrEqual(narrowGeometry?.formWidth + 0.5);
+    expect(narrowGeometry?.documentOverflow).toBeLessThanOrEqual(1);
 });
 
 test('remembers return and Ticker comparison state while switching workspaces', async ({page}) => {
@@ -1671,7 +2060,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
     });
-    expect(highPriceContract.helperVersion).toBe('v1.2.0');
+    expect(highPriceContract.helperVersion).toBe('v1.4.0');
     expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
     expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
 
@@ -7553,6 +7942,7 @@ test('renders fixed investment pagination chunks centered and legible in dark mo
             - ((dockRect.top + dockRect.bottom) / 2),
         );
     });
+    await page.waitForFunction(() => !document.querySelector('.app-shell')?.classList.contains('is-sidebar-animating'));
     await expect.poll(readDockCenterDelta).toBeLessThanOrEqual(0.5);
 
     await page.setViewportSize({width: 620, height: 900});
@@ -7748,15 +8138,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.132.1',
+        entry: 'v2.133.1',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
         importFeedback: 'v1.9.0',
-        layout: 'v1.1.2',
+        layout: 'v1.1.4',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
-        stockDetails: 'v0.26.0',
+        stockDetails: 'v0.27.0',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.2',
         urlState: 'v1.2.0',
@@ -7764,7 +8154,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.26.0';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.27.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -8138,7 +8528,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.76.0';
+            && url.searchParams.get('v') === '1.78.1';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -14600,19 +14990,35 @@ test('persists the general appearance setting across reloads', async ({page}) =>
 test('uses the standard frosted slider and complete mapping on language settings', async ({page}) => {
     await page.goto('/settings/general');
 
+    await expect(page.locator('.settings-language-options .settings-general-option-title').nth(2))
+        .toHaveText('简体中文(中国大陆)');
+    await expect(page.locator('.settings-language-header-label').nth(2))
+        .toHaveText('简体中文(中国大陆)');
+    await expect(page.locator('input[name="translation_zh_hans_cn"]').first())
+        .toHaveAttribute('aria-label', '简体中文(中国大陆) 1');
+
     const tabs = page.locator('.settings-language-tabs');
     await expect(tabs).toHaveCount(1);
+    await expect(tabs).toHaveClass(/segmented-control--tabs/);
+    await expect(tabs).toHaveAttribute('data-active', 'current');
     await expect(tabs).toHaveAttribute('data-option-count', '2');
     const slider = await tabs.evaluate((element) => {
         const shell = getComputedStyle(element);
         const thumb = getComputedStyle(element, '::before');
+        const options = Array.from(element.querySelectorAll('.segmented-control-option'));
         return {
             backdropFilter: shell.backdropFilter || shell.webkitBackdropFilter,
             thumbBackground: thumb.backgroundColor,
+            optionTags: options.map((option) => option.tagName),
+            activeTextWeight: getComputedStyle(options[0].querySelector('span')).fontWeight,
+            inactiveTextWeight: getComputedStyle(options[1].querySelector('span')).fontWeight,
         };
     });
     expect(slider.backdropFilter).toContain('blur');
     expect(slider.thumbBackground).not.toBe('rgba(0, 0, 0, 0)');
+    expect(slider.optionTags).toEqual(['BUTTON', 'BUTTON']);
+    expect(slider.activeTextWeight).toBe('700');
+    expect(slider.inactiveTextWeight).toBe('400');
 
     const mapping = await page.locator('[data-language-panel="current"] [data-language-paginated-body]').evaluate((body) => ({
         rowCount: body.querySelectorAll('[data-language-row]').length,
@@ -14632,7 +15038,13 @@ test('uses the standard frosted slider and complete mapping on language settings
     await expect(historyTab).toHaveCount(1);
     await historyTab.click();
     await expect(historyTab).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs).toHaveAttribute('data-active', 'history');
     await expect(page.locator('[data-language-panel="history"]')).toBeVisible();
+    expect(await tabs.evaluate((element) => element.dataset.segmentedActiveIndex)).toBe('1');
+
+    await page.goto('/settings/general?tab=history');
+    await expect(tabs).toHaveAttribute('data-active', 'history');
+    await expect(historyTab).toHaveAttribute('aria-selected', 'true');
     expect(await tabs.evaluate((element) => element.dataset.segmentedActiveIndex)).toBe('1');
 });
 
@@ -15384,6 +15796,49 @@ test('resizes the backtest overview and transaction history with the shared sect
     }, pointerBefore)).toBe(true);
 });
 
+test('keeps the Backtest Metrics and Transactions resizer endpoints aligned', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=grid-trading');
+
+    const resizer = page.locator('#backtest_section_resizer');
+    const historySurface = page.locator('#backtest_history_surface');
+    const readSplit = () => page.evaluate(() => {
+        const readRect = (selector) => {
+            const rect = document.querySelector(selector)?.getBoundingClientRect();
+            return rect ? {top: rect.top, bottom: rect.bottom, height: rect.height} : null;
+        };
+        const handle = document.querySelector('#backtest_section_resizer');
+        return {
+            active: document.querySelector('#backtest_history_surface')?.dataset.activeView,
+            resizer: {
+                now: Number(handle?.getAttribute('aria-valuenow')),
+                maximum: Number(handle?.getAttribute('aria-valuemax')),
+            },
+            overview: readRect('.backtest-trade-performance-card'),
+            history: readRect('#backtest_history_surface'),
+        };
+    });
+    const moveToEnd = async (view) => {
+        await page.locator(`label[for="backtest_history_${view}"]`).click();
+        await expect(historySurface).toHaveAttribute('data-active-view', view);
+        await resizer.press('End');
+        await expect.poll(async () => {
+            const split = await readSplit();
+            return split.resizer.now === split.resizer.maximum;
+        }).toBe(true);
+        return readSplit();
+    };
+
+    const metricsEnd = await moveToEnd('metrics');
+    const transactionsEnd = await moveToEnd('transactions');
+
+    expect(metricsEnd.resizer.maximum).toBe(transactionsEnd.resizer.maximum);
+    expect(metricsEnd.resizer.now).toBe(transactionsEnd.resizer.now);
+    expect(metricsEnd.overview.height).toBeCloseTo(transactionsEnd.overview.height, 0);
+    expect(metricsEnd.history.top).toBeCloseTo(transactionsEnd.history.top, 0);
+    expect(metricsEnd.history.height).toBeCloseTo(transactionsEnd.history.height, 0);
+});
+
 test('rebinds the backtest section handle after same-page result hydration', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?stop_loss=0');
@@ -15771,6 +16226,64 @@ test('formats Backtest price and equity axes with distinct precision', async ({p
     await assertAxisContract();
 });
 
+test('shares the tokenized chart stroke width between Backtest price and Investment equity', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+
+    const readChartStroke = (selector, tokenOwnerSelector) => page.evaluate(({selector, tokenOwnerSelector}) => {
+        const canvas = document.querySelector(selector);
+        const chart = window.Chart?.getChart?.(canvas);
+        const tokenOwner = document.querySelector(tokenOwnerSelector);
+        if (!chart || !(tokenOwner instanceof Element)) return null;
+        const token = getComputedStyle(tokenOwner)
+            .getPropertyValue('--trade-chart-series-line-width')
+            .trim();
+        return {
+            token,
+            tokenWidth: Number.parseFloat(token),
+            borderWidth: chart.data.datasets[0]?.borderWidth,
+            borderColor: chart.data.datasets[0]?.borderColor,
+            primaryColor: getComputedStyle(document.body)
+                .getPropertyValue('--theme-accent-primary')
+                .trim(),
+        };
+    }, {selector, tokenOwnerSelector});
+
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold&stop_loss=0');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    const backtestStroke = await readChartStroke('#tradePriceChart', '.trade-chart-stack');
+    expect(backtestStroke).not.toBeNull();
+    expect(backtestStroke?.token).toBe('2px');
+    expect(backtestStroke?.borderWidth).toBe(backtestStroke?.tokenWidth);
+    expect(backtestStroke?.borderColor).toBe(backtestStroke?.primaryColor);
+
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-07-01', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 100, amount: -100},
+        ],
+        priceHistoryByTicker: {
+            QQQ: [
+                {date: '2026-07-01', close: 100},
+                {date: '2026-07-02', close: 101},
+            ],
+        },
+    });
+    await page.goto('/trade/investment?view=overview&range=3m');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#investmentEquityChart')),
+    ))).toBe(true);
+    const investmentStroke = await readChartStroke(
+        '#investmentEquityChart',
+        '.investment-chart-stack',
+    );
+    expect(investmentStroke).not.toBeNull();
+    expect(investmentStroke?.token).toBe(backtestStroke?.token);
+    expect(investmentStroke?.borderWidth).toBe(investmentStroke?.tokenWidth);
+    expect(investmentStroke?.borderWidth).toBe(backtestStroke?.borderWidth);
+    expect(investmentStroke?.borderColor).toBe('#0055cc');
+});
+
 test('enters DCA through the Backtest strategy dropdown and tunes private parameters', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
@@ -15824,9 +16337,8 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     await expect(tuneButton).toBeVisible();
     await expect(tuneButton).toBeEnabled();
     await expect(tuneButton).toHaveAttribute('aria-hidden', 'false');
-    await expect(paramsPanel).toBeHidden();
-    await tuneButton.click();
     await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
     await expect(paramsPanel).toBeVisible();
     await expect(page.locator('[data-strategy-param-key="amount"]')).toBeVisible();
     await expect(page.locator('[data-strategy-param-key="frequency"]')).toBeVisible();
@@ -15908,7 +16420,6 @@ test('keeps DCA strategy parameter menus above clipping and the panel compact', 
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto('/workspaces/backtest?ticker=QQQI&strategy=dca&stop_loss=0');
 
-    await page.locator('[data-trade-strategy-tune-button]').click();
     await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
 
     const frequencyTrigger = page.locator(
@@ -15947,7 +16458,6 @@ test('keeps the bottom Backtest strategy parameter dropdown fully visible', asyn
     await page.setViewportSize({width: 990, height: 1242});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend_ai_gemini&interval=1m');
 
-    await page.locator('[data-trade-strategy-tune-button]').click();
     await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
     const field = page.locator('[data-strategy-param-key="from_cluster"]');
     await expect(field).toBeVisible();
@@ -16121,7 +16631,7 @@ test('removes the glass border color from the shared Backtest Period trigger', a
     });
 });
 
-test('opens Grid Trading private parameters through the shared strategy tune button', async ({page}) => {
+test('keeps Grid Trading private parameters open through the shared strategy tune button', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
 
@@ -16138,10 +16648,8 @@ test('opens Grid Trading private parameters through the shared strategy tune but
     await expect(tuneButton).toBeEnabled();
     await expect(tuneButton).toHaveAttribute('aria-hidden', 'false');
     await expect(page.locator('[data-trade-strategy-field]')).not.toHaveClass(/is-grid-trading-inline/);
-    await expect(paramsPanel).toBeHidden();
-
-    await tuneButton.click();
     await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
     await expect(paramsPanel).toBeVisible();
     for (const key of ['price_floor', 'price_ceiling', 'rise', 'fall']) {
         await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
@@ -16167,6 +16675,36 @@ test('opens Grid Trading private parameters through the shared strategy tune but
     await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
 });
 
+test('requires the Backtest tune button for parameter-panel toggle', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
+
+    const tuneButton = page.locator(
+        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/button',
+    );
+    const paramsPanel = page.locator('#trade_strategy_params_panel');
+    await expect(tuneButton).toBeVisible();
+    await expect(tuneButton).toBeEnabled();
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(paramsPanel).toBeVisible();
+
+    await page.mouse.click(1000, 880);
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(paramsPanel).toBeVisible();
+
+    await tuneButton.click();
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'false');
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(paramsPanel).toBeHidden();
+
+    await tuneButton.click();
+    await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(paramsPanel).toBeVisible();
+});
+
 test('waits for Grid Trading parameter blur before recalculating', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     const hydrationRequests = [];
@@ -16179,7 +16717,6 @@ test('waits for Grid Trading parameter blur before recalculating', async ({page}
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&fall=0.50');
     await expect(page.locator('#tradeEquityChart')).toBeVisible();
 
-    await page.locator('[data-trade-strategy-tune-button]').click();
     const fallInput = page.locator('#strategy_param_fall');
     await expect(fallInput).toBeVisible();
     await fallInput.click();
@@ -16233,7 +16770,7 @@ test('keeps the Grid Trading tuning panel inside the desktop viewport', async ({
 
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
     const paramsPanel = page.locator('#trade_strategy_params_panel');
-    await tuneButton.click();
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
     await expect(paramsPanel).toBeVisible();
 
     const geometry = await paramsPanel.evaluate((panel) => {
@@ -16454,14 +16991,583 @@ test('keeps the narrow-screen sidebar toggle clear of the sidebar edge and theme
         };
     });
 
+    const toggleInset = await page.evaluate(() => {
+        const rawValue = getComputedStyle(document.documentElement)
+            .getPropertyValue('--sidebar-overlay-toggle-inset');
+        return Number.parseFloat(rawValue.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] || 'NaN');
+    });
     await expect.poll(async () => {
         const {sidebar, toggle} = await geometry();
-        return sidebar && toggle ? sidebar.right - toggle.right : null;
-    }).toBeGreaterThanOrEqual(16);
+        return sidebar && toggle ? Math.abs((sidebar.right - toggle.right) - toggleInset) : null;
+    }).toBeLessThanOrEqual(0.5);
     await expect.poll(async () => {
         const {theme, toggle} = await geometry();
         return theme && toggle ? theme.left - toggle.right : null;
     }).toBeGreaterThanOrEqual(12);
+});
+
+test('renders, maps, pins, and clears the Bayesian Backtest probability field', async ({page}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({width: 375, height: 900});
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
+
+    await page.evaluate(() => {
+        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        if (!result?.chart?.close?.length) throw new Error('Backtest chart data is unavailable.');
+        const pointCount = result.chart.close.length;
+        if (!Array.isArray(result.chart.raw_dates) || result.chart.raw_dates.length !== pointCount) {
+            throw new Error('Backtest chart raw dates are not aligned.');
+        }
+        result.strategy_presentation = {
+            schema: 'bayesian-price-field/v1',
+            renderer: 'probability-grid-v1',
+            rows_above: 6,
+            rows_below: 6,
+            width_fraction: 0.25,
+            data_keys: [...result.chart.raw_dates],
+            predictive_mean: Array.from({length: pointCount}, (_, index) => (index < 3 ? null : 0.0015)),
+            predictive_scale: Array.from({length: pointCount}, (_, index) => (index < 3 ? null : 0.018)),
+        };
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+    });
+
+    const priceCanvas = page.locator('#tradePriceChart');
+    const probabilityTooltip = page.locator('[data-backtest-chart-tooltip="probability-grid"]');
+    await expect(priceCanvas).toBeVisible();
+    await expect(probabilityTooltip).toHaveCount(1);
+
+    const pointAt = async (ratio) => page.evaluate((targetRatio) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const index = Math.max(0, Math.min(points.length - 1, Math.round((points.length - 1) * targetRatio)));
+        const point = points[index];
+        const rect = canvas?.getBoundingClientRect();
+        if (!point || !rect) return null;
+        return {index, x: rect.left + point.x, y: rect.top + point.y};
+    }, ratio);
+
+    await priceCanvas.scrollIntoViewIfNeeded();
+    const freshNarrowAnchor = await pointAt(0.55);
+    if (!freshNarrowAnchor) throw new Error('Fresh narrow Bayesian hover anchor is unavailable.');
+    await page.mouse.move(freshNarrowAnchor.x, freshNarrowAnchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    const freshNarrowLayout = await page.evaluate(() => {
+        const results = document.querySelector('.backtest-results-stack');
+        const card = document.querySelector('.backtest-trade-performance-card');
+        const stack = document.querySelector('.trade-chart-stack');
+        const resizer = document.querySelector('#backtest_section_resizer');
+        const history = document.querySelector('#backtest_history_surface');
+        const canvas = document.querySelector('#tradePriceChart');
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const chart = window.Chart?.getChart?.(canvas);
+        if (!(results instanceof HTMLElement) || !(card instanceof HTMLElement)
+            || !(stack instanceof HTMLElement) || !(resizer instanceof HTMLElement)
+            || !(history instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)
+            || !(tooltip instanceof HTMLElement) || !chart?.chartArea) {
+            return null;
+        }
+        const resultsRect = results.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const stackRect = stack.getBoundingClientRect();
+        const resizerRect = resizer.getBoundingClientRect();
+        const historyRect = history.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const finiteY = chart.getDatasetMeta(0).data
+            .map((point) => Number(point?.y))
+            .filter(Number.isFinite);
+        return {
+            cardToResizerGap: resizerRect.top - cardRect.bottom,
+            horizontalOverflow: document.documentElement.scrollWidth
+                - document.documentElement.clientWidth,
+            hasProbabilityField: results.classList.contains('has-probability-field'),
+            historyToResultsBottom: resultsRect.bottom - historyRect.bottom,
+            pricePixelSpan: finiteY.length ? Math.max(...finiteY) - Math.min(...finiteY) : 0,
+            resizerToHistoryGap: historyRect.top - resizerRect.bottom,
+            resultsHeight: resultsRect.height,
+            stackBottomInset: cardRect.bottom - stackRect.bottom,
+            stackHeight: stackRect.height,
+            stackTopInset: stackRect.top - cardRect.top,
+            tooltipBottomInset: stackRect.bottom - tooltipRect.bottom,
+            tooltipTopInset: tooltipRect.top - stackRect.top,
+        };
+    });
+    expect(freshNarrowLayout).not.toBeNull();
+    expect(freshNarrowLayout.hasProbabilityField).toBe(true);
+    expect(freshNarrowLayout.resultsHeight).toBeGreaterThanOrEqual(599);
+    expect(freshNarrowLayout.stackHeight).toBeGreaterThanOrEqual(253);
+    expect(freshNarrowLayout.pricePixelSpan).toBeGreaterThanOrEqual(24);
+    expect(freshNarrowLayout.cardToResizerGap).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.resizerToHistoryGap).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.stackTopInset).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.stackBottomInset).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.tooltipTopInset).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.tooltipBottomInset).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.historyToResultsBottom).toBeGreaterThanOrEqual(-0.75);
+    expect(freshNarrowLayout.horizontalOverflow).toBeLessThanOrEqual(0);
+
+    await page.setViewportSize({width: 1024, height: 900});
+
+    const warmup = await pointAt(0);
+    if (!warmup) throw new Error('Bayesian warmup anchor is unavailable.');
+    await page.mouse.move(warmup.x, warmup.y);
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    await page.mouse.click(warmup.x, warmup.y);
+    await expect(probabilityTooltip).not.toHaveAttribute('data-pinned', 'true');
+
+    const anchor = await pointAt(0.55);
+    if (!anchor) throw new Error('Bayesian hover anchor is unavailable.');
+    await page.mouse.move(anchor.x, anchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+
+    const contract = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        if (!chart || !(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement) || !cells.length) {
+            return null;
+        }
+        const bounds = chart._activeBacktestProbabilityGridBounds;
+        const guide = chart._activeBacktestPriceGuideBounds;
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const first = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '0');
+        const nextColumn = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '1');
+        const nextRow = cells.find((cell) => cell.dataset.row === '1' && cell.dataset.column === '0');
+        const firstRect = first?.getBoundingClientRect();
+        const nextColumnRect = nextColumn?.getBoundingClientRect();
+        const nextRowRect = nextRow?.getBoundingClientRect();
+        const positiveCell = cells.find((cell) => cell.classList.contains('is-up'));
+        const negativeCell = cells.find((cell) => cell.classList.contains('is-down'));
+        const pricePoints = chart.getDatasetMeta(0)?.data || [];
+        const futurePoint = pricePoints[bounds.index + 1];
+        const pastPoint = pricePoints[bounds.index - 1];
+        const expectedStepPixels = futurePoint
+            ? futurePoint.x - bounds.intersectionX
+            : bounds.intersectionX - pastPoint.x;
+        const probe = document.createElement('span');
+        probe.style.position = 'fixed';
+        probe.style.backgroundColor = 'var(--theme-accent-positive)';
+        document.body.appendChild(probe);
+        const positiveTokenColor = getComputedStyle(probe).backgroundColor;
+        probe.style.backgroundColor = 'var(--theme-accent-secondary)';
+        const negativeTokenColor = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+            widthDelta: Math.abs(tooltipRect.width - ((chart.chartArea.right - chart.chartArea.left) * 0.25)),
+            centerDelta: Math.abs((tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + guide.y)),
+            intersectionDelta: Math.abs(bounds.intersectionY - guide.y),
+            rows: new Set(cells.map((cell) => cell.dataset.row)).size,
+            positiveRows: new Set(cells.filter((cell) => cell.classList.contains('is-up')).map((cell) => cell.dataset.row)).size,
+            negativeRows: new Set(cells.filter((cell) => cell.classList.contains('is-down')).map((cell) => cell.dataset.row)).size,
+            columns: new Set(cells.map((cell) => cell.dataset.column)).size,
+            squareDelta: firstRect ? Math.abs(firstRect.width - firstRect.height) : null,
+            horizontalGap: firstRect && nextColumnRect ? nextColumnRect.left - firstRect.right : null,
+            verticalGap: firstRect && nextRowRect ? nextRowRect.top - firstRect.bottom : null,
+            cellBorderWidth: first ? getComputedStyle(first).borderWidth : null,
+            cellBorderRadius: first ? getComputedStyle(first).borderRadius : null,
+            positiveColor: positiveCell ? getComputedStyle(positiveCell).backgroundColor : null,
+            negativeColor: negativeCell ? getComputedStyle(negativeCell).backgroundColor : null,
+            positiveTokenColor,
+            negativeTokenColor,
+            maximumOpacity: Math.max(...cells.map((cell) => Number(getComputedStyle(cell).opacity))),
+            opacityProbabilityDelta: Math.max(...cells.map((cell) => (
+                Math.abs(Number(getComputedStyle(cell).opacity) - Number(cell.dataset.probability))
+            ))),
+            direction: bounds.direction,
+            rightwardStartDelta: Math.abs(tooltipRect.left - (canvasRect.left + bounds.intersectionX)),
+            minimumCenterOffset: Math.min(...cells.map((cell) => (
+                cell.getBoundingClientRect().left
+                + (cell.getBoundingClientRect().width / 2)
+                - (canvasRect.left + bounds.intersectionX)
+            ))),
+            horizonPixelDelta: Math.max(...cells.map((cell) => {
+                const cellRect = cell.getBoundingClientRect();
+                const centerOffset = cellRect.left
+                    + (cellRect.width / 2)
+                    - (canvasRect.left + bounds.intersectionX);
+                return Math.abs((Number(cell.dataset.horizon) * bounds.stepPixels) - centerOffset);
+            })),
+            stepPixelsDelta: Math.abs(bounds.stepPixels - expectedStepPixels),
+            badgeLeft: guide.badgeLeft,
+            badgeRight: guide.badgeRight,
+            badgeValue: guide.value,
+            activeIndex: bounds.index,
+        };
+    });
+
+    expect(contract).not.toBeNull();
+    expect(contract.widthDelta).toBeLessThanOrEqual(0.75);
+    expect(contract.centerDelta).toBeLessThanOrEqual(0.75);
+    expect(contract.intersectionDelta).toBeLessThanOrEqual(0.01);
+    expect(contract.rows).toBe(12);
+    expect(contract.positiveRows).toBe(6);
+    expect(contract.negativeRows).toBe(6);
+    expect(contract.columns).toBeGreaterThan(1);
+    expect(contract.squareDelta).toBeLessThanOrEqual(0.1);
+    expect(contract.horizontalGap).toBeGreaterThan(0);
+    expect(Math.abs(contract.horizontalGap - contract.verticalGap)).toBeLessThanOrEqual(0.1);
+    expect(contract.cellBorderWidth).toBe('0px');
+    expect(contract.cellBorderRadius).toBe('10px');
+    expect(contract.positiveColor).toBe(contract.positiveTokenColor);
+    expect(contract.negativeColor).toBe(contract.negativeTokenColor);
+    expect(contract.maximumOpacity).toBeGreaterThan(0);
+    expect(contract.maximumOpacity).toBeLessThan(1);
+    expect(contract.opacityProbabilityDelta).toBeLessThanOrEqual(1e-6);
+    expect(contract.direction).toBe('right');
+    expect(contract.rightwardStartDelta).toBeLessThanOrEqual(0.75);
+    expect(contract.minimumCenterOffset).toBeGreaterThan(0);
+    expect(contract.horizonPixelDelta).toBeLessThanOrEqual(0.1);
+    expect(contract.stepPixelsDelta).toBeLessThanOrEqual(0.01);
+    expect(Number.isFinite(contract.badgeLeft)).toBe(true);
+    expect(contract.badgeRight).toBeGreaterThan(contract.badgeLeft);
+    expect(Number.isFinite(contract.badgeValue)).toBe(true);
+    // Dense multi-year series can place several trading days inside one CSS pixel.
+    expect(Math.abs(contract.activeIndex - anchor.index)).toBeLessThanOrEqual(3);
+
+    const latestAnchor = await pointAt(1);
+    if (!latestAnchor) throw new Error('Bayesian latest-date anchor is unavailable.');
+    await page.mouse.move(latestAnchor.x, latestAnchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    const latestContainment = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        if (!(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement) || !chart?.chartArea) {
+            return null;
+        }
+        const canvasRect = canvas.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        return {
+            rightOverflow: tooltipRect.right - canvasRect.right,
+            widthDelta: Math.abs(
+                tooltipRect.width - ((chart.chartArea.right - chart.chartArea.left) * 0.25)
+            ),
+        };
+    });
+    expect(latestContainment).not.toBeNull();
+    expect(latestContainment.rightOverflow).toBeLessThanOrEqual(0.75);
+    expect(latestContainment.widthDelta).toBeLessThanOrEqual(0.75);
+
+    const extremeAnchor = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const rect = canvas?.getBoundingClientRect();
+        if (!chart?.chartArea || !rect) return null;
+        const candidates = points
+            .map((point, index) => ({index, point}))
+            .filter(({index, point}) => index >= 3 && Number.isFinite(point?.x) && Number.isFinite(point?.y));
+        candidates.sort((left, right) => {
+            const leftEdgeDistance = Math.min(
+                Math.abs(left.point.y - chart.chartArea.top),
+                Math.abs(chart.chartArea.bottom - left.point.y),
+            );
+            const rightEdgeDistance = Math.min(
+                Math.abs(right.point.y - chart.chartArea.top),
+                Math.abs(chart.chartArea.bottom - right.point.y),
+            );
+            return leftEdgeDistance - rightEdgeDistance;
+        });
+        const extreme = candidates[0];
+        return extreme
+            ? {index: extreme.index, x: rect.left + extreme.point.x, y: rect.top + extreme.point.y}
+            : null;
+    });
+    if (!extremeAnchor) throw new Error('Bayesian price-extreme anchor is unavailable.');
+    await page.mouse.move(extremeAnchor.x, extremeAnchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    const extremeContainment = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const stack = canvas?.closest('.trade-chart-stack');
+        if (!(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement)
+            || !(stack instanceof HTMLElement) || !chart?.chartArea) {
+            return null;
+        }
+        const stackRect = stack.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        return {
+            bottomOverflow: tooltipRect.bottom - stackRect.bottom,
+            topOverflow: stackRect.top - tooltipRect.top,
+        };
+    });
+    expect(extremeContainment).not.toBeNull();
+    expect(extremeContainment.topOverflow).toBeLessThanOrEqual(0.75);
+    expect(extremeContainment.bottomOverflow).toBeLessThanOrEqual(0.75);
+
+    const coalescedHover = await page.evaluate(async () => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const rect = canvas?.getBoundingClientRect();
+        const firstCell = document.querySelector('.backtest-probability-cell');
+        if (!(canvas instanceof HTMLCanvasElement) || !chart || !rect || !firstCell || points.length < 8) {
+            return null;
+        }
+        const indexes = [0.6, 0.62, 0.64].map((ratio) => (
+            Math.round((points.length - 1) * ratio)
+        ));
+        const originalUpdate = chart.update;
+        let updateCount = 0;
+        chart.update = function countCoalescedUpdate(...args) {
+            updateCount += 1;
+            return originalUpdate.apply(this, args);
+        };
+        indexes.forEach((index) => {
+            const point = points[index];
+            canvas.dispatchEvent(new MouseEvent('mousemove', {
+                bubbles: true,
+                clientX: rect.left + point.x,
+                clientY: rect.top + point.y,
+            }));
+        });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        chart.update = originalUpdate;
+        return {
+            activeIndex: chart._activeBacktestProbabilityGridBounds?.index,
+            expectedIndex: indexes.at(-1),
+            reusedCell: firstCell === document.querySelector('.backtest-probability-cell'),
+            updateCount,
+        };
+    });
+    expect(coalescedHover).not.toBeNull();
+    expect(Math.abs(coalescedHover.activeIndex - coalescedHover.expectedIndex))
+        .toBeLessThanOrEqual(3);
+    expect(coalescedHover.reusedCell).toBe(true);
+    expect(coalescedHover.updateCount).toBe(1);
+
+    await page.mouse.move(anchor.x, anchor.y);
+    await expect.poll(() => page.evaluate((targetIndex) => {
+        const activeIndex = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+            ?._activeBacktestProbabilityGridBounds?.index;
+        return Number.isInteger(activeIndex)
+            ? Math.abs(activeIndex - targetIndex)
+            : Number.POSITIVE_INFINITY;
+    }, anchor.index)).toBeLessThanOrEqual(3);
+
+    await page.mouse.click(anchor.x, anchor.y);
+    await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    const pinnedIndex = await page.evaluate(() => (
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+            ?._activeBacktestProbabilityGridBounds?.index
+    ));
+    expect(Number.isInteger(pinnedIndex)).toBe(true);
+
+    const pinnedAlignmentError = () => page.evaluate((expectedIndex) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const guide = chart?._activeBacktestPriceGuideBounds;
+        const point = chart?.getDatasetMeta?.(0)?.data?.[expectedIndex];
+        if (!(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement)
+            || !chart?.chartArea || !bounds || !guide || !point || bounds.index !== expectedIndex) {
+            return Number.POSITIVE_INFINITY;
+        }
+        const canvasRect = canvas.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        return Math.max(
+            Math.abs(tooltipRect.width - ((chart.chartArea.right - chart.chartArea.left) * 0.25)),
+            Math.abs((tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + point.y)),
+            Math.abs(tooltipRect.left - (canvasRect.left + point.x)),
+            Math.abs(bounds.intersectionY - point.y),
+            Math.abs(guide.y - point.y),
+        );
+    }, pinnedIndex);
+
+    const sidebarToggle = page.locator('#sidebar_toggle');
+    const sidebarWasExpanded = await sidebarToggle.getAttribute('aria-expanded');
+    await sidebarToggle.click();
+    await expect(sidebarToggle).toHaveAttribute(
+        'aria-expanded',
+        sidebarWasExpanded === 'true' ? 'false' : 'true',
+    );
+    await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    await expect.poll(pinnedAlignmentError).toBeLessThanOrEqual(0.75);
+
+    await page.setViewportSize({width: 1180, height: 900});
+    await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    await expect.poll(pinnedAlignmentError).toBeLessThanOrEqual(0.75);
+
+    const later = await pointAt(0.75);
+    if (!later) throw new Error('Bayesian second hover anchor is unavailable.');
+    await page.mouse.move(later.x, later.y);
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+            ?._activeBacktestProbabilityGridBounds?.index
+    ))).toBe(pinnedIndex);
+
+    const blank = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        if (!chart?.chartArea || !rect) return null;
+        const index = Math.round((chart.getDatasetMeta(0).data.length - 1) * 0.5);
+        const pointY = chart.getDatasetMeta(0).data[index]?.y;
+        const top = chart.chartArea.top + 2;
+        const bottom = chart.chartArea.bottom - 2;
+        const y = Math.abs(top - pointY) > Math.abs(bottom - pointY) ? top : bottom;
+        return {x: rect.left + chart.getDatasetMeta(0).data[index].x, y: rect.top + y};
+    });
+    if (!blank) throw new Error('Bayesian blank-space target is unavailable.');
+    await page.mouse.click(blank.x, blank.y);
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+
+    await page.mouse.move(later.x, later.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate((targetIndex) => {
+        const activeIndex = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+            ?._activeBacktestProbabilityGridBounds?.index;
+        return Number.isInteger(activeIndex) ? Math.abs(activeIndex - targetIndex) : Number.POSITIVE_INFINITY;
+    }, later.index)).toBeLessThanOrEqual(3);
+
+    const trackingIndex = await page.evaluate(() => (
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+            ?._activeBacktestProbabilityGridBounds?.index
+    ));
+    const trackingAlignmentError = () => page.evaluate((expectedIndex) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const stack = canvas?.closest('.trade-chart-stack');
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const point = chart?.getDatasetMeta?.(0)?.data?.[expectedIndex];
+        if (!(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement)
+            || !(stack instanceof HTMLElement) || !chart?.chartArea
+            || !bounds || !point || bounds.index !== expectedIndex) {
+            return Number.POSITIVE_INFINITY;
+        }
+        const canvasRect = canvas.getBoundingClientRect();
+        const stackRect = stack.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        return Math.max(
+            Math.abs(tooltipRect.width - ((chart.chartArea.right - chart.chartArea.left) * 0.25)),
+            Math.abs((tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + point.y)),
+            Math.abs(tooltipRect.left - (canvasRect.left + point.x)),
+            Math.max(0, stackRect.top - tooltipRect.top),
+            Math.max(0, tooltipRect.bottom - stackRect.bottom),
+        );
+    }, trackingIndex);
+    expect(Number.isInteger(trackingIndex)).toBe(true);
+    await page.setViewportSize({width: 1060, height: 860});
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await expect.poll(trackingAlignmentError).toBeLessThanOrEqual(0.75);
+
+    await page.setViewportSize({width: 375, height: 900});
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await expect.poll(trackingAlignmentError).toBeLessThanOrEqual(0.75);
+    const narrowPriceReadability = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const stack = canvas?.closest('.trade-chart-stack');
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        if (!(canvas instanceof HTMLCanvasElement) || !(tooltip instanceof HTMLElement)
+            || !(stack instanceof HTMLElement) || !chart?.chartArea || !points.length) {
+            return null;
+        }
+        const finiteY = points.map((point) => Number(point?.y)).filter(Number.isFinite);
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const stackRect = stack.getBoundingClientRect();
+        return {
+            bottomOverflow: tooltipRect.bottom - stackRect.bottom,
+            pricePixelSpan: Math.max(...finiteY) - Math.min(...finiteY),
+            topOverflow: stackRect.top - tooltipRect.top,
+        };
+    });
+    expect(narrowPriceReadability).not.toBeNull();
+    expect(narrowPriceReadability.pricePixelSpan).toBeGreaterThanOrEqual(24);
+    expect(narrowPriceReadability.topOverflow).toBeLessThanOrEqual(0.75);
+    expect(narrowPriceReadability.bottomOverflow).toBeLessThanOrEqual(0.75);
+
+    await page.setViewportSize({width: 1024, height: 900});
+    const equityAnchor = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradeEquityChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const index = Math.round((points.length - 1) * 0.4);
+        const point = points[index];
+        const rect = canvas?.getBoundingClientRect();
+        return point && rect ? {index, x: rect.left + point.x, y: rect.top + point.y} : null;
+    });
+    if (!equityAnchor) throw new Error('Backtest equity hover anchor is unavailable.');
+    await page.mouse.move(equityAnchor.x, equityAnchor.y);
+    const summaryTooltip = page.locator('[data-backtest-chart-tooltip="summary"]');
+    await expect(summaryTooltip).toHaveClass(/is-visible/);
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    await page.setViewportSize({width: 1120, height: 900});
+    await expect(summaryTooltip).toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate((expectedIndex) => {
+        const priceCanvasElement = document.querySelector('#tradePriceChart');
+        const equityCanvasElement = document.querySelector('#tradeEquityChart');
+        const priceChartInstance = window.Chart?.getChart?.(priceCanvasElement);
+        const equityChartInstance = window.Chart?.getChart?.(equityCanvasElement);
+        const stack = priceCanvasElement?.closest('.trade-chart-stack');
+        const line = stack?.querySelector('.trade-chart-hover-line');
+        const pricePoint = priceChartInstance?.getDatasetMeta?.(0)?.data?.[expectedIndex];
+        if (!(priceCanvasElement instanceof HTMLCanvasElement)
+            || !(equityCanvasElement instanceof HTMLCanvasElement)
+            || !(stack instanceof HTMLElement) || !(line instanceof HTMLElement)
+            || !pricePoint || !priceChartInstance || !equityChartInstance) {
+            return Number.POSITIVE_INFINITY;
+        }
+        const activeIndex = equityChartInstance.getActiveElements?.()[0]?.index;
+        const expectedX = priceCanvasElement.getBoundingClientRect().left
+            - stack.getBoundingClientRect().left
+            + pricePoint.x;
+        const renderedX = Number.parseFloat(
+            line.style.getPropertyValue('--trade-chart-hover-line-x'),
+        );
+        return activeIndex === expectedIndex ? Math.abs(renderedX - expectedX) : Number.POSITIVE_INFINITY;
+    }, equityAnchor.index)).toBeLessThanOrEqual(0.75);
+
+    await page.evaluate(() => {
+        const chart = window.ANTIGRAVITY_APP?.backtestResult?.chart;
+        if (!chart?.raw_dates?.length) throw new Error('Backtest transition source is unavailable.');
+        window.ANTIGRAVITY_BOOTSTRAP.backtestRefreshTransition = {
+            rawLabels: [...chart.raw_dates],
+            close: chart.close.map((value) => Number(value) * 0.98),
+            equity: chart.equity.map((value) => Number(value) * 0.98),
+            allIn: (chart.all_in_equity || chart.equity).map((value) => Number(value) * 0.98),
+        };
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+    });
+    await page.setViewportSize({width: 375, height: 900});
+    await expect.poll(() => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const finiteY = points.map((point) => Number(point?.y)).filter(Number.isFinite);
+        return finiteY.length ? Math.max(...finiteY) - Math.min(...finiteY) : 0;
+    })).toBeGreaterThanOrEqual(24);
+
+    const lifecycle = await page.evaluate(() => {
+        const priceCanvasElement = document.querySelector('#tradePriceChart');
+        const equityCanvasElement = document.querySelector('#tradeEquityChart');
+        const oldPriceChart = window.Chart?.getChart?.(priceCanvasElement);
+        const oldEquityChart = window.Chart?.getChart?.(equityCanvasElement);
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+        const newPriceChart = window.Chart?.getChart?.(priceCanvasElement);
+        const newEquityChart = window.Chart?.getChart?.(equityCanvasElement);
+        return {
+            oldEquityDestroyed: oldEquityChart?.ctx === null,
+            oldPriceDestroyed: oldPriceChart?.ctx === null,
+            replacedEquityChart: Boolean(newEquityChart && newEquityChart !== oldEquityChart),
+            replacedPriceChart: Boolean(newPriceChart && newPriceChart !== oldPriceChart),
+            tooltipCount: document.querySelectorAll('[data-backtest-chart-tooltip="probability-grid"]').length,
+        };
+    });
+    expect(lifecycle).toEqual({
+        oldEquityDestroyed: true,
+        oldPriceDestroyed: true,
+        replacedEquityChart: true,
+        replacedPriceChart: true,
+        tooltipCount: 1,
+    });
 });
 
 const responsiveViewports = [

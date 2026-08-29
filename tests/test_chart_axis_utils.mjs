@@ -1,4 +1,4 @@
-/* Shared chart axis helper contracts. Code version: v1.2.0 */
+/* Shared chart axis helper contracts. Code version: v1.4.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -110,9 +110,164 @@ test('exposes a versioned shared chart axis API', () => {
     assert.equal(typeof utils.sortedTickIndexes, 'function');
     assert.equal(typeof utils.formatStockPriceAxisValue, 'function');
     assert.equal(typeof utils.buildAllInEquitySeries, 'function');
+    assert.equal(typeof utils.drawYAxisValueBadge, 'function');
+    assert.equal(typeof utils.readPxToken, 'function');
     assert.equal(typeof utils.readThemeTokens, 'function');
     assert.equal(typeof utils.readThemeToken, 'function');
     assert.equal(typeof utils.normalizeSafeImageUrl, 'function');
+});
+
+test('draws a blue rounded y-axis badge on the rendered decimal anchor', () => {
+    const previousGetComputedStyle = globalThis.getComputedStyle;
+    const hadGetComputedStyle = Object.prototype.hasOwnProperty.call(globalThis, 'getComputedStyle');
+    const drawCalls = [];
+    const ctx = {
+        fillStyle: '',
+        font: '',
+        textAlign: '',
+        textBaseline: '',
+        save() {},
+        restore() {},
+        beginPath() {},
+        measureText(copy) {
+            return {width: String(copy).length * 6};
+        },
+        roundRect(...args) {
+            drawCalls.push({kind: 'roundRect', args});
+        },
+        fill() {
+            drawCalls.push({kind: 'fill', fillStyle: this.fillStyle});
+        },
+        fillText(copy, x, y) {
+            drawCalls.push({
+                kind: 'fillText',
+                copy,
+                x,
+                y,
+                fillStyle: this.fillStyle,
+                textAlign: this.textAlign,
+            });
+        },
+    };
+    const chart = {
+        canvas: {},
+        ctx,
+        chartArea: {top: 10, bottom: 90, left: 70},
+        scales: {
+            y: {
+                right: 70,
+                ticks: [{value: 80}, {value: 120}],
+                _labelItems: [
+                    {
+                        label: '80',
+                        font: {string: '400 12px Axis Font'},
+                        options: {translation: [64, 20], textAlign: 'right'},
+                    },
+                    {
+                        label: '120.00',
+                        font: {string: '400 12px Axis Font'},
+                        options: {translation: [64, 40], textAlign: 'right'},
+                    },
+                ],
+            },
+        },
+    };
+
+    try {
+        globalThis.getComputedStyle = () => ({
+            getPropertyValue: (name) => (
+                name === '--investment-holdings-allocation-badge-radius' ? '10px' : ''
+            ),
+        });
+        const bounds = utils.drawYAxisValueBadge(chart, {
+            y: 50,
+            value: 123.45,
+            formattedValue: '123.45',
+            formatTickLabel: (value) => Number(value).toFixed(2),
+            boundsProperty: '_activeGuideBounds',
+            boundsAliases: {price: 123.45},
+        });
+
+        assert.deepEqual(bounds, {
+            badgeBottom: 60,
+            badgeLeft: 23,
+            badgeRight: 69,
+            badgeTop: 40,
+            axisLabelRight: 64,
+            axisTickCopy: '120.00',
+            decimalAnchor: 46,
+            formattedValue: '123.45',
+            value: 123.45,
+            y: 50,
+            price: 123.45,
+        });
+        assert.deepEqual(chart._activeGuideBounds, bounds);
+        assert.deepEqual(
+            drawCalls.find((call) => call.kind === 'roundRect'),
+            {kind: 'roundRect', args: [23, 40, 46, 20, 10]},
+        );
+        assert.equal(
+            drawCalls.find((call) => call.kind === 'fill').fillStyle,
+            '#0055cc',
+        );
+        assert.deepEqual(
+            drawCalls.filter((call) => call.kind === 'fillText'),
+            [
+                {
+                    kind: 'fillText',
+                    copy: '123',
+                    x: 46,
+                    y: 50,
+                    fillStyle: '#ffffff',
+                    textAlign: 'right',
+                },
+                {
+                    kind: 'fillText',
+                    copy: '.45',
+                    x: 46,
+                    y: 50,
+                    fillStyle: '#ffffff',
+                    textAlign: 'left',
+                },
+            ],
+        );
+    } finally {
+        if (hadGetComputedStyle) {
+            globalThis.getComputedStyle = previousGetComputedStyle;
+        } else {
+            delete globalThis.getComputedStyle;
+        }
+    }
+});
+
+test('reads numeric CSS pixel tokens and falls back for missing values', () => {
+    const hadElement = Object.prototype.hasOwnProperty.call(globalThis, 'Element');
+    const previousElement = globalThis.Element;
+    class TestElement {}
+    globalThis.Element = TestElement;
+    try {
+        const element = new TestElement();
+        assert.equal(
+            withThemeEnvironment({
+                cssTokens: {'--chart-line-width': '2px'},
+                run: () => utils.readPxToken(element, '--chart-line-width', 5),
+            }),
+            2,
+        );
+        assert.equal(
+            withThemeEnvironment({
+                cssTokens: {'--chart-line-width': 'auto'},
+                run: () => utils.readPxToken(element, '--chart-line-width', 5),
+            }),
+            5,
+        );
+    } finally {
+        if (hadElement) {
+            globalThis.Element = previousElement;
+        } else {
+            delete globalThis.Element;
+        }
+    }
 });
 
 test('formats every stock-price y axis with one project-wide precision contract', () => {

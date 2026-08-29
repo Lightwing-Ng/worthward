@@ -1,4 +1,4 @@
-/* Code version: v0.43.0 */
+/* Code version: v0.44.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5522,7 +5522,8 @@
         if (resolvedActiveIndex < 0) {
             resolvedActiveIndex = resolvedOptions.findIndex((option) => {
                 const input = option.querySelector("input");
-                return input instanceof HTMLInputElement && input.checked;
+                return (input instanceof HTMLInputElement && input.checked)
+                    || option.getAttribute("aria-selected") === "true";
             });
         }
         resolvedActiveIndex = Math.max(0, Math.min(optionCount - 1, resolvedActiveIndex));
@@ -7774,16 +7775,13 @@
     };
 
     const setTradeStrategyPanelOpen = (isOpen) => {
-        const {field, select, tuneButton, panel} = getTradeStrategyRefs();
+        const {field, tuneButton, panel} = getTradeStrategyRefs();
         if (!(panel instanceof HTMLElement) || !(tuneButton instanceof HTMLButtonElement)) return;
         const shouldOpen = isOpen && !tuneButton.classList.contains("is-hidden");
         panel.hidden = !shouldOpen;
         tuneButton.classList.toggle("is-active", shouldOpen);
         tuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
         tuneButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
-        if (select instanceof HTMLSelectElement) {
-            select.disabled = shouldOpen;
-        }
         if (field instanceof HTMLElement) {
             field.classList.toggle("is-open", shouldOpen);
         }
@@ -8241,8 +8239,8 @@
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);
-            } else if (!panel.hidden) {
-                positionTradeStrategyPanel();
+            } else {
+                setTradeStrategyPanelOpen(true);
             }
         } catch (_error) {
         }
@@ -8254,6 +8252,9 @@
         if (refs.field.dataset.tradeStrategyBound === "1") return;
         initStrategyParamControls(refs.field);
         syncTradeStrategyTuningAvailability();
+        if (refs.tuneButton instanceof HTMLButtonElement && !refs.tuneButton.disabled) {
+            setTradeStrategyPanelOpen(true);
+        }
         syncTradeStrategyTriggerLabel();
         renderTradeStrategyDropdown();
         refs.field.dataset.tradeStrategyBound = "1";
@@ -8341,7 +8342,6 @@
         });
         if (!clickedInsideStrategyField && !clickedInsideStrategyDropdown) {
             setTradeStrategyDropdownOpen(false);
-            setTradeStrategyPanelOpen(false);
         }
         if (!clickedInsideSharedField) {
             closeSharedSelectDropdowns();
@@ -8433,8 +8433,13 @@
             const shouldReloadForStrategyChange = pendingBacktestStrategyNavigation;
             pendingBacktestStrategyNavigation = false;
             if (shouldReloadForStrategyChange) {
+                showWorkspaceModal({
+                    title: "Preparing strategy",
+                    copy: "Loading strategy inputs and calculating the first result. This may take a moment for data-intensive models.",
+                    loadingSpinner: true,
+                });
                 rememberCurrentViewUrl(nextUrl);
-                window.location.assign(nextUrl);
+                window.requestAnimationFrame(() => window.location.assign(nextUrl));
                 return;
             }
             let missingLocalTickers = [];

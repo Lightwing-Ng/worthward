@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.0`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -22,7 +22,8 @@ the same change.
 | 6 | [`AGENT_OPTIMIZATION.md`](AGENT_OPTIMIZATION.md) | OpenAI Site tools adapter, privacy boundary, compatibility, and verification |
 | 7 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Current limitations and operating constraints |
 | 8 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Canonical routes, retained aliases, retired renderers, and reserved assets |
-| 9 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
+| 9 | [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md) | Project entrypoint for the shared numbered-copy housekeeping contract |
+| 10 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
 
 [`INVESTMENT_FRONTEND_CHANGELOG.md`](INVESTMENT_FRONTEND_CHANGELOG.md) is a
 historical record. It can explain why a change was made, but it is not a current
@@ -43,6 +44,9 @@ Component documentation applies only within its directory:
   ledger named there.
 - Site tools, WebMCP, or agent-facing metadata work: also read
   `AGENT_OPTIMIZATION.md` and the canonical shared contract it names.
+- Static-file generation or housekeeping: read `STATIC_FILE_HOUSEKEEPING.md` and its canonical
+  shared contract before writing, copying, exporting, or removing a static file; complete the
+  numbered-copy scan after the operation.
 - CSS, font, or icon work: also read the nearest component README or catalog.
 - Investment import or accounting work: re-read the relevant Architecture and
   Testing sections before touching persistence.
@@ -63,6 +67,7 @@ delete. Classify it first and check for an active process with `ps` and `lsof`.
 | Disposable task scratch | `tmp/`, `.codex_tmp/` | Remove only after confirming no active process or unfinished task owns it |
 | Reproducible test output | `test-results/`, `playwright-report/`, `.coverage*`, `coverage.json`, `htmlcov/` | Safe to recreate; retain failed-run evidence until the result has been recorded |
 | Reproducible caches | `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, stale `.dbg/` captures | Clean only when no test or debug process is using them; debug captures may contain sensitive values |
+| Numbered collision copies | Untracked or ignored files matching the shared ` <digits>` copy shape | Apply [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md); exact-byte evidence and active-process checks are required before recoverable cleanup |
 | Installed dependencies | `node_modules/` | Reproducible but not garbage during an active development checkout |
 | Bundled source assets | tracked `market_store/logos/`, static images, templates, strategy modules | Treat as source; consult Compatibility and component catalogs before deletion |
 
@@ -83,6 +88,9 @@ agent-started server must be stopped before handoff.
   transcripts, or transient audit reports into the authority chain.
 - Link to the current contract instead of duplicating it. One fact should have
   one maintained owner.
+- Keep the cross-project numbered-copy rules in the shared contract at
+  `../../SHARED_STATIC_FILE_HOUSEKEEPING.md`; this repository's entrypoint may
+  only add antigravity-specific boundaries.
 - When a tracked file appears unused, check dynamic loading, route aliases,
   template maps, strategy discovery, and reserved-asset catalogs before
   removal.

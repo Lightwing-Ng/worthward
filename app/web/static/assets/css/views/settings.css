@@ -1,4 +1,4 @@
-/* Code version: v0.23.0 */
+/* Code version: v0.24.2 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -106,7 +106,7 @@
 
 .settings-workspace-header {
     --settings-shell-gap: 8px;
-    --settings-shell-content-max-width: 100%;
+    --settings-shell-content-max-width: var(--layout-content-width);
     gap: var(--settings-shell-gap);
     overflow-x: hidden;
     overflow-y: auto;
@@ -119,6 +119,7 @@
  * list below remains the only vertical scrollport.
  */
 .settings-workspace-header.settings-shell-style-tokens {
+    --settings-shell-content-max-width: 100%;
     overflow: visible;
 }
 
@@ -140,14 +141,20 @@
 }
 
 .settings-shell-about,
-.settings-shell-font-tokens,
-.settings-shell-strategies {
+.settings-shell-font-tokens {
     --settings-shell-content-max-width: var(--settings-reading-guard-single-column-width);
 }
 
+.settings-shell-material-tokens,
+.settings-shell-strategies {
+    --settings-shell-content-max-width: var(--layout-content-width);
+}
+
 .settings-shell-general,
-.settings-shell-backtest {
-    --settings-shell-content-max-width: calc(var(--settings-general-option-max-width) + (var(--settings-general-panel-pad) * 2));
+.settings-shell-backtest,
+.settings-shell-investment,
+.settings-shell-local-market-store {
+    --settings-shell-content-max-width: var(--layout-content-width);
 }
 
 .settings-shell-network,
@@ -156,9 +163,17 @@
     --settings-shell-gap: 10px;
 }
 
+.settings-shell-network > .settings-action-package,
+.settings-shell-network > .settings-general-panel-network,
+.settings-shell-network .settings-service-row,
+.settings-shell-material-tokens > .style-token-shell,
+.settings-shell-material-tokens .style-token-card {
+    overflow: visible;
+}
+
 .settings-shell-broker-access,
 .settings-shell-email-smtp {
-    --settings-shell-content-max-width: var(--settings-form-shell-max-width);
+    --settings-shell-content-max-width: var(--layout-content-width);
     --settings-shell-gap: 12px;
 }
 
@@ -173,7 +188,8 @@
 }
 
 .settings-general-shell > .settings-general-panel,
-.settings-shell-backtest > .settings-general-panel {
+.settings-shell-backtest > .settings-general-panel,
+.settings-shell-investment > .settings-general-panel {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
@@ -184,13 +200,13 @@
 }
 
 .settings-shell-local-market-store > .settings-summary {
-    width: 100%;
+    width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
 .settings-shell-local-market-store > .local-store-table-shell {
-    width: calc(100% - var(--page-edge-pad));
-    max-width: calc(100% - var(--page-edge-pad));
+    width: min(100%, var(--settings-shell-content-max-width));
+    max-width: 100%;
     align-self: flex-start;
 }
 
@@ -227,7 +243,8 @@
 .settings-date-format-field {
     display: grid;
     gap: 6px;
-    width: 100%;
+    width: min(100%, var(--layout-control-width));
+    max-width: var(--layout-control-width);
     overflow: visible;
 }
 
@@ -488,6 +505,41 @@
     font-size: var(--font-table-body);
     line-height: 1.4;
     color: var(--muted);
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-copy .settings-broker-test-feedback {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: var(--settings-action-package-column-gap);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    justify-self: stretch;
+    box-sizing: border-box;
+}
+
+.settings-broker-test-feedback-icon {
+    grid-column: 1;
+    align-self: start;
+    justify-self: center;
+}
+
+.settings-action-package:has(.settings-service-name):has([data-broker-test-feedback]:not([hidden])) {
+    grid-template-rows: auto auto auto auto;
+}
+
+.settings-action-package:has(.settings-service-name):has([data-broker-test-feedback]:not([hidden])) .settings-action-package-form {
+    grid-row: 4;
+}
+
+.settings-broker-test-feedback > span:last-child {
+    grid-column: 2;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .settings-broker-test-feedback.is-success {
@@ -1189,22 +1241,21 @@ div.style-token-modal-demo {
 }
 
 .settings-shell-color-tokens {
-    --settings-shell-content-max-width: 100%;
+    --settings-shell-content-max-width: var(--layout-content-width);
     --settings-shell-gap: 10px;
 }
 
 .settings-color-token-layout {
     display: grid;
-    grid-template-columns: minmax(190px, 224px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     align-items: start;
-    width: 100%;
+    width: min(100%, var(--layout-content-width));
     min-width: 0;
 }
 
 .settings-color-token-sidebar {
-    position: sticky;
-    top: 10px;
+    position: static;
     display: grid;
     gap: 12px;
     min-width: 0;
@@ -1354,6 +1405,10 @@ div.style-token-modal-demo {
     min-width: 0;
 }
 
+.font-preview-card {
+    border: 0;
+}
+
 .settings-color-token-intro,
 .settings-color-token-group {
     display: grid;
@@ -1498,10 +1553,6 @@ div.style-token-modal-demo {
 @media (max-width: 767px) {
     .settings-color-token-layout {
         grid-template-columns: minmax(0, 1fr);
-    }
-
-    .settings-color-token-sidebar {
-        position: static;
     }
 
     .settings-color-token-sidebar-nav {
@@ -1890,8 +1941,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding: 0;
     min-height: var(--settings-strategy-card-min-height);
     min-width: 0;
-    overflow: hidden;
-    width: min(100%, var(--settings-reading-guard-single-column-width));
+    overflow: visible;
+    width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
     border-radius: var(--radius-panel);
     background: var(--glass-surface-background-soft);
@@ -1949,7 +2000,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
     transition: opacity 220ms var(--motion-emphasized);
     opacity: 0;
     padding-bottom: 0;
@@ -1958,6 +2009,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-strategy-card[open] .settings-strategy-params-shell {
     opacity: 1;
     padding-bottom: 14px;
+    overflow: visible;
 }
 
 .settings-strategy-params-table-shell {
@@ -2180,30 +2232,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     grid-column: 2;
     justify-self: center;
     width: min(100%, 260px);
-}
-
-.settings-language-tab {
-    min-height: var(--mode-switch-label-min-height);
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-}
-
-.settings-language-tab:hover,
-.settings-language-tab:focus-visible {
-    transform: none;
-    background: transparent;
-    box-shadow: none;
-}
-
-.settings-language-tab.is-active > span {
-    color: var(--color-white-adaptive);
-}
-
-.settings-language-tab:focus-visible > span {
-    outline: 2px solid var(--accent-focus-ring);
-    outline-offset: -2px;
 }
 
 .settings-language-file-actions {

@@ -1,11 +1,11 @@
-/* Code version: v3.28.2 */
+/* Code version: v3.29.0 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
 	--sidebar-layout-transition-delay: 0ms;
 }
 .app-shell.is-sidebar-open { --sidebar-layout-transition-delay: 40ms; }
-.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--frosted-glass-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: transform, opacity; transform-origin: left center; transition: opacity var(--motion-duration-emphasized) var(--motion-standard) var(--sidebar-layout-transition-delay), transform var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay); }
+.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: var(--layout-edge-gap) var(--layout-edge-gap) var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--frosted-glass-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: transform, opacity; transform-origin: left center; transition: opacity var(--motion-duration-emphasized) var(--motion-standard) var(--sidebar-layout-transition-delay), transform var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay); }
 .settings-round-icon-button,
 .global-quick-action-button,
 .sidebar-toggle {
@@ -55,10 +55,10 @@
 	-webkit-mask-size: contain;
 }
 .global-quick-actions {
-	--global-quick-action-gap: 10px;
+	--global-quick-action-gap: var(--layout-global-action-gap);
 	--global-quick-action-step: calc(var(--settings-round-icon-button-size) + var(--global-quick-action-gap));
 	position: fixed;
-	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
+	top: var(--layout-global-anchor-inset);
 	right: var(--global-quick-actions-right);
 	z-index: var(--layer-fixed-dock);
 	width: calc((var(--settings-round-icon-button-size) * 2) + var(--global-quick-action-gap));

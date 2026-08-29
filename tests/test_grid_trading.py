@@ -173,7 +173,10 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'is-grid-trading-inline' not in html
     assert 'data-grid-trading-parameters-heading' not in html
     assert 'grid-trading-parameters-panel' not in html
-    assert 'class="trade-strategy-tune-button"' in html
+    assert 'class="trade-strategy-tune-button is-active"' in html
+    assert 'aria-pressed="true"' in html
+    assert 'aria-expanded="true"' in html
+    assert 'data-trade-strategy-panel role="region" aria-label="Strategy parameters">' in html
     assert 'data-shared-select-kind="period"' in html
     assert 'id="period_dropdown"' in html
     assert 'class="trade-strategy-param-select form-select"' not in html

@@ -1,4 +1,4 @@
-/* Code version: v0.22.1 */
+/* Code version: v0.22.2 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.1.0';
 import {
@@ -2834,10 +2834,10 @@ import {
             const nextTab = targetName === "history" ? "history" : "current";
             tabs.forEach((tab, index) => {
                 const isActive = tab.dataset.languageTab === nextTab;
-                tab.classList.toggle("is-active", isActive);
                 tab.setAttribute("aria-selected", String(isActive));
                 tab.tabIndex = isActive ? 0 : -1;
                 if (isActive && tabShell instanceof HTMLElement) {
+                    tabShell.dataset.active = nextTab;
                     tabShell.dataset.segmentedActiveIndex = String(index);
                     tabShell.style.setProperty("--segmented-active-index", String(index));
                 }

@@ -1,10 +1,10 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.1.3
+ * Code version: v0.1.6
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.1.2';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.1.4';
 
 const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 let cleanupBacktestLayout = () => {};
@@ -35,6 +35,8 @@ export function initBacktestLayout() {
         historySurface,
         sectionResizer,
         historyTableSelector: '#backtest_history_table_wrap',
+        reservePrimaryHistoryMinimum: true,
+        overviewStageSelector: '.trade-chart-stack',
         getChartInstances: getBacktestCharts,
     });
     return cleanupBacktestLayout;

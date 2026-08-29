@@ -1,7 +1,7 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.12.0
+Code version: v0.12.1
 """
 
 from __future__ import annotations
@@ -108,6 +108,9 @@ class BrokerMarketDataTests(unittest.TestCase):
         self.assertEqual(normalize_longbridge_symbol("700.HK"), "700.HK")
         self.assertEqual(normalize_longbridge_symbol("600519.SH"), "600519.SH")
         self.assertEqual(normalize_longbridge_symbol("000001.SZ"), "000001.SZ")
+        self.assertEqual(normalize_longbridge_symbol("BRK.B"), "BRK.B.US")
+        self.assertEqual(normalize_longbridge_symbol("BRK-B"), "BRK.B.US")
+        self.assertEqual(normalize_longbridge_symbol("BF-B"), "BF.B.US")
 
     def test_longbridge_normalization_fails_closed_for_invalid_values(self) -> None:
         with self.assertRaisesRegex(ValueError, "Ticker is required"):

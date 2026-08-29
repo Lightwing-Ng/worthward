@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.85.2`
+Documentation version: `v2.86.5`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -12,6 +12,7 @@ Documentation version: `v2.85.2`
 - Simulate dollar-cost averaging from the Backtest strategy selector with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
 - Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
+- Use Bayesian Price Field to run a walk-forward probability forecast from Longbridge CLI P/E history, daily volume, put/call option volume and open interest, and a causal trailing volume-at-price distribution built from each bar's Low-High range
 - Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
@@ -117,7 +118,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
-  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Every strategy with private parameters exposes them through the shared `Tune strategy parameters` control. Select `Dollar-cost averaging` to use the recurring-contribution simulator with the shared Backtest result surface. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
+  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Every strategy with private parameters exposes them through the shared `Tune strategy parameters` control, which starts pressed with its panel open. Select `Bayesian Price Field` for the daily Longbridge CLI probability model: its chart hover adds a price-anchored crosshair, the shared blue Y-axis value badge, and a 6-row-up / 6-row-down glass probability field covering exactly one quarter of the price plot. Each square maps through the live chart scales to a specific future-time and price interval, and its unnormalized opacity is the posterior mass of that interval. Moving updates the field; clicking a forecastable point on the price curve pins it, while clicking blank space or pressing Escape restores tracking. The overlay reserves a shared forecast lane on the time axis and uses its actual responsive grid height plus the remaining chart-stack space to keep price-extreme fields visible without collapsing the price curve. A fresh narrow layout also reserves the probability chart stage through the shared Backtest result/history splitter, so the chart, resizer, and history surface remain separate instead of inheriting a stale desktop split. Tracking, pinned, and standard summary overlays all recompute after viewport or sidebar changes. Longbridge timestamps and relative request-window endpoints are normalized to each symbol's market-local trading day before OHLCV, P/E, and option observations are aligned. Bayesian signals always execute at the next bar's open so the current close and factor observations cannot trade against themselves. Because each walk-forward posterior solves a small matrix, `Auto` and `CPU` use NumPy CPU without importing Torch; selecting `GPU` explicitly probes Apple MPS on macOS or CUDA on supported Windows/NVIDIA systems and safely falls back to CPU when unavailable. Select `Dollar-cost averaging` to use the recurring-contribution simulator with the shared Backtest result surface. Strategies may declare the number and defaults of their ordered ticker inputs; `Leveraged Rotation` defaults to `QQQ` as the primary trigger and benchmark ticker plus `TQQQ` as its rotation asset.
 - `Grid Trading`
   Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and opens through the shared tune control with Trigger price min, Trigger price max, Rise %, and Fall %; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
 - `Trade`
@@ -517,6 +518,7 @@ local and incremental.
 - Runtime strategy discovery is dynamic and is handled by `strategies/loader.py`
 - Runtime strategy metadata is derived directly from strategy classes and no longer relies on `strategies/registry.json`
 - Strategy classes can declare ordered ticker defaults and a required ticker count through `StrategySupportMatrix`
+- Strategy classes can optionally declare supported intervals, provide their own read-only market datasets, disable result caching for live-factor models, and return a validated declarative browser-presentation payload
 - Backtest execution logic, including aligned multi-ticker histories and rotation execution, lives in `strategies/backtest.py`
 
 ## Project layout
@@ -531,6 +533,7 @@ docs/AGENTS.md                  -> Agent workflow, safety, and quality boundarie
 docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and invariants
 docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
 docs/AGENT_OPTIMIZATION.md      -> OpenAI Site tools adapter, privacy boundary, and verification
+docs/STATIC_FILE_HOUSEKEEPING.md -> Project entrypoint for shared numbered-copy housekeeping
 docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
 docs/COMPATIBILITY.md           -> Canonical routes, aliases, retired renderers, and reserved source
 docs/HANDOFF_TEMPLATE.md        -> Required agent handoff evidence structure
@@ -567,6 +570,7 @@ ownership, cleanup classes, and the required reading path:
 - [Architecture guide](docs/ARCHITECTURE.md)
 - [Testing guide](docs/TESTING.md)
 - [OpenAI Site tools and Agent Optimization](docs/AGENT_OPTIMIZATION.md)
+- [Static-file numbered-copy housekeeping](docs/STATIC_FILE_HOUSEKEEPING.md)
 - [Known issues and operating constraints](docs/KNOWN_ISSUES.md)
 - [Compatibility routes and reserved source](docs/COMPATIBILITY.md)
 - [Shared UI workflow](docs/SHARED_UI_WORKFLOW.md) (required only for shared UI work)

@@ -1,4 +1,4 @@
-/* Code version: v1.76.0 */
+/* Code version: v1.78.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1230,9 +1230,11 @@
 }
 
 #compare_summary_panel {
-    position: relative;
-    width: calc(100% + var(--workspace-article-pad-inline) + var(--workspace-article-pad-inline));
-    margin-inline: calc(-1 * var(--workspace-article-pad-inline));
+	position: relative;
+	width: calc(100% + var(--workspace-article-pad-inline) + var(--workspace-article-pad-inline));
+	margin-inline: calc(-1 * var(--workspace-article-pad-inline));
+	box-sizing: border-box;
+	padding-block-start: calc(var(--settings-round-icon-button-size) + var(--layout-global-action-gap));
 }
 
 .compare-summary-content-card {
@@ -1240,17 +1242,17 @@
 }
 
 #compare_summary_panel > .investment-share-actions[data-share-placement="summary-panel"] {
-    position: absolute;
-    top: var(--investment-share-actions-top, 0px);
-    right: calc(
-        var(--settings-round-icon-button-size)
-        + var(--investment-share-action-gap)
-        + var(--workspace-article-pad-inline)
-    );
+	position: absolute;
+	top: 0;
+	right: var(--layout-edge-gap);
     transform: none;
     z-index: calc(var(--layer-surface-content) + 2);
     width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
-    height: var(--settings-round-icon-button-size);
+	height: var(--settings-round-icon-button-size);
+}
+
+#compare_summary_panel > .compare-summary-date-range {
+	margin-inline-start: var(--workspace-article-pad-inline);
 }
 
 .investment-share-actions > .export-transactions-button,
@@ -3950,6 +3952,10 @@
     overflow: visible;
 }
 
+.investment-history-pagination {
+    inset-block-end: var(--investment-history-pagination-edge-inset);
+}
+
 .investment-workspace-header > .investment-report-card,
 .investment-workspace-header > .investment-history-surface {
     flex: 1 1 0;
@@ -4817,6 +4823,20 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-history-table-shell {
+    --investment-history-pagination-edge-inset: max(
+        0px,
+        calc(
+            (
+                var(--layout-sidebar-dock-block-size)
+                - (
+                    var(--local-store-pagination-slot-size)
+                    + (var(--local-store-pagination-host-shell-padding) * 2)
+                    + (var(--layout-glass-border-width) * 2)
+                )
+            ) / 2
+        )
+    );
+    --local-store-pagination-host-edge-inset: var(--investment-history-pagination-edge-inset);
     flex: 1 1 auto;
     height: 100%;
     min-height: 0;

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.49.2`
+Documentation version: `v1.50.5`
 
 ## Holdings P&L display contract
 
@@ -133,6 +133,15 @@ complete matrix and removal rules live in
 to `/workspaces/prices?metric=market-cap` while preserving canonical query
 state.
 
+## Shared Settings dimensions
+
+The Settings workspace uses the foundation layout tokens
+`--layout-content-width: 640px` and `--layout-control-width: 384px` as its
+canonical content and control maxima. Feature-specific Settings width tokens
+alias these values instead of introducing page-local pixel widths. A page may
+still opt into a wider surface, such as the Style tokens specimen shell, when
+its scrollable demo layout requires it.
+
 ## Shared stock-price axis labels
 
 Every chart whose Y-axis represents a stock price delegates label formatting to
@@ -142,6 +151,10 @@ with exactly two decimals, such as `12.50` or `5.50`. Price comparison,
 Backtest and DCA price subplots, Live trading candlesticks, Investment Stock
 details, and their Settings share previews use this contract. Equity, return,
 market-cap, volume, and share-count axes retain their domain-specific formats.
+The Investment filled hover badge is also the shared
+`ANTIGRAVITY_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
+Backtest overlays call that primitive instead of maintaining a second badge
+renderer.
 
 ## Price comparison cost-distribution snapshots
 
@@ -153,9 +166,15 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca` and `grid-trading`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control and popover. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, and `bayesian-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control and popover; the control starts pressed and the panel starts open. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
-Strategies declare their input contract through `StrategySupportMatrix.required_tickers` and `BaseStrategy.get_default_tickers()`. Backtest preserves the ordered ticker inputs, fetches their common local-history range, and passes a combined dataset to multi-asset strategies. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
+Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, and optional supported-interval and strategy-owned market-data hooks. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
+
+`BayesianPriceFieldStrategy` is a daily, single-ticker, strategy-owned data path. Its production request uses only the Longbridge CLI for forward-adjusted OHLCV, historical P/E, and daily option put/call volume and open-interest observations. The causal volume-at-price factor spreads each trailing Longbridge bar's volume uniformly across the fixed price bins intersecting its Low-High range, then records the current close's volume-weighted cumulative percentile; current `trade-stats` data is not rewritten into historical cost-basis evidence. P/E and option observations join backward as-of with maximum ages of 14 and 7 calendar days respectively. Every prediction trains only on factor rows whose next return was already observable at that timestamp, and the strategy requires `next_open` execution even when the global preference requests signal-close fills. Probability thresholds emit persistent buy or sell intent on every qualifying bar, while the backtest engine remains the sole owner of actual position state; an exit rejected by the Stop loss policy can therefore be attempted again on the next qualifying bar. Because each walk-forward posterior solves only a small factor matrix, `Auto` and `CPU` resolve directly to NumPy CPU without importing Torch. Only an explicit `GPU` request probes Apple MPS on macOS or CUDA on supported Windows/NVIDIA systems; an unavailable device or ordinary Torch failure falls back to NumPy CPU without changing the strategy contract.
+
+The Longbridge factor provider is read-only and process-local. Aware provider timestamps and aware request boundaries are converted through the symbol market's timezone before they become naive local-trading-day midnights; relative provider windows also end on the selected ticker's market-local date rather than a global New York date. This keeps US, HK, SH, SZ, and SG daily OHLCV, P/E, and option observations on the same causal date axis instead of shifting Asian midnight bars to the prior UTC date. Its factor bundles use a 32-entry, expiry-pruned LRU cache; concurrent requests for the same key share one in-flight CLI load, and cached status mappings are immutable. A strategy that declares a non-default market-data source must return a non-empty dataset list with `Date`, `Close`, and a matching `market_data_source` attribute. Missing, malformed, or source-mismatched strategy data fails closed and never falls through to the generic history provider.
+
+Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` supplies aligned predictive log-return means and scales to `probability-grid-v1`. The renderer obtains each column's horizon from the actual Chart.js point spacing and each row's price bounds from the live Y scale, uses six positive and six negative rows, keeps the field at one quarter of the price-plot width, and anchors its vertical center to the horizontal price guide. Both Backtest charts reserve the same responsive forecast lane, so the latest-date field remains fully visible inside the clipped chart stack without breaking their shared X alignment. For vertical containment, the price scale derives top and bottom padding separately from the actual responsive grid height and the space above and below the price plot inside the complete chart stack. This keeps an extreme field centered without the former narrow-screen failure mode in which a theoretical maximum symmetric pad could collapse the entire price curve. At widths up to 767 px, the normalized presentation marks the result stack with `has-probability-field`; the shared result/history splitter measures `.trade-chart-stack`, reserves its 254 px stage minimum, and raises the complete result stack to a 600 px minimum. This preserves independent report, resizer, and history grid rows on a fresh narrow load rather than relying on a desktop split ratio. Cell opacity is the absolute posterior probability mass for that mapped interval, not a visual renormalization against the strongest cell. Pointer movement is coalesced to the next animation frame and tracks the curve; only a point with a finite prediction can be pinned. Blank-space clicks and Escape clear it, while probability and standard summary overlays retain their source chart and recompute after chart, viewport, or sidebar layout changes.
 
 All `/workspaces/*` pages use the `Canonical URL State Contract`: semantic query names, repeated values whose order carries meaning, omitted defaults, and one stable serialization order. Relative windows use `range=<period>`; custom windows use `range=custom` with `period` and either `date` or `from` / `to`. Workspace tabs and result pagination use `tab` and `page`. Legacy aliases remain readable and are normalized to the canonical form on page hydration or the next state-changing interaction.
 

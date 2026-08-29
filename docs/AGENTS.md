@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.3.0-agent-contract.0`
+Policy version: `v1.4.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -22,6 +22,13 @@ discovery. This file remains the canonical guide.
   registry. Ignored, unreferenced, or old-looking files are not automatically
   disposable; classify protected state, generated output, compatibility
   source, and reserved assets before removal.
+- For any operation that can create, copy, rename, export, compile, or restore a
+  static file, read [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md)
+  and its canonical shared contract, then complete the numbered-copy scan
+  before continuing, committing, handing off, or responding. A ` 2`, ` 3`, or
+  other numbered name is only a review candidate; exact-byte, untracked or
+  reproducible duplicates require active-process and protected-path checks
+  before recoverable cleanup.
 - Investment equity replay is a high-risk accounting boundary. The replay
   timeline is ordered by the broker ledger booking date, with execution
   datetime used only as a same-day tie-breaker. A future-dated settlement
@@ -56,7 +63,9 @@ discovery. This file remains the canonical guide.
    not edit the sibling unless the task authorizes both projects, and include the ledger's
    required pending-sync reminder in the handoff until parity is verified.
 3. Search with `rg` when available; otherwise use a recursive fallback such as
-   `grep -R`, and inspect the current implementation before editing.
+   `grep -R`, and inspect the current implementation before editing. After any
+   static-file-producing operation, run the shared numbered-copy housekeeping
+   workflow and record unresolved candidates.
 4. Reuse factories under `tests/factories/`; do not create another quote-profile, OHLC-frame, or backtest-result double in a test module.
 5. Use canonical routes in new tests:
    - `/workspaces/compare`
@@ -71,9 +80,10 @@ discovery. This file remains the canonical guide.
 6. Run the smallest relevant test first, then `./scripts/check.sh` before handoff.
 7. Record intentional behavior changes in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) or the relevant domain documentation.
 8. Before deleting generated output, check active process ownership with `ps`
-   and `lsof`. Port `8688` is normally user-owned; isolated E2E owns `8699` and
-   `test-results/runtime-store`. Never clean a live test directory or reuse an
-   arbitrary existing server for the complete gate.
+   and `lsof`. Apply [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md)
+   to numbered copies. Port `8688` is normally user-owned; isolated E2E owns
+   `8699` and `test-results/runtime-store`. Never clean a live test directory or
+   reuse an arbitrary existing server for the complete gate.
 9. Use [`HANDOFF_TEMPLATE.md`](HANDOFF_TEMPLATE.md) for the final evidence
    record. Include exact commands, exit status, test counts, preserved dirty
    changes, service ownership, protected-store impact, and recoverable cleanup

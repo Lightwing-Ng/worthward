@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.5.11
+Code version: v0.5.12
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ SUPPORTED_LANGUAGE_CODES: tuple[LanguageCode, ...] = ("en", "zh_hant_hk", "zh_ha
 LANGUAGE_LABELS: dict[LanguageCode, str] = {
     "en": "English",
     "zh_hant_hk": "繁體中文（香港）",
-    "zh_hans_cn": "简体中文（中国大陆）",
+    "zh_hans_cn": "简体中文(中国大陆)",
 }
 HTML_LANG_BY_LANGUAGE: dict[LanguageCode, str] = {
     "en": "en-US",
@@ -96,7 +96,7 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "System", "zh_hant_hk": "系統", "zh_hans_cn": "系统"},
     {"en": "Timestamp", "zh_hant_hk": "時間戳記", "zh_hans_cn": "时间戳"},
     {"en": "繁體中文（香港）", "zh_hant_hk": "繁體中文（香港）", "zh_hans_cn": "繁體中文（香港）"},
-    {"en": "简体中文（中国大陆）", "zh_hant_hk": "简体中文（中国大陆）", "zh_hans_cn": "简体中文（中国大陆）"},
+    {"en": "简体中文(中国大陆)", "zh_hant_hk": "简体中文(中国大陆)", "zh_hans_cn": "简体中文(中国大陆)"},
     {"en": "Translations saved.", "zh_hant_hk": "翻譯已儲存。", "zh_hans_cn": "翻译已保存。"},
     {"en": "Tune the Light and Dark values independently. Changes stay in this browser.", "zh_hant_hk": "獨立調整淺色與深色數值。變更只會保留在此瀏覽器。", "zh_hans_cn": "独立调节浅色与深色数值。修改仅保存在此浏览器中。"},
     {"en": "Unable to save translations right now.", "zh_hant_hk": "目前無法儲存翻譯。", "zh_hans_cn": "暂时无法保存翻译。"},
@@ -632,6 +632,7 @@ DEFAULT_TRANSLATION_ROWS = DEFAULT_TRANSLATION_ROWS + SETTINGS_TRANSLATION_ROWS
 
 TRANSLATION_KEY_ALIASES = {
     "Export image": "Export images",
+    "简体中文（中国大陆）": "简体中文(中国大陆)",
 }
 
 
@@ -725,7 +726,7 @@ def diff_translation_rows(
         if old_row is None or next_row is None:
             continue
         field_changes = []
-        for field_name, field_label in (("zh_hant_hk", "繁體中文（香港）"), ("zh_hans_cn", "简体中文（中国大陆）")):
+        for field_name, field_label in (("zh_hant_hk", "繁體中文（香港）"), ("zh_hans_cn", "简体中文(中国大陆)")):
             old_value = old_row.get(field_name, "")
             next_value = next_row.get(field_name, "")
             if old_value != next_value:

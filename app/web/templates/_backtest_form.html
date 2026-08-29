@@ -1,4 +1,4 @@
-{# Code version: v0.6.3 #}
+{# Code version: v0.7.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -89,7 +89,7 @@
         <input type="hidden" name="stop_loss" value="0">
         {{ render_switch("stop_loss", labels.backtest_stop_loss, "stop_loss", checked=stop_loss_enabled, input_attrs='title="' ~ labels.backtest_stop_loss_help ~ '"') }}
     </div>
-    <div class="field trade-strategy-field backtest-shared-select-field" data-trade-strategy-field data-shared-select-field data-shared-select-kind="strategy">
+    <div class="field trade-strategy-field backtest-shared-select-field{% if strategy_form_fields %} is-open{% endif %}" data-trade-strategy-field data-shared-select-field data-shared-select-kind="strategy">
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row backtest-shared-select-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-native-select backtest-shared-select-native" hidden
@@ -120,11 +120,11 @@
             </div>
             <button
                     type="button"
-                    class="trade-strategy-tune-button{% if not strategy_form_fields %} is-hidden{% endif %}"
+                    class="trade-strategy-tune-button{% if strategy_form_fields %} is-active{% else %} is-hidden{% endif %}"
                     data-trade-strategy-tune-button
                     aria-label="Tune strategy parameters"
-                    aria-pressed="false"
-                    aria-expanded="false"
+                    aria-pressed="{{ 'true' if strategy_form_fields else 'false' }}"
+                    aria-expanded="{{ 'true' if strategy_form_fields else 'false' }}"
                     aria-controls="trade_strategy_params_panel"
                     {% if not strategy_form_fields %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
@@ -140,7 +140,7 @@
                     hidden
             ></div>
         </div>
-        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover" data-trade-strategy-panel role="region" aria-label="Strategy parameters" hidden>
+        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if not strategy_form_fields %} hidden{% endif %}>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>

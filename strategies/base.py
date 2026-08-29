@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.4.1
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -20,6 +20,39 @@ class StrategySignalResult:
     sell_signal_column: str
     execution_profile: str = "single_ticker"
     metadata: dict[str, Any] = field(default_factory=dict)
+    presentation: dict[str, Any] = field(default_factory=dict)
+    required_execution_mode: Literal["signal_close", "next_open"] | None = None
+
+
+def normalize_strategy_presentation(value: object) -> dict[str, Any]:
+    """Return a JSON-safe declarative strategy presentation payload."""
+
+    def normalize(node: object, path: str) -> Any:
+        if node is None or isinstance(node, (str, bool, int)):
+            return node
+        if isinstance(node, float):
+            if not math.isfinite(node):
+                raise ValueError(f"Strategy presentation contains a non-finite number at {path}.")
+            return node
+        if isinstance(node, dict):
+            normalized: dict[str, Any] = {}
+            for key, item in node.items():
+                if not isinstance(key, str) or not key:
+                    raise ValueError(f"Strategy presentation contains an invalid key at {path}.")
+                normalized[key] = normalize(item, f"{path}.{key}")
+            return normalized
+        if isinstance(node, (list, tuple)):
+            return [normalize(item, f"{path}[{index}]") for index, item in enumerate(node)]
+        raise ValueError(
+            f"Strategy presentation contains unsupported data at {path}: {type(node).__name__}."
+        )
+
+    if value in (None, {}):
+        return {}
+    normalized_value = normalize(value, "presentation")
+    if not isinstance(normalized_value, dict):
+        raise ValueError("Strategy presentation must be a dictionary.")
+    return normalized_value
 
 
 @dataclass(frozen=True)
@@ -109,6 +142,9 @@ class BaseStrategy:
     strategy_enabled: bool = True
     strategy_display_order: int = 9999
     strategy_supports: StrategySupportMatrix = StrategySupportMatrix()
+    strategy_supported_intervals: tuple[str, ...] = ("1d", "1m")
+    strategy_market_data_source: str = "default"
+    backtest_cacheable: bool = True
 
     @classmethod
     def get_metadata(cls) -> StrategyMetadata:
@@ -163,6 +199,28 @@ class BaseStrategy:
         """Return the number of ordered ticker inputs required by the strategy."""
         supports = self.get_metadata().supports
         return max(1, int(supports.required_tickers or (2 if supports.multi_ticker else 1)))
+
+    def get_supported_intervals(self) -> tuple[str, ...]:
+        """Return the market-data intervals this strategy can calculate."""
+        supported = tuple(
+            interval
+            for interval in self.strategy_supported_intervals
+            if interval in {"1d", "1m"}
+        )
+        return supported or ("1d",)
+
+    def load_market_datasets(
+            self,
+            tickers: Sequence[str],
+            *,
+            interval: str,
+            start: Any,
+            end: Any,
+            params: dict[str, Any] | None = None,
+    ) -> list[pd.DataFrame] | None:
+        """Optionally supply strategy-owned market data before range slicing."""
+        del tickers, interval, start, end, params
+        return None
 
     def normalize_params(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         merged: dict[str, Any] = {

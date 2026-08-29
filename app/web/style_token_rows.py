@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.11.0
+Code version: v1.14.0
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ SHARED_STYLE_TOKEN_NAMES = (
     "--layer-inline-overlay-host",
     "--layer-sidebar-toggle",
     "--layer-surface-content",
+    "--layout-content-width",
+    "--layout-control-width",
     "--live-trading-pin-icon-size",
     "--live-trading-pin-slot-dot-size",
     "--live-trading-pin-slot-size",
@@ -77,6 +79,7 @@ SHARED_STYLE_TOKEN_NAMES = (
     "--sidebar-toggle-left",
     "--sidebar-toggle-top",
     "--sidebar-width",
+    "--trade-chart-series-line-width",
     "--trade-chart-y-padding-px",
     "--workspace-article-sidebar-morph-duration",
     "--workspace-mobile-surface-bottom-pad",
@@ -326,7 +329,7 @@ def build_style_token_rows(
                 px_token("--settings-action-package-live-marker-size", 8, 1),
                 raw_token("--settings-action-package-live-marker-color", "var(--theme-accent-positive)"),
                 raw_token("--settings-action-package-live-marker-duration", "1.8s"),
-                px_token("--style-token-demo-width", 384),
+                raw_token("--style-token-demo-width", "var(--layout-control-width)"),
             ],
             "related_styles": [
                 {
@@ -386,7 +389,7 @@ def build_style_token_rows(
                 raw_token("--workspace-article-heading-shadow", "var(--frosted-glass-shadow)"),
                 raw_token("--workspace-article-mobile-shadow", "none"),
                 raw_token("--workspace-article-sidebar-morph-easing", "var(--motion-inertial)"),
-                raw_token("--workspace-mode-result-heading-lift", "calc(var(--workspace-title-rail-height) + 8px)"),
+                raw_token("--workspace-mode-result-heading-lift", "calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap))"),
                 raw_token("--workspace-content-article-background", "transparent"),
                 raw_token("--workspace-content-article-shadow", "none"),
                 raw_token("--workspace-content-article-blur", "none"),
@@ -650,7 +653,7 @@ def build_style_token_rows(
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "tokens": [
-                px_token("--settings-general-option-max-width", 640, 0),
+                raw_token("--settings-general-option-max-width", "var(--layout-content-width)"),
                 px_token("--settings-general-option-radius", 10, 0),
                 px_token("--settings-general-option-pad-block", 14, 0),
                 px_token("--settings-general-option-pad-inline", 16, 0),

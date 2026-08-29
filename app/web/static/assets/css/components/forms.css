@@ -1,4 +1,4 @@
-/* Code version: v0.17.9 */
+/* Code version: v0.18.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -406,6 +406,9 @@ input[type="number"],
 }
 .ticker-controls .field.range-panel > .backtest-shared-select-row {
 	grid-template-columns: minmax(0, 1fr);
+	width: min(100%, var(--settings-form-control-max-width));
+	max-width: var(--settings-form-control-max-width);
+	margin-inline: auto;
 }
 .trade-controls .ticker-input-row {
 	grid-row: 1 / span 2;
@@ -1675,6 +1678,36 @@ input[type="number"],
 .range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); font-weight: var(--font-weight-bold); letter-spacing: 0; }
 .segmented-control-option:has(input:focus-visible) > span,
 .range-mode-option:has(input:focus-visible) > span {
+	outline: 3px solid color-mix(in srgb, var(--theme-primary) 78%, transparent);
+	outline-offset: 2px;
+}
+.segmented-control--tabs > .segmented-control-option {
+	appearance: none;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.segmented-control--tabs > .segmented-control-option:hover,
+.segmented-control--tabs > .segmented-control-option:focus-visible {
+	transform: none;
+	background: transparent;
+	box-shadow: none;
+}
+.segmented-control--tabs > .segmented-control-option[aria-selected="true"] > span {
+	z-index: 2;
+	color: var(--color-white-adaptive);
+	font-weight: var(--font-weight-bold);
+	letter-spacing: 0;
+}
+.segmented-control--tabs > .segmented-control-option:focus-visible > span {
 	outline: 3px solid color-mix(in srgb, var(--theme-primary) 78%, transparent);
 	outline-offset: 2px;
 }

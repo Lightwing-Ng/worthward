@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.25.1`
+Documentation version: `v1.26.5`
 
 ## Supported commands
 
@@ -203,6 +203,9 @@ Current suite inventory remeasured on 28 Aug 2026:
   sections, language tabs, pagination, default omission, and legacy aliases.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
+- `tests/test_backtest_probability_grid.mjs`: deterministic schema and date-key validation, quarter-width geometry, theoretical and responsive grid-height calculations, true point-spacing horizons, square-cell probability mapping, absolute probability opacity, curve-hit, and pin-state contracts for Bayesian Backtest overlays. The dedicated Chromium flow also starts from a fresh 375 px viewport to verify reserved result, chart-stage, resizer, and history geometry before covering price-extreme containment, narrow-screen price-span readability, and tracking, pinned, and summary-hover remapping after resize.
+- `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, timestamp bounds, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
+- `tests/test_strategy_bayesian_price_field.py`: walk-forward no-lookahead, causal volume-at-price distribution, P/E and option staleness, persistent threshold intent, finite aligned presentation, factor status and coverage, execution mode, model fingerprint, direct NumPy selection without Torch imports for `Auto`/`CPU`, explicit-GPU MPS/CUDA selection and fallback, and warmup-provider contracts.
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
 - `tests/test_settings_url_state.py`: Flask route redirects and server-rendered
   Settings tab state for canonical and legacy URLs.

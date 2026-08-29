@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.1.2
+ * Code version: v1.1.4
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.2';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.4';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -50,6 +50,7 @@ export function bindInvestmentSectionResizer({
     getChartInstance = () => null,
     getChartInstances = null,
     historyTableSelector = '#history_table_wrap',
+    reservePrimaryHistoryMinimum = false,
     overviewStageSelector = '.investment-equity-chart-stage',
     windowRef = globalThis.window,
     documentRef = globalThis.document,
@@ -124,8 +125,15 @@ export function bindInvestmentSectionResizer({
     };
     const getOverviewMinimumHeight = (baselineMinimum) => {
         const holdingsMinimumHeight = getHoldingsMinimumHeight(baselineMinimum);
+        const declaredContentMinimum = readPixelProperty(
+            workspaceHeader,
+            '--investment-overview-content-min-height',
+            0,
+        );
         const stage = reportCard.querySelector(overviewStageSelector);
-        if (!isVisibleElement(stage)) return holdingsMinimumHeight;
+        if (!isVisibleElement(stage)) {
+            return Math.max(holdingsMinimumHeight, declaredContentMinimum);
+        }
         const reportHeight = reportCard.getBoundingClientRect().height;
         const stageHeight = stage.getBoundingClientRect().height;
         if (reportHeight > 0 && stageHeight > 0 && reportHeight >= stageHeight) {
@@ -136,14 +144,21 @@ export function bindInvestmentSectionResizer({
             'min-height',
             readPixelProperty(workspaceHeader, '--investment-equity-stage-min-height', 180),
         );
-        return Math.max(holdingsMinimumHeight, overviewChromeHeight + stageMinimum);
+        return Math.max(
+            holdingsMinimumHeight,
+            declaredContentMinimum,
+            overviewChromeHeight + stageMinimum,
+        );
     };
     const getHistoryMinimumHeight = (baselineMinimum) => {
         const primaryTableShell = historySurface.querySelector(historyTableSelector);
         const stockDetailsTableShell = historySurface.querySelector(
             '#investment_stock_details_table_host:not([hidden]) .investment-stock-details-table-shell',
         );
-        const tableShells = [primaryTableShell, stockDetailsTableShell].filter(isVisibleElement);
+        const tableShells = [primaryTableShell, stockDetailsTableShell].filter((tableShell) => (
+            isVisibleElement(tableShell)
+            || (reservePrimaryHistoryMinimum && tableShell === primaryTableShell && isElement(tableShell))
+        ));
         const fallbackRowHeight = readPixelProperty(
             workspaceHeader,
             '--investment-history-row-min-height',
@@ -182,8 +197,11 @@ export function bindInvestmentSectionResizer({
                 (rowTotal, row) => rowTotal + Math.max(row.getBoundingClientRect().height, fallbackRowHeight),
                 fallbackRowHeight * (minVisibleRows - rows.length),
             );
-            const headerHeight = isElement(headerTable)
+            const measuredHeaderHeight = isVisibleElement(headerTable)
                 ? headerTable.getBoundingClientRect().height
+                : 0;
+            const headerHeight = measuredHeaderHeight > 0
+                ? measuredHeaderHeight
                 : readPixelProperty(tableShell, '--scrollable-data-table-header-height', 28);
             return total + Math.max(0, headerHeight) + visibleRowsHeight + 1;
         }, 0);

@@ -1,4 +1,4 @@
-/* Code version: v3.29.4 */
+/* Code version: v3.32.0 */
 .page > .sidebar-toggle {
 	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
 	left: calc(var(--page-edge-pad) + var(--sidebar-toggle-left));
@@ -16,14 +16,47 @@
 @media (max-width: 900px) {
 	.page {
 		--settings-round-icon-button-size: 44px;
+		--workspace-title-rail-control-height: var(--settings-round-icon-button-size);
+		--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
+		--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
+		--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));
+		--layout-sidebar-dock-item-block-size: 52px;
+		--layout-sidebar-dock-padding-block: 4px;
+		--layout-sidebar-dock-block-size: calc(
+			var(--layout-sidebar-dock-item-block-size)
+			+ (var(--layout-sidebar-dock-padding-block) * 2)
+			+ var(--layout-sidebar-dock-border-block-size)
+		);
+		--layout-global-action-inline-size: calc(
+			(var(--settings-round-icon-button-size) * 2)
+			+ var(--layout-global-action-gap)
+		);
+		--layout-sidebar-overlay-inline-size: min(
+			var(--sidebar-width),
+			max(
+				0px,
+				calc(
+					100vw
+					- var(--sidebar-overlay-inset-left)
+					- var(--global-quick-actions-right)
+					- var(--layout-global-action-inline-size)
+					- var(--layout-edge-gap)
+				)
+			)
+		);
+		--sidebar-toggle-x: calc(
+			var(--layout-sidebar-overlay-inline-size)
+			- var(--sidebar-overlay-toggle-inset)
+			- var(--settings-round-icon-button-size)
+		);
 	}
 
 	.sidebar {
 		position: fixed;
 		top: var(--sidebar-overlay-inset-top);
 		left: var(--sidebar-overlay-inset-left);
-		width: min(var(--sidebar-width), var(--sidebar-overlay-available-inline-size));
-		max-width: var(--sidebar-overlay-available-inline-size);
+		width: var(--layout-sidebar-overlay-inline-size);
+		max-width: var(--layout-sidebar-overlay-inline-size);
 		bottom: var(--sidebar-overlay-inset-bottom);
 		flex-basis: auto;
 		padding-bottom: calc(16px + var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
@@ -76,12 +109,12 @@
 	}
 
 	.page > .sidebar-toggle {
-		width: 44px;
-		min-width: 44px;
-		height: 44px;
-		min-height: 44px;
+		width: var(--settings-round-icon-button-size);
+		min-width: var(--settings-round-icon-button-size);
+		height: var(--settings-round-icon-button-size);
+		min-height: var(--settings-round-icon-button-size);
 		position: fixed;
-		top: var(--sidebar-overlay-inset-top);
+		top: var(--layout-global-anchor-inset);
 		left: var(--sidebar-overlay-inset-left);
 		right: auto;
 		bottom: auto;
@@ -89,9 +122,13 @@
 		z-index: var(--layer-sidebar-toggle);
 		touch-action: manipulation;
 	}
+	.sidebar h1 {
+		min-height: var(--workspace-title-rail-control-height);
+		align-items: center;
+	}
 
 	.global-quick-actions {
-		top: var(--sidebar-overlay-inset-top);
+		top: var(--layout-global-anchor-inset);
 	}
 
 	html.sidebar-memory-collapsed .sidebar-backdrop {
@@ -102,17 +139,18 @@
 
 	.sidebar-dock {
 		position: fixed;
-		left: calc(var(--sidebar-overlay-inset-left) + (min(var(--sidebar-width), var(--sidebar-overlay-available-inline-size)) / 2)) !important;
+		left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;
 		right: auto;
 		bottom: calc(var(--sidebar-overlay-inset-bottom) + var(--sidebar-dock-bottom-gap));
 		transform: translateX(-50%);
 		margin: 0;
 		width: fit-content;
-		max-width: calc(min(var(--sidebar-width), var(--sidebar-overlay-available-inline-size)) - 20px);
+		max-width: calc(var(--layout-sidebar-overlay-inline-size) - (var(--layout-edge-gap) * 2));
 		z-index: var(--layer-fixed-dock);
 		box-shadow: var(--frosted-glass-shadow);
 		gap: 2px;
-		padding: 4px 6px;
+		padding-block: var(--layout-sidebar-dock-padding-block);
+		padding-inline: 6px;
 	}
 
 	.sidebar-dock::before {
@@ -200,9 +238,11 @@
 		width: 100%;
 		overflow-x: hidden;
 		gap: 0 !important;
-		--sidebar-toggle-top: 20px;
-		--sidebar-toggle-left: 20px;
-		--sidebar-toggle-x: calc(var(--sidebar-width) - 52px) !important;
+		--sidebar-toggle-x: calc(
+			var(--layout-sidebar-overlay-inline-size)
+			- var(--sidebar-overlay-toggle-inset)
+			- var(--settings-round-icon-button-size)
+		) !important;
 	}
 	.app-shell.is-sidebar-collapsed,
 	html.sidebar-memory-collapsed .page,
@@ -353,7 +393,8 @@
 	}
 	.sidebar-dock {
 		gap: 2px;
-		padding: 4px 6px;
+		padding-block: var(--layout-sidebar-dock-padding-block);
+		padding-inline: 6px;
 	}
 	.sidebar-dock::before {
 		top: 4px;
@@ -422,12 +463,29 @@
 @media (max-width: 500px) {
 	.page,
 	.app-shell {
-		--sidebar-toggle-open-inset: 24px;
-		--sidebar-toggle-quick-action-clearance: 12px;
-		--sidebar-toggle-x: min(
-			calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--sidebar-toggle-open-inset)),
-			calc(100vw - var(--sidebar-toggle-left) - (var(--settings-round-icon-button-size) * 2) - var(--global-quick-actions-right) - var(--sidebar-toggle-quick-action-clearance))
+		--sidebar-toggle-x: calc(
+			var(--layout-sidebar-overlay-inline-size)
+			- var(--sidebar-overlay-toggle-inset)
+			- var(--settings-round-icon-button-size)
 		) !important;
+	}
+	.sidebar { width: var(--layout-sidebar-overlay-inline-size); }
+	.sidebar-dock {
+		left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;
+		max-width: calc(var(--layout-sidebar-overlay-inline-size) - 16px);
+	}
+	.workspace-mode-title-card {
+		padding-inline-end: calc(
+			var(--workspace-article-pad-inline)
+			+ var(--layout-global-action-inline-size)
+			+ var(--layout-edge-gap)
+		);
+	}
+	.workspace-mode-title-card .report-heading {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px !important; }
 }

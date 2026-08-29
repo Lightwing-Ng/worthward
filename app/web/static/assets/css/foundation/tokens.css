@@ -1,4 +1,4 @@
-/* Code version: v0.17.0 */
+/* Code version: v0.23.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -64,14 +64,38 @@
 	--radius-control: 999px;
 	--radius-soft: 10px;
 	--radius-pill: 999px;
+	--layout-glass-border-width: 1px;
+	--layout-content-width: 640px;
+	--layout-control-width: 384px;
 	--page-edge-pad: 10px;
+	--layout-edge-gap: var(--page-edge-pad);
+	--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);
+	--layout-global-action-gap: 10px;
+	--layout-global-action-inline-size: calc(
+		(var(--settings-round-icon-button-size) * 2)
+		+ var(--layout-global-action-gap)
+	);
 	--sidebar-overlay-inset-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
 	--sidebar-overlay-inset-right: max(var(--page-edge-pad), env(safe-area-inset-right, 0px));
 	--sidebar-overlay-inset-bottom: max(var(--page-edge-pad), env(safe-area-inset-bottom, 0px));
 	--sidebar-overlay-inset-left: max(var(--page-edge-pad), env(safe-area-inset-left, 0px));
+	--sidebar-overlay-toggle-inset: max(var(--sidebar-overlay-inset-top), var(--sidebar-overlay-inset-right));
 	--sidebar-overlay-available-inline-size: calc(100vw - var(--sidebar-overlay-inset-left) - var(--sidebar-overlay-inset-right));
-	--global-quick-actions-right: max(calc(var(--page-edge-pad) * 2), calc(((100vw - 1560px) / 2) + (var(--page-edge-pad) * 2)));
+	--global-quick-actions-right: var(--layout-global-anchor-inset);
 	--sidebar-width: 312px;
+	--layout-sidebar-overlay-inline-size: min(
+		var(--sidebar-width),
+		max(
+			0px,
+			calc(
+				100vw
+				- var(--sidebar-overlay-inset-left)
+				- var(--global-quick-actions-right)
+				- var(--layout-global-action-inline-size)
+				- var(--layout-edge-gap)
+			)
+		)
+	);
 	--sidebar-toggle-top: var(--page-edge-pad);
 	--sidebar-toggle-left: var(--page-edge-pad);
 	--sidebar-toggle-center-offset: calc(var(--sidebar-toggle-top) + (var(--settings-round-icon-button-size) / 2));
@@ -83,7 +107,16 @@
 	--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
 	--sidebar-bottom-pad: 96px;
 	--sidebar-dock-hit-size: 56px;
-	--sidebar-dock-bottom-gap: 14px;
+	--layout-sidebar-dock-item-block-size: 44px;
+	--layout-sidebar-dock-padding-block: 6px;
+	--layout-sidebar-dock-border-block-size: calc(var(--layout-glass-border-width) * 2);
+	--layout-sidebar-dock-block-size: calc(
+		var(--layout-sidebar-dock-item-block-size)
+		+ (var(--layout-sidebar-dock-padding-block) * 2)
+		+ var(--layout-sidebar-dock-border-block-size)
+	);
+	--layout-sidebar-dock-bottom-gap: var(--layout-edge-gap);
+	--sidebar-dock-bottom-gap: var(--layout-sidebar-dock-bottom-gap);
 	--workspace-mobile-dock-clearance: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
 	--workspace-mobile-surface-bottom-pad: calc(var(--page-edge-pad) + var(--workspace-mobile-dock-clearance) + env(safe-area-inset-bottom, 0px));
 	--page-mobile-scroll-bottom-pad-base: var(--page-edge-pad);
@@ -100,7 +133,7 @@
 	--settings-general-option-radius: 10px;
 	--settings-general-option-pad-block: 14px;
 	--settings-general-option-pad-inline: 16px;
-	--settings-general-option-max-width: 640px;
+	--settings-general-option-max-width: var(--layout-content-width);
 	--settings-general-option-background: var(--glass-surface-background-strong);
 	--settings-general-option-border: 0.5px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
 	--settings-action-package-radius: var(--settings-general-option-radius);
@@ -111,7 +144,7 @@
 	--settings-action-package-copy-gap: 4px;
 	--settings-action-package-background: var(--frosted-glass-background);
 	--settings-action-package-border: var(--frosted-glass-border);
-	--settings-action-package-max-width: 680px;
+	--settings-action-package-max-width: var(--layout-content-width);
 	--settings-action-package-live-marker-size: 8px;
 	--settings-action-package-live-marker-color: var(--theme-accent-positive);
 	--settings-action-package-live-marker-duration: 1.8s;
@@ -144,9 +177,9 @@
 	--settings-round-icon-button-shadow-active: var(--frosted-glass-shadow-active);
 	--settings-round-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
 	--settings-round-icon-button-color-hover: var(--accent-text);
-	--settings-form-shell-max-width: 780px;
+	--settings-form-shell-max-width: var(--layout-content-width);
 	--settings-form-control-min-width: 220px;
-	--settings-form-control-max-width: 384px;
+	--settings-form-control-max-width: var(--layout-control-width);
 	--text-input-control-radius: 999px;
 	--text-input-control-pad-block: 0px;
 	--text-input-control-pad-inline: 10px;
@@ -163,11 +196,11 @@
 	--settings-text-input-border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
 	--settings-text-input-color: var(--text);
 	--settings-text-input-font-size: var(--font-form-control);
-	--settings-reading-guard-single-column-width: var(--responsive-breakpoint-layout-switch-min);
+	--settings-reading-guard-single-column-width: min(var(--layout-content-width), var(--responsive-breakpoint-layout-switch-min));
 	--settings-general-panel-background: color-mix(in srgb, var(--frosted-glass-background) 92%, transparent);
 	--settings-general-panel-border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
 	--scrollable-data-table-header-color: color-mix(in srgb, var(--theme-text) 92%, var(--color-white-adaptive) 8%);
-	--style-token-demo-width: 384px;
+	--style-token-demo-width: var(--layout-control-width);
 	--style-token-column-gap: 24px;
 	--style-token-resizer-width: 32px;
 	--style-token-divider-gap: 24px;
@@ -273,7 +306,8 @@
 	--workspace-article-mobile-shadow: none;
 	--workspace-article-sidebar-morph-easing: var(--motion-inertial);
 	--workspace-article-sidebar-morph-duration: var(--motion-duration-spatial);
-	--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + 8px);
+	--workspace-mode-result-heading-gap: 8px;
+	--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));
 	--workspace-content-article-background: transparent;
 	--workspace-content-article-shadow: none;
 	--workspace-content-article-blur: none;
@@ -290,6 +324,7 @@
 	--workspace-metric-card-align-self: start;
 	--workspace-metrics-grid-auto-rows-wide: max-content;
 	--trade-chart-y-padding-px: 2px;
+	--trade-chart-series-line-width: 2px;
 	--investment-view-surface-padding: 0;
 	--investment-history-surface-padding: 10px 12px 20px 12px;
 	--app-shell-gap: 14px;
@@ -361,7 +396,7 @@
 		),
 		var(--theme-background);
 	--frosted-glass-background-hover: var(--frosted-glass-surface);
-	--frosted-glass-border: 1px solid rgba(255, 255, 255, 0.30);
+	--frosted-glass-border: var(--layout-glass-border-width) solid rgba(255, 255, 255, 0.30);
 	--frosted-glass-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
@@ -457,14 +492,14 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {
-		--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.125);
+		--frosted-glass-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.125);
 		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 		--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 		--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
 	}
 }
 :root[data-theme-override="dark"] {
-	--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.125);
+	--frosted-glass-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.125);
 	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
@@ -508,10 +543,10 @@ body::-webkit-scrollbar-button,
 }
 [hidden] { display: none !important; }
 body { margin: 0; height: 100vh; min-height: 100svh; overflow: hidden; font-family: var(--font-family-base); font-synthesis: none; font-weight: var(--font-weight-regular); color: var(--text); background: var(--bg); }
-.page { --sidebar-toggle-x: calc(var(--sidebar-width) - 56px); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--page-edge-pad) var(--page-edge-pad) calc(var(--page-edge-pad) + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; overflow: hidden; position: relative; }
+.page { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--page-edge-pad) var(--page-edge-pad) calc(var(--page-edge-pad) + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; overflow: hidden; position: relative; }
 .page.sidebar-memory-collapsed,
 html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px; }
-.app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - 56px); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: var(--layer-surface-content); width: 100%; height: 100%; min-height: 0; }
+.app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: var(--layer-surface-content); width: 100%; height: 100%; min-height: 0; }
 @supports (height: 100dvh) {
 	body {
 		height: 100dvh;

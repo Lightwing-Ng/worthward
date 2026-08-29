@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.5.3
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -11,7 +11,54 @@ from typing import Any
 
 import pandas as pd
 
-from .base import StrategySignalResult
+from .base import StrategySignalResult, normalize_strategy_presentation
+
+
+def _attach_strategy_presentation(
+        result: dict[str, object],
+        signal_result: StrategySignalResult,
+) -> dict[str, object]:
+    """Attach only validated declarative browser presentation data."""
+    presentation = normalize_strategy_presentation(signal_result.presentation)
+    if presentation:
+        data_keys = presentation.get("data_keys")
+        if data_keys is not None:
+            if not isinstance(data_keys, list):
+                raise ValueError("Strategy presentation data_keys must be a list.")
+            chart = result.get("chart")
+            raw_dates = chart.get("raw_dates") if isinstance(chart, dict) else None
+            if not isinstance(raw_dates, list):
+                raise ValueError(
+                    "Strategy presentation data_keys require chart.raw_dates."
+                )
+            if len(data_keys) != len(raw_dates):
+                raise ValueError(
+                    "Strategy presentation data_keys must match chart.raw_dates length."
+                )
+            if data_keys != raw_dates:
+                raise ValueError(
+                    "Strategy presentation data_keys must exactly match chart.raw_dates."
+                )
+        result["strategy_presentation"] = presentation
+    return result
+
+
+def _resolve_execution_mode(
+        signal_result: StrategySignalResult,
+        requested_execution_mode: str,
+) -> str:
+    """Resolve a strategy-required fill mode ahead of the global preference."""
+    required_execution_mode = signal_result.required_execution_mode
+    if required_execution_mode is not None:
+        normalized_required = str(required_execution_mode).strip().lower()
+        if normalized_required not in {"signal_close", "next_open"}:
+            raise ValueError("Strategy required_execution_mode is invalid.")
+        return normalized_required
+    return (
+        "next_open"
+        if str(requested_execution_mode).strip().lower() == "next_open"
+        else "signal_close"
+    )
 
 
 def combine_backtest_datasets(datasets: list[pd.DataFrame]) -> pd.DataFrame:
@@ -293,7 +340,7 @@ def run_leveraged_rotation_backtest(
     if len(tickers) < 2:
         tickers = ("Ticker 1", "Ticker 2")
     trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
-    normalized_execution_mode = "next_open" if str(execution_mode).strip().lower() == "next_open" else "signal_close"
+    normalized_execution_mode = _resolve_execution_mode(signal_result, execution_mode)
     cash = float(initial_capital)
     shares = 0.0
     active_asset = 1
@@ -432,8 +479,9 @@ def run_leveraged_rotation_backtest(
     long_loss = sum(max(-value, 0.0) for value in realized_gains)
     _normalize_transaction_rows(trades)
 
-    return {
+    return _attach_strategy_presentation({
         "interval": interval,
+        "execution_mode": normalized_execution_mode,
         "multi_asset": True,
         "tickers": list(tickers),
         "summary": {
@@ -463,7 +511,7 @@ def run_leveraged_rotation_backtest(
             "sell_markers": sell_markers,
         },
         "trades": trades,
-    }
+    }, signal_result)
 
 
 def run_single_ticker_backtest(
@@ -496,7 +544,7 @@ def run_single_ticker_backtest(
     entry_price = None
     equity_points: list[float] = []
     trades: list[dict[str, object]] = []
-    normalized_execution_mode = "next_open" if str(execution_mode).strip().lower() == "next_open" else "signal_close"
+    normalized_execution_mode = _resolve_execution_mode(signal_result, execution_mode)
 
     buy_column = signal_result.buy_signal_column
     sell_column = signal_result.sell_signal_column
@@ -798,8 +846,9 @@ def run_single_ticker_backtest(
 
     _normalize_transaction_rows(trades)
 
-    return {
+    return _attach_strategy_presentation({
         "interval": interval,
+        "execution_mode": normalized_execution_mode,
         "summary": {
             "initial_capital": round(float(initial_capital), 2),
             "final_equity": round(final_equity, 2),
@@ -825,4 +874,4 @@ def run_single_ticker_backtest(
             "sell_markers": sell_markers,
         },
         "trades": trades,
-    }
+    }, signal_result)

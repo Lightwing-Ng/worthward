@@ -1,8 +1,9 @@
-/* Code version: v0.6.1 */
+/* Code version: v0.12.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
 	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+	const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID || {};
 
 	const readThemeToken = (computed, tokenName) => (
 		typeof chartAxis.readThemeToken === "function"
@@ -31,7 +32,15 @@
 			backtestThemeState.mediaCleanup = null;
 		}
 		const media = window.matchMedia("(prefers-color-scheme: dark)");
-		const handler = () => window.requestAnimationFrame(callback);
+		let disposed = false;
+		let refreshFrame = null;
+		const handler = () => {
+			if (disposed || refreshFrame !== null) return;
+			refreshFrame = window.requestAnimationFrame(() => {
+				refreshFrame = null;
+				if (!disposed) callback();
+			});
+		};
 		const cleanups = [];
 		if (typeof media.addEventListener === "function") {
 			media.addEventListener("change", handler);
@@ -42,7 +51,20 @@
 		}
 		window.addEventListener("antigravity:theme-mode-change", handler);
 		cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
-		backtestThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
+		const cleanup = () => {
+			if (disposed) return;
+			disposed = true;
+			cleanups.forEach((removeListener) => removeListener());
+			if (refreshFrame !== null) {
+				window.cancelAnimationFrame(refreshFrame);
+				refreshFrame = null;
+			}
+			if (backtestThemeState.mediaCleanup === cleanup) {
+				backtestThemeState.mediaCleanup = null;
+			}
+		};
+		backtestThemeState.mediaCleanup = cleanup;
+		return cleanup;
 	};
 
 	const consumeBacktestRefreshTransition = () => {
@@ -109,6 +131,9 @@
 	};
 
 	const readPxToken = (element, tokenName, fallbackValue) => {
+		if (typeof chartAxis.readPxToken === "function") {
+			return chartAxis.readPxToken(element, tokenName, fallbackValue);
+		}
 		if (!(element instanceof Element)) return fallbackValue;
 		const rawValue = getComputedStyle(element).getPropertyValue(tokenName).trim();
 		const parsed = Number.parseFloat(rawValue);
@@ -122,7 +147,7 @@
 			.filter((value) => Number.isFinite(value));
 	};
 
-	const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
+	const buildPixelPaddedYScale = (canvas, datasets, paddingPx, plotHeightPx = null) => {
 		const values = collectFiniteValues(datasets);
 		if (!values.length) return {};
 		const rawMin = Math.min(...values);
@@ -138,13 +163,24 @@
 			};
 		}
 		const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
-		const safePaddingPx = Math.max(0, paddingPx);
-		const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+		const paddingDescriptor = paddingPx && typeof paddingPx === "object"
+			? paddingPx
+			: {top: paddingPx, bottom: paddingPx};
+		const safeTopPaddingPx = Math.max(0, Number(paddingDescriptor.top) || 0);
+		const safeBottomPaddingPx = Math.max(0, Number(paddingDescriptor.bottom) || 0);
+		const resolvedPlotHeight = Number(plotHeightPx) > 0
+			? Number(plotHeightPx)
+			: Math.max(canvasHeight - 22, 1);
+		const usableHeight = Math.max(
+			resolvedPlotHeight - safeTopPaddingPx - safeBottomPaddingPx,
+			1,
+		);
 		const dataRange = rawMax - rawMin;
-		const dataPadding = dataRange * (safePaddingPx / usableHeight);
+		const topDataPadding = dataRange * (safeTopPaddingPx / usableHeight);
+		const bottomDataPadding = dataRange * (safeBottomPaddingPx / usableHeight);
 		return {
-			min: rawMin - dataPadding,
-			max: rawMax + dataPadding,
+			min: rawMin - bottomDataPadding,
+			max: rawMax + topDataPadding,
 			rawMin,
 			rawMax,
 		};
@@ -152,7 +188,10 @@
 
 	const applyBacktestYAxisScale = (chart, canvas, datasets, paddingPx) => {
 		if (!chart?.options?.scales?.y) return;
-		const nextScale = buildPixelPaddedYScale(canvas, datasets, paddingPx);
+		const plotHeightPx = chart?.chartArea
+			? Math.max(1, chart.chartArea.bottom - chart.chartArea.top)
+			: null;
+		const nextScale = buildPixelPaddedYScale(canvas, datasets, paddingPx, plotHeightPx);
 		chart.options.scales.y.min = nextScale.min;
 		chart.options.scales.y.max = nextScale.max;
 	};
@@ -181,8 +220,20 @@
 		});
 	};
 
-	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, nextAllIn, chartYPaddingPx) => {
-		if (!priceChart || !equityChart || !transition) return;
+	const animateBacktestRefreshTransition = (
+		priceChart,
+		equityChart,
+		transition,
+		nextClose,
+		nextEquity,
+		nextAllIn,
+		getPriceYPadding,
+		getEquityYPadding,
+	) => {
+		if (!priceChart || !equityChart || !transition) return null;
+		const resolvePadding = (valueOrGetter) => (
+			typeof valueOrGetter === "function" ? valueOrGetter() : valueOrGetter
+		);
 		const nextRawLabels = Array.isArray(priceChart.data.rawLabels) ? priceChart.data.rawLabels : [];
 		const fromClose = buildAlignedSeries(transition.rawLabels, transition.close, nextRawLabels, nextClose);
 		const fromEquity = buildAlignedSeries(transition.rawLabels, transition.equity, nextRawLabels, nextEquity);
@@ -196,8 +247,8 @@
 		priceChart.data.datasets[0].data = fromClose;
 		equityChart.data.datasets[0].data = fromEquity;
 		equityChart.data.datasets[1].data = fromAllIn;
-		applyBacktestYAxisScale(priceChart, priceChart.canvas, [fromClose], chartYPaddingPx);
-		applyBacktestYAxisScale(equityChart, equityChart.canvas, [fromEquity, fromAllIn], chartYPaddingPx);
+		applyBacktestYAxisScale(priceChart, priceChart.canvas, [fromClose], resolvePadding(getPriceYPadding));
+		applyBacktestYAxisScale(equityChart, equityChart.canvas, [fromEquity, fromAllIn], resolvePadding(getEquityYPadding));
 		priceChart.update("none");
 		equityChart.update("none");
 
@@ -217,14 +268,24 @@
 			priceChart.data.datasets[0].data = interpolate(targetSeries[0], 0);
 			equityChart.data.datasets[0].data = interpolate(targetSeries[1], 1);
 			equityChart.data.datasets[1].data = interpolate(targetSeries[2], 2);
-			applyBacktestYAxisScale(priceChart, priceChart.canvas, [priceChart.data.datasets[0].data], chartYPaddingPx);
-			applyBacktestYAxisScale(equityChart, equityChart.canvas, [equityChart.data.datasets[0].data, equityChart.data.datasets[1].data], chartYPaddingPx);
+			applyBacktestYAxisScale(
+				priceChart,
+				priceChart.canvas,
+				[priceChart.data.datasets[0].data],
+				resolvePadding(getPriceYPadding),
+			);
+			applyBacktestYAxisScale(
+				equityChart,
+				equityChart.canvas,
+				[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+				resolvePadding(getEquityYPadding),
+			);
 			priceChart.update("none");
 			equityChart.update("none");
 		};
 		const scheduler = window.AntigravityMotion?.scheduler;
 		if (scheduler?.animate) {
-			scheduler.animate({
+			return scheduler.animate({
 				key: 'backtest-refresh-transition',
 				duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
 				ease: window.AntigravityMotion?.easing?.emphasized,
@@ -234,16 +295,28 @@
 		} else {
 			applyProgress(1);
 		}
+		return null;
 	};
 
 	const initBacktestWorkspace = () => {
 		initBacktestHistoryTabs();
+		bootstrap.backtestHoverController?.destroy?.();
+		bootstrap.backtestHoverController = null;
+		const resultsStack = document.querySelector(
+			".backtest-results-stack.investment-workspace-header",
+		);
 		const state = window.ANTIGRAVITY_APP;
-		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) return;
+		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
+			resultsStack?.classList.remove("has-probability-field");
+			return;
+		}
 
 		const priceCanvas = document.getElementById("tradePriceChart");
 		const equityCanvas = document.getElementById("tradeEquityChart");
-		if (!priceCanvas || !equityCanvas) return;
+		if (!priceCanvas || !equityCanvas) {
+			resultsStack?.classList.remove("has-probability-field");
+			return;
+		}
 		const existingPriceChart = window.Chart.getChart?.(priceCanvas);
 		const existingEquityChart = window.Chart.getChart?.(equityCanvas);
 		if (existingPriceChart) existingPriceChart.destroy();
@@ -262,6 +335,13 @@
 		const high = backtestResult.chart.high || [];
 		const low = backtestResult.chart.low || [];
 		const equity = backtestResult.chart.equity;
+		const strategyPresentation = typeof probabilityGridApi.normalizePresentation === "function"
+			? probabilityGridApi.normalizePresentation(
+				backtestResult.strategy_presentation,
+				{raw_dates: rawDates, length: close.length},
+			)
+			: null;
+		resultsStack?.classList.toggle("has-probability-field", Boolean(strategyPresentation));
 		
 		const interval = backtestResult.interval || "1d";
 		const rawTimestamps = rawDates.map((value) => {
@@ -335,19 +415,31 @@
 			: buildAllInSeries(open, close, initialCapital);
 
 		const fixedYAxisWidth = 72;
+		const probabilityForecastLanePlugin = {
+			id: "backtestProbabilityForecastLanePlugin",
+			beforeLayout(chart) {
+				if (!strategyPresentation || !chart?.options?.layout?.padding) return;
+				const widthFraction = Number(strategyPresentation.width_fraction);
+				if (!(widthFraction > 0)) return;
+				const availableWidth = Math.max(0, Number(chart.width || 0) - fixedYAxisWidth);
+				chart.options.layout.padding.right = availableWidth
+					* (widthFraction / (1 + widthFraction));
+			},
+		};
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
 		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
+		let priceChartYPadding = chartYPaddingPx;
 		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
 		if (existingHoverLine) existingHoverLine.remove();
 		const hoverLine = document.createElement("div");
 		hoverLine.className = "trade-chart-hover-line";
 		tradeChartStack.appendChild(hoverLine);
 
-		const existingTooltip = tradeChartStack.querySelector(".chart-tooltip");
-		if (existingTooltip) existingTooltip.remove();
+		tradeChartStack.querySelectorAll("[data-backtest-chart-tooltip]").forEach((node) => node.remove());
 		const tooltip = document.createElement("div");
 		tooltip.className = "chart-tooltip";
+		tooltip.dataset.backtestChartTooltip = "summary";
 		tooltip.innerHTML = `
 			<p class="chart-tooltip-date"></p>
 			<div class="chart-tooltip-list">
@@ -384,13 +476,51 @@
 			</div>
 		`;
 		tradeChartStack.appendChild(tooltip);
+		const probabilityTooltip = strategyPresentation ? document.createElement("div") : null;
+		if (probabilityTooltip) {
+			probabilityTooltip.className = "chart-tooltip backtest-probability-tooltip";
+			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
+			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
+			probabilityTooltip.setAttribute("role", "img");
+			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
+			probabilityTooltip.innerHTML = '<div class="backtest-probability-grid" data-backtest-probability-grid></div>';
+			tradeChartStack.appendChild(probabilityTooltip);
+		}
 
 		const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 		const formatReturn = (value) => `${value >= 0 ? "" : "-"}${Math.abs(value).toFixed(2)}%`;
 
 		let activeIndex = null;
+		let activePriceOverlay = false;
+		let activeSourceCanvas = null;
+		let activeSourceChart = null;
+		let pinState = {mode: "tracking", activeIndex: null};
 		let priceChart;
 		let equityChart;
+		const documentController = new AbortController();
+		const controllerAnimationFrames = new Set();
+		const controllerTaskCleanups = [];
+		let controllerDestroyed = false;
+		let hoverFrameId = null;
+		let pendingHoverUpdate = null;
+		let layoutFrameId = null;
+		let layoutObserver = null;
+		let themeCleanup = null;
+		const requestControllerAnimationFrame = (callback) => {
+			if (controllerDestroyed) return null;
+			let frameId = null;
+			frameId = window.requestAnimationFrame((timestamp) => {
+				controllerAnimationFrames.delete(frameId);
+				if (!controllerDestroyed) callback(timestamp);
+			});
+			controllerAnimationFrames.add(frameId);
+			return frameId;
+		};
+		const cancelControllerAnimationFrame = (frameId) => {
+			if (frameId === null || frameId === undefined) return;
+			window.cancelAnimationFrame(frameId);
+			controllerAnimationFrames.delete(frameId);
+		};
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
@@ -548,6 +678,54 @@
 			},
 		};
 
+		const priceHoverOverlayPlugin = {
+			id: "backtestPriceHoverOverlayPlugin",
+			beforeDatasetsDraw(chart) {
+				if (chart.canvas !== priceCanvas || !activePriceOverlay || !Number.isInteger(activeIndex)) {
+					chart._activeBacktestPriceGuideBounds = null;
+					return;
+				}
+				const point = chart.getDatasetMeta(0)?.data?.[activeIndex];
+				const price = Number(close[activeIndex]);
+				const {ctx, chartArea} = chart;
+				if (!point || !chartArea || !Number.isFinite(point.y) || !Number.isFinite(price)) return;
+				const mutedSoft = getComputedStyle(document.body).getPropertyValue("--theme-muted-soft").trim()
+					|| resolvedTheme.muted;
+				ctx.save();
+				ctx.strokeStyle = mutedSoft;
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(chartArea.left, point.y);
+				ctx.lineTo(chartArea.right, point.y);
+				ctx.stroke();
+				ctx.restore();
+				chart._activeBacktestPriceGuideBounds = {
+					index: activeIndex,
+					left: chartArea.left,
+					price,
+					right: chartArea.right,
+					y: point.y,
+				};
+			},
+			afterDatasetsDraw(chart) {
+				const bounds = chart._activeBacktestPriceGuideBounds;
+				if (!bounds || typeof chartAxis.drawYAxisValueBadge !== "function") return;
+				const formattedPrice = new Intl.NumberFormat("en-US", {
+					minimumFractionDigits: 2,
+					maximumFractionDigits: 2,
+				}).format(bounds.price);
+				chartAxis.drawYAxisValueBadge(chart, {
+					y: bounds.y,
+					value: bounds.price,
+					formattedValue: formattedPrice,
+					formatTickLabel: formatStockPriceAxisValue,
+					fillColor: resolvedTheme.accentPrimary,
+					boundsProperty: "_activeBacktestPriceGuideBounds",
+					boundsAliases: {formattedPrice, price: bounds.price},
+				});
+			},
+		};
+
 		const buildYAxisTicks = (fractionDigits, valueFormatter = null) => ({
 			color: resolvedTheme.muted,
 			display: true,
@@ -633,6 +811,7 @@
 			if (!Number.isInteger(nearestIndex)) return null;
 			if (chart.canvas !== priceCanvas || !Number.isFinite(relativeY)) return nearestIndex;
 			if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return nearestIndex;
+			if (strategyPresentation) return nearestIndex;
 
 			const yScale = chart.scales?.y;
 			if (!yScale) return nearestIndex;
@@ -659,11 +838,130 @@
 			return nearestIndex;
 		};
 
+		const hideProbabilityTooltip = () => {
+			probabilityTooltip?.classList.remove("is-visible");
+			if (priceChart) priceChart._activeBacktestProbabilityGridBounds = null;
+		};
+
+		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
+			if (!probabilityTooltip || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
+				hideProbabilityTooltip();
+				return false;
+			}
+			const meanValue = strategyPresentation?.predictive_mean?.[index];
+			const scaleValue = strategyPresentation?.predictive_scale?.[index];
+			const mean = Number(meanValue);
+			const scale = Number(scaleValue);
+			const anchorPrice = Number(close[index]);
+			if (meanValue === null || meanValue === undefined
+				|| scaleValue === null || scaleValue === undefined
+				|| !Number.isFinite(mean) || !Number.isFinite(scale) || !(scale > 0) || !(anchorPrice > 0)) {
+				hideProbabilityTooltip();
+				return false;
+			}
+			const geometry = probabilityGridApi.computeGridGeometry?.({
+				chartArea: priceChart.chartArea,
+				anchorX: pricePoint.x,
+				anchorY: pricePoint.y,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
+				widthFraction: strategyPresentation.width_fraction,
+				maxCellPx: 10,
+			});
+			if (!geometry) {
+				hideProbabilityTooltip();
+				return false;
+			}
+			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
+			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
+			if (!(stepPixels > 0)) {
+				hideProbabilityTooltip();
+				return false;
+			}
+			const cells = probabilityGridApi.buildProbabilityCells?.({
+				geometry,
+				anchorPrice,
+				mean,
+				scale,
+				stepPixels,
+				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
+			}) || [];
+			if (!cells.length) {
+				hideProbabilityTooltip();
+				return false;
+			}
+
+			const grid = probabilityTooltip.querySelector("[data-backtest-probability-grid]");
+			if (!(grid instanceof HTMLElement)) {
+				hideProbabilityTooltip();
+				return false;
+			}
+			const canReuseCells = grid.childElementCount === cells.length
+				&& Number(grid.dataset.columnCount) === geometry.columnCount
+				&& Number(grid.dataset.rowCount) === geometry.rowCount;
+			let cellNodes = canReuseCells ? Array.from(grid.children) : [];
+			if (!canReuseCells) {
+				const fragment = document.createDocumentFragment();
+				cellNodes = cells.map(() => {
+					const node = document.createElement("span");
+					fragment.appendChild(node);
+					return node;
+				});
+				grid.replaceChildren(fragment);
+			}
+			cells.forEach((cell, cellIndex) => {
+				const node = cellNodes[cellIndex];
+				node.className = `backtest-probability-cell is-${cell.sign}`;
+				node.dataset.column = String(cell.column);
+				node.dataset.horizon = String(cell.horizon);
+				node.dataset.probability = String(cell.probability);
+				node.dataset.row = String(cell.row);
+				node.style.gridColumn = String(cell.column + 1);
+				node.style.gridRow = String(cell.row + 1);
+				node.style.opacity = String(cell.opacity);
+				node.title = `${(cell.probability * 100).toFixed(2)}%`;
+			});
+			grid.dataset.columnCount = String(geometry.columnCount);
+			grid.dataset.rowCount = String(geometry.rowCount);
+			grid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${geometry.cellSize}px)`;
+			grid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${geometry.cellSize}px)`;
+			grid.style.gap = `${geometry.gap}px`;
+			grid.style.padding = `${geometry.padding}px`;
+
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const canvasOffsetX = canvasRect.left - stackRect.left;
+			const canvasOffsetY = canvasRect.top - stackRect.top;
+			probabilityTooltip.style.left = `${canvasOffsetX + geometry.left}px`;
+			probabilityTooltip.style.top = `${canvasOffsetY + geometry.top}px`;
+			probabilityTooltip.style.width = `${geometry.width}px`;
+			probabilityTooltip.style.height = `${geometry.height}px`;
+			probabilityTooltip.dataset.direction = geometry.direction;
+			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
+			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
+			probabilityTooltip.setAttribute(
+				"aria-label",
+				`${labels[index] || "Selected date"}, ${formatMoney(anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability above the selected price on the next bar`,
+			);
+			probabilityTooltip.classList.add("is-visible");
+			priceChart._activeBacktestProbabilityGridBounds = {
+				...geometry,
+				canvasOffsetX,
+				canvasOffsetY,
+				index,
+				intersectionX: pricePoint.x,
+				intersectionY: pricePoint.y,
+				maxProbability: Math.max(...cells.map((cell) => cell.probability)),
+				stepPixels,
+			};
+			return true;
+		};
+
 		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
-				return;
+				hideProbabilityTooltip();
+				return false;
 			}
 			const stackRect = tradeChartStack.getBoundingClientRect();
 			const sourcePoint = getDatasetPoint(sourceChart, index, 0);
@@ -674,14 +972,16 @@
 			if (!sourcePoint) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
-				return;
+				hideProbabilityTooltip();
+				return false;
 			}
 			const hoverLinePosition = getRelativePointPosition(canonicalLineCanvas, stackRect, canonicalLinePoint);
 			const tooltipAnchorPosition = getRelativePointPosition(sourceCanvas, stackRect, sourcePoint);
 			if (!hoverLinePosition || !tooltipAnchorPosition) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
-				return;
+				hideProbabilityTooltip();
+				return false;
 			}
 			const hoverLineFrame = updateHoverLineFrame();
 			if (hoverLineFrame) {
@@ -690,6 +990,11 @@
 			}
 			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
 			hoverLine.classList.add("is-visible");
+			if (activePriceOverlay && pricePoint && renderProbabilityTooltip(index, stackRect, pricePoint)) {
+				tooltip.classList.remove("is-visible");
+				return true;
+			}
+			hideProbabilityTooltip();
 			const relativeX = hoverLinePosition.x;
 			const relativeY = tooltipAnchorPosition.y;
 			const closeValue = Number(close[index] || 0);
@@ -723,6 +1028,7 @@
 			tooltip.style.left = `${left}px`;
 			tooltip.style.top = `${Math.max(padding, top)}px`;
 			tooltip.classList.add("is-visible");
+			return false;
 		};
 
 		let activeBacktestRowElements = [];
@@ -752,6 +1058,9 @@
 
 		const syncHoverState = (index, sourceCanvas, sourceChart) => {
 			activeIndex = index;
+			activeSourceCanvas = index === null ? null : sourceCanvas;
+			activeSourceChart = index === null ? null : sourceChart;
+			activePriceOverlay = Boolean(strategyPresentation && index !== null && sourceCanvas === priceCanvas);
 			const setActive = (chart) => {
 				if (!chart || !chart.ctx) return;
 				chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
@@ -759,7 +1068,7 @@
 			};
 			setActive(priceChart);
 			setActive(equityChart);
-			updateSharedTooltip(index, sourceCanvas, sourceChart);
+			const probabilityRendered = updateSharedTooltip(index, sourceCanvas, sourceChart);
 
 			if (index !== null) {
 				const scrollContainer = document.querySelector("#tradeTransactionsTable")?.closest(".scrollable-data-table-scroll");
@@ -768,6 +1077,31 @@
 			} else {
 				activateBacktestRows([], null);
 			}
+			return probabilityRendered;
+		};
+
+		const cancelScheduledHoverSync = () => {
+			pendingHoverUpdate = null;
+			if (hoverFrameId !== null) {
+				cancelControllerAnimationFrame(hoverFrameId);
+				hoverFrameId = null;
+			}
+		};
+
+		const scheduleHoverSync = (index, sourceCanvas, sourceChart) => {
+			pendingHoverUpdate = {index, sourceCanvas, sourceChart};
+			if (hoverFrameId !== null) return;
+			hoverFrameId = requestControllerAnimationFrame(() => {
+				hoverFrameId = null;
+				const pending = pendingHoverUpdate;
+				pendingHoverUpdate = null;
+				if (!pending || pinState.mode === "pinned" || !pending.sourceChart?.ctx) return;
+				pinState = probabilityGridApi.reducePinState?.(
+					pinState,
+					{type: "track", index: pending.index},
+				) || {mode: "tracking", activeIndex: pending.index};
+				syncHoverState(pending.index, pending.sourceCanvas, pending.sourceChart);
+			});
 		};
 
 		const attachHover = (canvas, chart) => {
@@ -778,22 +1112,61 @@
 
 			canvas.addEventListener("mousemove", (event) => {
 				if (!chart || !chart.ctx) return;
+				if (pinState.mode === "pinned") return;
 				const nearestIndex = resolveNearestHoverIndex(chart, event);
-				if (nearestIndex === null) {
-					syncHoverState(null, canvas, chart);
-					return;
-				}
-				syncHoverState(nearestIndex, canvas, chart);
+				scheduleHoverSync(nearestIndex, canvas, chart);
 			}, { signal });
 
 			canvas.addEventListener("mouseleave", () => {
 				if (!chart || !chart.ctx) return;
-				syncHoverState(null, canvas, chart);
+				if (pinState.mode === "pinned") return;
+				scheduleHoverSync(null, canvas, chart);
 			}, { signal });
+
+			if (canvas === priceCanvas && strategyPresentation) {
+				canvas.addEventListener("click", (event) => {
+					if (!chart || !chart.ctx) return;
+					cancelScheduledHoverSync();
+					const nearestIndex = resolveNearestHoverIndex(chart, event);
+					const point = Number.isInteger(nearestIndex)
+						? chart.getDatasetMeta(0)?.data?.[nearestIndex]
+						: null;
+					const canvasRect = canvas.getBoundingClientRect();
+					const pointerY = event.clientY - canvasRect.top;
+					const isCurveClick = Number.isInteger(nearestIndex)
+						&& probabilityGridApi.isPointNearCurve?.(pointerY, point?.y, 14);
+					const probabilityRendered = isCurveClick
+						? renderProbabilityTooltip(
+							nearestIndex,
+							tradeChartStack.getBoundingClientRect(),
+							point,
+						)
+						: false;
+					if (probabilityRendered) {
+						pinState = probabilityGridApi.reducePinState?.(
+							pinState,
+							{type: "pin", index: nearestIndex},
+						) || {mode: "pinned", activeIndex: nearestIndex};
+						syncHoverState(nearestIndex, canvas, chart);
+						return;
+					}
+					if (pinState.mode === "pinned") {
+						pinState = probabilityGridApi.reducePinState?.(pinState, {type: "clear"})
+							|| {mode: "tracking", activeIndex: null};
+						syncHoverState(null, canvas, chart);
+					} else if (isCurveClick) {
+						pinState = probabilityGridApi.reducePinState?.(
+							pinState,
+							{type: "track", index: nearestIndex},
+						) || {mode: "tracking", activeIndex: nearestIndex};
+						syncHoverState(nearestIndex, canvas, chart);
+					}
+				}, { signal });
+			}
 		};
 
 		const refreshTransition = consumeBacktestRefreshTransition();
-		const referenceLineWidth = 1.0;
+		const seriesLineWidth = readPxToken(tradeChartStack, "--trade-chart-series-line-width", 2.0);
 		const priceSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.close, rawDates, close)
 			: close;
@@ -803,7 +1176,7 @@
 		const allInSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.allIn, rawDates, allInEquity)
 			: allInEquity;
-		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], chartYPaddingPx);
+		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], priceChartYPadding);
 		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInSeriesStart], chartYPaddingPx);
 		const markBacktestChartReady = (canvas) => {
 			if (!canvas || canvas.dataset.tradeChartReady === "1") return;
@@ -816,14 +1189,17 @@
 			const readyScheduler = window.AntigravityMotion?.scheduler;
 			if (readyScheduler?.frame) {
 				let readyFrameCount = 0;
-				readyScheduler.frame(`backtest-chart-ready-${canvas.id}`, () => {
+				const cleanupReadyFrame = readyScheduler.frame(`backtest-chart-ready-${canvas.id}`, () => {
 					readyFrameCount += 1;
 					if (readyFrameCount < 2) return true;
 					markBacktestChartReady(canvas);
 					return false;
 				});
+				if (typeof cleanupReadyFrame === "function") controllerTaskCleanups.push(cleanupReadyFrame);
 			} else {
-				window.requestAnimationFrame(() => window.requestAnimationFrame(() => markBacktestChartReady(canvas)));
+				requestControllerAnimationFrame(() => {
+					requestControllerAnimationFrame(() => markBacktestChartReady(canvas));
+				});
 			}
 			return false;
 		};
@@ -838,7 +1214,7 @@
 						label: "Close",
 						data: priceSeriesStart,
 						borderColor: isCandlestick ? "transparent" : resolvedTheme.accentPrimary,
-						borderWidth: isCandlestick ? 0 : referenceLineWidth,
+						borderWidth: isCandlestick ? 0 : seriesLineWidth,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",
@@ -866,7 +1242,12 @@
 					},
 				},
 			},
-			plugins: [candlestickPlugin, tradeMarkerPlugin],
+			plugins: [
+				candlestickPlugin,
+				tradeMarkerPlugin,
+				priceHoverOverlayPlugin,
+				...(strategyPresentation ? [probabilityForecastLanePlugin] : []),
+			],
 		});
 
 		equityChart = new Chart(equityCanvas, {
@@ -922,7 +1303,10 @@
 					y: { ...commonOptions.scales.y, ...equityYScale },
 				},
 			},
-			plugins: [xAxisLabelPlugin],
+			plugins: [
+				xAxisLabelPlugin,
+				...(strategyPresentation ? [probabilityForecastLanePlugin] : []),
+			],
 		});
 
 		const initTransactionsPagination = () => {
@@ -1054,8 +1438,139 @@
 
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
-		bindColorSchemeRefresh(() => {
+		const resolvePriceChartYPadding = () => {
+			if (!strategyPresentation || !priceChart?.chartArea) return chartYPaddingPx;
+			const chartArea = priceChart.chartArea;
+			const gridGeometry = probabilityGridApi.computeGridGeometry?.({
+				chartArea,
+				anchorX: chartArea.left,
+				anchorY: (chartArea.top + chartArea.bottom) / 2,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
+				widthFraction: strategyPresentation.width_fraction,
+				maxCellPx: 10,
+			});
+			const gridHalfHeight = Number(gridGeometry?.height) / 2;
+			if (!(gridHalfHeight > 0)) return chartYPaddingPx;
+
+			const stackRect = tradeChartStack.getBoundingClientRect();
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const plotTopInStack = canvasRect.top - stackRect.top + chartArea.top;
+			const plotBottomInStack = canvasRect.top - stackRect.top + chartArea.bottom;
+			const spaceBelowPlot = Math.max(0, stackRect.height - plotBottomInStack);
+			const topRequired = Math.max(0, gridHalfHeight - plotTopInStack);
+			const bottomRequired = Math.max(0, gridHalfHeight - spaceBelowPlot);
+			const withSafetyPixel = (required) => required > 0 ? Math.ceil(required) + 1 : 0;
+			return {
+				top: Math.max(chartYPaddingPx, withSafetyPixel(topRequired)),
+				bottom: Math.max(chartYPaddingPx, withSafetyPixel(bottomRequired)),
+			};
+		};
+		priceChartYPadding = resolvePriceChartYPadding();
+		applyBacktestYAxisScale(
+			priceChart,
+			priceCanvas,
+			[priceChart.data.datasets[0].data],
+			priceChartYPadding,
+		);
+		priceChart.update("none");
+		const scheduleChartLayoutRefresh = () => {
+			if (layoutFrameId !== null || controllerDestroyed) return;
+			layoutFrameId = requestControllerAnimationFrame(() => {
+				layoutFrameId = null;
+				if (!priceChart?.ctx || !equityChart?.ctx) return;
+				const refreshIndex = pinState.mode === "pinned"
+					? pinState.activeIndex
+					: activeIndex;
+				const refreshSourceCanvas = pinState.mode === "pinned"
+					? priceCanvas
+					: activeSourceCanvas;
+				const refreshSourceChart = pinState.mode === "pinned"
+					? priceChart
+					: activeSourceChart;
+				priceChart.resize();
+				equityChart.resize();
+				priceChartYPadding = resolvePriceChartYPadding();
+				applyBacktestYAxisScale(
+					priceChart,
+					priceCanvas,
+					[priceChart.data.datasets[0].data],
+					priceChartYPadding,
+				);
+				applyBacktestYAxisScale(
+					equityChart,
+					equityCanvas,
+					[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+					chartYPaddingPx,
+				);
+				if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
+					syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
+				} else {
+					priceChart.update("none");
+					equityChart.update("none");
+				}
+			});
+		};
+		if (typeof ResizeObserver === "function") {
+			layoutObserver = new ResizeObserver(scheduleChartLayoutRefresh);
+			layoutObserver.observe(tradeChartStack);
+		}
+		window.addEventListener("resize", scheduleChartLayoutRefresh, {signal: documentController.signal});
+		scheduleChartLayoutRefresh();
+		const clearPinnedProbabilityField = () => {
+			if (pinState.mode !== "pinned") return;
+			pinState = probabilityGridApi.reducePinState?.(pinState, {type: "clear"})
+				|| {mode: "tracking", activeIndex: null};
+			syncHoverState(null, priceCanvas, priceChart);
+		};
+		document.addEventListener("click", (event) => {
+			if (pinState.mode !== "pinned") return;
+			const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+			if (path.includes(priceCanvas) || (probabilityTooltip && path.includes(probabilityTooltip))) return;
+			const target = event.target instanceof Element ? event.target : null;
+			if (target?.closest("button, a, input, select, textarea, [role='button'], [role='link']")) return;
+			clearPinnedProbabilityField();
+		}, {capture: true, signal: documentController.signal});
+		document.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") clearPinnedProbabilityField();
+		}, {signal: documentController.signal});
+		const hoverController = {
+			destroy() {
+				if (controllerDestroyed) return;
+				controllerDestroyed = true;
+				cancelScheduledHoverSync();
+				if (layoutFrameId !== null) {
+					cancelControllerAnimationFrame(layoutFrameId);
+					layoutFrameId = null;
+				}
+				layoutObserver?.disconnect?.();
+				layoutObserver = null;
+				themeCleanup?.();
+				themeCleanup = null;
+				documentController.abort();
+				priceCanvas._abortController?.abort?.();
+				equityCanvas._abortController?.abort?.();
+				priceCanvas._abortController = null;
+				equityCanvas._abortController = null;
+				controllerAnimationFrames.forEach((frameId) => window.cancelAnimationFrame(frameId));
+				controllerAnimationFrames.clear();
+				controllerTaskCleanups.splice(0).forEach((cleanup) => cleanup());
+				activateBacktestRows([], null);
+				hoverLine.remove();
+				tooltip.remove();
+				probabilityTooltip?.remove();
+				priceChart?.destroy?.();
+				equityChart?.destroy?.();
+				if (bootstrap.backtestHoverController === hoverController) {
+					bootstrap.backtestHoverController = null;
+				}
+			},
+		};
+		bootstrap.backtestHoverController = hoverController;
+		themeCleanup = bindColorSchemeRefresh(() => {
+			if (controllerDestroyed || !priceChart?.ctx || !equityChart?.ctx) return;
 			const nextTheme = readThemeTokens();
+			Object.assign(resolvedTheme, nextTheme);
 			const nextAllInReferenceColor = nextTheme.muted;
 			priceChart.options.scales.y.ticks.color = nextTheme.muted;
 			equityChart.options.scales.y.ticks.color = nextTheme.muted;
@@ -1076,7 +1591,19 @@
 		});
 		initTransactionsPagination();
 		if (refreshTransition) {
-			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, allInEquity, chartYPaddingPx);
+			const cleanupRefreshTransition = animateBacktestRefreshTransition(
+				priceChart,
+				equityChart,
+				refreshTransition,
+				close,
+				equity,
+				allInEquity,
+				() => priceChartYPadding,
+				() => chartYPaddingPx,
+			);
+			if (typeof cleanupRefreshTransition === "function") {
+				controllerTaskCleanups.push(cleanupRefreshTransition);
+			}
 		}
 	};
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from app.core.language_settings import (
     DEFAULT_TRANSLATION_ROWS,
+    LANGUAGE_LABELS,
     TRANSLATION_KEY_ALIASES,
     LanguageSettings,
     build_translation_map,
@@ -80,7 +81,13 @@ class LanguageSettingsTests(unittest.TestCase):
         self.assertEqual(len(DEFAULT_TRANSLATION_ROWS), len(translation_keys))
         self.assertGreaterEqual(len(DEFAULT_TRANSLATION_ROWS), 500)
         self.assertEqual(TRANSLATION_KEY_ALIASES["Export image"], "Export images")
+        self.assertEqual(LANGUAGE_LABELS["zh_hans_cn"], "简体中文(中国大陆)")
+        self.assertEqual(
+            TRANSLATION_KEY_ALIASES["简体中文（中国大陆）"],
+            "简体中文(中国大陆)",
+        )
         self.assertNotIn("Export image", translation_keys)
+        self.assertNotIn("简体中文（中国大陆）", translation_keys)
 
         for row in DEFAULT_TRANSLATION_ROWS:
             self.assertTrue(row["en"])
@@ -137,11 +144,13 @@ class LanguageSettingsTests(unittest.TestCase):
         stylesheet = SETTINGS_CSS_PATH.read_text(encoding="utf-8")
         script = SETTINGS_JS_PATH.read_text(encoding="utf-8")
 
-        self.assertIn('class="settings-language-tabs segmented-control"', template)
+        self.assertIn('class="settings-language-tabs segmented-control segmented-control--tabs"', template)
         self.assertIn('data-option-count="2"', template)
-        self.assertIn('class="settings-language-tab segmented-control-option{% if settings_tab == \'current\' %} is-active{% endif %}"', template)
+        self.assertIn('data-active="{{ settings_tab }}"', template)
+        self.assertIn('class="settings-language-tab segmented-control-option"', template)
         self.assertIn('data-language-initial-page=', template)
         self.assertNotIn(".settings-language-tabs::before", stylesheet)
+        self.assertNotIn(".settings-language-tab.is-active", stylesheet)
         self.assertIn('"--segmented-active-index"', script)
 
 

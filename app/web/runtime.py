@@ -1,7 +1,15 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.83.1
+Code version: v0.85.1
+- Fixed: Relative Backtest provider windows now end on the selected ticker's
+  market-local trading date instead of the global New York calendar date.
+- Changed: Strategy-owned market-data loaders now fail closed on absent,
+  empty, structurally invalid, or source-mismatched datasets.
+- Added: Strategies may supply read-only market datasets and interval contracts;
+  Bayesian Price Field uses this path to keep every model input on Longbridge CLI.
+- Changed: Live-factor strategies can opt out of the generic Backtest result
+  cache so a current posterior is never replaced by a stale process snapshot.
 - Removed: Unreachable direct investment-ledger writes, superseded intraday and
   background-refresh helpers, and the retired standalone market-cap template
   mapping.
@@ -420,6 +428,101 @@ PORTFOLIO_BENCHMARK_COLORS = {
 LOCAL_STORE_PAGE_SIZE = 10
 SETTINGS_LANGUAGE_PAGE_SIZE = 10
 SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
+
+
+def _resolve_strategy_provider_end(
+        ticker: str,
+        reference_timestamp: object | None = None,
+) -> pd.Timestamp:
+    """Resolve a relative strategy-data window end in the ticker's market date."""
+    reference = (
+        pd.Timestamp.now(tz="UTC")
+        if reference_timestamp is None
+        else pd.Timestamp(reference_timestamp)
+    )
+    if reference.tzinfo is None:
+        reference = reference.tz_localize("UTC")
+    return pd.Timestamp(market_trading_date_for_timestamp(reference, ticker)).normalize()
+
+
+def _load_strategy_market_datasets(
+        strategy: object,
+        tickers: list[str],
+        *,
+        interval: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        params: dict[str, object],
+) -> list[pd.DataFrame] | None:
+    """Load and validate strategy-owned data without crossing provider boundaries."""
+    declared_source = str(
+        getattr(strategy, "strategy_market_data_source", "default")
+    ).strip().lower()
+    loader = getattr(strategy, "load_market_datasets", None)
+    if declared_source == "default":
+        return (
+            loader(
+                tickers,
+                interval=interval,
+                start=start,
+                end=end,
+                params=params,
+            )
+            if callable(loader)
+            else None
+        )
+
+    if not callable(loader):
+        raise ValueError(
+            f"Strategy market-data source {declared_source!r} requires a loader."
+        )
+    loaded = loader(
+        tickers,
+        interval=interval,
+        start=start,
+        end=end,
+        params=params,
+    )
+    if loaded is None:
+        raise ValueError(
+            f"Strategy market-data source {declared_source!r} returned no datasets."
+        )
+    if isinstance(loaded, pd.DataFrame):
+        raise ValueError("Strategy-owned market data must be returned as a dataset list.")
+    try:
+        datasets = list(loaded)
+    except TypeError as exc:
+        raise ValueError(
+            "Strategy-owned market data must be returned as a dataset list."
+        ) from exc
+
+    for index, dataset in enumerate(datasets, start=1):
+        if not isinstance(dataset, pd.DataFrame) or dataset.empty:
+            raise ValueError(
+                f"Strategy-owned market dataset {index} must be a non-empty DataFrame."
+            )
+        missing_columns = [
+            column
+            for column in ("Date", "Close")
+            if column not in dataset.columns
+        ]
+        if missing_columns:
+            raise ValueError(
+                f"Strategy-owned market dataset {index} is missing "
+                f"{', '.join(missing_columns)}."
+            )
+        dataset_source = str(
+            dataset.attrs.get("market_data_source", "")
+        ).strip().lower()
+        if dataset_source != declared_source:
+            raise ValueError(
+                f"Strategy-owned market dataset {index} source "
+                f"{dataset_source or 'missing'!r} does not match "
+                f"{declared_source!r}."
+            )
+    return datasets
+
+
 @dataclass(frozen=True)
 class WebRuntime:
     """Callable handlers and helpers shared across split route modules."""
@@ -2603,6 +2706,7 @@ def build_web_runtime() -> WebRuntime:
         if selected_strategy_id == "dca":
             return _run_dca_from_request()
         strategy = instantiate_strategy(selected_strategy_id)
+        selected_strategy_params = collect_strategy_form_values(selected_strategy_id)
         requested_tickers = parse_requested_tickers()
         requested_tickers, required_tickers, _ = resolve_backtest_tickers(
             requested_tickers,
@@ -2621,7 +2725,14 @@ def build_web_runtime() -> WebRuntime:
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):
             raise ValueError(f"{strategy.get_metadata().name} requires distinct tickers.")
-        refreshes = [ensure_latest_backtest_caches(ticker) for ticker in validated_tickers]
+        uses_strategy_market_data = str(
+            getattr(strategy, "strategy_market_data_source", "default")
+        ).strip().lower() != "default"
+        refreshes = (
+            []
+            if uses_strategy_market_data
+            else [ensure_latest_backtest_caches(ticker) for ticker in validated_tickers]
+        )
         backtest_cache_refresh = {
             "daily_error": any(bool(refresh.get("daily_error")) for refresh in refreshes),
             "intraday_error": any(bool(refresh.get("intraday_error")) for refresh in refreshes),
@@ -2636,18 +2747,46 @@ def build_web_runtime() -> WebRuntime:
             default=bool(defaults.get("backtest_stop_loss", True)),
         )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        interval_options = [list_available_market_intervals(ticker) for ticker in validated_tickers]
+        get_supported_intervals = getattr(strategy, "get_supported_intervals", None)
+        strategy_intervals = set(
+            get_supported_intervals()
+            if callable(get_supported_intervals)
+            else ("1d", "1m")
+        )
+        interval_options = (
+            [list(strategy_intervals) for _ticker in validated_tickers]
+            if uses_strategy_market_data
+            else [list_available_market_intervals(ticker) for ticker in validated_tickers]
+        )
         supported_intervals = [
             interval
             for interval in ("1d", "1m")
-            if all(interval in options for options in interval_options)
+            if interval in strategy_intervals and all(interval in options for options in interval_options)
         ] or ["1d"]
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
             requested_interval = "1m"
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
-        trade_datasets = [
+        provider_end = (
+            pd.Timestamp(exact_end)
+            if range_mode == "exact" and exact_end
+            else _resolve_strategy_provider_end(validated_tickers[0])
+        )
+        provider_start = (
+            pd.Timestamp(exact_start)
+            if range_mode == "exact" and exact_start
+            else provider_end - PERIOD_OFFSETS.get(period, pd.DateOffset(years=10))
+        )
+        strategy_datasets = _load_strategy_market_datasets(
+            strategy,
+            validated_tickers,
+            interval=requested_interval,
+            start=provider_start,
+            end=provider_end,
+            params=selected_strategy_params,
+        )
+        trade_datasets = strategy_datasets if strategy_datasets is not None else [
             fetch_history(
                 ticker,
                 False,
@@ -2656,6 +2795,10 @@ def build_web_runtime() -> WebRuntime:
             )
             for ticker in validated_tickers
         ]
+        if len(trade_datasets) != required_tickers:
+            raise ValueError(
+                f"{strategy.get_metadata().name} returned an invalid market dataset count."
+            )
         trade_dataset = (
             combine_backtest_datasets(trade_datasets)
             if required_tickers > 1
@@ -2685,7 +2828,6 @@ def build_web_runtime() -> WebRuntime:
             common_end_date = trade_dataset["Date"].max()
             trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
 
-        selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
         backtest_initial_capital = max(
             parse_float_value(
                 request.args.get("capital", request.args.get("initial_capital")),
@@ -3559,6 +3701,7 @@ def build_web_runtime() -> WebRuntime:
                 )
         selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
         strategy_form_fields = build_strategy_form_fields(selected_strategy_id, selected_strategy_params) if selected_strategy_id else []
+        selected_strategy_runtime = instantiate_strategy(selected_strategy_id) if selected_strategy_id else None
         backtest_initial_capital = max(
             parse_float_value(
                 request.args.get("capital", request.args.get("initial_capital")),
@@ -3602,14 +3745,31 @@ def build_web_runtime() -> WebRuntime:
         supported_intervals = ["1d"]
         if current_view in BACKTEST_VIEWS and requested_tickers:
             try:
-                interval_options = [
-                    list_available_market_intervals(validate_ticker_or_raise(ticker))
-                    for ticker in requested_tickers[:strategy_required_tickers]
-                ]
+                get_supported_intervals = getattr(
+                    selected_strategy_runtime,
+                    "get_supported_intervals",
+                    None,
+                )
+                strategy_intervals = set(
+                    get_supported_intervals()
+                    if callable(get_supported_intervals)
+                    else ("1d", "1m")
+                )
+                uses_strategy_market_data = str(
+                    getattr(selected_strategy_runtime, "strategy_market_data_source", "default")
+                ).strip().lower() != "default"
+                interval_options = (
+                    [list(strategy_intervals) for _ticker in requested_tickers[:strategy_required_tickers]]
+                    if uses_strategy_market_data
+                    else [
+                        list_available_market_intervals(validate_ticker_or_raise(ticker))
+                        for ticker in requested_tickers[:strategy_required_tickers]
+                    ]
+                )
                 supported_intervals = [
                     interval
                     for interval in ("1d", "1m")
-                    if all(interval in options for options in interval_options)
+                    if interval in strategy_intervals and all(interval in options for options in interval_options)
                 ] or ["1d"]
             except ValueError:
                 pass
@@ -3839,7 +3999,10 @@ def build_web_runtime() -> WebRuntime:
                     )
                     notice = f"{notice} {refresh_notice}" if notice else refresh_notice
             elif current_view in BACKTEST_VIEWS:
-                if requested_tickers:
+                uses_strategy_market_data = str(
+                    getattr(selected_strategy_runtime, "strategy_market_data_source", "default")
+                ).strip().lower() != "default"
+                if requested_tickers and not uses_strategy_market_data:
                     backtest_refreshes = [
                         ensure_latest_backtest_caches(validate_ticker_or_raise(ticker))
                         for ticker in requested_tickers[:strategy_required_tickers]
@@ -3854,9 +4017,11 @@ def build_web_runtime() -> WebRuntime:
                             for refresh in backtest_refreshes
                         ),
                     }
-                # Check cache: skip re-computation if config unchanged
-                cache_key = _get_backtest_cache_key()
-                if cache_key in _cached_backtest:
+                strategy_cacheable = bool(
+                    getattr(selected_strategy_runtime, "backtest_cacheable", True)
+                )
+                cache_key = _get_backtest_cache_key() if strategy_cacheable else ""
+                if strategy_cacheable and cache_key in _cached_backtest:
                     # Cache hit - use cached result directly
                     (
                         backtest_result,
@@ -3879,15 +4044,15 @@ def build_web_runtime() -> WebRuntime:
                         selected_strategy_params,
                         _,
                     ) = _run_backtest_from_request()
-                    _cached_backtest[cache_key] = (
-                        backtest_result, trade_ticker, requested_interval, date_constraints,
-                        trade_dataset, selected_strategy_id, selected_strategy_params
-                    )
-                    # Limit cache size to prevent memory growth (keep last 8 cached results)
-                    if len(_cached_backtest) > 8:
-                        # Remove oldest entry
-                        oldest_key = next(iter(_cached_backtest.keys()))
-                        del _cached_backtest[oldest_key]
+                    if strategy_cacheable:
+                        _cached_backtest[cache_key] = (
+                            backtest_result, trade_ticker, requested_interval, date_constraints,
+                            trade_dataset, selected_strategy_id, selected_strategy_params
+                        )
+                        # Limit cache size to prevent memory growth (keep last 8 cached results)
+                        if len(_cached_backtest) > 8:
+                            oldest_key = next(iter(_cached_backtest.keys()))
+                            del _cached_backtest[oldest_key]
                 record_strategy_usage(selected_strategy_id)
                 ticker_slots = requested_tickers[:strategy_required_tickers]
                 profiles = [fetch_quote_profile(ticker, False) for ticker in ticker_slots]
@@ -5537,7 +5702,9 @@ def build_web_runtime() -> WebRuntime:
         header_to_column = {header: index + 1 for index, header in enumerate(headers)}
         english_column = header_to_column.get("English", 2)
         traditional_column = header_to_column.get("繁體中文（香港）", 3)
-        simplified_column = header_to_column.get("简体中文（中国大陆）", 4)
+        simplified_column = header_to_column.get("简体中文(中国大陆)")
+        if simplified_column is None:
+            simplified_column = header_to_column.get("简体中文（中国大陆）", 4)
         rows: list[dict[str, str]] = []
         for row_index in range(2, worksheet.max_row + 1):
             english = str(worksheet.cell(row=row_index, column=english_column).value or "").strip()
@@ -5661,7 +5828,7 @@ def build_web_runtime() -> WebRuntime:
         workbook = Workbook()
         worksheet = workbook.active
         worksheet.title = "i18n mapping"
-        worksheet.append(["No.", "English", "繁體中文（香港）", "简体中文（中国大陆）"])
+        worksheet.append(["No.", "English", "繁體中文（香港）", LANGUAGE_LABELS["zh_hans_cn"]])
         for index, row in enumerate(settings.translations, start=1):
             worksheet.append([index, row["en"], row["zh_hant_hk"], row["zh_hans_cn"]])
         worksheet.freeze_panes = "A2"

@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.4.2
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -16,6 +16,120 @@ from strategies.base import StrategySignalResult
 
 
 class BacktestMetricTests(unittest.TestCase):
+    def test_strategy_signal_result_preserves_legacy_positional_field_order(self) -> None:
+        frame = pd.DataFrame()
+        result = StrategySignalResult(
+            frame,
+            "buy_signal",
+            "sell_signal",
+            "single_ticker",
+            {"legacy": True},
+            {"schema": "legacy/v1"},
+        )
+
+        self.assertEqual(result.metadata, {"legacy": True})
+        self.assertEqual(result.presentation, {"schema": "legacy/v1"})
+        self.assertIsNone(result.required_execution_mode)
+
+    def test_backtest_transmits_a_validated_declarative_strategy_presentation(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+        presentation = {
+            "schema": "bayesian-price-field/v1",
+            "predictive_mean": [None, 0.001],
+            "data_keys": [
+                "2025-01-01T00:00:00",
+                "2025-01-02T00:00:00",
+            ],
+        }
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+                presentation=presentation,
+            ),
+            initial_capital=10_000.0,
+        )
+
+        self.assertEqual(result["strategy_presentation"], presentation)
+        self.assertIsNot(result["strategy_presentation"], presentation)
+
+    def test_backtest_rejects_strategy_presentation_data_key_length_mismatch(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "data_keys must match.*length"):
+            run_single_ticker_backtest(
+                StrategySignalResult(
+                    frame=frame,
+                    buy_signal_column="buy_signal",
+                    sell_signal_column="sell_signal",
+                    presentation={"data_keys": ["2025-01-01T00:00:00"]},
+                ),
+                initial_capital=10_000.0,
+            )
+
+    def test_backtest_rejects_strategy_presentation_data_key_value_mismatch(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "exactly match"):
+            run_single_ticker_backtest(
+                StrategySignalResult(
+                    frame=frame,
+                    buy_signal_column="buy_signal",
+                    sell_signal_column="sell_signal",
+                    presentation={
+                        "data_keys": [
+                            "2025-01-01T00:00:00",
+                            "2025-01-03T00:00:00",
+                        ]
+                    },
+                ),
+                initial_capital=10_000.0,
+            )
+
+    def test_backtest_rejects_non_finite_strategy_presentation_values(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            run_single_ticker_backtest(
+                StrategySignalResult(
+                    frame=frame,
+                    buy_signal_column="buy_signal",
+                    sell_signal_column="sell_signal",
+                    presentation={"predictive_mean": [float("nan")]},
+                ),
+                initial_capital=10_000.0,
+            )
+
     def test_win_rate_returns_none_when_trades_exist_without_valid_pairs(self) -> None:
         self.assertIsNone(_calculate_win_rate_pct([], [], total_trades=1))
 
@@ -400,6 +514,37 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["trades"][0]["price"], 112.0)
         self.assertEqual(result["trades"][1]["date"], "2026/02/24")
         self.assertEqual(result["trades"][1]["price"], 118.0)
+        self.assertEqual(result["execution_mode"], "next_open")
+
+    def test_strategy_required_execution_mode_overrides_global_signal_close(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(
+                    ["2026-02-19", "2026-02-20", "2026-02-21"]
+                ),
+                "Open": [100.0, 105.0, 110.0],
+                "Close": [102.0, 108.0, 112.0],
+                "buy_signal": [True, False, False],
+                "sell_signal": [False, True, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+                required_execution_mode="next_open",
+            ),
+            initial_capital=10_000.0,
+            execution_mode="signal_close",
+        )
+
+        self.assertEqual(result["execution_mode"], "next_open")
+        self.assertEqual(
+            [(trade["date"], trade["price"]) for trade in result["trades"]],
+            [("2026/02/20", 105.0), ("2026/02/21", 110.0)],
+        )
 
     def test_signal_close_does_not_treat_later_signal_as_start_bar_trade(self) -> None:
         frame = pd.DataFrame(
@@ -426,6 +571,7 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["trades"][0]["price"], 110.0)
         self.assertEqual(result["trades"][1]["date"], "2026/02/21")
         self.assertEqual(result["trades"][1]["price"], 120.0)
+        self.assertEqual(result["execution_mode"], "signal_close")
 
     def test_next_open_initial_signal_executes_on_following_bar(self) -> None:
         frame = pd.DataFrame(

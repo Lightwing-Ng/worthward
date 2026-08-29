@@ -1,7 +1,13 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.132.1
+ * Code version: v2.133.1
+ * - Added: Shared split layouts can honor a workspace-declared total overview
+ *   content minimum before nested chart chrome has a measurable first frame.
+ * - Changed: Stock-details and Overview y-axis badges load the shared chart-axis
+ *   primitive through the current stock-details module revision.
+ * - Changed: Overview equity strokes now read the shared chart-series line-width
+ *   token used by the Backtest price curve.
  * - Changed: Stock-details price axes now load the shared project-wide
  *   stock-price number-format contract.
  * - Fixed: Import-complete transfer review now compares the refreshed ledger
@@ -378,7 +384,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.26.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.27.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -402,7 +408,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.1.2';
+} from './investment/layout.js?v=investment-layout-v1.1.4';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -423,8 +429,10 @@ import {
     renderNumericDisplayContent as renderWorkspaceMetricValueContent,
 } from './numeric-display.js?v=numeric-display-v1.1.0';
 
+const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.132.1',
+    entry: 'v2.133.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -18227,7 +18235,9 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentEquityChartRuntimeState = null;
         setInvestmentChartReady(false, canvas);
 
-        const referenceLineWidth = 2.0;
+        const seriesLineWidth = typeof chartAxis.readPxToken === 'function'
+            ? chartAxis.readPxToken(container, '--trade-chart-series-line-width', 2.0)
+            : 2.0;
         const cachedOverviewIntradayLinePoints = isInvestmentOverviewIntradayEquityRange()
             ? getCachedInvestmentOverviewIntradayLinePoints()
             : [];
@@ -18890,7 +18900,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         label: "Equity",
                         data: [...chartState.equity],
                         borderColor: equitySeriesColor,
-                        borderWidth: referenceLineWidth,
+                        borderWidth: seriesLineWidth,
                         pointRadius: 0,
                         tension: 0,
                         showLine: true,

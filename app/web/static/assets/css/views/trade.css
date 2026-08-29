@@ -1,4 +1,4 @@
-/* Code version: v3.34.13 */
+/* Code version: v3.35.3 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -72,8 +72,9 @@
 
 .backtest-trade-performance-card {
     --workspace-article-pad-block-start: 6px;
-    --workspace-article-pad-inline: 12px;
+    --workspace-article-pad-inline: 0px;
     --workspace-article-pad-block-end: 6px;
+    --backtest-result-surface-pad-inline: 12px;
 }
 
 .backtest-section-resizer {
@@ -89,6 +90,12 @@
     flex: 1 1 0;
     min-height: 0;
     height: auto;
+}
+
+.backtest-results-stack {
+    --backtest-probability-narrow-results-min-height: 600px;
+    --backtest-probability-narrow-overview-min-height: 320px;
+    --backtest-probability-narrow-chart-stage-min-height: 254px;
 }
 
 .backtest-results-stack > .backtest-trade-performance-card {
@@ -115,6 +122,7 @@
 #backtest_overview_panel > .backtest-surface {
     flex: 1 1 auto;
     width: 100%;
+    padding-inline: var(--backtest-result-surface-pad-inline);
     padding-top: 0;
     padding-bottom: 0 !important;
 }
@@ -189,6 +197,15 @@
             + var(--investment-section-resizer-size)
             + 84px
         );
+    }
+
+    .backtest-results-stack.investment-workspace-header.has-probability-field {
+        --investment-overview-content-min-height: var(--backtest-probability-narrow-overview-min-height);
+        min-height: var(--backtest-probability-narrow-results-min-height);
+    }
+
+    .backtest-results-stack.has-probability-field .trade-chart-stack {
+        min-height: var(--backtest-probability-narrow-chart-stage-min-height);
     }
 
     .backtest-results-stack > .backtest-trade-performance-card,
@@ -711,6 +728,48 @@
     opacity: 1;
 }
 
+.backtest-probability-tooltip.chart-tooltip {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-soft);
+    pointer-events: none;
+}
+
+.backtest-probability-tooltip[data-pinned="true"] {
+    box-shadow: var(--tooltip-shadow), 0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 18%, transparent);
+}
+
+.backtest-probability-grid {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    align-content: start;
+    justify-content: start;
+}
+
+.backtest-probability-cell {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 10px;
+    transition: opacity 80ms linear;
+}
+
+.backtest-probability-cell.is-up {
+    background: var(--theme-accent-positive);
+}
+
+.backtest-probability-cell.is-down {
+    background: var(--theme-accent-secondary);
+}
+
 .trade-chart-panel {
     position: relative;
     width: 100%;
@@ -776,7 +835,8 @@
     align-items: center;
     gap: 6px;
     width: fit-content;
-    padding: 6px;
+    padding-block: var(--layout-sidebar-dock-padding-block);
+    padding-inline: 6px;
     border-radius: var(--radius-pill);
     min-height: 0;
     pointer-events: auto;
@@ -827,9 +887,9 @@
     position: relative;
     z-index: var(--layer-surface-content);
     width: 44px;
-    height: 44px;
+    height: var(--layout-sidebar-dock-item-block-size);
     min-width: 44px;
-    min-height: 44px;
+    min-height: var(--layout-sidebar-dock-item-block-size);
     padding: 0;
     border-radius: var(--radius-pill);
     border: 0;

@@ -1,4 +1,4 @@
-{# Code version: v0.12.18 #}
+{# Code version: v0.12.21 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -96,7 +96,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.22.1') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.22.2') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -190,9 +190,9 @@
                 {% endfor %}
             </div>
             <div class="settings-language-toolbar">
-                <div class="settings-language-tabs segmented-control" role="tablist" aria-label="{{ translate_ui('Language') }}" data-option-count="2" data-segmented-active-index="{{ 1 if settings_tab == 'history' else 0 }}">
-                    <button type="button" class="settings-language-tab segmented-control-option{% if settings_tab == 'current' %} is-active{% endif %}" data-language-tab="current" role="tab" aria-selected="{{ 'true' if settings_tab == 'current' else 'false' }}" tabindex="{{ '0' if settings_tab == 'current' else '-1' }}"><span>{{ translate_ui('Current') }}</span></button>
-                    <button type="button" class="settings-language-tab segmented-control-option{% if settings_tab == 'history' %} is-active{% endif %}" data-language-tab="history" role="tab" aria-selected="{{ 'true' if settings_tab == 'history' else 'false' }}" tabindex="{{ '0' if settings_tab == 'history' else '-1' }}"><span>{{ translate_ui('History') }}</span></button>
+                <div class="settings-language-tabs segmented-control segmented-control--tabs" role="tablist" aria-label="{{ translate_ui('Language') }}" data-active="{{ settings_tab }}" data-option-count="2" data-segmented-active-index="{{ 1 if settings_tab == 'history' else 0 }}">
+                    <button type="button" class="settings-language-tab segmented-control-option" data-language-tab="current" role="tab" aria-selected="{{ 'true' if settings_tab == 'current' else 'false' }}" tabindex="{{ '0' if settings_tab == 'current' else '-1' }}"><span>{{ translate_ui('Current') }}</span></button>
+                    <button type="button" class="settings-language-tab segmented-control-option" data-language-tab="history" role="tab" aria-selected="{{ 'true' if settings_tab == 'history' else 'false' }}" tabindex="{{ '0' if settings_tab == 'history' else '-1' }}"><span>{{ translate_ui('History') }}</span></button>
                 </div>
                 <div class="settings-language-file-actions" aria-label="{{ translate_ui('Language mapping file actions') }}">
                     <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="{{ translate_ui('Upload i18n mapping') }}" title="{{ translate_ui('Upload i18n mapping') }}">
@@ -229,7 +229,7 @@
                                     {% endif %}
                                 </th>
                                 <th class="{% if language_code == 'zh_hans_cn' %}is-current-language{% endif %}">
-                                    <span class="settings-language-header-label">简体中文（中国大陆）</span>
+                                    <span class="settings-language-header-label">{{ language_labels['zh_hans_cn'] }}</span>
                                     {% if language_code == 'zh_hans_cn' %}
                                     <span class="settings-language-current-indicator" aria-hidden="true"></span>
                                     {% endif %}
@@ -251,7 +251,7 @@
                                     <td>{{ loop.index }}</td>
                                     <td><input type="text" name="translation_en" value="{{ row.en }}" aria-label="English {{ loop.index }}"></td>
                                     <td><input type="text" name="translation_zh_hant_hk" value="{{ row.zh_hant_hk }}" aria-label="繁體中文（香港） {{ loop.index }}"></td>
-                                    <td><input type="text" name="translation_zh_hans_cn" value="{{ row.zh_hans_cn }}" aria-label="简体中文（中国大陆） {{ loop.index }}"></td>
+                                    <td><input type="text" name="translation_zh_hans_cn" value="{{ row.zh_hans_cn }}" aria-label="{{ language_labels['zh_hans_cn'] }} {{ loop.index }}"></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -1074,32 +1074,32 @@
     </section>
     {% elif settings_section == "color-tokens" %}
     <section class="settings-color-token-layout" data-color-token-layout>
-        <aside class="settings-color-token-sidebar" data-color-token-sidebar aria-label="{{ translate_ui('Color token groups') }}">
-            <div class="settings-color-token-sidebar-heading">
-                <p class="settings-color-token-sidebar-kicker">{{ translate_ui('Palette') }}</p>
-                <p class="settings-color-token-sidebar-note">{{ translate_ui('Tune the Light and Dark values independently. Changes stay in this browser.') }}</p>
-            </div>
-            <nav class="settings-color-token-sidebar-nav" aria-label="{{ translate_ui('Color token groups') }}">
-                {% for group in color_token_rows %}
-                <a class="settings-color-token-sidebar-link{% if loop.first %} is-active{% endif %}" href="#color-token-{{ group.id }}" data-color-token-group-link="{{ group.id }}">
-                    <span class="settings-color-token-sidebar-swatches" aria-hidden="true">
-                        <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-light" style="--color-token-sidebar-swatch: {{ group.tokens[0].light_value }};"></span>
-                        <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-dark" style="--color-token-sidebar-swatch: {{ group.tokens[0].dark_value }};"></span>
-                    </span>
-                    <span class="settings-color-token-sidebar-link-copy">
-                        <span class="settings-color-token-sidebar-link-name">{{ group.name }}</span>
-                        <span class="settings-color-token-sidebar-link-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
-                    </span>
-                </a>
-                {% endfor %}
-            </nav>
-            <button type="button" class="settings-color-token-reset-all" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
-        </aside>
         <div class="settings-color-token-content">
             <div class="settings-color-token-intro settings-card">
                 <p class="settings-color-token-intro-title">{{ translate_ui('Color tokens') }}</p>
                 <p class="settings-color-token-intro-copy">{{ translate_ui('Use the text field for any CSS color expression. Hex colors also expose a native color picker. The positive green group intentionally keeps separate Light and Dark values.') }}</p>
             </div>
+            <aside class="settings-color-token-sidebar" data-color-token-sidebar aria-label="{{ translate_ui('Color token groups') }}">
+                <div class="settings-color-token-sidebar-heading">
+                    <p class="settings-color-token-sidebar-kicker">{{ translate_ui('Palette') }}</p>
+                    <p class="settings-color-token-sidebar-note">{{ translate_ui('Tune the Light and Dark values independently. Changes stay in this browser.') }}</p>
+                </div>
+                <nav class="settings-color-token-sidebar-nav" aria-label="{{ translate_ui('Color token groups') }}">
+                    {% for group in color_token_rows %}
+                    <a class="settings-color-token-sidebar-link{% if loop.first %} is-active{% endif %}" href="#color-token-{{ group.id }}" data-color-token-group-link="{{ group.id }}">
+                        <span class="settings-color-token-sidebar-swatches" aria-hidden="true">
+                            <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-light" style="--color-token-sidebar-swatch: {{ group.tokens[0].light_value }};"></span>
+                            <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-dark" style="--color-token-sidebar-swatch: {{ group.tokens[0].dark_value }};"></span>
+                        </span>
+                        <span class="settings-color-token-sidebar-link-copy">
+                            <span class="settings-color-token-sidebar-link-name">{{ group.name }}</span>
+                            <span class="settings-color-token-sidebar-link-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
+                        </span>
+                    </a>
+                    {% endfor %}
+                </nav>
+                <button type="button" class="settings-color-token-reset-all" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
+            </aside>
             {% for group in color_token_rows %}
             <section id="color-token-{{ group.id }}" class="settings-color-token-group settings-card" data-color-token-group="{{ group.id }}">
                 <header class="settings-color-token-group-header">
