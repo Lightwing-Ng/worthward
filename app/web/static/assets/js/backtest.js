@@ -1,4 +1,4 @@
-/* Code version: v0.15.0 */
+/* Code version: v0.18.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -74,24 +74,106 @@
 		return transition;
 	};
 
+	const getBacktestTradeDetailsInput = () => document.getElementById("show_trade_details");
+	const isBacktestTradeDetailsEnabled = () => {
+		const input = getBacktestTradeDetailsInput();
+		return !(input instanceof HTMLInputElement) || input.checked;
+	};
+	const persistBacktestTradeDetailsPreference = (enabled) => {
+		const nextUrl = new URL(window.location.href);
+		if (enabled) {
+			nextUrl.searchParams.delete("show_trade_details");
+		} else {
+			nextUrl.searchParams.set("show_trade_details", "0");
+			if (nextUrl.searchParams.get("tab") === "transactions") {
+				nextUrl.searchParams.delete("tab");
+			}
+		}
+		window.history.replaceState(
+			window.history.state,
+			"",
+			`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`,
+		);
+	};
+	const applyBacktestTradeDetailsPreference = (enabled, {persist = false} = {}) => {
+		const showTradeDetails = Boolean(enabled);
+		const input = getBacktestTradeDetailsInput();
+		if (input instanceof HTMLInputElement) input.checked = showTradeDetails;
+		document.querySelectorAll("[data-backtest-trade-chart-stack]").forEach((stack) => {
+			stack.classList.toggle("is-trade-details-hidden", !showTradeDetails);
+			stack.dataset.tradeDetailsVisible = String(showTradeDetails);
+		});
+		document.querySelectorAll("[data-backtest-equity-panel]").forEach((panel) => {
+			panel.hidden = !showTradeDetails;
+			panel.setAttribute("aria-hidden", showTradeDetails ? "false" : "true");
+		});
+		const historySurface = document.getElementById("backtest_history_surface");
+		if (historySurface instanceof HTMLElement) {
+			historySurface.dataset.tradeDetailsVisible = String(showTradeDetails);
+		}
+		if (persist) persistBacktestTradeDetailsPreference(showTradeDetails);
+		initBacktestHistoryTabs();
+		window.dispatchEvent(new CustomEvent("antigravity:backtest-trade-details-change", {
+			detail: {enabled: showTradeDetails},
+		}));
+		return showTradeDetails;
+	};
+	const initBacktestTradeDetailsPreference = () => {
+		const input = getBacktestTradeDetailsInput();
+		bootstrap.backtestTradeDetails = {
+			isEnabled: isBacktestTradeDetailsEnabled,
+			apply: applyBacktestTradeDetailsPreference,
+		};
+		if (!(input instanceof HTMLInputElement)) return;
+		if (input.dataset.backtestTradeDetailsBound !== "1") {
+			input.dataset.backtestTradeDetailsBound = "1";
+			input.addEventListener("change", () => {
+				applyBacktestTradeDetailsPreference(input.checked, {persist: true});
+			});
+		}
+		applyBacktestTradeDetailsPreference(input.checked);
+	};
+
 	const initBacktestHistoryTabs = () => {
 		const segmentedControl = document.getElementById("backtest_history_view_segmented");
 		const viewSurface = document.getElementById("backtest_history_surface");
-		if (!segmentedControl || !viewSurface || segmentedControl.dataset.bound === "1") return;
+		if (!segmentedControl || !viewSurface) return;
 		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-history-view-panel]"));
 		const syncPanels = () => {
-			const active = segmentedControl.querySelector('input[name="backtest_history_view_tab"]:checked')?.value || "transactions";
+			const showTradeDetails = isBacktestTradeDetailsEnabled();
+			const metricsInput = segmentedControl.querySelector('input[name="backtest_history_view_tab"][value="metrics"]');
+			const transactionsInput = segmentedControl.querySelector("[data-backtest-history-transactions]");
+			const transactionsOption = segmentedControl.querySelector(
+				"[data-backtest-history-transactions-option]",
+			);
+			if (transactionsInput instanceof HTMLInputElement) {
+				transactionsInput.disabled = !showTradeDetails;
+				transactionsInput.checked = showTradeDetails ? transactionsInput.checked : false;
+			}
+			if (transactionsOption instanceof HTMLElement) {
+				if (showTradeDetails) transactionsOption.removeAttribute("aria-disabled");
+				else transactionsOption.setAttribute("aria-disabled", "true");
+			}
+			if (!showTradeDetails && metricsInput instanceof HTMLInputElement) {
+				metricsInput.checked = true;
+			}
+			const active = showTradeDetails
+				? segmentedControl.querySelector('input[name="backtest_history_view_tab"]:checked')?.value || "transactions"
+				: "metrics";
 			segmentedControl.dataset.active = active;
 			viewSurface.dataset.activeView = active;
+			viewSurface.dataset.tradeDetailsVisible = String(showTradeDetails);
 			window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(segmentedControl, {activeValue: active});
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.backtestHistoryViewPanel !== active;
 			});
 		};
-		segmentedControl.dataset.bound = "1";
-		segmentedControl.querySelectorAll('input[name="backtest_history_view_tab"]').forEach((input) => {
-			input.addEventListener("change", syncPanels);
-		});
+		if (segmentedControl.dataset.bound !== "1") {
+			segmentedControl.dataset.bound = "1";
+			segmentedControl.querySelectorAll('input[name="backtest_history_view_tab"]').forEach((input) => {
+				input.addEventListener("change", syncPanels);
+			});
+		}
 		syncPanels();
 	};
 
@@ -299,15 +381,31 @@
 	};
 
 	const initBacktestWorkspace = () => {
+		initBacktestTradeDetailsPreference();
 		initBacktestHistoryTabs();
 		bootstrap.backtestHoverController?.destroy?.();
 		bootstrap.backtestHoverController = null;
 		const resultsStack = document.querySelector(
 			".backtest-results-stack.investment-workspace-header",
 		);
+		const resetProbabilityScrollPort = () => {
+			resultsStack?.classList.remove("has-probability-scrollport");
+			const scrollPort = resultsStack?.querySelector("[data-backtest-probability-scrollport]");
+			if (!(scrollPort instanceof HTMLElement)) return;
+			scrollPort.scrollLeft = 0;
+			scrollPort.tabIndex = -1;
+			scrollPort.hidden = true;
+			scrollPort.setAttribute("aria-hidden", "true");
+			const sectionResizer = resultsStack?.querySelector("#backtest_section_resizer");
+			if (sectionResizer instanceof HTMLElement) {
+				sectionResizer.removeAttribute("aria-hidden");
+				sectionResizer.removeAttribute("tabindex");
+			}
+		};
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
 			resultsStack?.classList.remove("has-probability-field");
+			resetProbabilityScrollPort();
 			return;
 		}
 
@@ -315,6 +413,7 @@
 		const equityCanvas = document.getElementById("tradeEquityChart");
 		if (!priceCanvas || !equityCanvas) {
 			resultsStack?.classList.remove("has-probability-field");
+			resetProbabilityScrollPort();
 			return;
 		}
 		const existingPriceChart = window.Chart.getChart?.(priceCanvas);
@@ -342,6 +441,7 @@
 			)
 			: null;
 		resultsStack?.classList.toggle("has-probability-field", Boolean(strategyPresentation));
+		if (!strategyPresentation) resetProbabilityScrollPort();
 		
 		const interval = backtestResult.interval || "1d";
 		const rawTimestamps = rawDates.map((value) => {
@@ -418,6 +518,19 @@
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
 		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
+		const probabilityScrollPort = strategyPresentation
+			? resultsStack?.querySelector("[data-backtest-probability-scrollport]")
+			: null;
+		const probabilityScrollPortSpacer = probabilityScrollPort?.querySelector(
+			"[data-backtest-probability-scrollport-spacer]",
+		);
+		const probabilityScrollResizer = resultsStack?.querySelector("#backtest_section_resizer");
+		if (probabilityScrollPort instanceof HTMLElement) {
+			probabilityScrollPort.scrollLeft = 0;
+			probabilityScrollPort.tabIndex = -1;
+			probabilityScrollPort.hidden = true;
+			probabilityScrollPort.setAttribute("aria-hidden", "true");
+		}
 		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
 		let priceChartYPadding = chartYPaddingPx;
 		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
@@ -507,6 +620,16 @@
 			probabilityTooltip.hidden = true;
 			tradeChartStack.appendChild(probabilityTooltip);
 		}
+		const probabilityScrollVisualNodes = [
+			priceCanvas.closest(".trade-chart-panel"),
+			equityCanvas.closest(".trade-chart-panel"),
+			hoverLine,
+			tooltip,
+			probabilityTooltip,
+		].filter((node) => node instanceof HTMLElement);
+		const probabilityScrollVisualTranslations = new Map(
+			probabilityScrollVisualNodes.map((node) => [node, node.style.translate]),
+		);
 
 		const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 		const formatReturn = (value) => `${value >= 0 ? "" : "-"}${Math.abs(value).toFixed(2)}%`;
@@ -528,9 +651,12 @@
 		let layoutObserver = null;
 		let themeCleanup = null;
 		let probabilityScrollTarget = 0;
+		let probabilityScrollVisualPosition = 0;
+		let probabilityScrollVisualOffset = 0;
 		let probabilityScrollVelocity = 0;
 		let probabilityScrollLastTimestamp = null;
 		let probabilityScrollCleanup = null;
+		let isSynchronizingProbabilityScrollPort = false;
 		const requestControllerAnimationFrame = (callback) => {
 			if (controllerDestroyed) return null;
 			let frameId = null;
@@ -546,51 +672,118 @@
 			window.cancelAnimationFrame(frameId);
 			controllerAnimationFrames.delete(frameId);
 		};
+		const setProbabilityScrollVisualOffset = (offsetValue) => {
+			probabilityScrollVisualOffset = Number(offsetValue) || 0;
+			tradeChartStack.dataset.probabilityPanVisualOffset = String(
+				probabilityScrollVisualOffset,
+			);
+			probabilityScrollVisualNodes.forEach((node) => {
+				node.style.translate = Math.abs(probabilityScrollVisualOffset) <= 0.001
+					? probabilityScrollVisualTranslations.get(node)
+					: `${probabilityScrollVisualOffset}px 0px`;
+			});
+		};
+		const setProbabilityScrollPortActive = (active) => {
+			const isActive = Boolean(active) && probabilityScrollPort instanceof HTMLElement;
+			resultsStack?.classList.toggle("has-probability-scrollport", isActive);
+			if (probabilityScrollResizer instanceof HTMLElement) {
+				if (isActive) {
+					if (document.activeElement === probabilityScrollResizer) {
+						probabilityScrollResizer.blur();
+					}
+					probabilityScrollResizer.tabIndex = -1;
+					probabilityScrollResizer.setAttribute("aria-hidden", "true");
+				} else {
+					probabilityScrollResizer.removeAttribute("tabindex");
+					probabilityScrollResizer.removeAttribute("aria-hidden");
+				}
+			}
+			if (!(probabilityScrollPort instanceof HTMLElement)) return;
+			probabilityScrollPort.hidden = !isActive;
+			probabilityScrollPort.tabIndex = isActive ? 0 : -1;
+			probabilityScrollPort.setAttribute("aria-hidden", isActive ? "false" : "true");
+			if (!isActive) {
+				isSynchronizingProbabilityScrollPort = true;
+				probabilityScrollPort.scrollLeft = 0;
+				isSynchronizingProbabilityScrollPort = false;
+			}
+		};
 		const setProbabilityScrollExtent = (scrollDistance) => {
 			if (!probabilityScrollSpacer) return;
 			const distance = Math.max(0, Number(scrollDistance) || 0);
+			const stackScrollWidth = Math.ceil(tradeChartStack.clientWidth + distance);
 			probabilityScrollSpacer.style.display = "block";
-			probabilityScrollSpacer.style.left = `${Math.max(0, tradeChartStack.clientWidth + distance - 1)}px`;
+			probabilityScrollSpacer.style.left = `${Math.max(0, stackScrollWidth - 1)}px`;
+			if (
+				probabilityScrollPort instanceof HTMLElement
+				&& probabilityScrollPortSpacer instanceof HTMLElement
+			) {
+				const portWidth = probabilityScrollPort.hidden
+					? 1
+					: Math.max(
+						1,
+						Math.ceil(probabilityScrollPort.clientWidth + distance),
+					);
+				probabilityScrollPortSpacer.style.width = `${portWidth}px`;
+			}
+		};
+		const setProbabilityScrollPosition = (scrollLeft) => {
+			const next = Math.max(0, Number(scrollLeft) || 0);
+			const nativeScrollLeft = Math.ceil(next);
+			tradeChartStack.scrollLeft = nativeScrollLeft;
+			const actualNativeScrollLeft = tradeChartStack.scrollLeft;
+			probabilityScrollVisualPosition = next;
+			tradeChartStack.dataset.probabilityPanVisualPosition = String(
+				probabilityScrollVisualPosition,
+			);
+			setProbabilityScrollVisualOffset(actualNativeScrollLeft - probabilityScrollVisualPosition);
+			if (
+				!(probabilityScrollPort instanceof HTMLElement)
+				|| probabilityScrollPort.hidden
+				|| Math.abs(probabilityScrollPort.scrollLeft - actualNativeScrollLeft) <= 0.01
+			) return;
+			isSynchronizingProbabilityScrollPort = true;
+			probabilityScrollPort.scrollLeft = actualNativeScrollLeft;
+			isSynchronizingProbabilityScrollPort = false;
 		};
 		const completeProbabilityScroll = () => {
 			probabilityScrollLastTimestamp = null;
 			probabilityScrollCleanup = null;
 			probabilityScrollVelocity = 0;
-			tradeChartStack.scrollLeft = probabilityScrollTarget;
 			if (probabilityScrollTarget <= 0.01) {
-				tradeChartStack.scrollLeft = 0;
-				tradeChartStack.classList.remove("has-probability-scroll");
+				setProbabilityScrollPosition(0);
+				setProbabilityScrollPortActive(false);
 				tradeChartStack.dataset.probabilityPanState = probabilityTooltip?.classList.contains("is-visible")
 					? (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
 					: "idle";
 				if (probabilityScrollSpacer) probabilityScrollSpacer.style.display = "none";
 			} else {
-				tradeChartStack.classList.add("has-probability-scroll");
+				setProbabilityScrollPortActive(true);
+				setProbabilityScrollExtent(probabilityScrollTarget);
+				setProbabilityScrollPosition(probabilityScrollTarget);
 				tradeChartStack.dataset.probabilityPanState = pinState.mode === "pinned"
 					? "pinned-pan"
 					: "tracking-pan";
-				setProbabilityScrollExtent(probabilityScrollTarget);
 			}
 		};
 		const setProbabilityScrollTarget = (targetValue) => {
 			if (!strategyPresentation) return;
-			probabilityScrollTarget = Math.ceil(Math.max(0, Number(targetValue) || 0));
+			probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);
 			tradeChartStack.dataset.probabilityPanTarget = String(probabilityScrollTarget);
 			tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";
 			tradeChartStack.dataset.probabilityPanState = probabilityScrollTarget > 0
 				? (pinState.mode === "pinned" ? "pinned-pan" : "tracking-pan")
 				: (
-					tradeChartStack.scrollLeft > 0.01
+					probabilityScrollVisualPosition > 0.01
 						? "returning"
 						: (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
 				);
-			setProbabilityScrollExtent(Math.max(tradeChartStack.scrollLeft, probabilityScrollTarget));
-			tradeChartStack.classList.toggle(
-				"has-probability-scroll",
-				probabilityScrollTarget > 0.01 || tradeChartStack.scrollLeft > 0.01,
+			setProbabilityScrollPortActive(
+				probabilityScrollTarget > 0.01 || probabilityScrollVisualPosition > 0.01,
 			);
+			setProbabilityScrollExtent(Math.max(probabilityScrollVisualPosition, probabilityScrollTarget));
 			if (
-				Math.abs(tradeChartStack.scrollLeft - probabilityScrollTarget) <= 0.01
+				Math.abs(probabilityScrollVisualPosition - probabilityScrollTarget) <= 0.01
 				&& Math.abs(probabilityScrollVelocity) <= 0.01
 			) {
 				completeProbabilityScroll();
@@ -625,7 +818,7 @@
 						Math.max(1 / 240, (timestamp - probabilityScrollLastTimestamp) / 1000),
 					);
 					probabilityScrollLastTimestamp = timestamp;
-					const current = tradeChartStack.scrollLeft;
+					const current = probabilityScrollVisualPosition;
 					const displacement = current - probabilityScrollTarget;
 					const acceleration = (
 						(-Number(preset.stiffness) * displacement)
@@ -642,9 +835,9 @@
 						probabilityScrollVelocity = 0;
 					}
 					setProbabilityScrollExtent(Math.max(next, probabilityScrollTarget));
-					tradeChartStack.scrollLeft = Math.max(0, next);
+					setProbabilityScrollPosition(next);
 					if (
-						Math.abs(tradeChartStack.scrollLeft - probabilityScrollTarget) <= 0.1
+						Math.abs(probabilityScrollVisualPosition - probabilityScrollTarget) <= 0.1
 						&& Math.abs(probabilityScrollVelocity) <= 0.1
 					) {
 						completeProbabilityScroll();
@@ -654,6 +847,30 @@
 				},
 			);
 		};
+		if (probabilityScrollPort instanceof HTMLElement) {
+			probabilityScrollPort.addEventListener("scroll", () => {
+				if (controllerDestroyed || isSynchronizingProbabilityScrollPort) return;
+				const nativeNext = Math.max(0, probabilityScrollPort.scrollLeft);
+				if (probabilityScrollTarget <= 0.01) {
+					probabilityScrollCleanup?.();
+					probabilityScrollCleanup = null;
+					probabilityScrollVelocity = 0;
+					probabilityScrollLastTimestamp = null;
+					setProbabilityScrollPosition(0);
+					completeProbabilityScroll();
+					return;
+				}
+				if (Math.abs(tradeChartStack.scrollLeft - nativeNext) <= 0.01) return;
+				probabilityScrollCleanup?.();
+				probabilityScrollCleanup = null;
+				probabilityScrollVelocity = 0;
+				probabilityScrollLastTimestamp = null;
+				const visualNext = probabilityScrollTarget > 0
+					? Math.min(nativeNext, probabilityScrollTarget)
+					: nativeNext;
+				setProbabilityScrollPosition(visualNext);
+			}, {signal: documentController.signal});
+		}
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
@@ -676,11 +893,18 @@
 			return `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`;
 		};
 
-		const formatChartDateLines = (dateParts) => (
-			typeof formatFullDateLines === "function"
-				? formatFullDateLines(dateParts, { allowWrap: true })
-				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
-		);
+		const formatChartDateLines = (dateParts) => {
+			const displayDateParts = interval === "1d"
+				? {
+					year: dateParts.year,
+					monthIndex: dateParts.monthIndex,
+					day: dateParts.day,
+				}
+				: dateParts;
+			return typeof formatFullDateLines === "function"
+				? formatFullDateLines(displayDateParts, { allowWrap: true })
+				: [`${displayDateParts.day}/${displayDateParts.monthIndex + 1}`, `${displayDateParts.year}`];
+		};
 
 		const buildTickIndexSet = (count, plotWidth) => (
 			typeof chartAxis.buildTickIndexSet === "function"
@@ -704,7 +928,8 @@
 		const xAxisLabelPlugin = {
 			id: "tradeXAxisLabelPlugin",
 			afterDraw(chart) {
-				if (chart.canvas !== equityCanvas) return;
+				const xAxisCanvas = isBacktestTradeDetailsEnabled() ? equityCanvas : priceCanvas;
+				if (chart.canvas !== xAxisCanvas) return;
 				const { ctx, chartArea, scales } = chart;
 				const xScale = scales?.x;
 				if (!chartArea || !xScale || !labels.length) return;
@@ -784,7 +1009,7 @@
 		const tradeMarkerPlugin = {
 			id: "tradeMarkerPlugin",
 			afterDatasetsDraw(chart) {
-				if (chart.canvas !== priceCanvas) return;
+				if (!isBacktestTradeDetailsEnabled() || chart.canvas !== priceCanvas) return;
 				const yScale = chart.scales?.y;
 				const priceMeta = chart.getDatasetMeta(0);
 				if (!yScale || !priceMeta?.data?.length) return;
@@ -894,12 +1119,16 @@
 		};
 
 		const updateHoverLineFrame = () => {
-			if (!priceChart?.chartArea || !equityChart?.chartArea) return null;
+			if (!priceChart?.chartArea) return null;
+			const showTradeDetails = isBacktestTradeDetailsEnabled();
+			if (showTradeDetails && !equityChart?.chartArea) return null;
 			const priceCanvasRect = priceCanvas.getBoundingClientRect();
-			const equityCanvasRect = equityCanvas.getBoundingClientRect();
 			const stackRect = tradeChartStack.getBoundingClientRect();
 			const top = priceCanvasRect.top - stackRect.top + priceChart.chartArea.top;
-			const bottom = equityCanvasRect.top - stackRect.top + equityChart.chartArea.bottom;
+			const bottomCanvas = showTradeDetails ? equityCanvas : priceCanvas;
+			const bottomChart = showTradeDetails ? equityChart : priceChart;
+			const bottomCanvasRect = bottomCanvas.getBoundingClientRect();
+			const bottom = bottomCanvasRect.top - stackRect.top + bottomChart.chartArea.bottom;
 			return { top, bottom };
 		};
 
@@ -912,7 +1141,7 @@
 			if (!canvas || !point) return null;
 			const canvasRect = canvas.getBoundingClientRect();
 			return {
-				x: canvasRect.left - stackRect.left + tradeChartStack.scrollLeft + point.x,
+				x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,
 				y: canvasRect.top - stackRect.top + point.y,
 			};
 		};
@@ -949,7 +1178,9 @@
 			const yScale = chart.scales?.y;
 			if (!yScale) return nearestIndex;
 
-			const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
+			const markerCandidates = isBacktestTradeDetailsEnabled()
+				? [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell]
+				: [];
 			let snappedMarkerIndex = null;
 			let snappedMarkerDistance = Number.POSITIVE_INFINITY;
 			markerCandidates.forEach((marker) => {
@@ -997,7 +1228,7 @@
 				hideProbabilityTooltip();
 				return false;
 			}
-			setProbabilityScrollExtent(tradeChartStack.scrollLeft);
+			setProbabilityScrollExtent(probabilityScrollVisualPosition);
 			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
 			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
 			if (!(stepPixels > 0)) {
@@ -1074,10 +1305,12 @@
 			grid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${geometry.cellSize}px)`;
 			grid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${geometry.cellSize}px)`;
 			grid.style.gap = `${geometry.gap}px`;
-			grid.style.padding = `${geometry.padding}px`;
+            grid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px`;
 
 			const canvasRect = priceCanvas.getBoundingClientRect();
-			const canvasOffsetX = canvasRect.left - stackRect.left + tradeChartStack.scrollLeft;
+			const canvasOffsetX = (
+				canvasRect.left - stackRect.left + probabilityScrollVisualPosition
+			);
 			const canvasOffsetY = canvasRect.top - stackRect.top;
 			probabilityTooltip.style.left = `${canvasOffsetX + geometry.left}px`;
 			probabilityTooltip.style.top = `${canvasOffsetY + geometry.top}px`;
@@ -1157,7 +1390,7 @@
 			}
 			hideProbabilityTooltip();
 			const relativeX = hoverLinePosition.x;
-			const visualRelativeX = relativeX - tradeChartStack.scrollLeft;
+			const visualRelativeX = relativeX - probabilityScrollVisualPosition;
 			const relativeY = tooltipAnchorPosition.y;
 			const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
@@ -1184,7 +1417,7 @@
 			const visualLeft = rightSpace >= tooltipWidth + 20
 				? visualRelativeX + 14
 				: Math.max(12, visualRelativeX - tooltipWidth - 14);
-			const left = visualLeft + tradeChartStack.scrollLeft;
+			const left = visualLeft + probabilityScrollVisualPosition;
 			const tooltipHeight = tooltip.offsetHeight || 156;
 			const padding = 12;
 			let top = relativeY - (tooltipHeight / 2);
@@ -1419,6 +1652,7 @@
 				candlestickPlugin,
 				tradeMarkerPlugin,
 				priceHoverOverlayPlugin,
+				xAxisLabelPlugin,
 			],
 		});
 
@@ -1608,12 +1842,26 @@
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
 		if (strategyPresentation) {
-			tradeChartStack.addEventListener("mouseleave", () => {
+			const isProbabilityHoverSurface = (target) => (
+				target instanceof Node
+				&& (
+					tradeChartStack.contains(target)
+					|| (probabilityScrollPort instanceof HTMLElement && probabilityScrollPort.contains(target))
+				)
+			);
+			const clearProbabilityFieldOnLeave = (relatedTarget) => {
+				if (isProbabilityHoverSurface(relatedTarget)) return;
 				if (!priceChart?.ctx || pinState.mode === "pinned") return;
 				cancelScheduledHoverSync();
 				pinState = probabilityGridApi.reducePinState?.(pinState, {type: "clear"})
 					|| {mode: "tracking", activeIndex: null};
 				syncHoverState(null, priceCanvas, priceChart);
+			};
+			tradeChartStack.addEventListener("mouseleave", (event) => {
+				clearProbabilityFieldOnLeave(event.relatedTarget);
+			}, {signal: documentController.signal});
+			probabilityScrollPort?.addEventListener("mouseleave", (event) => {
+				clearProbabilityFieldOnLeave(event.relatedTarget);
 			}, {signal: documentController.signal});
 		}
 		const resolvePriceChartYPadding = () => {
@@ -1664,17 +1912,18 @@
 			layoutFrameId = requestControllerAnimationFrame(() => {
 				layoutFrameId = null;
 				if (!priceChart?.ctx || !equityChart?.ctx) return;
+				const showTradeDetails = isBacktestTradeDetailsEnabled();
 				const refreshIndex = pinState.mode === "pinned"
 					? pinState.activeIndex
 					: activeIndex;
-				const refreshSourceCanvas = pinState.mode === "pinned"
+				const refreshSourceCanvas = !showTradeDetails || pinState.mode === "pinned"
 					? priceCanvas
 					: activeSourceCanvas;
-				const refreshSourceChart = pinState.mode === "pinned"
+				const refreshSourceChart = !showTradeDetails || pinState.mode === "pinned"
 					? priceChart
 					: activeSourceChart;
 				priceChart.resize();
-				equityChart.resize();
+				if (showTradeDetails) equityChart.resize();
 				priceChartYPadding = resolvePriceChartYPadding();
 				applyBacktestYAxisScale(
 					priceChart,
@@ -1682,17 +1931,19 @@
 					[priceChart.data.datasets[0].data],
 					priceChartYPadding,
 				);
-				applyBacktestYAxisScale(
-					equityChart,
-					equityCanvas,
-					[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
-					chartYPaddingPx,
-				);
+				if (showTradeDetails) {
+					applyBacktestYAxisScale(
+						equityChart,
+						equityCanvas,
+						[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+						chartYPaddingPx,
+					);
+				}
 				if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
 					syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
 				} else {
 					priceChart.update("none");
-					equityChart.update("none");
+					if (showTradeDetails) equityChart.update("none");
 				}
 			});
 		};
@@ -1701,6 +1952,11 @@
 			layoutObserver.observe(tradeChartStack);
 		}
 		window.addEventListener("resize", scheduleChartLayoutRefresh, {signal: documentController.signal});
+		window.addEventListener(
+			"antigravity:backtest-trade-details-change",
+			scheduleChartLayoutRefresh,
+			{signal: documentController.signal},
+		);
 		scheduleChartLayoutRefresh();
 		const clearPinnedProbabilityField = () => {
 			if (pinState.mode !== "pinned") return;
@@ -1743,13 +1999,17 @@
 				probabilityScrollCleanup?.();
 				probabilityScrollCleanup = null;
 				probabilityScrollTarget = 0;
+				probabilityScrollVisualPosition = 0;
 				probabilityScrollVelocity = 0;
 				probabilityScrollLastTimestamp = null;
-				tradeChartStack.scrollLeft = 0;
-				tradeChartStack.classList.remove("has-probability-field", "has-probability-scroll");
+				setProbabilityScrollPosition(0);
+				setProbabilityScrollPortActive(false);
+				tradeChartStack.classList.remove("has-probability-field");
 				delete tradeChartStack.dataset.probabilityPanState;
 				delete tradeChartStack.dataset.probabilityPanTarget;
 				delete tradeChartStack.dataset.probabilityPanMotion;
+				delete tradeChartStack.dataset.probabilityPanVisualOffset;
+				delete tradeChartStack.dataset.probabilityPanVisualPosition;
 				activateBacktestRows([], null);
 				hoverLine.remove();
 				tooltip.remove();

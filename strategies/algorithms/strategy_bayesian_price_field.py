@@ -5,15 +5,17 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.7.0
+Code version: v1.11.0
+- Changed: Walk-forward observation noise now uses causal ridge-residual variance instead of raw target variance, so predictive uncertainty reflects factor explanatory power without using future data.
 - Changed: The private probability-field background is 50% transparent, and
   its Python presentation owns the instantaneous nonlinear cell-opacity curve.
 - Added: Daily posterior signals may execute on real one-minute bars through a
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
-- Changed: The declarative presentation contract now fixes a 36 by 12
-  probability field, integer-trading-day slots, concentric 8 px padding, and
-  the strategy-private material geometry.
+- Changed: The declarative presentation contract retains a fixed 36-column,
+  six-row-per-side field with integer-trading-day slots, a 2 px requested-gap
+  upper bound, concentric 8 px padding, and the strategy-private material
+  geometry.
 - Changed: NVDA is the default research ticker for this strategy.
 - Changed: Auto and CPU now use NumPy directly for this small-matrix
   walk-forward workload; only an explicit GPU request imports Torch and probes
@@ -24,6 +26,8 @@ Code version: v1.7.0
   NumPy CPU fallback while process-control exceptions still propagate.
 - Fixed: Provider trading dates remain market-local naive midnights throughout
   the model frame and presentation time-axis contract.
+- Added: The probability field now reports a causal, probability-weighted
+  future-cell hit rate and exposes opt-in Longbridge research factors.
 """
 
 from __future__ import annotations
@@ -55,9 +59,14 @@ _PROBABILITY_COLUMN = "bayesian_probability_up"
 _MIN_TRAINING_OBSERVATIONS = 20
 _PE_MAX_STALENESS_DAYS = 14
 _OPTIONS_MAX_STALENESS_DAYS = 7
+_RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.2.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.5.0"
 _EPSILON = 1e-12
+_PROBABILITY_FIELD_MAX_HORIZON = 20
+_PROBABILITY_FIELD_ROWS_ABOVE = 6
+_PROBABILITY_FIELD_ROWS_BELOW = 6
+_PROBABILITY_FIELD_RETURN_SIGMA = 6.0
 
 
 def _record_value(record: object, key: str, default: Any = None) -> Any:
@@ -249,6 +258,32 @@ def _merge_bundle_observations(frame: pd.DataFrame, bundle: object | None) -> pd
             allow_exact_matches=True,
             tolerance=pd.Timedelta(days=_OPTIONS_MAX_STALENESS_DAYS),
         )
+    research_rows = tuple(_record_value(bundle, "research_history", ()) or ())
+    if research_rows:
+        for factor in sorted({str(_record_value(row, "factor", "")) for row in research_rows}):
+            if not factor:
+                continue
+            research_frame = _observation_frame(
+                [
+                    row for row in research_rows
+                    if str(_record_value(row, "factor", "")) == factor
+                ],
+                lambda observation: _record_value(observation, "value"),
+                f"bayesian_{factor}",
+            )
+            if research_frame.empty:
+                continue
+            observed_column = f"bayesian_{factor}_observed_at"
+            research_frame = research_frame.rename(columns={"Date": observed_column})
+            merged = pd.merge_asof(
+                merged,
+                research_frame,
+                left_on="Date",
+                right_on=observed_column,
+                direction="backward",
+                allow_exact_matches=True,
+                tolerance=pd.Timedelta(days=_RESEARCH_MAX_STALENESS_DAYS),
+            )
     return merged
 
 
@@ -382,6 +417,21 @@ def _build_factor_columns(frame: pd.DataFrame, chip_window: int) -> dict[str, np
         result["pe"] = _signed_log_series(pe_source).to_numpy(dtype=np.float64)
     if option_source is not None:
         result["options"] = _signed_log_series(option_source).to_numpy(dtype=np.float64)
+    for factor in (
+        "pb_ratio",
+        "ps_ratio",
+        "dividend_yield",
+        "market_temperature",
+        "capital_flow",
+        "shareholder_concentration",
+        "fund_holder_weight",
+        "short_interest",
+        "short_volume",
+        "broker_holding",
+    ):
+        source = frame.get(f"bayesian_{factor}")
+        if source is not None:
+            result[factor] = _signed_log_series(source).to_numpy(dtype=np.float64)
     return result
 
 
@@ -535,6 +585,108 @@ def _normal_probability_above_zero(mean: float, standard_deviation: float) -> fl
     )
 
 
+def _normal_cdf(value: float) -> float:
+    """Return a bounded standard-normal CDF value without a SciPy dependency."""
+    if not math.isfinite(value):
+        return 0.0 if value < 0 else 1.0
+    return min(1.0, max(0.0, 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))))
+
+
+def _probability_field_hit_rate(
+        close: Sequence[float],
+        predictive_mean: Sequence[float],
+        predictive_std: Sequence[float],
+        *,
+        max_horizon: int = _PROBABILITY_FIELD_MAX_HORIZON,
+        rows_above: int = _PROBABILITY_FIELD_ROWS_ABOVE,
+        rows_below: int = _PROBABILITY_FIELD_ROWS_BELOW,
+) -> dict[str, Any]:
+    """Score causal grid-cell coverage against observations that follow each origin.
+
+    At origin ``i`` the posterior was fitted only with rows before ``i``. The
+    score then evaluates each available future trading-day close ``i + h``
+    against the same six-row-per-side return lattice used by the browser
+    field. The
+    probability mass of the cell containing that future close is accumulated;
+    unavailable horizons near the end of a sample are not counted. This makes
+    the metric an honest walk-forward diagnostic rather than a future feature.
+    """
+    close_values = np.asarray(close, dtype=np.float64)
+    means = np.asarray(predictive_mean, dtype=np.float64)
+    scales = np.asarray(predictive_std, dtype=np.float64)
+    row_count = min(len(close_values), len(means), len(scales))
+    row_count = max(0, row_count)
+    normalized_horizon = max(1, min(_PROBABILITY_FIELD_MAX_HORIZON, int(max_horizon)))
+    normalized_rows_above = max(1, min(_PROBABILITY_FIELD_ROWS_ABOVE, int(rows_above)))
+    normalized_rows_below = max(1, min(_PROBABILITY_FIELD_ROWS_BELOW, int(rows_below)))
+    total_weight = 0.0
+    hit_weight = 0.0
+    scored_points = 0
+    row_count_lattice = normalized_rows_above + normalized_rows_below
+
+    for origin in range(row_count):
+        anchor = float(close_values[origin])
+        mean = float(means[origin])
+        scale = float(scales[origin])
+        if (
+                not math.isfinite(anchor)
+                or anchor <= 0.0
+                or not math.isfinite(mean)
+                or not math.isfinite(scale)
+                or scale <= _EPSILON
+        ):
+            continue
+        last_horizon = min(normalized_horizon, row_count - origin - 1)
+        for horizon in range(1, last_horizon + 1):
+            future_close = float(close_values[origin + horizon])
+            if not math.isfinite(future_close) or future_close <= 0.0:
+                continue
+            horizon_scale = scale * math.sqrt(float(horizon))
+            horizon_mean = mean * float(horizon)
+            if not math.isfinite(horizon_scale) or horizon_scale <= _EPSILON:
+                continue
+            # The horizontal guide is the zero-return axis. Keep at most six
+            # rows on each side while extending the side containing the
+            # posterior mean, so a strongly directional but valid forecast is
+            # still scored instead of producing an empty lattice.
+            lower_extent = _PROBABILITY_FIELD_RETURN_SIGMA * horizon_scale + max(0.0, -horizon_mean)
+            upper_extent = _PROBABILITY_FIELD_RETURN_SIGMA * horizon_scale + max(0.0, horizon_mean)
+            boundaries = np.concatenate((
+                np.linspace(-lower_extent, 0.0, normalized_rows_below + 1),
+                np.linspace(0.0, upper_extent, normalized_rows_above + 1)[1:],
+            ))
+            log_return = math.log(future_close / anchor)
+            cell_index = int(np.searchsorted(boundaries, log_return, side="right") - 1)
+            probabilities = []
+            for lower, upper in zip(boundaries[:-1], boundaries[1:], strict=True):
+                probabilities.append(
+                    _normal_cdf((float(upper) - horizon_mean) / horizon_scale)
+                    - _normal_cdf((float(lower) - horizon_mean) / horizon_scale)
+                )
+            lattice_mass = max(0.0, float(sum(probabilities)))
+            if lattice_mass <= _EPSILON:
+                continue
+            probability_mass = (
+                max(0.0, float(probabilities[cell_index]))
+                if 0 <= cell_index < row_count_lattice
+                else 0.0
+            )
+            total_weight += lattice_mass
+            hit_weight += probability_mass
+            scored_points += 1
+
+    score_pct = (hit_weight / total_weight) * 100.0 if total_weight > _EPSILON else 0.0
+    return {
+        "score_pct": round(float(score_pct), 2),
+        "scored_points": scored_points,
+        "max_horizon": normalized_horizon,
+        "rows_above": normalized_rows_above,
+        "rows_below": normalized_rows_below,
+        "weighting": "probability-mass-of-hit-cell",
+        "causal": True,
+    }
+
+
 def _walk_forward_predictions(
         frame: pd.DataFrame,
         factor_values: dict[str, np.ndarray],
@@ -607,8 +759,17 @@ def _walk_forward_predictions(
             design[:, 1:] = np.column_stack(standardized_training)
             current[1:] = standardized_current
 
-        sample_variance = float(np.var(target, ddof=1)) if len(target) > 1 else 0.0
-        noise_variance = max(sample_variance, 1e-10)
+        residual_variance = 0.0
+        if len(target) > design.shape[1]:
+            fitted_coefficients, *_ = np.linalg.lstsq(design, target, rcond=None)
+            residuals = target - design @ fitted_coefficients
+            residual_degrees_of_freedom = max(1, len(target) - design.shape[1])
+            residual_variance = float(
+                np.sum(np.square(residuals)) / residual_degrees_of_freedom
+            )
+        elif len(target) > 1:
+            residual_variance = float(np.var(target, ddof=1))
+        noise_variance = max(residual_variance, 1e-10)
         mean, standard_deviation = _bayesian_prediction(
             backend,
             design,
@@ -699,7 +860,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
     strategy_name = "Bayesian Price Field"
     strategy_description = (
         "Walk-forward Bayesian regression estimates the next-price probability field "
-        "from Longbridge CLI P/E, volume, options, and volume-at-price factors."
+        "from Longbridge CLI price, volume, options, ownership, capital, valuation, "
+        "short-interest, and sentiment factors."
     )
     strategy_category = "machine-learning"
     strategy_display_order = 42
@@ -754,6 +916,76 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 kind="boolean",
                 default=True,
                 help_text="Uses the current close's causal percentile in a trailing volume-at-price distribution built by spreading each Longbridge CLI bar's volume across fixed Low-High price bins.",
+            ),
+            StrategyParameterDefinition(
+                key="use_pb_ratio",
+                label="P/B Ratio",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in historical price-to-book observations from Longbridge valuation history; joined backward as-of.",
+            ),
+            StrategyParameterDefinition(
+                key="use_ps_ratio",
+                label="P/S Ratio",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in historical price-to-sales observations from Longbridge valuation history; joined backward as-of.",
+            ),
+            StrategyParameterDefinition(
+                key="use_dividend_yield",
+                label="Dividend Yield",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in historical dividend-yield observations from Longbridge valuation history; no current snapshot is backfilled.",
+            ),
+            StrategyParameterDefinition(
+                key="use_market_temperature",
+                label="Market Temperature",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in Longbridge market sentiment temperature history for the ticker's exchange.",
+            ),
+            StrategyParameterDefinition(
+                key="use_capital_flow",
+                label="Capital Flow",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in Longbridge capital-flow observations; only dated observations inside the backtest window are usable.",
+            ),
+            StrategyParameterDefinition(
+                key="use_shareholder_concentration",
+                label="Shareholder Concentration",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in dated major-shareholder ownership ratios from Longbridge; reports are never projected backward beyond their observation date.",
+            ),
+            StrategyParameterDefinition(
+                key="use_fund_holder_weight",
+                label="Fund Holder Weight",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in fund and ETF position weights reported by Longbridge.",
+            ),
+            StrategyParameterDefinition(
+                key="use_short_interest",
+                label="Short Interest",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in dated short-interest or disclosed open-short balances from Longbridge.",
+            ),
+            StrategyParameterDefinition(
+                key="use_short_volume",
+                label="Short Volume",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in daily short-sale volume from Longbridge; each observation is used only on or after its report date.",
+            ),
+            StrategyParameterDefinition(
+                key="use_broker_holding",
+                label="Broker Holding",
+                kind="boolean",
+                default=False,
+                help_text="Opt-in HKEX broker-holding history from Longbridge; unavailable for US and other markets.",
             ),
             StrategyParameterDefinition(
                 key="training_window",
@@ -832,12 +1064,31 @@ class BayesianPriceFieldStrategy(BaseStrategy):
 
         from app.services.bayesian_market_factors import fetch_bayesian_factor_bundle
 
+        research_factor_parameters = (
+            ("pb_ratio", "use_pb_ratio"),
+            ("ps_ratio", "use_ps_ratio"),
+            ("dividend_yield", "use_dividend_yield"),
+            ("market_temperature", "use_market_temperature"),
+            ("capital_flow", "use_capital_flow"),
+            ("shareholder_concentration", "use_shareholder_concentration"),
+            ("fund_holder_weight", "use_fund_holder_weight"),
+            ("short_interest", "use_short_interest"),
+            ("short_volume", "use_short_volume"),
+            ("broker_holding", "use_broker_holding"),
+        )
+        research_factors = tuple(
+            factor
+            for factor, parameter_key in research_factor_parameters
+            if bool(normalized_params[parameter_key])
+        )
+
         bundle = fetch_bayesian_factor_bundle(
             _longbridge_symbol(str(tickers[0])),
             warmup_start,
             end,
             include_pe=bool(normalized_params["use_pe_ratio"]),
             include_options=bool(normalized_params["use_options"]),
+            research_factors=research_factors,
         )
         self._warmup_bundle = bundle
         return [_bundle_ohlcv_frame(bundle)]
@@ -888,6 +1139,46 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 None,
                 None,
             ),
+            (
+                "pb_ratio", "P/B Ratio", "use_pb_ratio", "pb_ratio", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "ps_ratio", "P/S Ratio", "use_ps_ratio", "ps_ratio", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "dividend_yield", "Dividend Yield", "use_dividend_yield", "dividend_yield", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "market_temperature", "Market Temperature", "use_market_temperature", "market_temperature", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "capital_flow", "Capital Flow", "use_capital_flow", "capital_flow", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "shareholder_concentration", "Shareholder Concentration", "use_shareholder_concentration", "shareholder_concentration", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "fund_holder_weight", "Fund Holder Weight", "use_fund_holder_weight", "fund_holder_weight", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "short_interest", "Short Interest", "use_short_interest", "short_interest", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "short_volume", "Short Volume", "use_short_volume", "short_volume", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
+            (
+                "broker_holding", "Broker Holding", "use_broker_holding", "broker_holding", "research_history",
+                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
+            ),
         )
         total_observations = len(frame)
         latest_frame_date = (
@@ -924,6 +1215,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 status = "disabled"
             elif provider_status == "error":
                 status = "error"
+            elif provider_status in {"unsupported", "unsupported_market"}:
+                status = provider_status
             else:
                 is_stale = False
                 if (
@@ -932,18 +1225,19 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                         and max_staleness_days is not None
                         and latest_frame_date is not None
                 ):
-                    observation_frame = _observation_frame(
-                        tuple(
-                            _record_value(
-                                self._warmup_bundle,
-                                observation_key,
-                                (),
-                            )
-                            or ()
-                        ),
-                        value_builder,
-                        "value",
+                    observations = tuple(
+                        _record_value(self._warmup_bundle, observation_key, ()) or ()
                     )
+                    if provider_key in {
+                        "pb_ratio", "ps_ratio", "dividend_yield", "market_temperature",
+                        "capital_flow", "shareholder_concentration", "fund_holder_weight",
+                        "short_interest", "short_volume", "broker_holding",
+                    }:
+                        observations = tuple(
+                            observation for observation in observations
+                            if str(_record_value(observation, "factor", "")) == provider_key
+                        )
+                    observation_frame = _observation_frame(observations, value_builder, "value")
                     eligible_observations = observation_frame[
                         observation_frame["Date"] <= latest_frame_date
                     ]
@@ -1001,6 +1295,22 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             )
             if bool(normalized_params[parameter_key])
         ]
+        enabled_factors.extend(
+            factor
+            for factor, parameter_key in (
+                ("pb_ratio", "use_pb_ratio"),
+                ("ps_ratio", "use_ps_ratio"),
+                ("dividend_yield", "use_dividend_yield"),
+                ("market_temperature", "use_market_temperature"),
+                ("capital_flow", "use_capital_flow"),
+                ("shareholder_concentration", "use_shareholder_concentration"),
+                ("fund_holder_weight", "use_fund_holder_weight"),
+                ("short_interest", "use_short_interest"),
+                ("short_volume", "use_short_volume"),
+                ("broker_holding", "use_broker_holding"),
+            )
+            if bool(normalized_params[parameter_key])
+        )
         backend = _resolve_compute_backend(str(normalized_params["compute_backend"]))
         predictive_mean, predictive_std, probability_up = _walk_forward_predictions(
             full_frame,
@@ -1019,6 +1329,14 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             }
         )
         output = visible_frame.merge(prediction_frame, on="Date", how="left", validate="one_to_one")
+        # Score only the visible backtest interval. The hidden warm-up bars
+        # may train a posterior, but they are not part of the user-facing
+        # equity curve or its diagnostic denominator.
+        hit_rate = _probability_field_hit_rate(
+            output["Close"].to_numpy(dtype=np.float64),
+            output[_PREDICTION_MEAN_COLUMN].to_numpy(dtype=np.float64),
+            output[_PREDICTION_STD_COLUMN].to_numpy(dtype=np.float64),
+        )
 
         entry_probability = float(normalized_params["entry_probability"]) / 100.0
         buy_signals, sell_signals = _probability_threshold_signals(
@@ -1052,11 +1370,11 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "schema": "bayesian-price-field/v1",
             "renderer": "probability-grid-v1",
             "model_version": _MODEL_VERSION,
-            "rows_above": 6,
-            "rows_below": 6,
+            "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
+            "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
             "columns": 36,
             "width_fraction": 0.25,
-            "gap_px": 3,
+            "gap_px": 2,
             "padding_px": 8,
             "min_cell_px": 4,
             "cell_radius_px": 2,
@@ -1071,6 +1389,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "predictive_mean": _json_number_list(output[_PREDICTION_MEAN_COLUMN]),
             "predictive_scale": _json_number_list(output[_PREDICTION_STD_COLUMN]),
             "probability_up": _json_number_list(output[_PROBABILITY_COLUMN]),
+            "hit_rate": hit_rate,
             "data_keys": [
                 pd.Timestamp(value).isoformat()
                 for value in output["Date"].tolist()
@@ -1097,6 +1416,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "compute_device": backend.resolved,
                 "market_data_source": "longbridge-cli",
                 "fingerprint": fingerprint,
+                "probability_field_hit_rate_pct": hit_rate["score_pct"],
+                "probability_field_hit_rate_scored_points": hit_rate["scored_points"],
             },
             presentation=presentation,
         )

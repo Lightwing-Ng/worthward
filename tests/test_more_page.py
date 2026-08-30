@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.26.0
+Code version: v0.26.1
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
   capture as the current cash and position boundary.
 - Added: HSBC USD Savings settlement-only cash refreshes are accepted by
@@ -377,7 +377,7 @@ Fees: 0.12
         body = response.get_data(as_text=True)
 
         self.assertIn("Investment", body)
-        self.assertIn('<article class="report-card workspace-content-card trade-performance-card investment-report-card">', body)
+        self.assertIn('<article class="report-card workspace-content-card trade-performance-card investment-report-card"', body)
         self.assertIn('class="investment-surface-stack investment-view-surface" id="investment_view_surface"', body)
         self.assertIn('class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer"', body)
         self.assertIn('aria-orientation="horizontal"', body)

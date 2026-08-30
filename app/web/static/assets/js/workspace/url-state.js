@@ -1,10 +1,10 @@
 /*
  * Canonical Workspace URL state parsing and serialization.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
  */
 (() => {
-    const VERSION = "v1.4.0";
+    const VERSION = "v1.5.0";
     const DEFAULT_PERIOD = "1y";
     const PERIOD_VALUES = new Set([
         "1d",
@@ -41,6 +41,7 @@
         "capital",
         "interval",
         "stop_loss",
+        "show_trade_details",
         "amount",
         "frequency",
         "weekday",
@@ -82,6 +83,7 @@
         "initial_capital",
         "interval",
         "stop_loss",
+        "show_trade_details",
         "amount",
         "frequency",
         "weekday",
@@ -221,6 +223,9 @@
             stopLossEnabled: params.has("stop_loss")
                 ? parseFlag(params, "stop_loss")
                 : true,
+            showTradeDetailsEnabled: params.has("show_trade_details")
+                ? parseFlag(params, "show_trade_details")
+                : true,
             amount: normalizeValue(params.get("amount")),
             frequency: normalizeLower(params.get("frequency")),
             weekday: normalizeValue(params.get("weekday")),
@@ -318,6 +323,12 @@
                 const defaultStopLossEnabled = state.defaultStopLossEnabled ?? true;
                 if (Boolean(state.stopLossEnabled) !== Boolean(defaultStopLossEnabled)) {
                     params.set("stop_loss", state.stopLossEnabled ? "1" : "0");
+                }
+            }
+            if (state.showTradeDetailsEnabled !== undefined) {
+                const defaultShowTradeDetailsEnabled = state.defaultShowTradeDetailsEnabled ?? true;
+                if (Boolean(state.showTradeDetailsEnabled) !== Boolean(defaultShowTradeDetailsEnabled)) {
+                    params.set("show_trade_details", state.showTradeDetailsEnabled ? "1" : "0");
                 }
             }
             (state.strategyParams || []).forEach(([key, value]) => {

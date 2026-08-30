@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.3.5
+Code version: v0.5.4
 """
 
 from pathlib import Path
@@ -15,6 +15,13 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _css_code_version(path: Path) -> str:
+    first_line = _read(path).splitlines()[0]
+    assert first_line.startswith("/* Code version: v")
+    assert first_line.endswith(" */")
+    return first_line.removeprefix("/* Code version: ").removesuffix(" */")
+
+
 def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
     tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
     shell = _read(ASSET_ROOT / "css/layout/shell.css")
@@ -24,10 +31,15 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
     for fragment in (
         "--page-edge-pad: 10px;",
         "--layout-edge-gap: var(--page-edge-pad);",
+        "--layout-page-inset-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));",
+        "--layout-page-inset-right: max(var(--page-edge-pad), env(safe-area-inset-right, 0px));",
+        "--layout-global-anchor-top: calc(var(--layout-page-inset-top) + var(--layout-edge-gap));",
+        "--layout-global-anchor-right: calc(var(--layout-page-inset-right) + var(--layout-edge-gap));",
         "--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);",
         "--layout-glass-border-width: 1px;",
         "--workspace-mode-result-heading-gap: 8px;",
-        "--global-quick-actions-right: var(--layout-global-anchor-inset);",
+        "--global-quick-actions-top: var(--layout-global-anchor-top);",
+        "--global-quick-actions-right: var(--layout-global-anchor-right);",
         "--sidebar-overlay-toggle-inset: max(var(--sidebar-overlay-inset-top), var(--sidebar-overlay-inset-right));",
         "--layout-sidebar-dock-bottom-gap: var(--layout-edge-gap);",
         "--sidebar-dock-bottom-gap: var(--layout-sidebar-dock-bottom-gap);",
@@ -38,7 +50,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
 
     for fragment in (
         "padding: var(--layout-edge-gap) var(--layout-edge-gap) var(--sidebar-bottom-pad);",
-        "top: var(--layout-global-anchor-inset);",
+        "top: var(--global-quick-actions-top);",
         "--global-quick-action-gap: var(--layout-global-action-gap);",
     ):
         assert fragment in shell
@@ -55,7 +67,8 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--layout-global-action-inline-size: calc(",
         "--layout-sidebar-overlay-inline-size: min(",
         "--sidebar-toggle-x: calc(",
-        "top: var(--layout-global-anchor-inset);",
+        "top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));",
+        "top: var(--global-quick-actions-top);",
         "left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;",
         "--layout-sidebar-dock-block-size: calc(",
     ):
@@ -99,7 +112,7 @@ def test_portfolio_result_owns_date_and_share_action() -> None:
     portfolio = _read(TEMPLATE_ROOT / "portfolio.html")
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
 
-    heading_block = portfolio[portfolio.index('<div class="report-heading-row workspace-result-heading-stack">') :]
+    heading_block = portfolio[portfolio.index('<div class="report-heading-row workspace-result-heading-stack"') :]
     heading_block = heading_block[: heading_block.index("</div>")]
     assert "{{ display_range }}" not in heading_block
     assert '<div class="portfolio-summary-main">' in portfolio
@@ -139,9 +152,128 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
         assert fragment in settings_css
 
     assert '@import url("./views/settings.css?v=0.25.1");' in app_css
-    assert '@import url("./foundation/tokens.css?v=0.24.0");' in app_css
+    assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./views/investment.css?v=1.78.2");' in app_css
-    assert "v0.58.4" in app_css
+    assert "v0.64.0" in app_css
+
+
+def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
+    app_css = ASSET_ROOT / "css/app.css"
+    cache_buster = f"-app-css-{_css_code_version(app_css)}"
+
+    for template_name in ("base.html", "live_trading_unlock.html"):
+        assert cache_buster in _read(TEMPLATE_ROOT / template_name)
+
+
+def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+    app_css = _read(ASSET_ROOT / "css/app.css")
+
+    assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-param-select-shell {' in trade_css
+    assert "justify-self: center;" in trade_css
+    assert "width: min(100%, 160px);" in trade_css
+    assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
+    assert "justify-content: center;" in trade_css
+    assert '@import url("./views/trade.css?v=3.48.0");' in app_css
+
+
+def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    assert ".backtest-surface {" in trade_css
+    assert "--backtest-chart-heading-font-size: 20px;" in trade_css
+    assert ".backtest-surface > .chart-heading-row > .chart-heading {" in trade_css
+    assert "font-size: var(--backtest-chart-heading-font-size);" in trade_css
+    assert "font-weight: var(--font-weight-regular);" in trade_css
+
+
+def test_backtest_section_resizer_uses_compact_handle_contract() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    assert "--backtest-section-resizer-size: 10px;" in trade_css
+    assert "--investment-section-resizer-size: var(--backtest-section-resizer-size);" in trade_css
+    resizer_start = trade_css.index(".backtest-section-resizer {")
+    resizer_block = trade_css[resizer_start : trade_css.index("\n}", resizer_start)]
+    assert "font-size: 12px;" in resizer_block
+
+
+def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+    backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
+    pending_app = _read(ASSET_ROOT / "js/app.js")
+    stack_contract = trade_css[
+        trade_css.index(".trade-chart-stack {"):
+        trade_css.index(".backtest-probability-scroll-spacer {")
+    ]
+    scroll_contract = trade_css[
+        trade_css.index(".backtest-probability-scrollport {"):
+        trade_css.index(".backtest-probability-scrollport-spacer {", trade_css.index(".backtest-probability-scrollport {"))
+    ]
+
+    for fragment in (
+        "position: absolute;",
+        "inset-block: -2px;",
+        "overflow-x: auto;",
+        "overflow-y: hidden;",
+        "overscroll-behavior-inline: contain;",
+        "scrollbar-gutter: auto;",
+        "scrollbar-width: auto;",
+        "scrollbar-color: auto;",
+        "-ms-overflow-style: auto;",
+        ".backtest-probability-scrollport::-webkit-scrollbar {",
+        "all: revert;",
+        "width: auto;",
+        "height: auto;",
+        ".backtest-probability-scrollport::-webkit-scrollbar-track,",
+        ".backtest-probability-scrollport::-webkit-scrollbar-thumb,",
+        ".backtest-results-stack.has-probability-scrollport .backtest-section-resizer {",
+        "pointer-events: none;",
+    ):
+        assert fragment in trade_css
+
+    assert "var(--accent-scrollbar)" not in scroll_contract
+    assert ".trade-chart-stack.has-probability-scroll {" not in trade_css
+    assert "overflow: hidden;" in stack_contract
+
+    for markup in (backtest_template, pending_app):
+        assert 'class="backtest-section-resizer-slot" data-backtest-section-resizer-slot' in markup
+        assert 'data-backtest-probability-scrollport' in markup
+        assert 'data-backtest-probability-scrollport-spacer' in markup
+
+    for fragment in (
+        '"[data-backtest-probability-scrollport]"',
+        '"[data-backtest-probability-scrollport-spacer]"',
+        'const setProbabilityScrollPortActive = (active) => {',
+        'probabilityScrollResizer.blur();',
+        'const setProbabilityScrollPosition = (scrollLeft) => {',
+        'const stackScrollWidth = Math.ceil(',
+        'tradeChartStack.clientWidth + distance);',
+        'const nativeScrollLeft = Math.ceil(next);',
+        'const setProbabilityScrollVisualOffset = (offsetValue) => {',
+        'const probabilityScrollVisualNodes = [',
+        'priceCanvas.closest(".trade-chart-panel"),',
+        'equityCanvas.closest(".trade-chart-panel"),',
+        'probabilityScrollVisualPosition = next;',
+        'setProbabilityScrollVisualOffset(actualNativeScrollLeft - probabilityScrollVisualPosition);',
+        'probabilityScrollPort.addEventListener("scroll", () => {',
+        'const visualNext = probabilityScrollTarget > 0',
+        'Math.min(nativeNext, probabilityScrollTarget)',
+        'setProbabilityScrollPosition(visualNext);',
+        'if (probabilityScrollTarget <= 0.01) {',
+        'completeProbabilityScroll();',
+        'resultsStack?.classList.toggle("has-probability-scrollport", isActive);',
+    ):
+        assert fragment in backtest_script
+
+    for fragment in (
+        'maxWidth: Math.max(0, tradeChartStack.clientWidth - 1),',
+        'grid.dataset.requestedColumnCount = String(geometry.requestedColumnCount);',
+        'requestedColumnCount',
+        'probabilityScrollTarget = Math.ceil(',
+        'distance + (distance > 0 ? 1 : 0)',
+    ):
+        assert fragment not in backtest_script
 
 
 def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> None:
@@ -156,13 +288,19 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         '.classList.toggle("has-probability-field", Boolean(strategyPresentation))',
         '.classList.remove("has-probability-field")',
         'probabilityScrollSpacer.className = "backtest-probability-scroll-spacer";',
-        'probabilityScrollTarget = Math.ceil(Math.max(0, Number(targetValue) || 0));',
+        '"[data-backtest-probability-scrollport]"',
+        'const setProbabilityScrollPortActive = (active) => {',
+        'const setProbabilityScrollPosition = (scrollLeft) => {',
+        'probabilityScrollPort.addEventListener("scroll", () => {',
+        'probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);',
         'tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";',
         "const motion = window.AntigravityMotion;",
         "const preset = motion.springPresets?.bouncy || {",
         '"backtest-probability-scroll",',
-        "x: canvasRect.left - stackRect.left + tradeChartStack.scrollLeft + point.x,",
-        "const canvasOffsetX = canvasRect.left - stackRect.left + tradeChartStack.scrollLeft;",
+        "x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,",
+        "const canvasOffsetX = (",
+        "canvasRect.left - stackRect.left + probabilityScrollVisualPosition",
+        ");",
         "setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);",
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
@@ -170,7 +308,7 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "opacityExponent: strategyPresentation.cell_opacity_exponent,",
         "opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,",
         'probabilityTooltip.dataset.transparency = `${strategyPresentation.tooltip_transparency_pct}%`;',
-        'tradeChartStack.classList.remove("has-probability-field", "has-probability-scroll");',
+        'tradeChartStack.classList.remove("has-probability-field");',
     ):
         assert fragment in backtest_script
 
@@ -183,11 +321,22 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "min-height: var(--backtest-probability-narrow-results-min-height);",
         ".backtest-results-stack.has-probability-field .trade-chart-stack {",
         "min-height: var(--backtest-probability-narrow-chart-stage-min-height);",
-        ".trade-chart-stack.has-probability-scroll {",
+        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 0;",
+        "@media (min-width: 1008px) {",
+        ".workspace-mode-layout:has(.backtest-results-stack.has-probability-field) {",
+        "clamp(264px, calc(100% - 398px), var(--sidebar-width))",
+        "minmax(386px, 1fr);",
+        ".backtest-section-resizer-slot {",
+        "height: var(--investment-section-resizer-size);",
+        ".backtest-probability-scrollport {",
+        "inset-block: -2px;",
         "overflow-x: auto;",
-        "scrollbar-width: thin;",
-        ".trade-chart-stack.has-probability-scroll::-webkit-scrollbar {",
-        "height: 6px;",
+        "scrollbar-width: auto;",
+        "scrollbar-color: auto;",
+        ".backtest-probability-scrollport::-webkit-scrollbar {",
+        "all: revert;",
+        "width: auto;",
+        "height: auto;",
         ".backtest-probability-scroll-spacer {",
         ".backtest-probability-tooltip.chart-tooltip {",
         "--backtest-probability-tooltip-transparency: 50%;",
@@ -212,7 +361,7 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const DEFAULT_ROWS_ABOVE = 6;",
         "const DEFAULT_ROWS_BELOW = 6;",
         "const DEFAULT_COLUMN_COUNT = 36;",
-        "const DEFAULT_GAP_PX = 3;",
+        "const DEFAULT_GAP_PX = 2;",
         "const DEFAULT_PADDING_PX = 8;",
         "const DEFAULT_MIN_CELL_PX = 4;",
         "const DEFAULT_CELL_RADIUS_PX = 2;",
@@ -224,18 +373,37 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);",
         "rows_above: symmetricRows.rowsAbove,",
         "rows_below: symmetricRows.rowsBelow,",
-        "columns: boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns),",
+        "columns: DEFAULT_COLUMN_COUNT,",
+        "minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),",
         "tooltip_transparency_pct: boundedNumber(",
         "cell_opacity_exponent: boundedNumber(",
         "cell_opacity_tail_ratio: boundedNumber(",
         'time_quantization: "integer-trading-days",',
+        "const requestedGap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);",
+        "Math.ceil((minimumCell / normalizedStepPixels) - 1e-12),",
+        "const gap = Math.min(requestedGap, Math.max(0, slotWidth - minimumCell));",
         "const slotWidth = daysPerColumn * normalizedStepPixels;",
         "const cellSize = slotWidth - gap;",
+        "requestedGap,",
         "const horizon = (visualColumn + 1) * daysPerColumn;",
         "const opacityProfile = computeInstantOpacityProfile(",
+        "const minimumProbabilityRatio = minimumProbability / maximumProbability;",
+        "const baselineRatio = Math.max(",
+        "const probabilityRatio = probability / maximumProbability;",
         'direction: "right",',
     ):
         assert fragment in probability_grid
+
+    for fragment in (
+        "maxWidth = null",
+        "maximumVisibleColumns",
+        "requestedColumnCount",
+        "const MAX_ROWS_ABOVE",
+        "const MAX_ROWS_BELOW",
+        "normalizeRows(rowsAbove, rowsBelow)",
+        "boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns)",
+    ):
+        assert fragment not in probability_grid
 
     assert "--backtest-probability-tooltip-transparency" not in tokens
     assert "--backtest-probability-tooltip-radius" not in tokens
@@ -244,10 +412,12 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
     price_panel = backtest_template.index('<div class="trade-chart-panel">')
     price_canvas = backtest_template.index('<canvas id="tradePriceChart"></canvas>')
     equity_panel = backtest_template.index(
-        '<div class="trade-chart-panel trade-chart-panel-equity">'
+        '<div class="trade-chart-panel trade-chart-panel-equity"'
     )
     equity_canvas = backtest_template.index('<canvas id="tradeEquityChart"></canvas>')
     assert price_panel < price_canvas < equity_panel < equity_canvas
+    assert 'data-backtest-section-resizer-slot' in backtest_template
+    assert 'data-backtest-probability-scrollport' in backtest_template
 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
     investment_layout = _read(ASSET_ROOT / "js/investment/layout.js")
@@ -295,7 +465,10 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
     ):
         assert fragment in settings_css
 
-    assert 'class="settings-content-scrollport" data-settings-content-scrollport' in settings_template
+    assert (
+        'class="settings-content-scrollport" data-layout-role="content-scrollport" '
+        "data-settings-content-scrollport"
+    ) in settings_template
 
     intro_position = settings_template.index('class="settings-color-token-intro settings-card"')
     sidebar_position = settings_template.index('class="settings-color-token-sidebar"')
@@ -373,3 +546,85 @@ def test_simplified_chinese_label_uses_the_ascii_parenthesis_contract() -> None:
     assert '"简体中文（中国大陆）": "简体中文(中国大陆)"' in language_settings
     assert 'LANGUAGE_LABELS["zh_hans_cn"]' in runtime
     assert "language_labels['zh_hans_cn']" in template
+
+
+def test_production_templates_publish_the_shared_layout_role_registry() -> None:
+    base = _read(TEMPLATE_ROOT / "base.html")
+    macros = _read(TEMPLATE_ROOT / "_macros.html")
+
+    for fragment in (
+        'data-layout-role="sidebar-toggle"',
+        'data-layout-role="global-action-column"',
+        'data-layout-role="global-theme-anchor"',
+        'data-layout-role="sidebar-title"',
+        'data-layout-role="sidebar-dock"',
+    ):
+        assert fragment in base
+
+    for fragment in (
+        'data-layout-role="result-actions"',
+        'data-layout-role="result-action"',
+    ):
+        assert fragment in macros
+
+    for template_name in (
+        "compare.html",
+        "dca.html",
+        "investment.html",
+        "backtest.html",
+        "portfolio.html",
+        "price_compare.html",
+    ):
+        template = _read(TEMPLATE_ROOT / template_name)
+        for fragment in (
+            'data-layout-role="title-rail"',
+            'data-layout-role="title-heading"',
+        ):
+            assert fragment in template, (template_name, fragment)
+
+    for template_name in ("compare.html", "dca.html", "investment.html", "backtest.html", "portfolio.html"):
+        assert 'data-layout-role="result-container"' in _read(TEMPLATE_ROOT / template_name)
+
+    for template_name in ("compare.html", "dca.html", "backtest.html"):
+        template = _read(TEMPLATE_ROOT / template_name)
+        assert 'data-layout-role="result-title-rail"' in template
+        assert 'data-layout-role="result-heading"' in template
+
+    assert 'data-layout-role="secondary-heading"' in _read(TEMPLATE_ROOT / "investment.html")
+    assert 'data-layout-role="pagination"' in _read(TEMPLATE_ROOT / "_dca_backtest_table.html")
+    assert 'data-layout-role="content-scrollport"' in _read(TEMPLATE_ROOT / "settings.html")
+
+
+def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:
+    app_css = _read(ASSET_ROOT / "css/app.css")
+    settings_css = _read(ASSET_ROOT / "css/views/settings.css")
+    workspace_css = _read(ASSET_ROOT / "css/views/workspace.css")
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    assert ".chart-panel.workspace {\n    overflow: visible;" in workspace_css
+    settings_header_start = settings_css.index(".settings-workspace-header {")
+    settings_header = settings_css[settings_header_start : settings_header_start + 260]
+    assert "overflow: visible;" in settings_header
+
+    scrollport_start = settings_css.index(".settings-content-scrollport {")
+    scrollport = settings_css[scrollport_start : settings_css.index("\n}", scrollport_start)]
+    for fragment in (
+        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
+        "padding-inline-start: var(--layout-physical-effect-bleed);",
+        "padding-block-end: var(--layout-physical-effect-bleed);",
+        "overflow-x: hidden;",
+        "overflow-y: auto;",
+    ):
+        assert fragment in scrollport
+
+    for fragment in (
+        ".settings-shell-network .settings-service-row,",
+        ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;",
+        ".settings-action-package {\n    position: relative;",
+    ):
+        assert fragment in settings_css
+
+    trade_stack_start = trade_css.rindex(".trade-chart-stack {")
+    trade_stack = trade_css[trade_stack_start : trade_css.index("\n}", trade_stack_start)]
+    assert "overflow: hidden;" in trade_stack
+    assert '@import url("./views/workspace.css?v=1.22.0");' in app_css

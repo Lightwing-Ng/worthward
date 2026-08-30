@@ -40,6 +40,14 @@ def _attach_strategy_presentation(
                     "Strategy presentation data_keys must exactly match chart.raw_dates."
                 )
         result["strategy_presentation"] = presentation
+        summary = result.get("summary")
+        hit_rate = presentation.get("hit_rate")
+        if isinstance(summary, dict) and isinstance(hit_rate, dict):
+            score_pct = hit_rate.get("score_pct")
+            scored_points = hit_rate.get("scored_points")
+            if isinstance(score_pct, (int, float)) and isinstance(scored_points, int):
+                summary["probability_field_hit_rate_pct"] = round(float(score_pct), 2)
+                summary["probability_field_hit_rate_scored_points"] = scored_points
     return result
 
 

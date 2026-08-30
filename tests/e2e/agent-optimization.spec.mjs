@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
 
 const EXPECTED_TOOL_NAMES = [
@@ -39,7 +39,7 @@ test('registers bounded Site tools and performs allowlisted navigation', async (
     expect(contextResult).toMatchObject({
         ok: true,
         tool: 'get_page_context',
-        contractVersion: '1.0.0',
+        contractVersion: '1.1.0',
         data: {
             siteId: 'antigravity',
             route: '/settings/about',
@@ -93,7 +93,7 @@ test('keeps the normal narrow UI intact when Site tools are unavailable', async 
         window.SHARED_AGENT_OPTIMIZATION.boot()
     ))).toMatchObject({
         status: 'unsupported',
-        contractVersion: '1.0.0',
+        contractVersion: '1.1.0',
         registered: [],
         failed: [],
     });

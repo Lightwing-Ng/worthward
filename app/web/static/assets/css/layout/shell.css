@@ -1,4 +1,4 @@
-/* Code version: v3.29.0 */
+/* Code version: v3.30.0 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -58,7 +58,7 @@
 	--global-quick-action-gap: var(--layout-global-action-gap);
 	--global-quick-action-step: calc(var(--settings-round-icon-button-size) + var(--global-quick-action-gap));
 	position: fixed;
-	top: var(--layout-global-anchor-inset);
+	top: var(--global-quick-actions-top);
 	right: var(--global-quick-actions-right);
 	z-index: var(--layer-fixed-dock);
 	width: calc((var(--settings-round-icon-button-size) * 2) + var(--global-quick-action-gap));

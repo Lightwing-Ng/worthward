@@ -1,4 +1,4 @@
-{# Code version: v0.7.0 #}
+{# Code version: v0.8.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -11,7 +11,7 @@
 <form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}"
       data-strategy-required-tickers="{{ strategy_required_tickers }}"
       data-backtest-parameter-form
-      data-generic-parameters="range,interval,capital,return-mode,stop-loss"
+      data-generic-parameters="range,interval,capital,return-mode,stop-loss,trade-details"
       data-strategy-parameters="code-defined">
     <div id="ticker_fields" data-backtest-ticker-fields>
     {% for ticker_index in range(1, strategy_required_tickers + 1) %}
@@ -88,6 +88,10 @@
     <div class="field-checkbox field-switch">
         <input type="hidden" name="stop_loss" value="0">
         {{ render_switch("stop_loss", labels.backtest_stop_loss, "stop_loss", checked=stop_loss_enabled, input_attrs='title="' ~ labels.backtest_stop_loss_help ~ '"') }}
+    </div>
+    <div class="field-checkbox field-switch" data-backtest-trade-details-field>
+        <input type="hidden" name="show_trade_details" value="0">
+        {{ render_switch("show_trade_details", labels.backtest_show_trade_details, "show_trade_details", checked=show_trade_details) }}
     </div>
     <div class="field trade-strategy-field backtest-shared-select-field{% if strategy_form_fields %} is-open{% endif %}" data-trade-strategy-field data-shared-select-field data-shared-select-kind="strategy">
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>

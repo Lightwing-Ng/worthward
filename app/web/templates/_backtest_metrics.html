@@ -1,4 +1,4 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.2.1 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
@@ -24,6 +24,13 @@
             class="trade-metric-value"
             data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.win_rate_pct is none else "%.2f"|format(backtest_result.summary.win_rate_pct) ~ "%" }}</span>
     </div>
+    {% if backtest_result.summary.probability_field_hit_rate_pct is defined %}
+    <div class="trade-metric-card" data-backtest-metric="probability-field-hit-rate"
+         title="Probability-weighted share of causal field cells, with six rows above and below the guide, that contain an observed future close; horizons without a later bar are excluded.">
+        <span class="trade-metric-label">Bayesian field hit rate</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_hit_rate_pct) }}%</span>
+    </div>
+    {% endif %}
     <div class="trade-metric-card"
          title="Percentage of days/bars where strategy equity exceeded buy-and-hold value"><span
             class="trade-metric-label">Beat B&amp;H</span><span class="trade-metric-value"

@@ -1,4 +1,4 @@
-{# Code version: v0.5.7 #}
+{# Code version: v0.6.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -9,8 +9,8 @@
 
 {% block workspace_content %}
     <section class="workspace-mode-shell">
-        <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
-            <div class="report-heading-row">
+        <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
+            <div class="report-heading-row" data-layout-role="title-heading">
                 <p class="report-heading">{{ labels.dock_backtest }}</p>
             </div>
         </article>
@@ -22,12 +22,12 @@
             </article>
             <article class="workspace-mode-main backtest-workspace-main">
                 <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack backtest-results-stack investment-workspace-header" data-mobile-summary-fixed>
-                    <article class="report-card workspace-article-card workspace-summary-card">
-                        <div class="report-heading-row">
+                    <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                        <div class="report-heading-row" data-layout-role="result-heading">
                             <p class="report-heading">{{ labels.dca_metrics if selected_strategy_id == 'dca' else labels.backtest_metrics }}</p>
                         </div>
                     </article>
-                    <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">
+                    <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card" data-layout-role="result-container">
                         {% if backtest_result or dca_result %}
                             {{ render_investment_share_actions(shell_id='workspace_share_drawer_backtest', share_drawer='backtest', show_mask=false, capture_label='Save backtest screenshot', anchor_label='Export Transactions', anchor_title='Export Transactions') }}
                             <div class="investment-surface-stack investment-view-surface backtest-view-surface" id="backtest_view_surface" data-active-view="overview">
@@ -37,13 +37,17 @@
                                             <div class="chart-heading-row">
                                                 <p class="chart-heading">{{ labels.dca_chart if selected_strategy_id == 'dca' else labels.backtest_chart }}</p>
                                             </div>
-                                            <div class="trade-chart-stack">
+                                            <div class="trade-chart-stack{% if not show_trade_details %} is-trade-details-hidden{% endif %}"
+                                                 data-backtest-trade-chart-stack
+                                                 data-trade-details-visible="{{ 'true' if show_trade_details else 'false' }}">
                                                 <div class="trade-chart-panel">
                                                     <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
                                                         <canvas id="tradePriceChart"></canvas>
                                                     </div>
                                                 </div>
-                                                <div class="trade-chart-panel trade-chart-panel-equity">
+                                                <div class="trade-chart-panel trade-chart-panel-equity"
+                                                     data-backtest-equity-panel
+                                                     {% if not show_trade_details %}hidden aria-hidden="true"{% endif %}>
                                                     <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-equity-chart">
                                                         <canvas id="tradeEquityChart"></canvas>
                                                     </div>
@@ -57,37 +61,60 @@
                             <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
                         {% endif %}
                     </article>
-                    <button type="button"
-                            class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer backtest-section-resizer"
-                            id="backtest_section_resizer"
-                            data-backtest-section-resizer
-                            role="separator"
-                            aria-orientation="horizontal"
-                            aria-label="Resize backtest overview and transaction history"></button>
-                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface" data-active-view="transactions">
+                    <div class="backtest-section-resizer-slot" data-backtest-section-resizer-slot>
+                        <button type="button"
+                                class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer backtest-section-resizer"
+                                id="backtest_section_resizer"
+                                data-backtest-section-resizer
+                                role="separator"
+                                aria-orientation="horizontal"
+                                aria-label="Resize backtest overview and transaction history"></button>
+                        <div class="backtest-probability-scrollport"
+                             data-backtest-probability-scrollport
+                             role="region"
+                             aria-label="Pan chart to reveal the probability field"
+                             aria-hidden="true"
+                             tabindex="-1"
+                             hidden>
+                            <span class="backtest-probability-scrollport-spacer"
+                                  data-backtest-probability-scrollport-spacer
+                                  aria-hidden="true"></span>
+                        </div>
+                    </div>
+                <article class="chart-surface investment-history-surface backtest-history-surface"
+                         id="backtest_history_surface"
+                         data-active-view="{{ 'transactions' if show_trade_details else 'metrics' }}"
+                         data-trade-details-visible="{{ 'true' if show_trade_details else 'false' }}">
                     <div class="investment-view-segmented-wrap backtest-history-view-segmented-wrap">
                         {{ render_segmented_control(
                             "segmented-control--compact investment-view-segmented backtest-history-view-segmented",
                             "backtest_history_view_tab",
-                            "transactions",
+                            "transactions" if show_trade_details else "metrics",
                             [
                                 {"id": "backtest_history_metrics", "value": "metrics", "label": "Metrics"},
-                                {"id": "backtest_history_transactions", "value": "transactions", "label": "Transactions"},
+                                {
+                                    "id": "backtest_history_transactions",
+                                    "value": "transactions",
+                                    "label": "Transactions",
+                                    "disabled": not show_trade_details,
+                                    "label_attrs": 'data-backtest-history-transactions-option' ~ (' aria-disabled="true"' if not show_trade_details else ''),
+                                    "input_attrs": 'data-backtest-history-transactions',
+                                },
                             ],
-                            'id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="transactions" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
+                            'id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="' ~ ('transactions' if show_trade_details else 'metrics') ~ '" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
                             true,
                             'investment-view-segmented-frame backtest-history-view-segmented-frame'
                         ) }}
                     </div>
                     <div class="investment-view-surface-body backtest-history-view-body" id="backtest_history_view_body">
-                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics" hidden>
+                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics"{% if show_trade_details %} hidden{% endif %}>
                             {% if backtest_result or dca_result %}
                             {% include "_backtest_metrics.html" %}
                             {% else %}
                             <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
                             {% endif %}
                         </div>
-                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions">
+                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"{% if not show_trade_details %} hidden{% endif %}>
                         {% if backtest_result or dca_result %}
                     <div id="backtest_history_table_wrap"
                          class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}">
@@ -149,6 +176,7 @@
                             </table>
                         </div>
                         <nav class="settings-pagination local-store-pagination local-store-pagination--floating trade-transactions-pagination"
+                             data-layout-role="pagination"
                              id="tradeTransactionsPagination" aria-label="Transaction pages"
                              aria-controls="tradeTransactionsTable" data-pagination-scroll-target="backtest_history_table_scroll" hidden>
                             <!-- Pagination buttons will be injected by JS -->

@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.7.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.11.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ const presentation = {
     rows_below: 6,
     columns: 36,
     width_fraction: 0.25,
-    gap_px: 3,
+    gap_px: 2,
     padding_px: 8,
     min_cell_px: 4,
     cell_radius_px: 2,
@@ -35,7 +35,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.7.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.11.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -45,7 +45,7 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.rows_above, 6);
     assert.equal(normalized.rows_below, 6);
     assert.equal(normalized.columns, 36);
-    assert.equal(normalized.gap_px, 3);
+    assert.equal(normalized.gap_px, 2);
     assert.equal(normalized.padding_px, 8);
     assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 2);
@@ -61,7 +61,7 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
 });
 
-test('preserves bounded strategy-owned symmetric geometry and material values', () => {
+test('preserves bounded strategy-owned symmetric geometry while fixing the 36-column horizon', () => {
     const normalized = grid.normalizePresentation(
         {
             ...presentation,
@@ -82,10 +82,10 @@ test('preserves bounded strategy-owned symmetric geometry and material values', 
     );
     assert.equal(normalized.rows_above, 9);
     assert.equal(normalized.rows_below, 9);
-    assert.equal(normalized.columns, 18);
+    assert.equal(normalized.columns, 36);
     assert.equal(normalized.gap_px, 2.5);
     assert.equal(normalized.padding_px, 6);
-    assert.equal(normalized.min_cell_px, 3);
+    assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 1.5);
     assert.equal(normalized.tooltip_radius_px, 12);
     assert.equal(normalized.tooltip_transparency_pct, 75);
@@ -107,7 +107,7 @@ test('preserves bounded strategy-owned symmetric geometry and material values', 
         stepPixels: 4,
         widthFraction: normalized.width_fraction,
     });
-    assert.equal(geometry.columnCount, 18);
+    assert.equal(geometry.columnCount, 36);
     assert.equal(geometry.rowsAbove, 9);
     assert.equal(geometry.rowsBelow, 9);
     assert.equal(geometry.rowCount, 18);
@@ -115,13 +115,13 @@ test('preserves bounded strategy-owned symmetric geometry and material values', 
     assert.equal(geometry.padding, 6);
     assert.equal(geometry.widthTarget, 360);
     const horizontalGuideY = geometry.top
-        + geometry.padding
+        + geometry.gridPaddingTop
         + (geometry.rowsAbove * geometry.cellSize)
         + ((geometry.rowsAbove - 0.5) * geometry.gap);
     assert.equal(horizontalGuideY, geometry.anchorY);
 });
 
-test('bounds untrusted strategy-owned tooltip geometry and rejects asymmetric rows', () => {
+test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () => {
     const normalized = grid.normalizePresentation(
         {
             ...presentation,
@@ -143,10 +143,10 @@ test('bounds untrusted strategy-owned tooltip geometry and rejects asymmetric ro
     );
     assert.equal(normalized.rows_above, 6);
     assert.equal(normalized.rows_below, 6);
-    assert.equal(normalized.columns, 1);
+    assert.equal(normalized.columns, 36);
     assert.equal(normalized.gap_px, 0);
     assert.equal(normalized.padding_px, 64);
-    assert.equal(normalized.min_cell_px, 1);
+    assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 0);
     assert.equal(normalized.tooltip_radius_px, 64);
     assert.equal(normalized.tooltip_transparency_pct, 100);
@@ -167,7 +167,7 @@ test('bounds untrusted strategy-owned tooltip geometry and rejects asymmetric ro
     assert.equal(geometry.rowsBelow, 6);
     assert.equal(geometry.rowCount, 12);
     const horizontalGuideY = geometry.top
-        + geometry.padding
+        + geometry.gridPaddingTop
         + (geometry.rowsAbove * geometry.cellSize)
         + ((geometry.rowsAbove - 0.5) * geometry.gap);
     assert.equal(horizontalGuideY, geometry.anchorY);
@@ -205,14 +205,14 @@ test('quantizes 36 columns below the preferred quarter width when complete day s
     });
     assert.ok(geometry);
     assert.equal(geometry.widthTarget, 400);
-    assert.equal(geometry.width, 373);
+    assert.equal(geometry.width, 374);
     assert.equal(geometry.rowCount, 12);
     assert.equal(geometry.rowsAbove, 6);
     assert.equal(geometry.rowsBelow, 6);
     assert.equal(geometry.columnCount, 36);
     assert.equal(geometry.daysPerColumn, 5);
     assert.equal(geometry.slotWidth, 10);
-    assert.equal(geometry.cellSize, 7);
+    assert.equal(geometry.cellSize, 8);
     assert.equal(geometry.top + (geometry.height / 2), 108);
     assert.equal(geometry.exceedsPreferredWidth, false);
     const reconstructedWidth = (2 * geometry.padding)
@@ -255,12 +255,33 @@ test('prioritizes complete day slots and the four-pixel cell minimum over quarte
     });
     assert.equal(geometry.widthTarget, 150);
     assert.equal(geometry.columnCount, 36);
-    assert.equal(geometry.daysPerColumn, 4);
-    assert.equal(geometry.slotWidth, 8);
-    assert.equal(geometry.cellSize, 5);
+    assert.equal(geometry.daysPerColumn, 2);
+    assert.equal(geometry.slotWidth, 4);
+    assert.equal(geometry.gap, 0);
+    assert.equal(geometry.cellSize, 4);
     assert.equal(geometry.exceedsPreferredWidth, true);
     assert.ok(geometry.width > geometry.widthTarget);
     assert.ok(geometry.cellSize >= 4);
+    assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn);
+});
+
+test('keeps all 36 horizons while reducing only an unrealizable requested gap', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 300,
+        anchorY: 90,
+        columnCount: 18,
+        gapPx: 3,
+        minCellPx: 4,
+        stepPixels: 3,
+    });
+    assert.equal(geometry.columnCount, 36);
+    assert.equal(geometry.daysPerColumn, 2);
+    assert.equal(geometry.slotWidth, 6);
+    assert.equal(geometry.requestedGap, 3);
+    assert.equal(geometry.gap, 2);
+    assert.equal(geometry.cellSize, 4);
+    assert.equal(geometry.width, 230);
     assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn);
 });
 
@@ -273,7 +294,7 @@ test('allows one complete trading day when its slot preserves the cell-radius mi
     });
     assert.equal(geometry.daysPerColumn, 1);
     assert.equal(geometry.slotWidth, 7);
-    assert.equal(geometry.cellSize, 4);
+    assert.equal(geometry.cellSize, 5);
 });
 
 test('reserves the maximum symmetric half-height around an extreme price anchor', () => {
@@ -341,6 +362,29 @@ test('maps each hover field through its own nonlinear winner and invisible tail'
             .map((entry) => entry.opacity),
         [0, 0, 0],
     );
+});
+
+test('keeps the instantaneous contrast curve scale-invariant for extreme probabilities', () => {
+    const tiny = grid.computeInstantOpacityProfile(
+        [1e-20, 3e-20, 5e-20],
+        {exponent: 1.6, tailRatio: 0.02},
+    );
+    const scaled = grid.computeInstantOpacityProfile(
+        [1e-10, 3e-10, 5e-10],
+        {exponent: 1.6, tailRatio: 0.02},
+    );
+    tiny.forEach((entry, index) => {
+        assert.ok(Math.abs(entry.opacity - scaled[index].opacity) <= 1e-12);
+        assert.ok(Math.abs(entry.displayIntensity - scaled[index].displayIntensity) <= 1e-12);
+    });
+    assert.equal(tiny[0].opacity, 0);
+    assert.ok(tiny[1].opacity > 0 && tiny[1].opacity < tiny[1].displayIntensity);
+    assert.equal(tiny[2].opacity, 1);
+
+    const mixed = grid.computeInstantOpacityProfile(
+        [Number.NaN, -1, Number.POSITIVE_INFINITY, 0.25, 0.25],
+    );
+    assert.deepEqual(mixed.map((entry) => entry.opacity), [0, 0, 0, 1, 1]);
 });
 
 test('builds square probability cells with six green and six red nonlinear rows', () => {

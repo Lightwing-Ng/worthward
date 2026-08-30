@@ -1,13 +1,19 @@
-/* Code version: v1.0.0-codex.1 */
+/* Code version: v1.1.0-codex.1 */
 (function installSharedAgentOptimization(sharedGlobal) {
     "use strict";
 
-    const CONTRACT_VERSION = "1.0.0";
+    const CONTRACT_VERSION = "1.1.0";
     const MANIFEST_ELEMENT_ID = "agent_optimization_manifest";
     const REGISTRATION_STATE_KEY = "__sharedAgentOptimizationRegistrationV1";
     const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
     const MAX_CAPABILITIES = 12;
     const MAX_NAVIGATION_TARGETS = 20;
+    const MAX_WEBMCP_TOOLS = 8;
+    const SUPPORTED_TOOL_NAMES = Object.freeze([
+        "get_site_capabilities",
+        "get_page_context",
+        "navigate_to_site_target",
+    ]);
 
     if (sharedGlobal.SHARED_AGENT_OPTIMIZATION) {
         return;
@@ -51,6 +57,25 @@
         return JSON.parse(JSON.stringify(value));
     }
 
+    function normalizedToolSchema(rawSchema, label) {
+        if (!isPlainObject(rawSchema)) {
+            throw new TypeError(`${label} must be an object.`);
+        }
+        if (rawSchema.type !== "object") {
+            throw new TypeError(`${label}.type must be object.`);
+        }
+        if (!isPlainObject(rawSchema.properties)) {
+            throw new TypeError(`${label}.properties must be an object.`);
+        }
+        if (!Array.isArray(rawSchema.required)) {
+            throw new TypeError(`${label}.required must be an array.`);
+        }
+        if (rawSchema.additionalProperties !== false) {
+            throw new TypeError(`${label}.additionalProperties must be false.`);
+        }
+        return cloneJson(rawSchema);
+    }
+
     function normalizedSameOriginPath(rawPath, locationLike) {
         const path = normalizedText(rawPath, "navigation path", 500);
         if (!path.startsWith("/")) {
@@ -68,7 +93,13 @@
         return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
     }
 
-    function normalizedList(rawValue, label, maximumItems, normalizeItem) {
+    function normalizedList(
+        rawValue,
+        label,
+        maximumItems,
+        normalizeItem,
+        identifierKey = "id",
+    ) {
         if (!Array.isArray(rawValue) || rawValue.length > maximumItems) {
             throw new TypeError(`${label} must be an array with at most ${maximumItems} items.`);
         }
@@ -78,10 +109,13 @@
                 throw new TypeError(`${label}[${index}] must be an object.`);
             }
             const item = normalizeItem(rawItem, index);
-            if (identifiers.has(item.id)) {
-                throw new TypeError(`${label} contains duplicate id ${item.id}.`);
+            const identifier = item[identifierKey];
+            if (identifiers.has(identifier)) {
+                throw new TypeError(
+                    `${label} contains duplicate ${identifierKey} ${identifier}.`,
+                );
             }
-            identifiers.add(item.id);
+            identifiers.add(identifier);
             return item;
         });
     }
@@ -139,6 +173,46 @@
                 path: normalizedSameOriginPath(rawItem.path, locationLike),
             }),
         );
+        const webmcpTools = normalizedList(
+            rawManifest.webmcpTools,
+            "webmcpTools",
+            MAX_WEBMCP_TOOLS,
+            (rawItem, index) => {
+                const name = normalizedIdentifier(
+                    rawItem.name,
+                    `webmcpTools[${index}].name`,
+                );
+                if (typeof rawItem.readOnlyHint !== "boolean") {
+                    throw new TypeError(
+                        `webmcpTools[${index}].readOnlyHint must be a boolean.`,
+                    );
+                }
+                return {
+                    name,
+                    description: normalizedText(
+                        rawItem.description,
+                        `webmcpTools[${index}].description`,
+                        400,
+                    ),
+                    inputSchema: normalizedToolSchema(
+                        rawItem.inputSchema,
+                        `webmcpTools[${index}].inputSchema`,
+                    ),
+                    readOnlyHint: rawItem.readOnlyHint,
+                };
+            },
+            "name",
+        );
+        if (
+            webmcpTools.length !== SUPPORTED_TOOL_NAMES.length
+            || SUPPORTED_TOOL_NAMES.some(
+                (name) => !webmcpTools.some((tool) => tool.name === name),
+            )
+        ) {
+            throw new TypeError(
+                `webmcpTools must contain exactly the supported v1 tool names: ${SUPPORTED_TOOL_NAMES.join(", ")}.`,
+            );
+        }
         if (navigation.length === 0) {
             throw new TypeError("navigation must contain at least one allowlisted target.");
         }
@@ -150,6 +224,7 @@
             site,
             capabilities,
             navigation,
+            webmcpTools,
         };
     }
 
@@ -244,64 +319,86 @@
         const locationLike = environment.location;
         const schedule = environment.schedule;
         const navigationIds = manifest.navigation.map((target) => target.id);
+        const metadata = new Map(
+            manifest.webmcpTools.map((tool) => [tool.name, tool]),
+        );
+        const definition = (name, execute, inputSchema = undefined) => {
+            const tool = metadata.get(name);
+            if (!tool) {
+                throw new TypeError(`Missing WebMCP metadata for ${name}.`);
+            }
+            return {
+                name: tool.name,
+                description: tool.description,
+                inputSchema: inputSchema || cloneJson(tool.inputSchema),
+                annotations: {readOnlyHint: tool.readOnlyHint},
+                execute,
+            };
+        };
+        const inputKeys = (tool) => Object.keys(tool.inputSchema.properties);
+        const requiredKeys = (tool) => tool.inputSchema.required;
+        const capabilitiesTool = metadata.get("get_site_capabilities");
+        const pageContextTool = metadata.get("get_page_context");
+        const navigationTool = metadata.get("navigate_to_site_target");
+        if (!capabilitiesTool || !pageContextTool || !navigationTool) {
+            throw new TypeError("The manifest does not contain the complete WebMCP metadata set.");
+        }
+        const navigationSchema = cloneJson(navigationTool.inputSchema);
+        navigationSchema.properties.target.enum = navigationIds;
 
         return [
-            {
-                name: "get_site_capabilities",
-                description: "Read the trusted, bounded capability and navigation inventory for this local application. This does not read user records or change application state.",
-                inputSchema: {
-                    type: "object",
-                    properties: {},
-                    additionalProperties: false,
-                },
-                annotations: {readOnlyHint: true},
-                execute: async (input) => {
-                    const validation = validateInputObject(input, []);
+            definition(
+                capabilitiesTool.name,
+                async (input) => {
+                    const validation = validateInputObject(
+                        input,
+                        inputKeys(capabilitiesTool),
+                        requiredKeys(capabilitiesTool),
+                    );
                     if (validation.error) {
                         return errorEnvelope(
-                            "get_site_capabilities",
+                            capabilitiesTool.name,
                             "invalid_input",
                             validation.error,
                         );
                     }
                     return resultEnvelope(
-                        "get_site_capabilities",
+                        capabilitiesTool.name,
                         `Found ${manifest.capabilities.length} capabilities and ${manifest.navigation.length} allowlisted destinations.`,
                         {
                             profile: manifest.profile,
                             site: cloneJson(manifest.site),
                             capabilities: cloneJson(manifest.capabilities),
                             navigation: cloneJson(manifest.navigation),
+                            webmcpTools: cloneJson(manifest.webmcpTools),
                         },
                         {
                             capabilityCount: manifest.capabilities.length,
                             navigationTargetCount: manifest.navigation.length,
+                            webmcpToolCount: manifest.webmcpTools.length,
                             bounded: true,
                         },
                     );
                 },
-            },
-            {
-                name: "get_page_context",
-                description: "Read bounded metadata for the current top-level page, including its title, language, route, and matching allowlisted destination. This does not read page content or change application state.",
-                inputSchema: {
-                    type: "object",
-                    properties: {},
-                    additionalProperties: false,
-                },
-                annotations: {readOnlyHint: true},
-                execute: async (input) => {
-                    const validation = validateInputObject(input, []);
+            ),
+            definition(
+                pageContextTool.name,
+                async (input) => {
+                    const validation = validateInputObject(
+                        input,
+                        inputKeys(pageContextTool),
+                        requiredKeys(pageContextTool),
+                    );
                     if (validation.error) {
                         return errorEnvelope(
-                            "get_page_context",
+                            pageContextTool.name,
                             "invalid_input",
                             validation.error,
                         );
                     }
                     const matchingTarget = matchingNavigationTarget(manifest, locationLike);
                     return resultEnvelope(
-                        "get_page_context",
+                        pageContextTool.name,
                         "Read bounded metadata for the current page.",
                         {
                             siteId: manifest.site.id,
@@ -320,28 +417,18 @@
                         },
                     );
                 },
-            },
-            {
-                name: "navigate_to_site_target",
-                description: "Navigate the current top-level tab to one allowlisted destination in this local application. This changes the visible page and performs its normal page load, but it does not submit forms or directly request a data mutation.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        target: {
-                            type: "string",
-                            enum: navigationIds,
-                            description: "Stable identifier of an allowlisted destination.",
-                        },
-                    },
-                    required: ["target"],
-                    additionalProperties: false,
-                },
-                annotations: {readOnlyHint: false},
-                execute: async (input) => {
-                    const validation = validateInputObject(input, ["target"], ["target"]);
+            ),
+            definition(
+                navigationTool.name,
+                async (input) => {
+                    const validation = validateInputObject(
+                        input,
+                        inputKeys(navigationTool),
+                        requiredKeys(navigationTool),
+                    );
                     if (validation.error || typeof validation.value?.target !== "string") {
                         return errorEnvelope(
-                            "navigate_to_site_target",
+                            navigationTool.name,
                             "invalid_input",
                             validation.error || "target must be a string.",
                         );
@@ -351,14 +438,14 @@
                     );
                     if (!target) {
                         return errorEnvelope(
-                            "navigate_to_site_target",
+                            navigationTool.name,
                             "unknown_target",
                             "target is not in the allowlisted navigation inventory.",
                         );
                     }
                     if (typeof locationLike.assign !== "function" || typeof schedule !== "function") {
                         return errorEnvelope(
-                            "navigate_to_site_target",
+                            navigationTool.name,
                             "navigation_unavailable",
                             "This page cannot schedule same-origin navigation.",
                         );
@@ -367,13 +454,13 @@
                         schedule(() => locationLike.assign(target.path), 0);
                     } catch (_error) {
                         return errorEnvelope(
-                            "navigate_to_site_target",
+                            navigationTool.name,
                             "navigation_unavailable",
                             "This page could not schedule same-origin navigation.",
                         );
                     }
                     return resultEnvelope(
-                        "navigate_to_site_target",
+                        navigationTool.name,
                         `Scheduled navigation to ${target.label}.`,
                         {
                             fromRoute: currentRoute(locationLike),
@@ -393,7 +480,8 @@
                         },
                     );
                 },
-            },
+                navigationSchema,
+            ),
         ];
     }
 
@@ -499,7 +587,7 @@
     }
 
     const publicApi = Object.freeze({
-        codeVersion: "v1.0.0-codex.1",
+        codeVersion: "v1.1.0-codex.1",
         contractVersion: CONTRACT_VERSION,
         manifestElementId: MANIFEST_ELEMENT_ID,
         normalizeManifest,

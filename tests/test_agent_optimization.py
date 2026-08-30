@@ -1,6 +1,6 @@
 """Rendered-page contracts for OpenAI Site tools and Agent Optimization.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -44,11 +44,20 @@ def test_canonical_page_publishes_one_versioned_top_level_site_tools_adapter(
     assert response.status_code == 200
     assert len(MANIFEST_PATTERN.findall(body)) == 1
     assert body.count("/static/assets/js/agent-optimization.js?") == 1
-    assert "agent-optimization-v1.0.0" in body
+    assert "agent-optimization-v1.1.0" in body
     manifest = _manifest_from_body(body)
-    assert manifest["contractVersion"] == "1.0.0"
+    assert manifest["contractVersion"] == "1.1.0"
     assert manifest["status"] == "project-convention"
     assert manifest["site"]["id"] == "antigravity"
+    assert [tool["name"] for tool in manifest["webmcpTools"]] == [
+        "get_site_capabilities",
+        "get_page_context",
+        "navigate_to_site_target",
+    ]
+    assert all(
+        tool["inputSchema"]["additionalProperties"] is False
+        for tool in manifest["webmcpTools"]
+    )
 
 
 def test_manifest_has_bounded_navigation_and_no_financial_mutation_tools(

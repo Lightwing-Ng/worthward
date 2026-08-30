@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.7.3
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertIn(
-            '<article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card">',
+            '<article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card" data-layout-role="result-container">',
             html,
         )
         self.assertIn('data-share-drawer="backtest"', html)
@@ -112,6 +112,11 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
         self.assertIn("Allow algorithmic stop-loss exits", html)
+        self.assertIn('id="show_trade_details" name="show_trade_details" type="checkbox" value="1" checked', html)
+        self.assertIn("Show trade details", html)
+        self.assertLess(html.index('data-backtest-trade-details-field'), html.index('data-trade-strategy-field'))
+        self.assertIn('data-trade-details-visible="true"', html)
+        self.assertNotIn('id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" data-backtest-history-transactions disabled', html)
         self.assertIn(
             'title="Allow strategy sell or cover signals to close a position when the exit price '
             'represents a loss relative to the entry price. This price-only check excludes dividends '
@@ -120,6 +125,53 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
+
+    def test_backtest_trade_details_switch_can_hide_equity_and_transactions(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold"
+                "&show_trade_details=0"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("checked", _input_attributes_by_id(html, "show_trade_details"))
+        self.assertIn('data-trade-details-visible="false"', html)
+        self.assertIn('class="trade-chart-stack is-trade-details-hidden"', html)
+        self.assertIn('data-backtest-equity-panel', html)
+        self.assertIn('hidden aria-hidden="true"', html)
+        self.assertIn('id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics" checked', html)
+        transactions_attributes = _input_attributes_by_id(html, "backtest_history_transactions")
+        self.assertIn("disabled", transactions_attributes)
+        self.assertIn("data-backtest-history-transactions", transactions_attributes)
+        self.assertIn('data-backtest-history-transactions-option aria-disabled="true"', html)
+        self.assertLess(html.index('data-backtest-trade-details-field'), html.index('data-trade-strategy-field'))
+
+    def test_bayesian_field_hit_rate_is_rendered_as_a_percentage_metric(self) -> None:
+        result = backtest_result()
+        result["summary"]["probability_field_hit_rate_pct"] = 42.5
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Bayesian field hit rate", html)
+        self.assertIn('data-backtest-metric="probability-field-hit-rate"', html)
+        self.assertIn(">42.50%</span>", html)
 
     def test_backtest_stop_loss_copy_has_default_chinese_translations(self) -> None:
         labels = {
@@ -130,6 +182,7 @@ class BacktestPageTests(unittest.TestCase):
                 "dividends and total return. "
                 "This setting does not add a separate fixed-price stop."
             ),
+            "backtest_show_trade_details": "Show trade details",
         }
 
         traditional = translate_labels(
@@ -143,6 +196,8 @@ class BacktestPageTests(unittest.TestCase):
 
         self.assertEqual(traditional["backtest_stop_loss"], "允許演算法止損")
         self.assertEqual(simplified["backtest_stop_loss"], "允许算法止损")
+        self.assertEqual(traditional["backtest_show_trade_details"], "顯示交易詳情")
+        self.assertEqual(simplified["backtest_show_trade_details"], "显示交易详情")
         self.assertEqual(
             traditional["backtest_stop_loss_help"],
             "允許策略的賣出或回補訊號在出場價格相對入場價格構成價格虧損時平倉。"

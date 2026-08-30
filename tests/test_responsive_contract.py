@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.5."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.6."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ EXPECTED_REGISTRY = {
     "compact-layout-max": 600,
     "sidebar-overlay-max": 900,
     "settings-density-max": 980,
+    "backtest-probability-wide-min": 1008,
     "investment-form-density-max": 1080,
     "trade-layout-min": 1024,
     "trade-metrics-wide-min": 1200,

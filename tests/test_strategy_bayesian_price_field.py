@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.7.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.11.0."""
 
 from __future__ import annotations
 
@@ -19,9 +19,11 @@ from strategies.algorithms.strategy_bayesian_price_field import (
     _longbridge_symbol,
     _merge_bundle_observations,
     _option_ratio,
+    _probability_field_hit_rate,
     _probability_threshold_signals,
     _resolve_compute_backend,
     _rolling_volume_at_price_percentile,
+    _walk_forward_predictions,
 )
 from strategies.base import normalize_strategy_presentation
 
@@ -166,6 +168,16 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "use_volume",
                 "use_options",
                 "use_volume_at_price",
+                "use_pb_ratio",
+                "use_ps_ratio",
+                "use_dividend_yield",
+                "use_market_temperature",
+                "use_capital_flow",
+                "use_shareholder_concentration",
+                "use_fund_holder_weight",
+                "use_short_interest",
+                "use_short_volume",
+                "use_broker_holding",
                 "training_window",
                 "chip_window",
                 "prior_strength",
@@ -179,7 +191,41 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.2.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.5.0")
+
+    def test_probability_field_hit_rate_is_bounded_and_uses_only_later_observations(self) -> None:
+        frame = _market_frame(90)
+        strategy = BayesianPriceFieldStrategy()
+        result = strategy.compute_signals(
+            frame,
+            _cpu_params(use_pe_ratio=False, use_options=False),
+        )
+        hit_rate = result.presentation["hit_rate"]
+
+        self.assertTrue(hit_rate["causal"])
+        self.assertGreater(hit_rate["scored_points"], 0)
+        self.assertGreaterEqual(hit_rate["score_pct"], 0.0)
+        self.assertLessEqual(hit_rate["score_pct"], 100.0)
+        self.assertEqual(hit_rate["max_horizon"], 20)
+        self.assertEqual(hit_rate["rows_above"], 6)
+        self.assertEqual(hit_rate["rows_below"], 6)
+        self.assertEqual(
+            result.metadata["probability_field_hit_rate_pct"],
+            hit_rate["score_pct"],
+        )
+
+    def test_probability_field_hit_rate_does_not_score_same_day_predictions(self) -> None:
+        close = np.full(45, 100.0)
+        means = np.full(45, np.nan)
+        scales = np.full(45, np.nan)
+        means[-1] = 0.0
+        scales[-1] = 0.02
+        hit_rate = _probability_field_hit_rate(close, means, scales)
+
+        # The final origin has no later trading-day close, so a same-day
+        # prediction can never contribute a point to the score.
+        self.assertEqual(hit_rate["scored_points"], 0)
+        self.assertEqual(hit_rate["score_pct"], 0.0)
 
     def test_walk_forward_prediction_has_no_future_lookahead(self) -> None:
         original = _market_frame()
@@ -215,6 +261,47 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 atol=1e-12,
                 equal_nan=True,
             )
+
+    def test_walk_forward_noise_uses_factor_residual_variance(self) -> None:
+        row_count = 40
+        forward_returns = np.linspace(-0.02, 0.02, row_count - 1)
+        close = np.empty(row_count, dtype=np.float64)
+        close[0] = 100.0
+        for index, forward_return in enumerate(forward_returns, start=1):
+            close[index] = close[index - 1] * math.exp(float(forward_return))
+        frame = pd.DataFrame({"Close": close})
+        factor = np.concatenate((forward_returns, [forward_returns[-1]]))
+        backend = _resolve_compute_backend("CPU")
+        observed_noise_variances: list[float] = []
+
+        def capture_prediction(
+                _backend: object,
+                design: np.ndarray,
+                target: np.ndarray,
+                current: np.ndarray,
+                prior_strength: float,
+                noise_variance: float,
+        ) -> tuple[float, float]:
+            del _backend, design, target, current, prior_strength
+            observed_noise_variances.append(noise_variance)
+            return 0.0, math.sqrt(noise_variance)
+
+        with patch(
+            "strategies.algorithms.strategy_bayesian_price_field._bayesian_prediction",
+            side_effect=capture_prediction,
+        ):
+            _walk_forward_predictions(
+                frame,
+                {"signal": factor},
+                ["signal"],
+                training_window=30,
+                prior_strength=1.0,
+                backend=backend,
+            )
+
+        self.assertTrue(observed_noise_variances)
+        self.assertLess(max(observed_noise_variances), 1e-9)
+        self.assertGreater(float(np.var(forward_returns[:20], ddof=1)), 1e-5)
 
     def test_volume_at_price_factor_is_a_causal_volume_weighted_cdf(self) -> None:
         low_close_frame = pd.DataFrame(
@@ -414,7 +501,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["rows_below"], 6)
         self.assertEqual(presentation["columns"], 36)
         self.assertEqual(presentation["width_fraction"], 0.25)
-        self.assertEqual(presentation["gap_px"], 3)
+        self.assertEqual(presentation["gap_px"], 2)
         self.assertEqual(presentation["padding_px"], 8)
         self.assertEqual(presentation["min_cell_px"], 4)
         self.assertEqual(presentation["cell_radius_px"], 2)
@@ -484,6 +571,41 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(factor_details["volume"]["coverage"], 1.0)
         self.assertGreater(result.frame["bayesian_probability_up"].notna().sum(), 0)
+
+    def test_research_factor_observations_join_as_of_and_are_exposed_in_the_model(self) -> None:
+        frame = _market_frame(80)
+        observations = tuple(
+            SimpleNamespace(
+                observed_at=frame["Date"].iloc[index],
+                factor="pb_ratio",
+                value=2.0 + (index / 100.0),
+            )
+            for index in range(20, 80, 10)
+        )
+        bundle = _bundle_from_frame(
+            frame,
+            factor_status={"ohlcv": "available", "pb_ratio": "available"},
+        )
+        bundle.research_history = observations
+        strategy = BayesianPriceFieldStrategy()
+        strategy._warmup_bundle = bundle
+        result = strategy.compute_signals(
+            frame,
+            _cpu_params(
+                use_pe_ratio=False,
+                use_options=False,
+                use_pb_ratio=True,
+            ),
+        )
+
+        merged = _merge_bundle_observations(frame, bundle)
+        self.assertIn("pb_ratio", _build_factor_columns(merged, 20))
+        pb_factor = next(
+            factor for factor in result.presentation["factors"]
+            if factor["key"] == "pb_ratio"
+        )
+        self.assertTrue(pb_factor["enabled"])
+        self.assertGreater(pb_factor["finite_observations"], 0)
 
     def test_options_factor_derives_ratios_from_raw_volume_and_open_interest(self) -> None:
         observation = SimpleNamespace(

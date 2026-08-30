@@ -1,4 +1,4 @@
-{# Code version: v1.72.7 #}
+{# Code version: v1.72.8 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -24,15 +24,15 @@
     <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
 
 
-        <article class="report-card workspace-article-card workspace-summary-card">
-            <div class="report-heading-row">
+        <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="title-rail">
+            <div class="report-heading-row" data-layout-role="title-heading">
                 <p class="report-heading">Investment</p>
             </div>
         </article>
 
 
 
-        <article class="report-card workspace-content-card trade-performance-card investment-report-card">
+        <article class="report-card workspace-content-card trade-performance-card investment-report-card" data-layout-role="result-container">
 
             {{ render_notice_banner(
                 icon_class="notice-floating-banner-status-icon icon-modal-dialog-banner-default",
@@ -133,7 +133,7 @@
                 aria-label="Resize investment overview and transaction history"></button>
 
         <article class="chart-surface investment-history-surface" id="investment_history_surface">
-            <div class="chart-heading-row investment-history-heading-row">
+            <div class="chart-heading-row investment-history-heading-row" data-layout-role="secondary-heading">
                 <p class="chart-heading">Transaction history</p>
             </div>
         <div class="investment-import-control-rail" aria-label="Investment import controls">
@@ -864,6 +864,7 @@
 
             <div id="investment_stock_details_table_host" class="investment-stock-details-table-host" hidden>
                 <nav class="settings-pagination local-store-pagination local-store-pagination--floating investment-history-pagination"
+                     data-layout-role="pagination"
                      id="investment_history_pagination"
                      aria-label="Transaction history pages"
                      aria-controls="investment_history"

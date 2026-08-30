@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 (() => {
     const root = document.documentElement;
     const fallbackValues = Object.freeze({
@@ -6,6 +6,7 @@
         compactLayoutMax: 600,
         sidebarOverlayMax: 900,
         settingsDensityMax: 980,
+        backtestProbabilityWideMin: 1008,
         investmentFormDensityMax: 1080,
         tradeLayoutMin: 1024,
         tradeMetricsWideMin: 1200,
@@ -41,6 +42,10 @@
         settingsDensityMax: readCssPixel(
             "--responsive-breakpoint-settings-density-max",
             fallbackValues.settingsDensityMax,
+        ),
+        backtestProbabilityWideMin: readCssPixel(
+            "--responsive-breakpoint-backtest-probability-wide-min",
+            fallbackValues.backtestProbabilityWideMin,
         ),
         investmentFormDensityMax: readCssPixel(
             "--responsive-breakpoint-investment-form-density-max",

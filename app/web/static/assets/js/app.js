@@ -1,4 +1,4 @@
-/* Code version: v0.46.0 */
+/* Code version: v0.47.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2015,6 +2015,9 @@
         const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.backtest_metrics || translateUi("Loading");
         const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || translateUi("Loading");
         if (state.currentView === "backtest") {
+            const showBacktestTradeDetails = showTradeDetailsInput instanceof HTMLInputElement
+                ? showTradeDetailsInput.checked
+                : true;
             const tradeMetricLabels = [
                 "Initial capital",
                 "Final equity",
@@ -2055,38 +2058,58 @@
                                 <div id="backtest_overview_panel" data-backtest-view-panel="overview">
                                     <article class="chart-surface backtest-surface">
                                         <div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
-                                        <div class="trade-chart-stack">
+                                        <div class="trade-chart-stack${showBacktestTradeDetails ? "" : " is-trade-details-hidden"}"
+                                             data-backtest-trade-chart-stack
+                                             data-trade-details-visible="${showBacktestTradeDetails}">
                                             <div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
-                                            <div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
+                                            <div class="trade-chart-panel trade-chart-panel-equity is-pending-value"
+                                                 data-backtest-equity-panel
+                                                 data-workspace-mask="trade-chart"${showBacktestTradeDetails ? "" : " hidden aria-hidden=\"true\""}></div>
                                         </div>
                                     </article>
                                 </div>
                             </div>
                         </div>
                     </article>
-                    <button type="button"
-                            class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer backtest-section-resizer"
-                            id="backtest_section_resizer"
-                            data-backtest-section-resizer
-                            role="separator"
-                            aria-orientation="horizontal"
-                            aria-label="Resize backtest overview and transaction history"></button>
-                <article class="chart-surface investment-history-surface backtest-history-surface" id="backtest_history_surface" data-active-view="transactions">
+                    <div class="backtest-section-resizer-slot" data-backtest-section-resizer-slot>
+                        <button type="button"
+                                class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer backtest-section-resizer"
+                                id="backtest_section_resizer"
+                                data-backtest-section-resizer
+                                role="separator"
+                                aria-orientation="horizontal"
+                                aria-label="Resize backtest overview and transaction history"></button>
+                        <div class="backtest-probability-scrollport"
+                             data-backtest-probability-scrollport
+                             role="region"
+                             aria-label="Pan chart to reveal the probability field"
+                             aria-hidden="true"
+                             tabindex="-1"
+                             hidden>
+                            <span class="backtest-probability-scrollport-spacer"
+                                  data-backtest-probability-scrollport-spacer
+                                  aria-hidden="true"></span>
+                        </div>
+                    </div>
+                <article class="chart-surface investment-history-surface backtest-history-surface"
+                         id="backtest_history_surface"
+                         data-active-view="${showBacktestTradeDetails ? "transactions" : "metrics"}"
+                         data-trade-details-visible="${showBacktestTradeDetails}">
                     <div class="investment-view-segmented-wrap backtest-history-view-segmented-wrap">
                         <div class="segmented-control-overflow-frame investment-view-segmented-frame backtest-history-view-segmented-frame"
                              data-segmented-overflow-frame data-overflow-start="0" data-overflow-end="0">
                             <div class="segmented-control segmented-control--compact investment-view-segmented backtest-history-view-segmented"
-                                 id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="transactions" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
-                                <label class="segmented-control-option" for="backtest_history_metrics"><input id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics"><span>Metrics</span></label>
-                                <label class="segmented-control-option" for="backtest_history_transactions"><input id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" checked><span>Transactions</span></label>
+                                 id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="${showBacktestTradeDetails ? "transactions" : "metrics"}" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
+                                <label class="segmented-control-option" for="backtest_history_metrics"><input id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics"${showBacktestTradeDetails ? "" : " checked"}><span>Metrics</span></label>
+                                <label class="segmented-control-option" for="backtest_history_transactions" data-backtest-history-transactions-option${showBacktestTradeDetails ? "" : " aria-disabled=\"true\""}><input id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" data-backtest-history-transactions${showBacktestTradeDetails ? " checked" : " disabled"}><span>Transactions</span></label>
                             </div>
                         </div>
                     </div>
                     <div class="investment-view-surface-body backtest-history-view-body" id="backtest_history_view_body">
-                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics" hidden>
+                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics"${showBacktestTradeDetails ? " hidden" : ""}>
                             <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">${pendingMetricCards}</div>
                         </div>
-                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions">
+                        <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"${showBacktestTradeDetails ? "" : " hidden"}>
                     <div class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
                             <colgroup>
@@ -4644,6 +4667,7 @@
     const includeDividendsInput = $("#include_dividends");
     const dividendReinvestField = $("[data-dividend-reinvest-field]");
     const stopLossInput = $("#stop_loss");
+    const showTradeDetailsInput = $("#show_trade_details");
     const tradeCapitalField = $(".trade-capital-field");
     const tradeCapitalInput = $("#trade_initial_capital");
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
@@ -7053,6 +7077,8 @@
             strategyParamDefaults,
             stopLossEnabled: isBacktestView ? Boolean(stopLossInput?.checked) : undefined,
             defaultStopLossEnabled: defaults.backtest_stop_loss ?? true,
+            showTradeDetailsEnabled: isBacktestView ? Boolean(showTradeDetailsInput?.checked) : undefined,
+            defaultShowTradeDetailsEnabled: defaults.backtest_show_trade_details ?? true,
             isDca: isDcaView,
             amount: isDcaView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
             defaultAmount: defaults.dca_amount ?? 1000,

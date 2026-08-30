@@ -1,6 +1,6 @@
-{# Code version: v1.0.0 #}
+{# Code version: v1.1.0 #}
 <script id="agent_optimization_manifest" type="application/json">{{ {
-    "contractVersion": "1.0.0",
+    "contractVersion": "1.1.0",
     "profile": "openai-site-tools-2026-08-28",
     "status": "project-convention",
     "site": {
@@ -34,6 +34,46 @@
             "id": "configuration",
             "label": "Configuration",
             "description": "Review application settings without granting Site tools direct settings-write authority."
+        }
+    ],
+    "webmcpTools": [
+        {
+            "name": "get_site_capabilities",
+            "description": "Read the trusted, bounded capability and navigation inventory for this local application.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            },
+            "readOnlyHint": true
+        },
+        {
+            "name": "get_page_context",
+            "description": "Read bounded metadata for the current top-level page without reading page content.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            },
+            "readOnlyHint": true
+        },
+        {
+            "name": "navigate_to_site_target",
+            "description": "Navigate the current top-level tab to one allowlisted same-origin human page.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Stable identifier of an allowlisted destination."
+                    }
+                },
+                "required": ["target"],
+                "additionalProperties": false
+            },
+            "readOnlyHint": false
         }
     ],
     "navigation": [
@@ -81,4 +121,4 @@
         }
     ]
 }|tojson }}</script>
-<script src="{{ url_for('static', filename='assets/js/agent-optimization.js', v=version ~ '-agent-optimization-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/agent-optimization.js', v=version ~ '-agent-optimization-v1.1.0') }}"></script>

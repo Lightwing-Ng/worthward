@@ -1,4 +1,4 @@
-{# Code version: v0.29.8 #}
+{# Code version: v0.31.2 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -126,8 +126,8 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.58.4') }}">
-    <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.1.0') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.64.0') }}">
+    <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
 </head>
 <body>
 {% include "_agent_optimization.html" %}
@@ -168,15 +168,15 @@
         {{ notice }}
     {% endcall %}
     {% endif %}
-    <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
+    <button type="button" class="sidebar-toggle" id="sidebar_toggle" data-layout-role="sidebar-toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
         <span class="icon icon-sidebar-left" aria-hidden="true"></span>
     </button>
     <div class="app-shell is-sidebar-open">
-        <div class="global-quick-actions" id="global_quick_actions" aria-label="{{ translate_ui('Global quick actions') }}">
+        <div class="global-quick-actions" id="global_quick_actions" data-layout-role="global-action-column" aria-label="{{ translate_ui('Global quick actions') }}">
             <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>
             </button>
-            <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
+            <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" data-layout-role="global-theme-anchor" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
                 <span class="icon" id="global_theme_toggle_icon" aria-hidden="true"></span>
             </button>
         </div>
@@ -190,7 +190,7 @@
             hidden
         ></button>
         <aside class="panel sidebar" id="app_sidebar">
-            <section class="hero">
+            <section class="hero" data-layout-role="sidebar-title">
                 <h1>{{ sidebar_title or page_title }}</h1>
             </section>
             {% block sidebar_content %}{% endblock %}
@@ -199,7 +199,7 @@
             {% block workspace_content %}{% endblock %}
         </section>
     </div>
-    <nav class="sidebar-dock" aria-label="{{ translate_ui('Workspace modes') }}">
+    <nav class="sidebar-dock" aria-label="{{ translate_ui('Workspace modes') }}" data-layout-role="sidebar-dock">
         <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ dock_workspace_label }}</span>
@@ -353,7 +353,7 @@
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.4.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.5.0') }}"></script>
 {% endif %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.2') }}"></script>
@@ -363,16 +363,16 @@
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.4.1') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.24.2') }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.46.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.47.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.7.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.15.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.11.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.18.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.1.6') }}"></script>
 {% if selected_strategy_id == 'dca' %}
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.23') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>
 {% endif %}
 {% endif %}
 </body>

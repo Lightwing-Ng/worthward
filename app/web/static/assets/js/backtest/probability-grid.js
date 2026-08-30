@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.7.0
+ * Code version: v0.11.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -12,7 +12,7 @@
     const DEFAULT_ROWS_BELOW = 6;
     const DEFAULT_COLUMN_COUNT = 36;
     const DEFAULT_WIDTH_FRACTION = 0.25;
-    const DEFAULT_GAP_PX = 3;
+    const DEFAULT_GAP_PX = 2;
     const DEFAULT_PADDING_PX = 8;
     const DEFAULT_MIN_CELL_PX = 4;
     const DEFAULT_CELL_RADIUS_PX = 2;
@@ -27,7 +27,7 @@
         cellRadius: Object.freeze([0, 32]),
         columns: Object.freeze([1, 72]),
         gap: Object.freeze([0, 24]),
-        minCell: Object.freeze([1, 32]),
+        minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),
         opacityExponent: Object.freeze([1.1, 4]),
         opacityTailRatio: Object.freeze([0, 0.25]),
         padding: Object.freeze([0, 64]),
@@ -127,7 +127,9 @@
             renderer: RENDERER_ID,
             rows_above: symmetricRows.rowsAbove,
             rows_below: symmetricRows.rowsBelow,
-            columns: boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns),
+            // The horizon is a product-level chart contract, not a strategy-tunable
+            // density control. Every rendered probability field has 36 columns.
+            columns: DEFAULT_COLUMN_COUNT,
             gap_px: boundedNumber(value.gap_px, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap),
             padding_px: boundedNumber(value.padding_px, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding),
             min_cell_px: boundedNumber(value.min_cell_px, DEFAULT_MIN_CELL_PX, GEOMETRY_LIMITS.minCell),
@@ -210,17 +212,14 @@
             return null;
         }
         const symmetricRows = normalizeSymmetricRows(rowsAbove, rowsBelow);
-        const normalizedRowsAbove = symmetricRows.rowsAbove;
-        const normalizedRowsBelow = symmetricRows.rowsBelow;
-        const normalizedColumnCount = boundedInteger(
-            columnCount,
-            DEFAULT_COLUMN_COUNT,
-            GEOMETRY_LIMITS.columns,
-        );
-        const rowCount = normalizedRowsAbove + normalizedRowsBelow;
+        const requestedRowsAbove = symmetricRows.rowsAbove;
+        const requestedRowsBelow = symmetricRows.rowsBelow;
+        // Keep the visible time lattice stable across every presentation. A
+        // caller cannot shorten the forecast horizon by reducing columns.
+        const normalizedColumnCount = DEFAULT_COLUMN_COUNT;
         const plotWidth = right - left;
         const targetWidth = plotWidth * boundedNumber(widthFraction, DEFAULT_WIDTH_FRACTION, [0.1, 0.5]);
-        const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
+        const requestedGap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
         const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
         const minimumCell = boundedNumber(
             minCellPx,
@@ -232,7 +231,7 @@
         // whole slot prevents spacing from accumulating a fractional-day drift.
         const preferredSlotWidth = Math.max(
             0,
-            (targetWidth - (2 * padding) + gap) / normalizedColumnCount,
+            (targetWidth - (2 * padding) + requestedGap) / normalizedColumnCount,
         );
         const preferredDaysPerColumn = Math.max(
             0,
@@ -240,21 +239,56 @@
         );
         let minimumDaysPerColumn = Math.max(
             1,
-            Math.ceil((gap + minimumCell) / normalizedStepPixels),
+            Math.ceil((minimumCell / normalizedStepPixels) - 1e-12),
         );
-        while (((minimumDaysPerColumn * normalizedStepPixels) - gap) < minimumCell) {
+        while ((minimumDaysPerColumn * normalizedStepPixels) < (minimumCell - 1e-9)) {
             minimumDaysPerColumn += 1;
         }
         const daysPerColumn = Math.max(preferredDaysPerColumn, minimumDaysPerColumn);
         const slotWidth = daysPerColumn * normalizedStepPixels;
+        // The strategy-owned gap is an upper bound. When the shortest valid
+        // day slot cannot also carry that full gap, reduce only the gap before
+        // adding another trading day to every one of the fixed columns.
+        const gap = Math.min(requestedGap, Math.max(0, slotWidth - minimumCell));
         const cellSize = slotWidth - gap;
+        const rowsThatFit = (distance) => {
+            const numerator = Number(distance) - padding + (gap / 2);
+            if (!(numerator > 0) || !(cellSize + gap > 0)) return 0;
+            return Math.max(0, Math.floor((numerator / (cellSize + gap)) + 1e-9));
+        };
+        const availableRowsAbove = rowsThatFit(y - top);
+        const availableRowsBelow = rowsThatFit(bottom - y);
+        // Preserve every side's available price range independently. A point
+        // near a chart edge may have fewer cells on one side, but the field
+        // must remain interactive so the actual curve point can still be
+        // hovered and pinned.
+        const normalizedRowsAbove = Math.min(requestedRowsAbove, availableRowsAbove);
+        const normalizedRowsBelow = Math.min(requestedRowsBelow, availableRowsBelow);
+        const sideCellExtent = (rowCount, oppositeRowCount) => rowCount > 0
+            ? (rowCount * cellSize)
+                + ((rowCount - 1) * gap)
+                + (oppositeRowCount > 0 ? gap / 2 : 0)
+            : 0;
+        const aboveCellExtent = sideCellExtent(normalizedRowsAbove, normalizedRowsBelow);
+        const belowCellExtent = sideCellExtent(normalizedRowsBelow, normalizedRowsAbove);
+        const aboveExtent = padding + aboveCellExtent;
+        const belowExtent = padding + belowCellExtent;
+        const halfHeight = Math.max(aboveExtent, belowExtent);
+        const rowCount = normalizedRowsAbove + normalizedRowsBelow;
         const width = (2 * padding)
             + (normalizedColumnCount * cellSize)
             + ((normalizedColumnCount - 1) * gap);
-        const height = (2 * padding) + (rowCount * cellSize) + ((rowCount - 1) * gap);
+        const height = 2 * halfHeight;
         return Object.freeze({
             anchorX: x,
             anchorY: y,
+            availableRowsAbove,
+            availableRowsBelow,
+            aboveExtent,
+            belowExtent,
+            gridPaddingTop: halfHeight - aboveCellExtent,
+            gridPaddingBottom: halfHeight - belowCellExtent,
+            halfHeight,
             cellSize,
             columnCount: normalizedColumnCount,
             daysPerColumn,
@@ -264,12 +298,13 @@
             height,
             left: x,
             padding,
+            requestedGap,
             rowCount,
             rowsAbove: normalizedRowsAbove,
             rowsBelow: normalizedRowsBelow,
             slotWidth,
             stepPixels: normalizedStepPixels,
-            top: y - (height / 2),
+            top: y - halfHeight,
             width,
             widthTarget: targetWidth,
         });
@@ -283,13 +318,17 @@
         maxCellPx = DEFAULT_MAX_CELL_PX,
     } = {}) => {
         const symmetricRows = normalizeSymmetricRows(rowsAbove, rowsBelow);
-        const rowCount = symmetricRows.rowsAbove + symmetricRows.rowsBelow;
         const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
         const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
         const cellSize = boundedNumber(maxCellPx, DEFAULT_MAX_CELL_PX, [1, 64]);
-        return padding + (
-            (rowCount * cellSize) + ((rowCount - 1) * gap)
-        ) / 2;
+        const sideExtent = (rowCount, oppositeRowCount) => rowCount > 0
+            ? padding + (rowCount * cellSize) + ((rowCount - 1) * gap)
+                + (oppositeRowCount > 0 ? gap / 2 : 0)
+            : padding;
+        return Math.max(
+            sideExtent(symmetricRows.rowsAbove, symmetricRows.rowsBelow),
+            sideExtent(symmetricRows.rowsBelow, symmetricRows.rowsAbove),
+        );
     };
 
     const resolveDatasetStepPixels = (points, anchorIndex) => {
@@ -367,12 +406,13 @@
             DEFAULT_CELL_OPACITY_TAIL_RATIO,
             GEOMETRY_LIMITS.opacityTailRatio,
         );
-        const baseline = Math.max(
-            minimumProbability,
-            maximumProbability * normalizedTailRatio,
+        const minimumProbabilityRatio = minimumProbability / maximumProbability;
+        const baselineRatio = Math.max(
+            minimumProbabilityRatio,
+            normalizedTailRatio,
         );
-        const visibleRange = maximumProbability - baseline;
-        if (!(visibleRange > Math.max(Number.EPSILON, maximumProbability * 1e-12))) {
+        const visibleRatioRange = 1 - baselineRatio;
+        if (!(visibleRatioRange > 0)) {
             return sanitized.map((probability) => {
                 const isMaximum = probability === maximumProbability;
                 return Object.freeze({
@@ -386,9 +426,14 @@
             if (probability === maximumProbability) {
                 return Object.freeze({displayIntensity: 1, opacity: 1, probability});
             }
-            const displayIntensity = probability <= baseline
+            const probabilityRatio = probability / maximumProbability;
+            const displayIntensity = probabilityRatio <= baselineRatio
                 ? 0
-                : clamp((probability - baseline) / visibleRange, 0, 1);
+                : clamp(
+                    (probabilityRatio - baselineRatio) / visibleRatioRange,
+                    0,
+                    1,
+                );
             return Object.freeze({
                 displayIntensity,
                 opacity: displayIntensity > 0
@@ -420,11 +465,9 @@
             || !Number.isInteger(daysPerColumn) || daysPerColumn < 1
             || !Number.isFinite(slotWidth) || !(slotWidth > geometry.gap)) return [];
         const cells = [];
-        const centralGapCenter = geometry.padding
-            + (geometry.rowsAbove * geometry.cellSize)
-            + ((geometry.rowsAbove - 0.5) * geometry.gap);
         for (let row = 0; row < geometry.rowCount; row += 1) {
-            const cellTop = geometry.top + geometry.padding + (row * (geometry.cellSize + geometry.gap));
+            const cellTop = geometry.top + geometry.gridPaddingTop
+                + (row * (geometry.cellSize + geometry.gap));
             const cellBottom = cellTop + geometry.cellSize;
             const firstValue = Number(valueForPixel(cellTop));
             const secondValue = Number(valueForPixel(cellBottom));
@@ -469,7 +512,7 @@
             displayIntensity: opacityProfile[index]?.displayIntensity || 0,
             opacity: opacityProfile[index]?.opacity || 0,
             size: geometry.cellSize,
-            symmetryOffset: (cell.y + (geometry.cellSize / 2)) - (geometry.top + centralGapCenter),
+            symmetryOffset: (cell.y + (geometry.cellSize / 2)) - geometry.anchorY,
         }));
     };
 
@@ -499,7 +542,8 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.7.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.11.0",
+        DEFAULT_COLUMN_COUNT,
         CELL_OPACITY_MAPPING,
         PRESENTATION_SCHEMA,
         RENDERER_ID,

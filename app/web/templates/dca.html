@@ -1,4 +1,4 @@
-{# Code version: v0.1.3 #}
+{# Code version: v0.1.4 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -9,8 +9,8 @@
 
 {% block workspace_content %}
     <section class="workspace-mode-shell">
-        <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
-            <div class="report-heading-row">
+        <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
+            <div class="report-heading-row" data-layout-role="title-heading">
                 <p class="report-heading">{{ labels.dock_dca }}</p>
             </div>
         </article>
@@ -23,12 +23,12 @@
                 {{ render_investment_share_actions(shell_id='workspace_share_drawer_dca', share_drawer='dca', show_mask=false, capture_label='Save DCA screenshot', anchor_label='Share DCA') }}
                 {% endif %}
                 <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                    <article class="report-card workspace-article-card workspace-summary-card">
-                        <div class="report-heading-row">
+                    <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                        <div class="report-heading-row" data-layout-role="result-heading">
                             <p class="report-heading">{{ report_heading }}</p>
                         </div>
                     </article>
-                    <article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
+                    <article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card" data-layout-role="result-container">
                         {% if dca_result %}
                             <div class="trade-detail-tabs">
                                 <div class="trade-detail-toolbar">
@@ -140,6 +140,7 @@
                                         </div>
                                     </div>
                                     <nav class="settings-pagination local-store-pagination trade-transactions-pagination"
+                                         data-layout-role="pagination"
                                          id="tradeTransactionsPagination" aria-label="Contribution pages" hidden></nav>
                                 </div>
                             </div>
@@ -176,5 +177,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.1.23') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>
 {% endblock %}

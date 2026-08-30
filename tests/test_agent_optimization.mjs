@@ -1,4 +1,4 @@
-/* Code version: v1.0.0-codex.1 */
+/* Code version: v1.1.0-codex.1 */
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import path from 'node:path';
@@ -40,7 +40,7 @@ const createLocation = (initialHref = 'http://127.0.0.1:8699/alpha?mode=read') =
 };
 
 const rawManifest = () => ({
-    contractVersion: '1.0.0',
+    contractVersion: '1.1.0',
     profile: 'openai-site-tools-2026-08-28',
     status: 'project-convention',
     site: {
@@ -70,6 +70,46 @@ const rawManifest = () => ({
             path: '/beta?mode=review',
         },
     ],
+    webmcpTools: [
+        {
+            name: 'get_site_capabilities',
+            description: 'Read the bounded capability inventory for this fixture.',
+            inputSchema: {
+                type: 'object',
+                properties: {},
+                required: [],
+                additionalProperties: false,
+            },
+            readOnlyHint: true,
+        },
+        {
+            name: 'get_page_context',
+            description: 'Read bounded metadata for the current fixture page.',
+            inputSchema: {
+                type: 'object',
+                properties: {},
+                required: [],
+                additionalProperties: false,
+            },
+            readOnlyHint: true,
+        },
+        {
+            name: 'navigate_to_site_target',
+            description: 'Navigate to one allowlisted fixture destination.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    target: {
+                        type: 'string',
+                        description: 'Stable fixture destination identifier.',
+                    },
+                },
+                required: ['target'],
+                additionalProperties: false,
+            },
+            readOnlyHint: false,
+        },
+    ],
 });
 
 const createDocument = ({manifest = rawManifest(), registerTool} = {}) => ({
@@ -84,14 +124,23 @@ const createDocument = ({manifest = rawManifest(), registerTool} = {}) => ({
 });
 
 test('the shared runtime publishes its explicit contract version', () => {
-    assert.equal(runtime.codeVersion, 'v1.0.0-codex.1');
-    assert.equal(runtime.contractVersion, '1.0.0');
+    assert.equal(runtime.codeVersion, 'v1.1.0-codex.1');
+    assert.equal(runtime.contractVersion, '1.1.0');
     assert.equal(runtime.manifestElementId, 'agent_optimization_manifest');
 });
 
 test('manifest normalization enforces stable identifiers and same-origin paths', () => {
     const location = createLocation();
     const normalized = runtime.normalizeManifest(rawManifest(), location);
+
+    assert.deepEqual(
+        normalized.webmcpTools.map(({name, readOnlyHint}) => ({name, readOnlyHint})),
+        [
+            {name: 'get_site_capabilities', readOnlyHint: true},
+            {name: 'get_page_context', readOnlyHint: true},
+            {name: 'navigate_to_site_target', readOnlyHint: false},
+        ],
+    );
 
     assert.deepEqual(
         normalized.navigation.map(({id, path: targetPath}) => ({id, path: targetPath})),
@@ -153,7 +202,7 @@ test('tool definitions remain small, closed, and accurately annotated', () => {
         definitions[2].inputSchema.properties.target.enum,
         ['alpha', 'beta'],
     );
-    assert.match(definitions[2].description, /changes the visible page/);
+    assert.match(definitions[2].description, /allowlisted fixture destination/);
 });
 
 test('read tools return bounded verification envelopes and reject extra input', async () => {
@@ -170,6 +219,8 @@ test('read tools return bounded verification envelopes and reject extra input', 
     assert.equal(capabilities.tool, 'get_site_capabilities');
     assert.equal(capabilities.verification.capabilityCount, 1);
     assert.equal(capabilities.verification.navigationTargetCount, 2);
+    assert.equal(capabilities.verification.webmcpToolCount, 3);
+    assert.equal(capabilities.data.webmcpTools.length, 3);
     assert.equal(capabilities.effects.directPersistedDataMutation, false);
     assert.doesNotThrow(() => JSON.stringify(capabilities));
 

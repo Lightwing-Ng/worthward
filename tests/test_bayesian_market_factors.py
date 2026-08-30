@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -417,6 +417,52 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
         self.assertEqual(first.factor_status["pe"], "disabled")
         self.assertEqual(first.factor_status["options"], "disabled")
         self.assertNotIn("trade-stats", " ".join(first.source_commands))
+
+    def test_opt_in_research_factors_are_date_filtered_and_selective(self) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        def fake_cli(settings, arguments, *, timeout_seconds):
+            del settings, timeout_seconds
+            commands.append(tuple(arguments))
+            if arguments[:2] == ["kline", "history"]:
+                return [_bar("2026-08-27T20:00:00Z"), _bar("2026-08-28T20:00:00Z")]
+            if arguments[0] == "valuation":
+                return {
+                    "metrics": {
+                        "pb": {
+                            "list": [
+                                {"timestamp": "2026-08-27T04:00:00Z", "pb": "2.1"},
+                                {"timestamp": "2026-08-30T04:00:00Z", "pb": "9.9"},
+                            ]
+                        }
+                    }
+                }
+            raise AssertionError(f"Unexpected command: {arguments}")
+
+        interval_patch, now_patch = self._provider_patches()
+        with (
+            interval_patch,
+            now_patch,
+            patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
+        ):
+            bundle = factors.fetch_bayesian_factor_bundle(
+                "AAPL.US",
+                "2026-08-27",
+                "2026-08-29",
+                settings=self.settings,
+                include_pe=False,
+                include_options=False,
+                research_factors=("pb_ratio",),
+                ttl_seconds=0,
+            )
+
+        self.assertEqual(
+            [(row.factor, row.value, row.observed_at.date().isoformat()) for row in bundle.research_history],
+            [("pb_ratio", 2.1, "2026-08-27")],
+        )
+        self.assertEqual(bundle.factor_status["pb_ratio"], "available")
+        self.assertIn("valuation", " ".join(bundle.source_commands))
+        self.assertEqual(len(commands), 2)
 
     def test_a_shorter_call_level_ttl_cannot_reuse_a_longer_ttl_entry(self) -> None:
         with (

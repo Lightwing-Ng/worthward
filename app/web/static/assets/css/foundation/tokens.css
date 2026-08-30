@@ -1,4 +1,4 @@
-/* Code version: v0.24.0 */
+/* Code version: v0.26.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -11,6 +11,7 @@
 	--responsive-breakpoint-compact-layout-max: 600px;
 	--responsive-breakpoint-sidebar-overlay-max: 900px;
 	--responsive-breakpoint-settings-density-max: 980px;
+	--responsive-breakpoint-backtest-probability-wide-min: 1008px;
 	--responsive-breakpoint-investment-form-density-max: 1080px;
 	--responsive-breakpoint-trade-layout-min: 1024px;
 	--responsive-breakpoint-trade-metrics-wide-min: 1200px;
@@ -70,19 +71,30 @@
 	--layout-physical-effect-bleed: 48px;
 	--page-edge-pad: 10px;
 	--layout-edge-gap: var(--page-edge-pad);
+	/* Page insets are the minimum visual edge distance after safe areas. */
+	--layout-page-inset-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
+	--layout-page-inset-right: max(var(--page-edge-pad), env(safe-area-inset-right, 0px));
+	--layout-page-inset-bottom: max(var(--page-edge-pad), env(safe-area-inset-bottom, 0px));
+	--layout-page-inset-left: max(var(--page-edge-pad), env(safe-area-inset-left, 0px));
+	/* Global anchors sit one edge gap inside the safe page rectangle. */
+	--layout-global-anchor-top: calc(var(--layout-page-inset-top) + var(--layout-edge-gap));
+	--layout-global-anchor-right: calc(var(--layout-page-inset-right) + var(--layout-edge-gap));
+	--layout-global-anchor-bottom: calc(var(--layout-page-inset-bottom) + var(--layout-edge-gap));
+	--layout-global-anchor-left: calc(var(--layout-page-inset-left) + var(--layout-edge-gap));
 	--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);
 	--layout-global-action-gap: 10px;
 	--layout-global-action-inline-size: calc(
 		(var(--settings-round-icon-button-size) * 2)
 		+ var(--layout-global-action-gap)
 	);
-	--sidebar-overlay-inset-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
-	--sidebar-overlay-inset-right: max(var(--page-edge-pad), env(safe-area-inset-right, 0px));
-	--sidebar-overlay-inset-bottom: max(var(--page-edge-pad), env(safe-area-inset-bottom, 0px));
-	--sidebar-overlay-inset-left: max(var(--page-edge-pad), env(safe-area-inset-left, 0px));
+	--sidebar-overlay-inset-top: var(--layout-page-inset-top);
+	--sidebar-overlay-inset-right: var(--layout-page-inset-right);
+	--sidebar-overlay-inset-bottom: var(--layout-page-inset-bottom);
+	--sidebar-overlay-inset-left: var(--layout-page-inset-left);
 	--sidebar-overlay-toggle-inset: max(var(--sidebar-overlay-inset-top), var(--sidebar-overlay-inset-right));
 	--sidebar-overlay-available-inline-size: calc(100vw - var(--sidebar-overlay-inset-left) - var(--sidebar-overlay-inset-right));
-	--global-quick-actions-right: var(--layout-global-anchor-inset);
+	--global-quick-actions-top: var(--layout-global-anchor-top);
+	--global-quick-actions-right: var(--layout-global-anchor-right);
 	--sidebar-width: 312px;
 	--layout-sidebar-overlay-inline-size: min(
 		var(--sidebar-width),
@@ -99,8 +111,8 @@
 	);
 	--sidebar-toggle-top: var(--page-edge-pad);
 	--sidebar-toggle-left: var(--page-edge-pad);
-	--sidebar-toggle-center-offset: calc(var(--sidebar-toggle-top) + (var(--settings-round-icon-button-size) / 2));
-	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--page-edge-pad));
+	--sidebar-toggle-center-offset: calc(var(--layout-global-anchor-top) + (var(--settings-round-icon-button-size) / 2));
+	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--layout-page-inset-top));
 	--workspace-title-safe-top: 60px;
 	--workspace-title-rail-control-height: var(--settings-round-icon-button-size);
 	--workspace-title-rail-pad-block-start: var(--page-edge-pad);
@@ -119,7 +131,7 @@
 	--layout-sidebar-dock-bottom-gap: var(--layout-edge-gap);
 	--sidebar-dock-bottom-gap: var(--layout-sidebar-dock-bottom-gap);
 	--workspace-mobile-dock-clearance: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
-	--workspace-mobile-surface-bottom-pad: calc(var(--page-edge-pad) + var(--workspace-mobile-dock-clearance) + env(safe-area-inset-bottom, 0px));
+	--workspace-mobile-surface-bottom-pad: calc(var(--layout-page-inset-bottom) + var(--workspace-mobile-dock-clearance));
 	--page-mobile-scroll-bottom-pad-base: var(--page-edge-pad);
 	--page-mobile-end-bottom-pad-base: calc(var(--page-mobile-scroll-bottom-pad-base) + var(--workspace-mobile-surface-bottom-pad));
 	--sidebar-dock-mobile-bottom-gap: 4px;
@@ -544,7 +556,7 @@ body::-webkit-scrollbar-button,
 }
 [hidden] { display: none !important; }
 body { margin: 0; height: 100vh; min-height: 100svh; overflow: hidden; font-family: var(--font-family-base); font-synthesis: none; font-weight: var(--font-weight-regular); color: var(--text); background: var(--bg); }
-.page { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--page-edge-pad) var(--page-edge-pad) calc(var(--page-edge-pad) + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; overflow: hidden; position: relative; }
+.page { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--layout-page-inset-top) var(--layout-page-inset-right) var(--layout-page-inset-bottom) var(--layout-page-inset-left); display: flex; align-items: stretch; overflow: hidden; position: relative; }
 .page.sidebar-memory-collapsed,
 html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px; }
 .app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: var(--layer-surface-content); width: 100%; height: 100%; min-height: 0; }

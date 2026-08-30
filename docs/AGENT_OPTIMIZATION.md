@@ -1,6 +1,6 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.0.1`
+Documentation version: `v1.1.0`
 
 This project implements the shared Agent Optimization contract at
 `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
@@ -20,7 +20,9 @@ antigravity adapter and its verification evidence.
 
 The runtime is byte-identical to the sibling CacheLikesFromTwitter copy and registers tools only when
 the top-level document exposes `document.modelContext.registerTool`. Unsupported browsers receive the
-normal interface without an error or behavioral fork.
+normal interface without an error or behavioral fork. The project manifest publishes the executable
+`webmcpTools` metadata consumed by the shared runtime; the adapter remains the owner of its trusted
+descriptions and schemas.
 
 The protected Live trading PIN page does not load Site tools. Canonical Workspace, Investment, and
 Settings renderers load the same safe v1 inventory through `base.html`.
@@ -75,10 +77,12 @@ The Python browser test uses a random loopback port. The project Playwright gate
 must not reuse the user-owned 8688 service. Both use isolated settings and disposable Chromium
 contexts; neither submits a broker import or order.
 
-Current automated evidence from 28 Aug 2026: all 9 shared Node contract cases, all 5 focused Flask
-and random-port browser cases, 867 full-suite Python cases with 6 documented skips, all 269 Node
-cases, and all 252 repository-native Playwright cases passed. The JavaScript report measured the
-shared runtime at 88.85% lines, 69.81% branches, and 100.00% functions.
+Current automated evidence from 30 Aug 2026: all 9 shared Node contract cases, the focused Flask
+and random-port browser cases, 954 full-suite Python tests, all 293 Node tests, and all 267
+repository-native Playwright tests passed. The shared runtime is byte-identical to CacheLikesFromTwitter
+at SHA-256 `bffacd17ddfd40c0febd57e6ecb53022b7f5f68ba0238808433a09011214ed5c`. The full gate's
+JavaScript report measured the shared runtime at 86.84% lines, 67.46% branches, and 100.00%
+functions.
 
 ## OpenAI built-in Browser smoke test
 
@@ -96,10 +100,11 @@ This manual check depends on current OpenAI rollout and is not a CI gate:
 Use GPT-5.6 Sol or GPT-5.6 Terra for the current OpenAI compatibility check. GPT-5.6 Luna currently
 has WebMCP disabled. Treat this as client compatibility, not application logic.
 
-Current evidence from 28 Aug 2026: the ChatGPT built-in Browser discovered exactly the three v1
-tools on an isolated port 8701 Settings page, returned the five-capability and seven-destination
-inventory, returned bounded Settings context, navigated through the Site tool to the empty isolated
-Investment workspace, and discovered a fresh three-tool set whose context matched
-`investment_workspace`. The isolated settings store was stopped and removed after the check.
+Last recorded manual evidence from 28 Aug 2026: the ChatGPT built-in Browser discovered exactly
+the three v1 tools on an isolated port 8701 Settings page, returned the five-capability and
+seven-destination inventory, returned bounded Settings context, navigated through the Site tool to
+the empty isolated Investment workspace, and discovered a fresh three-tool set whose context
+matched `investment_workspace`. The isolated settings store was stopped and removed after the
+check. The 30 Aug 2026 completion work did not rerun this rollout-dependent smoke test.
 
 Official reference: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp).

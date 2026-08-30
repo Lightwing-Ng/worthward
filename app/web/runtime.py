@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.86.0
+Code version: v0.87.0
 - Added: Backtest strategies may keep a daily model while executing causal
   signals on real one-minute bars through a declared interval bridge.
 - Fixed: Relative Backtest provider windows now end on the selected ticker's
@@ -1652,7 +1652,7 @@ def build_web_runtime() -> WebRuntime:
             str(request.args.get("stop_loss", "")),
             # Include all strategy parameters in cache key
             sorted([(k, request.args.get(k, "")) for k in request.args.keys() if k not in {
-                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends", "stop_loss",
+                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends", "stop_loss", "show_trade_details",
                 "view", "section", "view", "tickers", "weight",
             }]),
             history_versions,
@@ -3610,6 +3610,10 @@ def build_web_runtime() -> WebRuntime:
         if stop_loss_value in {"0", "1"}:
             pairs.append(("stop_loss", stop_loss_value))
 
+        show_trade_details_value = request.args.get("show_trade_details", "").strip()
+        if normalized_view in BACKTEST_VIEWS and show_trade_details_value in {"0", "1"}:
+            pairs.append(("show_trade_details", show_trade_details_value))
+
         overnight_value = request.args.get("overnight", request.args.get("include_overnight", "")).strip()
         if overnight_value == "1":
             pairs.append(("overnight", "1"))
@@ -3676,6 +3680,7 @@ def build_web_runtime() -> WebRuntime:
             "price_only",
             "price_return_only",
             "stop_loss",
+            "show_trade_details",
             "extended-hours",
             "extended_hours",
             "include_extended_hours",
@@ -3767,6 +3772,10 @@ def build_web_runtime() -> WebRuntime:
         stop_loss_enabled = parse_bool_flag(
             "stop_loss",
             default=bool(defaults.get("backtest_stop_loss", True)),
+        )
+        show_trade_details = parse_bool_flag(
+            "show_trade_details",
+            default=bool(defaults.get("backtest_show_trade_details", True)),
         )
         if current_view in {"prices", "market-caps"}:
             price_only = True
@@ -5290,6 +5299,7 @@ def build_web_runtime() -> WebRuntime:
             base_timezone=BASE_TIMEZONE,
             include_dividends=include_dividends,
             stop_loss_enabled=stop_loss_enabled,
+            show_trade_details=show_trade_details,
             price_only=price_only,
             include_extended_hours=include_extended_hours,
             show_extended_hours_toggle=show_extended_hours_toggle,
@@ -5547,6 +5557,12 @@ def build_web_runtime() -> WebRuntime:
             beat_bh_pct = float(summary.get("beat_bh_pct", 0) or 0)
             win_rate_pct = summary.get("win_rate_pct")
             win_rate_display = "N/A" if win_rate_pct is None else f"{parse_float_value(win_rate_pct, 0.0):,.2f}%"
+            probability_field_hit_rate = summary.get("probability_field_hit_rate_pct")
+            probability_field_hit_rate_display = (
+                "N/A"
+                if probability_field_hit_rate is None
+                else f"{parse_float_value(probability_field_hit_rate, 0.0):,.2f}%"
+            )
 
             md_lines = [
                 f"## Backtest Report: {ticker_caption}",
@@ -5560,6 +5576,9 @@ def build_web_runtime() -> WebRuntime:
                 f"- **Net return**: {summary.get('net_return_pct', 0):,.2f}%",
                 f"- **Total trades**: {summary.get('total_trades', 0)}",
                 f"- **Win rate**: {win_rate_display}",
+                *([
+                    f"- **Bayesian field hit rate**: {probability_field_hit_rate_display}",
+                ] if probability_field_hit_rate is not None else []),
                 f"- **Beat B&H**: {beat_bh_pct:,.2f}%",
                 f"- **Alpha vs B&H**: {'+' if benchmark_alpha >= 0 else '-'}${abs(benchmark_alpha):,.2f}",
                 f"- **Realized long P&L**: {'+' if long_gain >= 0 else '-'}${abs(long_gain):,.2f}",

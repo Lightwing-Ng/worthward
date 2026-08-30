@@ -1,4 +1,4 @@
-/* Code version: v1.186.2 */
+/* Code version: v1.191.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -15764,7 +15764,7 @@ test('resizes the backtest overview and transaction history with the shared sect
 
     const handle = page.locator('#backtest_section_resizer');
     const exactHandle = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[2]/article/button',
+        'xpath=/html/body/main/div/section/section/div/article[2]/article/div/button',
     );
     const overview = page.locator('.backtest-trade-performance-card');
     const history = page.locator('#backtest_history_surface');
@@ -15776,7 +15776,7 @@ test('resizes the backtest overview and transaction history with the shared sect
         height: element.getBoundingClientRect().height,
         lineHeight: getComputedStyle(element, '::before').height,
     }));
-    expect(handleGeometry.height).toBe(12);
+    expect(handleGeometry.height).toBe(10);
     expect(handleGeometry.lineHeight).toBe('1px');
 
     const before = await page.evaluate(() => ({
@@ -15974,6 +15974,93 @@ test('keeps the Backtest Metrics and Transactions pill synchronized', async ({pa
     expect(narrowPill.rightGap).toBeGreaterThanOrEqual(0);
 });
 
+test('toggles the shared Backtest trade-details presentation without recomputing', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+
+    const detailsSwitch = page.locator('#show_trade_details');
+    const chartStack = page.locator('.trade-chart-stack');
+    const priceCanvas = page.locator('#tradePriceChart');
+    const equityCanvas = page.locator('#tradeEquityChart');
+    const transactionsInput = page.locator('#backtest_history_transactions');
+    await expect(detailsSwitch).toBeChecked();
+    await expect(chartStack).not.toHaveClass(/is-trade-details-hidden/);
+    await expect(equityCanvas).toBeVisible();
+    await expect(transactionsInput).toBeEnabled();
+    await expect(transactionsInput).toBeChecked();
+
+    const enabledGeometry = await page.evaluate(() => {
+        const stack = document.querySelector('.trade-chart-stack');
+        const price = document.querySelector('#tradePriceChart');
+        const equity = document.querySelector('#tradeEquityChart');
+        if (!(stack instanceof HTMLElement) || !(price instanceof HTMLElement) || !(equity instanceof HTMLElement)) return null;
+        return {
+            stackHeight: stack.getBoundingClientRect().height,
+            priceHeight: price.getBoundingClientRect().height,
+            equityHeight: equity.getBoundingClientRect().height,
+        };
+    });
+    expect(enabledGeometry).not.toBeNull();
+
+    await page.locator('label[for="show_trade_details"]').click();
+    await expect(detailsSwitch).not.toBeChecked();
+    await expect(chartStack).toHaveClass(/is-trade-details-hidden/);
+    await expect(equityCanvas).toBeHidden();
+    await expect(transactionsInput).toBeDisabled();
+    await expect(page.locator('#backtest_history_metrics')).toBeChecked();
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeVisible();
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeHidden();
+    await expect(page.locator('[data-backtest-history-transactions-option]')).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'metrics');
+    await expect(page).toHaveURL(/show_trade_details=0/);
+    await expect.poll(() => page.evaluate((baseline) => {
+        const stack = document.querySelector('.trade-chart-stack');
+        const price = document.querySelector('#tradePriceChart');
+        const equity = document.querySelector('#tradeEquityChart');
+        if (!(stack instanceof HTMLElement) || !(price instanceof HTMLElement) || !(equity instanceof HTMLElement)) return false;
+        const geometry = {
+            stackHeight: stack.getBoundingClientRect().height,
+            priceHeight: price.getBoundingClientRect().height,
+            equityHeight: equity.getBoundingClientRect().height,
+        };
+        return baseline !== null
+            && Math.abs(geometry.stackHeight - baseline.stackHeight) <= 1
+            && geometry.priceHeight > baseline.priceHeight
+            && geometry.equityHeight === 0;
+    }, enabledGeometry)).toBe(true);
+
+    const dateAxisRenderedOnPriceCanvas = await priceCanvas.evaluate((canvas) => {
+        const chart = window.Chart?.getChart?.(canvas);
+        if (!chart) return false;
+        const context = chart.ctx;
+        const originalFillText = context.fillText;
+        const labels = [];
+        context.fillText = function captureFillText(text, ...args) {
+            labels.push(String(text));
+            return originalFillText.call(this, text, ...args);
+        };
+        try {
+            chart.draw();
+        } finally {
+            context.fillText = originalFillText;
+        }
+        return labels.some((label) => /Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/.test(label));
+    });
+    expect(dateAxisRenderedOnPriceCanvas).toBe(true);
+
+    await page.locator('label[for="backtest_history_transactions"]').click({force: true});
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'metrics');
+    await page.locator('label[for="show_trade_details"]').click();
+    await expect(detailsSwitch).toBeChecked();
+    await expect(equityCanvas).toBeVisible();
+    await expect(transactionsInput).toBeEnabled();
+    await expect(page).not.toHaveURL(/show_trade_details=0/);
+    await page.locator('label[for="backtest_history_transactions"]').click();
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'transactions');
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeVisible();
+
+});
+
 test('keeps the Backtest interval pill aligned and static in the 1m state', async ({page}) => {
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto('/workspaces/backtest?ticker=DRAM&range=1d&interval=1m');
@@ -16010,6 +16097,71 @@ test('keeps the Backtest interval pill aligned and static in the 1m state', asyn
     expect(pillState.leftDelta).toBeLessThanOrEqual(1);
     expect(pillState.rightDelta).toBeLessThanOrEqual(1);
     expect(pillState.thumbRight).toBeLessThanOrEqual(pillState.shellRight + 1);
+});
+
+test('formats daily Backtest x-axis labels without a midnight time', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+
+    const axisLabels = await page.evaluate(() => {
+        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        if (!result?.chart) throw new Error('Backtest chart shell is unavailable.');
+        const renderLabels = (interval, rawDates) => {
+            const close = rawDates.map((_value, index) => 100 + index);
+            result.interval = interval;
+            result.trades = [];
+            result.chart = {
+                ...(result.chart || {}),
+                dates: [...rawDates],
+                raw_dates: [...rawDates],
+                open: close.map((value) => value - 1),
+                high: close.map((value) => value + 1),
+                low: close.map((value) => value - 2),
+                close,
+                equity: close.map((value) => 10_000 + value),
+                all_in_equity: close.map((value) => 10_000 + value),
+            };
+            window.ANTIGRAVITY_BOOTSTRAP.initBacktestWorkspace();
+            const canvas = document.querySelector('#tradeEquityChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const plugin = chart?.config?._config?.plugins?.find((item) => item.id === 'tradeXAxisLabelPlugin');
+            if (!(canvas instanceof HTMLCanvasElement) || !plugin) return [];
+            const calls = [];
+            plugin.afterDraw({
+                canvas,
+                ctx: {
+                    save: () => {},
+                    restore: () => {},
+                    fillText: (text) => calls.push(String(text)),
+                },
+                chartArea: {bottom: 200},
+                scales: {x: {getPixelForValue: (value) => Number(value) * 40}},
+            });
+            return calls;
+        };
+        return {
+            daily: renderLabels('1d', [
+                '2026-08-09 00:00',
+                '2026-08-10 00:00',
+                '2026-08-11 00:00',
+                '2026-08-12 00:00',
+            ]),
+            intraday: renderLabels('1m', [
+                '2026-08-09 09:30',
+                '2026-08-09 09:31',
+                '2026-08-09 09:32',
+                '2026-08-09 09:33',
+            ]),
+        };
+    });
+
+    expect(axisLabels.daily).toContain('9 Aug');
+    expect(axisLabels.daily).toContain('2026');
+    expect(axisLabels.daily.every((label) => !label.includes('00:00'))).toBe(true);
+    expect(axisLabels.intraday).toContain('2026 09:30');
 });
 
 test('switches an unsupported 1 year Backtest period to the available 1m maximum', async ({page}) => {
@@ -16445,9 +16597,7 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
 
-    const strategyTrigger = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/div[1]/button',
-    );
+    const strategyTrigger = page.locator('[data-trade-strategy-trigger]');
     await expect(strategyTrigger).toBeVisible();
     await expect(strategyTrigger).toBeEnabled();
     const triggerStyle = await strategyTrigger.evaluate((element) => {
@@ -16543,6 +16693,13 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
+
+    await expect(page.locator('#show_trade_details')).toBeChecked();
+    await page.locator('label[for="show_trade_details"]').click();
+    await expect(page.locator('#show_trade_details')).not.toBeChecked();
+    await expect(page.locator('#tradeEquityChart')).toBeHidden();
+    await expect(page.locator('#backtest_history_transactions')).toBeDisabled();
+    await expect(page.locator('#backtest_history_metrics')).toBeChecked();
 });
 
 test('preserves the current ticker when switching strategies from the default ticker', async ({page}) => {
@@ -16702,6 +16859,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
             overviewPadding: [overviewStyle.paddingTop, overviewStyle.paddingBottom],
             contentCardPadding: [contentCardStyle.paddingTop, contentCardStyle.paddingBottom],
             resizerFontSize: resizerStyle.fontSize,
+            resizerHeight: resizerStyle.height,
             numericCells: Array.from(firstRow.querySelectorAll('.trade-transactions-number')).map((cell) => ({
                 major: Boolean(cell.querySelector('.workspace-metric-value-major')),
                 minor: Boolean(cell.querySelector('.workspace-metric-value-minor')),
@@ -16712,7 +16870,8 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
     expect(layout).not.toBeNull();
     expect(layout?.overviewPadding).toEqual(['0px', '0px']);
     expect(layout?.contentCardPadding).toEqual(['6px', '6px']);
-    expect(layout?.resizerFontSize).toBe('13px');
+    expect(layout?.resizerFontSize).toBe('12px');
+    expect(layout?.resizerHeight).toBe('10px');
     expect(layout?.numericCells.length).toBe(7);
     expect(layout?.numericCells.every((cell) => cell.major && cell.minor)).toBe(true);
 });
@@ -16792,12 +16951,8 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
 
-    const strategyTrigger = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/div[1]/button',
-    );
-    const tuneButton = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/button',
-    );
+    const strategyTrigger = page.locator('[data-trade-strategy-trigger]');
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
     const paramsPanel = page.locator('#trade_strategy_params_panel');
 
     await expect(strategyTrigger).toHaveText('Grid Trading');
@@ -16836,9 +16991,7 @@ test('requires the Backtest tune button for parameter-panel toggle', async ({pag
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
 
-    const tuneButton = page.locator(
-        'xpath=/html/body/main/div/section/section/div/article[1]/form/div[10]/div[1]/button',
-    );
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
     const paramsPanel = page.locator('#trade_strategy_params_panel');
     await expect(tuneButton).toBeVisible();
     await expect(tuneButton).toBeEnabled();
@@ -17218,8 +17371,49 @@ test('keeps the narrow-screen sidebar toggle clear of the sidebar edge and theme
 
 test('renders, pans, pins, and clears the Bayesian Backtest probability field', async ({page}) => {
     test.setTimeout(90_000);
-    await page.setViewportSize({width: 1280, height: 900});
+    await page.setViewportSize({width: 1021, height: 841});
     await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=buy-and-hold');
+    const chartHeading = page.locator('#backtest_overview_panel > .backtest-surface > .chart-heading-row > .chart-heading');
+    await expect(chartHeading).toHaveText('Trade actions and net asset curve');
+    await expect.poll(() => chartHeading.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {fontSize: style.fontSize, fontWeight: style.fontWeight};
+    })).toEqual({fontSize: '20px', fontWeight: '400'});
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    const readBaselineGeometry = () => page.evaluate(() => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const price = document.querySelector('#tradePriceChart')?.getBoundingClientRect();
+        const equity = document.querySelector('#tradeEquityChart')?.getBoundingClientRect();
+        const resizer = document.querySelector('#backtest_section_resizer')?.getBoundingClientRect();
+        const resizerSlot = document.querySelector('[data-backtest-section-resizer-slot]')?.getBoundingClientRect();
+        const history = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
+        const stackRect = stack?.getBoundingClientRect();
+        return price && equity && resizer && resizerSlot && history && stack instanceof HTMLElement && stackRect ? {
+            equityHeight: equity.height,
+            equityLeft: equity.left,
+            equityTop: equity.top,
+            historyTop: history.top,
+            priceHeight: price.height,
+            priceLeft: price.left,
+            priceTop: price.top,
+            priceWidth: price.width,
+            resizerHeight: resizer.height,
+            resizerTop: resizer.top,
+            resizerSlotHeight: resizerSlot.height,
+            resizerSlotTop: resizerSlot.top,
+            stackClientHeight: stack.clientHeight,
+            stackHeight: stackRect.height,
+            stackLeft: stackRect.left,
+        } : null;
+    });
+    let baselineGeometry = await readBaselineGeometry();
+    expect(baselineGeometry).not.toBeNull();
+    await expect.poll(() => page.evaluate(() => {
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        return scrollPort instanceof HTMLElement && scrollPort.hidden;
+    })).toBe(true);
 
     await page.evaluate(() => {
         const result = window.ANTIGRAVITY_APP?.backtestResult;
@@ -17262,7 +17456,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             rows_below: 6,
             columns: 36,
             width_fraction: 0.25,
-            gap_px: 3,
+            gap_px: 2,
             padding_px: 8,
             min_cell_px: 4,
             cell_radius_px: 2,
@@ -17301,40 +17495,123 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             );
             const point = points[index];
             const rect = canvas?.getBoundingClientRect();
-            if (!point || !rect) return null;
-            return {index, x: rect.left + point.x, y: rect.top + point.y};
+            const chartWidth = Number(chart?.width);
+            const chartHeight = Number(chart?.height);
+            if (!point || !rect || !(chartWidth > 0) || !(chartHeight > 0)) return null;
+            return {
+                index,
+                x: rect.left + (point.x * (rect.width / chartWidth)),
+                y: rect.top + (point.y * (rect.height / chartHeight)),
+            };
         },
         {targetRatio: ratio, selector: canvasSelector},
     );
+    const moveToVisiblePriceCurve = async (ratio, label) => {
+        const anchor = await pointAt(ratio);
+        if (!anchor) throw new Error(`${label} curve anchor is unavailable.`);
+        const hitTarget = await page.evaluate(({x, y}) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const stack = canvas?.closest('.trade-chart-stack');
+            const canvasWrap = canvas?.closest('.trade-chart-canvas-wrap');
+            const chart = window.Chart?.getChart?.(canvas);
+            if (!(canvas instanceof HTMLCanvasElement)
+                || !(stack instanceof HTMLElement)
+                || !(canvasWrap instanceof HTMLElement)
+                || !chart?.chartArea) return null;
+            const stackRect = stack.getBoundingClientRect();
+            const canvasWrapRect = canvasWrap.getBoundingClientRect();
+            const cropLeft = Math.max(0, stackRect.left + stack.clientLeft, canvasWrapRect.left);
+            const cropRight = Math.min(
+                window.innerWidth,
+                stackRect.left + stack.clientLeft + stack.clientWidth,
+                canvasWrapRect.right,
+            );
+            const cropTop = Math.max(0, stackRect.top + stack.clientTop, canvasWrapRect.top);
+            const cropBottom = Math.min(
+                window.innerHeight,
+                stackRect.top + stack.clientTop + stack.clientHeight,
+                canvasWrapRect.bottom,
+            );
+            const canvasRect = canvas.getBoundingClientRect();
+            const chartX = (x - canvasRect.left) * (chart.width / canvasRect.width);
+            const chartY = (y - canvasRect.top) * (chart.height / canvasRect.height);
+            return {
+                hitsChartArea: chartX >= chart.chartArea.left && chartX <= chart.chartArea.right
+                    && chartY >= chart.chartArea.top && chartY <= chart.chartArea.bottom,
+                hitsPriceCanvas: document.elementFromPoint(x, y) === canvas,
+                insideVisibleCrop: x >= cropLeft + 2 && x <= cropRight - 2
+                    && y >= cropTop + 2 && y <= cropBottom - 2,
+            };
+        }, anchor);
+        expect(hitTarget, `${label} anchor must be inside the visible price canvas crop`).toEqual({
+            hitsChartArea: true,
+            hitsPriceCanvas: true,
+            insideVisibleCrop: true,
+        });
+        await page.mouse.move(anchor.x, anchor.y);
+        await expect.poll(() => page.evaluate(() => (
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index
+        ))).toBe(anchor.index);
+        return anchor;
+    };
     const panSnapshot = () => page.evaluate(() => {
         const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
         if (!(stack instanceof HTMLElement)) return null;
         return {
+            clientHeight: stack.clientHeight,
             clientWidth: stack.clientWidth,
-            hasScrollClass: stack.classList.contains('has-probability-scroll'),
             motion: stack.dataset.probabilityPanMotion || '',
             overflowX: getComputedStyle(stack).overflowX,
+            portActive: scrollPort instanceof HTMLElement && !scrollPort.hidden,
+            portAriaHidden: scrollPort instanceof HTMLElement
+                ? scrollPort.getAttribute('aria-hidden')
+                : null,
+            portClientWidth: scrollPort instanceof HTMLElement ? scrollPort.clientWidth : 0,
+            portScrollLeft: scrollPort instanceof HTMLElement ? scrollPort.scrollLeft : 0,
+            portScrollWidth: scrollPort instanceof HTMLElement ? scrollPort.scrollWidth : 0,
             scrollLeft: stack.scrollLeft,
             scrollWidth: stack.scrollWidth,
             state: stack.dataset.probabilityPanState || '',
             target: Number(stack.dataset.probabilityPanTarget || 0),
+            visualOffset: Number(stack.dataset.probabilityPanVisualOffset || 0),
+            visualPosition: Number(stack.dataset.probabilityPanVisualPosition || 0),
         };
     });
+    // Native rails use integral CSS scroll offsets. The controller applies the
+    // same subpixel correction to every chart visual so the logical pan target
+    // remains the exact missing floating width.
+    const probabilityScrollPositionTolerance = 1.1;
+    const probabilityScrollTargetTolerance = 0.05;
     const waitForPanTarget = async () => {
         await expect.poll(async () => {
             const snapshot = await panSnapshot();
-            return snapshot ? Math.abs(snapshot.scrollLeft - snapshot.target) : Number.POSITIVE_INFINITY;
-        }).toBeLessThanOrEqual(0.75);
-    };
-    const waitForPanReset = async () => {
+            return snapshot
+                ? Math.abs(snapshot.visualPosition - snapshot.target)
+                : Number.POSITIVE_INFINITY;
+        }).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
         await expect.poll(async () => {
             const snapshot = await panSnapshot();
-            if (!snapshot) return false;
-            return snapshot.scrollLeft === 0
-                && snapshot.target === 0
-                && snapshot.overflowX === 'hidden'
-                && !snapshot.hasScrollClass;
-        }).toBe(true);
+            return snapshot
+                ? Math.max(
+                    Math.abs(snapshot.scrollLeft - snapshot.target),
+                    Math.abs(snapshot.portScrollLeft - snapshot.target),
+                )
+                : Number.POSITIVE_INFINITY;
+        }).toBeLessThanOrEqual(probabilityScrollPositionTolerance);
+    };
+    const waitForPanReset = async () => {
+        await expect.poll(panSnapshot).toMatchObject({
+            overflowX: 'hidden',
+            portActive: false,
+            portAriaHidden: 'true',
+            portScrollLeft: 0,
+            scrollLeft: 0,
+            target: 0,
+            visualOffset: 0,
+            visualPosition: 0,
+        });
     };
 
     const warmup = await pointAt(0);
@@ -17343,12 +17620,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await page.mouse.click(warmup.x, warmup.y);
     await expect(probabilityTooltip).not.toHaveAttribute('data-pinned', 'true');
+    await waitForPanReset();
+    baselineGeometry = await readBaselineGeometry();
+    expect(baselineGeometry).not.toBeNull();
 
     const leftAnchor = await pointAt(0.05);
     if (!leftAnchor) throw new Error('Bayesian left-side hover anchor is unavailable.');
     await page.mouse.move(leftAnchor.x, leftAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    await waitForPanReset();
+    await waitForPanTarget();
 
     const contract = await page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
@@ -17419,6 +17699,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         ).singleNodeValue;
         return {
             activeIndex: bounds.index,
+            availableRowsAbove: bounds.availableRowsAbove,
+            availableRowsBelow: bounds.availableRowsBelow,
             backdropFilter: tooltipStyle.backdropFilter || 'none',
             backgroundAlpha,
             backgroundImage: tooltipStyle.backgroundImage,
@@ -17472,7 +17754,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             maximumOpacity: Math.max(...cellSamples.map((cell) => cell.opacity)),
             minimumOpacity: Math.min(...cellSamples.map((cell) => cell.opacity)),
             invisibleCellCount: cellSamples.filter((cell) => cell.opacity === 0).length,
-            nonlinearDistance: Math.max(...cellSamples
+            nonlinearDistance: Math.max(0, ...cellSamples
                 .filter((cell) => cell.displayIntensity > 0 && cell.displayIntensity < 1)
                 .map((cell) => Math.abs(cell.opacity - cell.displayIntensity))),
             opacityCurveDelta: Math.max(...cellSamples.map((cell) => Math.abs(
@@ -17531,17 +17813,25 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.cellBorderRadius).toBe('2px');
     expect(contract.cellBorderWidth).toBe('0px');
     expect(contract.cellTransitionDuration).toBe('0s');
-    expect(contract.gridPadding).toEqual(['8px', '8px', '8px', '8px']);
+    expect(contract.gridPadding[1]).toBe('8px');
+    expect(contract.gridPadding[3]).toBe('8px');
+    expect(parseFloat(contract.gridPadding[0])).toBeGreaterThanOrEqual(8);
+    expect(parseFloat(contract.gridPadding[2])).toBeGreaterThanOrEqual(8);
     expect(contract.firstCellLeftInset).toBeCloseTo(8, 1);
-    expect(contract.firstCellTopInset).toBeCloseTo(8, 1);
-    expect(contract.cellCount).toBe(432);
-    expect(contract.rows).toBe(12);
-    expect(contract.rowsUp).toBe(6);
-    expect(contract.rowsDown).toBe(6);
+    expect(contract.firstCellTopInset).toBeGreaterThanOrEqual(8);
+    expect(contract.cellCount).toBe(contract.rows * contract.columns);
+    expect(contract.rows).toBe(contract.rowsUp + contract.rowsDown);
+    expect(contract.rowsUp).toBeGreaterThan(0);
+    expect(contract.rowsDown).toBeGreaterThan(0);
+    expect(contract.rowsUp).toBeLessThanOrEqual(6);
+    expect(contract.rowsDown).toBeLessThanOrEqual(6);
+    expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsAbove);
+    expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsBelow);
     expect(contract.columns).toBe(36);
     expect(contract.cellMinimumSize).toBeGreaterThanOrEqual(3.99);
     expect(contract.cellSquareDelta).toBeLessThanOrEqual(0.1);
-    expect(contract.horizontalGap).toBeGreaterThan(0);
+    expect(contract.horizontalGap).toBeGreaterThanOrEqual(0);
+    expect(contract.horizontalGap).toBeCloseTo(2, 1);
     expect(Math.abs(contract.horizontalGap - contract.verticalGap)).toBeLessThanOrEqual(0.1);
     expect(Number.isInteger(contract.daysPerColumn)).toBe(true);
     expect(contract.daysPerColumn).toBeGreaterThanOrEqual(1);
@@ -17571,20 +17861,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Number.isFinite(contract.badgeValue)).toBe(true);
     expect(contract.domXPathStable).toBe(true);
 
-    const baselineGeometry = await page.evaluate(() => {
-        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
-        const price = document.querySelector('#tradePriceChart')?.getBoundingClientRect();
-        const equity = document.querySelector('#tradeEquityChart')?.getBoundingClientRect();
-        const stackRect = stack?.getBoundingClientRect();
-        return price && equity && stackRect ? {
-            equityLeft: equity.left,
-            priceLeft: price.left,
-            priceWidth: price.width,
-            stackLeft: stackRect.left,
-        } : null;
-    });
-    expect(baselineGeometry).not.toBeNull();
-
+    const sectionResizer = page.locator('#backtest_section_resizer');
+    await sectionResizer.focus();
+    await expect(sectionResizer).toBeFocused();
     const rightAnchor = await pointAt(0.96);
     if (!rightAnchor) throw new Error('Bayesian right-side hover anchor is unavailable.');
     await page.mouse.move(rightAnchor.x, rightAnchor.y);
@@ -17597,21 +17876,35 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const equityCanvasElement = document.querySelector('#tradeEquityChart');
         const chart = window.Chart?.getChart?.(priceCanvasElement);
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        const resizer = document.querySelector('#backtest_section_resizer');
         const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
         if (!(stack instanceof HTMLElement)
             || !(priceCanvasElement instanceof HTMLCanvasElement)
             || !(equityCanvasElement instanceof HTMLCanvasElement)
-            || !(tooltip instanceof HTMLElement) || !chart) {
+            || !(tooltip instanceof HTMLElement)
+            || !(scrollPort instanceof HTMLElement)
+            || !(resizer instanceof HTMLElement)
+            || !chart) {
             return null;
         }
         const stackRect = stack.getBoundingClientRect();
         const priceRect = priceCanvasElement.getBoundingClientRect();
         const equityRect = equityCanvasElement.getBoundingClientRect();
+        const resizerRect = resizer.getBoundingClientRect();
+        const resizerSlotRect = document.querySelector('[data-backtest-section-resizer-slot]')?.getBoundingClientRect();
+        const historyRect = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
+        const scrollPortRect = scrollPort.getBoundingClientRect();
         const tooltipRect = tooltip.getBoundingClientRect();
         const bounds = chart._activeBacktestProbabilityGridBounds;
         const point = chart.getDatasetMeta(0)?.data?.[bounds?.index];
-        const tooltipContentRight = tooltipRect.right - stackRect.left + stack.scrollLeft;
-        const expectedTarget = Math.ceil(Math.max(0, tooltipContentRight - stack.clientWidth));
+        const scrollbarStyle = getComputedStyle(scrollPort);
+        const scrollbarPseudoStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar');
+        const scrollbarThumbStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar-thumb');
+        const visualPosition = Number(stack.dataset.probabilityPanVisualPosition || 0);
+        const visualOffset = Number(stack.dataset.probabilityPanVisualOffset || 0);
+        const tooltipContentRight = tooltipRect.right - stackRect.left + visualPosition;
+        const expectedTarget = Math.max(0, tooltipContentRight - stack.clientWidth);
         return {
             activeIndex: bounds?.index,
             canvasTooltipAnchorDelta: point
@@ -17619,7 +17912,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 : Number.POSITIVE_INFINITY,
             domOrderStable: stack.children[0]?.contains(priceCanvasElement)
                 && stack.children[1]?.contains(equityCanvasElement),
+            equityHeight: equityRect.height,
             equityLeft: equityRect.left,
+            equityTop: equityRect.top,
+            historyTop: historyRect?.top ?? Number.NaN,
+            leftInset: tooltipRect.left - stackRect.left,
             motion: stack.dataset.probabilityPanMotion,
             maximumOpacity: cells.length
                 ? Math.max(...cells.map((cell) => Number(getComputedStyle(cell).opacity)))
@@ -17632,16 +17929,47 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             )).length,
             overflowX: getComputedStyle(stack).overflowX,
             pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            portActive: !scrollPort.hidden,
+            portAriaHidden: scrollPort.getAttribute('aria-hidden'),
+            portBottom: scrollPortRect.bottom,
+            portClientWidth: scrollPort.clientWidth,
+            portHeight: scrollPortRect.height,
+            portLeft: scrollPortRect.left,
+            portPointerEvents: scrollbarStyle.pointerEvents,
+            portScrollDistance: scrollPort.scrollWidth - scrollPort.clientWidth,
+            portScrollLeft: scrollPort.scrollLeft,
+            portScrollWidth: scrollPort.scrollWidth,
+            portTop: scrollPortRect.top,
+            priceHeight: priceRect.height,
             priceLeft: priceRect.left,
+            priceTop: priceRect.top,
             priceWidth: priceRect.width,
+            resizerAriaHidden: resizer.getAttribute('aria-hidden'),
+            resizerFocused: document.activeElement === resizer,
+            resizerHeight: resizerRect.height,
+            resizerPointerEvents: getComputedStyle(resizer).pointerEvents,
+            resizerSlotHeight: resizerSlotRect?.height ?? Number.NaN,
+            resizerSlotTop: resizerSlotRect?.top ?? Number.NaN,
+            resizerTabIndex: resizer.getAttribute('tabindex'),
+            resizerTop: resizerRect.top,
             rightInset: stackRect.right - tooltipRect.right,
             scrollLeft: stack.scrollLeft,
             scrollWidth: stack.scrollWidth,
+            scrollbarColor: scrollbarStyle.scrollbarColor,
+            scrollbarGutter: scrollbarStyle.scrollbarGutter,
+            scrollbarThumbBackground: scrollbarThumbStyle.backgroundColor,
+            scrollbarWidth: scrollbarStyle.scrollbarWidth,
+            webkitScrollbarHeight: scrollbarPseudoStyle.height,
+            webkitScrollbarWidth: scrollbarPseudoStyle.width,
             stackClientWidth: stack.clientWidth,
+            stackClientHeight: stack.clientHeight,
+            stackHeight: stackRect.height,
             stackLeft: stackRect.left,
             target: Number(stack.dataset.probabilityPanTarget),
             targetFormulaDelta: Math.abs(Number(stack.dataset.probabilityPanTarget) - expectedTarget),
             tooltipWidthDelta: Math.abs(tooltipRect.width - expectedTooltipWidth),
+            visualOffset,
+            visualPosition,
         };
     }, contract.tooltipWidth);
     expect(rightPan).not.toBeNull();
@@ -17650,44 +17978,253 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan.maximumOpacity).toBe(1);
     expect(rightPan.minimumOpacity).toBe(0);
     expect(rightPan.invisibleCellCount).toBeGreaterThan(0);
-    expect(Math.abs(rightPan.scrollLeft - rightPan.target)).toBeLessThanOrEqual(0.75);
-    expect(rightPan.targetFormulaDelta).toBeLessThanOrEqual(0.01);
-    expect(rightPan.overflowX).toBe('auto');
+    expect(Math.abs(rightPan.scrollLeft - rightPan.target))
+        .toBeLessThanOrEqual(probabilityScrollPositionTolerance);
+    expect(Math.abs(rightPan.portScrollLeft - rightPan.target))
+        .toBeLessThanOrEqual(probabilityScrollPositionTolerance);
+    expect(Math.abs(rightPan.visualPosition - rightPan.target))
+        .toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(Math.abs((rightPan.scrollLeft - rightPan.visualPosition) - rightPan.visualOffset))
+        .toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(rightPan.targetFormulaDelta).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(rightPan.overflowX).toBe('hidden');
+    expect(rightPan.portActive).toBe(true);
+    expect(rightPan.portAriaHidden).toBe('false');
+    expect(rightPan.portPointerEvents).toBe('auto');
+    expect(rightPan.portClientWidth).toBeGreaterThan(0);
+    expect(rightPan.portScrollWidth).toBeGreaterThan(rightPan.portClientWidth);
+    expect(Math.abs(rightPan.portScrollDistance - rightPan.target)).toBeLessThanOrEqual(1);
+    expect(rightPan.scrollbarGutter).toBe('auto');
+    expect(rightPan.scrollbarColor).toBe('auto');
+    expect(rightPan.scrollbarWidth).toBe('auto');
+    expect(rightPan.webkitScrollbarHeight).toBe('auto');
+    expect(rightPan.webkitScrollbarWidth).toBe('auto');
+    expect(rightPan.scrollbarThumbBackground).not.toBe('rgb(0, 85, 204)');
     expect(rightPan.scrollWidth).toBeGreaterThan(rightPan.stackClientWidth);
-    expect(rightPan.rightInset).toBeGreaterThanOrEqual(-0.75);
+    expect(rightPan.portTop).toBeLessThanOrEqual(rightPan.resizerTop + 0.1);
+    expect(rightPan.portBottom).toBeGreaterThanOrEqual(rightPan.resizerTop + rightPan.resizerHeight - 0.1);
+    expect(rightPan.portHeight).toBeGreaterThanOrEqual(rightPan.resizerHeight);
+    expect(rightPan.resizerAriaHidden).toBe('true');
+    expect(rightPan.resizerFocused).toBe(false);
+    expect(rightPan.resizerPointerEvents).toBe('none');
+    expect(rightPan.resizerTabIndex).toBe('-1');
+    expect(rightPan.leftInset).toBeGreaterThanOrEqual(0);
+    expect(rightPan.rightInset).toBeGreaterThanOrEqual(0);
     expect(rightPan.rightInset).toBeLessThanOrEqual(1);
     expect(rightPan.tooltipWidthDelta).toBeLessThanOrEqual(0.1);
-    expect(rightPan.canvasTooltipAnchorDelta).toBeLessThanOrEqual(0.75);
+    expect(rightPan.canvasTooltipAnchorDelta).toBeLessThanOrEqual(0.1);
     expect(rightPan.motion).toBe('shared-bouncy-spring');
     expect(Math.abs(rightPan.stackLeft - baselineGeometry.stackLeft)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.priceWidth - baselineGeometry.priceWidth)).toBeLessThanOrEqual(0.1);
-    expect(Math.abs((baselineGeometry.priceLeft - rightPan.priceLeft) - rightPan.scrollLeft))
-        .toBeLessThanOrEqual(0.75);
-    expect(Math.abs((baselineGeometry.equityLeft - rightPan.equityLeft) - rightPan.scrollLeft))
-        .toBeLessThanOrEqual(0.75);
+    expect(Math.abs(rightPan.priceHeight - baselineGeometry.priceHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.priceTop - baselineGeometry.priceTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.equityHeight - baselineGeometry.equityHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.equityTop - baselineGeometry.equityTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.stackClientHeight - baselineGeometry.stackClientHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.stackHeight - baselineGeometry.stackHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.resizerHeight - baselineGeometry.resizerHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.resizerSlotHeight - baselineGeometry.resizerSlotHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.resizerSlotTop - baselineGeometry.resizerSlotTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.historyTop - baselineGeometry.historyTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs((baselineGeometry.priceLeft - rightPan.priceLeft) - rightPan.visualPosition))
+        .toBeLessThanOrEqual(0.1);
+    expect(Math.abs((baselineGeometry.equityLeft - rightPan.equityLeft) - rightPan.visualPosition))
+        .toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.priceLeft - rightPan.equityLeft)).toBeLessThanOrEqual(0.1);
     expect(rightPan.pageOverflow).toBeLessThanOrEqual(0);
     expect(rightPan.domOrderStable).toBe(true);
 
-    const returningWidths = [];
-    for (const ratio of [0.84, 0.72, 0.60, 0.48, 0.36, 0.24, 0.12, 0.05]) {
-        const returningAnchor = await pointAt(ratio);
-        if (!returningAnchor) throw new Error('Bayesian returning hover anchor is unavailable.');
-        await page.mouse.move(returningAnchor.x, returningAnchor.y);
-        await waitForPanTarget();
-        returningWidths.push(await probabilityTooltip.evaluate((tooltip) => (
-            tooltip.getBoundingClientRect().width
-        )));
-    }
+    await page.mouse.move(
+        rightPan.portLeft + Math.min(16, Math.max(1, rightPan.portClientWidth / 2)),
+        (rightPan.portTop + rightPan.portBottom) / 2,
+    );
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    await waitForPanReset();
-    expect(Math.max(...returningWidths.map((width) => Math.abs(width - contract.tooltipWidth))))
-        .toBeLessThanOrEqual(0.1);
+    const manualRailSync = await page.evaluate(() => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        if (!(stack instanceof HTMLElement) || !(scrollPort instanceof HTMLElement)) return null;
+        const previous = scrollPort.scrollLeft;
+        const next = Math.max(0, previous - Math.min(24, Math.max(1, previous / 2)));
+        scrollPort.scrollLeft = next;
+        scrollPort.dispatchEvent(new Event('scroll'));
+        return {
+            next,
+            previous,
+            portScrollLeft: scrollPort.scrollLeft,
+            stackScrollLeft: stack.scrollLeft,
+            visualOffset: Number(stack.dataset.probabilityPanVisualOffset || 0),
+            visualPosition: Number(stack.dataset.probabilityPanVisualPosition || 0),
+        };
+    });
+    expect(manualRailSync).not.toBeNull();
+    expect(manualRailSync.previous).toBeGreaterThan(0);
+    expect(manualRailSync.next).toBeLessThan(manualRailSync.previous);
+    expect(Math.abs(manualRailSync.portScrollLeft - manualRailSync.stackScrollLeft))
+        .toBeLessThanOrEqual(probabilityScrollPositionTolerance);
+    expect(Math.abs(manualRailSync.visualPosition - manualRailSync.stackScrollLeft))
+        .toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(Math.abs(manualRailSync.visualOffset)).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
 
+    const maxRailSync = await page.evaluate(() => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        const canvas = document.querySelector('#tradePriceChart');
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const hoverLine = document.querySelector('.trade-chart-hover-line');
+        const chart = window.Chart?.getChart?.(canvas);
+        if (!(stack instanceof HTMLElement)
+            || !(scrollPort instanceof HTMLElement)
+            || !(canvas instanceof HTMLCanvasElement)
+            || !(tooltip instanceof HTMLElement)
+            || !(hoverLine instanceof HTMLElement)
+            || !chart) return null;
+        scrollPort.scrollLeft = scrollPort.scrollWidth;
+        scrollPort.dispatchEvent(new Event('scroll'));
+        const stackRect = stack.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const hoverLineRect = hoverLine.getBoundingClientRect();
+        const bounds = chart._activeBacktestProbabilityGridBounds;
+        const point = chart.getDatasetMeta(0)?.data?.[bounds?.index];
+        const curveX = point && chart.width > 0
+            ? canvasRect.left + (point.x * (canvasRect.width / chart.width))
+            : Number.NaN;
+        return {
+            curveX,
+            hoverLineAnchorDelta: Math.abs(
+                (hoverLineRect.left + (hoverLineRect.width / 2)) - curveX,
+            ),
+            leftInset: tooltipRect.left - stackRect.left,
+            portMaximum: scrollPort.scrollWidth - scrollPort.clientWidth,
+            portScrollLeft: scrollPort.scrollLeft,
+            rightInset: stackRect.right - tooltipRect.right,
+            stackScrollLeft: stack.scrollLeft,
+            target: Number(stack.dataset.probabilityPanTarget || 0),
+            tooltipAnchorDelta: Math.abs(tooltipRect.left - curveX),
+            visualOffset: Number(stack.dataset.probabilityPanVisualOffset || 0),
+            visualPosition: Number(stack.dataset.probabilityPanVisualPosition || 0),
+        };
+    });
+    expect(maxRailSync).not.toBeNull();
+    expect(maxRailSync.portScrollLeft).toBe(maxRailSync.portMaximum);
+    expect(maxRailSync.stackScrollLeft).toBe(maxRailSync.portMaximum);
+    expect(Math.abs(maxRailSync.visualPosition - maxRailSync.target))
+        .toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(maxRailSync.visualOffset).toBeGreaterThan(0);
+    expect(maxRailSync.visualOffset).toBeLessThan(1);
+    expect(Math.abs(
+        (maxRailSync.stackScrollLeft - maxRailSync.visualPosition) - maxRailSync.visualOffset,
+    )).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
+    expect(maxRailSync.leftInset).toBeGreaterThanOrEqual(0);
+    expect(maxRailSync.rightInset).toBeGreaterThanOrEqual(0);
+    expect(maxRailSync.tooltipAnchorDelta).toBeLessThanOrEqual(0.1);
+    expect(maxRailSync.hoverLineAnchorDelta).toBeLessThanOrEqual(0.1);
+
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    const interruptedReturnPromise = page.evaluate(() => new Promise((resolve, reject) => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        if (!(stack instanceof HTMLElement) || !(scrollPort instanceof HTMLElement)) {
+            reject(new Error('The native probability scroll port is unavailable.'));
+            return;
+        }
+        const timeoutId = window.setTimeout(() => {
+            observer.disconnect();
+            reject(new Error('The probability field did not enter its active return state.'));
+        }, 1_000);
+        const observer = new MutationObserver(() => {
+            const target = Number(stack.dataset.probabilityPanTarget || 0);
+            const previous = scrollPort.scrollLeft;
+            if (target > 0.01 || scrollPort.hidden || stack.scrollLeft <= 0 || previous <= 1) return;
+            const next = Math.max(1, Math.floor(previous / 2));
+            if (next >= previous) {
+                observer.disconnect();
+                window.clearTimeout(timeoutId);
+                reject(new Error('The active return state has no smaller native rail position.'));
+                return;
+            }
+            observer.disconnect();
+            window.clearTimeout(timeoutId);
+            // This changes the browser-native scroll position. It deliberately
+            // does not construct or dispatch a synthetic scroll event.
+            scrollPort.scrollLeft = next;
+            resolve({next, previous, target});
+        });
+        observer.observe(stack, {
+            attributes: true,
+            attributeFilter: ['data-probability-pan-target'],
+        });
+    }));
+    await page.mouse.move(8, 800);
+    const interruptedReturn = await interruptedReturnPromise;
+    expect(interruptedReturn).not.toBeNull();
+    expect(interruptedReturn.target).toBeLessThanOrEqual(0.01);
+    expect(interruptedReturn.next).toBeLessThan(interruptedReturn.previous);
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    await waitForPanReset();
+    const resetGeometry = await page.evaluate(() => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const price = document.querySelector('#tradePriceChart')?.getBoundingClientRect();
+        const equity = document.querySelector('#tradeEquityChart')?.getBoundingClientRect();
+        const resizer = document.querySelector('#backtest_section_resizer');
+        const resizerRect = resizer?.getBoundingClientRect();
+        const resizerSlot = document.querySelector('[data-backtest-section-resizer-slot]')?.getBoundingClientRect();
+        const history = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        const stackRect = stack?.getBoundingClientRect();
+        return price && equity && resizer instanceof HTMLElement && resizerRect && resizerSlot && history
+            && scrollPort instanceof HTMLElement && stack instanceof HTMLElement && stackRect ? {
+                equityHeight: equity.height,
+                equityTop: equity.top,
+                historyTop: history.top,
+                portAriaHidden: scrollPort.getAttribute('aria-hidden'),
+                portHidden: scrollPort.hidden,
+                priceHeight: price.height,
+                priceTop: price.top,
+                resizerAriaHidden: resizer.getAttribute('aria-hidden'),
+                resizerHeight: resizerRect.height,
+                resizerPointerEvents: getComputedStyle(resizer).pointerEvents,
+                resizerSlotHeight: resizerSlot.height,
+                resizerSlotTop: resizerSlot.top,
+                resizerTabIndex: resizer.getAttribute('tabindex'),
+                resizerTop: resizerRect.top,
+                stackClientHeight: stack.clientHeight,
+                stackHeight: stackRect.height,
+            } : null;
+    });
+    expect(resetGeometry).not.toBeNull();
+    expect(resetGeometry.portHidden).toBe(true);
+    expect(resetGeometry.portAriaHidden).toBe('true');
+    expect(resetGeometry.resizerAriaHidden).toBeNull();
+    expect(resetGeometry.resizerPointerEvents).toBe('auto');
+    expect(resetGeometry.resizerTabIndex).toBeNull();
+    await sectionResizer.focus();
+    await expect(sectionResizer).toBeFocused();
+    expect(Math.abs(resetGeometry.priceHeight - baselineGeometry.priceHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.priceTop - baselineGeometry.priceTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.equityHeight - baselineGeometry.equityHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.equityTop - baselineGeometry.equityTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.stackClientHeight - baselineGeometry.stackClientHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.stackHeight - baselineGeometry.stackHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.resizerHeight - baselineGeometry.resizerHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.resizerSlotHeight - baselineGeometry.resizerSlotHeight)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.resizerSlotTop - baselineGeometry.resizerSlotTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.historyTop - baselineGeometry.historyTop)).toBeLessThanOrEqual(0.1);
     const secondRightAnchor = await pointAt(0.96);
     if (!secondRightAnchor) throw new Error('Bayesian second right-side hover anchor is unavailable.');
     await page.mouse.move(secondRightAnchor.x, secondRightAnchor.y);
     await waitForPanTarget();
+    const equityRailReset = await page.evaluate(() => {
+        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+        const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
+        if (!(stack instanceof HTMLElement) || !(scrollPort instanceof HTMLElement)) return null;
+        scrollPort.scrollLeft = 0;
+        scrollPort.dispatchEvent(new Event('scroll'));
+        return {portScrollLeft: scrollPort.scrollLeft, stackScrollLeft: stack.scrollLeft};
+    });
+    expect(equityRailReset).toEqual({portScrollLeft: 0, stackScrollLeft: 0});
     const equityAnchor = await pointAt(0.96, '#tradeEquityChart');
     if (!equityAnchor) throw new Error('Backtest equity hover anchor is unavailable.');
     await page.mouse.move(equityAnchor.x, equityAnchor.y);
@@ -17695,13 +18232,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await waitForPanReset();
 
-    const pinAnchorBeforePan = await pointAt(0.96);
-    if (!pinAnchorBeforePan) throw new Error('Bayesian pin hover anchor is unavailable.');
-    await page.mouse.move(pinAnchorBeforePan.x, pinAnchorBeforePan.y);
+    await moveToVisiblePriceCurve(0.20, 'Bayesian pin hover');
     await waitForPanTarget();
-    const pinAnchor = await pointAt(0.96);
-    if (!pinAnchor) throw new Error('Bayesian post-pan pin anchor is unavailable.');
-    await page.mouse.click(pinAnchor.x, pinAnchor.y);
+    const pinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian pin click');
+    await waitForPanTarget();
+    await page.mouse.click(pinAnchor.x, pinAnchor.y, {button: 'left'});
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
     await waitForPanTarget();
     const pinned = await panSnapshot();
@@ -17709,7 +18244,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
             ?._activeBacktestProbabilityGridBounds?.index
     ));
-    expect(Number.isInteger(pinnedIndex)).toBe(true);
+    expect(pinnedIndex).toBe(pinAnchor.index);
 
     const ignoredHover = await pointAt(0.62);
     if (!ignoredHover) throw new Error('Bayesian pinned hover probe is unavailable.');
@@ -17749,18 +18284,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Math.abs(blankResetGeometry.equityLeft - baselineGeometry.equityLeft))
         .toBeLessThanOrEqual(0.1);
 
-    const resumedAnchor = await pointAt(0.05);
-    if (!resumedAnchor) throw new Error('Bayesian resumed hover anchor is unavailable.');
-    await page.mouse.move(resumedAnchor.x, resumedAnchor.y);
+    await moveToVisiblePriceCurve(0.20, 'Bayesian resumed hover');
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await expect(probabilityTooltip).not.toHaveAttribute('data-pinned', 'true');
-    await expect.poll(() => page.evaluate(() => (
-        window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
-            ?._activeBacktestProbabilityGridBounds?.index
-    ))).toBe(resumedAnchor.index);
-    await waitForPanReset();
+    await waitForPanTarget();
 
-    await page.mouse.click(resumedAnchor.x, resumedAnchor.y);
+    const resumedPinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian resumed pin click');
+    await waitForPanTarget();
+    await page.mouse.click(resumedPinAnchor.x, resumedPinAnchor.y, {button: 'left'});
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
     await page.keyboard.press('Escape');
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
@@ -17814,6 +18345,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             horizontalOverflow: document.documentElement.scrollWidth
                 - document.documentElement.clientWidth,
             historyToResultsBottom: resultsRect.bottom - historyRect.bottom,
+            leftInset: tooltipRect.left - stackRect.left,
             pricePixelSpan: finiteY.length ? Math.max(...finiteY) - Math.min(...finiteY) : 0,
             resizerToHistoryGap: historyRect.top - resizerRect.bottom,
             resultsHeight: resultsRect.height,
@@ -17844,8 +18376,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         .toBeGreaterThanOrEqual(-0.75);
     expect(narrowLayout.historyToResultsBottom, 'history-to-results bottom inset')
         .toBeGreaterThanOrEqual(-0.75);
+    expect(narrowLayout.leftInset, 'probability field left inset')
+        .toBeGreaterThanOrEqual(0);
     expect(narrowLayout.rightInset, 'probability field right inset')
-        .toBeGreaterThanOrEqual(-0.75);
+        .toBeGreaterThanOrEqual(0);
     expect(narrowLayout.horizontalOverflow).toBeLessThanOrEqual(0);
 
     const secondNarrowAnchor = await pointAt(0.72);
@@ -17917,7 +18451,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     if (!customAnchor) throw new Error('Custom Bayesian hover anchor is unavailable.');
     await page.mouse.move(customAnchor.x, customAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    await waitForPanReset();
+    await waitForPanTarget();
     const customPresentation = await page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
         const chart = window.Chart?.getChart?.(canvas);
@@ -17944,6 +18478,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             backgroundAlpha: colorContext.getImageData(0, 0, 1, 1).data[3] / 255,
             cellBorderRadius: firstCellStyle.borderRadius,
             cellCount: cells.length,
+            cellMinimumSize: Math.min(...cells.map((cell) => cell.getBoundingClientRect().width)),
             centerDelta: Math.abs(
                 (tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + guide.y)
             ),
@@ -17955,24 +18490,32 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             gridPadding: getComputedStyle(grid).paddingTop,
             outerBorderRadius: tooltipStyle.borderRadius,
             rows: Number(grid.dataset.rowCount),
+            availableRowsAbove: bounds?.availableRowsAbove,
+            availableRowsBelow: bounds?.availableRowsBelow,
             rowsAbove: bounds?.rowsAbove,
             rowsBelow: bounds?.rowsBelow,
         };
     });
     expect(customPresentation).toEqual(expect.objectContaining({
         cellBorderRadius: '1.5px',
-        cellCount: 144,
-        columns: 18,
+        cellCount: customPresentation.rows * customPresentation.columns,
+        columns: 36,
         dataTransparency: '75%',
         gridPadding: '6px',
         opacityExponent: 2.4,
         opacityMapping: 'instant-contrast-power-v1',
         opacityTailRatio: 0.05,
         outerBorderRadius: '12px',
-        rows: 8,
+        rows: customPresentation.rowsAbove + customPresentation.rowsBelow,
         rowsAbove: 4,
-        rowsBelow: 4,
+        rowsBelow: customPresentation.rowsBelow,
     }));
+    expect(customPresentation.cellMinimumSize).toBeGreaterThanOrEqual(3.99);
+    expect(customPresentation.rowsAbove).toBeLessThanOrEqual(4);
+    expect(customPresentation.rowsBelow).toBeGreaterThan(0);
+    expect(customPresentation.rowsBelow).toBeLessThanOrEqual(4);
+    expect(customPresentation.rowsAbove).toBeLessThanOrEqual(customPresentation.availableRowsAbove);
+    expect(customPresentation.rowsBelow).toBeLessThanOrEqual(customPresentation.availableRowsBelow);
     expect(customPresentation.backgroundAlpha).toBeCloseTo(0.25, 2);
     expect(customPresentation.centerDelta).toBeLessThanOrEqual(0.75);
 });

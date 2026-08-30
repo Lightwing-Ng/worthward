@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.4.0 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.5.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -19,7 +19,7 @@ const createRuntime = () => {
 test("publishes the canonical Workspace query contract", () => {
     const api = createRuntime();
 
-    assert.equal(api.VERSION, "v1.4.0");
+    assert.equal(api.VERSION, "v1.5.0");
     assert.deepEqual(Array.from(api.getParameterNames()), [
         "ticker",
         "metric",
@@ -40,6 +40,7 @@ test("publishes the canonical Workspace query contract", () => {
         "capital",
         "interval",
         "stop_loss",
+        "show_trade_details",
         "amount",
         "frequency",
         "weekday",
@@ -311,4 +312,35 @@ test("serializes the shared backtest stop-loss switch against its default", () =
         "http://localhost:8688/workspaces/backtest?stop_loss=0",
     );
     assert.equal(parsed.stopLossEnabled, false);
+});
+
+test("serializes the shared backtest trade-details switch against its default", () => {
+    const api = createRuntime();
+
+    const defaultState = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/backtest?strategy=buy-and-hold",
+    );
+    assert.equal(defaultState.showTradeDetailsEnabled, true);
+    assert.equal(
+        api.buildWorkspaceUrl(
+            "http://localhost:8688/workspaces/backtest?tab=transactions",
+            {
+                tickers: ["AAPL"],
+                defaultTickers: [],
+                rangeMode: "period",
+                period: "1y",
+                isBacktest: true,
+                strategy: "buy-and-hold",
+                defaultStrategy: "buy-and-hold",
+                showTradeDetailsEnabled: false,
+                defaultShowTradeDetailsEnabled: true,
+            },
+        ),
+        "/workspaces/backtest?ticker=AAPL&show_trade_details=0",
+    );
+
+    const hiddenState = api.parseWorkspaceUrlState(
+        "http://localhost:8688/workspaces/backtest?show_trade_details=0",
+    );
+    assert.equal(hiddenState.showTradeDetailsEnabled, false);
 });

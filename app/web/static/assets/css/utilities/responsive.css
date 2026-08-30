@@ -1,7 +1,7 @@
-/* Code version: v3.32.0 */
+/* Code version: v3.33.0 */
 .page > .sidebar-toggle {
-	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
-	left: calc(var(--page-edge-pad) + var(--sidebar-toggle-left));
+	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
+	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
 }
 @media (max-width: 980px) {
 	.portfolio-summary { align-items: flex-start; }
@@ -114,7 +114,7 @@
 		height: var(--settings-round-icon-button-size);
 		min-height: var(--settings-round-icon-button-size);
 		position: fixed;
-		top: var(--layout-global-anchor-inset);
+		top: var(--global-quick-actions-top);
 		left: var(--sidebar-overlay-inset-left);
 		right: auto;
 		bottom: auto;
@@ -127,8 +127,8 @@
 		align-items: center;
 	}
 
-	.global-quick-actions {
-		top: var(--layout-global-anchor-inset);
+		.global-quick-actions {
+			top: var(--global-quick-actions-top);
 	}
 
 	html.sidebar-memory-collapsed .sidebar-backdrop {

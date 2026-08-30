@@ -1,4 +1,4 @@
-/* Code version: v3.37.0 */
+/* Code version: v3.48.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -18,6 +18,21 @@
 
 .trade-strategy-param-select-shell .backtest-shared-select-dropdown {
     width: 100%;
+}
+
+/* Keep the compute-device control centered within its value column only. */
+.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-param-select-shell {
+    justify-self: center;
+    width: min(100%, 160px);
+}
+
+.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {
+    justify-content: center;
+    text-align: center;
+}
+
+.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger-label {
+    justify-content: center;
 }
 .trade-sidebar-card {
     padding: 12px 12px 10px;
@@ -40,11 +55,17 @@
 }
 
 .backtest-surface {
+    --backtest-chart-heading-font-size: 20px;
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     padding-bottom: var(--backtest-surface-bottom-pad) !important;
     container-type: inline-size;
+}
+
+.backtest-surface > .chart-heading-row > .chart-heading {
+    font-size: var(--backtest-chart-heading-font-size);
+    font-weight: var(--font-weight-regular);
 }
 
 .trade-pane-placeholder {
@@ -78,11 +99,77 @@
 }
 
 .backtest-section-resizer {
-    font-size: 13px;
+    font-size: 12px;
+}
+
+.backtest-section-resizer-slot {
+    position: relative;
+    width: 100%;
+    height: var(--investment-section-resizer-size);
+    min-width: 0;
+    min-height: 0;
+}
+
+.backtest-section-resizer-slot > .backtest-section-resizer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: var(--investment-section-resizer-size);
+    margin: 0;
+}
+
+.backtest-probability-scrollport {
+    position: absolute;
+    z-index: 1;
+    inset-inline: 0;
+    inset-block: -2px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: auto;
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+    -ms-overflow-style: auto;
+}
+
+.backtest-probability-scrollport::-webkit-scrollbar {
+    all: revert;
+    width: auto;
+    height: auto;
+}
+
+.backtest-probability-scrollport::-webkit-scrollbar-track,
+.backtest-probability-scrollport::-webkit-scrollbar-corner,
+.backtest-probability-scrollport::-webkit-scrollbar-thumb,
+.backtest-probability-scrollport::-webkit-scrollbar-button {
+    all: revert;
+}
+
+.backtest-probability-scrollport-spacer {
+    display: block;
+    width: 1px;
+    height: 1px;
+    min-width: 1px;
+    min-height: 1px;
+    pointer-events: none;
+}
+
+.backtest-results-stack.has-probability-scrollport .backtest-section-resizer {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .backtest-workspace-main {
     gap: 8px;
+}
+
+@media (min-width: 1008px) {
+    .workspace-mode-layout:has(.backtest-results-stack.has-probability-field) {
+        grid-template-columns:
+            clamp(264px, calc(100% - 398px), var(--sidebar-width))
+            minmax(386px, 1fr);
+    }
 }
 
 .backtest-results-stack,
@@ -92,7 +179,9 @@
     height: auto;
 }
 
-.backtest-results-stack {
+.investment-workspace-header.backtest-results-stack {
+    --backtest-section-resizer-size: 10px;
+    --investment-section-resizer-size: var(--backtest-section-resizer-size);
     --backtest-probability-narrow-results-min-height: 600px;
     --backtest-probability-narrow-overview-min-height: 320px;
     --backtest-probability-narrow-chart-stage-min-height: 254px;
@@ -137,6 +226,15 @@
     --segmented-overflow-option-min-width: 104px;
     flex: 0 1 360px;
     width: min(100%, 360px);
+}
+
+.backtest-history-view-segmented [data-backtest-history-transactions-option][aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.backtest-history-view-segmented [data-backtest-history-transactions-option][aria-disabled="true"] > span {
+    pointer-events: none;
 }
 
 .backtest-history-view-body {
@@ -688,28 +786,16 @@
     overflow: hidden;
 }
 
-.trade-chart-stack.has-probability-scroll {
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: thin;
-    scrollbar-color: var(--accent-scrollbar) transparent;
+.trade-chart-stack.has-probability-field {
+    padding-bottom: 0;
 }
 
-.trade-chart-stack.has-probability-scroll::-webkit-scrollbar {
-    width: 0;
-    height: 6px;
+.trade-chart-stack.is-trade-details-hidden {
+    grid-template-rows: minmax(0, 1fr);
 }
 
-.trade-chart-stack.has-probability-scroll::-webkit-scrollbar-track,
-.trade-chart-stack.has-probability-scroll::-webkit-scrollbar-corner {
-    background: transparent;
-}
-
-.trade-chart-stack.has-probability-scroll::-webkit-scrollbar-thumb {
-    border: 0;
-    border-radius: var(--radius-pill);
-    background: var(--accent-scrollbar);
+.trade-chart-stack.is-trade-details-hidden .trade-chart-panel-equity {
+    display: none;
 }
 
 .backtest-probability-scroll-spacer {
@@ -877,9 +963,9 @@
 }
 
 .sidebar-dock {
-    position: fixed;
-    left: 0;
-    bottom: calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
+	position: fixed;
+	left: calc(var(--layout-page-inset-left) + (var(--sidebar-width) / 2));
+	bottom: var(--layout-global-anchor-bottom);
     transform: translateX(-50%);
     z-index: var(--layer-fixed-dock);
     display: flex;

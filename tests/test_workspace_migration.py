@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.8.0
+Code version: v1.8.1
 """
 
 from __future__ import annotations
@@ -286,7 +286,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
         )
         dock_html = _slice_between(
             html,
-            '<nav class="sidebar-dock" aria-label="Workspace modes">',
+            '<nav class="sidebar-dock" aria-label="Workspace modes"',
             "</nav>",
         )
 

@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Bayesian price models.
 
-Code version: v1.2.0
+Code version: v1.3.0
 - Fixed: Daily OHLCV and factor observations now use each symbol's local
   trading date, preventing Asia-market midnight timestamps from shifting to
   the previous UTC calendar day.
@@ -9,6 +9,9 @@ Code version: v1.2.0
   same-key single-flight loading, and immutable cached factor status.
 - Added: Chunked daily OHLCV, historical P/E, and daily option-volume
   observations with serialized rate limiting, bounded retry, and memory TTL.
+- Added: Opt-in research factors from Longbridge valuation, capital, market
+  temperature, ownership, short-interest, and broker-holding commands. Every
+  observation is date-filtered before it can enter a walk-forward model.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ import re
 from threading import Lock
 import time
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Sequence
 from zoneinfo import ZoneInfo
 
 from app.core.broker_settings import BrokerSettings, load_broker_settings
@@ -43,6 +46,36 @@ CLI_MIN_INTERVAL_SECONDS = 0.15
 CLI_MAX_ATTEMPTS = 3
 CLI_RETRY_BASE_SECONDS = 0.25
 RETRYABLE_RATE_LIMIT_CODES = ("429002", "429003")
+
+RESEARCH_FACTOR_KEYS = (
+    "pb_ratio",
+    "ps_ratio",
+    "dividend_yield",
+    "market_temperature",
+    "capital_flow",
+    "shareholder_concentration",
+    "fund_holder_weight",
+    "short_interest",
+    "short_volume",
+    "broker_holding",
+)
+
+_RESEARCH_VALUE_KEYS: dict[str, tuple[str, ...]] = {
+    "pb_ratio": ("pb", "pb_ratio", "value"),
+    "ps_ratio": ("ps", "ps_ratio", "value"),
+    "dividend_yield": ("dvd_yld", "dividend_yield", "yield", "value"),
+    "market_temperature": ("temperature", "temp", "score", "value"),
+    "capital_flow": ("capital_flow", "net_inflow", "net_flow", "inflow", "value", "amount"),
+    "shareholder_concentration": (
+        "owned_ratio", "holding_ratio", "ownership_ratio", "ratio", "percent", "value",
+    ),
+    "fund_holder_weight": ("weight", "position_ratio", "holding_ratio", "ratio", "percent", "value"),
+    "short_interest": (
+        "short_interest", "open_short_shares", "balance", "short_shares", "rate", "value",
+    ),
+    "short_volume": ("total_amount", "amount", "nus_amount", "ny_amount", "rate", "value"),
+    "broker_holding": ("holding_ratio", "ratio", "balance", "quantity", "amount", "value"),
+}
 
 _MARKET_TIMEZONES = {
     "US": ZoneInfo("America/New_York"),
@@ -101,6 +134,14 @@ class OptionVolumeObservation:
 
 
 @dataclass(frozen=True)
+class ResearchFactorObservation:
+    observed_at: datetime
+    factor: str
+    value: float
+    source: str
+
+
+@dataclass(frozen=True)
 class BayesianFactorBundle:
     symbol: str
     start: date
@@ -112,6 +153,7 @@ class BayesianFactorBundle:
     fingerprint: str
     factor_status: Mapping[str, str]
     source_commands: tuple[str, ...]
+    research_history: tuple[ResearchFactorObservation, ...] = ()
 
 
 def clear_bayesian_factor_cache() -> None:
@@ -504,6 +546,157 @@ def _fetch_option_history(
     return tuple(observations[key] for key in sorted(observations)), _display_command(arguments)
 
 
+def _iter_payload_rows(payload: Any) -> list[dict[str, Any]]:
+    """Flatten Longbridge JSON containers while retaining mapping rows only."""
+    rows: list[dict[str, Any]] = []
+    if isinstance(payload, list):
+        for value in payload:
+            rows.extend(_iter_payload_rows(value))
+        return rows
+    if not isinstance(payload, dict):
+        return rows
+    timestamp_keys = {
+        "timestamp", "time", "date", "report_date", "report_period", "period",
+        "updated_at", "end_date", "period_end", "holding_date", "date_time",
+    }
+    if timestamp_keys.intersection(payload):
+        rows.append(payload)
+    for value in payload.values():
+        if isinstance(value, (dict, list)):
+            rows.extend(_iter_payload_rows(value))
+    return rows
+
+
+def _research_timestamp(row: Mapping[str, Any]) -> datetime | None:
+    for key in (
+        "timestamp", "time", "date", "report_date", "report_period", "period",
+        "updated_at", "end_date", "period_end", "holding_date", "date_time",
+    ):
+        parsed = _parse_observed_at(row.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _research_value(row: Mapping[str, Any], factor: str) -> float | None:
+    for key in _RESEARCH_VALUE_KEYS.get(factor, ("value",)):
+        value = _finite_float(row.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _research_observations(
+        payload: Any,
+        *,
+        symbol: str,
+        start: date,
+        end: date,
+        factor: str,
+        source: str,
+) -> tuple[ResearchFactorObservation, ...]:
+    observations: dict[datetime, ResearchFactorObservation] = {}
+    for row in _iter_payload_rows(payload):
+        parsed_timestamp = _research_timestamp(row)
+        value = _research_value(row, factor)
+        if parsed_timestamp is None or value is None:
+            continue
+        observed_at = _market_local_trading_day(parsed_timestamp, symbol)
+        if not _is_in_window(observed_at, start, end):
+            continue
+        observations[observed_at] = ResearchFactorObservation(
+            observed_at=observed_at,
+            factor=factor,
+            value=value,
+            source=source,
+        )
+    return tuple(observations[key] for key in sorted(observations))
+
+
+def _market_from_symbol(symbol: str) -> str:
+    return symbol.rsplit(".", 1)[-1]
+
+
+def _research_command(
+        factor: str,
+        symbol: str,
+        start: date,
+        end: date,
+        fetched_at: datetime,
+) -> list[str] | None:
+    if factor in {"pb_ratio", "ps_ratio", "dividend_yield"}:
+        indicator = {
+            "pb_ratio": "pb",
+            "ps_ratio": "ps",
+            "dividend_yield": "dvd_yld",
+        }[factor]
+        return [
+            "valuation", symbol, "--history", "--indicator", indicator,
+            "--range", str(_history_range_years(start, fetched_at)), "--format", "json",
+        ]
+    if factor == "market_temperature":
+        return [
+            "market-temp", _market_from_symbol(symbol), "--history",
+            "--start", start.isoformat(), "--end", end.isoformat(), "--format", "json",
+        ]
+    if factor == "capital_flow":
+        return ["capital", symbol, "--flow", "--format", "json"]
+    if factor == "shareholder_concentration":
+        return [
+            "shareholder", symbol, "--top", "--periods", "8", "--format", "json",
+        ]
+    if factor == "fund_holder_weight":
+        return ["fund-holder", symbol, "--count", "-1", "--format", "json"]
+    if factor == "short_interest":
+        return ["short-positions", symbol, "--count", "100", "--format", "json"]
+    if factor == "short_volume":
+        return ["short-trades", symbol, "--count", "100", "--format", "json"]
+    if factor == "broker_holding":
+        return ["broker-holding", symbol, "--format", "json"]
+    return None
+
+
+def _fetch_research_history(
+        settings: BrokerSettings,
+        symbol: str,
+        start: date,
+        end: date,
+        fetched_at: datetime,
+        requested_factors: Sequence[str],
+) -> tuple[tuple[ResearchFactorObservation, ...], dict[str, str], list[str]]:
+    observations: list[ResearchFactorObservation] = []
+    statuses: dict[str, str] = {}
+    commands: list[str] = []
+    for factor in dict.fromkeys(str(item) for item in requested_factors):
+        if factor not in RESEARCH_FACTOR_KEYS:
+            statuses[factor] = "unsupported"
+            continue
+        if factor == "broker_holding" and not symbol.endswith(".HK"):
+            statuses[factor] = "unsupported_market"
+            continue
+        arguments = _research_command(factor, symbol, start, end, fetched_at)
+        if arguments is None:
+            statuses[factor] = "unsupported"
+            continue
+        commands.append(_display_command(arguments))
+        try:
+            payload = _run_readonly_cli(settings, arguments, timeout_seconds=45)
+            parsed = _research_observations(
+                payload,
+                symbol=symbol,
+                start=start,
+                end=end,
+                factor=factor,
+                source=f"longbridge-cli:{factor}",
+            )
+            observations.extend(parsed)
+            statuses[factor] = "available" if parsed else "missing"
+        except Exception:
+            LOGGER.warning("Longbridge CLI research factor %s was unavailable for %s.", factor, symbol)
+            statuses[factor] = "error"
+    return tuple(observations), statuses, commands
+
+
 def _fingerprint_payload(
         *,
         symbol: str,
@@ -512,6 +705,7 @@ def _fingerprint_payload(
         ohlcv: tuple[OhlcvBar, ...],
         pe_history: tuple[PeObservation, ...],
         option_history: tuple[OptionVolumeObservation, ...],
+        research_history: tuple[ResearchFactorObservation, ...],
         factor_status: dict[str, str],
         source_commands: tuple[str, ...],
 ) -> str:
@@ -560,6 +754,15 @@ def _fingerprint_payload(
             }
             for row in option_history
         ],
+        "research_history": [
+            {
+                "observed_at": timestamp(row.observed_at),
+                "factor": row.factor,
+                "value": row.value,
+                "source": row.source,
+            }
+            for row in research_history
+        ],
         "factor_status": factor_status,
         "source_commands": source_commands,
     }
@@ -588,6 +791,7 @@ def fetch_bayesian_factor_bundle(
         settings: BrokerSettings | None = None,
         include_pe: bool = True,
         include_options: bool = True,
+        research_factors: Sequence[str] = (),
         ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS,
 ) -> BayesianFactorBundle:
     """Fetch a time-bounded, read-only factor bundle from Longbridge CLI OAuth."""
@@ -599,12 +803,16 @@ def fetch_bayesian_factor_bundle(
 
     broker_settings = settings or load_broker_settings()
     normalized_ttl = max(0.0, float(ttl_seconds))
+    normalized_research_factors = tuple(
+        sorted(dict.fromkeys(str(item) for item in (research_factors or ())))
+    )
     cache_key = (
         normalized_symbol,
         normalized_start,
         normalized_end,
         bool(include_pe),
         bool(include_options),
+        normalized_research_factors,
         normalized_ttl,
         *_settings_cache_identity(broker_settings),
     )
@@ -692,6 +900,17 @@ def fetch_bayesian_factor_bundle(
                 )
                 factor_status["options"] = "error"
 
+        research_history, research_status, research_commands = _fetch_research_history(
+            broker_settings,
+            normalized_symbol,
+            normalized_start,
+            normalized_end,
+            fetched_at,
+            normalized_research_factors,
+        )
+        factor_status.update(research_status)
+        source_commands_list.extend(research_commands)
+
         source_commands = tuple(source_commands_list)
         fingerprint = _fingerprint_payload(
             symbol=normalized_symbol,
@@ -700,6 +919,7 @@ def fetch_bayesian_factor_bundle(
             ohlcv=ohlcv,
             pe_history=pe_history,
             option_history=option_history,
+            research_history=research_history,
             factor_status=factor_status,
             source_commands=source_commands,
         )
@@ -714,6 +934,7 @@ def fetch_bayesian_factor_bundle(
             fingerprint=fingerprint,
             factor_status=MappingProxyType(dict(factor_status)),
             source_commands=source_commands,
+            research_history=research_history,
         )
     except BaseException as exc:
         flight.set_exception(exc)

@@ -1,4 +1,4 @@
-/* Code version: v0.1.23 */
+/* Code version: v0.2.0 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -121,6 +121,10 @@
     const initDcaWorkspace = () => {
         const state = window.ANTIGRAVITY_APP;
         const isUnifiedBacktestDca = state?.currentView === "backtest" && state.selectedStrategyId === "dca";
+        if (typeof bootstrap.dcaTradeDetailsCleanup === "function") {
+            bootstrap.dcaTradeDetailsCleanup();
+            bootstrap.dcaTradeDetailsCleanup = null;
+        }
         if (!state || (!isUnifiedBacktestDca && state.currentView !== "dca") || !window.Chart || !state.dcaResult) return;
         if (typeof bootstrap.dcaTableAlignmentCleanup === "function") {
             bootstrap.dcaTableAlignmentCleanup();
@@ -151,6 +155,14 @@
 
         const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
         if (!tradeChartStack) return;
+        const isTradeDetailsEnabled = () => {
+            if (!isUnifiedBacktestDca) return true;
+            if (typeof bootstrap.backtestTradeDetails?.isEnabled === "function") {
+                return bootstrap.backtestTradeDetails.isEnabled();
+            }
+            const input = document.getElementById("show_trade_details");
+            return !(input instanceof HTMLInputElement) || input.checked;
+        };
         const chartYPaddingPx = 5;
         const fixedYAxisWidth = 72;
         const contributionByIndex = new Map();
@@ -245,7 +257,8 @@
         const xAxisLabelPlugin = {
             id: "dcaXAxisLabelPlugin",
             afterDraw(chart) {
-                if (chart.canvas !== equityCanvas) return;
+                const xAxisCanvas = isTradeDetailsEnabled() ? equityCanvas : priceCanvas;
+                if (chart.canvas !== xAxisCanvas) return;
                 const {ctx, chartArea, scales} = chart;
                 const xScale = scales?.x;
                 if (!chartArea || !xScale || !labels.length) return;
@@ -275,7 +288,7 @@
         const contributionMarkerPlugin = {
             id: "dcaContributionMarkerPlugin",
             afterDatasetsDraw(chart) {
-                if (chart.canvas !== priceCanvas) return;
+                if (!isTradeDetailsEnabled() || chart.canvas !== priceCanvas) return;
                 const meta = chart.getDatasetMeta(0);
                 const yScale = chart.scales?.y;
                 if (!meta?.data?.length || !yScale) return;
@@ -305,6 +318,7 @@
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            layout: {padding: {bottom: 22}},
             interaction: {
                 intersect: false,
                 mode: "index",
@@ -377,7 +391,7 @@
                     },
                 },
             },
-            plugins: [contributionMarkerPlugin],
+            plugins: [contributionMarkerPlugin, xAxisLabelPlugin],
         });
 
         const equityChart = new Chart(equityCanvas, {
@@ -427,12 +441,16 @@
         };
 
         const updateHoverLineFrame = () => {
-            if (!priceChart.chartArea || !equityChart.chartArea) return null;
+            if (!priceChart.chartArea) return null;
+            const showTradeDetails = isTradeDetailsEnabled();
+            if (showTradeDetails && !equityChart.chartArea) return null;
             const priceCanvasRect = priceCanvas.getBoundingClientRect();
-            const equityCanvasRect = equityCanvas.getBoundingClientRect();
             const stackRect = tradeChartStack.getBoundingClientRect();
             const top = priceCanvasRect.top - stackRect.top + priceChart.chartArea.top;
-            const bottom = equityCanvasRect.top - stackRect.top + equityChart.chartArea.bottom;
+            const bottomCanvas = showTradeDetails ? equityCanvas : priceCanvas;
+            const bottomChart = showTradeDetails ? equityChart : priceChart;
+            const bottomCanvasRect = bottomCanvas.getBoundingClientRect();
+            const bottom = bottomCanvasRect.top - stackRect.top + bottomChart.chartArea.bottom;
             return {top, bottom};
         };
 
@@ -628,6 +646,29 @@
             priceChart.update("none");
             equityChart.update("none");
         });
+
+        if (isUnifiedBacktestDca) {
+            let layoutFrameId = null;
+            const refreshTradeDetailsLayout = () => {
+                if (layoutFrameId !== null) return;
+                layoutFrameId = window.requestAnimationFrame(() => {
+                    layoutFrameId = null;
+                    const showTradeDetails = isTradeDetailsEnabled();
+                    priceChart.resize();
+                    priceChart.update("none");
+                    if (showTradeDetails) {
+                        equityChart.resize();
+                        equityChart.update("none");
+                    }
+                });
+            };
+            window.addEventListener("antigravity:backtest-trade-details-change", refreshTradeDetailsLayout);
+            bootstrap.dcaTradeDetailsCleanup = () => {
+                window.removeEventListener("antigravity:backtest-trade-details-change", refreshTradeDetailsLayout);
+                if (layoutFrameId !== null) window.cancelAnimationFrame(layoutFrameId);
+            };
+            refreshTradeDetailsLayout();
+        }
 
         const markDcaChartReady = (canvas) => {
             if (!(canvas instanceof HTMLCanvasElement) || canvas.dataset.tradeChartReady === "1") return;

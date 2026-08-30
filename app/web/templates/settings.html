@@ -1,4 +1,4 @@
-{# Code version: v0.13.0 #}
+{# Code version: v0.13.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -101,14 +101,14 @@
 
 {% block workspace_content %}
 <section class="workspace-header settings-workspace-header settings-shell-{{ settings_section }}{% if settings_section == 'about' %} settings-about-shell{% elif settings_section == 'general' %} settings-general-shell{% endif %}" id="settings_workspace_shell" data-settings-workspace-region data-settings-section="{{ settings_section }}">
-    <article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
-        <div class="report-heading-row">
+    <article class="report-card workspace-article-card workspace-summary-card settings-summary-card" data-layout-role="title-rail">
+        <div class="report-heading-row" data-layout-role="title-heading">
             <p class="report-heading">{{ settings_title }}</p>
         </div>
     </article>
 
     {% if settings_section != "style-tokens" %}
-    <div class="settings-content-scrollport" data-settings-content-scrollport>
+    <div class="settings-content-scrollport" data-layout-role="content-scrollport" data-settings-content-scrollport>
     {% endif %}
 
     {% if settings_section == "about" %}
@@ -262,7 +262,7 @@
                         </table>
                     </div>
                 </div>
-                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="current" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
+                <nav class="local-store-pagination settings-language-pagination" data-layout-role="pagination" data-language-pagination="current" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
             </div>
             <div class="settings-language-panel{% if settings_tab == 'history' %} is-active{% endif %}" data-language-panel="history" data-language-initial-page="{{ settings_page_number if settings_tab == 'history' else 1 }}"{% if settings_tab != 'history' %} hidden{% endif %}>
                 <div class="settings-language-table-shell scrollable-data-table-shell">
@@ -305,7 +305,7 @@
                         </table>
                     </div>
                 </div>
-                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="history" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
+                <nav class="local-store-pagination settings-language-pagination" data-layout-role="pagination" data-language-pagination="history" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
             </div>
             <div class="settings-language-submit-row">
                 <button type="submit" class="settings-inline-button settings-inline-button-primary settings-language-save-button" data-language-save-button data-language-save-label="{{ translate_ui('Save translations') }}">{{ translate_ui('Save translations') }}</button>
@@ -657,7 +657,7 @@
                     <button type="submit" class="settings-inline-button settings-inline-button-primary" data-action-package-button data-default-label="{{ labels.local_store_maintain_button }}" data-pending-label="{{ labels.local_store_maintain_pending_button }}">{{ labels.local_store_maintain_button }}</button>
                 </form>
     </section>
-    <p class="settings-summary">{{ labels.local_store_summary }}</p>
+    <p class="settings-summary" data-layout-role="summary-copy">{{ labels.local_store_summary }}</p>
     <div class="scrollable-data-table-shell local-store-pagination-host local-store-table-shell{% if local_store_total_pages > 1 %} has-floating-pagination{% endif %}" id="local_store_region" data-local-store-region>
                 <table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
                     <colgroup>
@@ -774,6 +774,7 @@
                 </div>
     {% if local_store_total_pages > 1 %}
     <nav class="settings-pagination local-store-pagination local-store-pagination--floating local-store-table-pagination"
+         data-layout-role="pagination"
          aria-label="{{ translate_ui('Local market store pages') }}"
          aria-controls="local_store_table_body"
          data-local-store-pagination
@@ -1396,6 +1397,7 @@
                                 </table>
                             </div>
                             <nav class="settings-pagination local-store-pagination local-store-pagination--floating style-token-table-demo-pagination"
+                                 data-layout-role="pagination"
                                  aria-label="{{ translate_ui('Scrollable table pages') }}"
                                  aria-controls="style_token_table_demo_body"
                                  data-pagination-scroll-target="style_token_table_demo_scroll"
@@ -1512,7 +1514,7 @@
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
                     <div class="style-token-pagination-demo-surface">
-                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" aria-label="{{ translate_ui('Pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
+                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" data-layout-role="pagination" aria-label="{{ translate_ui('Pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
                         <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 5)), 0, 0); opacity: 1;"></span>
                         <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-prev" aria-hidden="true"></span></span>
                         <span class="local-store-page-button" aria-hidden="true">1</span>

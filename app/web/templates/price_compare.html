@@ -1,4 +1,4 @@
-{# Code version: v0.5.4 #}
+{# Code version: v0.5.5 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -11,8 +11,8 @@
 
 {% block workspace_content %}
 <section class="workspace-mode-shell price-compare-workspace{% if is_market_cap_comparison %} market-cap-compare-workspace{% endif %}" aria-labelledby="ticker_comparison_heading">
-    <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
-        <div class="report-heading-row">
+    <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
+        <div class="report-heading-row" data-layout-role="title-heading">
             <h2 class="report-heading" id="ticker_comparison_heading">{{ report_heading or labels.get('dock_ticker_comparison', 'Ticker comparison') }}</h2>
         </div>
     </header>
@@ -22,8 +22,8 @@
         </aside>
         <section class="workspace-mode-main" aria-labelledby="{{ comparison_heading_id }}">
             <div class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                <header class="report-card workspace-article-card workspace-summary-card">
-                    <div class="report-heading-row workspace-result-heading-stack">
+                <header class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                    <div class="report-heading-row workspace-result-heading-stack" data-layout-role="result-heading">
                         <h2 class="report-heading" id="{{ comparison_heading_id }}" data-price-compare-heading data-price-heading="{{ translate_ui('Price history') }}" data-chips-heading="{{ translate_ui('Chip distribution') }}">{{ translate_ui('Market cap history') if is_market_cap_comparison else (chart_heading or translate_ui('Price history')) }}</h2>
                     </div>
                 </header>

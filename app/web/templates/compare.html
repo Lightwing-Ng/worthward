@@ -1,4 +1,4 @@
-{# Code version: v0.3.1 #}
+{# Code version: v0.3.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -17,8 +17,8 @@
 
 {% block workspace_content %}
 <section class="workspace-mode-shell">
-    <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
-        <div class="report-heading-row">
+    <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
+        <div class="report-heading-row" data-layout-role="title-heading">
             <p class="report-heading">{{ labels.dock_tickers }}</p>
         </div>
     </article>
@@ -29,13 +29,13 @@
         <article class="workspace-mode-main">
             {% if series %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                <article class="report-card workspace-article-card workspace-summary-card">
-                    <div class="report-heading-row">
+                <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                    <div class="report-heading-row" data-layout-role="result-heading">
                         <p class="report-heading">{{ report_heading }}</p>
                     </div>
                 </article>
 
-                <article class="report-card workspace-content-card compare-summary-content-card">
+                <article class="report-card workspace-content-card compare-summary-content-card" data-layout-role="result-container">
                     <div id="compare_summary_panel">
                         {{ render_investment_share_actions(shell_id='workspace_share_drawer_tickers', share_drawer='tickers', show_mask=false, capture_label='Save comparison screenshot', anchor_label='Share comparison', placement='summary-panel') }}
                         {% if display_range %}
@@ -76,12 +76,12 @@
             </article>
             {% else %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                <article class="report-card workspace-article-card workspace-summary-card">
-                    <div class="report-heading-row">
+                <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                    <div class="report-heading-row" data-layout-role="result-heading">
                         <p class="report-heading">{{ report_heading }}</p>
                     </div>
                 </article>
-                <article class="report-card workspace-content-card compare-summary-content-card">
+                <article class="report-card workspace-content-card compare-summary-content-card" data-layout-role="result-container">
                     <div class="placeholder-copy chart-placeholder-copy">
                         <p>Please configure at least two tickers to compare.</p>
                     </div>
