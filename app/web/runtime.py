@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.87.0
+Code version: v0.88.0
 - Added: Backtest strategies may keep a daily model while executing causal
   signals on real one-minute bars through a declared interval bridge.
 - Fixed: Relative Backtest provider windows now end on the selected ticker's
@@ -5563,6 +5563,14 @@ def build_web_runtime() -> WebRuntime:
                 if probability_field_hit_rate is None
                 else f"{parse_float_value(probability_field_hit_rate, 0.0):,.2f}%"
             )
+            probability_field_event_hit_rate = summary.get(
+                "probability_field_event_hit_rate_pct"
+            )
+            probability_field_event_hit_rate_display = (
+                "N/A"
+                if probability_field_event_hit_rate is None
+                else f"{parse_float_value(probability_field_event_hit_rate, 0.0):,.2f}%"
+            )
 
             md_lines = [
                 f"## Backtest Report: {ticker_caption}",
@@ -5577,8 +5585,11 @@ def build_web_runtime() -> WebRuntime:
                 f"- **Total trades**: {summary.get('total_trades', 0)}",
                 f"- **Win rate**: {win_rate_display}",
                 *([
-                    f"- **Bayesian field hit rate**: {probability_field_hit_rate_display}",
+                    f"- **Bayesian field hit-rate score (probability-weighted realized cell)**: {probability_field_hit_rate_display}",
                 ] if probability_field_hit_rate is not None else []),
+                *([
+                    f"- **Bayesian field event hit rate**: {probability_field_event_hit_rate_display}",
+                ] if probability_field_event_hit_rate is not None else []),
                 f"- **Beat B&H**: {beat_bh_pct:,.2f}%",
                 f"- **Alpha vs B&H**: {'+' if benchmark_alpha >= 0 else '-'}${abs(benchmark_alpha):,.2f}",
                 f"- **Realized long P&L**: {'+' if long_gain >= 0 else '-'}${abs(long_gain):,.2f}",

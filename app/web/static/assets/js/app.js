@@ -1,4 +1,4 @@
-/* Code version: v0.47.0 */
+/* Code version: v0.47.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5412,10 +5412,7 @@
     };
     const getVisibleSegmentedOptions = (shell) => Array.from(shell.querySelectorAll(".segmented-control-option, .range-mode-option"))
         .filter((option) => option instanceof HTMLElement)
-        .filter((option) => {
-            const input = option.querySelector("input");
-            return !option.hidden && (!(input instanceof HTMLInputElement) || !input.disabled);
-        });
+        .filter((option) => !option.hidden);
     const readSegmentedPixelValue = (styles, propertyName, fallback = 0) => {
         const parsedValue = Number.parseFloat(styles.getPropertyValue(propertyName));
         return Number.isFinite(parsedValue) ? parsedValue : fallback;

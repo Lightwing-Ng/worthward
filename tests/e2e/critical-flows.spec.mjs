@@ -1,4 +1,4 @@
-/* Code version: v1.191.0 */
+/* Code version: v1.193.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -15979,6 +15979,7 @@ test('toggles the shared Backtest trade-details presentation without recomputing
     await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
 
     const detailsSwitch = page.locator('#show_trade_details');
+    const viewSegmented = page.locator('#backtest_history_view_segmented');
     const chartStack = page.locator('.trade-chart-stack');
     const priceCanvas = page.locator('#tradePriceChart');
     const equityCanvas = page.locator('#tradeEquityChart');
@@ -16013,6 +16014,63 @@ test('toggles the shared Backtest trade-details presentation without recomputing
     await expect(page.locator('[data-backtest-history-transactions-option]')).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'metrics');
     await expect(page).toHaveURL(/show_trade_details=0/);
+    const disabledSegmentState = await viewSegmented.evaluate((element) => {
+        const shell = element.getBoundingClientRect();
+        const activeOption = element.querySelector('#backtest_history_metrics')?.closest('.segmented-control-option');
+        const disabledOption = element.querySelector('#backtest_history_transactions')?.closest('.segmented-control-option');
+        const activeRect = activeOption?.getBoundingClientRect();
+        const disabledRect = disabledOption?.getBoundingClientRect();
+        const disabledLabel = disabledOption?.querySelector('span');
+        const thumb = getComputedStyle(element, '::before');
+        return {
+            optionCount: element.dataset.optionCount,
+            columnCount: getComputedStyle(element).gridTemplateColumns.split(/\s+/).filter(Boolean).length,
+            shellWidth: shell.width,
+            activeWidth: activeRect?.width || 0,
+            disabledWidth: disabledRect?.width || 0,
+            activeTop: activeRect?.top || 0,
+            disabledTop: disabledRect?.top || 0,
+            disabledOpacity: getComputedStyle(disabledLabel).opacity,
+            disabledPointerEvents: getComputedStyle(disabledLabel).pointerEvents,
+            thumbWidth: Number.parseFloat(thumb.width) || 0,
+        };
+    });
+    expect(disabledSegmentState).toMatchObject({
+        optionCount: '2',
+        columnCount: 2,
+        disabledOpacity: '0.55',
+        disabledPointerEvents: 'none',
+    });
+    expect(Math.abs(disabledSegmentState.activeWidth - disabledSegmentState.disabledWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(disabledSegmentState.activeTop - disabledSegmentState.disabledTop)).toBeLessThanOrEqual(1);
+    expect(disabledSegmentState.thumbWidth).toBeLessThan(disabledSegmentState.shellWidth - 8);
+    await page.setViewportSize({width: 390, height: 844});
+    const narrowDisabledSegmentState = await viewSegmented.evaluate((element) => {
+        const shell = element.getBoundingClientRect();
+        const activeOption = element.querySelector('#backtest_history_metrics')?.closest('.segmented-control-option');
+        const disabledOption = element.querySelector('#backtest_history_transactions')?.closest('.segmented-control-option');
+        const activeRect = activeOption?.getBoundingClientRect();
+        const disabledRect = disabledOption?.getBoundingClientRect();
+        const thumb = getComputedStyle(element, '::before');
+        return {
+            shellWidth: shell.width,
+            shellRight: shell.right,
+            activeWidth: activeRect?.width || 0,
+            disabledWidth: disabledRect?.width || 0,
+            activeTop: activeRect?.top || 0,
+            disabledTop: disabledRect?.top || 0,
+            thumbWidth: Number.parseFloat(thumb.width) || 0,
+        };
+    });
+    expect(narrowDisabledSegmentState.shellWidth).toBeGreaterThan(0);
+    expect(narrowDisabledSegmentState.shellRight).toBeLessThanOrEqual(390);
+    expect(Math.abs(narrowDisabledSegmentState.activeWidth - narrowDisabledSegmentState.disabledWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(narrowDisabledSegmentState.activeTop - narrowDisabledSegmentState.disabledTop)).toBeLessThanOrEqual(1);
+    expect(narrowDisabledSegmentState.thumbWidth).toBeLessThan(narrowDisabledSegmentState.shellWidth - 8);
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.locator('label[for="backtest_history_transactions"]').click({force: true});
+    await expect(page.locator('#backtest_history_metrics')).toBeChecked();
+    await expect(viewSegmented).toHaveAttribute('data-active', 'metrics');
     await expect.poll(() => page.evaluate((baseline) => {
         const stack = document.querySelector('.trade-chart-stack');
         const price = document.querySelector('#tradePriceChart');
@@ -17452,16 +17510,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         result.strategy_presentation = {
             schema: 'bayesian-price-field/v1',
             renderer: 'probability-grid-v1',
-            rows_above: 6,
-            rows_below: 6,
+            rows_above: 10,
+            rows_below: 10,
             columns: 36,
             width_fraction: 0.25,
             gap_px: 2,
             padding_px: 8,
             min_cell_px: 4,
-            cell_radius_px: 2,
-            tooltip_radius_px: 10,
-            tooltip_transparency_pct: 50,
+            cell_radius_px: 0,
             cell_opacity_mapping: 'instant-contrast-power-v1',
             cell_opacity_exponent: 1.6,
             cell_opacity_tail_ratio: 0.02,
@@ -17701,6 +17757,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             activeIndex: bounds.index,
             availableRowsAbove: bounds.availableRowsAbove,
             availableRowsBelow: bounds.availableRowsBelow,
+            availableRowsPerSide: bounds.availableRowsPerSide,
+            availableRowsWithinHalfPlot: bounds.availableRowsWithinHalfPlot,
             backdropFilter: tooltipStyle.backdropFilter || 'none',
             backgroundAlpha,
             backgroundImage: tooltipStyle.backgroundImage,
@@ -17729,7 +17787,6 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             columns: new Set(cells.map((cell) => cell.dataset.column)).size,
             daysPerColumn: Number(grid.dataset.daysPerColumn),
             direction: bounds.direction,
-            dataTransparency: tooltip.dataset.transparency,
             opacityMapping: tooltip.dataset.cellOpacityMapping,
             opacityExponent,
             opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
@@ -17739,6 +17796,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && panelChildren[1].contains(equityCanvas),
             firstCellLeftInset: firstRect ? firstRect.left - tooltipRect.left : null,
             firstCellTopInset: firstRect ? firstRect.top - tooltipRect.top : null,
+            guideBottomInset: tooltipRect.bottom - (canvasRect.top + guide.y),
+            guideTopInset: (canvasRect.top + guide.y) - tooltipRect.top,
             gridPadding: [
                 gridStyle.paddingTop,
                 gridStyle.paddingRight,
@@ -17801,16 +17860,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     expect(contract).not.toBeNull();
     expect(contract.activeIndex).toBe(leftAnchor.index);
-    expect(contract.backgroundAlpha).toBeCloseTo(0.5, 2);
-    expect(contract.dataTransparency).toBe('50%');
+    expect(contract.backgroundAlpha).toBe(0);
     expect(contract.opacity).toBe(1);
     expect(contract.backgroundImage).toBe('none');
     expect(contract.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
     expect(contract.boxShadow).toBe('none');
     expect(contract.backdropFilter).toBe('none');
     expect(contract.webkitBackdropFilter).toBe('none');
-    expect(contract.outerBorderRadius).toBe('10px');
-    expect(contract.cellBorderRadius).toBe('2px');
+    expect(contract.outerBorderRadius).toBe('0px');
+    expect(contract.cellBorderRadius).toBe('0px');
     expect(contract.cellBorderWidth).toBe('0px');
     expect(contract.cellTransitionDuration).toBe('0s');
     expect(contract.gridPadding[1]).toBe('8px');
@@ -17822,9 +17880,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.cellCount).toBe(contract.rows * contract.columns);
     expect(contract.rows).toBe(contract.rowsUp + contract.rowsDown);
     expect(contract.rowsUp).toBeGreaterThan(0);
-    expect(contract.rowsDown).toBeGreaterThan(0);
-    expect(contract.rowsUp).toBeLessThanOrEqual(6);
-    expect(contract.rowsDown).toBeLessThanOrEqual(6);
+    expect(contract.rowsDown).toBeGreaterThanOrEqual(0);
+    expect(contract.rowsUp).toBeLessThanOrEqual(10);
+    expect(contract.rowsDown).toBeLessThanOrEqual(10);
+    expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsPerSide);
+    expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsPerSide);
     expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsAbove);
     expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsBelow);
     expect(contract.columns).toBe(36);
@@ -17843,7 +17903,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.direction).toBe('right');
     expect(contract.rightwardStartDelta).toBeLessThanOrEqual(0.75);
     expect(contract.minimumCenterOffset).toBeGreaterThan(0);
-    expect(contract.centerDelta).toBeLessThanOrEqual(0.75);
+    expect(contract.centerDelta).toBeGreaterThanOrEqual(0);
+    expect(contract.guideTopInset).toBeGreaterThanOrEqual(0);
+    expect(contract.guideBottomInset).toBeGreaterThanOrEqual(0);
     expect(contract.intersectionDelta).toBeLessThanOrEqual(0.01);
     expect(contract.opacityMapping).toBe('instant-contrast-power-v1');
     expect(contract.opacityExponent).toBe(1.6);
@@ -18439,8 +18501,6 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             padding_px: 6,
             min_cell_px: 3,
             cell_radius_px: 1.5,
-            tooltip_radius_px: 12,
-            tooltip_transparency_pct: 75,
             cell_opacity_exponent: 2.4,
             cell_opacity_tail_ratio: 0.05,
         };
@@ -18482,11 +18542,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             centerDelta: Math.abs(
                 (tooltipRect.top + (tooltipRect.height / 2)) - (canvasRect.top + guide.y)
             ),
+            guideBottomInset: tooltipRect.bottom - (canvasRect.top + guide.y),
+            guideTopInset: (canvasRect.top + guide.y) - tooltipRect.top,
             columns: Number(grid.dataset.columnCount),
             opacityExponent: Number(tooltip.dataset.cellOpacityExponent),
             opacityMapping: tooltip.dataset.cellOpacityMapping,
             opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
-            dataTransparency: tooltip.dataset.transparency,
             gridPadding: getComputedStyle(grid).paddingTop,
             outerBorderRadius: tooltipStyle.borderRadius,
             rows: Number(grid.dataset.rowCount),
@@ -18500,12 +18561,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         cellBorderRadius: '1.5px',
         cellCount: customPresentation.rows * customPresentation.columns,
         columns: 36,
-        dataTransparency: '75%',
         gridPadding: '6px',
         opacityExponent: 2.4,
         opacityMapping: 'instant-contrast-power-v1',
         opacityTailRatio: 0.05,
-        outerBorderRadius: '12px',
+        outerBorderRadius: '0px',
         rows: customPresentation.rowsAbove + customPresentation.rowsBelow,
         rowsAbove: 4,
         rowsBelow: customPresentation.rowsBelow,
@@ -18516,8 +18576,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(4);
     expect(customPresentation.rowsAbove).toBeLessThanOrEqual(customPresentation.availableRowsAbove);
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(customPresentation.availableRowsBelow);
-    expect(customPresentation.backgroundAlpha).toBeCloseTo(0.25, 2);
-    expect(customPresentation.centerDelta).toBeLessThanOrEqual(0.75);
+    expect(customPresentation.backgroundAlpha).toBe(0);
+    expect(customPresentation.centerDelta).toBeGreaterThanOrEqual(0);
+    expect(customPresentation.guideTopInset).toBeGreaterThanOrEqual(0);
+    expect(customPresentation.guideBottomInset).toBeGreaterThanOrEqual(0);
 });
 
 const responsiveViewports = [

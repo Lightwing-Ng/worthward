@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Bayesian price models.
 
-Code version: v1.3.0
+Code version: v1.4.1
 - Fixed: Daily OHLCV and factor observations now use each symbol's local
   trading date, preventing Asia-market midnight timestamps from shifting to
   the previous UTC calendar day.
@@ -12,6 +12,9 @@ Code version: v1.3.0
 - Added: Opt-in research factors from Longbridge valuation, capital, market
   temperature, ownership, short-interest, and broker-holding commands. Every
   observation is date-filtered before it can enter a walk-forward model.
+- Fixed: Research observations now require an availability or disclosure
+  timestamp. Report-period fields such as ``period`` and ``end_date`` are
+  never treated as point-in-time availability dates.
 """
 
 from __future__ import annotations
@@ -67,7 +70,8 @@ _RESEARCH_VALUE_KEYS: dict[str, tuple[str, ...]] = {
     "market_temperature": ("temperature", "temp", "score", "value"),
     "capital_flow": ("capital_flow", "net_inflow", "net_flow", "inflow", "value", "amount"),
     "shareholder_concentration": (
-        "owned_ratio", "holding_ratio", "ownership_ratio", "ratio", "percent", "value",
+        "owned_ratio", "holding_ratio", "ownership_ratio", "percent_shares_held",
+        "shares_held", "ratio", "percent", "value",
     ),
     "fund_holder_weight": ("weight", "position_ratio", "holding_ratio", "ratio", "percent", "value"),
     "short_interest": (
@@ -239,11 +243,12 @@ def _parse_observed_at(value: Any) -> datetime | None:
         except (OSError, OverflowError, ValueError):
             return None
 
+    normalized_text = text.replace("/", "-")
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(normalized_text.replace("Z", "+00:00"))
     except ValueError:
         try:
-            parsed_date = date.fromisoformat(text)
+            parsed_date = date.fromisoformat(normalized_text)
         except ValueError:
             return None
         return datetime.combine(parsed_date, datetime.min.time())
@@ -556,8 +561,14 @@ def _iter_payload_rows(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
         return rows
     timestamp_keys = {
-        "timestamp", "time", "date", "report_date", "report_period", "period",
-        "updated_at", "end_date", "period_end", "holding_date", "date_time",
+        "available_at", "availability_date", "published_at", "publication_date",
+        "disclosed_at", "filing_date", "announcement_date", "release_date",
+        "timestamp", "time", "date", "date_time", "updated_at",
+        # Keep period keys in the traversal set so rows that also carry an
+        # availability key are still discovered. They are deliberately not
+        # accepted by _research_timestamp below.
+        "report_date", "report_period", "period", "end_date", "period_end",
+        "holding_date",
     }
     if timestamp_keys.intersection(payload):
         rows.append(payload)
@@ -568,9 +579,18 @@ def _iter_payload_rows(payload: Any) -> list[dict[str, Any]]:
 
 
 def _research_timestamp(row: Mapping[str, Any]) -> datetime | None:
+    """Return only a point-in-time availability/disclosure date.
+
+    Longbridge ownership and fund-report payloads commonly expose both a
+    report period and a filing date. A report period describes what the
+    observation measures, not when it became knowable to a backtest. Keeping
+    this allowlist separate from the row-discovery keys prevents accidental
+    look-ahead when a payload contains only period metadata.
+    """
     for key in (
-        "timestamp", "time", "date", "report_date", "report_period", "period",
-        "updated_at", "end_date", "period_end", "holding_date", "date_time",
+        "available_at", "availability_date", "published_at", "publication_date",
+        "disclosed_at", "filing_date", "announcement_date", "release_date",
+        "updated_at", "timestamp", "time", "date_time",
     ):
         parsed = _parse_observed_at(row.get(key))
         if parsed is not None:
@@ -581,6 +601,13 @@ def _research_timestamp(row: Mapping[str, Any]) -> datetime | None:
 def _research_value(row: Mapping[str, Any], factor: str) -> float | None:
     for key in _RESEARCH_VALUE_KEYS.get(factor, ("value",)):
         value = _finite_float(row.get(key))
+        if value is None:
+            raw = str(row.get(key, "")).strip().replace(",", "")
+            if raw.endswith("%"):
+                try:
+                    value = float(raw[:-1].lstrip("<>").strip())
+                except ValueError:
+                    value = None
         if value is not None:
             return value
     return None

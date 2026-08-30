@@ -1,4 +1,4 @@
-/* Code version: v3.48.0 */
+/* Code version: v3.49.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -226,15 +226,6 @@
     --segmented-overflow-option-min-width: 104px;
     flex: 0 1 360px;
     width: min(100%, 360px);
-}
-
-.backtest-history-view-segmented [data-backtest-history-transactions-option][aria-disabled="true"] {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
-
-.backtest-history-view-segmented [data-backtest-history-transactions-option][aria-disabled="true"] > span {
-    pointer-events: none;
 }
 
 .backtest-history-view-body {
@@ -849,23 +840,17 @@
 }
 
 .backtest-probability-tooltip.chart-tooltip {
-    --backtest-probability-tooltip-transparency: 50%;
-    --backtest-probability-tooltip-radius: 10px;
-    --backtest-probability-cell-radius: 2px;
+    --backtest-probability-cell-radius: 0px;
     --backtest-probability-grid-padding: 8px;
     box-sizing: border-box;
     min-width: 0;
     max-width: none;
     padding: 0;
     overflow: hidden;
-    background: color-mix(
-        in srgb,
-        transparent var(--backtest-probability-tooltip-transparency),
-        var(--theme-background)
-    );
+    background: transparent;
     background-image: none;
     border: 0;
-    border-radius: var(--backtest-probability-tooltip-radius);
+    border-radius: 0;
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

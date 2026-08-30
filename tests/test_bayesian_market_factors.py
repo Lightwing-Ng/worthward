@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.3.0
+Code version: v1.4.1
 """
 
 from __future__ import annotations
@@ -463,6 +463,76 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
         self.assertEqual(bundle.factor_status["pb_ratio"], "available")
         self.assertIn("valuation", " ".join(bundle.source_commands))
         self.assertEqual(len(commands), 2)
+
+    def test_research_period_metadata_cannot_be_used_as_availability(self) -> None:
+        period_only = {
+            "report_period": "2026-08-28",
+            "period": "2026-08-28",
+            "end_date": "2026-08-28",
+            "period_end": "2026-08-28",
+            "date": "2026-08-28",
+            "value": "2.0",
+        }
+        self.assertIsNone(factors._research_timestamp(period_only))
+        self.assertEqual(
+            factors._research_observations(
+                [period_only],
+                symbol="NVDA.US",
+                start=datetime(2026, 8, 1).date(),
+                end=datetime(2026, 8, 31).date(),
+                factor="pb_ratio",
+                source="test",
+            ),
+            (),
+        )
+
+    def test_research_observation_prefers_explicit_filing_date_over_report_period(self) -> None:
+        row = {
+            "report_period": "2026-06-30",
+            "period": "2026-06-30",
+            "filing_date": "2026-08-15T13:00:00Z",
+            "pb": "2.0",
+        }
+        timestamp = factors._research_timestamp(row)
+        self.assertIsNotNone(timestamp)
+        self.assertEqual(timestamp.date().isoformat(), "2026-08-15")
+        observations = factors._research_observations(
+            [row],
+            symbol="NVDA.US",
+            start=datetime(2026, 8, 1).date(),
+            end=datetime(2026, 8, 31).date(),
+            factor="pb_ratio",
+            source="test",
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0].observed_at.date().isoformat(), "2026-08-15")
+
+    def test_report_date_only_rows_are_excluded_from_research_history(self) -> None:
+        self.assertIsNone(factors._research_timestamp({"report_date": "2026-06-30"}))
+
+    def test_shareholder_percentage_payload_is_read_from_filing_date(self) -> None:
+        observations = factors._research_observations(
+            {
+                "info": [
+                    {
+                        "period": "Q2 2026",
+                        "share_holders": [
+                            {
+                                "filing_date": "2026/08/15",
+                                "percent_shares_held": "8.04%",
+                            }
+                        ],
+                    }
+                ]
+            },
+            symbol="NVDA.US",
+            start=datetime(2026, 8, 1).date(),
+            end=datetime(2026, 8, 31).date(),
+            factor="shareholder_concentration",
+            source="test",
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertAlmostEqual(observations[0].value, 8.04)
 
     def test_a_shorter_call_level_ttl_cannot_reuse_a_longer_ttl_entry(self) -> None:
         with (

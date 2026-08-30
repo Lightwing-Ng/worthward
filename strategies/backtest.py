@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -43,11 +43,23 @@ def _attach_strategy_presentation(
         summary = result.get("summary")
         hit_rate = presentation.get("hit_rate")
         if isinstance(summary, dict) and isinstance(hit_rate, dict):
-            score_pct = hit_rate.get("score_pct")
+            score_pct = hit_rate.get(
+                "probability_weighted_score_pct",
+                hit_rate.get("score_pct"),
+            )
             scored_points = hit_rate.get("scored_points")
             if isinstance(score_pct, (int, float)) and isinstance(scored_points, int):
                 summary["probability_field_hit_rate_pct"] = round(float(score_pct), 2)
                 summary["probability_field_hit_rate_scored_points"] = scored_points
+                event_hit_rate_pct = hit_rate.get("event_hit_rate_pct")
+                event_hits = hit_rate.get("event_hits")
+                if isinstance(event_hit_rate_pct, (int, float)):
+                    summary["probability_field_event_hit_rate_pct"] = round(
+                        float(event_hit_rate_pct),
+                        2,
+                    )
+                if isinstance(event_hits, int):
+                    summary["probability_field_event_hits"] = event_hits
     return result
 
 

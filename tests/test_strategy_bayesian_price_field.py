@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.11.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.14.0."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 from strategies.algorithms.strategy_bayesian_price_field import (
     _MODEL_VERSION,
+    _MIN_NOISE_VARIANCE,
     BayesianPriceFieldStrategy,
     _build_factor_columns,
     _bundle_ohlcv_frame,
@@ -23,6 +24,7 @@ from strategies.algorithms.strategy_bayesian_price_field import (
     _probability_threshold_signals,
     _resolve_compute_backend,
     _rolling_volume_at_price_percentile,
+    _select_active_factors,
     _walk_forward_predictions,
 )
 from strategies.base import normalize_strategy_presentation
@@ -191,7 +193,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.5.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.6.0")
 
     def test_probability_field_hit_rate_is_bounded_and_uses_only_later_observations(self) -> None:
         frame = _market_frame(90)
@@ -206,9 +208,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertGreater(hit_rate["scored_points"], 0)
         self.assertGreaterEqual(hit_rate["score_pct"], 0.0)
         self.assertLessEqual(hit_rate["score_pct"], 100.0)
+        self.assertEqual(
+            hit_rate["probability_weighted_score_pct"],
+            hit_rate["score_pct"],
+        )
+        self.assertGreaterEqual(hit_rate["event_hit_rate_pct"], 0.0)
+        self.assertLessEqual(hit_rate["event_hit_rate_pct"], 100.0)
+        self.assertGreaterEqual(hit_rate["event_hits"], 0)
+        self.assertLessEqual(hit_rate["event_hits"], hit_rate["scored_points"])
+        self.assertEqual(hit_rate["metric_kind"], "probability-mass-of-realized-cell")
         self.assertEqual(hit_rate["max_horizon"], 20)
-        self.assertEqual(hit_rate["rows_above"], 6)
-        self.assertEqual(hit_rate["rows_below"], 6)
+        self.assertEqual(hit_rate["rows_above"], 10)
+        self.assertEqual(hit_rate["rows_below"], 10)
         self.assertEqual(
             result.metadata["probability_field_hit_rate_pct"],
             hit_rate["score_pct"],
@@ -262,7 +273,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 equal_nan=True,
             )
 
-    def test_walk_forward_noise_uses_factor_residual_variance(self) -> None:
+    def test_walk_forward_noise_uses_regularized_residual_variance_floor(self) -> None:
         row_count = 40
         forward_returns = np.linspace(-0.02, 0.02, row_count - 1)
         close = np.empty(row_count, dtype=np.float64)
@@ -300,8 +311,35 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             )
 
         self.assertTrue(observed_noise_variances)
-        self.assertLess(max(observed_noise_variances), 1e-9)
+        self.assertGreaterEqual(min(observed_noise_variances), _MIN_NOISE_VARIANCE)
+        self.assertLess(max(observed_noise_variances), float(np.var(forward_returns[:20], ddof=1)))
         self.assertGreater(float(np.var(forward_returns[:20], ddof=1)), 1e-5)
+
+    def test_sparse_factor_fallback_is_independent_of_parameter_order(self) -> None:
+        candidate_indices = np.arange(40, dtype=np.int64)
+        target_mask = np.ones(40, dtype=bool)
+        first = np.full(41, np.nan)
+        second = np.full(41, np.nan)
+        first[:25] = np.linspace(1.0, 2.0, 25)
+        second[10:41] = np.linspace(3.0, 5.0, 31)
+        factor_values = {"sparse": first, "dense": second}
+
+        selected_forward = _select_active_factors(
+            factor_values,
+            ["sparse", "dense"],
+            candidate_indices,
+            40,
+            target_mask,
+        )
+        selected_reversed = _select_active_factors(
+            factor_values,
+            ["dense", "sparse"],
+            candidate_indices,
+            40,
+            target_mask,
+        )
+        self.assertEqual(selected_forward, selected_reversed)
+        self.assertEqual(selected_forward, ["dense"])
 
     def test_volume_at_price_factor_is_a_causal_volume_weighted_cdf(self) -> None:
         low_close_frame = pd.DataFrame(
@@ -497,16 +535,16 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["schema"], "bayesian-price-field/v1")
         self.assertEqual(presentation["renderer"], "probability-grid-v1")
         self.assertEqual(presentation["model_version"], _MODEL_VERSION)
-        self.assertEqual(presentation["rows_above"], 6)
-        self.assertEqual(presentation["rows_below"], 6)
+        self.assertEqual(presentation["rows_above"], 10)
+        self.assertEqual(presentation["rows_below"], 10)
         self.assertEqual(presentation["columns"], 36)
         self.assertEqual(presentation["width_fraction"], 0.25)
         self.assertEqual(presentation["gap_px"], 2)
         self.assertEqual(presentation["padding_px"], 8)
         self.assertEqual(presentation["min_cell_px"], 4)
-        self.assertEqual(presentation["cell_radius_px"], 2)
-        self.assertEqual(presentation["tooltip_radius_px"], 10)
-        self.assertEqual(presentation["tooltip_transparency_pct"], 50)
+        self.assertEqual(presentation["cell_radius_px"], 0)
+        self.assertNotIn("tooltip_radius_px", presentation)
+        self.assertNotIn("tooltip_transparency_pct", presentation)
         self.assertEqual(
             presentation["cell_opacity_mapping"],
             "instant-contrast-power-v1",

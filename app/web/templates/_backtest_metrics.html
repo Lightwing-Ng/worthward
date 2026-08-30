@@ -1,4 +1,4 @@
-{# Code version: v0.2.1 #}
+{# Code version: v0.2.3 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
@@ -26,8 +26,9 @@
     </div>
     {% if backtest_result.summary.probability_field_hit_rate_pct is defined %}
     <div class="trade-metric-card" data-backtest-metric="probability-field-hit-rate"
-         title="Probability-weighted share of causal field cells, with six rows above and below the guide, that contain an observed future close; horizons without a later bar are excluded.">
-        <span class="trade-metric-label">Bayesian field hit rate</span>
+         data-probability-field-metric="probability-weighted-realized-cell"
+         title="Probability-weighted realized-cell score over the causal model lattice; each later close contributes the probability mass of its containing cell, and horizons without a later bar are excluded. The separate event hit rate is available in the strategy presentation metadata.">
+        <span class="trade-metric-label">Bayesian field hit rate (weighted)</span>
         <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_hit_rate_pct) }}%</span>
     </div>
     {% endif %}

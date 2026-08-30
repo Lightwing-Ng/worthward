@@ -5,17 +5,16 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.11.0
-- Changed: Walk-forward observation noise now uses causal ridge-residual variance instead of raw target variance, so predictive uncertainty reflects factor explanatory power without using future data.
-- Changed: The private probability-field background is 50% transparent, and
-  its Python presentation owns the instantaneous nonlinear cell-opacity curve.
+Code version: v1.14.0
+- Changed: Walk-forward observation noise now uses regularized, effective-degree-of-freedom ridge residual variance with a small process-noise floor, avoiding in-sample OLS overconfidence.
+- Changed: The probability renderer keeps only the matrix itself; its Python
+  presentation owns the instantaneous nonlinear cell-opacity curve.
 - Added: Daily posterior signals may execute on real one-minute bars through a
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
 - Changed: The declarative presentation contract retains a fixed 36-column,
-  six-row-per-side field with integer-trading-day slots, a 2 px requested-gap
-  upper bound, concentric 8 px padding, and the strategy-private material
-  geometry.
+  ten-row-per-side maximum field with integer-trading-day slots, a 2 px
+  requested gap, and concentric 8 px padding.
 - Changed: NVDA is the default research ticker for this strategy.
 - Changed: Auto and CPU now use NumPy directly for this small-matrix
   walk-forward workload; only an explicit GPU request imports Torch and probes
@@ -26,8 +25,10 @@ Code version: v1.11.0
   NumPy CPU fallback while process-control exceptions still propagate.
 - Fixed: Provider trading dates remain market-local naive midnights throughout
   the model frame and presentation time-axis contract.
-- Added: The probability field now reports a causal, probability-weighted
-  future-cell hit rate and exposes opt-in Longbridge research factors.
+- Changed: The probability field reports both a probability-weighted realized-cell score and an event hit rate; both metrics use only later observations.
+- Fixed: Sparse-factor fallback ranks candidates by causal coverage and
+  dispersion with deterministic tie-breaking instead of parameter order.
+- Added: The probability field now exposes opt-in Longbridge research factors.
 """
 
 from __future__ import annotations
@@ -61,12 +62,33 @@ _PE_MAX_STALENESS_DAYS = 14
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.5.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.6.0"
 _EPSILON = 1e-12
 _PROBABILITY_FIELD_MAX_HORIZON = 20
-_PROBABILITY_FIELD_ROWS_ABOVE = 6
-_PROBABILITY_FIELD_ROWS_BELOW = 6
+_PROBABILITY_FIELD_ROWS_ABOVE = 10
+_PROBABILITY_FIELD_ROWS_BELOW = 10
+_PROBABILITY_FIELD_COLUMNS = 36
 _PROBABILITY_FIELD_RETURN_SIGMA = 6.0
+_FACTOR_SELECTION_PRIORITY = (
+    "volume",
+    "pe",
+    "options",
+    "volume_at_price",
+    "pb_ratio",
+    "ps_ratio",
+    "dividend_yield",
+    "market_temperature",
+    "capital_flow",
+    "shareholder_concentration",
+    "fund_holder_weight",
+    "short_interest",
+    "short_volume",
+    "broker_holding",
+)
+_FACTOR_SELECTION_PRIORITY_INDEX = {
+    factor: index for index, factor in enumerate(_FACTOR_SELECTION_PRIORITY)
+}
+_MIN_NOISE_VARIANCE = 1e-8
 
 
 def _record_value(record: object, key: str, default: Any = None) -> Any:
@@ -575,6 +597,154 @@ def _bayesian_prediction(
     )
 
 
+def _ridge_residual_variance(
+        design: np.ndarray,
+        target: np.ndarray,
+        prior_strength: float,
+) -> float:
+    """Estimate causal process noise from the same ridge model as prediction.
+
+    The old estimator fit an unregularized OLS model and divided its in-sample
+    residual sum by ``n - p``. With correlated factors that residual can be
+    almost zero even though a future return remains uncertain. Reusing the
+    Bayesian ridge coefficients and its effective residual degrees of freedom
+    keeps the scale aligned with the posterior while the variance floor avoids
+    a degenerate, overconfident forecast on a short or perfectly fitted sample.
+    """
+    numeric_design = np.asarray(design, dtype=np.float64)
+    numeric_target = np.asarray(target, dtype=np.float64)
+    observation_count = len(numeric_target)
+    if observation_count <= 1:
+        return _MIN_NOISE_VARIANCE
+
+    sample_variance = float(np.var(numeric_target, ddof=1))
+    if not math.isfinite(sample_variance):
+        sample_variance = 0.0
+    # `_bayesian_prediction` is equivalent to ridge regression with a penalty
+    # of `prior_strength * noise_variance` after multiplying its precision
+    # system by the noise scale. Iterate that fixed point a few times so the
+    # residual estimate and the eventual posterior use the same regularizer.
+    noise_variance = max(_MIN_NOISE_VARIANCE, sample_variance)
+    identity = np.eye(numeric_design.shape[1], dtype=np.float64)
+    identity[0, 0] = 0.1
+    regularization = max(0.0, float(prior_strength))
+    ridge_variance = noise_variance
+    for _ in range(4):
+        precision = numeric_design.T @ numeric_design + (
+            regularization * noise_variance * identity
+        )
+        try:
+            coefficients = np.linalg.solve(
+                precision,
+                numeric_design.T @ numeric_target,
+            )
+            # trace(H) is the effective parameter count for a ridge fit.
+            leverage = np.linalg.solve(precision, numeric_design.T)
+            effective_degrees_of_freedom = observation_count - float(
+                np.trace(numeric_design @ leverage)
+            )
+        except (np.linalg.LinAlgError, ValueError):
+            coefficients, *_ = np.linalg.lstsq(
+                numeric_design,
+                numeric_target,
+                rcond=None,
+            )
+            effective_degrees_of_freedom = observation_count - numeric_design.shape[1]
+
+        residuals = numeric_target - numeric_design @ coefficients
+        residual_sum = float(np.sum(np.square(residuals)))
+        effective_degrees_of_freedom = max(1.0, effective_degrees_of_freedom)
+        ridge_variance = residual_sum / effective_degrees_of_freedom
+        if not math.isfinite(ridge_variance):
+            ridge_variance = 0.0
+        next_noise_variance = max(
+            _MIN_NOISE_VARIANCE,
+            ridge_variance,
+            sample_variance * 0.05,
+        )
+        if abs(next_noise_variance - noise_variance) <= max(
+            1e-12,
+            noise_variance * 1e-6,
+        ):
+            noise_variance = next_noise_variance
+            break
+        noise_variance = next_noise_variance
+    # A modest fraction of the observed return dispersion is retained as
+    # irreducible process noise even when the training design interpolates it.
+    return max(_MIN_NOISE_VARIANCE, float(noise_variance), ridge_variance)
+
+
+def _select_active_factors(
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        candidate_indices: np.ndarray,
+        current_index: int,
+        target_mask: np.ndarray,
+) -> list[str]:
+    """Select a stable factor subset using point-in-time coverage.
+
+    Every candidate is scored only from observations available before the
+    current origin. Candidates are then ordered by finite coverage, useful
+    dispersion, and a fixed product priority; the caller's parameter order is
+    intentionally ignored. If the joint training mask is too sparse, the
+    lowest-information candidate is removed deterministically.
+    """
+    candidates: list[tuple[str, int, float]] = []
+    seen: set[str] = set()
+    for raw_factor in enabled_factors:
+        factor = str(raw_factor)
+        if factor in seen or factor not in factor_values:
+            continue
+        seen.add(factor)
+        values = np.asarray(factor_values[factor], dtype=np.float64)
+        if current_index >= len(values):
+            continue
+        candidate_values = values[candidate_indices]
+        finite = np.isfinite(candidate_values)
+        coverage = int(np.count_nonzero(finite))
+        if not np.isfinite(values[current_index]) or coverage < _MIN_TRAINING_OBSERVATIONS:
+            continue
+        finite_values = candidate_values[finite]
+        dispersion = float(np.std(finite_values)) if len(finite_values) > 1 else 0.0
+        if not math.isfinite(dispersion):
+            dispersion = 0.0
+        candidates.append((factor, coverage, dispersion))
+
+    candidates.sort(
+        key=lambda item: (
+            -item[1],
+            -item[2],
+            _FACTOR_SELECTION_PRIORITY_INDEX.get(item[0], len(_FACTOR_SELECTION_PRIORITY)),
+            item[0],
+        )
+    )
+    active = [item[0] for item in candidates]
+    coverage_by_factor = {item[0]: item[1] for item in candidates}
+    dispersion_by_factor = {item[0]: item[2] for item in candidates}
+
+    def joint_training_count(selected: Sequence[str]) -> int:
+        joint_mask = target_mask.copy()
+        for factor in selected:
+            joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
+        return int(np.count_nonzero(joint_mask))
+
+    while active and joint_training_count(active) < _MIN_TRAINING_OBSERVATIONS:
+        drop_factor = min(
+            active,
+            key=lambda factor: (
+                coverage_by_factor[factor],
+                dispersion_by_factor[factor],
+                -_FACTOR_SELECTION_PRIORITY_INDEX.get(
+                    factor,
+                    len(_FACTOR_SELECTION_PRIORITY),
+                ),
+                factor,
+            ),
+        )
+        active.remove(drop_factor)
+    return active
+
+
 def _normal_probability_above_zero(mean: float, standard_deviation: float) -> float:
     if standard_deviation <= 0 or not math.isfinite(standard_deviation):
         return 0.5
@@ -601,15 +771,15 @@ def _probability_field_hit_rate(
         rows_above: int = _PROBABILITY_FIELD_ROWS_ABOVE,
         rows_below: int = _PROBABILITY_FIELD_ROWS_BELOW,
 ) -> dict[str, Any]:
-    """Score causal grid-cell coverage against observations that follow each origin.
+    """Score causal model-lattice coverage against observations after each origin.
 
     At origin ``i`` the posterior was fitted only with rows before ``i``. The
     score then evaluates each available future trading-day close ``i + h``
-    against the same six-row-per-side return lattice used by the browser
-    field. The
-    probability mass of the cell containing that future close is accumulated;
-    unavailable horizons near the end of a sample are not counted. This makes
-    the metric an honest walk-forward diagnostic rather than a future feature.
+    against a finite ten-row-per-side return lattice. The probability mass of
+    the cell containing that future close is accumulated; unavailable horizons
+    near the end of a sample are not counted. Both the weighted score and the
+    separate event hit rate are therefore honest walk-forward diagnostics,
+    rather than future features.
     """
     close_values = np.asarray(close, dtype=np.float64)
     means = np.asarray(predictive_mean, dtype=np.float64)
@@ -622,6 +792,7 @@ def _probability_field_hit_rate(
     total_weight = 0.0
     hit_weight = 0.0
     scored_points = 0
+    event_hits = 0
     row_count_lattice = normalized_rows_above + normalized_rows_below
 
     for origin in range(row_count):
@@ -645,7 +816,7 @@ def _probability_field_hit_rate(
             horizon_mean = mean * float(horizon)
             if not math.isfinite(horizon_scale) or horizon_scale <= _EPSILON:
                 continue
-            # The horizontal guide is the zero-return axis. Keep at most six
+            # The horizontal guide is the zero-return axis. Keep at most ten
             # rows on each side while extending the side containing the
             # posterior mean, so a strongly directional but valid forecast is
             # still scored instead of producing an empty lattice.
@@ -671,18 +842,29 @@ def _probability_field_hit_rate(
                 if 0 <= cell_index < row_count_lattice
                 else 0.0
             )
+            if 0 <= cell_index < row_count_lattice:
+                event_hits += 1
             total_weight += lattice_mass
             hit_weight += probability_mass
             scored_points += 1
 
     score_pct = (hit_weight / total_weight) * 100.0 if total_weight > _EPSILON else 0.0
+    event_hit_rate_pct = (
+        (event_hits / scored_points) * 100.0
+        if scored_points
+        else 0.0
+    )
     return {
         "score_pct": round(float(score_pct), 2),
+        "probability_weighted_score_pct": round(float(score_pct), 2),
+        "event_hit_rate_pct": round(float(event_hit_rate_pct), 2),
+        "event_hits": event_hits,
         "scored_points": scored_points,
         "max_horizon": normalized_horizon,
         "rows_above": normalized_rows_above,
         "rows_below": normalized_rows_below,
-        "weighting": "probability-mass-of-hit-cell",
+        "metric_kind": "probability-mass-of-realized-cell",
+        "weighting": "probability-mass-of-realized-cell",
         "causal": True,
     }
 
@@ -717,22 +899,14 @@ def _walk_forward_predictions(
         if len(candidate_indices) < _MIN_TRAINING_OBSERVATIONS:
             continue
 
-        active_factors = [
-            factor
-            for factor in enabled_factors
-            if factor in factor_values
-            and np.isfinite(factor_values[factor][index])
-            and np.count_nonzero(np.isfinite(factor_values[factor][candidate_indices]))
-            >= _MIN_TRAINING_OBSERVATIONS
-        ]
         target_mask = np.isfinite(forward_return[candidate_indices])
-        while active_factors:
-            joint_mask = target_mask.copy()
-            for factor in active_factors:
-                joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
-            if np.count_nonzero(joint_mask) >= _MIN_TRAINING_OBSERVATIONS:
-                break
-            active_factors.pop()
+        active_factors = _select_active_factors(
+            factor_values,
+            enabled_factors,
+            candidate_indices,
+            index,
+            target_mask,
+        )
 
         joint_mask = target_mask.copy()
         for factor in active_factors:
@@ -759,17 +933,11 @@ def _walk_forward_predictions(
             design[:, 1:] = np.column_stack(standardized_training)
             current[1:] = standardized_current
 
-        residual_variance = 0.0
-        if len(target) > design.shape[1]:
-            fitted_coefficients, *_ = np.linalg.lstsq(design, target, rcond=None)
-            residuals = target - design @ fitted_coefficients
-            residual_degrees_of_freedom = max(1, len(target) - design.shape[1])
-            residual_variance = float(
-                np.sum(np.square(residuals)) / residual_degrees_of_freedom
-            )
-        elif len(target) > 1:
-            residual_variance = float(np.var(target, ddof=1))
-        noise_variance = max(residual_variance, 1e-10)
+        noise_variance = _ridge_residual_variance(
+            design,
+            target,
+            prior_strength,
+        )
         mean, standard_deviation = _bayesian_prediction(
             backend,
             design,
@@ -957,7 +1125,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 label="Shareholder Concentration",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in dated major-shareholder ownership ratios from Longbridge; reports are never projected backward beyond their observation date.",
+                help_text="Opt-in dated major-shareholder ownership ratios from Longbridge; only filing or disclosure dates are used for as-of joins.",
             ),
             StrategyParameterDefinition(
                 key="use_fund_holder_weight",
@@ -978,7 +1146,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 label="Short Volume",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in daily short-sale volume from Longbridge; each observation is used only on or after its report date.",
+                help_text="Opt-in daily short-sale volume from Longbridge; each observation is used only on or after its availability date.",
             ),
             StrategyParameterDefinition(
                 key="use_broker_holding",
@@ -1372,14 +1540,12 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "model_version": _MODEL_VERSION,
             "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
             "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
-            "columns": 36,
+            "columns": _PROBABILITY_FIELD_COLUMNS,
             "width_fraction": 0.25,
             "gap_px": 2,
             "padding_px": 8,
             "min_cell_px": 4,
-            "cell_radius_px": 2,
-            "tooltip_radius_px": 10,
-            "tooltip_transparency_pct": 50,
+            "cell_radius_px": 0,
             "cell_opacity_mapping": "instant-contrast-power-v1",
             "cell_opacity_exponent": 1.6,
             "cell_opacity_tail_ratio": 0.02,
@@ -1390,6 +1556,14 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "predictive_scale": _json_number_list(output[_PREDICTION_STD_COLUMN]),
             "probability_up": _json_number_list(output[_PROBABILITY_COLUMN]),
             "hit_rate": hit_rate,
+            "metric_geometry": {
+                "columns": _PROBABILITY_FIELD_COLUMNS,
+                "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
+                "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
+                "horizon_unit": "trading-day",
+                "horizon_mapping": "one-step-per-scored-origin",
+                "bounds": "six-sigma-plus-directional-mean",
+            },
             "data_keys": [
                 pd.Timestamp(value).isoformat()
                 for value in output["Date"].tolist()
@@ -1418,6 +1592,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "fingerprint": fingerprint,
                 "probability_field_hit_rate_pct": hit_rate["score_pct"],
                 "probability_field_hit_rate_scored_points": hit_rate["scored_points"],
+                "probability_field_event_hit_rate_pct": hit_rate["event_hit_rate_pct"],
+                "probability_field_event_hits": hit_rate["event_hits"],
             },
             presentation=presentation,
         )

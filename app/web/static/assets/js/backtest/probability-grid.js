@@ -1,23 +1,23 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.11.0
+ * Code version: v0.13.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
 
     const PRESENTATION_SCHEMA = "bayesian-price-field/v1";
     const RENDERER_ID = "probability-grid-v1";
-    const DEFAULT_ROWS_ABOVE = 6;
-    const DEFAULT_ROWS_BELOW = 6;
+    const DEFAULT_ROWS_ABOVE = 10;
+    const DEFAULT_ROWS_BELOW = 10;
+    const MAX_ROWS_PER_SIDE = 10;
+    const MAX_VERTICAL_PLOT_FRACTION = 0.5;
     const DEFAULT_COLUMN_COUNT = 36;
     const DEFAULT_WIDTH_FRACTION = 0.25;
     const DEFAULT_GAP_PX = 2;
     const DEFAULT_PADDING_PX = 8;
     const DEFAULT_MIN_CELL_PX = 4;
-    const DEFAULT_CELL_RADIUS_PX = 2;
-    const DEFAULT_TOOLTIP_RADIUS_PX = 10;
-    const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;
+    const DEFAULT_CELL_RADIUS_PX = 0;
     const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";
     const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;
     const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
@@ -31,9 +31,7 @@
         opacityExponent: Object.freeze([1.1, 4]),
         opacityTailRatio: Object.freeze([0, 0.25]),
         padding: Object.freeze([0, 64]),
-        rows: Object.freeze([1, 24]),
-        tooltipRadius: Object.freeze([0, 64]),
-        transparency: Object.freeze([0, 100]),
+        rows: Object.freeze([1, MAX_ROWS_PER_SIDE]),
     });
 
     const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -96,6 +94,14 @@
         if (!value || typeof value !== "object") return null;
         if (String(value.schema || "") !== PRESENTATION_SCHEMA) return null;
         if (String(value.renderer || "") !== RENDERER_ID) return null;
+        // These presentation properties used to style a frosted field underlay.
+        // The renderer now draws only the matrix, so older cached payloads may
+        // carry them without restoring that retired visual layer.
+        const {
+            tooltip_radius_px: _retiredTooltipRadius,
+            tooltip_transparency_pct: _retiredTooltipTransparency,
+            ...presentation
+        } = value;
         const expected = normalizeExpectedSeriesContract(expectedRawDatesOrOptions, expectedLength);
         const predictiveMean = Array.isArray(value.predictive_mean)
             ? value.predictive_mean.map(finiteOrNull)
@@ -122,7 +128,7 @@
         const widthFraction = boundedNumber(value.width_fraction, DEFAULT_WIDTH_FRACTION, [0.1, 0.5]);
         const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);
         return Object.freeze({
-            ...value,
+            ...presentation,
             schema: PRESENTATION_SCHEMA,
             renderer: RENDERER_ID,
             rows_above: symmetricRows.rowsAbove,
@@ -137,16 +143,6 @@
                 value.cell_radius_px,
                 DEFAULT_CELL_RADIUS_PX,
                 GEOMETRY_LIMITS.cellRadius,
-            ),
-            tooltip_radius_px: boundedNumber(
-                value.tooltip_radius_px,
-                DEFAULT_TOOLTIP_RADIUS_PX,
-                GEOMETRY_LIMITS.tooltipRadius,
-            ),
-            tooltip_transparency_pct: boundedNumber(
-                value.tooltip_transparency_pct,
-                DEFAULT_TOOLTIP_TRANSPARENCY_PCT,
-                GEOMETRY_LIMITS.transparency,
             ),
             cell_opacity_mapping: CELL_OPACITY_MAPPING,
             cell_opacity_exponent: boundedNumber(
@@ -239,17 +235,18 @@
         );
         let minimumDaysPerColumn = Math.max(
             1,
-            Math.ceil((minimumCell / normalizedStepPixels) - 1e-12),
+            Math.ceil(((minimumCell + requestedGap) / normalizedStepPixels) - 1e-12),
         );
-        while ((minimumDaysPerColumn * normalizedStepPixels) < (minimumCell - 1e-9)) {
+        while ((minimumDaysPerColumn * normalizedStepPixels)
+            < (minimumCell + requestedGap - 1e-9)) {
             minimumDaysPerColumn += 1;
         }
         const daysPerColumn = Math.max(preferredDaysPerColumn, minimumDaysPerColumn);
         const slotWidth = daysPerColumn * normalizedStepPixels;
-        // The strategy-owned gap is an upper bound. When the shortest valid
-        // day slot cannot also carry that full gap, reduce only the gap before
-        // adding another trading day to every one of the fixed columns.
-        const gap = Math.min(requestedGap, Math.max(0, slotWidth - minimumCell));
+        // Keep the requested gap exact. If the shortest valid day slot cannot
+        // carry both the gap and the cell floor, add a complete trading day
+        // to every fixed column instead of shrinking the gap.
+        const gap = requestedGap;
         const cellSize = slotWidth - gap;
         const rowsThatFit = (distance) => {
             const numerator = Number(distance) - padding + (gap / 2);
@@ -258,36 +255,53 @@
         };
         const availableRowsAbove = rowsThatFit(y - top);
         const availableRowsBelow = rowsThatFit(bottom - y);
-        // Preserve every side's available price range independently. A point
-        // near a chart edge may have fewer cells on one side, but the field
-        // must remain interactive so the actual curve point can still be
-        // hovered and pinned.
-        const normalizedRowsAbove = Math.min(requestedRowsAbove, availableRowsAbove);
-        const normalizedRowsBelow = Math.min(requestedRowsBelow, availableRowsBelow);
-        const sideCellExtent = (rowCount, oppositeRowCount) => rowCount > 0
+        const availableRowsWithinHalfPlot = rowsThatFit(
+            (bottom - top) * MAX_VERTICAL_PLOT_FRACTION,
+        );
+        // Each side is bounded by the fixed ten-row ceiling and half of the
+        // current plot height. Its own chart boundary applies independently,
+        // so a guide near an edge keeps the available opposite-side cells.
+        const availableRowsPerSide = Math.min(
+            MAX_ROWS_PER_SIDE,
+            availableRowsWithinHalfPlot,
+        );
+        const normalizedRowsAbove = Math.min(
+            requestedRowsAbove,
+            availableRowsPerSide,
+            availableRowsAbove,
+        );
+        const normalizedRowsBelow = Math.min(
+            requestedRowsBelow,
+            availableRowsPerSide,
+            availableRowsBelow,
+        );
+        const sideCellExtent = (rowCount) => rowCount > 0
             ? (rowCount * cellSize)
                 + ((rowCount - 1) * gap)
-                + (oppositeRowCount > 0 ? gap / 2 : 0)
             : 0;
-        const aboveCellExtent = sideCellExtent(normalizedRowsAbove, normalizedRowsBelow);
-        const belowCellExtent = sideCellExtent(normalizedRowsBelow, normalizedRowsAbove);
-        const aboveExtent = padding + aboveCellExtent;
-        const belowExtent = padding + belowCellExtent;
-        const halfHeight = Math.max(aboveExtent, belowExtent);
+        const aboveCellExtent = sideCellExtent(normalizedRowsAbove);
+        const belowCellExtent = sideCellExtent(normalizedRowsBelow);
+        const guideGapAbove = normalizedRowsBelow > 0 ? gap / 2 : 0;
+        const guideGapBelow = normalizedRowsAbove > 0 ? gap / 2 : 0;
+        const aboveExtent = padding + aboveCellExtent + guideGapAbove;
+        const belowExtent = padding + belowCellExtent + guideGapBelow;
+        const height = aboveExtent + belowExtent;
+        const halfHeight = height / 2;
         const rowCount = normalizedRowsAbove + normalizedRowsBelow;
         const width = (2 * padding)
             + (normalizedColumnCount * cellSize)
             + ((normalizedColumnCount - 1) * gap);
-        const height = 2 * halfHeight;
         return Object.freeze({
             anchorX: x,
             anchorY: y,
             availableRowsAbove,
             availableRowsBelow,
             aboveExtent,
+            availableRowsPerSide,
+            availableRowsWithinHalfPlot,
             belowExtent,
-            gridPaddingTop: halfHeight - aboveCellExtent,
-            gridPaddingBottom: halfHeight - belowCellExtent,
+            gridPaddingTop: padding,
+            gridPaddingBottom: padding,
             halfHeight,
             cellSize,
             columnCount: normalizedColumnCount,
@@ -304,7 +318,7 @@
             rowsBelow: normalizedRowsBelow,
             slotWidth,
             stepPixels: normalizedStepPixels,
-            top: y - halfHeight,
+            top: y - aboveExtent,
             width,
             widthTarget: targetWidth,
         });
@@ -493,13 +507,16 @@
                     centerX,
                     column: visualColumn,
                     daysPerColumn,
+                    lowerPrice,
                     horizon,
                     probability,
                     row,
                     sign,
                     slotWidth,
+                    upperPrice,
                     x,
                     y: cellTop,
+                    yBottom: cellBottom,
                 });
             }
         }
@@ -542,8 +559,9 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.11.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.13.0",
         DEFAULT_COLUMN_COUNT,
+        MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
         PRESENTATION_SCHEMA,
         RENDERER_ID,

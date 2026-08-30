@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.5.4
+Code version: v0.5.6
 """
 
 from pathlib import Path
@@ -154,7 +154,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./views/settings.css?v=0.25.1");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./views/investment.css?v=1.78.2");' in app_css
-    assert "v0.64.0" in app_css
+    assert "v0.64.2" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -174,7 +174,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.48.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.49.0");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -307,7 +307,6 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "rowsBelow: strategyPresentation.rows_below,",
         "opacityExponent: strategyPresentation.cell_opacity_exponent,",
         "opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,",
-        'probabilityTooltip.dataset.transparency = `${strategyPresentation.tooltip_transparency_pct}%`;',
         'tradeChartStack.classList.remove("has-probability-field");',
     ):
         assert fragment in backtest_script
@@ -339,13 +338,12 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "height: auto;",
         ".backtest-probability-scroll-spacer {",
         ".backtest-probability-tooltip.chart-tooltip {",
-        "--backtest-probability-tooltip-transparency: 50%;",
-        "--backtest-probability-tooltip-radius: 10px;",
-        "--backtest-probability-cell-radius: 2px;",
+        "--backtest-probability-cell-radius: 0px;",
         "--backtest-probability-grid-padding: 8px;",
-        "transparent var(--backtest-probability-tooltip-transparency),",
+        "background: transparent;",
         "background-image: none;",
         "border: 0;",
+        "border-radius: 0;",
         "box-shadow: none;",
         "backdrop-filter: none;",
         "-webkit-backdrop-filter: none;",
@@ -358,15 +356,13 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         assert fragment in trade_css
 
     for fragment in (
-        "const DEFAULT_ROWS_ABOVE = 6;",
-        "const DEFAULT_ROWS_BELOW = 6;",
+        "const DEFAULT_ROWS_ABOVE = 10;",
+        "const DEFAULT_ROWS_BELOW = 10;",
         "const DEFAULT_COLUMN_COUNT = 36;",
         "const DEFAULT_GAP_PX = 2;",
         "const DEFAULT_PADDING_PX = 8;",
         "const DEFAULT_MIN_CELL_PX = 4;",
-        "const DEFAULT_CELL_RADIUS_PX = 2;",
-        "const DEFAULT_TOOLTIP_RADIUS_PX = 10;",
-        "const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;",
+        "const DEFAULT_CELL_RADIUS_PX = 0;",
         'const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";',
         "const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;",
         "const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;",
@@ -375,15 +371,18 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "rows_below: symmetricRows.rowsBelow,",
         "columns: DEFAULT_COLUMN_COUNT,",
         "minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),",
-        "tooltip_transparency_pct: boundedNumber(",
         "cell_opacity_exponent: boundedNumber(",
         "cell_opacity_tail_ratio: boundedNumber(",
         'time_quantization: "integer-trading-days",',
         "const requestedGap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);",
-        "Math.ceil((minimumCell / normalizedStepPixels) - 1e-12),",
-        "const gap = Math.min(requestedGap, Math.max(0, slotWidth - minimumCell));",
+        "Math.ceil(((minimumCell + requestedGap) / normalizedStepPixels) - 1e-12),",
+        "const gap = requestedGap;",
         "const slotWidth = daysPerColumn * normalizedStepPixels;",
         "const cellSize = slotWidth - gap;",
+        "const availableRowsWithinHalfPlot = rowsThatFit(",
+        "MAX_VERTICAL_PLOT_FRACTION",
+        "const availableRowsPerSide = Math.min(",
+        "MAX_ROWS_PER_SIDE",
         "requestedGap,",
         "const horizon = (visualColumn + 1) * daysPerColumn;",
         "const opacityProfile = computeInstantOpacityProfile(",
@@ -402,12 +401,18 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const MAX_ROWS_BELOW",
         "normalizeRows(rowsAbove, rowsBelow)",
         "boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns)",
+        "DEFAULT_TOOLTIP_RADIUS_PX",
+        "DEFAULT_TOOLTIP_TRANSPARENCY_PCT",
+        "tooltip_radius_px: boundedNumber(",
+        "tooltip_transparency_pct: boundedNumber(",
     ):
         assert fragment not in probability_grid
 
     assert "--backtest-probability-tooltip-transparency" not in tokens
     assert "--backtest-probability-tooltip-radius" not in tokens
     assert "--backtest-probability-cell-radius" not in tokens
+    assert "--backtest-probability-tooltip-transparency" not in trade_css
+    assert "--backtest-probability-tooltip-radius" not in trade_css
 
     price_panel = backtest_template.index('<div class="trade-chart-panel">')
     price_canvas = backtest_template.index('<canvas id="tradePriceChart"></canvas>')
@@ -535,6 +540,17 @@ def test_language_tabs_use_the_shared_button_tab_segmented_contract() -> None:
     assert '[aria-selected="true"] > span' in forms_css
     assert "option.getAttribute(\"aria-selected\") === \"true\"" in app_js
     assert ".settings-language-tab.is-active" not in settings_css
+
+
+def test_shared_segmented_controls_keep_visible_disabled_options_in_their_slots() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    app_js = _read(ASSET_ROOT / "js/app.js")
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    assert ".filter((option) => !option.hidden);" in app_js
+    assert ".segmented-control-option:has(input:disabled)," in forms_css
+    assert ".segmented-control-option[aria-disabled=\"true\"] > span," in forms_css
+    assert "[data-backtest-history-transactions-option][aria-disabled=\"true\"]" not in trade_css
 
 
 def test_simplified_chinese_label_uses_the_ascii_parenthesis_contract() -> None:

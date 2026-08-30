@@ -1,4 +1,4 @@
-/* Code version: v0.19.1 */
+/* Code version: v0.19.2 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1638,6 +1638,14 @@ input[type="number"],
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
 .range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); font-weight: var(--font-weight-bold); letter-spacing: 0; }
+.segmented-control-option:has(input:disabled),
+.range-mode-option:has(input:disabled),
+.segmented-control-option[aria-disabled="true"],
+.range-mode-option[aria-disabled="true"] { cursor: not-allowed; }
+.segmented-control-option:has(input:disabled) > span,
+.range-mode-option:has(input:disabled) > span,
+.segmented-control-option[aria-disabled="true"] > span,
+.range-mode-option[aria-disabled="true"] > span { opacity: 0.55; pointer-events: none; }
 .segmented-control-option:has(input:focus-visible) > span,
 .range-mode-option:has(input:focus-visible) > span {
 	outline: 3px solid color-mix(in srgb, var(--theme-primary) 78%, transparent);

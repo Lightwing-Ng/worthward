@@ -1,4 +1,4 @@
-/* Code version: v0.18.0 */
+/* Code version: v0.19.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -600,14 +600,6 @@
 			);
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-tooltip-transparency",
-				`${strategyPresentation.tooltip_transparency_pct}%`,
-			);
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-tooltip-radius",
-				`${strategyPresentation.tooltip_radius_px}px`,
-			);
 			probabilityTooltip.style.setProperty(
 				"--backtest-probability-cell-radius",
 				`${strategyPresentation.cell_radius_px}px`,
@@ -1318,7 +1310,6 @@
 			probabilityTooltip.style.height = `${geometry.height}px`;
 			probabilityTooltip.dataset.direction = geometry.direction;
 			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
-			probabilityTooltip.dataset.transparency = `${strategyPresentation.tooltip_transparency_pct}%`;
 			probabilityTooltip.hidden = false;
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
@@ -1864,41 +1855,9 @@
 				clearProbabilityFieldOnLeave(event.relatedTarget);
 			}, {signal: documentController.signal});
 		}
-		const resolvePriceChartYPadding = () => {
-			if (!strategyPresentation || !priceChart?.chartArea) return chartYPaddingPx;
-			const chartArea = priceChart.chartArea;
-			const pricePoints = priceChart.getDatasetMeta(0)?.data || [];
-			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(pricePoints, 0);
-			if (!(stepPixels > 0)) return chartYPaddingPx;
-			const gridGeometry = probabilityGridApi.computeGridGeometry?.({
-				chartArea,
-				anchorX: chartArea.left,
-				anchorY: (chartArea.top + chartArea.bottom) / 2,
-				columnCount: strategyPresentation.columns,
-				widthFraction: strategyPresentation.width_fraction,
-				gapPx: strategyPresentation.gap_px,
-				paddingPx: strategyPresentation.padding_px,
-				minCellPx: strategyPresentation.min_cell_px,
-				rowsAbove: strategyPresentation.rows_above,
-				rowsBelow: strategyPresentation.rows_below,
-				stepPixels,
-			});
-			const gridHalfHeight = Number(gridGeometry?.height) / 2;
-			if (!(gridHalfHeight > 0)) return chartYPaddingPx;
-
-			const stackRect = tradeChartStack.getBoundingClientRect();
-			const canvasRect = priceCanvas.getBoundingClientRect();
-			const plotTopInStack = canvasRect.top - stackRect.top + chartArea.top;
-			const plotBottomInStack = canvasRect.top - stackRect.top + chartArea.bottom;
-			const spaceBelowPlot = Math.max(0, stackRect.height - plotBottomInStack);
-			const topRequired = Math.max(0, gridHalfHeight - plotTopInStack);
-			const bottomRequired = Math.max(0, gridHalfHeight - spaceBelowPlot);
-			const withSafetyPixel = (required) => required > 0 ? Math.ceil(required) + 1 : 0;
-			return {
-				top: Math.max(chartYPaddingPx, withSafetyPixel(topRequired)),
-				bottom: Math.max(chartYPaddingPx, withSafetyPixel(bottomRequired)),
-			};
-		};
+		// Probability cells are clipped to the existing Chart.js plot area. They
+		// must not expand Y-axis padding or change the curve's drawing range.
+		const resolvePriceChartYPadding = () => chartYPaddingPx;
 		priceChartYPadding = resolvePriceChartYPadding();
 		applyBacktestYAxisScale(
 			priceChart,
