@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.5.6
+Code version: v0.5.7
 """
 
 from pathlib import Path
@@ -365,7 +365,7 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const DEFAULT_ROWS_ABOVE = 10;",
         "const DEFAULT_ROWS_BELOW = 10;",
         "const DEFAULT_COLUMN_COUNT = 20;",
-        "const DEFAULT_GAP_PX = 2;",
+        "const DEFAULT_GAP_PX = 1;",
         "const DEFAULT_PADDING_PX = 8;",
         "const DEFAULT_MIN_CELL_PX = 4;",
         "const DEFAULT_CELL_RADIUS_PX = 2;",

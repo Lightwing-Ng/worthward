@@ -17514,7 +17514,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             rows_below: 10,
             columns: 20,
             width_fraction: 0.25,
-            gap_px: 2,
+            gap_px: 1,
             padding_px: 8,
             min_cell_px: 4,
             cell_radius_px: 2,
@@ -17876,10 +17876,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.cellBorderWidth).toBe('0px');
     expect(contract.cellTransitionDuration).toBe('0s');
     expect(contract.gridPadding[1]).toBe('8px');
-    expect(contract.gridPadding[3]).toBe('8px');
+    expect(contract.gridPadding[3]).toBe('1px');
     expect(parseFloat(contract.gridPadding[0])).toBeGreaterThanOrEqual(8);
     expect(parseFloat(contract.gridPadding[2])).toBeGreaterThanOrEqual(8);
-    expect(contract.firstCellLeftInset).toBeCloseTo(8, 1);
+    expect(contract.firstCellLeftInset).toBeCloseTo(1, 1);
     expect(contract.firstCellTopInset).toBeGreaterThanOrEqual(8);
     expect(contract.cellCount).toBe(contract.rows * contract.columns);
     expect(contract.rows).toBe(contract.rowsUp + contract.rowsDown);
@@ -17895,7 +17895,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.cellMinimumSize).toBeGreaterThanOrEqual(3.99);
     expect(contract.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(contract.horizontalGap).toBeGreaterThanOrEqual(0);
-    expect(contract.horizontalGap).toBeCloseTo(2, 1);
+    expect(contract.horizontalGap).toBeCloseTo(1, 1);
     expect(Math.abs(contract.horizontalGap - contract.verticalGap)).toBeLessThanOrEqual(0.1);
     expect(Number.isInteger(contract.daysPerColumn)).toBe(true);
     expect(contract.daysPerColumn).toBeGreaterThanOrEqual(1);

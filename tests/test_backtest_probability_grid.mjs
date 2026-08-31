@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.14.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.15.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ const presentation = {
     rows_below: 10,
     columns: 20,
     width_fraction: 0.25,
-    gap_px: 2,
+    gap_px: 1,
     padding_px: 8,
     min_cell_px: 4,
     cell_radius_px: 2,
@@ -35,7 +35,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.14.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.15.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -45,7 +45,7 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.rows_above, 10);
     assert.equal(normalized.rows_below, 10);
     assert.equal(normalized.columns, 20);
-    assert.equal(normalized.gap_px, 2);
+    assert.equal(normalized.gap_px, 1);
     assert.equal(normalized.padding_px, 8);
     assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 2);
@@ -201,17 +201,17 @@ test('quantizes 20 columns below the preferred quarter width when complete day s
     });
     assert.ok(geometry);
     assert.equal(geometry.widthTarget, 400);
-    assert.equal(geometry.width, 374);
+    assert.equal(geometry.width, 368);
     assert.equal(geometry.rowCount, 10);
     assert.equal(geometry.rowsAbove, 5);
     assert.equal(geometry.rowsBelow, 5);
     assert.equal(geometry.columnCount, 20);
     assert.equal(geometry.daysPerColumn, 9);
     assert.equal(geometry.slotWidth, 18);
-    assert.equal(geometry.cellSize, 16);
+    assert.equal(geometry.cellSize, 17);
     assert.equal(geometry.top + (geometry.height / 2), 108);
     assert.equal(geometry.exceedsPreferredWidth, false);
-    const reconstructedWidth = (2 * geometry.padding)
+    const reconstructedWidth = geometry.gridPaddingInlineStart + geometry.padding
         + (geometry.columnCount * geometry.cellSize)
         + ((geometry.columnCount - 1) * geometry.gap);
     assert.equal(reconstructedWidth, geometry.width);
@@ -219,7 +219,7 @@ test('quantizes 20 columns below the preferred quarter width when complete day s
     assert.ok(geometry.width + (geometry.columnCount * geometry.stepPixels) > geometry.widthTarget);
 });
 
-test('limits each side by the ten-row ceiling, half plot height, and its boundary', () => {
+test('floors each side within the ten-row ceiling, half plot height, and its boundary', () => {
     const centered = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
         anchorX: 200,
@@ -230,9 +230,16 @@ test('limits each side by the ten-row ceiling, half plot height, and its boundar
     assert.equal(centered.availableRowsPerSide, 9);
     assert.equal(centered.rowsAbove, 9);
     assert.equal(centered.rowsBelow, 9);
-    assert.equal(centered.gap, 2);
+    assert.equal(centered.gap, 1);
     assert.ok(centered.top >= 0);
     assert.ok(centered.top + centered.height <= 240);
+
+    const completeRows = (distance) => Math.floor(
+        ((distance - centered.padding + (centered.gap / 2)) / centered.slotWidth) + 1e-9,
+    );
+    assert.equal(centered.availableRowsWithinHalfPlot, completeRows(120));
+    assert.equal(centered.availableRowsAbove, completeRows(120));
+    assert.equal(centered.availableRowsBelow, completeRows(120));
 
     const nearTop = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
@@ -245,6 +252,8 @@ test('limits each side by the ten-row ceiling, half plot height, and its boundar
     assert.equal(nearTop.rowsBelow, 9);
     assert.ok(nearTop.top >= 0);
     assert.ok(nearTop.top + nearTop.height <= 240);
+    assert.equal(nearTop.availableRowsAbove, completeRows(20));
+    assert.equal(nearTop.availableRowsBelow, completeRows(220));
 
     const shortPlot = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 80},
@@ -291,8 +300,9 @@ test('prioritizes complete day slots, the four-pixel cell minimum, and the reque
     assert.equal(geometry.columnCount, 20);
     assert.equal(geometry.daysPerColumn, 3);
     assert.equal(geometry.slotWidth, 6);
-    assert.equal(geometry.gap, 2);
-    assert.equal(geometry.cellSize, 4);
+    assert.equal(geometry.gap, 1);
+    assert.equal(geometry.gridPaddingInlineStart, 1);
+    assert.equal(geometry.cellSize, 5);
     assert.equal(geometry.exceedsPreferredWidth, false);
     assert.ok(geometry.width <= geometry.widthTarget);
     assert.ok(geometry.cellSize >= 4);
@@ -315,7 +325,7 @@ test('keeps all 20 columns while preserving an unrealizable requested gap', () =
     assert.equal(geometry.requestedGap, 3);
     assert.equal(geometry.gap, 3);
     assert.equal(geometry.cellSize, 6);
-    assert.equal(geometry.width, 193);
+    assert.equal(geometry.width, 188);
     assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn);
 });
 
@@ -329,7 +339,7 @@ test('allows one complete trading day when its slot preserves the cell-radius mi
     });
     assert.equal(geometry.daysPerColumn, 1);
     assert.equal(geometry.slotWidth, 7);
-    assert.equal(geometry.cellSize, 5);
+    assert.equal(geometry.cellSize, 6);
 });
 
 test('reserves the maximum symmetric half-height around an extreme price anchor', () => {
@@ -454,7 +464,8 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
     assert.ok(cells.every((cell) => Number.isInteger(cell.horizon)));
     assert.ok(cells.every((cell) => Number.isInteger(cell.daysPerColumn)));
     assert.ok(cells.every((cell) => cell.slotWidth === geometry.slotWidth));
-    assert.equal(cells[0].x, geometry.anchorX + geometry.padding);
+    assert.equal(cells[0].x, geometry.anchorX + geometry.gridPaddingInlineStart);
+    assert.equal(geometry.gridPaddingInlineStart, 1);
     assert.equal(cells[1].x - cells[0].x, geometry.slotWidth);
     assert.equal(Math.max(...cells.map((cell) => cell.opacity)), 1);
     assert.equal(Math.min(...cells.map((cell) => cell.opacity)), 0);

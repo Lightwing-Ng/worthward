@@ -1,4 +1,4 @@
-/* Code version: v0.20.0 */
+/* Code version: v0.21.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1308,7 +1308,7 @@
 			grid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${geometry.cellSize}px)`;
 			grid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${geometry.cellSize}px)`;
 			grid.style.gap = `${geometry.gap}px`;
-            grid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px`;
+			grid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`;
 
 			const canvasRect = priceCanvas.getBoundingClientRect();
 			const canvasOffsetX = (

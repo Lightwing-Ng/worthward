@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.14.0
+ * Code version: v0.15.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -14,7 +14,7 @@
     const MAX_VERTICAL_PLOT_FRACTION = 0.5;
     const DEFAULT_COLUMN_COUNT = 20;
     const DEFAULT_WIDTH_FRACTION = 0.25;
-    const DEFAULT_GAP_PX = 2;
+    const DEFAULT_GAP_PX = 1;
     const DEFAULT_PADDING_PX = 8;
     const DEFAULT_MIN_CELL_PX = 4;
     const DEFAULT_CELL_RADIUS_PX = 2;
@@ -255,6 +255,10 @@
         // to every fixed column instead of shrinking the gap.
         const gap = requestedGap;
         const cellSize = slotWidth - gap;
+        // Count only complete cell slots. This keeps the row limit equivalent
+        // to flooring the smaller of the half-plot height and the relevant
+        // chart-edge distance, after reserving the field's vertical edge
+        // padding and its half-gap around the horizontal guide.
         const rowsThatFit = (distance) => {
             const numerator = Number(distance) - padding + (gap / 2);
             if (!(numerator > 0) || !(cellSize + gap > 0)) return 0;
@@ -295,7 +299,11 @@
         const height = aboveExtent + belowExtent;
         const halfHeight = height / 2;
         const rowCount = normalizedRowsAbove + normalizedRowsBelow;
-        const width = (2 * padding)
+        // The vertical guide and first field column share the same one-pixel
+        // logical gap as adjacent cells. Retain the strategy-owned outer
+        // padding on the field's trailing edge and both vertical edges.
+        const gridPaddingInlineStart = gap;
+        const width = gridPaddingInlineStart + padding
             + (normalizedColumnCount * cellSize)
             + ((normalizedColumnCount - 1) * gap);
         return Object.freeze({
@@ -307,6 +315,7 @@
             availableRowsPerSide,
             availableRowsWithinHalfPlot,
             belowExtent,
+            gridPaddingInlineStart,
             gridPaddingTop: padding,
             gridPaddingBottom: padding,
             halfHeight,
@@ -498,7 +507,7 @@
             for (let distanceColumn = 0; distanceColumn < geometry.columnCount; distanceColumn += 1) {
                 const visualColumn = distanceColumn;
                 const x = geometry.left
-                    + geometry.padding
+                    + geometry.gridPaddingInlineStart
                     + (visualColumn * slotWidth);
                 const centerX = x + (geometry.cellSize / 2);
                 const horizon = (visualColumn + 1) * daysPerColumn;
@@ -566,7 +575,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.14.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.15.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
