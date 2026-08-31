@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.59.0`
+Documentation version: `v1.60.0`
 
 ## Holdings P&L display contract
 
@@ -224,11 +224,15 @@ The causal volume-at-price factor spreads each trailing Longbridge bar's volume 
 
 The Longbridge factor provider is read-only and process-local. Aware provider timestamps and aware request boundaries are converted through the symbol market's timezone before they become naive local-trading-day midnights; relative provider windows also end on the selected ticker's market-local date rather than a global New York date. This keeps US, HK, SH, SZ, and SG daily OHLCV, P/E, and option observations on the same causal date axis instead of shifting Asian midnight bars to the prior UTC date. Its factor bundles use a 32-entry, expiry-pruned LRU cache; concurrent requests for the same key share one in-flight CLI load, and cached status mappings are immutable. A strategy that declares a non-default market-data source must return a non-empty dataset list with `Date`, `Close`, and a matching `market_data_source` attribute. Missing, malformed, or source-mismatched strategy data fails closed and never falls through to the generic history provider.
 
-Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` supplies aligned predictive log-return means and scales plus a fixed 36-column, six-row-per-side geometry contract to `probability-grid-v1`. The renderer fixes every field to 36 columns and a 4 px minimum cell size, while preserving bounded symmetric strategy-owned rows, width, requested gap, padding, cell radius, field radius, transparency, opacity exponent, and opacity-tail ratio. Responsive Canvas capacity may reserve fewer than six rows at an extreme edge, but both sides use the same bounded row count and the horizontal guide remains the exact growth/decline boundary and symmetry axis. It derives one stable daily step `s` from the median positive Chart.js point spacing across the complete rendered series. Each column slot is an integer multiple `k × s` of that step and at least one trading day. The requested gap is an upper bound, not a reason to add a day to every column: the renderer chooses the smallest `k` that preserves the 4 px cell floor, then applies `effectiveGap = min(requestedGap, k × s - 4)`. The cell is `k × s - effectiveGap`, so all 36 squares retain an exact one-to-one time and price mapping without dropping columns or scaling the lattice. The preferred field width is one quarter of the price plot, but integer-day quantization, 36 columns, and the 4 px minimum cell size take priority when those constraints require a wider field. Rows use the live Y scale, so every 1:1 square maps to an exact future-time and price interval without a cumulative offset. The field is vertically centered on the horizontal price guide, uses 2 px cell radii, and places those cells inside a 10 px outer radius with the uniquely concentric 8 px padding.
+Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` supplies aligned predictive log-return means and scales plus a fixed 20-column contract to `probability-grid-v1`. The renderer preserves strategy-owned bounded rows, preferred width, requested gap, padding, radii, transparency, opacity exponent, and opacity-tail ratio while enforcing the product-owned 20 columns and 4 px minimum cell size. It derives one stable daily step `s` from the median positive Chart.js point spacing across the complete rendered series. Each column slot is an integer multiple `k × s` of that step and at least one trading day. The requested gap is an upper bound, not a reason to add a day to every column: the renderer chooses the smallest `k` that preserves the 4 px cell floor, then applies `effectiveGap = min(requestedGap, k × s - 4)`. The cell is `k × s - effectiveGap`, so all 20 squares retain an exact one-to-one time and price mapping without scaling the lattice. The preferred field width is one quarter of the price plot, but integer-day quantization, the 20-column count, and the 4 px minimum cell size take priority when those constraints require a wider field. Rows use the live Y scale, so every 1:1 square maps to an exact future-time and price interval without a cumulative offset. The field has up to 10 independently bounded rows above and below the horizontal growth/decline boundary, uses 2 px cell radii, and places those cells inside a 10 px outer radius with 8 px concentric padding.
 
 The probability field is not a Frosted Glass consumer. Its strategy-private material uses a 50%-transparent background, which is `alpha: 0.50` under the CSS alpha convention, and explicitly disables background images, blur, borders, and shadows. Standard Frosted Glass tokens and every other material consumer remain unchanged. For one hover instant, let the finite clamped raw posterior cell masses be `p`, `m = max(p)`, the relative masses be `r = p / m`, and the relative baseline be `b = max(min(r), tailRatio)`. The default strategy owns `tailRatio = 0.02` and `exponent = 1.6`. When `m > 0` and `1 - b > 0`, each display intensity is `u = clamp((r - b) / (1 - b), 0, 1)` and its opacity is `u ^ exponent`; the exact maximum is forced to `1`. The ratio-space construction remains invariant when a valid probability field is multiplied by a positive finite scale, including extremely small probability magnitudes. Values at or below the instantaneous baseline are `0`, so every nonconstant field has its own fully opaque winner and invisible tail. An all-zero field remains entirely invisible, while an equal positive field preserves all tied winners rather than inventing a ranking. Raw posterior masses remain unchanged in the cell data and title, and this display-only contrast mapping does not affect model output. Cell opacity has no temporal CSS transition, preventing the prior hover's visible tail from leaking into the new instant. The field always remains to the right of its vertical guide and retains one stable width while the pointer moves. If its right edge exceeds the visible chart stack, the stack derives the exact missing floating visual distance `V` and reuses Motion Core's bouncy spring to reach it. The browser-native rail uses the sufficient integer physical offset `P = ceil(V)`; the controller applies `C = P - V` to both chart panels, the crosshair, the summary tooltip, and the probability tooltip, so their shared visual position is exactly `V` and their 1:1 curve/grid relationship is unchanged. Content-space calculations use `V`, not physical `scrollLeft`; a manual rail position may move left naturally, but its rightmost visual position clamps to the current exact target. The target requires both field edges to remain inside the stack, so the field is fully visible rather than merely right-aligned. The native horizontal scrollbar exists only while that extent is needed and is absolutely positioned inside the existing 12 px Backtest section-resizer grid slot, without changing the measured chart-stack, Canvas, or probability-grid dimensions. The resizer keeps its measurable 12 px geometry for the layout contract but is non-interactive for pointer and keyboard input while the scrollbar is active. The native surface never uses the accent scrollbar token. Returning to a fitting point, hiding the field, clearing the pinned state, or destroying the controller springs back to zero, removes the temporary extent, and restores resizer interaction.
 
-The current probability-grid amendment supersedes the older six-row, symmetric-padding, field-radius, and transparent-material description above. Each side is independently bounded by `min(10, 50% of the current plot height, its own chart boundary)`. Grid cells retain the requested 2 px gap and map their top and bottom pixels through the live Y scale to exact price intervals; the matrix container itself is transparent and has no blur, border, shadow, background, or outer radius. Its renderer ignores retired tooltip transparency and radius properties, and it never changes the price Canvas range.
+The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each side independently to `min(10, 50% of the current plot height, its chart boundary)`. Grid cells keep the requested 2 px gap when the valid slot permits it, map their top and bottom pixels through the live Y scale to exact price intervals, and map horizontally to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It retains the 2 px cell radius, 10 px outer radius, 8 px concentric padding, and strategy-private `alpha: 0.50` non-blurred, borderless, shadowless material. This material has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
+
+The model's `Bayesian realized-cell score` and `Bayesian lattice coverage` are causal, post-hoc diagnostics for the separate log-return scoring lattice: horizons 1 through 20, with up to 10 rows on each side. They are not a frequency or hit rate for the browser's viewport-quantized 20-column grid, whose time slots depend on the live Chart.js geometry. The strategy exports both lattice descriptions so consumers cannot conflate them. Neither diagnostic is a model feature, a signal input, or a cache key.
+
+Research-factor time semantics fail closed. The provider accepts real `published_at`, `available_at`, or equivalent disclosure timestamps; it does not use `filing_date`, report period, settlement date, `updated_at`, or a snapshot timestamp as a historical availability date. Until a source exposes a verifiable availability timestamp and a causal aggregation rule, capital flow, broker holding, shareholder concentration, fund-holder weight, short interest, and short volume report `unsupported_history` or `unavailable_point_in_time` and cannot enter the factor matrix. The safe historical research set is limited to P/B, P/S, dividend yield, and market temperature when they meet the timestamp rule. A GPU failure restarts the complete walk-forward calculation with a fresh NumPy float64 CPU backend; it never combines prior GPU rows with later CPU rows, and its presentation exposes the effective device, numeric precision, and fallback reason.
 
 For vertical containment, the price scale uses the unmodified chart range while the grid clips to the existing plot area. At widths up to 767 px, the normalized presentation marks the result stack with `has-probability-field`; the shared result/history splitter measures `.trade-chart-stack`, reserves its 254 px stage minimum, and raises the complete result stack to a 600 px minimum. This preserves independent report, resizer, and history grid rows on a fresh narrow load rather than relying on a desktop split ratio. Pointer movement is coalesced to the next animation frame and tracks the curve; only a point with a finite prediction can be pinned. Blank-space clicks and Escape clear it, while probability and standard summary overlays retain their source chart and recompute after chart, viewport, or sidebar layout changes.
 
@@ -585,35 +589,26 @@ assembled browser behavior.
 
 ### Bayesian Price Field geometry amendment
 
-The current renderer keeps the product contract above: every probability field
-renders 36 columns and starts with up to ten equal rows on each side of the
-price guide. Each side is independently bounded by `min(10, 50% of the
-current vertical plot height, its chart boundary)`, so an edge-adjacent guide
-retains every cell that can fit on the opposite side. The 2 px requested cell
-gap is preserved when possible, cells are square by default, and live Y-scale
-intervals provide the strict price mapping without changing the curve Canvas
-drawing range.
-Responsive Canvas capacity may reserve fewer than the ten-row maximum symmetric
-rows at an extreme edge, but it never drops columns, scales cells, or changes the integer-trading-day
-mapping. The guide remains the exact zero-return boundary and no future
-observations are used to choose the rendered lattice.
+Every current probability field renders 20 columns and starts with up to 10
+rows independently on each side of the price guide. Each side is bounded by
+`min(10, 50% of the current vertical plot height, its chart boundary)`, so an
+edge-adjacent guide retains every cell that fits on the opposite side. The 2 px
+requested cell gap is preserved when possible; 2 px cell radii sit inside the
+10 px outer radius with 8 px concentric padding. The private material has
+`alpha: 0.50`, no blur, no border, and no shadow, independently of Frosted
+Glass. Cells are square with exact live-Y price intervals and an integer number
+of trading days per column; the field can therefore span more than 20 trading
+days without a time or price offset. The guide remains the exact zero-return
+boundary and no future observations choose the rendering lattice.
 
-The post-hoc field diagnostic is intentionally named as two values in the
-presentation payload: `probability_weighted_score_pct` is the weighted
-probability mass of the realized model-lattice cell, while
-`event_hit_rate_pct` is the unweighted percentage of later closes that fall
-inside that finite lattice. The legacy `score_pct` and summary key remain as
-compatibility aliases for the weighted score; neither value is a model input.
-The browser's pixel-sized field can aggregate integer trading-day columns at a
-different viewport width, so consumers must not interpret the weighted score
-as a pixel-grid frequency.
-
-Research-factor rows likewise require an availability or disclosure timestamp
-(`published_at`, `filing_date`, `updated_at`, or an equivalent point-in-time
-field). Report-period metadata such as `report_period`, `period`, `report_date`,
-`end_date`, and `period_end` is never used as an as-of date. Rows that provide
-only those measurement-period fields are excluded rather than projected into
-the historical model.
+The post-hoc field diagnostics are `realized_cell_score_pct` and
+`lattice_coverage_pct`. They score the causal model log-return lattice over
+horizons 1 through 20, not the viewport-sized browser grid; legacy score keys
+remain aliases only. Neither diagnostic is a model input. Research-factor rows
+require a verified availability or disclosure timestamp. `filing_date`, report
+period, settlement date, `updated_at`, and snapshot timestamps are not accepted
+as historical availability dates. Factors without that proof remain unavailable
+to the model rather than being projected into the past.
 
 ## Quality-gate topology
 

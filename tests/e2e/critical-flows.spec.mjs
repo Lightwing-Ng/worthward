@@ -17512,12 +17512,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             renderer: 'probability-grid-v1',
             rows_above: 10,
             rows_below: 10,
-            columns: 36,
+            columns: 20,
             width_fraction: 0.25,
             gap_px: 2,
             padding_px: 8,
             min_cell_px: 4,
-            cell_radius_px: 0,
+            cell_radius_px: 2,
+            tooltip_radius_px: 10,
+            tooltip_transparency_pct: 50,
             cell_opacity_mapping: 'instant-contrast-power-v1',
             cell_opacity_exponent: 1.6,
             cell_opacity_tail_ratio: 0.02,
@@ -17853,6 +17855,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 : null,
             stepPixelsDelta: Math.abs(bounds.stepPixels - medianStep),
             tooltipWidth: tooltipRect.width,
+            tooltipTransparency: Number(tooltip.dataset.transparency),
             verticalGap: firstRect && nextRowRect ? nextRowRect.top - firstRect.bottom : null,
             webkitBackdropFilter: tooltipStyle.webkitBackdropFilter || 'none',
         };
@@ -17860,15 +17863,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     expect(contract).not.toBeNull();
     expect(contract.activeIndex).toBe(leftAnchor.index);
-    expect(contract.backgroundAlpha).toBe(0);
+    expect(contract.backgroundAlpha).toBeCloseTo(0.5, 1);
+    expect(contract.tooltipTransparency).toBe(50);
     expect(contract.opacity).toBe(1);
     expect(contract.backgroundImage).toBe('none');
     expect(contract.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
     expect(contract.boxShadow).toBe('none');
     expect(contract.backdropFilter).toBe('none');
     expect(contract.webkitBackdropFilter).toBe('none');
-    expect(contract.outerBorderRadius).toBe('0px');
-    expect(contract.cellBorderRadius).toBe('0px');
+    expect(contract.outerBorderRadius).toBe('10px');
+    expect(contract.cellBorderRadius).toBe('2px');
     expect(contract.cellBorderWidth).toBe('0px');
     expect(contract.cellTransitionDuration).toBe('0s');
     expect(contract.gridPadding[1]).toBe('8px');
@@ -17887,7 +17891,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsPerSide);
     expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsAbove);
     expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsBelow);
-    expect(contract.columns).toBe(36);
+    expect(contract.columns).toBe(20);
     expect(contract.cellMinimumSize).toBeGreaterThanOrEqual(3.99);
     expect(contract.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(contract.horizontalGap).toBeGreaterThanOrEqual(0);
@@ -18560,12 +18564,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation).toEqual(expect.objectContaining({
         cellBorderRadius: '1.5px',
         cellCount: customPresentation.rows * customPresentation.columns,
-        columns: 36,
+        columns: 20,
         gridPadding: '6px',
         opacityExponent: 2.4,
         opacityMapping: 'instant-contrast-power-v1',
         opacityTailRatio: 0.05,
-        outerBorderRadius: '0px',
+        outerBorderRadius: '10px',
         rows: customPresentation.rowsAbove + customPresentation.rowsBelow,
         rowsAbove: 4,
         rowsBelow: customPresentation.rowsBelow,
@@ -18576,7 +18580,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(4);
     expect(customPresentation.rowsAbove).toBeLessThanOrEqual(customPresentation.availableRowsAbove);
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(customPresentation.availableRowsBelow);
-    expect(customPresentation.backgroundAlpha).toBe(0);
+    expect(customPresentation.backgroundAlpha).toBeCloseTo(0.5, 1);
     expect(customPresentation.centerDelta).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideTopInset).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideBottomInset).toBeGreaterThanOrEqual(0);

@@ -1,4 +1,4 @@
-/* Code version: v0.19.0 */
+/* Code version: v0.20.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -592,6 +592,9 @@
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
 			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
 			probabilityTooltip.dataset.cellOpacityMapping = strategyPresentation.cell_opacity_mapping;
+			probabilityTooltip.dataset.transparency = String(
+				strategyPresentation.tooltip_transparency_pct,
+			);
 			probabilityTooltip.dataset.cellOpacityExponent = String(
 				strategyPresentation.cell_opacity_exponent,
 			);
@@ -603,6 +606,14 @@
 			probabilityTooltip.style.setProperty(
 				"--backtest-probability-cell-radius",
 				`${strategyPresentation.cell_radius_px}px`,
+			);
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-tooltip-radius",
+				`${strategyPresentation.tooltip_radius_px}px`,
+			);
+			probabilityTooltip.style.setProperty(
+				"--backtest-probability-tooltip-transparency",
+				`${strategyPresentation.tooltip_transparency_pct}%`,
 			);
 			probabilityTooltip.style.setProperty(
 				"--backtest-probability-grid-padding",

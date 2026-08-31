@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.13.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.14.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,12 +17,14 @@ const presentation = {
     renderer: 'probability-grid-v1',
     rows_above: 10,
     rows_below: 10,
-    columns: 36,
+    columns: 20,
     width_fraction: 0.25,
     gap_px: 2,
     padding_px: 8,
     min_cell_px: 4,
-    cell_radius_px: 0,
+    cell_radius_px: 2,
+    tooltip_radius_px: 10,
+    tooltip_transparency_pct: 50,
     cell_opacity_mapping: 'instant-contrast-power-v1',
     cell_opacity_exponent: 1.6,
     cell_opacity_tail_ratio: 0.02,
@@ -33,7 +35,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.13.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.14.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -42,13 +44,13 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.renderer, 'probability-grid-v1');
     assert.equal(normalized.rows_above, 10);
     assert.equal(normalized.rows_below, 10);
-    assert.equal(normalized.columns, 36);
+    assert.equal(normalized.columns, 20);
     assert.equal(normalized.gap_px, 2);
     assert.equal(normalized.padding_px, 8);
     assert.equal(normalized.min_cell_px, 4);
-    assert.equal(normalized.cell_radius_px, 0);
-    assert.equal(Object.hasOwn(normalized, 'tooltip_radius_px'), false);
-    assert.equal(Object.hasOwn(normalized, 'tooltip_transparency_pct'), false);
+    assert.equal(normalized.cell_radius_px, 2);
+    assert.equal(normalized.tooltip_radius_px, 10);
+    assert.equal(normalized.tooltip_transparency_pct, 50);
     assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
     assert.equal(normalized.cell_opacity_exponent, 1.6);
     assert.equal(normalized.cell_opacity_tail_ratio, 0.02);
@@ -59,7 +61,7 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
 });
 
-test('preserves bounded strategy-owned symmetric geometry while fixing the 36-column horizon', () => {
+test('preserves bounded strategy-owned symmetric geometry while fixing the 20-column horizon', () => {
     const normalized = grid.normalizePresentation(
         {
             ...presentation,
@@ -78,7 +80,7 @@ test('preserves bounded strategy-owned symmetric geometry while fixing the 36-co
     );
     assert.equal(normalized.rows_above, 9);
     assert.equal(normalized.rows_below, 9);
-    assert.equal(normalized.columns, 36);
+    assert.equal(normalized.columns, 20);
     assert.equal(normalized.gap_px, 2.5);
     assert.equal(normalized.padding_px, 6);
     assert.equal(normalized.min_cell_px, 4);
@@ -101,10 +103,10 @@ test('preserves bounded strategy-owned symmetric geometry while fixing the 36-co
         stepPixels: 4,
         widthFraction: normalized.width_fraction,
     });
-    assert.equal(geometry.columnCount, 36);
-    assert.equal(geometry.rowsAbove, 9);
-    assert.equal(geometry.rowsBelow, 9);
-    assert.equal(geometry.rowCount, 18);
+    assert.equal(geometry.columnCount, 20);
+    assert.equal(geometry.rowsAbove, 7);
+    assert.equal(geometry.rowsBelow, 7);
+    assert.equal(geometry.rowCount, 14);
     assert.equal(geometry.gap, 2.5);
     assert.equal(geometry.padding, 6);
     assert.equal(geometry.widthTarget, 360);
@@ -126,6 +128,8 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
             padding_px: 100,
             min_cell_px: 0,
             cell_radius_px: -1,
+            tooltip_radius_px: -1,
+            tooltip_transparency_pct: 101,
             cell_opacity_mapping: 'untrusted-mapping',
             cell_opacity_exponent: 100,
             cell_opacity_tail_ratio: 1,
@@ -135,13 +139,13 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
     );
     assert.equal(normalized.rows_above, 10);
     assert.equal(normalized.rows_below, 10);
-    assert.equal(normalized.columns, 36);
+    assert.equal(normalized.columns, 20);
     assert.equal(normalized.gap_px, 0);
     assert.equal(normalized.padding_px, 64);
     assert.equal(normalized.min_cell_px, 4);
     assert.equal(normalized.cell_radius_px, 0);
-    assert.equal(Object.hasOwn(normalized, 'tooltip_radius_px'), false);
-    assert.equal(Object.hasOwn(normalized, 'tooltip_transparency_pct'), false);
+    assert.equal(normalized.tooltip_radius_px, 0);
+    assert.equal(normalized.tooltip_transparency_pct, 100);
     assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
     assert.equal(normalized.cell_opacity_exponent, 4);
     assert.equal(normalized.cell_opacity_tail_ratio, 0.25);
@@ -187,7 +191,7 @@ test('keeps legacy presentations length-aligned when they omit explicit data key
     assert.equal(grid.normalizePresentation(legacyPresentation, rawDates.length - 1), null);
 });
 
-test('quantizes 36 columns below the preferred quarter width when complete day slots fit', () => {
+test('quantizes 20 columns below the preferred quarter width when complete day slots fit', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 72, right: 1672, top: 8, bottom: 208},
         anchorX: 300,
@@ -198,13 +202,13 @@ test('quantizes 36 columns below the preferred quarter width when complete day s
     assert.ok(geometry);
     assert.equal(geometry.widthTarget, 400);
     assert.equal(geometry.width, 374);
-    assert.equal(geometry.rowCount, 18);
-    assert.equal(geometry.rowsAbove, 9);
-    assert.equal(geometry.rowsBelow, 9);
-    assert.equal(geometry.columnCount, 36);
-    assert.equal(geometry.daysPerColumn, 5);
-    assert.equal(geometry.slotWidth, 10);
-    assert.equal(geometry.cellSize, 8);
+    assert.equal(geometry.rowCount, 10);
+    assert.equal(geometry.rowsAbove, 5);
+    assert.equal(geometry.rowsBelow, 5);
+    assert.equal(geometry.columnCount, 20);
+    assert.equal(geometry.daysPerColumn, 9);
+    assert.equal(geometry.slotWidth, 18);
+    assert.equal(geometry.cellSize, 16);
     assert.equal(geometry.top + (geometry.height / 2), 108);
     assert.equal(geometry.exceedsPreferredWidth, false);
     const reconstructedWidth = (2 * geometry.padding)
@@ -222,10 +226,10 @@ test('limits each side by the ten-row ceiling, half plot height, and its boundar
         anchorY: 120,
         stepPixels: 6,
     });
-    assert.equal(centered.availableRowsWithinHalfPlot, 18);
-    assert.equal(centered.availableRowsPerSide, 10);
-    assert.equal(centered.rowsAbove, 10);
-    assert.equal(centered.rowsBelow, 10);
+    assert.equal(centered.availableRowsWithinHalfPlot, 9);
+    assert.equal(centered.availableRowsPerSide, 9);
+    assert.equal(centered.rowsAbove, 9);
+    assert.equal(centered.rowsBelow, 9);
     assert.equal(centered.gap, 2);
     assert.ok(centered.top >= 0);
     assert.ok(centered.top + centered.height <= 240);
@@ -236,9 +240,9 @@ test('limits each side by the ten-row ceiling, half plot height, and its boundar
         anchorY: 20,
         stepPixels: 6,
     });
-    assert.equal(nearTop.availableRowsPerSide, 10);
-    assert.equal(nearTop.rowsAbove, 2);
-    assert.equal(nearTop.rowsBelow, 10);
+    assert.equal(nearTop.availableRowsPerSide, 9);
+    assert.equal(nearTop.rowsAbove, 1);
+    assert.equal(nearTop.rowsBelow, 9);
     assert.ok(nearTop.top >= 0);
     assert.ok(nearTop.top + nearTop.height <= 240);
 
@@ -248,9 +252,9 @@ test('limits each side by the ten-row ceiling, half plot height, and its boundar
         anchorY: 40,
         stepPixels: 6,
     });
-    assert.equal(shortPlot.availableRowsWithinHalfPlot, 5);
-    assert.equal(shortPlot.rowsAbove, 5);
-    assert.equal(shortPlot.rowsBelow, 5);
+    assert.equal(shortPlot.availableRowsWithinHalfPlot, 2);
+    assert.equal(shortPlot.rowsAbove, 2);
+    assert.equal(shortPlot.rowsBelow, 2);
 });
 
 test('keeps a stable rightward width across hover anchors', () => {
@@ -284,18 +288,18 @@ test('prioritizes complete day slots, the four-pixel cell minimum, and the reque
         stepPixels: 2,
     });
     assert.equal(geometry.widthTarget, 150);
-    assert.equal(geometry.columnCount, 36);
+    assert.equal(geometry.columnCount, 20);
     assert.equal(geometry.daysPerColumn, 3);
     assert.equal(geometry.slotWidth, 6);
     assert.equal(geometry.gap, 2);
     assert.equal(geometry.cellSize, 4);
-    assert.equal(geometry.exceedsPreferredWidth, true);
-    assert.ok(geometry.width > geometry.widthTarget);
+    assert.equal(geometry.exceedsPreferredWidth, false);
+    assert.ok(geometry.width <= geometry.widthTarget);
     assert.ok(geometry.cellSize >= 4);
     assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn);
 });
 
-test('keeps all 36 horizons while preserving an unrealizable requested gap', () => {
+test('keeps all 20 columns while preserving an unrealizable requested gap', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
         anchorX: 300,
@@ -305,13 +309,13 @@ test('keeps all 36 horizons while preserving an unrealizable requested gap', () 
         minCellPx: 4,
         stepPixels: 3,
     });
-    assert.equal(geometry.columnCount, 36);
+    assert.equal(geometry.columnCount, 20);
     assert.equal(geometry.daysPerColumn, 3);
     assert.equal(geometry.slotWidth, 9);
     assert.equal(geometry.requestedGap, 3);
     assert.equal(geometry.gap, 3);
     assert.equal(geometry.cellSize, 6);
-    assert.equal(geometry.width, 337);
+    assert.equal(geometry.width, 193);
     assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn);
 });
 
@@ -320,6 +324,7 @@ test('allows one complete trading day when its slot preserves the cell-radius mi
         chartArea: {left: 0, right: 1200, top: 0, bottom: 180},
         anchorX: 300,
         anchorY: 90,
+        widthFraction: 0.1,
         stepPixels: 7,
     });
     assert.equal(geometry.daysPerColumn, 1);
@@ -434,9 +439,9 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
         opacityExponent: 1.6,
         opacityTailRatio: 0.02,
     });
-    assert.equal(cells.length, 20 * 36);
-    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 36);
-    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 36);
+    assert.equal(cells.length, 20 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
     assert.ok(cells.every((cell) => cell.size === geometry.cellSize));
     assert.ok(cells.every((cell) => cell.size >= 4));
     assert.ok(cells.every((cell) => cell.probability >= 0 && cell.probability <= 1));

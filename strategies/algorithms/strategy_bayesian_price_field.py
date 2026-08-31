@@ -5,14 +5,14 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.14.0
+Code version: v1.15.0
 - Changed: Walk-forward observation noise now uses regularized, effective-degree-of-freedom ridge residual variance with a small process-noise floor, avoiding in-sample OLS overconfidence.
 - Changed: The probability renderer keeps only the matrix itself; its Python
   presentation owns the instantaneous nonlinear cell-opacity curve.
 - Added: Daily posterior signals may execute on real one-minute bars through a
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
-- Changed: The declarative presentation contract retains a fixed 36-column,
+- Changed: The declarative presentation contract retains a fixed 20-column,
   ten-row-per-side maximum field with integer-trading-day slots, a 2 px
   requested gap, and concentric 8 px padding.
 - Changed: NVDA is the default research ticker for this strategy.
@@ -25,7 +25,14 @@ Code version: v1.14.0
   NumPy CPU fallback while process-control exceptions still propagate.
 - Fixed: Provider trading dates remain market-local naive midnights throughout
   the model frame and presentation time-axis contract.
-- Changed: The probability field reports both a probability-weighted realized-cell score and an event hit rate; both metrics use only later observations.
+- Changed: The probability field reports a clearly named probability-weighted
+  realized-cell score and lattice coverage; both metrics use only later
+  observations and neither is presented as a viewport-grid hit rate.
+- Fixed: A GPU runtime failure now restarts the full walk-forward pass on one
+  NumPy CPU backend, so a single backtest cannot mix MPS/CUDA and CPU values.
+- Fixed: Research factors that lack a verifiable point-in-time availability
+  status surface as unavailable rather than silently acting like ordinary
+  sparse historical factors.
 - Fixed: Sparse-factor fallback ranks candidates by causal coverage and
   dispersion with deterministic tie-breaking instead of parameter order.
 - Added: The probability field now exposes opt-in Longbridge research factors.
@@ -62,13 +69,16 @@ _PE_MAX_STALENESS_DAYS = 14
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.6.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.7.0"
 _EPSILON = 1e-12
 _PROBABILITY_FIELD_MAX_HORIZON = 20
 _PROBABILITY_FIELD_ROWS_ABOVE = 10
 _PROBABILITY_FIELD_ROWS_BELOW = 10
-_PROBABILITY_FIELD_COLUMNS = 36
+_PROBABILITY_FIELD_COLUMNS = 20
 _PROBABILITY_FIELD_RETURN_SIGMA = 6.0
+_PROBABILITY_FIELD_CELL_RADIUS_PX = 2
+_PROBABILITY_FIELD_TOOLTIP_RADIUS_PX = 10
+_PROBABILITY_FIELD_TOOLTIP_TRANSPARENCY_PCT = 50
 _FACTOR_SELECTION_PRIORITY = (
     "volume",
     "pe",
@@ -470,11 +480,17 @@ class _ComputeBackend:
     resolved: str = "cpu"
     engine: str = "numpy"
     torch_module: Any | None = None
+    numeric_precision: str = "float64"
+    fallback_reason: str | None = None
+    runtime_fallback: bool = False
 
-    def fall_back_to_cpu(self) -> None:
+    def fall_back_to_cpu(self, reason: str) -> None:
         self.resolved = "cpu"
         self.engine = "numpy-fallback"
         self.torch_module = None
+        self.numeric_precision = "float64"
+        self.fallback_reason = reason
+        self.runtime_fallback = True
 
 
 def _torch_device_available(torch_module: Any, device: str) -> bool:
@@ -509,6 +525,7 @@ def _resolve_compute_backend(requested: str) -> _ComputeBackend:
             backend.resolved = device
             backend.engine = "torch"
             backend.torch_module = torch_module
+            backend.numeric_precision = "float32" if device == "mps" else "float64"
             return backend
     return backend
 
@@ -565,7 +582,10 @@ def _torch_bayesian_prediction(
             + current_tensor @ precision_solution
         ).detach().cpu().item()
     )
-    return predictive_mean, math.sqrt(max(predictive_variance, _EPSILON))
+    predictive_standard_deviation = math.sqrt(max(predictive_variance, _EPSILON))
+    if not math.isfinite(predictive_mean) or not math.isfinite(predictive_standard_deviation):
+        raise ValueError("Torch posterior prediction was non-finite.")
+    return predictive_mean, predictive_standard_deviation
 
 
 def _bayesian_prediction(
@@ -586,8 +606,10 @@ def _bayesian_prediction(
                 prior_strength,
                 noise_variance,
             )
-        except (RuntimeError, TypeError, ValueError):
-            backend.fall_back_to_cpu()
+        except (RuntimeError, TypeError, ValueError) as exc:
+            backend.fall_back_to_cpu(
+                f"{type(exc).__name__}: {str(exc) or 'Torch posterior failure'}"
+            )
     return _numpy_bayesian_prediction(
         design,
         target,
@@ -644,12 +666,15 @@ def _ridge_residual_variance(
                 np.trace(numeric_design @ leverage)
             )
         except (np.linalg.LinAlgError, ValueError):
-            coefficients, *_ = np.linalg.lstsq(
-                numeric_design,
-                numeric_target,
-                rcond=None,
+            # Keep the recovery path on the same ridge precision system. An
+            # unregularized OLS fallback would reintroduce the exact
+            # overconfidence this estimator is intended to avoid.
+            precision_inverse = np.linalg.pinv(precision)
+            coefficients = precision_inverse @ numeric_design.T @ numeric_target
+            leverage = precision_inverse @ numeric_design.T
+            effective_degrees_of_freedom = observation_count - float(
+                np.trace(numeric_design @ leverage)
             )
-            effective_degrees_of_freedom = observation_count - numeric_design.shape[1]
 
         residuals = numeric_target - numeric_design @ coefficients
         residual_sum = float(np.sum(np.square(residuals)))
@@ -771,15 +796,17 @@ def _probability_field_hit_rate(
         rows_above: int = _PROBABILITY_FIELD_ROWS_ABOVE,
         rows_below: int = _PROBABILITY_FIELD_ROWS_BELOW,
 ) -> dict[str, Any]:
-    """Score causal model-lattice coverage against observations after each origin.
+    """Score a causal model lattice against observations after each origin.
 
     At origin ``i`` the posterior was fitted only with rows before ``i``. The
     score then evaluates each available future trading-day close ``i + h``
     against a finite ten-row-per-side return lattice. The probability mass of
     the cell containing that future close is accumulated; unavailable horizons
     near the end of a sample are not counted. Both the weighted score and the
-    separate event hit rate are therefore honest walk-forward diagnostics,
-    rather than future features.
+    separate lattice-coverage rate are therefore honest walk-forward
+    diagnostics, rather than future features. This is intentionally not a
+    score for the browser's viewport-dependent probability field: that field
+    quantizes time and price from the live canvas dimensions.
     """
     close_values = np.asarray(close, dtype=np.float64)
     means = np.asarray(predictive_mean, dtype=np.float64)
@@ -855,16 +882,27 @@ def _probability_field_hit_rate(
         else 0.0
     )
     return {
+        # ``score_pct`` and the hit-rate names remain compatibility aliases
+        # for existing saved result payloads. New consumers must use the
+        # explicit realized-cell and coverage names below.
         "score_pct": round(float(score_pct), 2),
         "probability_weighted_score_pct": round(float(score_pct), 2),
+        "realized_cell_score_pct": round(float(score_pct), 2),
         "event_hit_rate_pct": round(float(event_hit_rate_pct), 2),
+        "lattice_coverage_pct": round(float(event_hit_rate_pct), 2),
         "event_hits": event_hits,
         "scored_points": scored_points,
         "max_horizon": normalized_horizon,
         "rows_above": normalized_rows_above,
         "rows_below": normalized_rows_below,
-        "metric_kind": "probability-mass-of-realized-cell",
+        "metric_kind": "causal-log-return-realized-cell-score",
         "weighting": "probability-mass-of-realized-cell",
+        "scoring_lattice": {
+            "horizons": f"1..{normalized_horizon}",
+            "rows_above": normalized_rows_above,
+            "rows_below": normalized_rows_below,
+            "bounds": "six-sigma-plus-directional-mean",
+        },
         "causal": True,
     }
 
@@ -1028,8 +1066,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
     strategy_name = "Bayesian Price Field"
     strategy_description = (
         "Walk-forward Bayesian regression estimates the next-price probability field "
-        "from Longbridge CLI price, volume, options, ownership, capital, valuation, "
-        "short-interest, and sentiment factors."
+        "from point-in-time-safe Longbridge CLI price, volume, options, valuation, "
+        "and sentiment factors, while exposing unavailable research sources honestly."
     )
     strategy_category = "machine-learning"
     strategy_display_order = 42
@@ -1118,42 +1156,42 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 label="Capital Flow",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in Longbridge capital-flow observations; only dated observations inside the backtest window are usable.",
+                help_text="Research-only: Longbridge currently exposes an intraday snapshot, not causal daily history, so this factor is unavailable to backtests.",
             ),
             StrategyParameterDefinition(
                 key="use_shareholder_concentration",
                 label="Shareholder Concentration",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in dated major-shareholder ownership ratios from Longbridge; only filing or disclosure dates are used for as-of joins.",
+                help_text="Research-only until Longbridge supplies a verified publication timestamp; filing-period dates are never used as availability dates.",
             ),
             StrategyParameterDefinition(
                 key="use_fund_holder_weight",
                 label="Fund Holder Weight",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in fund and ETF position weights reported by Longbridge.",
+                help_text="Research-only until Longbridge supplies a verified publication timestamp; fund report dates are not causal availability dates.",
             ),
             StrategyParameterDefinition(
                 key="use_short_interest",
                 label="Short Interest",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in dated short-interest or disclosed open-short balances from Longbridge.",
+                help_text="Research-only until a source publication timestamp is available; FINRA settlement dates are not causal availability dates.",
             ),
             StrategyParameterDefinition(
                 key="use_short_volume",
                 label="Short Volume",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in daily short-sale volume from Longbridge; each observation is used only on or after its availability date.",
+                help_text="Research-only until Longbridge supplies a verified publication timestamp for each daily short-sale report.",
             ),
             StrategyParameterDefinition(
                 key="use_broker_holding",
                 label="Broker Holding",
                 kind="boolean",
                 default=False,
-                help_text="Opt-in HKEX broker-holding history from Longbridge; unavailable for US and other markets.",
+                help_text="Research-only: HK history requires a selected broker and an aggregation rule, so no causal aggregate is available yet.",
             ),
             StrategyParameterDefinition(
                 key="training_window",
@@ -1383,7 +1421,12 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 status = "disabled"
             elif provider_status == "error":
                 status = "error"
-            elif provider_status in {"unsupported", "unsupported_market"}:
+            elif provider_status in {
+                "unsupported",
+                "unsupported_market",
+                "unsupported_history",
+                "unavailable_point_in_time",
+            }:
                 status = provider_status
             else:
                 is_stale = False
@@ -1488,6 +1531,27 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             float(normalized_params["prior_strength"]),
             backend,
         )
+        if backend.runtime_fallback:
+            # A runtime MPS/CUDA failure can happen only after earlier origins
+            # have already completed. Recompute every origin on one clean CPU
+            # backend instead of returning a mixed-precision backtest.
+            fallback_backend = _ComputeBackend(
+                requested=backend.requested,
+                resolved="cpu",
+                engine="numpy-fallback",
+                numeric_precision="float64",
+                fallback_reason=backend.fallback_reason,
+                runtime_fallback=True,
+            )
+            predictive_mean, predictive_std, probability_up = _walk_forward_predictions(
+                full_frame,
+                factor_values,
+                enabled_factors,
+                int(normalized_params["training_window"]),
+                float(normalized_params["prior_strength"]),
+                fallback_backend,
+            )
+            backend = fallback_backend
         prediction_frame = pd.DataFrame(
             {
                 "Date": full_frame["Date"],
@@ -1545,7 +1609,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "gap_px": 2,
             "padding_px": 8,
             "min_cell_px": 4,
-            "cell_radius_px": 0,
+            "cell_radius_px": _PROBABILITY_FIELD_CELL_RADIUS_PX,
+            "tooltip_radius_px": _PROBABILITY_FIELD_TOOLTIP_RADIUS_PX,
+            "tooltip_transparency_pct": _PROBABILITY_FIELD_TOOLTIP_TRANSPARENCY_PCT,
             "cell_opacity_mapping": "instant-contrast-power-v1",
             "cell_opacity_exponent": 1.6,
             "cell_opacity_tail_ratio": 0.02,
@@ -1557,12 +1623,20 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "probability_up": _json_number_list(output[_PROBABILITY_COLUMN]),
             "hit_rate": hit_rate,
             "metric_geometry": {
-                "columns": _PROBABILITY_FIELD_COLUMNS,
-                "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
-                "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
-                "horizon_unit": "trading-day",
-                "horizon_mapping": "one-step-per-scored-origin",
-                "bounds": "six-sigma-plus-directional-mean",
+                "scoring_lattice": {
+                    "horizons": f"1..{_PROBABILITY_FIELD_MAX_HORIZON}",
+                    "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
+                    "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
+                    "horizon_unit": "trading-day",
+                    "bounds": "six-sigma-plus-directional-mean",
+                },
+                "render_lattice": {
+                    "columns": _PROBABILITY_FIELD_COLUMNS,
+                    "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
+                    "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
+                    "horizon_unit": "integer-trading-days-per-viewport-column",
+                    "horizon_mapping": "viewport-quantized",
+                },
             },
             "data_keys": [
                 pd.Timestamp(value).isoformat()
@@ -1573,6 +1647,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "requested": backend.requested,
                 "resolved": backend.resolved,
                 "engine": backend.engine,
+                "numeric_precision": backend.numeric_precision,
+                "fallback_reason": backend.fallback_reason,
             },
             "source": {
                 "market_data": "longbridge-cli",
@@ -1594,6 +1670,12 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "probability_field_hit_rate_scored_points": hit_rate["scored_points"],
                 "probability_field_event_hit_rate_pct": hit_rate["event_hit_rate_pct"],
                 "probability_field_event_hits": hit_rate["event_hits"],
+                "probability_field_realized_cell_score_pct": hit_rate[
+                    "realized_cell_score_pct"
+                ],
+                "probability_field_lattice_coverage_pct": hit_rate[
+                    "lattice_coverage_pct"
+                ],
             },
             presentation=presentation,
         )

@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.13.0
+ * Code version: v0.14.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -12,12 +12,14 @@
     const DEFAULT_ROWS_BELOW = 10;
     const MAX_ROWS_PER_SIDE = 10;
     const MAX_VERTICAL_PLOT_FRACTION = 0.5;
-    const DEFAULT_COLUMN_COUNT = 36;
+    const DEFAULT_COLUMN_COUNT = 20;
     const DEFAULT_WIDTH_FRACTION = 0.25;
     const DEFAULT_GAP_PX = 2;
     const DEFAULT_PADDING_PX = 8;
     const DEFAULT_MIN_CELL_PX = 4;
-    const DEFAULT_CELL_RADIUS_PX = 0;
+    const DEFAULT_CELL_RADIUS_PX = 2;
+    const DEFAULT_TOOLTIP_RADIUS_PX = 10;
+    const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;
     const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";
     const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;
     const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
@@ -32,6 +34,8 @@
         opacityTailRatio: Object.freeze([0, 0.25]),
         padding: Object.freeze([0, 64]),
         rows: Object.freeze([1, MAX_ROWS_PER_SIDE]),
+        tooltipRadius: Object.freeze([0, 32]),
+        tooltipTransparency: Object.freeze([0, 100]),
     });
 
     const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -94,14 +98,7 @@
         if (!value || typeof value !== "object") return null;
         if (String(value.schema || "") !== PRESENTATION_SCHEMA) return null;
         if (String(value.renderer || "") !== RENDERER_ID) return null;
-        // These presentation properties used to style a frosted field underlay.
-        // The renderer now draws only the matrix, so older cached payloads may
-        // carry them without restoring that retired visual layer.
-        const {
-            tooltip_radius_px: _retiredTooltipRadius,
-            tooltip_transparency_pct: _retiredTooltipTransparency,
-            ...presentation
-        } = value;
+        const presentation = {...value};
         const expected = normalizeExpectedSeriesContract(expectedRawDatesOrOptions, expectedLength);
         const predictiveMean = Array.isArray(value.predictive_mean)
             ? value.predictive_mean.map(finiteOrNull)
@@ -133,8 +130,8 @@
             renderer: RENDERER_ID,
             rows_above: symmetricRows.rowsAbove,
             rows_below: symmetricRows.rowsBelow,
-            // The horizon is a product-level chart contract, not a strategy-tunable
-            // density control. Every rendered probability field has 36 columns.
+            // The horizon density is a product-level chart contract, not a
+            // user-tunable parameter. Every rendered field has 20 columns.
             columns: DEFAULT_COLUMN_COUNT,
             gap_px: boundedNumber(value.gap_px, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap),
             padding_px: boundedNumber(value.padding_px, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding),
@@ -143,6 +140,16 @@
                 value.cell_radius_px,
                 DEFAULT_CELL_RADIUS_PX,
                 GEOMETRY_LIMITS.cellRadius,
+            ),
+            tooltip_radius_px: boundedNumber(
+                value.tooltip_radius_px,
+                DEFAULT_TOOLTIP_RADIUS_PX,
+                GEOMETRY_LIMITS.tooltipRadius,
+            ),
+            tooltip_transparency_pct: boundedNumber(
+                value.tooltip_transparency_pct,
+                DEFAULT_TOOLTIP_TRANSPARENCY_PCT,
+                GEOMETRY_LIMITS.tooltipTransparency,
             ),
             cell_opacity_mapping: CELL_OPACITY_MAPPING,
             cell_opacity_exponent: boundedNumber(
@@ -211,7 +218,7 @@
         const requestedRowsAbove = symmetricRows.rowsAbove;
         const requestedRowsBelow = symmetricRows.rowsBelow;
         // Keep the visible time lattice stable across every presentation. A
-        // caller cannot shorten the forecast horizon by reducing columns.
+        // caller cannot change the product-owned 20-column density.
         const normalizedColumnCount = DEFAULT_COLUMN_COUNT;
         const plotWidth = right - left;
         const targetWidth = plotWidth * boundedNumber(widthFraction, DEFAULT_WIDTH_FRACTION, [0.1, 0.5]);
@@ -559,7 +566,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.13.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.14.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

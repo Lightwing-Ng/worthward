@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.4.1
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -486,7 +486,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             (),
         )
 
-    def test_research_observation_prefers_explicit_filing_date_over_report_period(self) -> None:
+    def test_research_observation_requires_publication_not_filing_period_date(self) -> None:
         row = {
             "report_period": "2026-06-30",
             "period": "2026-06-30",
@@ -494,10 +494,28 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             "pb": "2.0",
         }
         timestamp = factors._research_timestamp(row)
+        self.assertIsNone(timestamp)
+        self.assertEqual(
+            factors._research_observations(
+                [row],
+                symbol="NVDA.US",
+                start=datetime(2026, 8, 1).date(),
+                end=datetime(2026, 8, 31).date(),
+                factor="pb_ratio",
+                source="test",
+            ),
+            (),
+        )
+
+        publication_row = {
+            **row,
+            "published_at": "2026.08.15T13:00:00Z",
+        }
+        timestamp = factors._research_timestamp(publication_row)
         self.assertIsNotNone(timestamp)
         self.assertEqual(timestamp.date().isoformat(), "2026-08-15")
         observations = factors._research_observations(
-            [row],
+            [publication_row],
             symbol="NVDA.US",
             start=datetime(2026, 8, 1).date(),
             end=datetime(2026, 8, 31).date(),
@@ -510,7 +528,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
     def test_report_date_only_rows_are_excluded_from_research_history(self) -> None:
         self.assertIsNone(factors._research_timestamp({"report_date": "2026-06-30"}))
 
-    def test_shareholder_percentage_payload_is_read_from_filing_date(self) -> None:
+    def test_shareholder_concentration_uses_disclosure_time_and_aggregates_unique_holders(self) -> None:
         observations = factors._research_observations(
             {
                 "info": [
@@ -518,7 +536,21 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                         "period": "Q2 2026",
                         "share_holders": [
                             {
-                                "filing_date": "2026/08/15",
+                                "published_at": "2026/08/15",
+                                "object_id": "one",
+                                "percent_shares_held": "8.04%",
+                            },
+                            {
+                                "published_at": "2026/08/15",
+                                "object_id": "two",
+                                "percent_shares_held": "6.95%",
+                            },
+                            # The CLI may repeat the same holder under a
+                            # current "Latest" group. It must not double the
+                            # concentration feature.
+                            {
+                                "published_at": "2026/08/15",
+                                "object_id": "one",
                                 "percent_shares_held": "8.04%",
                             }
                         ],
@@ -532,7 +564,55 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             source="test",
         )
         self.assertEqual(len(observations), 1)
-        self.assertAlmostEqual(observations[0].value, 8.04)
+        self.assertAlmostEqual(observations[0].value, 14.99)
+
+    def test_non_point_in_time_research_sources_are_not_requested_or_backfilled(self) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        def fake_cli(settings, arguments, *, timeout_seconds):
+            del settings, timeout_seconds
+            commands.append(tuple(arguments))
+            self.assertEqual(arguments[:2], ["kline", "history"])
+            return [_bar("2026-08-27T20:00:00Z"), _bar("2026-08-28T20:00:00Z")]
+
+        interval_patch, now_patch = self._provider_patches()
+        with (
+            interval_patch,
+            now_patch,
+            patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
+        ):
+            bundle = factors.fetch_bayesian_factor_bundle(
+                "NVDA.US",
+                "2026-08-27",
+                "2026-08-29",
+                settings=self.settings,
+                include_pe=False,
+                include_options=False,
+                research_factors=(
+                    "capital_flow",
+                    "shareholder_concentration",
+                    "fund_holder_weight",
+                    "short_interest",
+                    "short_volume",
+                    "broker_holding",
+                ),
+                ttl_seconds=0,
+            )
+
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0][:5], ("kline", "history", "NVDA.US", "--period", "day"))
+        self.assertIn("--adjust", commands[0])
+        self.assertIn("forward", commands[0])
+        self.assertEqual(bundle.research_history, ())
+        self.assertEqual(bundle.factor_status["capital_flow"], "unsupported_history")
+        self.assertEqual(bundle.factor_status["broker_holding"], "unsupported_market")
+        for factor in (
+            "shareholder_concentration",
+            "fund_holder_weight",
+            "short_interest",
+            "short_volume",
+        ):
+            self.assertEqual(bundle.factor_status[factor], "unavailable_point_in_time")
 
     def test_a_shorter_call_level_ttl_cannot_reuse_a_longer_ttl_entry(self) -> None:
         with (

@@ -1,4 +1,4 @@
-/* Code version: v3.49.0 */
+/* Code version: v3.50.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -840,17 +840,25 @@
 }
 
 .backtest-probability-tooltip.chart-tooltip {
-    --backtest-probability-cell-radius: 0px;
+    --backtest-probability-cell-radius: 2px;
     --backtest-probability-grid-padding: 8px;
+    --backtest-probability-tooltip-radius: 10px;
+    --backtest-probability-tooltip-transparency: 50%;
     box-sizing: border-box;
     min-width: 0;
     max-width: none;
     padding: 0;
     overflow: hidden;
-    background: transparent;
+    /* This is strategy-private material. It intentionally does not consume
+       the global Frosted glass token or its blur contract. */
+    background: color-mix(
+        in srgb,
+        transparent var(--backtest-probability-tooltip-transparency),
+        var(--theme-background)
+    );
     background-image: none;
     border: 0;
-    border-radius: 0;
+    border-radius: var(--backtest-probability-tooltip-radius);
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

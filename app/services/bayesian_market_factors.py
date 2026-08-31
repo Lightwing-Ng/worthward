@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Bayesian price models.
 
-Code version: v1.4.1
+Code version: v1.5.0
 - Fixed: Daily OHLCV and factor observations now use each symbol's local
   trading date, preventing Asia-market midnight timestamps from shifting to
   the previous UTC calendar day.
@@ -15,6 +15,11 @@ Code version: v1.4.1
 - Fixed: Research observations now require an availability or disclosure
   timestamp. Report-period fields such as ``period`` and ``end_date`` are
   never treated as point-in-time availability dates.
+- Fixed: Commands that provide only intraday snapshots, report-period dates,
+  or short-interest settlement dates are explicitly unavailable to the causal
+  backtest. They remain visible as research controls, but cannot enter a
+  walk-forward feature matrix until Longbridge exposes a verifiable
+  availability timestamp.
 """
 
 from __future__ import annotations
@@ -71,7 +76,7 @@ _RESEARCH_VALUE_KEYS: dict[str, tuple[str, ...]] = {
     "capital_flow": ("capital_flow", "net_inflow", "net_flow", "inflow", "value", "amount"),
     "shareholder_concentration": (
         "owned_ratio", "holding_ratio", "ownership_ratio", "percent_shares_held",
-        "shares_held", "ratio", "percent", "value",
+        "ratio", "percent", "value",
     ),
     "fund_holder_weight": ("weight", "position_ratio", "holding_ratio", "ratio", "percent", "value"),
     "short_interest": (
@@ -80,6 +85,44 @@ _RESEARCH_VALUE_KEYS: dict[str, tuple[str, ...]] = {
     "short_volume": ("total_amount", "amount", "nus_amount", "ny_amount", "rate", "value"),
     "broker_holding": ("holding_ratio", "ratio", "balance", "quantity", "amount", "value"),
 }
+
+# These sources are useful research surfaces, but their current Longbridge CLI
+# commands cannot construct a time-series feature with a defensible as-of
+# timestamp. In particular, ``capital --flow`` is an intraday snapshot and
+# broker history requires a caller-selected broker participant plus a defined
+# aggregation policy.
+_UNSUPPORTED_HISTORY_FACTORS = frozenset({
+    "capital_flow",
+    "broker_holding",
+})
+
+# The commands return historical measurements, but the payload has no
+# publication/availability timestamp. A measurement date, a filing-period end
+# date, and a FINRA short-interest settlement date are not the date at which a
+# model could have known the value. Fail closed until the CLI can supply one.
+_UNAVAILABLE_POINT_IN_TIME_FACTORS = frozenset({
+    "shareholder_concentration",
+    "fund_holder_weight",
+    "short_interest",
+    "short_volume",
+})
+
+_DISCLOSURE_TIMESTAMP_KEYS = (
+    "available_at",
+    "availability_date",
+    "published_at",
+    "publication_date",
+    "disclosed_at",
+    "announcement_date",
+    "release_date",
+)
+
+_HISTORICAL_OBSERVATION_TIMESTAMP_KEYS = (
+    "timestamp",
+    "time",
+    "date",
+    "date_time",
+)
 
 _MARKET_TIMEZONES = {
     "US": ZoneInfo("America/New_York"),
@@ -243,7 +286,7 @@ def _parse_observed_at(value: Any) -> datetime | None:
         except (OSError, OverflowError, ValueError):
             return None
 
-    normalized_text = text.replace("/", "-")
+    normalized_text = text.replace("/", "-").replace(".", "-")
     try:
         parsed = datetime.fromisoformat(normalized_text.replace("Z", "+00:00"))
     except ValueError:
@@ -578,20 +621,45 @@ def _iter_payload_rows(payload: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def _research_timestamp(row: Mapping[str, Any]) -> datetime | None:
-    """Return only a point-in-time availability/disclosure date.
+def _research_timestamp(
+        row: Mapping[str, Any],
+        factor: str | None = None,
+) -> datetime | None:
+    """Return a time at which a research observation was knowable.
 
-    Longbridge ownership and fund-report payloads commonly expose both a
-    report period and a filing date. A report period describes what the
-    observation measures, not when it became knowable to a backtest. Keeping
-    this allowlist separate from the row-discovery keys prevents accidental
-    look-ahead when a payload contains only period metadata.
+    Ownership and fund payloads sometimes call a report-period end a
+    ``filing_date``. That label is not an availability timestamp, so it is
+    deliberately excluded. The default is disclosure-only, which keeps direct
+    callers safe. The few historical time-series factors may explicitly opt
+    into their provider observation timestamp.
     """
-    for key in (
-        "available_at", "availability_date", "published_at", "publication_date",
-        "disclosed_at", "filing_date", "announcement_date", "release_date",
-        "updated_at", "timestamp", "time", "date_time",
-    ):
+    timestamp_keys = _DISCLOSURE_TIMESTAMP_KEYS
+    if factor in {
+        "pb_ratio",
+        "ps_ratio",
+        "dividend_yield",
+        "market_temperature",
+    }:
+        # Prefer an explicit disclosure timestamp even for a historical
+        # series. A bare ``date`` is usable only when the row does not also
+        # advertise itself as a report-period payload; that combination is
+        # ambiguous and must fail closed.
+        timestamp_keys = _DISCLOSURE_TIMESTAMP_KEYS + tuple(
+            key
+            for key in _HISTORICAL_OBSERVATION_TIMESTAMP_KEYS
+            if key != "date" or not any(
+                report_key in row
+                for report_key in (
+                    "report_date",
+                    "report_period",
+                    "period",
+                    "end_date",
+                    "period_end",
+                    "filing_date",
+                )
+            )
+        )
+    for key in timestamp_keys:
         parsed = _parse_observed_at(row.get(key))
         if parsed is not None:
             return parsed
@@ -623,13 +691,29 @@ def _research_observations(
         source: str,
 ) -> tuple[ResearchFactorObservation, ...]:
     observations: dict[datetime, ResearchFactorObservation] = {}
+    shareholder_values: dict[datetime, dict[str, float]] = {}
     for row in _iter_payload_rows(payload):
-        parsed_timestamp = _research_timestamp(row)
+        parsed_timestamp = _research_timestamp(row, factor)
         value = _research_value(row, factor)
         if parsed_timestamp is None or value is None:
             continue
         observed_at = _market_local_trading_day(parsed_timestamp, symbol)
         if not _is_in_window(observed_at, start, end):
+            continue
+        if factor == "shareholder_concentration":
+            # Top-holder payloads commonly repeat a current "Latest" group
+            # beside the same quarterly group. Preserve the first value for
+            # each real holder instead of accidentally summing that duplicate
+            # group or replacing the whole factor with the last holder.
+            holder_key = str(
+                row.get("object_id") or row.get("name") or ""
+            ).strip()
+            if not holder_key:
+                continue
+            shareholder_values.setdefault(observed_at, {}).setdefault(
+                holder_key,
+                value,
+            )
             continue
         observations[observed_at] = ResearchFactorObservation(
             observed_at=observed_at,
@@ -637,6 +721,17 @@ def _research_observations(
             value=value,
             source=source,
         )
+    if factor == "shareholder_concentration":
+        for observed_at, values_by_holder in shareholder_values.items():
+            # The factor is an explicit Top-20 reported ownership sum in
+            # percent, not a last-row shareholder percentage or an invented
+            # whole-market ownership statistic.
+            observations[observed_at] = ResearchFactorObservation(
+                observed_at=observed_at,
+                factor=factor,
+                value=float(sum(values_by_holder.values())),
+                source=source,
+            )
     return tuple(observations[key] for key in sorted(observations))
 
 
@@ -700,6 +795,12 @@ def _fetch_research_history(
             continue
         if factor == "broker_holding" and not symbol.endswith(".HK"):
             statuses[factor] = "unsupported_market"
+            continue
+        if factor in _UNSUPPORTED_HISTORY_FACTORS:
+            statuses[factor] = "unsupported_history"
+            continue
+        if factor in _UNAVAILABLE_POINT_IN_TIME_FACTORS:
+            statuses[factor] = "unavailable_point_in_time"
             continue
         arguments = _research_command(factor, symbol, start, end, fetched_at)
         if arguments is None:

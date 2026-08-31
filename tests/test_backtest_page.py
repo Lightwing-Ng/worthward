@@ -154,7 +154,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('data-backtest-history-transactions-option aria-disabled="true"', html)
         self.assertLess(html.index('data-backtest-trade-details-field'), html.index('data-trade-strategy-field'))
 
-    def test_bayesian_field_hit_rate_is_rendered_as_a_percentage_metric(self) -> None:
+    def test_bayesian_realized_cell_score_is_rendered_as_a_percentage_metric(self) -> None:
         result = backtest_result()
         result["summary"]["probability_field_hit_rate_pct"] = 42.5
         with (
@@ -169,8 +169,8 @@ class BacktestPageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Bayesian field hit rate", html)
-        self.assertIn('data-backtest-metric="probability-field-hit-rate"', html)
+        self.assertIn("Bayesian realized-cell score", html)
+        self.assertIn('data-backtest-metric="probability-field-realized-cell-score"', html)
         self.assertIn(">42.50%</span>", html)
 
     def test_backtest_stop_loss_copy_has_default_chinese_translations(self) -> None:

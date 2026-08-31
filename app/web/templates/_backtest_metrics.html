@@ -1,4 +1,4 @@
-{# Code version: v0.2.3 #}
+{# Code version: v0.3.0 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
@@ -25,11 +25,19 @@
             data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.win_rate_pct is none else "%.2f"|format(backtest_result.summary.win_rate_pct) ~ "%" }}</span>
     </div>
     {% if backtest_result.summary.probability_field_hit_rate_pct is defined %}
-    <div class="trade-metric-card" data-backtest-metric="probability-field-hit-rate"
+    <div class="trade-metric-card" data-backtest-metric="probability-field-realized-cell-score"
          data-probability-field-metric="probability-weighted-realized-cell"
-         title="Probability-weighted realized-cell score over the causal model lattice; each later close contributes the probability mass of its containing cell, and horizons without a later bar are excluded. The separate event hit rate is available in the strategy presentation metadata.">
-        <span class="trade-metric-label">Bayesian field hit rate (weighted)</span>
+         title="Probability-weighted realized-cell score over the causal log-return scoring lattice. Each later close contributes the probability mass of its containing model cell, and unavailable trailing horizons are excluded. This is not the viewport-dependent on-screen probability grid.">
+        <span class="trade-metric-label">Bayesian realized-cell score</span>
         <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_hit_rate_pct) }}%</span>
+    </div>
+    {% endif %}
+    {% if backtest_result.summary.probability_field_lattice_coverage_pct is defined %}
+    <div class="trade-metric-card" data-backtest-metric="probability-field-lattice-coverage"
+         data-probability-field-metric="causal-lattice-coverage"
+         title="Percentage of later closes inside the finite causal log-return scoring lattice. This coverage diagnostic is not a hit rate for the responsive on-screen probability grid.">
+        <span class="trade-metric-label">Bayesian lattice coverage</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_lattice_coverage_pct) }}%</span>
     </div>
     {% endif %}
     <div class="trade-metric-card"

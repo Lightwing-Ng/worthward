@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.14.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.15.0."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 from strategies.algorithms.strategy_bayesian_price_field import (
     _MODEL_VERSION,
+    _ComputeBackend,
     _MIN_NOISE_VARIANCE,
     BayesianPriceFieldStrategy,
     _build_factor_columns,
@@ -22,6 +23,7 @@ from strategies.algorithms.strategy_bayesian_price_field import (
     _option_ratio,
     _probability_field_hit_rate,
     _probability_threshold_signals,
+    _ridge_residual_variance,
     _resolve_compute_backend,
     _rolling_volume_at_price_percentile,
     _select_active_factors,
@@ -193,7 +195,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.6.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.7.0")
 
     def test_probability_field_hit_rate_is_bounded_and_uses_only_later_observations(self) -> None:
         frame = _market_frame(90)
@@ -212,11 +214,14 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             hit_rate["probability_weighted_score_pct"],
             hit_rate["score_pct"],
         )
+        self.assertEqual(hit_rate["realized_cell_score_pct"], hit_rate["score_pct"])
         self.assertGreaterEqual(hit_rate["event_hit_rate_pct"], 0.0)
         self.assertLessEqual(hit_rate["event_hit_rate_pct"], 100.0)
         self.assertGreaterEqual(hit_rate["event_hits"], 0)
         self.assertLessEqual(hit_rate["event_hits"], hit_rate["scored_points"])
-        self.assertEqual(hit_rate["metric_kind"], "probability-mass-of-realized-cell")
+        self.assertEqual(hit_rate["lattice_coverage_pct"], hit_rate["event_hit_rate_pct"])
+        self.assertEqual(hit_rate["metric_kind"], "causal-log-return-realized-cell-score")
+        self.assertEqual(hit_rate["scoring_lattice"]["horizons"], "1..20")
         self.assertEqual(hit_rate["max_horizon"], 20)
         self.assertEqual(hit_rate["rows_above"], 10)
         self.assertEqual(hit_rate["rows_below"], 10)
@@ -273,6 +278,102 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 equal_nan=True,
             )
 
+    def test_walk_forward_prediction_ignores_future_pe_options_and_research_values(self) -> None:
+        frame = _market_frame()
+        future_start = 145
+        dates = pd.to_datetime(frame["Date"])
+
+        def bundle_with_factor_multiplier(multiplier: float) -> SimpleNamespace:
+            pe_history = tuple(
+                SimpleNamespace(
+                    observed_at=timestamp,
+                    value=(18.0 + (index * 0.03))
+                    * (multiplier if index >= future_start else 1.0),
+                )
+                for index, timestamp in enumerate(dates)
+            )
+            option_history = tuple(
+                SimpleNamespace(
+                    observed_at=timestamp,
+                    put_call_volume_ratio=(0.8 + (index * 0.002))
+                    * (multiplier if index >= future_start else 1.0),
+                    put_call_open_interest_ratio=None,
+                    put_volume=None,
+                    call_volume=None,
+                    put_open_interest=None,
+                    call_open_interest=None,
+                )
+                for index, timestamp in enumerate(dates)
+            )
+            bundle = _bundle_from_frame(
+                frame,
+                pe_history=pe_history,
+                option_history=option_history,
+                factor_status={
+                    "ohlcv": "available",
+                    "pe": "available",
+                    "options": "available",
+                    "pb_ratio": "available",
+                },
+            )
+            bundle.research_history = tuple(
+                SimpleNamespace(
+                    observed_at=timestamp,
+                    factor="pb_ratio",
+                    value=(2.0 + (index * 0.01))
+                    * (multiplier if index >= future_start else 1.0),
+                    source="test",
+                )
+                for index, timestamp in enumerate(dates)
+            )
+            return bundle
+
+        first_strategy = BayesianPriceFieldStrategy()
+        first_strategy._warmup_bundle = bundle_with_factor_multiplier(1.0)
+        first = first_strategy.compute_signals(
+            frame,
+            _cpu_params(
+                use_pe_ratio=True,
+                use_options=True,
+                use_pb_ratio=True,
+                use_volume=False,
+                use_volume_at_price=False,
+            ),
+        )
+        second_strategy = BayesianPriceFieldStrategy()
+        second_strategy._warmup_bundle = bundle_with_factor_multiplier(1_000.0)
+        second = second_strategy.compute_signals(
+            frame,
+            _cpu_params(
+                use_pe_ratio=True,
+                use_options=True,
+                use_pb_ratio=True,
+                use_volume=False,
+                use_volume_at_price=False,
+            ),
+        )
+
+        for column in (
+            "bayesian_predictive_mean",
+            "bayesian_predictive_std",
+            "bayesian_probability_up",
+        ):
+            np.testing.assert_allclose(
+                first.frame.loc[: future_start - 1, column],
+                second.frame.loc[: future_start - 1, column],
+                rtol=0.0,
+                atol=1e-12,
+                equal_nan=True,
+            )
+        self.assertTrue(
+            np.any(
+                np.not_equal(
+                    first.frame.loc[future_start:, "bayesian_predictive_mean"],
+                    second.frame.loc[future_start:, "bayesian_predictive_mean"],
+                )
+            )
+        )
+
     def test_walk_forward_noise_uses_regularized_residual_variance_floor(self) -> None:
         row_count = 40
         forward_returns = np.linspace(-0.02, 0.02, row_count - 1)
@@ -314,6 +415,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertGreaterEqual(min(observed_noise_variances), _MIN_NOISE_VARIANCE)
         self.assertLess(max(observed_noise_variances), float(np.var(forward_returns[:20], ddof=1)))
         self.assertGreater(float(np.var(forward_returns[:20], ddof=1)), 1e-5)
+
+    def test_ridge_noise_fallback_keeps_regularization_when_direct_solve_fails(self) -> None:
+        design = np.column_stack((np.ones(30), np.linspace(-1.0, 1.0, 30)))
+        target = np.linspace(-0.02, 0.02, 30)
+        with patch(
+            "strategies.algorithms.strategy_bayesian_price_field.np.linalg.solve",
+            side_effect=np.linalg.LinAlgError("forced recovery"),
+        ):
+            variance = _ridge_residual_variance(design, target, prior_strength=1.0)
+
+        self.assertTrue(math.isfinite(variance))
+        self.assertGreaterEqual(variance, _MIN_NOISE_VARIANCE)
 
     def test_sparse_factor_fallback_is_independent_of_parameter_order(self) -> None:
         candidate_indices = np.arange(40, dtype=np.int64)
@@ -469,6 +582,37 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(one_value_factors["options"]["status"], "error")
         self.assertEqual(one_value_factors["volume"]["status"], "disabled")
 
+        unavailable_bundle = _bundle_from_frame(
+            frame,
+            factor_status={
+                "ohlcv": "available",
+                "short_interest": "unavailable_point_in_time",
+                "capital_flow": "unsupported_history",
+            },
+        )
+        unavailable_strategy = BayesianPriceFieldStrategy()
+        unavailable_strategy._warmup_bundle = unavailable_bundle
+        unavailable_result = unavailable_strategy.compute_signals(
+            frame,
+            _cpu_params(
+                use_short_interest=True,
+                use_capital_flow=True,
+                use_volume=False,
+            ),
+        )
+        unavailable_factors = {
+            factor["key"]: factor
+            for factor in unavailable_result.presentation["factors"]
+        }
+        self.assertEqual(
+            unavailable_factors["short_interest"]["status"],
+            "unavailable_point_in_time",
+        )
+        self.assertEqual(
+            unavailable_factors["capital_flow"]["status"],
+            "unsupported_history",
+        )
+
     def test_model_fingerprint_covers_bundle_params_ohlcv_and_derived_factors(self) -> None:
         frame = _market_frame(80)
         frame["bayesian_pe_ratio"] = np.linspace(15.0, 20.0, len(frame))
@@ -537,14 +681,14 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["model_version"], _MODEL_VERSION)
         self.assertEqual(presentation["rows_above"], 10)
         self.assertEqual(presentation["rows_below"], 10)
-        self.assertEqual(presentation["columns"], 36)
+        self.assertEqual(presentation["columns"], 20)
         self.assertEqual(presentation["width_fraction"], 0.25)
         self.assertEqual(presentation["gap_px"], 2)
         self.assertEqual(presentation["padding_px"], 8)
         self.assertEqual(presentation["min_cell_px"], 4)
-        self.assertEqual(presentation["cell_radius_px"], 0)
-        self.assertNotIn("tooltip_radius_px", presentation)
-        self.assertNotIn("tooltip_transparency_pct", presentation)
+        self.assertEqual(presentation["cell_radius_px"], 2)
+        self.assertEqual(presentation["tooltip_radius_px"], 10)
+        self.assertEqual(presentation["tooltip_transparency_pct"], 50)
         self.assertEqual(
             presentation["cell_opacity_mapping"],
             "instant-contrast-power-v1",
@@ -552,6 +696,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["cell_opacity_exponent"], 1.6)
         self.assertEqual(presentation["cell_opacity_tail_ratio"], 0.02)
         self.assertEqual(presentation["time_quantization"], "integer-trading-days")
+        self.assertEqual(
+            presentation["metric_geometry"]["scoring_lattice"]["horizons"],
+            "1..20",
+        )
+        self.assertEqual(
+            presentation["metric_geometry"]["render_lattice"]["columns"],
+            20,
+        )
+        self.assertEqual(
+            presentation["metric_geometry"]["render_lattice"]["horizon_mapping"],
+            "viewport-quantized",
+        )
         self.assertEqual(len(presentation["predictive_mean"]), len(result.frame))
         self.assertEqual(len(presentation["predictive_scale"]), len(result.frame))
         self.assertEqual(len(presentation["probability_up"]), len(result.frame))
@@ -724,6 +880,66 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 load_torch.assert_called_once_with()
                 platform_system.assert_not_called()
 
+    def test_runtime_gpu_failure_restarts_the_complete_walk_forward_pass_on_cpu(self) -> None:
+        frame = _market_frame()
+        expected = BayesianPriceFieldStrategy().compute_signals(
+            frame,
+            _cpu_params(use_pe_ratio=False, use_options=False),
+        )
+        gpu_backend = _ComputeBackend(
+            requested="GPU",
+            resolved="mps",
+            engine="torch",
+            torch_module=object(),
+            numeric_precision="float32",
+        )
+        attempts = 0
+
+        def fake_torch_prediction(*_args: object, **_kwargs: object) -> tuple[float, float]:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return 0.987654321, 0.1
+            raise RuntimeError("simulated MPS solve failure")
+
+        with (
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field._resolve_compute_backend",
+                return_value=gpu_backend,
+            ),
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field._torch_bayesian_prediction",
+                side_effect=fake_torch_prediction,
+            ),
+        ):
+            result = BayesianPriceFieldStrategy().compute_signals(
+                frame,
+                _cpu_params(
+                    compute_backend="GPU",
+                    use_pe_ratio=False,
+                    use_options=False,
+                ),
+            )
+
+        self.assertEqual(attempts, 2)
+        for column in (
+            "bayesian_predictive_mean",
+            "bayesian_predictive_std",
+            "bayesian_probability_up",
+        ):
+            np.testing.assert_allclose(
+                result.frame[column],
+                expected.frame[column],
+                rtol=0.0,
+                atol=1e-12,
+                equal_nan=True,
+            )
+        self.assertEqual(result.presentation["device"]["requested"], "GPU")
+        self.assertEqual(result.presentation["device"]["resolved"], "cpu")
+        self.assertEqual(result.presentation["device"]["engine"], "numpy-fallback")
+        self.assertEqual(result.presentation["device"]["numeric_precision"], "float64")
+        self.assertIn("RuntimeError", result.presentation["device"]["fallback_reason"])
+
     def test_torch_initialization_failure_falls_back_without_swallowing_process_control(self) -> None:
         with patch(
             "strategies.algorithms.strategy_bayesian_price_field.importlib.import_module",
@@ -786,6 +1002,8 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "requested": "Auto",
                 "resolved": "cpu",
                 "engine": "numpy",
+                "numeric_precision": "float64",
+                "fallback_reason": None,
             },
         )
         self.assertEqual(result.metadata["compute_device"], "cpu")
