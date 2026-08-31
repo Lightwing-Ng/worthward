@@ -1,4 +1,4 @@
-/* Code version: v0.19.2 */
+/* Code version: v0.19.3 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1559,6 +1559,8 @@ input[type="number"],
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	box-shadow: var(--frosted-glass-shadow);
+	width: fit-content;
+	max-width: 100%;
 	margin-inline: auto;
 	scrollbar-width: none;
 	overscroll-behavior-x: contain;
@@ -1712,8 +1714,8 @@ input[type="number"],
 	letter-spacing: 0;
 }
 .segmented-control--compact {
-	width: min(320px, 100%);
-	max-width: 320px;
+	width: fit-content;
+	max-width: 100%;
 	margin: 0 auto;
 }
 .segmented-control--compact .segmented-control-option {
@@ -1736,8 +1738,8 @@ input[type="number"],
 		margin-inline: auto;
 	}
 	.segmented-control--compact-mobile {
-		width: min(320px, 100%);
-		max-width: 320px;
+		width: fit-content;
+		max-width: 100%;
 		margin: 0 auto;
 	}
 	.segmented-control--compact-mobile .segmented-control-option {

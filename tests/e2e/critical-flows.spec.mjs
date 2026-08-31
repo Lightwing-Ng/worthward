@@ -15365,6 +15365,23 @@ test('keeps the Style token segmented control at 36px without an outer border', 
     await expect(rangeShell).toHaveCSS('border-right-width', '0px');
     await expect(rangeShell).toHaveCSS('border-bottom-width', '0px');
     await expect(rangeShell).toHaveCSS('border-left-width', '0px');
+    const compactGeometry = await rangeShell.evaluate((element) => {
+        const shellRect = element.getBoundingClientRect();
+        const demoRect = element.parentElement?.getBoundingClientRect();
+        const optionWidths = Array.from(element.querySelectorAll('.range-mode-option'))
+            .map((option) => option.getBoundingClientRect().width);
+        return {
+            shellWidth: shellRect.width,
+            demoWidth: demoRect?.width ?? shellRect.width,
+            centerDelta: demoRect
+                ? Math.abs((shellRect.left + (shellRect.width / 2)) - (demoRect.left + (demoRect.width / 2)))
+                : Number.POSITIVE_INFINITY,
+            optionWidths,
+        };
+    });
+    expect(compactGeometry.shellWidth).toBeLessThan(compactGeometry.demoWidth);
+    expect(compactGeometry.centerDelta).toBeLessThanOrEqual(1);
+    expect(Math.max(...compactGeometry.optionWidths) - Math.min(...compactGeometry.optionWidths)).toBeLessThanOrEqual(1);
 });
 
 test('allows the Style token Shared select filter to switch between All, Buy, and Sell', async ({page}) => {

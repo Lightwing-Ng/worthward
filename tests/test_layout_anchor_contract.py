@@ -151,10 +151,10 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.25.1");' in app_css
+    assert '@import url("./views/settings.css?v=0.25.2");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./views/investment.css?v=1.78.2");' in app_css
-    assert "v0.64.3" in app_css
+    assert "v0.64.4" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -497,8 +497,8 @@ def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     assert ".ticker-controls .field.range-panel > .backtest-shared-select-row {" in forms_css
     assert "width: min(100%, var(--settings-form-control-max-width));" in forms_css
     assert "max-width: var(--settings-form-control-max-width);" in forms_css
-    assert "width: min(320px, 100%);" in forms_css
-    assert "max-width: 320px;" in forms_css
+    assert "width: fit-content;" in forms_css
+    assert "max-width: 100%;" in forms_css
     assert "width: min(100%, var(--layout-control-width));" in investment_css
     assert "width: min(100%, 384px);" not in investment_css
 

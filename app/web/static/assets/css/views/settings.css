@@ -1,4 +1,4 @@
-/* Code version: v0.25.1 */
+/* Code version: v0.25.2 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -674,7 +674,7 @@
 }
 
 .settings-shell-style-tokens .range-mode-shell {
-    width: 100%;
+    width: fit-content;
     max-width: 100%;
     margin-inline: auto;
     background: var(--control-glass-background);
