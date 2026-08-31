@@ -1,4 +1,4 @@
-/* Code version: v3.51.0 */
+/* Code version: v3.53.0 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -255,6 +255,224 @@
 
 .backtest-history-view-body {
     gap: 0;
+}
+
+.backtest-history-view-body > .backtest-probability-detail-panel {
+    flex: 0 0 clamp(320px, 52vh, 520px);
+    display: flex;
+    flex-direction: column;
+    min-height: 320px;
+    min-width: 0;
+    margin: 0 12px 10px;
+    padding: 14px 16px 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: var(--radius-panel);
+    background: var(--glass-surface-background-strong);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+}
+
+.backtest-probability-detail-panel[hidden] {
+    display: none;
+}
+
+.backtest-probability-detail-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+    margin-bottom: 10px;
+}
+
+.backtest-probability-detail-heading .chart-heading {
+    margin: 0;
+    font-size: 18px;
+    font-weight: var(--font-weight-regular);
+    line-height: 1.2;
+}
+
+.backtest-probability-detail-status {
+    min-height: 16px;
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: var(--font-form-label);
+    line-height: 1.35;
+}
+
+.backtest-probability-detail-legend {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    color: var(--muted);
+    font-size: var(--font-form-label);
+    line-height: 1.2;
+}
+
+.backtest-probability-detail-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.backtest-probability-detail-legend-swatch {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 10px;
+}
+
+.backtest-probability-detail-legend-swatch.is-up {
+    background: var(--theme-accent-positive);
+}
+
+.backtest-probability-detail-legend-swatch.is-down {
+    background: var(--theme-accent-secondary);
+}
+
+.backtest-probability-detail-plot {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: 52px minmax(0, 1fr);
+    min-height: 0;
+    min-width: 0;
+}
+
+.backtest-probability-detail-y-axis {
+    position: relative;
+    min-height: 0;
+}
+
+.backtest-probability-detail-y-axis-title {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    color: var(--muted);
+    font-size: var(--font-form-label);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    writing-mode: vertical-rl;
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.backtest-probability-detail-y-axis-viewport {
+    position: absolute;
+    inset: 0 0 38px;
+}
+
+.backtest-probability-detail-y-tick {
+    position: absolute;
+    right: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    transform: translateY(-50%);
+}
+
+.backtest-probability-detail-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.backtest-probability-detail-grid-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+.backtest-probability-detail-grid {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    display: grid;
+    box-sizing: border-box;
+    align-content: stretch;
+    justify-content: stretch;
+    min-width: 0;
+    min-height: 0;
+    transform: translateY(-50%);
+}
+
+.backtest-probability-detail-cell {
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.backtest-probability-detail-anchor {
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 1px;
+    background: color-mix(in srgb, var(--theme-muted) 72%, transparent);
+    pointer-events: none;
+    transform: translateY(-0.5px);
+}
+
+.backtest-probability-detail-x-axis {
+    position: relative;
+    flex: 0 0 38px;
+    min-width: 0;
+}
+
+.backtest-probability-detail-x-tick {
+    position: absolute;
+    top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.05;
+    text-align: center;
+    white-space: nowrap;
+    transform: translateX(-50%);
+}
+
+.backtest-probability-detail-x-tick.is-first {
+    text-align: left;
+    transform: none;
+}
+
+.backtest-probability-detail-x-tick.is-last {
+    text-align: right;
+    transform: translateX(-100%);
+}
+
+.backtest-probability-detail-x-tick-line {
+    display: block;
+}
+
+.backtest-probability-detail-x-axis-title {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1;
+}
+
+@media (max-width: 767px) {
+    .backtest-history-view-body > .backtest-probability-detail-panel {
+        flex-basis: 380px;
+        min-height: 380px;
+        margin-inline: 10px;
+        padding-inline: 12px;
+    }
+
+    .backtest-probability-detail-heading {
+        display: block;
+    }
+
+    .backtest-probability-detail-legend {
+        justify-content: flex-start;
+        margin-top: 8px;
+    }
 }
 
 .backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]) {
@@ -913,6 +1131,10 @@
 
 .backtest-probability-cell.is-down {
     background: var(--theme-accent-secondary);
+}
+
+.backtest-probability-cell.is-threshold-hidden {
+    pointer-events: none;
 }
 
 .trade-chart-panel {

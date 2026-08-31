@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.17.0
+ * Code version: v0.18.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -19,6 +19,7 @@
     const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";
     const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;
     const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
+    const DEFAULT_CELL_DISPLAY_THRESHOLD_PCT = 5;
     const DEFAULT_MAX_CELL_PX = 10;
 
     const GEOMETRY_LIMITS = Object.freeze({
@@ -27,6 +28,7 @@
         minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),
         opacityExponent: Object.freeze([1.1, 4]),
         opacityTailRatio: Object.freeze([0, 0.25]),
+        cellDisplayThresholdPct: Object.freeze([0, 50]),
         padding: Object.freeze([0, 64]),
         rows: Object.freeze([1, MAX_ROWS_PER_SIDE]),
     });
@@ -148,6 +150,11 @@
                 value.cell_opacity_tail_ratio,
                 DEFAULT_CELL_OPACITY_TAIL_RATIO,
                 GEOMETRY_LIMITS.opacityTailRatio,
+            ),
+            cell_display_threshold_pct: boundedNumber(
+                value.cell_display_threshold_pct,
+                DEFAULT_CELL_DISPLAY_THRESHOLD_PCT,
+                GEOMETRY_LIMITS.cellDisplayThresholdPct,
             ),
             time_quantization: "integer-trading-days",
             width_fraction: widthFraction,
@@ -527,6 +534,7 @@
         valueForPixel,
         opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
         opacityTailRatio = DEFAULT_CELL_OPACITY_TAIL_RATIO,
+        cellDisplayThresholdPct = DEFAULT_CELL_DISPLAY_THRESHOLD_PCT,
     } = {}) => {
         const normalizedStepPixels = Number(stepPixels);
         const geometryStepPixels = Number(geometry?.stepPixels);
@@ -584,10 +592,16 @@
             cells.map((cell) => cell.probability),
             {exponent: opacityExponent, tailRatio: opacityTailRatio},
         );
+        const displayThresholdPct = boundedNumber(
+            cellDisplayThresholdPct,
+            DEFAULT_CELL_DISPLAY_THRESHOLD_PCT,
+            GEOMETRY_LIMITS.cellDisplayThresholdPct,
+        );
         return cells.map((cell, index) => ({
             ...cell,
             displayIntensity: opacityProfile[index]?.displayIntensity || 0,
             opacity: opacityProfile[index]?.opacity || 0,
+            isVisible: (cell.probability * 100) >= displayThresholdPct,
             size: geometry.cellSize,
             symmetryOffset: (cell.y + (geometry.cellSize / 2)) - geometry.anchorY,
         }));
@@ -619,7 +633,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.17.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.18.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

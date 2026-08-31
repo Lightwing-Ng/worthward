@@ -1,7 +1,10 @@
 """
 Read-only Longbridge CLI factor data for Bayesian price models.
 
-Code version: v1.5.0
+Code version: v1.6.0
+- Added: An opt-in current P/E snapshot from Longbridge ``calc-index`` is
+  retained only on its own market-local availability date and never backfilled
+  into an earlier historical window.
 - Fixed: Daily OHLCV and factor observations now use each symbol's local
   trading date, preventing Asia-market midnight timestamps from shifting to
   the previous UTC calendar day.
@@ -201,6 +204,7 @@ class BayesianFactorBundle:
     factor_status: Mapping[str, str]
     source_commands: tuple[str, ...]
     research_history: tuple[ResearchFactorObservation, ...] = ()
+    dynamic_pe_history: tuple[PeObservation, ...] = ()
 
 
 def clear_bayesian_factor_cache() -> None:
@@ -524,6 +528,58 @@ def _fetch_pe_history(
     return tuple(observations[key] for key in sorted(observations)), _display_command(arguments)
 
 
+def _dynamic_pe_rows(payload: Any) -> list[dict[str, Any]]:
+    """Extract current P/E rows from the real-time calc-index response."""
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    rows = _extract_rows(payload, "data", "items", "list", "results")
+    if rows:
+        return rows
+    return [payload] if "pe" in payload else []
+
+
+def _fetch_dynamic_pe_history(
+        settings: BrokerSettings,
+        symbol: str,
+        start: date,
+        end: date,
+        fetched_at: datetime,
+) -> tuple[tuple[PeObservation, ...], str]:
+    """Fetch Longbridge's current P/E and bind it to the request date.
+
+    ``calc-index`` returns a current snapshot without an observation timestamp.
+    The provider therefore uses the request's market-local date as a conservative
+    availability boundary and excludes the snapshot from earlier backtests.
+    """
+    arguments = [
+        "calc-index",
+        symbol,
+        "--fields",
+        "pe",
+        "--format",
+        "json",
+    ]
+    payload = _run_readonly_cli(settings, arguments, timeout_seconds=45)
+    observed_at = _market_local_trading_day(fetched_at, symbol)
+    if not _is_in_window(observed_at, start, end):
+        return (), _display_command(arguments)
+
+    observations: dict[datetime, PeObservation] = {}
+    source = "longbridge-cli:calc-index:pe"
+    for row in _dynamic_pe_rows(payload):
+        value = _finite_float(row.get("pe", row.get("value")))
+        if value is None:
+            continue
+        observations[observed_at] = PeObservation(
+            observed_at=observed_at,
+            value=value,
+            source=source,
+        )
+    return tuple(observations[key] for key in sorted(observations)), _display_command(arguments)
+
+
 def _option_history_count(start: date, fetched_at: datetime) -> int:
     calendar_days = max(0, (fetched_at.date() - start).days)
     return min(OPTION_HISTORY_MAX_DAYS, max(20, calendar_days + 15))
@@ -832,6 +888,7 @@ def _fingerprint_payload(
         end: date,
         ohlcv: tuple[OhlcvBar, ...],
         pe_history: tuple[PeObservation, ...],
+        dynamic_pe_history: tuple[PeObservation, ...],
         option_history: tuple[OptionVolumeObservation, ...],
         research_history: tuple[ResearchFactorObservation, ...],
         factor_status: dict[str, str],
@@ -866,6 +923,14 @@ def _fingerprint_payload(
                 "source": row.source,
             }
             for row in pe_history
+        ],
+        "dynamic_pe_history": [
+            {
+                "observed_at": timestamp(row.observed_at),
+                "value": row.value,
+                "source": row.source,
+            }
+            for row in dynamic_pe_history
         ],
         "option_history": [
             {
@@ -918,6 +983,7 @@ def fetch_bayesian_factor_bundle(
         *,
         settings: BrokerSettings | None = None,
         include_pe: bool = True,
+        include_dynamic_pe: bool = False,
         include_options: bool = True,
         research_factors: Sequence[str] = (),
         ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS,
@@ -939,6 +1005,7 @@ def fetch_bayesian_factor_bundle(
         normalized_start,
         normalized_end,
         bool(include_pe),
+        bool(include_dynamic_pe),
         bool(include_options),
         normalized_research_factors,
         normalized_ttl,
@@ -1005,6 +1072,29 @@ def fetch_bayesian_factor_bundle(
                 )
                 factor_status["pe"] = "error"
 
+        dynamic_pe_history: tuple[PeObservation, ...] = ()
+        if not include_dynamic_pe:
+            factor_status["dynamic_pe"] = "disabled"
+        else:
+            try:
+                dynamic_pe_history, dynamic_pe_command = _fetch_dynamic_pe_history(
+                    broker_settings,
+                    normalized_symbol,
+                    normalized_start,
+                    normalized_end,
+                    fetched_at,
+                )
+                source_commands_list.append(dynamic_pe_command)
+                factor_status["dynamic_pe"] = (
+                    "available" if dynamic_pe_history else "missing"
+                )
+            except Exception:
+                LOGGER.warning(
+                    "Longbridge CLI dynamic P/E was unavailable for %s.",
+                    normalized_symbol,
+                )
+                factor_status["dynamic_pe"] = "error"
+
         option_history: tuple[OptionVolumeObservation, ...] = ()
         if not include_options:
             factor_status["options"] = "disabled"
@@ -1046,6 +1136,7 @@ def fetch_bayesian_factor_bundle(
             end=normalized_end,
             ohlcv=ohlcv,
             pe_history=pe_history,
+            dynamic_pe_history=dynamic_pe_history,
             option_history=option_history,
             research_history=research_history,
             factor_status=factor_status,
@@ -1057,6 +1148,7 @@ def fetch_bayesian_factor_bundle(
             end=normalized_end,
             ohlcv=ohlcv,
             pe_history=pe_history,
+            dynamic_pe_history=dynamic_pe_history,
             option_history=option_history,
             fetched_at=fetched_at,
             fingerprint=fingerprint,

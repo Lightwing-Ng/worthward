@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.5.0
+Code version: v1.6.0
 """
 
 from __future__ import annotations
@@ -111,7 +111,12 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
         self.assertTrue(all("--adjust forward" in command for command in bundle.source_commands))
         self.assertEqual(
             bundle.factor_status,
-            {"ohlcv": "available", "pe": "disabled", "options": "disabled"},
+            {
+                "ohlcv": "available",
+                "pe": "disabled",
+                "dynamic_pe": "disabled",
+                "options": "disabled",
+            },
         )
 
     def test_drops_dash_and_non_finite_pe_values_without_fabricating_history(self) -> None:
@@ -150,6 +155,92 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
         self.assertEqual(bundle.pe_history[0].value, 17.25)
         self.assertEqual(bundle.pe_history[0].source, "longbridge-cli:valuation-history:pe")
         self.assertEqual(bundle.factor_status["pe"], "available")
+
+    def test_fetches_dynamic_pe_snapshot_only_on_its_availability_date(self) -> None:
+        snapshot_now = datetime(2026, 8, 28, 20, 0, tzinfo=UTC)
+
+        def fake_cli(settings, arguments, *, timeout_seconds):
+            del settings
+            self.assertEqual(timeout_seconds, 45)
+            if arguments[:2] == ["kline", "history"]:
+                return [_bar("2026-08-28T20:00:00Z")]
+            self.assertEqual(
+                arguments,
+                [
+                    "calc-index",
+                    "AAPL.US",
+                    "--fields",
+                    "pe",
+                    "--format",
+                    "json",
+                ],
+            )
+            return [{"symbol": "AAPL.US", "pe": "18.75"}]
+
+        interval_patch, _now_patch = self._provider_patches()
+        with (
+            interval_patch,
+            patch.object(factors, "_utc_now", return_value=snapshot_now),
+            patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
+        ):
+            bundle = factors.fetch_bayesian_factor_bundle(
+                "AAPL.US",
+                "2026-08-01",
+                "2026-08-28",
+                settings=self.settings,
+                include_pe=False,
+                include_dynamic_pe=True,
+                include_options=False,
+                ttl_seconds=0,
+            )
+
+        self.assertEqual(len(bundle.dynamic_pe_history), 1)
+        self.assertEqual(bundle.dynamic_pe_history[0].value, 18.75)
+        self.assertEqual(
+            bundle.dynamic_pe_history[0].observed_at,
+            datetime(2026, 8, 28),
+        )
+        self.assertEqual(
+            bundle.dynamic_pe_history[0].source,
+            "longbridge-cli:calc-index:pe",
+        )
+        self.assertEqual(bundle.factor_status["dynamic_pe"], "available")
+        self.assertTrue(
+            any(
+                "longbridge calc-index AAPL.US --fields pe" in command
+                for command in bundle.source_commands
+            )
+        )
+
+    def test_does_not_backfill_dynamic_pe_snapshot_into_an_earlier_window(self) -> None:
+        snapshot_now = datetime(2026, 8, 28, 20, 0, tzinfo=UTC)
+
+        def fake_cli(settings, arguments, *, timeout_seconds):
+            del settings, timeout_seconds
+            if arguments[:2] == ["kline", "history"]:
+                return [_bar("2026-08-27T20:00:00Z")]
+            self.assertEqual(arguments[:2], ["calc-index", "AAPL.US"])
+            return [{"symbol": "AAPL.US", "pe": "18.75"}]
+
+        interval_patch, _now_patch = self._provider_patches()
+        with (
+            interval_patch,
+            patch.object(factors, "_utc_now", return_value=snapshot_now),
+            patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
+        ):
+            bundle = factors.fetch_bayesian_factor_bundle(
+                "AAPL.US",
+                "2026-08-01",
+                "2026-08-27",
+                settings=self.settings,
+                include_pe=False,
+                include_dynamic_pe=True,
+                include_options=False,
+                ttl_seconds=0,
+            )
+
+        self.assertEqual(bundle.dynamic_pe_history, ())
+        self.assertEqual(bundle.factor_status["dynamic_pe"], "missing")
 
     def test_reports_missing_option_history_without_inventing_neutral_ratios(self) -> None:
         def fake_cli(settings, arguments, *, timeout_seconds):

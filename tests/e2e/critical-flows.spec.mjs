@@ -17580,6 +17580,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             cell_opacity_mapping: 'instant-contrast-power-v1',
             cell_opacity_exponent: 1.6,
             cell_opacity_tail_ratio: 0.02,
+            cell_display_threshold_pct: 0,
             time_quantization: 'integer-trading-days',
             data_keys: [...rawDates],
             predictive_mean: rawDates.map((_, index) => (index < 3 ? null : 0.0015)),
@@ -17892,6 +17893,13 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             opacityMapping: tooltip.dataset.cellOpacityMapping,
             opacityExponent,
             opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
+            cellDisplayThresholdPct: Number(tooltip.dataset.cellDisplayThresholdPct),
+            thresholdVisibleCellCount: cells.filter((cell) => (
+                cell.dataset.thresholdVisible === 'true'
+            )).length,
+            thresholdHiddenCellCount: cells.filter((cell) => (
+                cell.dataset.thresholdVisible === 'false'
+            )).length,
             domXPathStable: priceXPath === canvas && equityXPath === equityCanvas
                 && panelChildren.length === 2
                 && panelChildren[0].contains(canvas)
@@ -18012,6 +18020,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.opacityMapping).toBe('instant-contrast-power-v1');
     expect(contract.opacityExponent).toBe(1.6);
     expect(contract.opacityTailRatio).toBe(0.02);
+    expect(contract.cellDisplayThresholdPct).toBe(0);
+    expect(contract.thresholdVisibleCellCount).toBe(contract.cellCount);
+    expect(contract.thresholdHiddenCellCount).toBe(0);
     expect(contract.maximumOpacity).toBe(1);
     expect(contract.minimumOpacity).toBe(0);
     expect(contract.invisibleCellCount).toBeGreaterThan(0);
@@ -18024,6 +18035,88 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.badgeRight).toBeGreaterThan(contract.badgeLeft);
     expect(Number.isFinite(contract.badgeValue)).toBe(true);
     expect(contract.domXPathStable).toBe(true);
+
+    const detailContract = await page.evaluate(() => {
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        const detailGrid = panel?.querySelector('[data-backtest-probability-detail-grid]');
+        const detailCells = Array.from(detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const tooltipCells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        const yTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-y-axis] .backtest-probability-detail-y-tick') || []);
+        const xTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-x-tick]') || []);
+        const detailGridRect = detailGrid?.getBoundingClientRect();
+        const detailCellRects = detailCells.map((cell) => cell.getBoundingClientRect());
+        const detailCellByKey = new Map(detailCells.map((cell) => [
+            `${cell.dataset.row}:${cell.dataset.column}`,
+            cell,
+        ]));
+        const hoverCellDataMatches = tooltipCells.every((cell) => {
+            const detailCell = detailCellByKey.get(`${cell.dataset.row}:${cell.dataset.column}`);
+            return detailCell
+                && detailCell.dataset.probability === cell.dataset.probability
+                && detailCell.dataset.lowerPrice === cell.dataset.lowerPrice
+                && detailCell.dataset.upperPrice === cell.dataset.upperPrice;
+        });
+        const xTickRects = xTicks.map((tick) => tick.getBoundingClientRect());
+        const xTicksDoNotOverlap = xTickRects.every((rect, index) => (
+            index === 0 || rect.left >= xTickRects[index - 1].right - 0.5
+        ));
+        const activeIndex = Number(panel?.dataset.activeIndex);
+        const firstTick = xTicks[0];
+        const firstHorizon = Number(firstTick?.dataset.horizon);
+        const rawDates = window.ANTIGRAVITY_APP?.backtestResult?.chart?.raw_dates || [];
+        const rawDate = rawDates[activeIndex + firstHorizon];
+        const dateMatch = typeof rawDate === 'string'
+            ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
+            : null;
+        const dateFormatter = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.formatFullDateLines;
+        const expectedDateText = dateMatch && typeof dateFormatter === 'function'
+            ? dateFormatter({
+                year: Number(dateMatch[1]),
+                monthIndex: Number(dateMatch[2]) - 1,
+                day: Number(dateMatch[3]),
+            }, {allowWrap: true}).filter(Boolean).join('')
+            : null;
+        return {
+            activeIndex,
+            ariaHidden: panel?.getAttribute('aria-hidden'),
+            cellCount: detailCells.length,
+            cellSquareDelta: Math.max(...detailCellRects.map((rect) => Math.abs(rect.width - rect.height))),
+            columns: Number(detailGrid?.dataset.columnCount),
+            detailGridWidth: detailGridRect?.width ?? Number.NaN,
+            detailGridHeight: detailGridRect?.height ?? Number.NaN,
+            expectedDateText,
+            firstDateText: firstTick?.textContent?.trim() || '',
+            gap: detailCellRects[0] && detailCellRects[1]
+                ? detailCellRects[1].left - detailCellRects[0].right
+                : Number.NaN,
+            hoverCellDataMatches,
+            panelHidden: panel instanceof HTMLElement ? panel.hidden : true,
+            rows: Number(detailGrid?.dataset.rowCount),
+            xTickCount: xTicks.length,
+            xTicksDoNotOverlap,
+            yTickCount: yTicks.length,
+            yTicksHaveValues: yTicks.every((tick) => Boolean(tick.textContent?.trim())),
+        };
+    });
+    expect(detailContract).not.toBeNull();
+    expect(detailContract.panelHidden).toBe(false);
+    expect(detailContract.ariaHidden).toBe('false');
+    expect(detailContract.activeIndex).toBe(leftAnchor.index);
+    expect(detailContract.cellCount).toBe(contract.cellCount);
+    expect(detailContract.hoverCellDataMatches).toBe(true);
+    expect(detailContract.columns).toBe(20);
+    expect(detailContract.rows).toBe(contract.rows);
+    expect(detailContract.cellSquareDelta).toBeLessThanOrEqual(0.1);
+    expect(detailContract.gap).toBeCloseTo(2, 1);
+    expect(detailContract.xTickCount).toBeGreaterThanOrEqual(3);
+    expect(detailContract.xTickCount).toBeLessThanOrEqual(4);
+    expect(detailContract.xTicksDoNotOverlap).toBe(true);
+    expect(detailContract.yTickCount).toBe(5);
+    expect(detailContract.yTicksHaveValues).toBe(true);
+    if (detailContract.expectedDateText) {
+        expect(detailContract.firstDateText).toContain(detailContract.expectedDateText);
+    }
 
     const sectionResizer = page.locator('#backtest_section_resizer');
     await sectionResizer.focus();
@@ -18206,6 +18299,18 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await page.mouse.move(10, 10);
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    const retainedDetail = await page.evaluate(() => {
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        const grid = panel?.querySelector('[data-backtest-probability-detail-grid]');
+        return {
+            activeIndex: Number(panel?.dataset.activeIndex),
+            cellCount: grid?.querySelectorAll('.backtest-probability-detail-cell').length || 0,
+            hidden: panel instanceof HTMLElement ? panel.hidden : true,
+        };
+    });
+    expect(retainedDetail.hidden).toBe(false);
+    expect(retainedDetail.activeIndex).toBe(minimumAnchor.index);
+    expect(retainedDetail.cellCount).toBeGreaterThan(0);
     await waitForPanReset();
     await sectionResizer.focus();
     await sectionResizer.press('End');
@@ -18678,6 +18783,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const history = document.querySelector('#backtest_history_surface');
         const canvas = document.querySelector('#tradePriceChart');
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const detailPanel = document.querySelector('#backtest_probability_detail_panel');
+        const detailGrid = detailPanel?.querySelector('[data-backtest-probability-detail-grid]');
+        const detailCells = Array.from(detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []);
         const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
         const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
         const chart = window.Chart?.getChart?.(canvas);
@@ -18701,11 +18809,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const firstRect = first?.getBoundingClientRect();
         const nextColumnRect = nextColumn?.getBoundingClientRect();
         const nextRowRect = nextRow?.getBoundingClientRect();
+        const detailCellRects = detailCells.map((cell) => cell.getBoundingClientRect());
         const finiteY = chart.getDatasetMeta(0).data
             .map((point) => Number(point?.y))
             .filter(Number.isFinite);
         return {
             cardToResizerGap: resizerRect.top - cardRect.bottom,
+            detailCellSquareDelta: Math.max(...detailCellRects.map((rect) => Math.abs(rect.width - rect.height))),
+            detailGridWidth: detailGrid?.getBoundingClientRect().width ?? Number.NaN,
+            detailHidden: detailPanel instanceof HTMLElement ? detailPanel.hidden : true,
+            detailXTickCount: detailPanel?.querySelectorAll('[data-backtest-probability-detail-x-tick]').length || 0,
             cellSquareDelta: Math.max(...cells.map((cell) => {
                 const rect = cell.getBoundingClientRect();
                 return Math.abs(rect.width - rect.height);
@@ -18744,6 +18857,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         };
     });
     expect(narrowLayout).not.toBeNull();
+    expect(narrowLayout.detailHidden).toBe(false);
+    expect(narrowLayout.detailGridWidth).toBeGreaterThan(0);
+    expect(narrowLayout.detailCellSquareDelta).toBeLessThanOrEqual(0.1);
+    expect(narrowLayout.detailXTickCount).toBeGreaterThanOrEqual(3);
+    expect(narrowLayout.detailXTickCount).toBeLessThanOrEqual(4);
     expect(narrowLayout.resultsHeight).toBeGreaterThanOrEqual(599);
     expect(narrowLayout.stackHeight).toBeGreaterThanOrEqual(253);
     expect(narrowLayout.pricePixelSpan).toBeGreaterThanOrEqual(24);
@@ -18920,6 +19038,43 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation.centerDelta).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideTopInset).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideBottomInset).toBeGreaterThanOrEqual(0);
+
+    await page.evaluate(() => {
+        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        if (!result?.strategy_presentation) throw new Error('Bayesian presentation is unavailable for threshold verification.');
+        result.strategy_presentation = {
+            ...result.strategy_presentation,
+            cell_display_threshold_pct: 50,
+        };
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+    });
+    const thresholdAnchor = await pointAt(0.05);
+    if (!thresholdAnchor) throw new Error('Bayesian threshold hover anchor is unavailable.');
+    await page.mouse.move(thresholdAnchor.x, thresholdAnchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    const thresholdContract = await page.evaluate(() => {
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        const detailPanel = document.querySelector('#backtest_probability_detail_panel');
+        const detailCells = Array.from(detailPanel?.querySelectorAll('.backtest-probability-detail-cell') || []);
+        const hiddenCells = cells.filter((cell) => cell.dataset.thresholdVisible === 'false');
+        const hiddenDetailCells = detailCells.filter((cell) => cell.dataset.thresholdVisible === 'false');
+        return {
+            threshold: Number(tooltip?.dataset.cellDisplayThresholdPct),
+            hiddenCount: hiddenCells.length,
+            hiddenComputedOpacity: hiddenCells.every((cell) => getComputedStyle(cell).opacity === '0'),
+            hiddenAria: hiddenCells.every((cell) => cell.getAttribute('aria-hidden') === 'true'),
+            detailHiddenCount: hiddenDetailCells.length,
+            detailHiddenComputedOpacity: hiddenDetailCells.every((cell) => getComputedStyle(cell).opacity === '0'),
+        };
+    });
+    expect(thresholdContract.threshold).toBe(50);
+    expect(thresholdContract.hiddenCount).toBeGreaterThan(0);
+    expect(thresholdContract.hiddenComputedOpacity).toBe(true);
+    expect(thresholdContract.hiddenAria).toBe(true);
+    expect(thresholdContract.detailHiddenCount).toBe(thresholdContract.hiddenCount);
+    expect(thresholdContract.detailHiddenComputedOpacity).toBe(true);
 });
 
 const responsiveViewports = [

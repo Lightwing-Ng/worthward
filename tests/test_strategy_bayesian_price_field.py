@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.17.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.19.0."""
 
 from __future__ import annotations
 
@@ -66,6 +66,7 @@ def _bundle_from_frame(
         frame: pd.DataFrame,
         *,
         pe_history: tuple[object, ...] = (),
+        dynamic_pe_history: tuple[object, ...] = (),
         option_history: tuple[object, ...] = (),
         fingerprint: str = "bundle-fingerprint",
         factor_status: dict[str, str] | None = None,
@@ -85,6 +86,7 @@ def _bundle_from_frame(
     return SimpleNamespace(
         ohlcv=bars,
         pe_history=pe_history,
+        dynamic_pe_history=dynamic_pe_history,
         option_history=option_history,
         fingerprint=fingerprint,
         factor_status=factor_status
@@ -169,6 +171,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(
             {
                 "use_pe_ratio",
+                "use_dynamic_pe_ratio",
                 "use_volume",
                 "use_options",
                 "use_volume_at_price",
@@ -182,6 +185,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "use_short_interest",
                 "use_short_volume",
                 "use_broker_holding",
+                "cell_display_threshold",
                 "training_window",
                 "chip_window",
                 "prior_strength",
@@ -192,10 +196,67 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(definitions["compute_backend"].options, ("Auto", "CPU", "GPU"))
         self.assertEqual(definitions["compute_backend"].default, "Auto")
+        factor_definitions = [
+            definition
+            for definition in strategy.get_parameter_definitions()
+            if definition.key.startswith("use_")
+        ]
+        factor_labels = [definition.label for definition in factor_definitions]
+        self.assertEqual(
+            factor_labels,
+            sorted(factor_labels, key=str.casefold),
+        )
+        self.assertFalse(definitions["use_dynamic_pe_ratio"].default)
+        self.assertEqual(definitions["cell_display_threshold"].kind, "number")
+        self.assertEqual(definitions["cell_display_threshold"].label, "Cell Display Threshold (%)")
+        self.assertEqual(definitions["cell_display_threshold"].default, 5.0)
+        self.assertEqual(definitions["cell_display_threshold"].minimum, 0.0)
+        self.assertEqual(definitions["cell_display_threshold"].maximum, 50.0)
+        self.assertEqual(definitions["cell_display_threshold"].step, 0.1)
+        self.assertEqual(definitions["cell_display_threshold"].unit_hint, "%")
+        self.assertIn("presentation only", definitions["cell_display_threshold"].help_text)
         self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
         self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.7.0")
+
+    def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
+        strategy = BayesianPriceFieldStrategy()
+        self.assertEqual(
+            strategy.normalize_params({"cell_display_threshold": -10})[
+                "cell_display_threshold"
+            ],
+            0.0,
+        )
+        self.assertEqual(
+            strategy.normalize_params({"cell_display_threshold": 75})[
+                "cell_display_threshold"
+            ],
+            50.0,
+        )
+
+        frame = _market_frame(90)
+        baseline = strategy.compute_signals(
+            frame,
+            _cpu_params(cell_display_threshold=0),
+        )
+        focused = strategy.compute_signals(
+            frame,
+            _cpu_params(cell_display_threshold=50),
+        )
+        for column in (
+            "bayesian_predictive_mean",
+            "bayesian_predictive_std",
+            "bayesian_probability_up",
+            "buy_signal",
+            "sell_signal",
+        ):
+            np.testing.assert_array_equal(
+                baseline.frame[column].to_numpy(),
+                focused.frame[column].to_numpy(),
+            )
+        self.assertEqual(baseline.presentation["cell_display_threshold_pct"], 0.0)
+        self.assertEqual(focused.presentation["cell_display_threshold_pct"], 50.0)
 
     def test_probability_field_hit_rate_is_bounded_and_uses_only_later_observations(self) -> None:
         frame = _market_frame(90)
@@ -695,6 +756,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(presentation["cell_opacity_exponent"], 1.6)
         self.assertEqual(presentation["cell_opacity_tail_ratio"], 0.02)
+        self.assertEqual(presentation["cell_display_threshold_pct"], 5.0)
         self.assertEqual(presentation["time_quantization"], "integer-trading-days")
         self.assertEqual(
             presentation["metric_geometry"]["scoring_lattice"]["horizons"],
@@ -800,6 +862,44 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertTrue(pb_factor["enabled"])
         self.assertGreater(pb_factor["finite_observations"], 0)
+
+    def test_dynamic_pe_snapshot_is_joined_as_a_distinct_factor(self) -> None:
+        frame = _market_frame(80)
+        observations = tuple(
+            SimpleNamespace(
+                observed_at=frame["Date"].iloc[index],
+                value=20.0 + (index / 100.0),
+            )
+            for index in range(60, 80)
+        )
+        bundle = _bundle_from_frame(
+            frame,
+            dynamic_pe_history=observations,
+            factor_status={"ohlcv": "available", "dynamic_pe": "available"},
+        )
+        strategy = BayesianPriceFieldStrategy()
+        strategy._warmup_bundle = bundle
+        result = strategy.compute_signals(
+            frame,
+            _cpu_params(
+                use_pe_ratio=False,
+                use_dynamic_pe_ratio=True,
+                use_options=False,
+                use_volume=False,
+                use_volume_at_price=False,
+            ),
+        )
+
+        merged = _merge_bundle_observations(frame, bundle)
+        factor_values = _build_factor_columns(merged, 20)
+        self.assertIn("dynamic_pe_ratio", factor_values)
+        dynamic_factor = next(
+            factor for factor in result.presentation["factors"]
+            if factor["key"] == "dynamic_pe_ratio"
+        )
+        self.assertTrue(dynamic_factor["enabled"])
+        self.assertEqual(dynamic_factor["status"], "active")
+        self.assertEqual(dynamic_factor["finite_observations"], 20)
 
     def test_options_factor_derives_ratios_from_raw_volume_and_open_interest(self) -> None:
         observation = SimpleNamespace(
@@ -1055,6 +1155,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(call_args.args[0], "AAPL.US")
         self.assertLess(pd.Timestamp(call_args.args[1]), requested_start)
         self.assertFalse(call_args.kwargs["include_pe"])
+        self.assertFalse(call_args.kwargs["include_dynamic_pe"])
         self.assertFalse(call_args.kwargs["include_options"])
 
 

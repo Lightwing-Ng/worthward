@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.89.1
+Code version: v0.89.2
+- Fixed: Mixed-market relative one-day comparisons render the current local
+  trading session on the first response, while pending markets keep an empty
+  aligned series until their first live bar arrives.
 - Fixed: Mixed one-day date constraints probe the current local-market session
   when an older exact date is already selected, keeping a current Korean
   session selectable alongside a not-yet-open US series.
@@ -2398,6 +2401,103 @@ def build_web_runtime() -> WebRuntime:
             trading_date=target_date_value,
         )
 
+    def build_current_compare_one_day_datasets(
+            tickers: list[str],
+            *,
+            daily_datasets: list[pd.DataFrame],
+            target_trading_date: object,
+            live_session_date: object,
+            include_extended_hours_flag: bool,
+            include_overnight_flag: bool,
+            force_refresh: bool,
+    ) -> tuple[list[pd.DataFrame], str]:
+        """Build a current-day axis while allowing a market to remain pending."""
+        parsed_target_date = pd.to_datetime(target_trading_date, errors="coerce")
+        parsed_live_session_date = pd.to_datetime(live_session_date, errors="coerce")
+        if pd.isna(parsed_target_date) or pd.isna(parsed_live_session_date):
+            raise ValueError("Current compare trading dates must be valid.")
+
+        target_date_value = parsed_target_date.date()
+        live_session_date_value = parsed_live_session_date.date()
+        axis_trading_date = (
+            resolve_compare_axis_trading_date(tickers, target_date_value)
+            if target_date_value == live_session_date_value
+            else target_date_value
+        )
+        axis_trading_date_value = pd.to_datetime(axis_trading_date, errors="coerce")
+        if pd.isna(axis_trading_date_value):
+            raise ValueError("Current compare reference axis date must be valid.")
+        axis_trading_date_value = axis_trading_date_value.date()
+        reference_intraday_datasets = [
+            load_compare_one_day_intraday_dataset(
+                ticker,
+                include_extended_hours_flag=include_extended_hours_flag,
+                include_overnight_flag=include_overnight_flag,
+                trading_date=axis_trading_date_value,
+            )
+            for ticker in tickers
+        ]
+        reference_common_end_date = min(
+            dataset["Date"].max()
+            for dataset in reference_intraday_datasets
+        )
+        reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
+            reference_intraday_datasets,
+            "1d",
+            reference_common_end_date,
+            tickers,
+        )
+        if axis_trading_date_value != target_date_value:
+            display_reference_aligned_datasets = [
+                shift_intraday_compare_axis_to_trading_date(
+                    dataset,
+                    axis_trading_date_value,
+                    target_date_value,
+                )
+                for dataset in reference_aligned_datasets
+            ]
+            aligned_datasets: list[pd.DataFrame] = []
+            for reference_dataset, ticker in zip(display_reference_aligned_datasets, tickers):
+                try:
+                    target_dataset = load_target_compare_one_day_intraday_dataset(
+                        ticker,
+                        target_trading_date=target_date_value,
+                        include_extended_hours_flag=include_extended_hours_flag,
+                        include_overnight_flag=include_overnight_flag,
+                        live_session_date=live_session_date_value,
+                        force_refresh=force_refresh,
+                    )
+                    aligned_datasets.append(
+                        map_live_intraday_dataset_to_reference_axis(
+                            reference_dataset,
+                            target_dataset,
+                            ticker,
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.info(
+                        "No current compare bars for %s on %s yet: %s",
+                        ticker,
+                        target_date_value,
+                        exc,
+                    )
+                    aligned_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
+        else:
+            aligned_datasets = [
+                apply_market_close_anchor(
+                    dataset,
+                    daily_dataset,
+                    ticker,
+                    target_date_value,
+                )
+                for dataset, daily_dataset, ticker in zip(
+                    reference_aligned_datasets,
+                    daily_datasets,
+                    tickers,
+                )
+            ]
+        return aligned_datasets, pd.Timestamp(axis_trading_date_value).strftime("%Y-%m-%d")
+
     def append_live_compare_intraday_dataset(
             ticker: str,
             intraday_dataset: pd.DataFrame,
@@ -4652,61 +4752,15 @@ def build_web_runtime() -> WebRuntime:
                                 infer_ticker_market(ticker)
                                 for ticker in validated_tickers
                             }
-                            axis_trading_date = resolve_compare_axis_trading_date(
+                            aligned_datasets, axis_trading_date = build_current_compare_one_day_datasets(
                                 validated_tickers,
-                                target_trading_date,
-                            ) if target_trading_date == date_constraints.max_date else target_trading_date
-                            reference_intraday_datasets = [
-                                load_compare_one_day_intraday_dataset(
-                                    ticker,
-                                    include_extended_hours_flag=include_extended_hours,
-                                    include_overnight_flag=include_overnight,
-                                    trading_date=axis_trading_date,
-                                )
-                                for ticker in validated_tickers
-                            ]
-                            reference_common_end_date = min(dataset["Date"].max() for dataset in reference_intraday_datasets)
-                            reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
-                                reference_intraday_datasets,
-                                "1d",
-                                reference_common_end_date,
-                                validated_tickers,
+                                daily_datasets=datasets,
+                                target_trading_date=target_trading_date,
+                                live_session_date=live_session_date,
+                                include_extended_hours_flag=include_extended_hours,
+                                include_overnight_flag=include_overnight,
+                                force_refresh=False,
                             )
-                            if axis_trading_date != target_trading_date:
-                                display_reference_aligned_datasets = [
-                                    shift_intraday_compare_axis_to_trading_date(
-                                        dataset,
-                                        axis_trading_date,
-                                        target_trading_date,
-                                    )
-                                    for dataset in reference_aligned_datasets
-                                ]
-                                aligned_datasets = []
-                                for reference_dataset, ticker in zip(display_reference_aligned_datasets, validated_tickers):
-                                    try:
-                                        target_dataset = load_target_compare_one_day_intraday_dataset(
-                                            ticker,
-                                            target_trading_date=target_trading_date,
-                                            include_extended_hours_flag=include_extended_hours,
-                                            include_overnight_flag=include_overnight,
-                                            force_refresh=False,
-                                        )
-                                        aligned_datasets.append(
-                                            map_live_intraday_dataset_to_reference_axis(reference_dataset, target_dataset, ticker)
-                                        )
-                                    except Exception as exc:  # noqa: BLE001
-                                        LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, target_trading_date, exc)
-                                        aligned_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
-                            else:
-                                aligned_datasets = [
-                                    apply_market_close_anchor(
-                                        dataset,
-                                        daily_dataset,
-                                        ticker,
-                                        target_trading_date,
-                                    )
-                                    for dataset, daily_dataset, ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
-                                ]
                             if (
                                     pd.to_datetime(target_trading_date, errors="coerce").date() == live_session_date
                                     and len(selected_markets) == 1
@@ -4795,6 +4849,10 @@ def build_web_runtime() -> WebRuntime:
                             live_session_date = pd.Timestamp.now(
                                 tz=market_timezone_for_ticker(validated_tickers[0])
                             ).date()
+                            selected_markets = {
+                                infer_ticker_market(ticker)
+                                for ticker in validated_tickers
+                            }
                             should_append_relative_live = any(
                                 is_market_regular_session_active_for_ticker(ticker)
                                 for ticker in validated_tickers
@@ -4968,6 +5026,36 @@ def build_web_runtime() -> WebRuntime:
                                 ).strftime("%Y-%m-%d")
                                 exact_start_value = chart_trading_date_value
                                 exact_end_value = chart_trading_date_value
+                                has_current_intraday_data = any(
+                                    dataset is not None
+                                    and live_session_date in {
+                                        market_trading_date_for_timestamp(value, ticker)
+                                        for value in dataset["Date"]
+                                    }
+                                    for ticker, dataset in zip(validated_tickers, loaded_intraday_datasets)
+                                )
+                                if (
+                                        len(selected_markets) > 1
+                                        and (should_append_relative_live or has_current_intraday_data)
+                                ):
+                                    try:
+                                        aligned_datasets, _axis_trading_date = build_current_compare_one_day_datasets(
+                                            validated_tickers,
+                                            daily_datasets=datasets,
+                                            target_trading_date=live_session_date,
+                                            live_session_date=live_session_date,
+                                            include_extended_hours_flag=include_extended_hours,
+                                            include_overnight_flag=include_overnight,
+                                            force_refresh=True,
+                                        )
+                                        chart_trading_date_value = pd.Timestamp(live_session_date).strftime("%Y-%m-%d")
+                                        exact_start_value = chart_trading_date_value
+                                        exact_end_value = chart_trading_date_value
+                                    except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                                        LOGGER.info(
+                                            "Unable to render the current mixed-market one-day axis; keeping the local comparison: %s",
+                                            exc,
+                                        )
                             for ticker in ([] if period == "1d" else validated_tickers):
                                 intraday_dataset = fetch_history(
                                     ticker,

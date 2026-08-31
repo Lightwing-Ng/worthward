@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.6
+Code version: v0.14.7
 """
 
 from __future__ import annotations
@@ -159,6 +159,78 @@ class ComparePageTests(unittest.TestCase):
             html,
         )
         self.assertIn('"2026-08-30 20:00"', html)
+
+    def test_mixed_market_relative_one_day_starts_on_current_session_and_shows_overnight(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                [
+                    "2026-08-27 20:00",
+                    "2026-08-28 02:30",
+                    "2026-08-30 20:00",
+                    "2026-08-31 02:30",
+                ],
+            ),
+            "DRAM": ohlc_frame_for_dates(
+                "DRAM",
+                [
+                    "2026-08-28 09:30",
+                    "2026-08-28 15:59",
+                ],
+            ),
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "price",
+        ) -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return close_frame_for_ticker(ticker, dates=["2026-08-28", "2026-08-31"])
+
+        with _write_intraday_stores(intraday_frames) as tempdir:
+            with (
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-08-31 16:00", tz="Asia/Shanghai"),
+                ),
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
+                patch("app.web.runtime.is_one_minute_store_fresh", return_value=True),
+                patch("app.web.runtime.refresh_one_minute_store"),
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_extended_history",
+                    side_effect=ValueError("Yahoo extended-hours data is unavailable for DRAM."),
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=DRAM&range=1d"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        self.assertIn("31 Aug 2026", html)
+        self.assertNotIn("15 Jul 2026", html)
+        self.assertIn('"2026-08-30 20:00"', html)
+        self.assertIn('"2026-08-31 02:30"', html)
+        self.assertIn('data-one-day-overnight-field', html)
+        self.assertIn('data-overnight-source-ready="1"', html)
+        self.assertNotIn(
+            'id="include_overnight_hours" name="overnight" type="checkbox" value="1" disabled',
+            html,
+        )
+        self.assertIn('"ticker": "DRAM"', html)
 
     def test_one_day_date_constraints_include_current_us_session_from_compare_fallback(self) -> None:
         stale_frames = {

@@ -1,4 +1,4 @@
-/* Code version: v0.23.0 */
+/* Code version: v0.25.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -415,11 +415,34 @@
 				sectionResizer.removeAttribute("tabindex");
 			}
 		};
+		const probabilityDetailPanel = document.getElementById("backtest_probability_detail_panel");
+		const probabilityDetailGrid = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-grid]",
+		);
+		const probabilityDetailYAxis = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-y-axis]",
+		);
+		const probabilityDetailXAxis = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-x-axis]",
+		);
+		const probabilityDetailStatus = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-status]",
+		);
+		const probabilityDetailAnchor = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-anchor]",
+		);
+		const hideProbabilityDetail = () => {
+			if (!(probabilityDetailPanel instanceof HTMLElement)) return;
+			probabilityDetailPanel.hidden = true;
+			probabilityDetailPanel.setAttribute("aria-hidden", "true");
+			delete probabilityDetailPanel.dataset.activeIndex;
+		};
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
 			resultsStack?.classList.remove("has-probability-field");
 			clearProbabilityStageMinimum();
 			resetProbabilityScrollPort();
+			hideProbabilityDetail();
 			return;
 		}
 
@@ -429,6 +452,7 @@
 			resultsStack?.classList.remove("has-probability-field");
 			clearProbabilityStageMinimum();
 			resetProbabilityScrollPort();
+			hideProbabilityDetail();
 			return;
 		}
 		const existingPriceChart = window.Chart.getChart?.(priceCanvas);
@@ -536,6 +560,7 @@
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) {
 			clearProbabilityStageMinimum();
+			hideProbabilityDetail();
 			return;
 		}
 		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
@@ -618,6 +643,9 @@
 			);
 			probabilityTooltip.dataset.cellOpacityTailRatio = String(
 				strategyPresentation.cell_opacity_tail_ratio,
+			);
+			probabilityTooltip.dataset.cellDisplayThresholdPct = String(
+				strategyPresentation.cell_display_threshold_pct,
 			);
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
@@ -1015,6 +1043,205 @@
 				})()
 		);
 
+		const addTradingDays = (dateParts, tradingDays) => {
+			if (!dateParts) return null;
+			const cursor = new Date(Date.UTC(
+				dateParts.year,
+				dateParts.monthIndex,
+				dateParts.day,
+			));
+			if (Number.isNaN(cursor.getTime())) return null;
+			let remainingDays = Math.max(0, Math.floor(Number(tradingDays) || 0));
+			while (remainingDays > 0) {
+				cursor.setUTCDate(cursor.getUTCDate() + 1);
+				const weekday = cursor.getUTCDay();
+				if (weekday !== 0 && weekday !== 6) remainingDays -= 1;
+			}
+			return {
+				year: cursor.getUTCFullYear(),
+				monthIndex: cursor.getUTCMonth(),
+				day: cursor.getUTCDate(),
+				hours: null,
+				minutes: null,
+			};
+		};
+
+		const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {
+			const normalizedHorizon = Math.max(1, Math.floor(Number(horizon) || 0));
+			const knownDate = parseRawDate(rawDates[anchorIndex + normalizedHorizon]);
+			if (knownDate) return knownDate;
+			return addTradingDays(parseRawDate(rawDates[anchorIndex]), normalizedHorizon);
+		};
+
+		const applyProbabilityCellNode = (node, cell, modifierClass = "") => {
+			const thresholdVisible = cell.isVisible !== false;
+			node.className = `backtest-probability-cell is-${cell.sign}${modifierClass ? ` ${modifierClass}` : ""}`
+				+ (thresholdVisible ? "" : " is-threshold-hidden");
+			node.dataset.column = String(cell.column);
+			node.dataset.horizon = String(cell.horizon);
+			node.dataset.probability = String(cell.probability);
+			node.dataset.displayIntensity = String(cell.displayIntensity);
+			node.dataset.opacity = String(cell.opacity);
+			node.dataset.row = String(cell.row);
+			node.dataset.lowerPrice = String(cell.lowerPrice);
+			node.dataset.upperPrice = String(cell.upperPrice);
+			node.dataset.thresholdVisible = String(thresholdVisible);
+			node.style.gridColumn = String(cell.column + 1);
+			node.style.gridRow = String(cell.row + 1);
+			node.style.opacity = thresholdVisible ? String(cell.opacity) : "0";
+			if (thresholdVisible) node.removeAttribute("aria-hidden");
+			else node.setAttribute("aria-hidden", "true");
+			node.title = `${(cell.probability * 100).toFixed(2)}%`;
+		};
+
+		const renderProbabilityDetail = (index, model) => {
+			if (!(probabilityDetailPanel instanceof HTMLElement)
+				|| !(probabilityDetailGrid instanceof HTMLElement)
+				|| !(probabilityDetailYAxis instanceof HTMLElement)
+				|| !(probabilityDetailXAxis instanceof HTMLElement)
+				|| !model?.geometry
+				|| !Array.isArray(model.cells)
+				|| !model.cells.length) return false;
+
+			const {geometry, cells, anchorPrice} = model;
+			probabilityDetailPanel.hidden = false;
+			probabilityDetailPanel.setAttribute("aria-hidden", "false");
+			probabilityDetailPanel.dataset.activeIndex = String(index);
+			probabilityDetailPanel.dataset.columnCount = String(geometry.columnCount);
+			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
+			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
+			probabilityDetailPanel.dataset.cellDisplayThresholdPct = String(
+				model.cellDisplayThresholdPct,
+			);
+			probabilityDetailPanel.dataset.thresholdHiddenCount = String(
+				cells.filter((cell) => cell.isVisible === false).length,
+			);
+			probabilityDetailGrid.setAttribute(
+				"aria-label",
+				`Bayesian future price probability field for ${labels[index] || "selected date"}`,
+			);
+			const anchorDate = parseRawDate(rawDates[index]);
+			const selectedDate = anchorDate ? formatChartDate(anchorDate) : (labels[index] || "selected date");
+			if (probabilityDetailStatus instanceof HTMLElement) {
+				probabilityDetailStatus.textContent = `Selected date: ${selectedDate} · Close: ${formatMoney(anchorPrice)} · Cells below ${Number(model.cellDisplayThresholdPct).toFixed(1)}% hidden`;
+			}
+			if (probabilityDetailAnchor instanceof HTMLElement) {
+				probabilityDetailAnchor.dataset.price = String(anchorPrice);
+			}
+
+			const canReuseCells = probabilityDetailGrid.childElementCount === cells.length
+				&& Number(probabilityDetailGrid.dataset.columnCount) === geometry.columnCount
+				&& Number(probabilityDetailGrid.dataset.rowCount) === geometry.rowCount;
+			let cellNodes = canReuseCells ? Array.from(probabilityDetailGrid.children) : [];
+			if (!canReuseCells) {
+				const fragment = document.createDocumentFragment();
+				cellNodes = cells.map(() => {
+					const node = document.createElement("span");
+					fragment.appendChild(node);
+					return node;
+				});
+				probabilityDetailGrid.replaceChildren(fragment);
+			}
+			cells.forEach((cell, cellIndex) => applyProbabilityCellNode(
+				cellNodes[cellIndex],
+				cell,
+				"backtest-probability-detail-cell",
+			));
+			probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
+			probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
+			probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
+			const detailGridViewport = probabilityDetailGrid.parentElement;
+			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
+			const detailGridViewportWidth = Number(detailGridViewportRect?.width) || 1;
+			const detailGridViewportHeight = Number(detailGridViewportRect?.height) || 1;
+			const horizontalPadding = geometry.gridPaddingInlineStart + geometry.padding;
+			const verticalPadding = geometry.gridPaddingTop + geometry.gridPaddingBottom;
+			const availableWidth = Math.max(
+				1,
+				detailGridViewportWidth - horizontalPadding
+					- ((geometry.columnCount - 1) * geometry.gap),
+			);
+			const availableHeight = Math.max(
+				1,
+				detailGridViewportHeight - verticalPadding
+					- ((geometry.rowCount - 1) * geometry.gap),
+			);
+			const detailCellSize = Math.max(1, Math.min(
+				availableWidth / geometry.columnCount,
+				availableHeight / geometry.rowCount,
+			));
+			const detailGridWidth = horizontalPadding
+				+ (geometry.columnCount * detailCellSize)
+				+ ((geometry.columnCount - 1) * geometry.gap);
+			const detailGridHeight = verticalPadding
+				+ (geometry.rowCount * detailCellSize)
+				+ ((geometry.rowCount - 1) * geometry.gap);
+			probabilityDetailGrid.style.width = `${detailGridWidth}px`;
+			probabilityDetailGrid.style.height = `${detailGridHeight}px`;
+			probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;
+			probabilityDetailGrid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${detailCellSize}px)`;
+			probabilityDetailGrid.style.gap = `${geometry.gap}px`;
+			probabilityDetailGrid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`;
+
+			const lowerPrice = Math.min(...cells.map((cell) => cell.lowerPrice));
+			const upperPrice = Math.max(...cells.map((cell) => cell.upperPrice));
+			const detailGridTop = Math.max(0, (detailGridViewportHeight - detailGridHeight) / 2);
+			const detailYViewportRect = probabilityDetailYAxis.getBoundingClientRect();
+			const tickValues = Array.from({length: 5}, (_, tickIndex) => (
+				upperPrice - ((upperPrice - lowerPrice) * (tickIndex / 4))
+			));
+			probabilityDetailYAxis.replaceChildren();
+			tickValues.forEach((value, tickIndex) => {
+				const tick = document.createElement("span");
+				tick.className = "backtest-probability-detail-y-tick";
+				tick.dataset.price = String(value);
+				const pricePosition = detailGridTop
+					+ geometry.gridPaddingTop
+					+ ((detailGridHeight - verticalPadding) * (tickIndex / 4));
+				tick.style.top = `${(pricePosition / Math.max(1, detailYViewportRect.height)) * 100}%`;
+				tick.textContent = formatStockPriceAxisValue(value);
+				probabilityDetailYAxis.appendChild(tick);
+			});
+
+			probabilityDetailXAxis
+				.querySelectorAll("[data-backtest-probability-detail-x-tick]")
+				.forEach((node) => node.remove());
+			const tickIndexes = Array.from(
+				buildTickIndexSet(geometry.columnCount, probabilityDetailGrid.clientWidth || 0),
+			).sort((left, right) => left - right);
+			tickIndexes.forEach((column, tickIndex) => {
+				const cell = cells.find((candidate) => candidate.column === column);
+				const dateParts = cell
+					? buildProbabilityForecastDateParts(index, cell.horizon)
+					: null;
+				if (!cell || !dateParts) return;
+				const tick = document.createElement("span");
+				tick.className = "backtest-probability-detail-x-tick";
+				tick.dataset.backtestProbabilityDetailXTick = "";
+				tick.dataset.column = String(column);
+				tick.dataset.horizon = String(cell.horizon);
+				tick.dataset.rawDate = rawDates[index + cell.horizon] || "";
+				tick.style.left = `${geometry.gridPaddingInlineStart
+					+ (column * (detailCellSize + geometry.gap))
+					+ (detailCellSize / 2)}px`;
+				if (tickIndex === 0) tick.classList.add("is-first");
+				if (tickIndex === tickIndexes.length - 1) tick.classList.add("is-last");
+				const [firstLine, secondLine] = formatChartDateLines(dateParts);
+				const firstLineNode = document.createElement("span");
+				firstLineNode.className = "backtest-probability-detail-x-tick-line";
+				firstLineNode.textContent = firstLine;
+				tick.appendChild(firstLineNode);
+				if (secondLine) {
+					const secondLineNode = document.createElement("span");
+					secondLineNode.className = "backtest-probability-detail-x-tick-line";
+					secondLineNode.textContent = secondLine;
+					tick.appendChild(secondLineNode);
+				}
+				probabilityDetailXAxis.appendChild(tick);
+			});
+			return true;
+		};
+
 		const xAxisLabelPlugin = {
 			id: "tradeXAxisLabelPlugin",
 			afterDraw(chart) {
@@ -1302,29 +1529,23 @@
 			setProbabilityScrollTarget(0);
 		};
 
-		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
-			if (!probabilityTooltip || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
-				hideProbabilityTooltip();
-				return false;
+		const buildProbabilityGridModel = (index, pricePoint) => {
+			if (!strategyPresentation || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
+				return null;
 			}
-			const meanValue = strategyPresentation?.predictive_mean?.[index];
-			const scaleValue = strategyPresentation?.predictive_scale?.[index];
+			const meanValue = strategyPresentation.predictive_mean?.[index];
+			const scaleValue = strategyPresentation.predictive_scale?.[index];
 			const mean = Number(meanValue);
 			const scale = Number(scaleValue);
 			const anchorPrice = Number(close[index]);
 			if (meanValue === null || meanValue === undefined
 				|| scaleValue === null || scaleValue === undefined
 				|| !Number.isFinite(mean) || !Number.isFinite(scale) || !(scale > 0) || !(anchorPrice > 0)) {
-				hideProbabilityTooltip();
-				return false;
+				return null;
 			}
-			setProbabilityScrollExtent(probabilityScrollVisualPosition);
 			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
 			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
-			if (!(stepPixels > 0)) {
-				hideProbabilityTooltip();
-				return false;
-			}
+			if (!(stepPixels > 0)) return null;
 			const geometry = probabilityGridApi.computeGridGeometry?.({
 				chartArea: priceChart.chartArea,
 				anchorX: pricePoint.x,
@@ -1338,10 +1559,7 @@
 				rowsBelow: strategyPresentation.rows_below,
 				stepPixels,
 			});
-			if (!geometry) {
-				hideProbabilityTooltip();
-				return false;
-			}
+			if (!geometry) return null;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
 				geometry,
 				anchorPrice,
@@ -1351,11 +1569,34 @@
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
 				opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
+				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			}) || [];
-			if (!cells.length) {
+			if (!cells.length) return null;
+			return {
+				anchorPrice,
+				cells,
+				geometry,
+				mean,
+				scale,
+				stepPixels,
+				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
+			};
+		};
+
+		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
+			if (!probabilityTooltip || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
 				hideProbabilityTooltip();
 				return false;
 			}
+			const model = buildProbabilityGridModel(index, pricePoint);
+			if (!model) {
+				hideProbabilityTooltip();
+				hideProbabilityDetail();
+				return false;
+			}
+			const {anchorPrice, cells, geometry, mean, scale, stepPixels} = model;
+			renderProbabilityDetail(index, model);
+			setProbabilityScrollExtent(probabilityScrollVisualPosition);
 
 			const grid = probabilityTooltip.querySelector("[data-backtest-probability-grid]");
 			if (!(grid instanceof HTMLElement)) {
@@ -1375,22 +1616,7 @@
 				});
 				grid.replaceChildren(fragment);
 			}
-			cells.forEach((cell, cellIndex) => {
-				const node = cellNodes[cellIndex];
-				node.className = `backtest-probability-cell is-${cell.sign}`;
-				node.dataset.column = String(cell.column);
-				node.dataset.horizon = String(cell.horizon);
-				node.dataset.probability = String(cell.probability);
-				node.dataset.displayIntensity = String(cell.displayIntensity);
-				node.dataset.opacity = String(cell.opacity);
-				node.dataset.row = String(cell.row);
-				node.dataset.lowerPrice = String(cell.lowerPrice);
-				node.dataset.upperPrice = String(cell.upperPrice);
-				node.style.gridColumn = String(cell.column + 1);
-				node.style.gridRow = String(cell.row + 1);
-				node.style.opacity = String(cell.opacity);
-				node.title = `${(cell.probability * 100).toFixed(2)}%`;
-			});
+			cells.forEach((cell, cellIndex) => applyProbabilityCellNode(cellNodes[cellIndex], cell));
 			grid.dataset.columnCount = String(geometry.columnCount);
 			grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			grid.dataset.rowCount = String(geometry.rowCount);
@@ -1433,6 +1659,8 @@
 				cellOpacityMapping: strategyPresentation.cell_opacity_mapping,
 				cellOpacityExponent: strategyPresentation.cell_opacity_exponent,
 				cellOpacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
+				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
+				thresholdHiddenCount: cells.filter((cell) => cell.isVisible === false).length,
 				daysPerColumn: geometry.daysPerColumn,
 				slotWidth: geometry.slotWidth,
 				stepPixels,
@@ -1966,6 +2194,24 @@
 			priceChartYPadding,
 		);
 		priceChart.update("none");
+		if (strategyPresentation) {
+			const defaultIndex = strategyPresentation.predictive_mean.reduce(
+				(latestIndex, meanValue, index) => (
+					Number.isFinite(Number(meanValue))
+						&& Number(strategyPresentation.predictive_scale?.[index]) > 0
+						&& Number(close[index]) > 0
+						? index
+						: latestIndex
+				),
+				-1,
+			);
+			const defaultPoint = getDatasetPoint(priceChart, defaultIndex, 0);
+			const defaultModel = defaultIndex >= 0
+				? buildProbabilityGridModel(defaultIndex, defaultPoint)
+				: null;
+			if (defaultModel) renderProbabilityDetail(defaultIndex, defaultModel);
+			else hideProbabilityDetail();
+		}
 		publishProbabilityStageMinimum();
 		const refreshChartLayout = ({chartsAlreadyResized = false} = {}) => {
 			if (controllerDestroyed || !priceChart?.ctx || !equityChart?.ctx) return;
@@ -2001,6 +2247,12 @@
 			} else {
 				priceChart.update("none");
 				if (showTradeDetails) equityChart.update("none");
+			}
+			if (strategyPresentation && probabilityDetailPanel?.dataset.activeIndex) {
+				const detailIndex = Number(probabilityDetailPanel.dataset.activeIndex);
+				const detailPoint = getDatasetPoint(priceChart, detailIndex, 0);
+				const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
+				if (detailModel) renderProbabilityDetail(detailIndex, detailModel);
 			}
 			publishProbabilityStageMinimum();
 		};
@@ -2088,6 +2340,7 @@
 				tooltip.remove();
 				probabilityTooltip?.remove();
 				probabilityScrollSpacer?.remove();
+				hideProbabilityDetail();
 				priceChart?.destroy?.();
 				equityChart?.destroy?.();
 				if (bootstrap.backtestHoverController === hoverController) {

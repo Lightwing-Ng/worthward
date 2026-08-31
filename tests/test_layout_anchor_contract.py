@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from pathlib import Path
@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.4");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.64.7" in app_css
+    assert "v0.64.9" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -175,7 +175,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.51.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.53.0");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -308,6 +308,10 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "rowsBelow: strategyPresentation.rows_below,",
         "opacityExponent: strategyPresentation.cell_opacity_exponent,",
         "opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,",
+        "cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,",
+        "probabilityDetailPanel.dataset.cellDisplayThresholdPct = String(",
+        "is-threshold-hidden",
+        "thresholdVisible",
         'tradeChartStack.classList.remove("has-probability-field");',
     ):
         assert fragment in backtest_script
@@ -350,6 +354,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "display: none;",
         ".backtest-probability-tooltip[data-pinned=\"true\"] {",
         ".backtest-probability-cell {",
+        ".backtest-probability-cell.is-threshold-hidden {",
         "border-radius: 0;",
         "transition: none;",
     ):
@@ -365,6 +370,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         'const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";',
         "const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;",
         "const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;",
+        "const DEFAULT_CELL_DISPLAY_THRESHOLD_PCT = 5;",
         "const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);",
         "rows_above: symmetricRows.rowsAbove,",
         "rows_below: symmetricRows.rowsBelow,",
@@ -372,6 +378,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),",
         "cell_opacity_exponent: boundedNumber(",
         "cell_opacity_tail_ratio: boundedNumber(",
+        "cell_display_threshold_pct: boundedNumber(",
         "delete presentation.cell_radius_px;",
         "delete presentation.tooltip_radius_px;",
         "delete presentation.tooltip_transparency_pct;",
@@ -475,11 +482,47 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-backtest-probability-grid-v0.17.0",
-        "-backtest-v0.23.0",
+        "-backtest-probability-grid-v0.18.0",
+        "-backtest-v0.25.0",
         "-backtest-layout-v0.3.0",
     ):
         assert fragment in base_template
+
+
+def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None:
+    backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
+    backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    for fragment in (
+        'id="backtest_probability_detail_panel"',
+        'data-backtest-probability-detail-grid',
+        'data-backtest-probability-detail-y-axis',
+        'data-backtest-probability-detail-x-axis',
+        'aria-live="polite"',
+    ):
+        assert fragment in backtest_template
+    for fragment in (
+        "const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {",
+        "const applyProbabilityCellNode = (node, cell, modifierClass = \"\") => {",
+        "const renderProbabilityDetail = (index, model) => {",
+        "const buildProbabilityGridModel = (index, pricePoint) => {",
+        "renderProbabilityDetail(index, model);",
+        "formatChartDateLines(dateParts)",
+        "buildTickIndexSet(geometry.columnCount",
+        "probabilityDetailPanel.dataset.activeIndex = String(index);",
+        "probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;",
+    ):
+        assert fragment in backtest_script
+    for fragment in (
+        ".backtest-probability-detail-panel",
+        "flex: 0 0 clamp(320px, 52vh, 520px);",
+        "transform: translateY(-50%);",
+        ".backtest-probability-detail-cell",
+        ".backtest-probability-detail-x-tick.is-first",
+        ".backtest-probability-detail-x-tick.is-last",
+    ):
+        assert fragment in trade_css
 
 
 def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_intro() -> None:

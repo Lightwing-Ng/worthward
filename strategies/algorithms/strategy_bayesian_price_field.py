@@ -5,7 +5,11 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.17.0
+Code version: v1.19.0
+- Added: An opt-in Dynamic P/E Ratio factor uses the current Longbridge
+  ``calc-index`` snapshot only on its own availability date.
+- Changed: Bayesian quantitative-factor controls are registered once and
+  rendered in alphabetical order; model parameters remain after the factors.
 - Changed: Walk-forward observation noise now uses regularized, effective-degree-of-freedom ridge residual variance with a small process-noise floor, avoiding in-sample OLS overconfidence.
 - Changed: The probability renderer keeps only the matrix itself; its Python
   presentation owns the instantaneous nonlinear cell-opacity curve.
@@ -39,6 +43,8 @@ Code version: v1.17.0
 - Fixed: Sparse-factor fallback ranks candidates by causal coverage and
   dispersion with deterministic tie-breaking instead of parameter order.
 - Added: The probability field now exposes opt-in Longbridge research factors.
+- Added: The Bayesian Price Field exposes a private absolute probability display
+  threshold for focusing the rendered field without changing signals or scores.
 """
 
 from __future__ import annotations
@@ -69,6 +75,7 @@ _PREDICTION_STD_COLUMN = "bayesian_predictive_std"
 _PROBABILITY_COLUMN = "bayesian_probability_up"
 _MIN_TRAINING_OBSERVATIONS = 20
 _PE_MAX_STALENESS_DAYS = 14
+_DYNAMIC_PE_MAX_STALENESS_DAYS = 1
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
@@ -99,6 +106,214 @@ _FACTOR_SELECTION_PRIORITY_INDEX = {
     factor: index for index, factor in enumerate(_FACTOR_SELECTION_PRIORITY)
 }
 _MIN_NOISE_VARIANCE = 1e-8
+_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
+_CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
+_CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
+
+
+@dataclass(frozen=True)
+class _BayesianFactorDefinition:
+    key: str
+    label: str
+    parameter_key: str
+    provider_key: str
+    default: bool
+    help_text: str
+    observation_key: str | None = None
+    max_staleness_days: int | None = None
+
+
+_BAYESIAN_FACTOR_DEFINITIONS = tuple(sorted(
+    (
+        _BayesianFactorDefinition(
+            key="broker_holding",
+            label="Broker Holding",
+            parameter_key="use_broker_holding",
+            provider_key="broker_holding",
+            default=False,
+            help_text=(
+                "Research-only: HK history requires a selected broker and an "
+                "aggregation rule, so no causal aggregate is available yet."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="capital_flow",
+            label="Capital Flow",
+            parameter_key="use_capital_flow",
+            provider_key="capital_flow",
+            default=False,
+            help_text=(
+                "Research-only: Longbridge currently exposes an intraday "
+                "snapshot, not causal daily history, so this factor is "
+                "unavailable to backtests."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="dividend_yield",
+            label="Dividend Yield",
+            parameter_key="use_dividend_yield",
+            provider_key="dividend_yield",
+            default=False,
+            help_text=(
+                "Opt-in historical dividend-yield observations from Longbridge "
+                "valuation history; no current snapshot is backfilled."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="dynamic_pe_ratio",
+            label="Dynamic P/E Ratio",
+            parameter_key="use_dynamic_pe_ratio",
+            provider_key="dynamic_pe",
+            default=False,
+            help_text=(
+                "Uses the current Longbridge calc-index P/E snapshot only on "
+                "its market-local availability date; it is never backfilled "
+                "into earlier dates."
+            ),
+            observation_key="dynamic_pe_history",
+            max_staleness_days=_DYNAMIC_PE_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="fund_holder_weight",
+            label="Fund Holder Weight",
+            parameter_key="use_fund_holder_weight",
+            provider_key="fund_holder_weight",
+            default=False,
+            help_text=(
+                "Research-only until Longbridge supplies a verified publication "
+                "timestamp; fund report dates are not causal availability dates."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="market_temperature",
+            label="Market Temperature",
+            parameter_key="use_market_temperature",
+            provider_key="market_temperature",
+            default=False,
+            help_text="Opt-in Longbridge market sentiment temperature history for the ticker's exchange.",
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="options",
+            label="Options",
+            parameter_key="use_options",
+            provider_key="options",
+            default=True,
+            help_text=(
+                "Combines put/call volume and open-interest ratios without "
+                "broadcasting current snapshots backward."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="pb_ratio",
+            label="P/B Ratio",
+            parameter_key="use_pb_ratio",
+            provider_key="pb_ratio",
+            default=False,
+            help_text=(
+                "Opt-in historical price-to-book observations from Longbridge "
+                "valuation history; joined backward as-of."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="pe",
+            label="P/E Ratio",
+            parameter_key="use_pe_ratio",
+            provider_key="pe",
+            default=True,
+            help_text="Uses backward as-of P/E observations from Longbridge CLI when available.",
+            observation_key="pe_history",
+            max_staleness_days=_PE_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="ps_ratio",
+            label="P/S Ratio",
+            parameter_key="use_ps_ratio",
+            provider_key="ps_ratio",
+            default=False,
+            help_text=(
+                "Opt-in historical price-to-sales observations from Longbridge "
+                "valuation history; joined backward as-of."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="shareholder_concentration",
+            label="Shareholder Concentration",
+            parameter_key="use_shareholder_concentration",
+            provider_key="shareholder_concentration",
+            default=False,
+            help_text=(
+                "Research-only until Longbridge supplies a verified publication "
+                "timestamp; filing-period dates are never used as availability "
+                "dates."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="short_interest",
+            label="Short Interest",
+            parameter_key="use_short_interest",
+            provider_key="short_interest",
+            default=False,
+            help_text=(
+                "Research-only until a source publication timestamp is available; "
+                "FINRA settlement dates are not causal availability dates."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="short_volume",
+            label="Short Volume",
+            parameter_key="use_short_volume",
+            provider_key="short_volume",
+            default=False,
+            help_text=(
+                "Research-only until Longbridge supplies a verified publication "
+                "timestamp for each daily short-sale report."
+            ),
+            observation_key="research_history",
+            max_staleness_days=_RESEARCH_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="volume",
+            label="Volume",
+            parameter_key="use_volume",
+            provider_key="ohlcv",
+            default=True,
+            help_text="Uses daily Longbridge CLI trading volume as a walk-forward factor.",
+        ),
+        _BayesianFactorDefinition(
+            key="volume_at_price",
+            label="Volume-at-price Percentile",
+            parameter_key="use_volume_at_price",
+            provider_key="ohlcv",
+            default=True,
+            help_text=(
+                "Uses the current close's causal percentile in a trailing volume-"
+                "at-price distribution built by spreading each Longbridge CLI "
+                "bar's volume across fixed Low-High price bins."
+            ),
+        ),
+    ),
+    key=lambda definition: definition.label.casefold(),
+))
 
 
 def _record_value(record: object, key: str, default: Any = None) -> Any:
@@ -270,6 +485,25 @@ def _merge_bundle_observations(frame: pd.DataFrame, bundle: object | None) -> pd
             direction="backward",
             allow_exact_matches=True,
             tolerance=pd.Timedelta(days=_PE_MAX_STALENESS_DAYS),
+        )
+
+    dynamic_pe_frame = _observation_frame(
+        tuple(_record_value(bundle, "dynamic_pe_history", ()) or ()),
+        lambda observation: _record_value(observation, "value"),
+        "bayesian_dynamic_pe_ratio",
+    )
+    if not dynamic_pe_frame.empty:
+        dynamic_pe_frame = dynamic_pe_frame.rename(
+            columns={"Date": "bayesian_dynamic_pe_observed_at"}
+        )
+        merged = pd.merge_asof(
+            merged,
+            dynamic_pe_frame,
+            left_on="Date",
+            right_on="bayesian_dynamic_pe_observed_at",
+            direction="backward",
+            allow_exact_matches=True,
+            tolerance=pd.Timedelta(days=_DYNAMIC_PE_MAX_STALENESS_DAYS),
         )
 
     option_frame = _observation_frame(
@@ -447,6 +681,11 @@ def _build_factor_columns(frame: pd.DataFrame, chip_window: int) -> dict[str, np
     }
     if pe_source is not None:
         result["pe"] = _signed_log_series(pe_source).to_numpy(dtype=np.float64)
+    dynamic_pe_source = frame.get("bayesian_dynamic_pe_ratio")
+    if dynamic_pe_source is not None:
+        result["dynamic_pe_ratio"] = _signed_log_series(
+            dynamic_pe_source
+        ).to_numpy(dtype=np.float64)
     if option_source is not None:
         result["options"] = _signed_log_series(option_source).to_numpy(dtype=np.float64)
     for factor in (
@@ -1095,103 +1334,30 @@ class BayesianPriceFieldStrategy(BaseStrategy):
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
-            StrategyParameterDefinition(
-                key="use_pe_ratio",
-                label="P/E Ratio",
-                kind="boolean",
-                default=True,
-                help_text="Uses backward as-of P/E observations from Longbridge CLI when available.",
+            *(
+                StrategyParameterDefinition(
+                    key=definition.parameter_key,
+                    label=definition.label,
+                    kind="boolean",
+                    default=definition.default,
+                    help_text=definition.help_text,
+                )
+                for definition in _BAYESIAN_FACTOR_DEFINITIONS
             ),
             StrategyParameterDefinition(
-                key="use_volume",
-                label="Volume",
-                kind="boolean",
-                default=True,
-                help_text="Uses daily Longbridge CLI trading volume as a walk-forward factor.",
-            ),
-            StrategyParameterDefinition(
-                key="use_options",
-                label="Options",
-                kind="boolean",
-                default=True,
-                help_text="Combines put/call volume and open-interest ratios without broadcasting current snapshots backward.",
-            ),
-            StrategyParameterDefinition(
-                key="use_volume_at_price",
-                label="Volume-at-price Percentile",
-                kind="boolean",
-                default=True,
-                help_text="Uses the current close's causal percentile in a trailing volume-at-price distribution built by spreading each Longbridge CLI bar's volume across fixed Low-High price bins.",
-            ),
-            StrategyParameterDefinition(
-                key="use_pb_ratio",
-                label="P/B Ratio",
-                kind="boolean",
-                default=False,
-                help_text="Opt-in historical price-to-book observations from Longbridge valuation history; joined backward as-of.",
-            ),
-            StrategyParameterDefinition(
-                key="use_ps_ratio",
-                label="P/S Ratio",
-                kind="boolean",
-                default=False,
-                help_text="Opt-in historical price-to-sales observations from Longbridge valuation history; joined backward as-of.",
-            ),
-            StrategyParameterDefinition(
-                key="use_dividend_yield",
-                label="Dividend Yield",
-                kind="boolean",
-                default=False,
-                help_text="Opt-in historical dividend-yield observations from Longbridge valuation history; no current snapshot is backfilled.",
-            ),
-            StrategyParameterDefinition(
-                key="use_market_temperature",
-                label="Market Temperature",
-                kind="boolean",
-                default=False,
-                help_text="Opt-in Longbridge market sentiment temperature history for the ticker's exchange.",
-            ),
-            StrategyParameterDefinition(
-                key="use_capital_flow",
-                label="Capital Flow",
-                kind="boolean",
-                default=False,
-                help_text="Research-only: Longbridge currently exposes an intraday snapshot, not causal daily history, so this factor is unavailable to backtests.",
-            ),
-            StrategyParameterDefinition(
-                key="use_shareholder_concentration",
-                label="Shareholder Concentration",
-                kind="boolean",
-                default=False,
-                help_text="Research-only until Longbridge supplies a verified publication timestamp; filing-period dates are never used as availability dates.",
-            ),
-            StrategyParameterDefinition(
-                key="use_fund_holder_weight",
-                label="Fund Holder Weight",
-                kind="boolean",
-                default=False,
-                help_text="Research-only until Longbridge supplies a verified publication timestamp; fund report dates are not causal availability dates.",
-            ),
-            StrategyParameterDefinition(
-                key="use_short_interest",
-                label="Short Interest",
-                kind="boolean",
-                default=False,
-                help_text="Research-only until a source publication timestamp is available; FINRA settlement dates are not causal availability dates.",
-            ),
-            StrategyParameterDefinition(
-                key="use_short_volume",
-                label="Short Volume",
-                kind="boolean",
-                default=False,
-                help_text="Research-only until Longbridge supplies a verified publication timestamp for each daily short-sale report.",
-            ),
-            StrategyParameterDefinition(
-                key="use_broker_holding",
-                label="Broker Holding",
-                kind="boolean",
-                default=False,
-                help_text="Research-only: HK history requires a selected broker and an aggregation rule, so no causal aggregate is available yet.",
+                key="cell_display_threshold",
+                label="Cell Display Threshold (%)",
+                kind="number",
+                default=_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT,
+                minimum=_CELL_DISPLAY_THRESHOLD_MIN_PCT,
+                maximum=_CELL_DISPLAY_THRESHOLD_MAX_PCT,
+                step=0.1,
+                unit_hint="%",
+                help_text=(
+                    "Hides individual probability-field cells below this absolute "
+                    "probability. 0% shows every cell; 50% is the maximum focus "
+                    "threshold. This changes presentation only, not signals or scoring."
+                ),
             ),
             StrategyParameterDefinition(
                 key="training_window",
@@ -1270,22 +1436,11 @@ class BayesianPriceFieldStrategy(BaseStrategy):
 
         from app.services.bayesian_market_factors import fetch_bayesian_factor_bundle
 
-        research_factor_parameters = (
-            ("pb_ratio", "use_pb_ratio"),
-            ("ps_ratio", "use_ps_ratio"),
-            ("dividend_yield", "use_dividend_yield"),
-            ("market_temperature", "use_market_temperature"),
-            ("capital_flow", "use_capital_flow"),
-            ("shareholder_concentration", "use_shareholder_concentration"),
-            ("fund_holder_weight", "use_fund_holder_weight"),
-            ("short_interest", "use_short_interest"),
-            ("short_volume", "use_short_volume"),
-            ("broker_holding", "use_broker_holding"),
-        )
         research_factors = tuple(
-            factor
-            for factor, parameter_key in research_factor_parameters
-            if bool(normalized_params[parameter_key])
+            definition.provider_key
+            for definition in _BAYESIAN_FACTOR_DEFINITIONS
+            if definition.observation_key == "research_history"
+            and bool(normalized_params[definition.parameter_key])
         )
 
         bundle = fetch_bayesian_factor_bundle(
@@ -1293,6 +1448,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             warmup_start,
             end,
             include_pe=bool(normalized_params["use_pe_ratio"]),
+            include_dynamic_pe=bool(normalized_params["use_dynamic_pe_ratio"]),
             include_options=bool(normalized_params["use_options"]),
             research_factors=research_factors,
         )
@@ -1308,84 +1464,6 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         bundle_status = dict(
             _record_value(self._warmup_bundle, "factor_status", {}) or {}
         )
-        definitions = (
-            (
-                "pe",
-                "P/E Ratio",
-                "use_pe_ratio",
-                "pe",
-                "pe_history",
-                lambda observation: _record_value(observation, "value"),
-                _PE_MAX_STALENESS_DAYS,
-            ),
-            (
-                "volume",
-                "Volume",
-                "use_volume",
-                "ohlcv",
-                None,
-                None,
-                None,
-            ),
-            (
-                "options",
-                "Options",
-                "use_options",
-                "options",
-                "option_history",
-                _option_ratio,
-                _OPTIONS_MAX_STALENESS_DAYS,
-            ),
-            (
-                "volume_at_price",
-                "Volume-at-price Percentile",
-                "use_volume_at_price",
-                "ohlcv",
-                None,
-                None,
-                None,
-            ),
-            (
-                "pb_ratio", "P/B Ratio", "use_pb_ratio", "pb_ratio", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "ps_ratio", "P/S Ratio", "use_ps_ratio", "ps_ratio", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "dividend_yield", "Dividend Yield", "use_dividend_yield", "dividend_yield", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "market_temperature", "Market Temperature", "use_market_temperature", "market_temperature", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "capital_flow", "Capital Flow", "use_capital_flow", "capital_flow", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "shareholder_concentration", "Shareholder Concentration", "use_shareholder_concentration", "shareholder_concentration", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "fund_holder_weight", "Fund Holder Weight", "use_fund_holder_weight", "fund_holder_weight", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "short_interest", "Short Interest", "use_short_interest", "short_interest", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "short_volume", "Short Volume", "use_short_volume", "short_volume", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-            (
-                "broker_holding", "Broker Holding", "use_broker_holding", "broker_holding", "research_history",
-                lambda observation: _record_value(observation, "value"), _RESEARCH_MAX_STALENESS_DAYS,
-            ),
-        )
         total_observations = len(frame)
         latest_frame_date = (
             _normalized_timestamp(frame["Date"].iloc[-1])
@@ -1393,19 +1471,11 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             else None
         )
         factors: list[dict[str, Any]] = []
-        for (
-                key,
-                label,
-                parameter_key,
-                provider_key,
-                observation_key,
-                value_builder,
-                max_staleness_days,
-        ) in definitions:
-            enabled = bool(normalized_params[parameter_key])
+        for definition in _BAYESIAN_FACTOR_DEFINITIONS:
+            enabled = bool(normalized_params[definition.parameter_key])
             values = np.asarray(
                 factor_values.get(
-                    key,
+                    definition.key,
                     np.full(total_observations, np.nan, dtype=np.float64),
                 ),
                 dtype=np.float64,
@@ -1416,7 +1486,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 if total_observations > 0
                 else 0.0
             )
-            provider_status = str(bundle_status.get(provider_key, "") or "").lower()
+            provider_status = str(
+                bundle_status.get(definition.provider_key, "") or ""
+            ).lower()
             if not enabled:
                 status = "disabled"
             elif provider_status == "error":
@@ -1431,24 +1503,34 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             else:
                 is_stale = False
                 if (
-                        observation_key is not None
-                        and value_builder is not None
-                        and max_staleness_days is not None
+                        definition.observation_key is not None
+                        and definition.max_staleness_days is not None
                         and latest_frame_date is not None
                 ):
                     observations = tuple(
-                        _record_value(self._warmup_bundle, observation_key, ()) or ()
+                        _record_value(
+                            self._warmup_bundle,
+                            definition.observation_key,
+                            (),
+                        )
+                        or ()
                     )
-                    if provider_key in {
-                        "pb_ratio", "ps_ratio", "dividend_yield", "market_temperature",
-                        "capital_flow", "shareholder_concentration", "fund_holder_weight",
-                        "short_interest", "short_volume", "broker_holding",
-                    }:
+                    if definition.observation_key == "research_history":
                         observations = tuple(
                             observation for observation in observations
-                            if str(_record_value(observation, "factor", "")) == provider_key
+                            if str(_record_value(observation, "factor", ""))
+                            == definition.provider_key
                         )
-                    observation_frame = _observation_frame(observations, value_builder, "value")
+                    value_builder = (
+                        _option_ratio
+                        if definition.observation_key == "option_history"
+                        else lambda observation: _record_value(observation, "value")
+                    )
+                    observation_frame = _observation_frame(
+                        observations,
+                        value_builder,
+                        "value",
+                    )
                     eligible_observations = observation_frame[
                         observation_frame["Date"] <= latest_frame_date
                     ]
@@ -1458,7 +1540,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                         )
                         is_stale = (
                             latest_frame_date - latest_observation
-                            > pd.Timedelta(days=max_staleness_days)
+                            > pd.Timedelta(days=definition.max_staleness_days)
                         )
                 if is_stale:
                     status = "stale"
@@ -1468,8 +1550,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     status = "insufficient"
             factors.append(
                 {
-                    "key": key,
-                    "label": label,
+                    "key": definition.key,
+                    "label": definition.label,
                     "enabled": enabled,
                     "status": status,
                     "finite_observations": finite_observations,
@@ -1497,31 +1579,10 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             int(normalized_params["chip_window"]),
         )
         enabled_factors = [
-            key
-            for key, parameter_key in (
-                ("pe", "use_pe_ratio"),
-                ("volume", "use_volume"),
-                ("options", "use_options"),
-                ("volume_at_price", "use_volume_at_price"),
-            )
-            if bool(normalized_params[parameter_key])
+            definition.key
+            for definition in _BAYESIAN_FACTOR_DEFINITIONS
+            if bool(normalized_params[definition.parameter_key])
         ]
-        enabled_factors.extend(
-            factor
-            for factor, parameter_key in (
-                ("pb_ratio", "use_pb_ratio"),
-                ("ps_ratio", "use_ps_ratio"),
-                ("dividend_yield", "use_dividend_yield"),
-                ("market_temperature", "use_market_temperature"),
-                ("capital_flow", "use_capital_flow"),
-                ("shareholder_concentration", "use_shareholder_concentration"),
-                ("fund_holder_weight", "use_fund_holder_weight"),
-                ("short_interest", "use_short_interest"),
-                ("short_volume", "use_short_volume"),
-                ("broker_holding", "use_broker_holding"),
-            )
-            if bool(normalized_params[parameter_key])
-        )
         backend = _resolve_compute_backend(str(normalized_params["compute_backend"]))
         predictive_mean, predictive_std, probability_up = _walk_forward_predictions(
             full_frame,
@@ -1612,6 +1673,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "cell_opacity_mapping": "instant-contrast-power-v1",
             "cell_opacity_exponent": 1.6,
             "cell_opacity_tail_ratio": 0.02,
+            "cell_display_threshold_pct": float(
+                normalized_params["cell_display_threshold"]
+            ),
             "time_quantization": "integer-trading-days",
             "distribution_kind": "normal-log-return",
             "step_unit": "trading-day",

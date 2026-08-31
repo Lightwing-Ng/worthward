@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.17.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.18.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,6 +28,7 @@ const presentation = {
     cell_opacity_mapping: 'instant-contrast-power-v1',
     cell_opacity_exponent: 1.6,
     cell_opacity_tail_ratio: 0.02,
+    cell_display_threshold_pct: 5,
     time_quantization: 'integer-trading-days',
     data_keys: rawDates,
     predictive_mean: [0.001, null, -0.002],
@@ -35,7 +36,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.17.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.18.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -54,6 +55,7 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
     assert.equal(normalized.cell_opacity_exponent, 1.6);
     assert.equal(normalized.cell_opacity_tail_ratio, 0.02);
+    assert.equal(normalized.cell_display_threshold_pct, 5);
     assert.equal(normalized.time_quantization, 'integer-trading-days');
     assert.deepEqual(normalized.data_keys, rawDates);
     assert.deepEqual(normalized.predictive_mean, [0.001, null, -0.002]);
@@ -133,6 +135,7 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
             cell_opacity_mapping: 'untrusted-mapping',
             cell_opacity_exponent: 100,
             cell_opacity_tail_ratio: 1,
+            cell_display_threshold_pct: 75,
             width_fraction: 1,
         },
         {raw_dates: rawDates, length: rawDates.length},
@@ -149,6 +152,7 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
     assert.equal(normalized.cell_opacity_mapping, 'instant-contrast-power-v1');
     assert.equal(normalized.cell_opacity_exponent, 4);
     assert.equal(normalized.cell_opacity_tail_ratio, 0.25);
+    assert.equal(normalized.cell_display_threshold_pct, 50);
     assert.equal(normalized.width_fraction, 0.5);
 
     const geometry = grid.computeGridGeometry({
@@ -559,6 +563,38 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
     const winnerProbability = Math.max(...cells.map((cell) => cell.probability));
     assert.ok(cells.filter((cell) => cell.probability === winnerProbability)
         .every((cell) => cell.opacity === 1));
+});
+
+test('marks cells below the absolute display threshold without changing their geometry', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 200,
+        anchorY: 90,
+        stepPixels: 2,
+    });
+    const build = (cellDisplayThresholdPct) => grid.buildProbabilityCells({
+        geometry,
+        anchorPrice: 100,
+        mean: 0.002,
+        scale: 0.02,
+        stepPixels: 2,
+        valueForPixel: (pixel) => 109 - (pixel * 0.1),
+        cellDisplayThresholdPct,
+    });
+    const allCells = build(0);
+    const exactThresholdPct = allCells[0].probability * 100;
+    const exactThresholdCells = build(exactThresholdPct);
+    const hiddenCells = build(5);
+    assert.ok(allCells.every((cell) => cell.isVisible === true));
+    assert.equal(exactThresholdCells[0].isVisible, true);
+    assert.ok(exactThresholdCells.some((cell) => cell.isVisible === false));
+    assert.ok(hiddenCells.some((cell) => cell.isVisible === false));
+    assert.ok(hiddenCells.every((cell, index) => (
+        cell.x === allCells[index].x
+        && cell.y === allCells[index].y
+        && cell.lowerPrice === allCells[index].lowerPrice
+        && cell.upperPrice === allCells[index].upperPrice
+    )));
 });
 
 test('maps every cell to an exact price interval around the horizontal guide', () => {
