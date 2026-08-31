@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.7.0
+Code version: v0.8.1
 """
 
 from pathlib import Path
@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.4");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.64.9" in app_css
+    assert "v0.65.0" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -175,7 +175,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.53.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.54.0");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -482,8 +482,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-backtest-probability-grid-v0.18.0",
-        "-backtest-v0.25.0",
+        "-app-v0.48.0",
+        "-backtest-probability-grid-v0.20.0",
+        "-backtest-v0.28.2",
         "-backtest-layout-v0.3.0",
     ):
         assert fragment in base_template
@@ -496,20 +497,43 @@ def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None
 
     for fragment in (
         'id="backtest_probability_detail_panel"',
+        'data-backtest-history-view-panel="probability"',
         'data-backtest-probability-detail-grid',
         'data-backtest-probability-detail-y-axis',
         'data-backtest-probability-detail-x-axis',
+        '"value": "probability", "label": "Price Field"',
+        'data-option-count="',
+        'class="backtest-probability-detail-legend-bar"',
         'aria-live="polite"',
     ):
         assert fragment in backtest_template
+    assert 'backtest-probability-detail-y-axis-title' not in backtest_template
+    assert backtest_template.index('"value": "metrics"') < backtest_template.index('"value": "probability"')
+    assert backtest_template.index('"value": "probability"') < backtest_template.index('"value": "transactions"')
+    assert backtest_template.index('data-backtest-history-view-panel="metrics"') < backtest_template.index('data-backtest-history-view-panel="probability"')
+    assert backtest_template.index('data-backtest-history-view-panel="probability"') < backtest_template.index('data-backtest-history-view-panel="transactions"')
     for fragment in (
         "const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {",
         "const applyProbabilityCellNode = (node, cell, modifierClass = \"\") => {",
         "const renderProbabilityDetail = (index, model) => {",
+        "const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {",
+        "const renderedTicks = xTickNodes.filter(Boolean);",
+        "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
+        "const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {",
+        "const referenceWindow = rangeEnd - referenceStart;",
+        "const hasFullReferenceWindow = (rangeEnd - rangeStart) >= (referenceWindow * 0.9);",
+        "const chartHoverPointCaches = new Map();",
+        "const probabilityModelCache = new Map();",
+        "const getProbabilityHoverLayout = () => {",
+        "const cachedModel = probabilityModelCache.get(index);",
+        "const shouldRenderCells = !canReuseCells || grid.dataset.renderKey !== renderKey;",
+        "if (chart === equityChart && !showTradeDetails) return;",
+        "let latestProbabilityDetailIndex = null;",
+        "cellSizeTargetPx",
         "renderProbabilityDetail(index, model);",
         "formatChartDateLines(dateParts)",
-        "buildTickIndexSet(geometry.columnCount",
+        "buildProbabilityDetailTickIndexSet(geometry.columnCount",
         "probabilityDetailPanel.dataset.activeIndex = String(index);",
         "probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;",
     ):
@@ -521,6 +545,8 @@ def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None
         ".backtest-probability-detail-cell",
         ".backtest-probability-detail-x-tick.is-first",
         ".backtest-probability-detail-x-tick.is-last",
+        ".backtest-probability-detail-legend-bar",
+        "linear-gradient(",
     ):
         assert fragment in trade_css
 

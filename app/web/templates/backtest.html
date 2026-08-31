@@ -1,4 +1,4 @@
-{# Code version: v0.7.0 #}
+{# Code version: v0.8.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -85,31 +85,48 @@
                          id="backtest_history_surface"
                          data-active-view="{{ 'transactions' if show_trade_details else 'metrics' }}"
                          data-trade-details-visible="{{ 'true' if show_trade_details else 'false' }}">
+                    {% set history_view_options = [
+                        {"id": "backtest_history_metrics", "value": "metrics", "label": "Metrics"}
+                    ] %}
+                    {% if selected_strategy_id == 'bayesian-price-field' %}
+                    {% set history_view_options = history_view_options + [
+                        {"id": "backtest_history_probability", "value": "probability", "label": "Price Field"}
+                    ] %}
+                    {% endif %}
+                    {% set history_view_options = history_view_options + [
+                        {
+                            "id": "backtest_history_transactions",
+                            "value": "transactions",
+                            "label": "Transactions",
+                            "disabled": not show_trade_details,
+                            "label_attrs": 'data-backtest-history-transactions-option' ~ (' aria-disabled="true"' if not show_trade_details else ''),
+                            "input_attrs": 'data-backtest-history-transactions',
+                        }
+                    ] %}
                     <div class="investment-view-segmented-wrap backtest-history-view-segmented-wrap">
                         {{ render_segmented_control(
                             "segmented-control--compact investment-view-segmented backtest-history-view-segmented",
                             "backtest_history_view_tab",
                             "transactions" if show_trade_details else "metrics",
-                            [
-                                {"id": "backtest_history_metrics", "value": "metrics", "label": "Metrics"},
-                                {
-                                    "id": "backtest_history_transactions",
-                                    "value": "transactions",
-                                    "label": "Transactions",
-                                    "disabled": not show_trade_details,
-                                    "label_attrs": 'data-backtest-history-transactions-option' ~ (' aria-disabled="true"' if not show_trade_details else ''),
-                                    "input_attrs": 'data-backtest-history-transactions',
-                                },
-                            ],
-                            'id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="' ~ ('transactions' if show_trade_details else 'metrics') ~ '" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
+                            history_view_options,
+                            'id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="' ~ ('transactions' if show_trade_details else 'metrics') ~ '" data-option-count="' ~ ('3' if selected_strategy_id == 'bayesian-price-field' else '2') ~ '" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
                             true,
                             'investment-view-segmented-frame backtest-history-view-segmented-frame'
                         ) }}
                     </div>
                     <div class="investment-view-surface-body backtest-history-view-body" id="backtest_history_view_body">
+                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics"{% if show_trade_details %} hidden{% endif %}>
+                            {% if backtest_result or dca_result %}
+                            {% include "_backtest_metrics.html" %}
+                            {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
+                            {% endif %}
+                        </div>
+                        {% if selected_strategy_id == 'bayesian-price-field' %}
                         <section class="backtest-probability-detail-panel"
                                  id="backtest_probability_detail_panel"
                                  data-backtest-probability-detail-panel
+                                 data-backtest-history-view-panel="probability"
                                  role="region"
                                  aria-labelledby="backtest_probability_detail_title"
                                  hidden
@@ -121,20 +138,16 @@
                                         Hover a price point to inspect its forecast field.
                                     </p>
                                 </div>
-                                <div class="backtest-probability-detail-legend" aria-hidden="true">
-                                    <span class="backtest-probability-detail-legend-item">
-                                        <span class="backtest-probability-detail-legend-swatch is-up"></span>
-                                        Higher price
-                                    </span>
-                                    <span class="backtest-probability-detail-legend-item">
-                                        <span class="backtest-probability-detail-legend-swatch is-down"></span>
-                                        Lower price
-                                    </span>
+                                <div class="backtest-probability-detail-legend"
+                                     role="img"
+                                     aria-label="Lower price to higher price probability legend">
+                                    <span class="backtest-probability-detail-legend-label">Lower price</span>
+                                    <span class="backtest-probability-detail-legend-bar" aria-hidden="true"></span>
+                                    <span class="backtest-probability-detail-legend-label">Higher price</span>
                                 </div>
                             </div>
                             <div class="backtest-probability-detail-plot" data-backtest-probability-detail-plot>
                                 <div class="backtest-probability-detail-y-axis">
-                                    <span class="backtest-probability-detail-axis-title backtest-probability-detail-y-axis-title">Price</span>
                                     <div class="backtest-probability-detail-y-axis-viewport" data-backtest-probability-detail-y-axis></div>
                                 </div>
                                 <div class="backtest-probability-detail-main">
@@ -148,13 +161,7 @@
                                 </div>
                             </div>
                         </section>
-                        <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics"{% if show_trade_details %} hidden{% endif %}>
-                            {% if backtest_result or dca_result %}
-                            {% include "_backtest_metrics.html" %}
-                            {% else %}
-                            <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
-                            {% endif %}
-                        </div>
+                        {% endif %}
                         <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"{% if not show_trade_details %} hidden{% endif %}>
                         {% if backtest_result or dca_result %}
                     <div id="backtest_history_table_wrap"

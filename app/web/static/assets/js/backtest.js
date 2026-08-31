@@ -1,4 +1,4 @@
-/* Code version: v0.25.0 */
+/* Code version: v0.28.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -6,6 +6,8 @@
 	const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID || {};
 	const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";
 	const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "antigravity:backtest-probability-stage-minimum-change";
+	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "antigravity:backtest-history-view-change";
+	const PROBABILITY_MODEL_CACHE_LIMIT = 24;
 
 	const readThemeToken = (computed, tokenName) => (
 		typeof chartAxis.readThemeToken === "function"
@@ -142,8 +144,10 @@
 		if (!segmentedControl || !viewSurface) return;
 		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-history-view-panel]"));
 		const syncPanels = () => {
+			const previousActive = viewSurface.dataset.activeView;
 			const showTradeDetails = isBacktestTradeDetailsEnabled();
 			const metricsInput = segmentedControl.querySelector('input[name="backtest_history_view_tab"][value="metrics"]');
+			const probabilityInput = segmentedControl.querySelector('input[name="backtest_history_view_tab"][value="probability"]');
 			const transactionsInput = segmentedControl.querySelector("[data-backtest-history-transactions]");
 			const transactionsOption = segmentedControl.querySelector(
 				"[data-backtest-history-transactions-option]",
@@ -156,12 +160,15 @@
 				if (showTradeDetails) transactionsOption.removeAttribute("aria-disabled");
 				else transactionsOption.setAttribute("aria-disabled", "true");
 			}
-			if (!showTradeDetails && metricsInput instanceof HTMLInputElement) {
+			if (!showTradeDetails && metricsInput instanceof HTMLInputElement
+				&& !(probabilityInput instanceof HTMLInputElement && probabilityInput.checked)) {
 				metricsInput.checked = true;
 			}
 			const active = showTradeDetails
 				? segmentedControl.querySelector('input[name="backtest_history_view_tab"]:checked')?.value || "transactions"
-				: "metrics";
+				: probabilityInput instanceof HTMLInputElement && probabilityInput.checked
+					? "probability"
+					: "metrics";
 			segmentedControl.dataset.active = active;
 			viewSurface.dataset.activeView = active;
 			viewSurface.dataset.tradeDetailsVisible = String(showTradeDetails);
@@ -169,6 +176,11 @@
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.backtestHistoryViewPanel !== active;
 			});
+			if (previousActive !== active) {
+				window.dispatchEvent(new CustomEvent(BACKTEST_HISTORY_VIEW_CHANGE_EVENT, {
+					detail: {active},
+				}));
+			}
 		};
 		if (segmentedControl.dataset.bound !== "1") {
 			segmentedControl.dataset.bound = "1";
@@ -431,12 +443,19 @@
 		const probabilityDetailAnchor = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-anchor]",
 		);
+		let latestProbabilityDetailIndex = null;
+		const probabilityDetailXAxisTickNodes = new Map();
 		const hideProbabilityDetail = () => {
 			if (!(probabilityDetailPanel instanceof HTMLElement)) return;
+			latestProbabilityDetailIndex = null;
 			probabilityDetailPanel.hidden = true;
 			probabilityDetailPanel.setAttribute("aria-hidden", "true");
 			delete probabilityDetailPanel.dataset.activeIndex;
+			delete probabilityDetailPanel.dataset.renderKey;
 		};
+		const isProbabilityHistoryViewActive = () => (
+			document.getElementById("backtest_history_surface")?.dataset.activeView === "probability"
+		);
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
 			resultsStack?.classList.remove("has-probability-field");
@@ -490,6 +509,50 @@
 			const parsed = Date.parse(value);
 			return Number.isFinite(parsed) ? parsed : null;
 		});
+		const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {
+			const chartArea = chart?.chartArea;
+			const plotWidth = Number(chartArea?.right) - Number(chartArea?.left);
+			const timestamps = rawTimestamps
+				.filter((value) => Number.isFinite(value))
+				.sort((left, right) => left - right);
+			if (!(plotWidth > 0) || !(stepPixels > 0) || timestamps.length < 2) return null;
+			const rangeStart = timestamps[0];
+			const rangeEnd = timestamps[timestamps.length - 1];
+			if (!(rangeEnd > rangeStart)) return null;
+			const referenceStartDate = new Date(rangeEnd);
+			referenceStartDate.setUTCMonth(referenceStartDate.getUTCMonth() - 3);
+			const referenceStart = referenceStartDate.getTime();
+			const referenceWindow = rangeEnd - referenceStart;
+			const trailingReferenceCount = timestamps.filter(
+				(value) => value >= referenceStart,
+			).length;
+			const hasFullReferenceWindow = (rangeEnd - rangeStart) >= (referenceWindow * 0.9);
+			const referencePointCount = hasFullReferenceWindow && trailingReferenceCount >= 2
+				? trailingReferenceCount
+				: Math.max(
+					2,
+					Math.round(
+						(referenceWindow / (rangeEnd - rangeStart))
+						* (timestamps.length - 1),
+					) + 1,
+				);
+			const referenceStepPixels = plotWidth / (referencePointCount - 1);
+			if (!(referenceStepPixels > 0)) return null;
+			const referenceGeometry = probabilityGridApi.computeGridGeometry?.({
+				chartArea,
+				anchorX: Number(chartArea.left),
+				anchorY: (Number(chartArea.top) + Number(chartArea.bottom)) / 2,
+				columnCount: strategyPresentation.columns,
+				widthFraction: strategyPresentation.width_fraction,
+				gapPx: strategyPresentation.gap_px,
+				paddingPx: strategyPresentation.padding_px,
+				minCellPx: strategyPresentation.min_cell_px,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
+				stepPixels: referenceStepPixels,
+			});
+			return referenceGeometry?.cellSize > 0 ? referenceGeometry.cellSize : null;
+		};
 		const isSessionGap = (leftIndex, rightIndex) => {
 			if (interval !== "1m") return false;
 			const left = rawTimestamps[leftIndex];
@@ -674,6 +737,69 @@
 		let pinState = {mode: "tracking", activeIndex: null};
 		let priceChart;
 		let equityChart;
+		const chartHoverPointCaches = new Map();
+		const probabilityModelCache = new Map();
+		let probabilityHoverLayout = null;
+		const getChartHoverPointCache = (chart) => {
+			if (!chart) return {points: [], finitePoints: []};
+			const points = chart.getDatasetMeta?.(0)?.data || [];
+			const chartArea = chart.chartArea;
+			const signature = [
+				chart.width,
+				chart.height,
+				chartArea?.left,
+				chartArea?.right,
+				chartArea?.top,
+				chartArea?.bottom,
+				points.length,
+			].join("|");
+			const cached = chartHoverPointCaches.get(chart);
+			if (cached?.points === points && cached.signature === signature) return cached;
+			const finitePoints = [];
+			points.forEach((point, index) => {
+				if (point && Number.isFinite(point.x)) finitePoints.push({index, x: point.x});
+			});
+			const next = {points, finitePoints, signature};
+			chartHoverPointCaches.set(chart, next);
+			return next;
+		};
+		const getProbabilityHoverLayout = () => {
+			if (!strategyPresentation || !priceChart?.chartArea) return null;
+			const pointCache = getChartHoverPointCache(priceChart);
+			const chartArea = priceChart.chartArea;
+			const yScale = priceChart.scales?.y;
+			const signature = [
+				priceChart.width,
+				priceChart.height,
+				chartArea.left,
+				chartArea.right,
+				chartArea.top,
+				chartArea.bottom,
+				yScale?.min,
+				yScale?.max,
+				pointCache.signature,
+				strategyPresentation.columns,
+				strategyPresentation.width_fraction,
+				strategyPresentation.gap_px,
+				strategyPresentation.padding_px,
+				strategyPresentation.min_cell_px,
+			].join("|");
+			if (
+				probabilityHoverLayout?.signature === signature
+				&& probabilityHoverLayout.points === pointCache.points
+			) return probabilityHoverLayout;
+			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(pointCache.points, 0);
+			if (!(stepPixels > 0)) return null;
+			const cellSizeTargetPx = resolveProbabilityFieldReferenceCellSize(priceChart, stepPixels);
+			probabilityModelCache.clear();
+			probabilityHoverLayout = {
+				cellSizeTargetPx,
+				points: pointCache.points,
+				signature,
+				stepPixels,
+			};
+			return probabilityHoverLayout;
+		};
 		const publishProbabilityStageMinimum = () => {
 			if (
 				!strategyPresentation
@@ -683,9 +809,10 @@
 				clearProbabilityStageMinimum();
 				return;
 			}
-			const pricePoints = priceChart.getDatasetMeta?.(0)?.data || [];
-			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(pricePoints, 0);
-			if (!(stepPixels > 0)) return;
+			const hoverLayout = getProbabilityHoverLayout();
+			if (!hoverLayout) return;
+			const pricePoints = hoverLayout.points;
+			const {cellSizeTargetPx, stepPixels} = hoverLayout;
 			const requirement = probabilityGridApi.computeGridMinimumPlotHeight?.({
 				chartArea: priceChart.chartArea,
 				columnCount: strategyPresentation.columns,
@@ -695,6 +822,7 @@
 				rowsAbove: strategyPresentation.rows_above,
 				rowsBelow: strategyPresentation.rows_below,
 				stepPixels,
+				cellSizeTargetPx,
 				widthFraction: strategyPresentation.width_fraction,
 			});
 			if (!requirement) return;
@@ -1042,6 +1170,11 @@
 					]);
 				})()
 		);
+		const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {
+			if (count <= 1) return buildTickIndexSet(count, plotWidth);
+			if (plotWidth > 0 && plotWidth < 360) return new Set([0, count - 1]);
+			return buildTickIndexSet(count, plotWidth);
+		};
 
 		const addTradingDays = (dateParts, tradingDays) => {
 			if (!dateParts) return null;
@@ -1104,9 +1237,32 @@
 				|| !model.cells.length) return false;
 
 			const {geometry, cells, anchorPrice} = model;
-			probabilityDetailPanel.hidden = false;
-			probabilityDetailPanel.setAttribute("aria-hidden", "false");
+			latestProbabilityDetailIndex = index;
+			const detailViewActive = isProbabilityHistoryViewActive();
+			probabilityDetailPanel.hidden = !detailViewActive;
+			probabilityDetailPanel.setAttribute("aria-hidden", String(!detailViewActive));
 			probabilityDetailPanel.dataset.activeIndex = String(index);
+			if (!detailViewActive) return false;
+			const detailGridViewport = probabilityDetailGrid.parentElement;
+			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
+			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
+				? Math.max(0, Number(detailGridViewportRect.width))
+				: 0;
+			const detailGridViewportHeight = Number.isFinite(Number(detailGridViewportRect?.height))
+				? Math.max(0, Number(detailGridViewportRect.height))
+				: 0;
+			const renderKey = [
+				model.cacheKey || [
+					index,
+					geometry.anchorX,
+					geometry.anchorY,
+					geometry.cellSize,
+					geometry.rowCount,
+				].join("|"),
+				detailGridViewportWidth,
+				detailGridViewportHeight,
+			].join("|");
+			if (probabilityDetailPanel.dataset.renderKey === renderKey) return true;
 			probabilityDetailPanel.dataset.columnCount = String(geometry.columnCount);
 			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
 			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
@@ -1150,10 +1306,6 @@
 			probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
 			probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
-			const detailGridViewport = probabilityDetailGrid.parentElement;
-			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
-			const detailGridViewportWidth = Number(detailGridViewportRect?.width) || 1;
-			const detailGridViewportHeight = Number(detailGridViewportRect?.height) || 1;
 			const horizontalPadding = geometry.gridPaddingInlineStart + geometry.padding;
 			const verticalPadding = geometry.gridPaddingTop + geometry.gridPaddingBottom;
 			const availableWidth = Math.max(
@@ -1166,9 +1318,32 @@
 				detailGridViewportHeight - verticalPadding
 					- ((geometry.rowCount - 1) * geometry.gap),
 			);
+			const sideCellSize = (rowCount, guideGap) => rowCount > 0
+				? (
+					(detailGridViewportHeight / 2)
+					- geometry.padding
+					- guideGap
+					- ((rowCount - 1) * geometry.gap)
+				) / rowCount
+				: Number.POSITIVE_INFINITY;
+			const detailRowsAbove = (() => {
+				const firstDownCell = cells.find((cell) => (
+					cell.column === 0 && cell.sign === "down"
+				));
+				return firstDownCell ? firstDownCell.row : geometry.rowCount;
+			})();
+			const detailRowsBelow = Math.max(0, geometry.rowCount - detailRowsAbove);
 			const detailCellSize = Math.max(1, Math.min(
 				availableWidth / geometry.columnCount,
 				availableHeight / geometry.rowCount,
+				sideCellSize(
+					detailRowsAbove,
+					detailRowsBelow > 0 ? geometry.gap / 2 : 0,
+				),
+				sideCellSize(
+					detailRowsBelow,
+					detailRowsAbove > 0 ? geometry.gap / 2 : 0,
+				),
 			));
 			const detailGridWidth = horizontalPadding
 				+ (geometry.columnCount * detailCellSize)
@@ -1176,69 +1351,134 @@
 			const detailGridHeight = verticalPadding
 				+ (geometry.rowCount * detailCellSize)
 				+ ((geometry.rowCount - 1) * geometry.gap);
-			probabilityDetailGrid.style.width = `${detailGridWidth}px`;
-			probabilityDetailGrid.style.height = `${detailGridHeight}px`;
-			probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;
-			probabilityDetailGrid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${detailCellSize}px)`;
-			probabilityDetailGrid.style.gap = `${geometry.gap}px`;
-			probabilityDetailGrid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`;
 
 			const lowerPrice = Math.min(...cells.map((cell) => cell.lowerPrice));
 			const upperPrice = Math.max(...cells.map((cell) => cell.upperPrice));
-			const detailGridTop = Math.max(0, (detailGridViewportHeight - detailGridHeight) / 2);
+			const detailGridPosition = probabilityGridApi.computeAnchoredDetailGridPosition?.({
+				viewportHeight: detailGridViewportHeight,
+				rowsAbove: detailRowsAbove,
+				rowsBelow: detailRowsBelow,
+				cellSize: detailCellSize,
+				gapPx: geometry.gap,
+				paddingPx: geometry.padding,
+			});
+			if (!detailGridPosition) return false;
+			const detailGridTop = detailGridPosition.top;
+			const detailLayoutKey = [
+				detailGridViewportWidth,
+				detailGridViewportHeight,
+				detailCellSize,
+				detailGridWidth,
+				detailGridHeight,
+				detailGridTop,
+				detailRowsAbove,
+				detailRowsBelow,
+				geometry.columnCount,
+				geometry.rowCount,
+				geometry.gap,
+				geometry.padding,
+			].join("|");
+			const detailLayoutChanged = probabilityDetailPanel.dataset.layoutKey !== detailLayoutKey;
+			if (detailLayoutChanged) {
+				probabilityDetailGrid.style.width = `${detailGridWidth}px`;
+				probabilityDetailGrid.style.height = `${detailGridHeight}px`;
+				probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;
+				probabilityDetailGrid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${detailCellSize}px)`;
+				probabilityDetailGrid.style.gap = `${geometry.gap}px`;
+				probabilityDetailGrid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`;
+				probabilityDetailGrid.style.top = `${detailGridTop}px`;
+				probabilityDetailGrid.style.transform = "none";
+			}
 			const detailYViewportRect = probabilityDetailYAxis.getBoundingClientRect();
 			const tickValues = Array.from({length: 5}, (_, tickIndex) => (
 				upperPrice - ((upperPrice - lowerPrice) * (tickIndex / 4))
 			));
-			probabilityDetailYAxis.replaceChildren();
-			tickValues.forEach((value, tickIndex) => {
+			let yTickNodes = Array.from(
+				probabilityDetailYAxis.querySelectorAll("[data-backtest-probability-detail-y-tick]"),
+			);
+			while (yTickNodes.length < tickValues.length) {
 				const tick = document.createElement("span");
 				tick.className = "backtest-probability-detail-y-tick";
+				tick.dataset.backtestProbabilityDetailYTick = "";
+				const textNode = document.createTextNode("");
+				tick.appendChild(textNode);
+				probabilityDetailYAxis.appendChild(tick);
+				yTickNodes.push(tick);
+			}
+			while (yTickNodes.length > tickValues.length) yTickNodes.pop()?.remove();
+			yTickNodes.forEach((tick, tickIndex) => {
+				const value = tickValues[tickIndex];
 				tick.dataset.price = String(value);
 				const pricePosition = detailGridTop
 					+ geometry.gridPaddingTop
 					+ ((detailGridHeight - verticalPadding) * (tickIndex / 4));
 				tick.style.top = `${(pricePosition / Math.max(1, detailYViewportRect.height)) * 100}%`;
-				tick.textContent = formatStockPriceAxisValue(value);
-				probabilityDetailYAxis.appendChild(tick);
+				tick.firstChild.nodeValue = formatStockPriceAxisValue(value);
 			});
 
-			probabilityDetailXAxis
-				.querySelectorAll("[data-backtest-probability-detail-x-tick]")
-				.forEach((node) => node.remove());
 			const tickIndexes = Array.from(
-				buildTickIndexSet(geometry.columnCount, probabilityDetailGrid.clientWidth || 0),
+				buildProbabilityDetailTickIndexSet(geometry.columnCount, detailGridViewportWidth),
 			).sort((left, right) => left - right);
-			tickIndexes.forEach((column, tickIndex) => {
+			const tickIndexSet = new Set(tickIndexes);
+			probabilityDetailXAxisTickNodes.forEach((node, column) => {
+				if (!tickIndexSet.has(column) || node.parentElement !== probabilityDetailXAxis) {
+					node.remove();
+					probabilityDetailXAxisTickNodes.delete(column);
+				}
+			});
+			const xTickNodes = tickIndexes.map((column, tickIndex) => {
 				const cell = cells.find((candidate) => candidate.column === column);
 				const dateParts = cell
 					? buildProbabilityForecastDateParts(index, cell.horizon)
 					: null;
-				if (!cell || !dateParts) return;
-				const tick = document.createElement("span");
-				tick.className = "backtest-probability-detail-x-tick";
-				tick.dataset.backtestProbabilityDetailXTick = "";
+				if (!cell || !dateParts) return null;
+				let tick = probabilityDetailXAxisTickNodes.get(column);
+				if (!(tick instanceof HTMLElement) || tick.parentElement !== probabilityDetailXAxis) {
+					tick = document.createElement("span");
+					tick.className = "backtest-probability-detail-x-tick";
+					tick.dataset.backtestProbabilityDetailXTick = "";
+					probabilityDetailXAxis.appendChild(tick);
+					probabilityDetailXAxisTickNodes.set(column, tick);
+				}
 				tick.dataset.column = String(column);
 				tick.dataset.horizon = String(cell.horizon);
 				tick.dataset.rawDate = rawDates[index + cell.horizon] || "";
 				tick.style.left = `${geometry.gridPaddingInlineStart
 					+ (column * (detailCellSize + geometry.gap))
 					+ (detailCellSize / 2)}px`;
-				if (tickIndex === 0) tick.classList.add("is-first");
-				if (tickIndex === tickIndexes.length - 1) tick.classList.add("is-last");
+				tick.classList.toggle("is-first", tickIndex === 0);
+				tick.classList.toggle("is-last", tickIndex === tickIndexes.length - 1);
 				const [firstLine, secondLine] = formatChartDateLines(dateParts);
-				const firstLineNode = document.createElement("span");
-				firstLineNode.className = "backtest-probability-detail-x-tick-line";
-				firstLineNode.textContent = firstLine;
-				tick.appendChild(firstLineNode);
-				if (secondLine) {
-					const secondLineNode = document.createElement("span");
-					secondLineNode.className = "backtest-probability-detail-x-tick-line";
-					secondLineNode.textContent = secondLine;
-					tick.appendChild(secondLineNode);
+				let lineNodes = Array.from(tick.children);
+				while (lineNodes.length < 2) {
+					const line = document.createElement("span");
+					line.className = "backtest-probability-detail-x-tick-line";
+					tick.appendChild(line);
+					lineNodes = Array.from(tick.children);
 				}
-				probabilityDetailXAxis.appendChild(tick);
+				lineNodes[0].textContent = firstLine;
+				lineNodes[1].textContent = secondLine || "";
+				lineNodes[1].hidden = !secondLine;
+				return tick;
 			});
+			const renderedTicks = xTickNodes.filter(Boolean);
+			if (detailLayoutChanged) {
+				for (let tickIndex = 1; tickIndex < renderedTicks.length; tickIndex += 1) {
+					if (renderedTicks[tickIndex].getBoundingClientRect().left
+						< renderedTicks[tickIndex - 1].getBoundingClientRect().right - 0.5) {
+						renderedTicks[tickIndex].remove();
+						probabilityDetailXAxisTickNodes.delete(
+							Number(renderedTicks[tickIndex].dataset.column),
+						);
+					}
+				}
+			}
+			renderedTicks.filter((tick) => tick.parentElement === probabilityDetailXAxis).forEach((tick, tickIndex, visibleTicks) => {
+				tick.classList.toggle("is-first", tickIndex === 0);
+				tick.classList.toggle("is-last", tickIndex === visibleTicks.length - 1);
+			});
+			probabilityDetailPanel.dataset.layoutKey = detailLayoutKey;
+			probabilityDetailPanel.dataset.renderKey = renderKey;
 			return true;
 		};
 
@@ -1474,18 +1714,22 @@
 			const relativeX = event.clientX - canvasRect.left;
 			const relativeY = event.clientY - canvasRect.top;
 			if (!Number.isFinite(relativeX)) return null;
-			const points = chart.getDatasetMeta(0)?.data || [];
-
-			let nearestIndex = null;
-			let nearestDistance = Number.POSITIVE_INFINITY;
-			points.forEach((point, index) => {
-				if (!point || !Number.isFinite(point.x)) return;
-				const distance = Math.abs(point.x - relativeX);
-				if (distance < nearestDistance) {
-					nearestDistance = distance;
-					nearestIndex = index;
-				}
-			});
+			const pointCache = getChartHoverPointCache(chart);
+			const {points, finitePoints} = pointCache;
+			if (!finitePoints.length) return null;
+			let low = 0;
+			let high = finitePoints.length - 1;
+			while (low < high) {
+				const midpoint = Math.floor((low + high) / 2);
+				if (finitePoints[midpoint].x < relativeX) low = midpoint + 1;
+				else high = midpoint;
+			}
+			const rightPoint = finitePoints[low];
+			const leftPoint = finitePoints[Math.max(0, low - 1)];
+			const nearestPoint = Math.abs(leftPoint.x - relativeX) <= Math.abs(rightPoint.x - relativeX)
+				? leftPoint
+				: rightPoint;
+			const nearestIndex = nearestPoint.index;
 
 			if (!Number.isInteger(nearestIndex)) return null;
 			if (chart.canvas !== priceCanvas || !Number.isFinite(relativeY)) return nearestIndex;
@@ -1533,6 +1777,12 @@
 			if (!strategyPresentation || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
 				return null;
 			}
+			const cachedModel = probabilityModelCache.get(index);
+			if (cachedModel) {
+				probabilityModelCache.delete(index);
+				probabilityModelCache.set(index, cachedModel);
+				return cachedModel;
+			}
 			const meanValue = strategyPresentation.predictive_mean?.[index];
 			const scaleValue = strategyPresentation.predictive_scale?.[index];
 			const mean = Number(meanValue);
@@ -1543,9 +1793,9 @@
 				|| !Number.isFinite(mean) || !Number.isFinite(scale) || !(scale > 0) || !(anchorPrice > 0)) {
 				return null;
 			}
-			const priceDatasetPoints = priceChart.getDatasetMeta(0)?.data || [];
-			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(priceDatasetPoints, index);
-			if (!(stepPixels > 0)) return null;
+			const hoverLayout = getProbabilityHoverLayout();
+			if (!hoverLayout) return null;
+			const {cellSizeTargetPx, stepPixels} = hoverLayout;
 			const geometry = probabilityGridApi.computeGridGeometry?.({
 				chartArea: priceChart.chartArea,
 				anchorX: pricePoint.x,
@@ -1558,6 +1808,7 @@
 				rowsAbove: strategyPresentation.rows_above,
 				rowsBelow: strategyPresentation.rows_below,
 				stepPixels,
+				cellSizeTargetPx,
 			});
 			if (!geometry) return null;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
@@ -1572,15 +1823,21 @@
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			}) || [];
 			if (!cells.length) return null;
-			return {
+			const model = {
 				anchorPrice,
 				cells,
+				cacheKey: `${hoverLayout.signature}|${index}`,
 				geometry,
 				mean,
 				scale,
 				stepPixels,
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			};
+			probabilityModelCache.set(index, model);
+			while (probabilityModelCache.size > PROBABILITY_MODEL_CACHE_LIMIT) {
+				probabilityModelCache.delete(probabilityModelCache.keys().next().value);
+			}
+			return model;
 		};
 
 		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
@@ -1595,7 +1852,10 @@
 				return false;
 			}
 			const {anchorPrice, cells, geometry, mean, scale, stepPixels} = model;
-			renderProbabilityDetail(index, model);
+			latestProbabilityDetailIndex = index;
+			if (isProbabilityHistoryViewActive()) {
+				renderProbabilityDetail(index, model);
+			}
 			setProbabilityScrollExtent(probabilityScrollVisualPosition);
 
 			const grid = probabilityTooltip.querySelector("[data-backtest-probability-grid]");
@@ -1606,8 +1866,10 @@
 			const canReuseCells = grid.childElementCount === cells.length
 				&& Number(grid.dataset.columnCount) === geometry.columnCount
 				&& Number(grid.dataset.rowCount) === geometry.rowCount;
+			const renderKey = model.cacheKey || String(index);
+			const shouldRenderCells = !canReuseCells || grid.dataset.renderKey !== renderKey;
 			let cellNodes = canReuseCells ? Array.from(grid.children) : [];
-			if (!canReuseCells) {
+			if (shouldRenderCells && !canReuseCells) {
 				const fragment = document.createDocumentFragment();
 				cellNodes = cells.map(() => {
 					const node = document.createElement("span");
@@ -1616,7 +1878,10 @@
 				});
 				grid.replaceChildren(fragment);
 			}
-			cells.forEach((cell, cellIndex) => applyProbabilityCellNode(cellNodes[cellIndex], cell));
+			if (shouldRenderCells) {
+				cells.forEach((cell, cellIndex) => applyProbabilityCellNode(cellNodes[cellIndex], cell));
+				grid.dataset.renderKey = renderKey;
+			}
 			grid.dataset.columnCount = String(geometry.columnCount);
 			grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			grid.dataset.rowCount = String(geometry.rowCount);
@@ -1668,6 +1933,22 @@
 			};
 			return true;
 		};
+		const refreshActiveProbabilityDetail = () => {
+			if (!isProbabilityHistoryViewActive() || !(probabilityDetailPanel instanceof HTMLElement)) return;
+			const detailIndex = Number.isInteger(latestProbabilityDetailIndex)
+				? latestProbabilityDetailIndex
+				: Number(probabilityDetailPanel.dataset.activeIndex);
+			if (!Number.isInteger(detailIndex) || detailIndex < 0) return;
+			const detailPoint = getDatasetPoint(priceChart, detailIndex, 0);
+			const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
+			if (detailModel) renderProbabilityDetail(detailIndex, detailModel);
+			else hideProbabilityDetail();
+		};
+		window.addEventListener(
+			BACKTEST_HISTORY_VIEW_CHANGE_EVENT,
+			refreshActiveProbabilityDetail,
+			{signal: documentController.signal},
+		);
 
 		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
@@ -1778,8 +2059,10 @@
 			activeSourceCanvas = index === null ? null : sourceCanvas;
 			activeSourceChart = index === null ? null : sourceChart;
 			activePriceOverlay = Boolean(strategyPresentation && index !== null && sourceCanvas === priceCanvas);
+			const showTradeDetails = isBacktestTradeDetailsEnabled();
 			const setActive = (chart) => {
 				if (!chart || !chart.ctx) return;
+				if (chart === equityChart && !showTradeDetails) return;
 				chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
 				chart.update("none");
 			};
@@ -1806,6 +2089,19 @@
 		};
 
 		const scheduleHoverSync = (index, sourceCanvas, sourceChart) => {
+			if (
+				index === activeIndex
+				&& sourceCanvas === activeSourceCanvas
+				&& sourceChart === activeSourceChart
+			) {
+				cancelScheduledHoverSync();
+				return;
+			}
+			if (
+				pendingHoverUpdate?.index === index
+				&& pendingHoverUpdate.sourceCanvas === sourceCanvas
+				&& pendingHoverUpdate.sourceChart === sourceChart
+			) return;
 			pendingHoverUpdate = {index, sourceCanvas, sourceChart};
 			if (hoverFrameId !== null) return;
 			hoverFrameId = requestControllerAnimationFrame(() => {
@@ -1813,6 +2109,11 @@
 				const pending = pendingHoverUpdate;
 				pendingHoverUpdate = null;
 				if (!pending || pinState.mode === "pinned" || !pending.sourceChart?.ctx) return;
+				if (
+					pending.index === activeIndex
+					&& pending.sourceCanvas === activeSourceCanvas
+					&& pending.sourceChart === activeSourceChart
+				) return;
 				pinState = probabilityGridApi.reducePinState?.(
 					pinState,
 					{type: "track", index: pending.index},
@@ -2227,6 +2528,9 @@
 				: activeSourceChart;
 			if (!chartsAlreadyResized) priceChart.resize();
 			if (showTradeDetails && !chartsAlreadyResized) equityChart.resize();
+			chartHoverPointCaches.clear();
+			probabilityHoverLayout = null;
+			probabilityModelCache.clear();
 			priceChartYPadding = resolvePriceChartYPadding();
 			applyBacktestYAxisScale(
 				priceChart,
@@ -2248,8 +2552,8 @@
 				priceChart.update("none");
 				if (showTradeDetails) equityChart.update("none");
 			}
-			if (strategyPresentation && probabilityDetailPanel?.dataset.activeIndex) {
-				const detailIndex = Number(probabilityDetailPanel.dataset.activeIndex);
+			if (strategyPresentation && isProbabilityHistoryViewActive() && Number.isInteger(latestProbabilityDetailIndex)) {
+				const detailIndex = latestProbabilityDetailIndex;
 				const detailPoint = getDatasetPoint(priceChart, detailIndex, 0);
 				const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
 				if (detailModel) renderProbabilityDetail(detailIndex, detailModel);
@@ -2307,10 +2611,10 @@
 				if (layoutFrameId !== null) {
 					cancelControllerAnimationFrame(layoutFrameId);
 					layoutFrameId = null;
-				}
-				layoutObserver?.disconnect?.();
-				layoutObserver = null;
-				themeCleanup?.();
+					}
+					layoutObserver?.disconnect?.();
+					layoutObserver = null;
+					themeCleanup?.();
 				themeCleanup = null;
 				documentController.abort();
 				priceCanvas._abortController?.abort?.();

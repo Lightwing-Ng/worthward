@@ -1,4 +1,4 @@
-/* Code version: v0.47.2 */
+/* Code version: v0.48.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2018,6 +2018,7 @@
             const showBacktestTradeDetails = showTradeDetailsInput instanceof HTMLInputElement
                 ? showTradeDetailsInput.checked
                 : true;
+            const showBacktestProbabilityField = state.selectedStrategyId === "bayesian-price-field";
             const tradeMetricLabels = [
                 "Initial capital",
                 "Final equity",
@@ -2099,8 +2100,9 @@
                         <div class="segmented-control-overflow-frame investment-view-segmented-frame backtest-history-view-segmented-frame"
                              data-segmented-overflow-frame data-overflow-start="0" data-overflow-end="0">
                             <div class="segmented-control segmented-control--compact investment-view-segmented backtest-history-view-segmented"
-                                 id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="${showBacktestTradeDetails ? "transactions" : "metrics"}" data-option-count="2" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
+                                 id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="${showBacktestTradeDetails ? "transactions" : "metrics"}" data-option-count="${showBacktestProbabilityField ? "3" : "2"}" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
                                 <label class="segmented-control-option" for="backtest_history_metrics"><input id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics"${showBacktestTradeDetails ? "" : " checked"}><span>Metrics</span></label>
+                                ${showBacktestProbabilityField ? '<label class="segmented-control-option" for="backtest_history_probability"><input id="backtest_history_probability" name="backtest_history_view_tab" type="radio" value="probability"><span>Price Field</span></label>' : ""}
                                 <label class="segmented-control-option" for="backtest_history_transactions" data-backtest-history-transactions-option${showBacktestTradeDetails ? "" : " aria-disabled=\"true\""}><input id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" data-backtest-history-transactions${showBacktestTradeDetails ? " checked" : " disabled"}><span>Transactions</span></label>
                             </div>
                         </div>
@@ -2109,6 +2111,47 @@
                         <div id="backtest_history_metrics_panel" data-backtest-history-view-panel="metrics"${showBacktestTradeDetails ? " hidden" : ""}>
                             <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">${pendingMetricCards}</div>
                         </div>
+                        ${showBacktestProbabilityField ? `
+                        <section class="backtest-probability-detail-panel"
+                                 id="backtest_probability_detail_panel"
+                                 data-backtest-probability-detail-panel
+                                 data-backtest-history-view-panel="probability"
+                                 role="region"
+                                 aria-labelledby="backtest_probability_detail_title"
+                                 hidden
+                                 aria-hidden="true">
+                            <div class="backtest-probability-detail-heading">
+                                <div>
+                                    <p class="chart-heading" id="backtest_probability_detail_title">Bayesian Price Field detail</p>
+                                    <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
+                                        Hover a price point to inspect its forecast field.
+                                    </p>
+                                </div>
+                                <div class="backtest-probability-detail-legend"
+                                     role="img"
+                                     aria-label="Lower price to higher price probability legend">
+                                    <span class="backtest-probability-detail-legend-label">Lower price</span>
+                                    <span class="backtest-probability-detail-legend-bar" aria-hidden="true"></span>
+                                    <span class="backtest-probability-detail-legend-label">Higher price</span>
+                                </div>
+                            </div>
+                            <div class="backtest-probability-detail-plot" data-backtest-probability-detail-plot>
+                                <div class="backtest-probability-detail-y-axis">
+                                    <span class="backtest-probability-detail-axis-title backtest-probability-detail-y-axis-title">Price</span>
+                                    <div class="backtest-probability-detail-y-axis-viewport" data-backtest-probability-detail-y-axis></div>
+                                </div>
+                                <div class="backtest-probability-detail-main">
+                                    <div class="backtest-probability-detail-grid-viewport" data-backtest-probability-detail-grid-viewport>
+                                        <div class="backtest-probability-detail-grid" data-backtest-probability-detail-grid role="img" aria-label="Bayesian future price probability field"></div>
+                                        <span class="backtest-probability-detail-anchor" data-backtest-probability-detail-anchor aria-hidden="true"></span>
+                                    </div>
+                                    <div class="backtest-probability-detail-x-axis" data-backtest-probability-detail-x-axis>
+                                        <span class="backtest-probability-detail-axis-title backtest-probability-detail-x-axis-title">Forecast date</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        ` : ""}
                         <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"${showBacktestTradeDetails ? "" : " hidden"}>
                     <div class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">

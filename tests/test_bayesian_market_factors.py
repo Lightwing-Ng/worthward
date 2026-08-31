@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.6.0
+Code version: v1.6.1
 """
 
 from __future__ import annotations
@@ -361,6 +361,9 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                         "total_call_volume": "600",
                         "total_put_volume": "400",
                         "total_volume": "1,000",
+                        "total_call_open_interest": "1,200",
+                        "total_put_open_interest": "800",
+                        "total_open_interest": "2,000",
                     },
                     {"timestamp": after, "put_call_volume_ratio": "0.6"},
                 ]
@@ -390,6 +393,13 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             ["2024-01-02"],
         )
         self.assertEqual(bundle.option_history[0].total_volume, 1_000.0)
+        self.assertEqual(bundle.option_history[0].put_call_volume_ratio, 0.8)
+        self.assertEqual(bundle.option_history[0].put_call_open_interest_ratio, 0.7)
+        self.assertEqual(bundle.option_history[0].call_volume, 600.0)
+        self.assertEqual(bundle.option_history[0].put_volume, 400.0)
+        self.assertEqual(bundle.option_history[0].call_open_interest, 1_200.0)
+        self.assertEqual(bundle.option_history[0].put_open_interest, 800.0)
+        self.assertEqual(bundle.option_history[0].total_open_interest, 2_000.0)
         self.assertEqual(bundle.fetched_at, FIXED_NOW)
         self.assertRegex(bundle.fingerprint, r"^[0-9a-f]{64}$")
         self.assertTrue(all(row.source.startswith("longbridge-cli:") for row in bundle.ohlcv))

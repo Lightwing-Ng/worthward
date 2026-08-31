@@ -1,19 +1,36 @@
 # Testing guide
 
-Documentation version: `v1.39.0`
+Documentation version: `v1.41.3`
 
 ## Bayesian Price Field detail view coverage
 
-The isolated Chromium Backtest flow verifies that the persistent Bayesian
-detail panel appears above Metrics and Transactions, follows the active hover
-index, reuses the hover cell probabilities and price bounds, preserves square
-cells and the 2px lattice gap, and retains the last valid field after hover is
-cleared. It also checks Settings-formatted forecast dates, edge-aware tick
+The isolated Chromium Backtest flow verifies that the Bayesian `Price Field`
+option sits between `Metrics` and `Transactions`, that selecting it preserves
+both existing views, follows the active hover index, reuses the hover cell
+probabilities and price bounds, preserves square cells and the 2px lattice gap,
+and retains the last valid field after hover is cleared. It also checks the
+bar-gradient legend, Settings-formatted forecast dates, edge-aware tick
 placement, the live price axis, accessible state, and narrow-layout geometry.
+The detail contract also requires that green cells stay wholly above the live
+price guide and red cells wholly below it, including the first render after a
+layout change.
 The probability-grid unit contract additionally verifies the private 0–50%
 absolute cell-display threshold, default 5% value, inclusive boundary, and
 unchanged cell geometry; strategy tests verify that changing this parameter
 does not change predictions, signals, or post-hoc scores.
+It also verifies that longer ranges carry the trailing three-month reference
+target for integer-day cell sizing. Strategy/provider regressions cover the
+alphabetically ordered granular Options controls, independent selection without
+the composite factor, one shared historical `option volume daily` fetch, all
+Longbridge volume/open-interest fields, raw-ratio fallback, and backward as-of
+staleness boundaries. Real-time-only option contract quote fields must not be
+introduced into the historical feature matrix. Longer ranges must preserve the
+three-month reference cell size through integer trading-day quantization.
+
+The overview-hover regression also covers the `show_trade_details=0` path:
+hidden Price Field detail cells stay untouched during repeated pointer moves,
+the hidden equity Chart.js instance is not updated, and only the visible
+probability field is refreshed.
 
 ## Supported commands
 

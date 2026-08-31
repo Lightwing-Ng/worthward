@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.18.0
+ * Code version: v0.20.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -21,6 +21,7 @@
     const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
     const DEFAULT_CELL_DISPLAY_THRESHOLD_PCT = 5;
     const DEFAULT_MAX_CELL_PX = 10;
+    const MAX_TARGET_CELL_PX = 64;
 
     const GEOMETRY_LIMITS = Object.freeze({
         columns: Object.freeze([1, 72]),
@@ -196,6 +197,7 @@
         rowsBelow = DEFAULT_ROWS_BELOW,
         columnCount = DEFAULT_COLUMN_COUNT,
         stepPixels,
+        cellSizeTargetPx = null,
     } = {}) => {
         const left = Number(chartArea?.left);
         const right = Number(chartArea?.right);
@@ -223,6 +225,14 @@
             DEFAULT_MIN_CELL_PX,
             GEOMETRY_LIMITS.minCell,
         );
+        const requestedCellSizeTarget = finiteOrNull(cellSizeTargetPx);
+        const normalizedCellSizeTarget = requestedCellSizeTarget !== null
+            ? clamp(
+                requestedCellSizeTarget,
+                minimumCell,
+                MAX_TARGET_CELL_PX,
+            )
+            : null;
 
         // One slot is the visible square plus its following gap. Quantizing the
         // whole slot prevents spacing from accumulating a fractional-day drift.
@@ -242,7 +252,25 @@
             < (minimumCell + requestedGap - 1e-9)) {
             minimumDaysPerColumn += 1;
         }
-        const daysPerColumn = Math.max(preferredDaysPerColumn, minimumDaysPerColumn);
+        let targetDaysPerColumn = 0;
+        if (normalizedCellSizeTarget !== null) {
+            targetDaysPerColumn = Math.max(
+                1,
+                Math.ceil(
+                    ((normalizedCellSizeTarget + requestedGap) / normalizedStepPixels)
+                        - 1e-12,
+                ),
+            );
+            while ((targetDaysPerColumn * normalizedStepPixels)
+                < (normalizedCellSizeTarget + requestedGap - 1e-9)) {
+                targetDaysPerColumn += 1;
+            }
+        }
+        const daysPerColumn = Math.max(
+            preferredDaysPerColumn,
+            minimumDaysPerColumn,
+            targetDaysPerColumn,
+        );
         const slotWidth = daysPerColumn * normalizedStepPixels;
         // Keep the requested gap exact. If the shortest valid day slot cannot
         // carry both the gap and the cell floor, add a complete trading day
@@ -311,6 +339,7 @@
             gridPaddingBottom: padding,
             halfHeight,
             cellSize,
+            cellSizeTarget: normalizedCellSizeTarget,
             columnCount: normalizedColumnCount,
             daysPerColumn,
             direction: "right",
@@ -368,6 +397,7 @@
         rowsBelow = DEFAULT_ROWS_BELOW,
         columnCount = DEFAULT_COLUMN_COUNT,
         stepPixels,
+        cellSizeTargetPx = null,
     } = {}) => {
         const top = Number(chartArea?.top);
         const bottom = Number(chartArea?.bottom);
@@ -391,6 +421,7 @@
             rowsBelow,
             columnCount,
             stepPixels,
+            cellSizeTargetPx,
         });
         if (!geometry) return null;
         const halfHeight = computeMaximumGridHalfHeight({
@@ -409,6 +440,46 @@
             padding: geometry.padding,
             slotWidth: geometry.slotWidth,
             stepPixels: geometry.stepPixels,
+        });
+    };
+
+    const computeAnchoredDetailGridPosition = ({
+        viewportHeight,
+        rowsAbove = DEFAULT_ROWS_ABOVE,
+        rowsBelow = DEFAULT_ROWS_BELOW,
+        cellSize,
+        gapPx = DEFAULT_GAP_PX,
+        paddingPx = DEFAULT_PADDING_PX,
+    } = {}) => {
+        const height = Number(viewportHeight);
+        const normalizedCellSize = Number(cellSize);
+        const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
+        const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
+        const normalizedRowsAbove = boundedInteger(
+            rowsAbove,
+            DEFAULT_ROWS_ABOVE,
+            GEOMETRY_LIMITS.rows,
+        );
+        const normalizedRowsBelow = boundedInteger(
+            rowsBelow,
+            DEFAULT_ROWS_BELOW,
+            GEOMETRY_LIMITS.rows,
+        );
+        if (!(height > 0) || !(normalizedCellSize > 0)) return null;
+        const sideCellExtent = (rowCount) => rowCount > 0
+            ? (rowCount * normalizedCellSize) + ((rowCount - 1) * gap)
+            : 0;
+        const aboveExtent = padding + sideCellExtent(normalizedRowsAbove)
+            + (normalizedRowsBelow > 0 ? gap / 2 : 0);
+        const belowExtent = padding + sideCellExtent(normalizedRowsBelow)
+            + (normalizedRowsAbove > 0 ? gap / 2 : 0);
+        const anchorY = height / 2;
+        return Object.freeze({
+            anchorY,
+            aboveExtent,
+            belowExtent,
+            height: aboveExtent + belowExtent,
+            top: anchorY - aboveExtent,
         });
     };
 
@@ -555,7 +626,11 @@
             const secondValue = Number(valueForPixel(cellBottom));
             const lowerPrice = Math.min(firstValue, secondValue);
             const upperPrice = Math.max(firstValue, secondValue);
-            const sign = row < geometry.rowsAbove ? "up" : "down";
+            const normalizedAnchorPrice = Number(anchorPrice);
+            const sign = Number.isFinite(normalizedAnchorPrice)
+                && Number.isFinite(lowerPrice)
+                ? (lowerPrice >= normalizedAnchorPrice ? "up" : "down")
+                : (row < geometry.rowsAbove ? "up" : "down");
             for (let distanceColumn = 0; distanceColumn < geometry.columnCount; distanceColumn += 1) {
                 const visualColumn = distanceColumn;
                 const x = geometry.left
@@ -633,7 +708,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.18.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.20.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -644,6 +719,7 @@
         computeGridMinimumPlotHeight,
         computeMaximumGridHalfHeight,
         computeGridGeometry,
+        computeAnchoredDetailGridPosition,
         isPointNearCurve,
         normalCdf,
         normalizePresentation,

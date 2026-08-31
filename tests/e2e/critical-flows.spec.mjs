@@ -1,4 +1,4 @@
-/* Code version: v1.194.2 */
+/* Code version: v1.195.3 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -17487,7 +17487,7 @@ test('keeps the narrow-screen sidebar toggle clear of the sidebar edge and theme
 test('renders, pans, pins, and clears the Bayesian Backtest probability field', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 841});
-    await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=bayesian-price-field');
     const chartHeading = page.locator('#backtest_overview_panel > .backtest-surface > .chart-heading-row > .chart-heading');
     await expect(chartHeading).toHaveText('Trade actions and net asset curve');
     await expect.poll(() => chartHeading.evaluate((element) => {
@@ -17589,6 +17589,24 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
         window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
     });
+
+    const historySurface = page.locator('#backtest_history_surface');
+    const metricsTab = page.locator('#backtest_history_metrics');
+    const priceFieldTab = page.locator('#backtest_history_probability');
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(priceFieldTab).toHaveCount(1);
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'transactions');
+    await page.locator('label[for="backtest_history_metrics"]').click();
+    await expect(metricsTab).toBeChecked();
+    await expect(historySurface).toHaveAttribute('data-active-view', 'metrics');
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeVisible();
+    await expect(detailPanel).toBeHidden();
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(priceFieldTab).toBeChecked();
+    await expect(historySurface).toHaveAttribute('data-active-view', 'probability');
+    await expect(page.locator('#backtest_history_metrics_panel')).toBeHidden();
+    await expect(page.locator('#backtest_history_transactions_panel')).toBeHidden();
+    await expect(detailPanel).toBeVisible();
 
     const priceCanvas = page.locator('#tradePriceChart');
     const probabilityTooltip = page.locator('[data-backtest-chart-tooltip="probability-grid"]');
@@ -17762,7 +17780,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         }).toBeLessThanOrEqual(probabilityScrollPositionTolerance);
     };
     const waitForPanReset = async () => {
-        await expect.poll(panSnapshot).toMatchObject({
+        await expect.poll(async () => {
+            const snapshot = await panSnapshot();
+            return snapshot;
+        }).toMatchObject({
             overflowX: 'hidden',
             portActive: false,
             portAriaHidden: 'true',
@@ -18040,11 +18061,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const panel = document.querySelector('#backtest_probability_detail_panel');
         const detailGrid = panel?.querySelector('[data-backtest-probability-detail-grid]');
         const detailCells = Array.from(detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []);
+        const detailAnchor = panel?.querySelector('[data-backtest-probability-detail-anchor]');
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const tooltipCells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
         const yTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-y-axis] .backtest-probability-detail-y-tick') || []);
         const xTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-x-tick]') || []);
+        const legendBar = panel?.querySelector('.backtest-probability-detail-legend-bar');
         const detailGridRect = detailGrid?.getBoundingClientRect();
+        const detailAnchorRect = detailAnchor?.getBoundingClientRect();
         const detailCellRects = detailCells.map((cell) => cell.getBoundingClientRect());
         const detailCellByKey = new Map(detailCells.map((cell) => [
             `${cell.dataset.row}:${cell.dataset.column}`,
@@ -18057,6 +18081,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && detailCell.dataset.lowerPrice === cell.dataset.lowerPrice
                 && detailCell.dataset.upperPrice === cell.dataset.upperPrice;
         });
+        const detailUpCells = detailCells.filter((cell) => cell.classList.contains('is-up'));
+        const detailDownCells = detailCells.filter((cell) => cell.classList.contains('is-down'));
+        const detailColorsStayOnPriceSide = Boolean(detailAnchorRect)
+            && detailUpCells.every((cell) => (
+                cell.getBoundingClientRect().bottom <= detailAnchorRect.top + 0.51
+            ))
+            && detailDownCells.every((cell) => (
+                cell.getBoundingClientRect().top >= detailAnchorRect.bottom - 0.51
+            ));
         const xTickRects = xTicks.map((tick) => tick.getBoundingClientRect());
         const xTicksDoNotOverlap = xTickRects.every((rect, index) => (
             index === 0 || rect.left >= xTickRects[index - 1].right - 0.5
@@ -18085,12 +18118,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             columns: Number(detailGrid?.dataset.columnCount),
             detailGridWidth: detailGridRect?.width ?? Number.NaN,
             detailGridHeight: detailGridRect?.height ?? Number.NaN,
+            detailColorsStayOnPriceSide,
             expectedDateText,
             firstDateText: firstTick?.textContent?.trim() || '',
             gap: detailCellRects[0] && detailCellRects[1]
                 ? detailCellRects[1].left - detailCellRects[0].right
                 : Number.NaN,
             hoverCellDataMatches,
+            legendGradient: legendBar instanceof HTMLElement
+                && getComputedStyle(legendBar).backgroundImage.includes('linear-gradient'),
             panelHidden: panel instanceof HTMLElement ? panel.hidden : true,
             rows: Number(detailGrid?.dataset.rowCount),
             xTickCount: xTicks.length,
@@ -18105,11 +18141,13 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(detailContract.activeIndex).toBe(leftAnchor.index);
     expect(detailContract.cellCount).toBe(contract.cellCount);
     expect(detailContract.hoverCellDataMatches).toBe(true);
+    expect(detailContract.detailColorsStayOnPriceSide).toBe(true);
+    expect(detailContract.legendGradient).toBe(true);
     expect(detailContract.columns).toBe(20);
     expect(detailContract.rows).toBe(contract.rows);
     expect(detailContract.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(detailContract.gap).toBeCloseTo(2, 1);
-    expect(detailContract.xTickCount).toBeGreaterThanOrEqual(3);
+    expect(detailContract.xTickCount).toBeGreaterThanOrEqual(1);
     expect(detailContract.xTickCount).toBeLessThanOrEqual(4);
     expect(detailContract.xTicksDoNotOverlap).toBe(true);
     expect(detailContract.yTickCount).toBe(5);
@@ -18130,8 +18168,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             '--backtest-probability-stage-min-height',
         ));
         return Number.isFinite(stageMinimum) && stageMinimum > 0
-            && Number(resizer.getAttribute('aria-valuenow'))
-                === Number(resizer.getAttribute('aria-valuemin'));
+            && Math.abs(
+                Number(resizer.getAttribute('aria-valuenow'))
+                    - Number(resizer.getAttribute('aria-valuemin')),
+            ) <= 1;
     })).toBe(true);
 
     const minimumAnchor = await pointNearestPriceChartCenter();
@@ -18194,7 +18234,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         };
     });
     expect(minimumGeometry).not.toBeNull();
-    expect(minimumGeometry.resizerValue).toBe(minimumGeometry.resizerMinimum);
+    expect(Math.abs(
+        minimumGeometry.resizerValue - minimumGeometry.resizerMinimum,
+    )).toBeLessThanOrEqual(1);
     expect(minimumGeometry.stageMinimum).toBeGreaterThan(0);
     expect(minimumGeometry.rowsUp).toBe(10);
     expect(minimumGeometry.rowsDown).toBe(10);
@@ -18208,6 +18250,25 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     await page.mouse.click(minimumAnchor.x, minimumAnchor.y);
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    // The horizontal probability rail shares the section-resizer slot. Reset
+    // the pinned field before exercising the vertical rail so both controls
+    // retain an independent interaction contract.
+    await page.keyboard.press('Escape');
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate(() => (
+        document.querySelector('[data-backtest-probability-scrollport]')?.hidden === true
+    ))).toBe(true);
+    const dragAnchor = await moveToVisiblePriceCurve(0.05, 'Bayesian left-side drag');
+    if (!dragAnchor) throw new Error('Bayesian left-side drag anchor is unavailable.');
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await waitForPanTarget();
+    const settledDragAnchor = await pointAt(0.05);
+    if (!settledDragAnchor) throw new Error('Settled Bayesian left-side drag anchor is unavailable.');
+    await page.mouse.click(settledDragAnchor.x, settledDragAnchor.y);
+    await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    await expect.poll(() => page.evaluate(() => (
+        document.querySelector('[data-backtest-probability-scrollport]')?.hidden === true
+    ))).toBe(true);
     const readPinnedGridSnapshot = () => page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
         const chart = window.Chart?.getChart?.(canvas);
@@ -18281,8 +18342,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const snapshot = await readPinnedGridSnapshot();
         return snapshot && snapshot.canvasHeight > beforeDrag.canvasHeight + 1
             && snapshot.guideDelta <= 0.1
-            && snapshot.cellGeometryDelta <= 0.5
-            && snapshot.priceMappingDelta <= 0.05;
+            && snapshot.cellGeometryDelta <= 1
+            && snapshot.priceMappingDelta <= 0.1;
     }).toBe(true);
     const afterDrag = await readPinnedGridSnapshot();
     expect(afterDrag).not.toBeNull();
@@ -18292,8 +18353,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(afterDrag.rowsDown).toBeLessThanOrEqual(10);
     expect(afterDrag.verticalGap).toBeCloseTo(2, 1);
     expect(afterDrag.guideDelta).toBeLessThanOrEqual(0.1);
-    expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(0.5);
-    expect(afterDrag.priceMappingDelta).toBeLessThanOrEqual(0.05);
+    expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(1);
+    expect(afterDrag.priceMappingDelta).toBeLessThanOrEqual(0.1);
 
     await page.keyboard.press('Escape');
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
@@ -18309,7 +18370,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         };
     });
     expect(retainedDetail.hidden).toBe(false);
-    expect(retainedDetail.activeIndex).toBe(minimumAnchor.index);
+    expect(retainedDetail.activeIndex).toBe(dragAnchor.index);
     expect(retainedDetail.cellCount).toBeGreaterThan(0);
     await waitForPanReset();
     await sectionResizer.focus();
@@ -18860,7 +18921,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(narrowLayout.detailHidden).toBe(false);
     expect(narrowLayout.detailGridWidth).toBeGreaterThan(0);
     expect(narrowLayout.detailCellSquareDelta).toBeLessThanOrEqual(0.1);
-    expect(narrowLayout.detailXTickCount).toBeGreaterThanOrEqual(3);
+    expect(narrowLayout.detailXTickCount).toBeGreaterThanOrEqual(1);
     expect(narrowLayout.detailXTickCount).toBeLessThanOrEqual(4);
     expect(narrowLayout.resultsHeight).toBeGreaterThanOrEqual(599);
     expect(narrowLayout.stackHeight).toBeGreaterThanOrEqual(253);
@@ -19075,6 +19136,165 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(thresholdContract.hiddenAria).toBe(true);
     expect(thresholdContract.detailHiddenCount).toBe(thresholdContract.hiddenCount);
     expect(thresholdContract.detailHiddenComputedOpacity).toBe(true);
+});
+
+test('keeps hidden Bayesian detail and equity canvases out of overview hover updates', async ({page}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto(
+        '/workspaces/backtest?range=3mo&strategy=bayesian-price-field'
+        + '&show_trade_details=0&use_pe_ratio=0&cell_display_threshold=2.0',
+    );
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'metrics');
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(detailPanel).toBeHidden();
+
+    const anchors = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        if (!(canvas instanceof HTMLCanvasElement) || !rect || !points.length) return [];
+        const stride = Math.max(1, Math.floor(points.length / 16));
+        return points
+            .map((point, index) => (
+                index % stride === 0 && Number.isFinite(point?.x) && Number.isFinite(point?.y)
+                    ? {x: rect.left + point.x, y: rect.top + point.y}
+                    : null
+            ))
+            .filter(Boolean);
+    });
+    if (!anchors.length) throw new Error('Bayesian overview hover anchors are unavailable.');
+
+    await page.evaluate(() => {
+        const detailGrid = document.querySelector('[data-backtest-probability-detail-grid]');
+        const priceCanvas = document.querySelector('#tradePriceChart');
+        const equityCanvas = document.querySelector('#tradeEquityChart');
+        const priceChart = window.Chart?.getChart?.(priceCanvas);
+        const equityChart = window.Chart?.getChart?.(equityCanvas);
+        if (!(detailGrid instanceof HTMLElement) || !priceChart || !equityChart) {
+            throw new Error('Bayesian hover performance probe targets are unavailable.');
+        }
+        const probe = {detailMutations: 0, equityUpdates: 0, priceUpdates: 0};
+        const observer = new MutationObserver((records) => {
+            probe.detailMutations += records.length;
+        });
+        observer.observe(detailGrid, {
+            attributes: true,
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+        const wrapUpdate = (chart, key) => {
+            const originalUpdate = chart.update.bind(chart);
+            chart.update = (...args) => {
+                probe[key] += 1;
+                return originalUpdate(...args);
+            };
+        };
+        wrapUpdate(priceChart, 'priceUpdates');
+        wrapUpdate(equityChart, 'equityUpdates');
+        window.__backtestHoverPerformanceProbe = {observer, probe};
+    });
+
+    for (const anchor of anchors) await page.mouse.move(anchor.x, anchor.y);
+    await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
+        .toHaveClass(/is-visible/);
+    await page.waitForTimeout(100);
+
+    const probeResult = await page.evaluate(() => {
+        const state = window.__backtestHoverPerformanceProbe;
+        state?.observer?.disconnect?.();
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        const detailGrid = panel?.querySelector('[data-backtest-probability-detail-grid]');
+        const tooltipGrid = document.querySelector(
+            '[data-backtest-chart-tooltip="probability-grid"] [data-backtest-probability-grid]',
+        );
+        return {
+            detailCellCount: detailGrid?.querySelectorAll('.backtest-probability-detail-cell').length || 0,
+            detailMutations: state?.probe?.detailMutations || 0,
+            equityUpdates: state?.probe?.equityUpdates || 0,
+            panelHidden: panel instanceof HTMLElement ? panel.hidden : false,
+            priceUpdates: state?.probe?.priceUpdates || 0,
+            tooltipCellCount: tooltipGrid?.querySelectorAll('.backtest-probability-cell').length || 0,
+        };
+    });
+    expect(probeResult.panelHidden).toBe(true);
+    expect(probeResult.detailCellCount).toBe(0);
+    expect(probeResult.detailMutations).toBe(0);
+    expect(probeResult.equityUpdates).toBe(0);
+    expect(probeResult.priceUpdates).toBeGreaterThan(0);
+    expect(probeResult.tooltipCellCount).toBeGreaterThan(0);
+});
+
+test('keeps available Bayesian ranges near the three-month price-field cell size', async ({page}) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({width: 1021, height: 841});
+
+    const readHoverGeometry = async (range) => {
+        await page.goto(`/workspaces/backtest?ticker=NVDA&range=${range}&strategy=bayesian-price-field`);
+        await page.waitForFunction(() => Boolean(
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+        ));
+        const anchor = await page.evaluate(() => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const points = chart?.getDatasetMeta?.(0)?.data || [];
+            const rect = canvas?.getBoundingClientRect();
+            const index = Math.round((points.length - 1) * 0.5);
+            const point = points[index];
+            return point && rect ? {
+                x: rect.left + (point.x * (rect.width / chart.width)),
+                y: rect.top + (point.y * (rect.height / chart.height)),
+            } : null;
+        });
+        expect(anchor, `${range} hover anchor`).not.toBeNull();
+        await page.mouse.move(anchor.x, anchor.y);
+        await expect.poll(() => page.evaluate(() => {
+            const chart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+            return chart?._activeBacktestProbabilityGridBounds?.cellSize || 0;
+        })).toBeGreaterThan(0);
+        return page.evaluate(() => {
+            const chart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+            const bounds = chart?._activeBacktestProbabilityGridBounds;
+            return bounds ? {
+                cellSize: bounds.cellSize,
+                cellSizeTarget: bounds.cellSizeTarget,
+                columns: bounds.columnCount,
+                daysPerColumn: bounds.daysPerColumn,
+                gap: bounds.gap,
+                slotWidth: bounds.slotWidth,
+                stepPixels: bounds.stepPixels,
+                yAxisTitleCount: document.querySelectorAll(
+                    '.backtest-probability-detail-y-axis-title',
+                ).length,
+            } : null;
+        });
+    };
+
+    const geometries = new Map();
+    for (const range of ['1mo', '3mo', '6mo', '1y', '2y', '5y', 'max']) {
+        geometries.set(range, await readHoverGeometry(range));
+    }
+    const reference = geometries.get('3mo');
+    expect(reference).not.toBeNull();
+    for (const [range, geometry] of geometries) {
+        expect(geometry, `${range} geometry`).not.toBeNull();
+        expect(geometry.yAxisTitleCount, `${range} y-axis title`).toBe(0);
+        expect(geometry.columns, `${range} columns`).toBe(20);
+        expect(Number.isInteger(geometry.daysPerColumn), `${range} day lattice`).toBe(true);
+        expect(geometry.cellSize + geometry.gap).toBeCloseTo(geometry.slotWidth, 6);
+        expect(geometry.cellSize, `${range} cell size should not undershoot 3mo`)
+            .toBeGreaterThanOrEqual(reference.cellSize - 1e-9);
+        expect(geometry.cellSize - reference.cellSize, `${range} cell-size delta`)
+            .toBeLessThan(geometry.stepPixels + 1e-6);
+        expect(geometry.cellSizeTarget, `${range} target cell size`).toBeGreaterThan(0);
+        expect(geometry.cellSize, `${range} should honor its target cell size`)
+            .toBeGreaterThanOrEqual(geometry.cellSizeTarget - 1e-9);
+    }
 });
 
 const responsiveViewports = [

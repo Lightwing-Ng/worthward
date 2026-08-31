@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.18.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.20.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.18.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.20.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -221,6 +221,30 @@ test('quantizes 20 columns below the preferred quarter width when complete day s
     assert.equal(reconstructedWidth, geometry.width);
     assert.ok(geometry.width <= geometry.widthTarget);
     assert.ok(geometry.width + (geometry.columnCount * geometry.stepPixels) > geometry.widthTarget);
+});
+
+test('carries the three-month reference cell size across longer ranges', () => {
+    const reference = grid.computeGridGeometry({
+        chartArea: {left: 72, right: 361, top: 8, bottom: 208},
+        anchorX: 200,
+        anchorY: 108,
+        stepPixels: 4.515625,
+    });
+    const longerRange = grid.computeGridGeometry({
+        chartArea: {left: 72, right: 361, top: 8, bottom: 208},
+        anchorX: 200,
+        anchorY: 108,
+        stepPixels: 2.312,
+        cellSizeTargetPx: reference.cellSize,
+    });
+    assert.equal(reference.cellSize, 7.03125);
+    assert.equal(longerRange.cellSizeTarget, reference.cellSize);
+    assert.ok(longerRange.cellSize >= reference.cellSize);
+    assert.ok(longerRange.cellSize - reference.cellSize < longerRange.stepPixels);
+    assert.equal(longerRange.daysPerColumn, 4);
+    assert.ok(Math.abs(longerRange.cellSize - 7.248) < 1e-9);
+    assert.equal(longerRange.slotWidth / longerRange.stepPixels, longerRange.daysPerColumn);
+    assert.equal(longerRange.cellSize + longerRange.gap, longerRange.slotWidth);
 });
 
 test('uses the half-plot cap and each chart boundary to floor the ten-row ceiling', () => {
@@ -628,6 +652,44 @@ test('maps every cell to an exact price interval around the horizontal guide', (
     assert.ok(upLast && downFirst);
     assert.equal(downFirst.y - upLast.yBottom, geometry.gap);
     assert.equal((upLast.yBottom + downFirst.y) / 2, geometry.anchorY);
+});
+
+test('anchors an asymmetric detail grid at the horizontal guide', () => {
+    const position = grid.computeAnchoredDetailGridPosition({
+        viewportHeight: 240,
+        rowsAbove: 9,
+        rowsBelow: 3,
+        cellSize: 8,
+        gapPx: 2,
+        paddingPx: 8,
+    });
+    assert.ok(position);
+    assert.equal(position.anchorY, 120);
+    assert.equal(position.top + position.aboveExtent, position.anchorY);
+    assert.equal(position.top + position.height, position.anchorY + position.belowExtent);
+    assert.equal(position.top + position.height, 157);
+});
+
+test('assigns green only to cells whose full price interval is at or above the anchor', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 220,
+        stepPixels: 6,
+    });
+    const cells = grid.buildProbabilityCells({
+        geometry,
+        anchorPrice: 100,
+        mean: 0,
+        scale: 0.02,
+        stepPixels: geometry.stepPixels,
+        valueForPixel: (pixel) => 200 - (pixel * 0.5),
+    });
+    assert.ok(cells.length > 0);
+    assert.ok(cells.filter((cell) => cell.sign === 'up')
+        .every((cell) => cell.lowerPrice >= 100));
+    assert.ok(cells.filter((cell) => cell.sign === 'down')
+        .every((cell) => cell.lowerPrice < 100));
 });
 
 test('evaluates probability mass at complete one-day and two-day horizons', () => {

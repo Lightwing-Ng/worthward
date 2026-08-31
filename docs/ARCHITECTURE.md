@@ -1,24 +1,37 @@
 # Architecture guide
 
-Documentation version: `v1.65.0`
+Documentation version: `v1.67.2`
 
 ## Bayesian Price Field detail view contract
 
-The Bayesian Backtest history surface renders a product-specific detail panel
-above its Metrics and Transactions panels when a valid strategy presentation is
-available. `app/web/static/assets/js/backtest.js` builds one probability-grid
-model from the live Chart.js Y scale and sends the same cell records to both the
-floating hover field and the persistent detail field. A chart hover changes the
-detail panel's selected origin; clearing hover hides only the floating overlay,
-so the last valid forecast remains inspectable.
+The Bayesian Backtest history surface exposes a third `Price Field` option between
+`Metrics` and `Transactions` when a valid strategy presentation is available.
+Selecting it renders the product-specific detail panel without replacing either
+existing view. `app/web/static/assets/js/backtest.js` builds one
+probability-grid model from the live Chart.js Y scale and sends the same cell
+records to both the floating hover field and the persistent detail field. A
+chart hover changes the detail panel's selected origin; clearing hover hides
+only the floating overlay, so the last valid forecast remains inspectable.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
-columns, 2px gaps, row signs, opacity mapping, and square-cell geometry. Its
-forecast-date ticks call the Settings-owned date formatter and use only a small
-edge-aware tick set to avoid collisions. Price ticks are derived from the exact
-cell price intervals returned by the live scale. This is a Backtest-specific
-surface; it has no equivalent in `CacheLikesFromTwitter` and therefore remains
-Pending in the shared UI synchronization ledger.
+columns, 2px gaps, opacity mapping, and square-cell geometry. A cell is green
+only when its complete price interval is at or above the selected close; a cell
+whose interval crosses the close remains red, so the horizontal guide is never
+visually crossed by a green cell. The asymmetric grid is anchored to that guide
+instead of being centered as one block, and a detail-viewport resize triggers a
+fresh measurement after the surrounding layout settles. Its forecast-date ticks
+call the Settings-owned date formatter and use only a small edge-aware tick set
+to avoid collisions. Price ticks are derived from the exact cell price intervals
+returned by the live scale. This is a Backtest-specific surface; it has no
+equivalent in `CacheLikesFromTwitter` and therefore remains Pending in the shared
+UI synchronization ledger.
+
+The renderer derives a target cell size from the trailing three-month data
+density on the current chart. Every other available range reuses that target
+when its integer trading-day lattice permits it, choosing the smallest
+non-under-sized complete slot when quantization makes an exact match
+impossible. Chart boundaries, the 20-column contract, the 4px floor, and the
+existing vertical row limits remain authoritative.
 
 ## Holdings P&L display contract
 
@@ -236,7 +249,7 @@ Backtest owns the shared result presentation and market-range components. It exp
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, supported execution intervals, optional execution-to-model interval overrides, causal signal bridges, and strategy-owned market-data hooks. The strategy registry carries the declared execution intervals into both the initial browser state and the strategy-fields response, so temporary data availability is never mistaken for permanent strategy capability. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. The browser requests presence for the complete ordered required-ticker snapshot, intersects each interval's Period options across that set, and exposes `1m` only when the strategy declares it and every required ticker shares a real one-minute Period. A monotonic request token plus required-count and ordered-snapshot revalidation makes availability updates latest-wins after rapid ticker or strategy edits. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. When model and execution intervals differ, the strategy must declare a bridge; the runtime never treats a daily posterior as a native minute posterior. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
 
-`BayesianPriceFieldStrategy` is a daily, single-ticker, strategy-owned model whose default research ticker is `NVDA`. Its production model request uses only the Longbridge CLI for forward-adjusted OHLCV, historical P/E, an opt-in current Dynamic P/E snapshot, daily volume, and daily option put/call volume and open-interest observations. Selecting `1d` keeps the daily model and execution axes aligned and exposes the probability field. Selecting `1m` keeps the same causal daily model, refreshes only the required ticker's one-minute cache, then loads that file through a read-only path as the execution and equity axis. Refresh failure is reported before an existing cache may be reused; a missing cache fails closed. Daily intents and intraday bars are joined through the ticker exchange's local trading dates, not a global New York or UTC date. Each intent is placed on that session's final available one-minute bar, and the required `next_open` mode fills it at the next session's first available one-minute open. The bridge rejects missing, duplicate, out-of-order, or misaligned session mappings. The one-minute result intentionally omits the probability field rather than interpolating or forward-filling daily posterior values. When a selected daily Period exceeds the one-minute store, both server and client resolve it to the final actually supported one-minute Period, normally `max`, before execution.
+`BayesianPriceFieldStrategy` is a daily, single-ticker, strategy-owned model whose default research ticker is `NVDA`. Its production model request uses only the Longbridge CLI for forward-adjusted OHLCV, historical P/E, an opt-in current Dynamic P/E snapshot, daily volume, and daily option put/call volume and open-interest observations. The backward-compatible composite `Options` factor remains available, while independent opt-in controls expose the historical daily option put/call volume ratio, put/call open-interest ratio, call/put/total volume, and call/put/total open interest fields. All option subfactors share the one date-bounded `option volume daily` request and backward as-of merge; real-time-only contract quotes are not backfilled into historical rows. Selecting `1d` keeps the daily model and execution axes aligned and exposes the probability field. Selecting `1m` keeps the same causal daily model, refreshes only the required ticker's one-minute cache, then loads that file through a read-only path as the execution and equity axis. Refresh failure is reported before an existing cache may be reused; a missing cache fails closed. Daily intents and intraday bars are joined through the ticker exchange's local trading dates, not a global New York or UTC date. Each intent is placed on that session's final available one-minute bar, and the required `next_open` mode fills it at the next session's first available one-minute open. The bridge rejects missing, duplicate, out-of-order, or misaligned session mappings. The one-minute result intentionally omits the probability field rather than interpolating or forward-filling daily posterior values. When a selected daily Period exceeds the one-minute store, both server and client resolve it to the final actually supported one-minute Period, normally `max`, before execution.
 
 The causal volume-at-price factor spreads each trailing Longbridge bar's volume uniformly across the fixed price bins intersecting its Low-High range, then records the current close's volume-weighted cumulative percentile; current `trade-stats` data is not rewritten into historical cost-basis evidence. Historical P/E and option observations join backward as-of with maximum ages of 14 and 7 calendar days respectively. Dynamic P/E is a separate opt-in `calc-index` snapshot bound only to its own market-local availability date, with a one-day maximum age, and is never backfilled across an earlier historical window. Optional research factors use Longbridge valuation history, capital flow, market temperature, shareholder and fund-holder reports, short-interest and short-volume reports, and HK broker holding history; each is disabled by default, fetched only when selected, filtered to dated observations, and joined backward as-of with a bounded 90-day staleness window. Snapshot-only values are never backfilled across a historical window. Quantitative-factor controls are registered once and sorted alphabetically; model parameters remain after the factor list. Every prediction trains only on factor rows whose next return was already observable at that timestamp. The Bayesian field hit-rate diagnostic then evaluates only later closes, assigns the probability mass of the containing six-row-per-side cell, and omits unavailable trailing horizons; it is a post-hoc metric, never a model input. Probability thresholds emit persistent buy or sell intent on every qualifying bar, while the backtest engine remains the sole owner of actual position state. The `Allow algorithmic stop-loss exits` switch is enabled by default; disabling it blocks a strategy sell or cover from closing below its entry price. This is a price-only gate that excludes dividends and total return, and it does not add a separate fixed-price stop. A rejected exit intent can therefore be attempted again on the next qualifying bar. Because each walk-forward posterior solves only a small factor matrix, `Auto` and `CPU` resolve directly to NumPy CPU without importing Torch. Only an explicit `GPU` request probes Apple MPS on macOS or CUDA on supported Windows/NVIDIA systems; an unavailable device or ordinary Torch failure falls back to NumPy CPU without changing the strategy contract.
 

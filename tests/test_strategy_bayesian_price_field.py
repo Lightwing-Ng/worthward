@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.19.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.20.0."""
 
 from __future__ import annotations
 
@@ -174,6 +174,14 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "use_dynamic_pe_ratio",
                 "use_volume",
                 "use_options",
+                "use_option_call_open_interest",
+                "use_option_call_volume",
+                "use_option_put_call_open_interest_ratio",
+                "use_option_put_call_volume_ratio",
+                "use_option_put_open_interest",
+                "use_option_put_volume",
+                "use_option_total_open_interest",
+                "use_option_total_volume",
                 "use_volume_at_price",
                 "use_pb_ratio",
                 "use_ps_ratio",
@@ -218,7 +226,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.7.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.8.0")
 
     def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
         strategy = BayesianPriceFieldStrategy()
@@ -588,6 +596,80 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertTrue(
             pd.isna(merged.loc[8, "bayesian_option_put_call_ratio"])
         )
+
+    def test_options_expose_independent_cli_history_subfactors(self) -> None:
+        frame = _market_frame(25)
+        first_date = pd.Timestamp(frame["Date"].iloc[0])
+        bundle = _bundle_from_frame(
+            frame,
+            option_history=(
+                SimpleNamespace(
+                    observed_at=first_date,
+                    put_call_volume_ratio=0.8,
+                    put_call_open_interest_ratio=0.7,
+                    call_volume=600.0,
+                    put_volume=400.0,
+                    total_volume=1_000.0,
+                    call_open_interest=1_200.0,
+                    put_open_interest=800.0,
+                    total_open_interest=2_000.0,
+                ),
+            ),
+        )
+
+        merged = _merge_bundle_observations(frame, bundle)
+        factor_values = _build_factor_columns(merged, 20)
+
+        self.assertEqual(
+            merged.loc[0, "bayesian_option_put_call_volume_ratio"],
+            0.8,
+        )
+        self.assertEqual(
+            merged.loc[0, "bayesian_option_put_call_open_interest_ratio"],
+            0.7,
+        )
+        for factor_key, raw_value in (
+            ("option_call_volume", 600.0),
+            ("option_put_volume", 400.0),
+            ("option_total_volume", 1_000.0),
+            ("option_call_open_interest", 1_200.0),
+            ("option_put_open_interest", 800.0),
+            ("option_total_open_interest", 2_000.0),
+        ):
+            with self.subTest(factor=factor_key):
+                self.assertAlmostEqual(
+                    factor_values[factor_key][0],
+                    math.log1p(raw_value),
+                )
+        self.assertIn("option_put_call_volume_ratio", factor_values)
+        self.assertIn("option_put_call_open_interest_ratio", factor_values)
+
+    def test_option_detail_selection_requests_shared_history_without_composite(self) -> None:
+        frame = _market_frame(10)
+        bundle = _bundle_from_frame(frame, factor_status={
+            "ohlcv": "available",
+            "pe": "disabled",
+            "options": "disabled",
+        })
+        strategy = BayesianPriceFieldStrategy()
+        with patch(
+            "app.services.bayesian_market_factors.fetch_bayesian_factor_bundle",
+            return_value=bundle,
+        ) as fetch_bundle:
+            strategy.load_market_datasets(
+                ["AAPL"],
+                interval="1d",
+                start=pd.Timestamp("2025-01-02"),
+                end=pd.Timestamp("2025-04-01"),
+                params=_cpu_params(
+                    use_pe_ratio=False,
+                    use_options=False,
+                    use_option_total_volume=True,
+                ),
+            )
+
+        self.assertTrue(fetch_bundle.call_args.kwargs["include_options"])
+        self.assertFalse(fetch_bundle.call_args.kwargs["include_pe"])
 
     def test_factor_status_reports_stale_error_disabled_and_insufficient(self) -> None:
         frame = _market_frame(60)

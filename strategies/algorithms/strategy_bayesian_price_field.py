@@ -5,7 +5,9 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.19.0
+Code version: v1.20.0
+- Added: Opt-in granular historical Longbridge option-volume and open-interest
+  factors sit alongside the backward-compatible composite Options factor.
 - Added: An opt-in Dynamic P/E Ratio factor uses the current Longbridge
   ``calc-index`` snapshot only on its own availability date.
 - Changed: Bayesian quantitative-factor controls are registered once and
@@ -79,7 +81,7 @@ _DYNAMIC_PE_MAX_STALENESS_DAYS = 1
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.7.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.8.0"
 _EPSILON = 1e-12
 _PROBABILITY_FIELD_MAX_HORIZON = 20
 _PROBABILITY_FIELD_ROWS_ABOVE = 10
@@ -90,6 +92,14 @@ _FACTOR_SELECTION_PRIORITY = (
     "volume",
     "pe",
     "options",
+    "option_call_open_interest",
+    "option_call_volume",
+    "option_put_open_interest",
+    "option_put_call_open_interest_ratio",
+    "option_put_call_volume_ratio",
+    "option_put_volume",
+    "option_total_open_interest",
+    "option_total_volume",
     "volume_at_price",
     "pb_ratio",
     "ps_ratio",
@@ -210,8 +220,112 @@ _BAYESIAN_FACTOR_DEFINITIONS = tuple(sorted(
             provider_key="options",
             default=True,
             help_text=(
-                "Combines put/call volume and open-interest ratios without "
-                "broadcasting current snapshots backward."
+                "Compatibility composite of historical put/call volume and "
+                "open-interest ratios; it never backfills current snapshots."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_call_open_interest",
+            label="Call OI",
+            parameter_key="use_option_call_open_interest",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical call open interest from Longbridge's daily "
+                "option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_call_volume",
+            label="Call Volume",
+            parameter_key="use_option_call_volume",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical call volume from Longbridge's daily "
+                "option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_put_call_open_interest_ratio",
+            label="Put/Call OI Ratio",
+            parameter_key="use_option_put_call_open_interest_ratio",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical put/call open-interest ratio from "
+                "Longbridge's daily option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_put_call_volume_ratio",
+            label="Put/Call Volume Ratio",
+            parameter_key="use_option_put_call_volume_ratio",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical put/call volume ratio from Longbridge's "
+                "daily option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_put_open_interest",
+            label="Put OI",
+            parameter_key="use_option_put_open_interest",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical put open interest from Longbridge's daily "
+                "option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_put_volume",
+            label="Put Volume",
+            parameter_key="use_option_put_volume",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical put volume from Longbridge's daily "
+                "option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_total_open_interest",
+            label="Total OI",
+            parameter_key="use_option_total_open_interest",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical total option open interest from "
+                "Longbridge's daily option-volume history."
+            ),
+            observation_key="option_history",
+            max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
+        ),
+        _BayesianFactorDefinition(
+            key="option_total_volume",
+            label="Total Option Volume",
+            parameter_key="use_option_total_volume",
+            provider_key="options",
+            default=False,
+            help_text=(
+                "Opt-in historical total option volume from Longbridge's daily "
+                "option-volume history."
             ),
             observation_key="option_history",
             max_staleness_days=_OPTIONS_MAX_STALENESS_DAYS,
@@ -431,34 +545,114 @@ def _observation_frame(
     )
 
 
+_OPTION_DETAIL_FACTOR_KEYS = (
+    "option_call_open_interest",
+    "option_call_volume",
+    "option_put_call_open_interest_ratio",
+    "option_put_call_volume_ratio",
+    "option_put_open_interest",
+    "option_put_volume",
+    "option_total_open_interest",
+    "option_total_volume",
+)
+_OPTION_COUNT_FACTOR_KEYS = frozenset({
+    "option_call_open_interest",
+    "option_call_volume",
+    "option_put_open_interest",
+    "option_put_volume",
+    "option_total_open_interest",
+    "option_total_volume",
+})
+
+
+def _option_nonnegative_value(observation: object, key: str) -> float | None:
+    value = _record_value(observation, key)
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric_value) or numeric_value < 0:
+        return None
+    return numeric_value
+
+
+def _option_ratio_value(
+        observation: object,
+        ratio_key: str,
+        numerator_key: str,
+        denominator_key: str,
+) -> float | None:
+    direct_value = _option_nonnegative_value(observation, ratio_key)
+    if direct_value is not None:
+        return direct_value
+    numerator = _option_nonnegative_value(observation, numerator_key)
+    denominator = _option_nonnegative_value(observation, denominator_key)
+    if numerator is None or denominator is None or denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def _option_feature_value(observation: object, factor_key: str) -> float | None:
+    if factor_key == "option_put_call_volume_ratio":
+        return _option_ratio_value(
+            observation,
+            "put_call_volume_ratio",
+            "put_volume",
+            "call_volume",
+        )
+    if factor_key == "option_put_call_open_interest_ratio":
+        return _option_ratio_value(
+            observation,
+            "put_call_open_interest_ratio",
+            "put_open_interest",
+            "call_open_interest",
+        )
+    field_key = factor_key.removeprefix("option_")
+    return _option_nonnegative_value(observation, field_key)
+
+
+def _option_observation_frame(observations: Sequence[object]) -> pd.DataFrame:
+    columns = [
+        "Date",
+        "bayesian_option_put_call_ratio",
+        *(f"bayesian_{factor_key}" for factor_key in _OPTION_DETAIL_FACTOR_KEYS),
+    ]
+    rows: list[dict[str, Any]] = []
+    for observation in observations:
+        observed_at = _record_value(observation, "observed_at")
+        if observed_at is None:
+            continue
+        values: dict[str, Any] = {
+            "Date": _normalized_timestamp(observed_at),
+            "bayesian_option_put_call_ratio": _option_ratio(observation),
+        }
+        for factor_key in _OPTION_DETAIL_FACTOR_KEYS:
+            values[f"bayesian_{factor_key}"] = _option_feature_value(
+                observation,
+                factor_key,
+            )
+        if all(value is None for key, value in values.items() if key != "Date"):
+            continue
+        rows.append(values)
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values("Date")
+        .drop_duplicates(subset=["Date"], keep="last")
+        .reset_index(drop=True)
+    )
+
+
 def _option_ratio(observation: object) -> float | None:
-    ratios: list[float] = []
-    for key in ("put_call_volume_ratio", "put_call_open_interest_ratio"):
-        value = _record_value(observation, key)
-        try:
-            numeric_value = float(value)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(numeric_value) and numeric_value >= 0:
-            ratios.append(numeric_value)
-    for numerator_key, denominator_key in (
-        ("put_volume", "call_volume"),
-        ("put_open_interest", "call_open_interest"),
-    ):
-        numerator = _record_value(observation, numerator_key)
-        denominator = _record_value(observation, denominator_key)
-        try:
-            numerator_value = float(numerator)
-            denominator_value = float(denominator)
-        except (TypeError, ValueError):
-            continue
-        if (
-            math.isfinite(numerator_value)
-            and numerator_value >= 0
-            and math.isfinite(denominator_value)
-            and denominator_value > 0
-        ):
-            ratios.append(numerator_value / denominator_value)
+    ratios = [
+        value
+        for value in (
+            _option_feature_value(observation, "option_put_call_volume_ratio"),
+            _option_feature_value(observation, "option_put_call_open_interest_ratio"),
+        )
+        if value is not None
+    ]
     if not ratios:
         return None
     return float(sum(ratios) / len(ratios))
@@ -507,10 +701,8 @@ def _merge_bundle_observations(frame: pd.DataFrame, bundle: object | None) -> pd
             tolerance=pd.Timedelta(days=_DYNAMIC_PE_MAX_STALENESS_DAYS),
         )
 
-    option_frame = _observation_frame(
-        tuple(_record_value(bundle, "option_history", ()) or ()),
-        _option_ratio,
-        "bayesian_option_put_call_ratio",
+    option_frame = _option_observation_frame(
+        tuple(_record_value(bundle, "option_history", ()) or ())
     )
     if not option_frame.empty:
         option_frame = option_frame.rename(
@@ -557,6 +749,11 @@ def _merge_bundle_observations(frame: pd.DataFrame, bundle: object | None) -> pd
 def _signed_log_series(values: pd.Series) -> pd.Series:
     numeric = pd.to_numeric(values, errors="coerce")
     return np.sign(numeric) * np.log1p(np.abs(numeric))
+
+
+def _nonnegative_log_series(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce").clip(lower=0.0)
+    return np.log1p(numeric)
 
 
 def _rolling_volume_at_price_percentile(
@@ -689,6 +886,16 @@ def _build_factor_columns(frame: pd.DataFrame, chip_window: int) -> dict[str, np
         ).to_numpy(dtype=np.float64)
     if option_source is not None:
         result["options"] = _signed_log_series(option_source).to_numpy(dtype=np.float64)
+    for factor in _OPTION_DETAIL_FACTOR_KEYS:
+        source = frame.get(f"bayesian_{factor}")
+        if source is None:
+            continue
+        transform = (
+            _nonnegative_log_series
+            if factor in _OPTION_COUNT_FACTOR_KEYS
+            else _signed_log_series
+        )
+        result[factor] = transform(source).to_numpy(dtype=np.float64)
     for factor in (
         "pb_ratio",
         "ps_ratio",
@@ -1447,6 +1654,11 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             if definition.observation_key == "research_history"
             and bool(normalized_params[definition.parameter_key])
         )
+        option_factors_requested = any(
+            bool(normalized_params[definition.parameter_key])
+            for definition in _BAYESIAN_FACTOR_DEFINITIONS
+            if definition.observation_key == "option_history"
+        )
 
         bundle = fetch_bayesian_factor_bundle(
             _longbridge_symbol(str(tickers[0])),
@@ -1454,7 +1666,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             end,
             include_pe=bool(normalized_params["use_pe_ratio"]),
             include_dynamic_pe=bool(normalized_params["use_dynamic_pe_ratio"]),
-            include_options=bool(normalized_params["use_options"]),
+            include_options=option_factors_requested,
             research_factors=research_factors,
         )
         self._warmup_bundle = bundle
@@ -1526,11 +1738,18 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                             if str(_record_value(observation, "factor", ""))
                             == definition.provider_key
                         )
-                    value_builder = (
-                        _option_ratio
-                        if definition.observation_key == "option_history"
-                        else lambda observation: _record_value(observation, "value")
-                    )
+                    if definition.observation_key == "option_history":
+                        if definition.key == "options":
+                            value_builder = _option_ratio
+                        else:
+                            def value_builder(
+                                    observation: object,
+                                    factor_key: str = definition.key,
+                            ) -> float | None:
+                                return _option_feature_value(observation, factor_key)
+                    else:
+                        def value_builder(observation: object) -> Any:
+                            return _record_value(observation, "value")
                     observation_frame = _observation_frame(
                         observations,
                         value_builder,

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.8.1
+Code version: v0.8.2
 """
 
 from __future__ import annotations
@@ -154,6 +154,41 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn("data-backtest-history-transactions", transactions_attributes)
         self.assertIn('data-backtest-history-transactions-option aria-disabled="true"', html)
         self.assertLess(html.index('data-backtest-trade-details-field'), html.index('data-trade-strategy-field'))
+
+    def test_bayesian_history_inserts_price_field_between_metrics_and_transactions(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=bayesian-price-field"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            'id="backtest_history_probability" name="backtest_history_view_tab" '
+            'type="radio" value="probability"',
+            html,
+        )
+        self.assertIn('data-option-count="3"', html)
+        self.assertIn('data-backtest-history-view-panel="probability"', html)
+        self.assertIn('class="backtest-probability-detail-legend-bar"', html)
+        self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
+        self.assertLess(html.index('id="backtest_history_probability"'), html.index('id="backtest_history_transactions"'))
+        self.assertLess(
+            html.index('data-backtest-history-view-panel="metrics"'),
+            html.index('data-backtest-history-view-panel="probability"'),
+        )
+        self.assertLess(
+            html.index('data-backtest-history-view-panel="probability"'),
+            html.index('data-backtest-history-view-panel="transactions"'),
+        )
 
     def test_bayesian_realized_cell_score_is_rendered_as_a_percentage_metric(self) -> None:
         result = backtest_result()
