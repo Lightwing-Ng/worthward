@@ -1,4 +1,4 @@
-/* Code version: v0.47.1 */
+/* Code version: v0.47.2 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;

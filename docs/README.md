@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.2.1`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -23,7 +23,8 @@ the same change.
 | 7 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Current limitations and operating constraints |
 | 8 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Canonical routes, retained aliases, retired renderers, and reserved assets |
 | 9 | [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md) | Project entrypoint for the shared numbered-copy housekeeping contract |
-| 10 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
+| 10 | [`../SHARED_UI_LAYOUT_CONTRACT.md`](../SHARED_UI_LAYOUT_CONTRACT.md) | Version-controlled cross-project spatial layout contract |
+| 11 | [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) | Conditional workflow for shared UI changes |
 
 [`INVESTMENT_FRONTEND_CHANGELOG.md`](INVESTMENT_FRONTEND_CHANGELOG.md) is a
 historical record. It can explain why a change was made, but it is not a current
@@ -40,8 +41,8 @@ Component documentation applies only within its directory:
 
 - Cross-cutting work: this map, `AGENTS.md`, the root README, Architecture,
   Testing, Known Issues, and Compatibility.
-- Shared UI work: also read `SHARED_UI_WORKFLOW.md` and the external shared UI
-  ledger named there.
+- Shared UI work: also read `../SHARED_UI_LAYOUT_CONTRACT.md`,
+  `SHARED_UI_WORKFLOW.md`, and the external shared UI ledger named there.
 - Site tools, WebMCP, or agent-facing metadata work: also read
   `AGENT_OPTIMIZATION.md` and the canonical shared contract it names.
 - Static-file generation or housekeeping: read `STATIC_FILE_HOUSEKEEPING.md` and its canonical

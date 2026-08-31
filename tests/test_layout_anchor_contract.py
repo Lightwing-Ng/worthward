@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.4");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.64.6" in app_css
+    assert "v0.64.7" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -175,7 +175,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.50.1");' in app_css
+    assert '@import url("./views/trade.css?v=3.51.0");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -306,9 +306,6 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
         "rowsBelow: strategyPresentation.rows_below,",
-        'probabilityTooltip.dataset.transparency = String(',
-        '"--backtest-probability-tooltip-radius",',
-        '"--backtest-probability-tooltip-transparency",',
         "opacityExponent: strategyPresentation.cell_opacity_exponent,",
         "opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,",
         'tradeChartStack.classList.remove("has-probability-field");',
@@ -342,15 +339,10 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "height: auto;",
         ".backtest-probability-scroll-spacer {",
         ".backtest-probability-tooltip.chart-tooltip {",
-        "--backtest-probability-cell-radius: 2px;",
-        "--backtest-probability-grid-padding: 8px;",
-        "--backtest-probability-tooltip-radius: 10px;",
-        "--backtest-probability-tooltip-transparency: 50%;",
-        "background: color-mix(",
-        "transparent var(--backtest-probability-tooltip-transparency),",
+        "background: transparent;",
         "background-image: none;",
         "border: 0;",
-        "border-radius: var(--backtest-probability-tooltip-radius);",
+        "border-radius: 0;",
         "box-shadow: none;",
         "backdrop-filter: none;",
         "-webkit-backdrop-filter: none;",
@@ -358,6 +350,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "display: none;",
         ".backtest-probability-tooltip[data-pinned=\"true\"] {",
         ".backtest-probability-cell {",
+        "border-radius: 0;",
         "transition: none;",
     ):
         assert fragment in trade_css
@@ -366,12 +359,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const DEFAULT_ROWS_ABOVE = 10;",
         "const DEFAULT_ROWS_BELOW = 10;",
         "const DEFAULT_COLUMN_COUNT = 20;",
-        "const DEFAULT_GAP_PX = 1;",
+        "const DEFAULT_GAP_PX = 2;",
         "const DEFAULT_PADDING_PX = 8;",
         "const DEFAULT_MIN_CELL_PX = 4;",
-        "const DEFAULT_CELL_RADIUS_PX = 2;",
-        "const DEFAULT_TOOLTIP_RADIUS_PX = 10;",
-        "const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;",
         'const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";',
         "const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;",
         "const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;",
@@ -382,15 +372,17 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),",
         "cell_opacity_exponent: boundedNumber(",
         "cell_opacity_tail_ratio: boundedNumber(",
-        "tooltip_radius_px: boundedNumber(",
-        "tooltip_transparency_pct: boundedNumber(",
+        "delete presentation.cell_radius_px;",
+        "delete presentation.tooltip_radius_px;",
+        "delete presentation.tooltip_transparency_pct;",
         'time_quantization: "integer-trading-days",',
         "const requestedGap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);",
         "Math.ceil(((minimumCell + requestedGap) / normalizedStepPixels) - 1e-12),",
         "const gap = requestedGap;",
         "const slotWidth = daysPerColumn * normalizedStepPixels;",
         "const cellSize = slotWidth - gap;",
-        "const availableRowsPerSide = MAX_ROWS_PER_SIDE;",
+        "const availableRowsWithinHalfPlot = rowsThatFit((bottom - top) / 2);",
+        "const availableRowsPerSide = Math.min(",
         "MAX_ROWS_PER_SIDE",
         "const computeGridMinimumPlotHeight = ({",
         "const geometry = computeGridGeometry({",
@@ -417,15 +409,15 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "normalizeRows(rowsAbove, rowsBelow)",
         "boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns)",
         "MAX_VERTICAL_PLOT_FRACTION",
-        "availableRowsWithinHalfPlot",
+        "MAX_VERTICAL_PLOT_FRACTION",
     ):
         assert fragment not in probability_grid
 
     assert "--backtest-probability-tooltip-transparency" not in tokens
     assert "--backtest-probability-tooltip-radius" not in tokens
     assert "--backtest-probability-cell-radius" not in tokens
-    assert "--backtest-probability-tooltip-transparency" in trade_css
-    assert "--backtest-probability-tooltip-radius" in trade_css
+    assert "--backtest-probability-tooltip-transparency" not in trade_css
+    assert "--backtest-probability-tooltip-radius" not in trade_css
 
     price_panel = backtest_template.index('<div class="trade-chart-panel">')
     price_canvas = backtest_template.index('<canvas id="tradePriceChart"></canvas>')
@@ -444,7 +436,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const getProbabilityStageMinimum = () => {",
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.2.0",
+        "investment-layout-v1.3.0",
     ):
         assert fragment in backtest_layout
 
@@ -469,10 +461,12 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "getOverviewStageMinimum = () => 0,",
         "overviewMinimumChangeEvent = null,",
+        "onChartsResized = null,",
         "const requestedDynamicStageMinimum = typeof getOverviewStageMinimum === 'function'",
         "const dynamicStageMinimum = Number.isFinite(requestedDynamicStageMinimum)",
         "dynamicStageMinimum,",
         "overviewMinimumChangeEvent",
+        "onChartsResized",
         "workspaceHeader.addEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
         "workspaceHeader.removeEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
         "'--investment-overview-content-min-height'",
@@ -481,9 +475,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-backtest-probability-grid-v0.16.0",
-        "-backtest-v0.22.0",
-        "-backtest-layout-v0.2.0",
+        "-backtest-probability-grid-v0.17.0",
+        "-backtest-v0.23.0",
+        "-backtest-layout-v0.3.0",
     ):
         assert fragment in base_template
 

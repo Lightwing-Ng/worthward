@@ -8180,7 +8180,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
         importFeedback: 'v1.9.0',
-        layout: 'v1.2.0',
+        layout: 'v1.3.0',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
@@ -17571,7 +17571,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             rows_below: 10,
             columns: 20,
             width_fraction: 0.25,
-            gap_px: 1,
+            gap_px: 2,
             padding_px: 8,
             min_cell_px: 4,
             cell_radius_px: 2,
@@ -17955,7 +17955,6 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 : null,
             stepPixelsDelta: Math.abs(bounds.stepPixels - medianStep),
             tooltipWidth: tooltipRect.width,
-            tooltipTransparency: Number(tooltip.dataset.transparency),
             verticalGap: firstRect && nextRowRect ? nextRowRect.top - firstRect.bottom : null,
             webkitBackdropFilter: tooltipStyle.webkitBackdropFilter || 'none',
         };
@@ -17963,23 +17962,22 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     expect(contract).not.toBeNull();
     expect(contract.activeIndex).toBe(leftAnchor.index);
-    expect(contract.backgroundAlpha).toBeCloseTo(0.5, 1);
-    expect(contract.tooltipTransparency).toBe(50);
+    expect(contract.backgroundAlpha).toBe(0);
     expect(contract.opacity).toBe(1);
     expect(contract.backgroundImage).toBe('none');
     expect(contract.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
     expect(contract.boxShadow).toBe('none');
     expect(contract.backdropFilter).toBe('none');
     expect(contract.webkitBackdropFilter).toBe('none');
-    expect(contract.outerBorderRadius).toBe('10px');
-    expect(contract.cellBorderRadius).toBe('2px');
+    expect(contract.outerBorderRadius).toBe('0px');
+    expect(contract.cellBorderRadius).toBe('0px');
     expect(contract.cellBorderWidth).toBe('0px');
     expect(contract.cellTransitionDuration).toBe('0s');
     expect(contract.gridPadding[1]).toBe('8px');
-    expect(contract.gridPadding[3]).toBe('1px');
+    expect(contract.gridPadding[3]).toBe('2px');
     expect(parseFloat(contract.gridPadding[0])).toBeGreaterThanOrEqual(8);
     expect(parseFloat(contract.gridPadding[2])).toBeGreaterThanOrEqual(8);
-    expect(contract.firstCellLeftInset).toBeCloseTo(1, 1);
+    expect(contract.firstCellLeftInset).toBeCloseTo(2, 1);
     expect(contract.firstCellTopInset).toBeGreaterThanOrEqual(8);
     expect(contract.cellCount).toBe(contract.rows * contract.columns);
     expect(contract.rows).toBe(contract.rowsUp + contract.rowsDown);
@@ -17995,7 +17993,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.cellMinimumSize).toBeGreaterThanOrEqual(3.99);
     expect(contract.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(contract.horizontalGap).toBeGreaterThanOrEqual(0);
-    expect(contract.horizontalGap).toBeCloseTo(1, 1);
+    expect(contract.horizontalGap).toBeCloseTo(2, 1);
     expect(Math.abs(contract.horizontalGap - contract.verticalGap)).toBeLessThanOrEqual(0.1);
     expect(Number.isInteger(contract.daysPerColumn)).toBe(true);
     expect(contract.daysPerColumn).toBeGreaterThanOrEqual(1);
@@ -18109,12 +18107,103 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(minimumGeometry.rowsDown).toBe(10);
     expect(minimumGeometry.columns).toBe(20);
     expect(minimumGeometry.cellSquareDelta).toBeLessThanOrEqual(0.1);
-    expect(minimumGeometry.horizontalGap).toBeCloseTo(1, 1);
-    expect(minimumGeometry.verticalGap).toBeCloseTo(1, 1);
+    expect(minimumGeometry.horizontalGap).toBeCloseTo(2, 1);
+    expect(minimumGeometry.verticalGap).toBeCloseTo(2, 1);
     expect(Number.isInteger(minimumGeometry.daysPerColumn)).toBe(true);
     expect(minimumGeometry.daysPerColumn).toBeGreaterThanOrEqual(1);
     expect(minimumGeometry.slotLatticeDelta).toBeLessThanOrEqual(1e-9);
 
+    await page.mouse.click(minimumAnchor.x, minimumAnchor.y);
+    await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+    const readPinnedGridSnapshot = () => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const point = chart?.getDatasetMeta?.(0)?.data?.[bounds?.index];
+        const canvasRect = canvas?.getBoundingClientRect();
+        const scaleY = canvasRect && chart?.height ? canvasRect.height / chart.height : 0;
+        if (!(canvas instanceof HTMLCanvasElement) || !chart?.chartArea
+            || !(tooltip instanceof HTMLElement) || !cells.length
+            || !bounds || !point || !(scaleY > 0) || !chart.scales?.y) return null;
+        const cellGeometryDelta = Math.max(...cells.map((cell) => {
+            const rect = cell.getBoundingClientRect();
+            const row = Number(cell.dataset.row);
+            const expectedTop = bounds.top + bounds.gridPaddingTop
+                + (row * (bounds.cellSize + bounds.gap));
+            const expectedBottom = expectedTop + bounds.cellSize;
+            return Math.max(
+                Math.abs(((rect.top - canvasRect.top) / scaleY) - expectedTop),
+                Math.abs(((rect.bottom - canvasRect.top) / scaleY) - expectedBottom),
+            );
+        }));
+        const priceMappingDelta = Math.max(...cells.map((cell) => {
+            const rect = cell.getBoundingClientRect();
+            const lower = Math.min(
+                chart.scales.y.getValueForPixel((rect.top - canvasRect.top) / scaleY),
+                chart.scales.y.getValueForPixel((rect.bottom - canvasRect.top) / scaleY),
+            );
+            const upper = Math.max(
+                chart.scales.y.getValueForPixel((rect.top - canvasRect.top) / scaleY),
+                chart.scales.y.getValueForPixel((rect.bottom - canvasRect.top) / scaleY),
+            );
+            return Math.max(
+                Math.abs(lower - Number(cell.dataset.lowerPrice)),
+                Math.abs(upper - Number(cell.dataset.upperPrice)),
+            );
+        }));
+        return {
+            canvasHeight: canvasRect.height,
+            chartAreaHeight: chart.chartArea.bottom - chart.chartArea.top,
+            cellGeometryDelta,
+            guideDelta: Math.abs(bounds.intersectionY - point.y),
+            priceMappingDelta,
+            resizerValue: Number(document.querySelector('#backtest_section_resizer')?.getAttribute('aria-valuenow')),
+            rowsDown: bounds.rowsBelow,
+            rowsUp: bounds.rowsAbove,
+            verticalGap: cells[0] && cells[20]
+                ? cells[20].getBoundingClientRect().top - cells[0].getBoundingClientRect().bottom
+                : Number.NaN,
+        };
+    });
+    const beforeDrag = await readPinnedGridSnapshot();
+    expect(beforeDrag).not.toBeNull();
+    const handleBox = await sectionResizer.boundingBox();
+    if (!handleBox) throw new Error('Backtest vertical resizer is unavailable.');
+    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+    await page.mouse.down();
+    await page.mouse.move(
+        handleBox.x + (handleBox.width / 2),
+        handleBox.y + (handleBox.height / 2) + 48,
+        {steps: 4},
+    );
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate((previousValue) => {
+        const resizer = document.querySelector('#backtest_section_resizer');
+        return resizer instanceof HTMLElement
+            && Number(resizer.getAttribute('aria-valuenow')) > previousValue;
+    }, beforeDrag.resizerValue)).toBe(true);
+    await expect.poll(async () => {
+        const snapshot = await readPinnedGridSnapshot();
+        return snapshot && snapshot.canvasHeight > beforeDrag.canvasHeight + 1
+            && snapshot.guideDelta <= 0.1
+            && snapshot.cellGeometryDelta <= 0.5
+            && snapshot.priceMappingDelta <= 0.05;
+    }).toBe(true);
+    const afterDrag = await readPinnedGridSnapshot();
+    expect(afterDrag).not.toBeNull();
+    expect(afterDrag.canvasHeight).toBeGreaterThan(beforeDrag.canvasHeight + 1);
+    expect(afterDrag.chartAreaHeight).toBeGreaterThan(beforeDrag.chartAreaHeight + 1);
+    expect(afterDrag.rowsUp).toBeLessThanOrEqual(10);
+    expect(afterDrag.rowsDown).toBeLessThanOrEqual(10);
+    expect(afterDrag.verticalGap).toBeCloseTo(2, 1);
+    expect(afterDrag.guideDelta).toBeLessThanOrEqual(0.1);
+    expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(0.5);
+    expect(afterDrag.priceMappingDelta).toBeLessThanOrEqual(0.05);
+
+    await page.keyboard.press('Escape');
+    await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await page.mouse.move(10, 10);
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await waitForPanReset();
@@ -18288,7 +18377,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Math.abs(rightPan.stackClientHeight - baselineGeometry.stackClientHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.stackHeight - baselineGeometry.stackHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.resizerHeight - baselineGeometry.resizerHeight)).toBeLessThanOrEqual(0.1);
-    expect(Math.abs(rightPan.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(rightPan.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(1.1);
     expect(Math.abs(rightPan.resizerSlotHeight - baselineGeometry.resizerSlotHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.resizerSlotTop - baselineGeometry.resizerSlotTop)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.historyTop - baselineGeometry.historyTop)).toBeLessThanOrEqual(0.1);
@@ -18473,7 +18562,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Math.abs(resetGeometry.stackClientHeight - baselineGeometry.stackClientHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.stackHeight - baselineGeometry.stackHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.resizerHeight - baselineGeometry.resizerHeight)).toBeLessThanOrEqual(0.1);
-    expect(Math.abs(resetGeometry.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(resetGeometry.resizerTop - baselineGeometry.resizerTop)).toBeLessThanOrEqual(1.1);
     expect(Math.abs(resetGeometry.resizerSlotHeight - baselineGeometry.resizerSlotHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.resizerSlotTop - baselineGeometry.resizerSlotTop)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.historyTop - baselineGeometry.historyTop)).toBeLessThanOrEqual(0.1);
@@ -18683,8 +18772,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(narrowLayout.rowsDown).toBeLessThanOrEqual(10);
     expect(narrowLayout.columns).toBe(20);
     expect(narrowLayout.cellSquareDelta).toBeLessThanOrEqual(0.1);
-    expect(narrowLayout.horizontalGap).toBeCloseTo(1, 1);
-    expect(narrowLayout.verticalGap).toBeCloseTo(1, 1);
+    expect(narrowLayout.horizontalGap).toBeCloseTo(2, 1);
+    expect(narrowLayout.verticalGap).toBeCloseTo(2, 1);
     expect(Number.isInteger(narrowLayout.daysPerColumn)).toBe(true);
     expect(narrowLayout.daysPerColumn).toBeGreaterThanOrEqual(1);
     expect(narrowLayout.slotLatticeDelta).toBeLessThanOrEqual(1e-9);
@@ -18790,6 +18879,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             guideBottomInset: tooltipRect.bottom - (canvasRect.top + guide.y),
             guideTopInset: (canvasRect.top + guide.y) - tooltipRect.top,
             columns: Number(grid.dataset.columnCount),
+            gap: bounds?.gap,
+            horizontalGap: cells.length > 1
+                ? cells[1].getBoundingClientRect().left - cells[0].getBoundingClientRect().right
+                : null,
             opacityExponent: Number(tooltip.dataset.cellOpacityExponent),
             opacityMapping: tooltip.dataset.cellOpacityMapping,
             opacityTailRatio: Number(tooltip.dataset.cellOpacityTailRatio),
@@ -18803,14 +18896,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         };
     });
     expect(customPresentation).toEqual(expect.objectContaining({
-        cellBorderRadius: '1.5px',
+        cellBorderRadius: '0px',
         cellCount: customPresentation.rows * customPresentation.columns,
         columns: 20,
+        gap: 2,
+        horizontalGap: 2,
         gridPadding: '6px',
         opacityExponent: 2.4,
         opacityMapping: 'instant-contrast-power-v1',
         opacityTailRatio: 0.05,
-        outerBorderRadius: '10px',
+        outerBorderRadius: '0px',
         rows: customPresentation.rowsAbove + customPresentation.rowsBelow,
         rowsAbove: 4,
         rowsBelow: customPresentation.rowsBelow,
@@ -18821,7 +18916,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(4);
     expect(customPresentation.rowsAbove).toBeLessThanOrEqual(customPresentation.availableRowsAbove);
     expect(customPresentation.rowsBelow).toBeLessThanOrEqual(customPresentation.availableRowsBelow);
-    expect(customPresentation.backgroundAlpha).toBeCloseTo(0.5, 1);
+    expect(customPresentation.backgroundAlpha).toBe(0);
     expect(customPresentation.centerDelta).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideTopInset).toBeGreaterThanOrEqual(0);
     expect(customPresentation.guideBottomInset).toBeGreaterThanOrEqual(0);

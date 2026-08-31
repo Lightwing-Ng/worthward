@@ -5,7 +5,7 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.16.0
+Code version: v1.17.0
 - Changed: Walk-forward observation noise now uses regularized, effective-degree-of-freedom ridge residual variance with a small process-noise floor, avoiding in-sample OLS overconfidence.
 - Changed: The probability renderer keeps only the matrix itself; its Python
   presentation owns the instantaneous nonlinear cell-opacity curve.
@@ -13,9 +13,11 @@ Code version: v1.16.0
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
 - Changed: The declarative presentation contract retains a fixed 20-column,
-  ten-row-per-side maximum field with integer-trading-day slots and a 1 px
-  requested cell gap. The renderer applies the same 1 px guide-to-first-cell
-  inset while retaining the vertical and trailing 8 px field padding.
+  ten-row-per-side maximum field with integer-trading-day slots and a fixed
+  2 px cell gap. The renderer applies the same 2 px guide-to-first-cell inset
+  while retaining the vertical and trailing 8 px field padding.
+- Changed: The probability field no longer carries private radius or material
+  fields; the renderer is a transparent, square-cell matrix only.
 - Changed: NVDA is the default research ticker for this strategy.
 - Changed: Auto and CPU now use NumPy directly for this small-matrix
   walk-forward workload; only an explicit GPU request imports Torch and probes
@@ -77,9 +79,6 @@ _PROBABILITY_FIELD_ROWS_ABOVE = 10
 _PROBABILITY_FIELD_ROWS_BELOW = 10
 _PROBABILITY_FIELD_COLUMNS = 20
 _PROBABILITY_FIELD_RETURN_SIGMA = 6.0
-_PROBABILITY_FIELD_CELL_RADIUS_PX = 2
-_PROBABILITY_FIELD_TOOLTIP_RADIUS_PX = 10
-_PROBABILITY_FIELD_TOOLTIP_TRANSPARENCY_PCT = 50
 _FACTOR_SELECTION_PRIORITY = (
     "volume",
     "pe",
@@ -1607,12 +1606,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
             "columns": _PROBABILITY_FIELD_COLUMNS,
             "width_fraction": 0.25,
-            "gap_px": 1,
+            "gap_px": 2,
             "padding_px": 8,
             "min_cell_px": 4,
-            "cell_radius_px": _PROBABILITY_FIELD_CELL_RADIUS_PX,
-            "tooltip_radius_px": _PROBABILITY_FIELD_TOOLTIP_RADIUS_PX,
-            "tooltip_transparency_pct": _PROBABILITY_FIELD_TOOLTIP_TRANSPARENCY_PCT,
             "cell_opacity_mapping": "instant-contrast-power-v1",
             "cell_opacity_exponent": 1.6,
             "cell_opacity_tail_ratio": 0.02,

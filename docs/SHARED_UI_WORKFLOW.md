@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.1`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
@@ -9,11 +9,12 @@ long-form synchronization state lives in:
 
 ## Read order
 
-1. Read this file.
-2. Read the central ledger's `Fast path for agents` section and the matching row.
-3. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
+1. Read [`../SHARED_UI_LAYOUT_CONTRACT.md`](../SHARED_UI_LAYOUT_CONTRACT.md).
+2. Read this file.
+3. Read the central ledger's `Fast path for agents` section and the matching row.
+4. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
    `docs/ARCHITECTURE.md`, `docs/TESTING.md`, and `docs/KNOWN_ISSUES.md`.
-4. Inspect the current `antigravity` implementation and the named
+5. Inspect the current `antigravity` implementation and the named
    `CacheLikesFromTwitter` implementation before editing either one.
 
 ## Contract

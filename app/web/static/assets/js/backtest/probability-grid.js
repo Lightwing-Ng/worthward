@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.16.0
+ * Code version: v0.17.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -13,19 +13,15 @@
     const MAX_ROWS_PER_SIDE = 10;
     const DEFAULT_COLUMN_COUNT = 20;
     const DEFAULT_WIDTH_FRACTION = 0.25;
-    const DEFAULT_GAP_PX = 1;
+    const DEFAULT_GAP_PX = 2;
     const DEFAULT_PADDING_PX = 8;
     const DEFAULT_MIN_CELL_PX = 4;
-    const DEFAULT_CELL_RADIUS_PX = 2;
-    const DEFAULT_TOOLTIP_RADIUS_PX = 10;
-    const DEFAULT_TOOLTIP_TRANSPARENCY_PCT = 50;
     const CELL_OPACITY_MAPPING = "instant-contrast-power-v1";
     const DEFAULT_CELL_OPACITY_EXPONENT = 1.6;
     const DEFAULT_CELL_OPACITY_TAIL_RATIO = 0.02;
     const DEFAULT_MAX_CELL_PX = 10;
 
     const GEOMETRY_LIMITS = Object.freeze({
-        cellRadius: Object.freeze([0, 32]),
         columns: Object.freeze([1, 72]),
         gap: Object.freeze([0, 24]),
         minCell: Object.freeze([DEFAULT_MIN_CELL_PX, 32]),
@@ -33,8 +29,6 @@
         opacityTailRatio: Object.freeze([0, 0.25]),
         padding: Object.freeze([0, 64]),
         rows: Object.freeze([1, MAX_ROWS_PER_SIDE]),
-        tooltipRadius: Object.freeze([0, 32]),
-        tooltipTransparency: Object.freeze([0, 100]),
     });
 
     const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -98,6 +92,12 @@
         if (String(value.schema || "") !== PRESENTATION_SCHEMA) return null;
         if (String(value.renderer || "") !== RENDERER_ID) return null;
         const presentation = {...value};
+        // These fields belonged to the retired frosted-field material. Drop
+        // them at the renderer boundary so stale cached payloads cannot
+        // reintroduce radius or translucent-background behavior.
+        delete presentation.cell_radius_px;
+        delete presentation.tooltip_radius_px;
+        delete presentation.tooltip_transparency_pct;
         const expected = normalizeExpectedSeriesContract(expectedRawDatesOrOptions, expectedLength);
         const predictiveMean = Array.isArray(value.predictive_mean)
             ? value.predictive_mean.map(finiteOrNull)
@@ -132,24 +132,12 @@
             // The horizon density is a product-level chart contract, not a
             // user-tunable parameter. Every rendered field has 20 columns.
             columns: DEFAULT_COLUMN_COUNT,
-            gap_px: boundedNumber(value.gap_px, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap),
+            // The cell gap is a fixed 2 px visual contract. Keep the lower
+            // geometry helpers parameterized for focused mathematical tests,
+            // but do not allow a strategy payload to change the product gap.
+            gap_px: DEFAULT_GAP_PX,
             padding_px: boundedNumber(value.padding_px, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding),
             min_cell_px: boundedNumber(value.min_cell_px, DEFAULT_MIN_CELL_PX, GEOMETRY_LIMITS.minCell),
-            cell_radius_px: boundedNumber(
-                value.cell_radius_px,
-                DEFAULT_CELL_RADIUS_PX,
-                GEOMETRY_LIMITS.cellRadius,
-            ),
-            tooltip_radius_px: boundedNumber(
-                value.tooltip_radius_px,
-                DEFAULT_TOOLTIP_RADIUS_PX,
-                GEOMETRY_LIMITS.tooltipRadius,
-            ),
-            tooltip_transparency_pct: boundedNumber(
-                value.tooltip_transparency_pct,
-                DEFAULT_TOOLTIP_TRANSPARENCY_PCT,
-                GEOMETRY_LIMITS.tooltipTransparency,
-            ),
             cell_opacity_mapping: CELL_OPACITY_MAPPING,
             cell_opacity_exponent: boundedNumber(
                 value.cell_opacity_exponent,
@@ -263,11 +251,15 @@
         };
         const availableRowsAbove = rowsThatFit(y - top);
         const availableRowsBelow = rowsThatFit(bottom - y);
-        // The fixed ten-row ceiling applies independently to each chart
-        // boundary. A guide near the top must not discard bottom rows simply
-        // because its opposite side is short; only the relevant real edge may
-        // crop a side.
-        const availableRowsPerSide = MAX_ROWS_PER_SIDE;
+        // Each side is independently capped by the smaller of ten rows, one
+        // half of the current plot, and its own real chart boundary. The
+        // half-plot cap prevents a near-edge guide from consuming the whole
+        // vertical field while the boundary caps preserve exact clipping.
+        const availableRowsWithinHalfPlot = rowsThatFit((bottom - top) / 2);
+        const availableRowsPerSide = Math.min(
+            MAX_ROWS_PER_SIDE,
+            availableRowsWithinHalfPlot,
+        );
         const normalizedRowsAbove = Math.min(
             requestedRowsAbove,
             availableRowsPerSide,
@@ -291,7 +283,7 @@
         const height = aboveExtent + belowExtent;
         const halfHeight = height / 2;
         const rowCount = normalizedRowsAbove + normalizedRowsBelow;
-        // The vertical guide and first field column share the same one-pixel
+        // The vertical guide and first field column share the same 2 px
         // logical gap as adjacent cells. Retain the strategy-owned outer
         // padding on the field's trailing edge and both vertical edges.
         const gridPaddingInlineStart = gap;
@@ -303,6 +295,7 @@
             anchorY: y,
             availableRowsAbove,
             availableRowsBelow,
+            availableRowsWithinHalfPlot,
             aboveExtent,
             availableRowsPerSide,
             belowExtent,
@@ -626,7 +619,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.16.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.17.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

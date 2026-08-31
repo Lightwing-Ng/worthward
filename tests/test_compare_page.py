@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.5
+Code version: v0.14.6
 """
 
 from __future__ import annotations
@@ -34,6 +34,132 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_one_day_date_constraints_keep_current_korean_session_with_pending_us_market(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                [
+                    "2026-07-14 20:00",
+                    "2026-07-15 02:30",
+                    "2026-08-30 20:00",
+                    "2026-08-31 05:59",
+                ],
+            ),
+            "DRAM": ohlc_frame_for_dates(
+                "DRAM",
+                [
+                    "2026-07-15 09:30",
+                    "2026-07-15 15:59",
+                    "2026-08-28 09:30",
+                    "2026-08-28 15:59",
+                ],
+            ),
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "price",
+        ) -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return close_frame_for_ticker(ticker, dates=["2026-07-15", "2026-08-28"])
+
+        with (
+            patch.object(
+                pd.Timestamp,
+                "now",
+                return_value=pd.Timestamp("2026-08-31 16:00", tz="Asia/Shanghai"),
+            ),
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch(
+                "app.web.runtime.refresh_recent_one_minute_store_with_yfinance",
+                side_effect=ValueError("Yahoo minute history is unavailable for DRAM."),
+            ) as refresh_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/date-constraints?view=prices&range=exact&period=1d"
+                "&from=2026-07-15&to=2026-07-15"
+                "&ticker=000660.KS&ticker=DRAM"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertEqual(payload["max_date"], "2026-08-31")
+        self.assertIn("2026-08-31", payload["trading_dates"])
+        self.assertEqual(payload["adjusted_start"], "2026-07-15")
+        self.assertEqual(payload["adjusted_end"], "2026-07-15")
+        refresh_mock.assert_called_once_with("DRAM")
+
+    def test_current_korean_one_day_page_keeps_partial_series_when_us_market_is_pending(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                [
+                    "2026-08-27 20:00",
+                    "2026-08-28 02:30",
+                    "2026-08-30 20:00",
+                    "2026-08-31 05:59",
+                ],
+            ),
+            "DRAM": ohlc_frame_for_dates(
+                "DRAM",
+                [
+                    "2026-08-28 09:30",
+                    "2026-08-28 15:59",
+                ],
+            ),
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "price",
+        ) -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return close_frame_for_ticker(ticker, dates=["2026-08-28", "2026-08-31"])
+
+        with _write_intraday_stores(intraday_frames) as tempdir:
+            temp_root = Path(tempdir)
+
+            with (
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-08-31 16:00", tz="Asia/Shanghai"),
+                ),
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": temp_root / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+                patch(
+                    "app.web.runtime.refresh_recent_one_minute_store_with_yfinance",
+                    side_effect=ValueError("Yahoo minute history is unavailable for DRAM."),
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=DRAM"
+                    "&range=custom&period=1d&date=2026-08-31"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        self.assertIn(
+            'id="exact_trading_date" name="trading_date" type="hidden" value="2026-08-31"',
+            html,
+        )
+        self.assertIn('"2026-08-30 20:00"', html)
+
     def test_one_day_date_constraints_include_current_us_session_from_compare_fallback(self) -> None:
         stale_frames = {
             ticker: ohlc_frame_for_dates(

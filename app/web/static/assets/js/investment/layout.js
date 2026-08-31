@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.2.0';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.0';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -54,6 +54,7 @@ export function bindInvestmentSectionResizer({
     overviewStageSelector = '.investment-equity-chart-stage',
     getOverviewStageMinimum = () => 0,
     overviewMinimumChangeEvent = null,
+    onChartsResized = null,
     windowRef = globalThis.window,
     documentRef = globalThis.document,
     HTMLElementClass = globalThis.HTMLElement,
@@ -261,9 +262,13 @@ export function bindInvestmentSectionResizer({
             const chartInstances = typeof getChartInstances === 'function'
                 ? getChartInstances()
                 : [getChartInstance()];
-            (Array.isArray(chartInstances) ? chartInstances : [chartInstances])
+            const resizedCharts = (Array.isArray(chartInstances) ? chartInstances : [chartInstances])
                 .filter((chartInstance) => chartInstance?.canvas?.isConnected)
-                .forEach((chartInstance) => chartInstance.resize());
+                .map((chartInstance) => {
+                    chartInstance.resize();
+                    return chartInstance;
+                });
+            if (typeof onChartsResized === 'function') onChartsResized(resizedCharts);
         });
     };
     const setValue = (height) => {

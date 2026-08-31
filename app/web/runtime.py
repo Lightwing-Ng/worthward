@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.89.0
+Code version: v0.89.1
+- Fixed: Mixed one-day date constraints probe the current local-market session
+  when an older exact date is already selected, keeping a current Korean
+  session selectable alongside a not-yet-open US series.
 - Added: Backtest strategies may keep a daily model while executing causal
   signals on real one-minute bars through a declared interval bridge.
 - Fixed: Relative Backtest provider windows now end on the selected ticker's
@@ -811,10 +814,15 @@ def build_web_runtime() -> WebRuntime:
             if value and not pd.isna(parsed := pd.to_datetime(value, errors="coerce"))
         }
         dates_to_probe = set(requested_dates)
-        if not dates_to_probe and any(infer_ticker_market(ticker) == "US" for ticker in tickers):
+        has_us_market = any(infer_ticker_market(ticker) == "US" for ticker in tickers)
+        has_non_us_market = any(infer_ticker_market(ticker) != "US" for ticker in tickers)
+        should_probe_live_session = has_us_market and has_non_us_market
+        if not dates_to_probe and has_us_market:
             live_session_state = nyse_market_session_state(include_overnight=True)
             if live_session_state.get("is_trading_day"):
-                dates_to_probe.add(live_session_date)
+                should_probe_live_session = True
+        if should_probe_live_session:
+            dates_to_probe.add(live_session_date)
         for ticker in tickers:
             use_overnight_source = include_overnight_flag and infer_ticker_market(ticker) == "US"
             if use_overnight_source:
@@ -869,7 +877,7 @@ def build_web_runtime() -> WebRuntime:
                     LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
                     refresh_failures.append(ticker)
             available_dates = set(date_frame["Date"].dt.date) if not date_frame.empty else set()
-            missing_requested_dates = dates_to_probe - available_dates
+            missing_requested_dates = requested_dates - available_dates
             if not use_overnight_source:
                 for requested_date in sorted(missing_requested_dates):
                     try:

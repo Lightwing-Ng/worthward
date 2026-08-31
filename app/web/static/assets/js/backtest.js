@@ -1,4 +1,4 @@
-/* Code version: v0.22.0 */
+/* Code version: v0.23.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -613,9 +613,6 @@
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
 			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
 			probabilityTooltip.dataset.cellOpacityMapping = strategyPresentation.cell_opacity_mapping;
-			probabilityTooltip.dataset.transparency = String(
-				strategyPresentation.tooltip_transparency_pct,
-			);
 			probabilityTooltip.dataset.cellOpacityExponent = String(
 				strategyPresentation.cell_opacity_exponent,
 			);
@@ -624,22 +621,6 @@
 			);
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-cell-radius",
-				`${strategyPresentation.cell_radius_px}px`,
-			);
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-tooltip-radius",
-				`${strategyPresentation.tooltip_radius_px}px`,
-			);
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-tooltip-transparency",
-				`${strategyPresentation.tooltip_transparency_pct}%`,
-			);
-			probabilityTooltip.style.setProperty(
-				"--backtest-probability-grid-padding",
-				`${strategyPresentation.padding_px}px`,
-			);
 			probabilityTooltip.innerHTML = '<div class="backtest-probability-grid" data-backtest-probability-grid></div>';
 			probabilityTooltip.hidden = true;
 			tradeChartStack.appendChild(probabilityTooltip);
@@ -1403,6 +1384,8 @@
 				node.dataset.displayIntensity = String(cell.displayIntensity);
 				node.dataset.opacity = String(cell.opacity);
 				node.dataset.row = String(cell.row);
+				node.dataset.lowerPrice = String(cell.lowerPrice);
+				node.dataset.upperPrice = String(cell.upperPrice);
 				node.style.gridColumn = String(cell.column + 1);
 				node.style.gridRow = String(cell.row + 1);
 				node.style.opacity = String(cell.opacity);
@@ -1984,47 +1967,58 @@
 		);
 		priceChart.update("none");
 		publishProbabilityStageMinimum();
+		const refreshChartLayout = ({chartsAlreadyResized = false} = {}) => {
+			if (controllerDestroyed || !priceChart?.ctx || !equityChart?.ctx) return;
+			const showTradeDetails = isBacktestTradeDetailsEnabled();
+			const refreshIndex = pinState.mode === "pinned"
+				? pinState.activeIndex
+				: activeIndex;
+			const refreshSourceCanvas = !showTradeDetails || pinState.mode === "pinned"
+				? priceCanvas
+				: activeSourceCanvas;
+			const refreshSourceChart = !showTradeDetails || pinState.mode === "pinned"
+				? priceChart
+				: activeSourceChart;
+			if (!chartsAlreadyResized) priceChart.resize();
+			if (showTradeDetails && !chartsAlreadyResized) equityChart.resize();
+			priceChartYPadding = resolvePriceChartYPadding();
+			applyBacktestYAxisScale(
+				priceChart,
+				priceCanvas,
+				[priceChart.data.datasets[0].data],
+				priceChartYPadding,
+			);
+			if (showTradeDetails) {
+				applyBacktestYAxisScale(
+					equityChart,
+					equityCanvas,
+					[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+					chartYPaddingPx,
+				);
+			}
+			if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
+				syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
+			} else {
+				priceChart.update("none");
+				if (showTradeDetails) equityChart.update("none");
+			}
+			publishProbabilityStageMinimum();
+		};
 		const scheduleChartLayoutRefresh = () => {
 			if (layoutFrameId !== null || controllerDestroyed) return;
 			layoutFrameId = requestControllerAnimationFrame(() => {
 				layoutFrameId = null;
-				if (!priceChart?.ctx || !equityChart?.ctx) return;
-				const showTradeDetails = isBacktestTradeDetailsEnabled();
-				const refreshIndex = pinState.mode === "pinned"
-					? pinState.activeIndex
-					: activeIndex;
-				const refreshSourceCanvas = !showTradeDetails || pinState.mode === "pinned"
-					? priceCanvas
-					: activeSourceCanvas;
-				const refreshSourceChart = !showTradeDetails || pinState.mode === "pinned"
-					? priceChart
-					: activeSourceChart;
-				priceChart.resize();
-				if (showTradeDetails) equityChart.resize();
-				priceChartYPadding = resolvePriceChartYPadding();
-				applyBacktestYAxisScale(
-					priceChart,
-					priceCanvas,
-					[priceChart.data.datasets[0].data],
-					priceChartYPadding,
-				);
-				if (showTradeDetails) {
-					applyBacktestYAxisScale(
-						equityChart,
-						equityCanvas,
-						[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
-						chartYPaddingPx,
-					);
-				}
-				if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
-					syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
-				} else {
-					priceChart.update("none");
-					if (showTradeDetails) equityChart.update("none");
-				}
-				publishProbabilityStageMinimum();
+				refreshChartLayout();
 			});
 		};
+		const refreshAfterSharedChartResize = () => {
+			if (layoutFrameId !== null) {
+				cancelControllerAnimationFrame(layoutFrameId);
+				layoutFrameId = null;
+			}
+			refreshChartLayout({chartsAlreadyResized: true});
+		};
+		bootstrap.backtestChartLayoutRefresh = refreshAfterSharedChartResize;
 		if (typeof ResizeObserver === "function") {
 			layoutObserver = new ResizeObserver(scheduleChartLayoutRefresh);
 			layoutObserver.observe(tradeChartStack);
@@ -2098,6 +2092,9 @@
 				equityChart?.destroy?.();
 				if (bootstrap.backtestHoverController === hoverController) {
 					bootstrap.backtestHoverController = null;
+				}
+				if (bootstrap.backtestChartLayoutRefresh === refreshAfterSharedChartResize) {
+					delete bootstrap.backtestChartLayoutRefresh;
 				}
 			},
 		};

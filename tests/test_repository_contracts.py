@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.3.0
+Code version: v1.3.2
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ APP_CSS_IMPORT_ORDER = (
 DOCUMENTATION_ENTRYPOINTS = (
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "AGENTS.md",
+    PROJECT_ROOT / "SHARED_UI_LAYOUT_CONTRACT.md",
     PROJECT_ROOT / "docs/README.md",
     PROJECT_ROOT / "docs/AGENTS.md",
     PROJECT_ROOT / "docs/ARCHITECTURE.md",
@@ -50,6 +51,7 @@ DOCUMENTATION_ENTRYPOINTS = (
 
 VERSIONED_DOCUMENTS = (
     PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "SHARED_UI_LAYOUT_CONTRACT.md",
     PROJECT_ROOT / "docs/README.md",
     PROJECT_ROOT / "docs/ARCHITECTURE.md",
     PROJECT_ROOT / "docs/TESTING.md",
@@ -103,6 +105,10 @@ def test_documentation_entrypoints_exist_and_local_links_resolve() -> None:
                 Path(target)
                 if Path(target).is_absolute()
                 else markdown_path.parent / target
+            ).resolve()
+            assert resolved_target.is_relative_to(PROJECT_ROOT), (
+                f"Local link escapes the repository in "
+                f"{markdown_path.relative_to(PROJECT_ROOT)}: {raw_target}"
             )
             assert resolved_target.exists(), (
                 f"Broken local link in {markdown_path.relative_to(PROJECT_ROOT)}: "
