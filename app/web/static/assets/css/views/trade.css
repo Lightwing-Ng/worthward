@@ -1,4 +1,4 @@
-/* Code version: v3.50.0 */
+/* Code version: v3.50.1 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -96,6 +96,31 @@
     --workspace-article-pad-inline: 0px;
     --workspace-article-pad-block-end: 6px;
     --backtest-result-surface-pad-inline: 12px;
+    --backtest-share-action-inset-block-start: 6px;
+    --backtest-share-action-clearance: calc(
+        var(--settings-round-icon-button-size)
+        + var(--layout-global-action-gap)
+    );
+}
+
+.backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"]) {
+    --workspace-article-pad-block-start: calc(
+        var(--backtest-share-action-inset-block-start)
+        + var(--backtest-share-action-clearance)
+    );
+}
+
+.backtest-trade-performance-card > .investment-share-actions[data-share-placement="summary-panel"] {
+    position: absolute;
+    top: var(--backtest-share-action-inset-block-start);
+    right: var(--backtest-result-surface-pad-inline);
+    transform: none;
+    z-index: calc(var(--layer-surface-content) + 2);
+    width: calc(
+        (var(--settings-round-icon-button-size) * 3)
+        + (var(--investment-share-action-gap) * 2)
+    );
+    height: var(--settings-round-icon-button-size);
 }
 
 .backtest-section-resizer {

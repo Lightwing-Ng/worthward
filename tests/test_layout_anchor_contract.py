@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.5.7
+Code version: v0.5.9
 """
 
 from pathlib import Path
@@ -151,10 +151,11 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.25.2");' in app_css
+    assert '@import url("./views/settings.css?v=0.25.3");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
-    assert '@import url("./views/investment.css?v=1.78.2");' in app_css
-    assert "v0.64.4" in app_css
+    assert '@import url("./components/forms.css?v=3.40.4");' in app_css
+    assert '@import url("./views/investment.css?v=1.78.3");' in app_css
+    assert "v0.64.6" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -174,7 +175,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.50.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.50.1");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -501,6 +502,55 @@ def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     assert "max-width: 100%;" in forms_css
     assert "width: min(100%, var(--layout-control-width));" in investment_css
     assert "width: min(100%, 384px);" not in investment_css
+
+
+def test_shared_segmented_controls_shrink_wrap_without_disabling_true_overflow_tracks() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    investment_css = _read(ASSET_ROOT / "css/views/investment.css")
+    settings_css = _read(ASSET_ROOT / "css/views/settings.css")
+
+    backtest_interval_rule = forms_css[
+        forms_css.index(".trade-controls .backtest-interval-field > .backtest-interval-segmented {"):
+        forms_css.index(".trade-controls .range-mode-field > .range-mode-shell {")
+    ]
+    range_mode_rule = forms_css[
+        forms_css.index(".trade-controls .range-mode-field > .range-mode-shell {"):
+        forms_css.index(".trade-controls .range-mode-field {")
+    ]
+    peek_rule = forms_css[
+        forms_css.index('.segmented-control[data-segmented-overflow-mode="peek"] {'):
+        forms_css.index('.segmented-control[data-segmented-overflow-mode="peek"][data-segmented-overflow="1"] {')
+    ]
+    overflow_track_rule = forms_css[
+        forms_css.index('.segmented-control[data-segmented-overflow-mode="peek"][data-segmented-overflow="1"] {'):
+        forms_css.index(".segmented-control,\n.range-mode-shell {")
+    ]
+
+    for rule in (backtest_interval_rule, range_mode_rule, peek_rule):
+        assert "width: fit-content;" in rule
+        assert "max-width: 100%;" in rule
+    assert "justify-self: center;" in backtest_interval_rule
+    assert "justify-self: center;" in range_mode_rule
+    assert "width: var(--segmented-track-width, 100%);" in overflow_track_rule
+    assert "margin-inline: 0;" in overflow_track_rule
+
+    for selector in (
+        ".live-trading-range-segmented {",
+        ".investment-view-segmented {",
+        ".investment-import-method-segmented {",
+    ):
+        rule_start = investment_css.index(selector)
+        rule_end = investment_css.index("}\n", rule_start) + 2
+        rule = investment_css[rule_start:rule_end]
+        assert "width: fit-content;" in rule
+        assert "max-width: 100%;" in rule
+        assert "margin-inline: auto;" in rule
+
+    language_tabs_start = settings_css.index(".settings-language-tabs {")
+    language_tabs_end = settings_css.index("}\n", language_tabs_start) + 2
+    language_tabs_rule = settings_css[language_tabs_start:language_tabs_end]
+    assert "width: fit-content;" in language_tabs_rule
+    assert "max-width: 100%;" in language_tabs_rule
 
 
 def test_strategy_parameters_reveal_downward_without_crossing_the_strategy_row() -> None:

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.8.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -102,6 +102,7 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertIn('data-share-drawer="backtest"', html)
+        self.assertIn('data-share-placement="summary-panel"', html)
         self.assertIn('id="export_transactions_button"', html)
         self.assertIn('aria-label="Export Transactions"', html)
         self.assertIn('id="backtest_section_resizer"', html)

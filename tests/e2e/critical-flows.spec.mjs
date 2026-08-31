@@ -1,4 +1,4 @@
-/* Code version: v1.193.0 */
+/* Code version: v1.193.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2539,7 +2539,7 @@ test('places the Ticker comparison mode above Period and Position distribution b
     expect(placement.modeNextId).toBe('period_panel');
 });
 
-test('matches the Ticker comparison Period trigger width to the range Mode width', async ({page}) => {
+test('keeps the Ticker comparison range Mode content-sized and centered', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
 
     const periodTrigger = page.locator(
@@ -2551,21 +2551,35 @@ test('matches the Ticker comparison Period trigger width to the range Mode width
     await expect(periodTrigger).toBeVisible();
     await expect(rangeMode).toBeVisible();
 
-    const widths = await Promise.all([
-        periodTrigger.evaluate((element) => element.getBoundingClientRect().width),
-        rangeMode.evaluate((element) => element.getBoundingClientRect().width),
-    ]);
-    expect(Math.abs(widths[0] - widths[1])).toBeLessThanOrEqual(0.5);
+    const readRangeModeGeometry = () => rangeMode.evaluate((element) => {
+        const owner = element.closest('.range-mode-field') || element.parentElement;
+        const controlRect = element.getBoundingClientRect();
+        const ownerRect = owner?.getBoundingClientRect();
+        const optionWidths = Array.from(element.querySelectorAll('.segmented-control-option'))
+            .map((option) => option.getBoundingClientRect().width);
+        return {
+            centerDelta: ownerRect
+                ? Math.abs((controlRect.left + (controlRect.width / 2)) - (ownerRect.left + (ownerRect.width / 2)))
+                : Number.POSITIVE_INFINITY,
+            compact: ownerRect ? controlRect.width < ownerRect.width - 1 : false,
+            optionWidths,
+        };
+    });
+    for (const geometry of [await readRangeModeGeometry()]) {
+        expect(geometry.compact).toBe(true);
+        expect(geometry.centerDelta).toBeLessThanOrEqual(1);
+        expect(Math.max(...geometry.optionWidths) - Math.min(...geometry.optionWidths)).toBeLessThanOrEqual(1);
+    }
 
     await page.setViewportSize({width: 390, height: 844});
     await page.reload();
     await expect(periodTrigger).toBeVisible();
     await expect(rangeMode).toBeVisible();
-    const narrowWidths = await Promise.all([
-        periodTrigger.evaluate((element) => element.getBoundingClientRect().width),
-        rangeMode.evaluate((element) => element.getBoundingClientRect().width),
-    ]);
-    expect(Math.abs(narrowWidths[0] - narrowWidths[1])).toBeLessThanOrEqual(0.5);
+    for (const geometry of [await readRangeModeGeometry()]) {
+        expect(geometry.compact).toBe(true);
+        expect(geometry.centerDelta).toBeLessThanOrEqual(1);
+        expect(Math.max(...geometry.optionWidths) - Math.min(...geometry.optionWidths)).toBeLessThanOrEqual(1);
+    }
 });
 
 test('renders a cached OHLCV cost distribution on the price scale without category legends', async ({page}) => {
@@ -8552,7 +8566,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.2';
+            && url.searchParams.get('v') === '1.78.3';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -11636,9 +11650,26 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     }, {controlSelector, stageSelector});
 
     await expect(segmented).toHaveClass(/is-pill-ready/);
-    await expect.poll(() => readCapDelta('left')).toBeCloseTo(0, 5);
+    await expect.poll(() => readCapDelta('left')).toBeCloseTo(0, 2);
     await expect(segmented).toHaveAttribute('data-segmented-overflow', '0');
     await expect.poll(() => segmented.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
+    const viewGeometry = await segmented.evaluate((element) => {
+        const owner = element.parentElement;
+        const controlRect = element.getBoundingClientRect();
+        const ownerRect = owner?.getBoundingClientRect();
+        const optionWidths = Array.from(element.querySelectorAll('.segmented-control-option'))
+            .map((option) => option.getBoundingClientRect().width);
+        return {
+            centerDelta: ownerRect
+                ? Math.abs((controlRect.left + (controlRect.width / 2)) - (ownerRect.left + (ownerRect.width / 2)))
+                : Number.POSITIVE_INFINITY,
+            compact: ownerRect ? controlRect.width < ownerRect.width - 1 : false,
+            optionWidths,
+        };
+    });
+    expect(viewGeometry.compact).toBe(true);
+    expect(viewGeometry.centerDelta).toBeLessThanOrEqual(1);
+    expect(Math.max(...viewGeometry.optionWidths) - Math.min(...viewGeometry.optionWidths)).toBeLessThanOrEqual(1);
 
     const overviewRange = page.locator('#investment_equity_chart .investment-stock-details-range-segmented');
     await expect(overviewRange).toHaveClass(/is-pill-ready/);
@@ -11660,14 +11691,14 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
 
     await page.locator('label[for="investment_view_metrics"]').click();
     await expect(segmented).toHaveAttribute('data-active', 'metrics');
-    await expect.poll(() => readCapDelta('right')).toBeCloseTo(0, 5);
+    await expect.poll(() => readCapDelta('right')).toBeCloseTo(0, 2);
     await expect(segmented).toHaveAttribute('data-segmented-overflow', '0');
 
     await page.locator('label[for="investment_view_stock_details"]').click();
     await expect(page.locator('#stock_panel')).toBeVisible();
     const stockDetailsRange = page.locator('#stock_panel .investment-stock-details-range-segmented');
     await expect(stockDetailsRange).toHaveClass(/is-pill-ready/);
-    await expect(stockDetailsRange).toHaveAttribute('data-segmented-overflow', '0');
+    await expect(stockDetailsRange).toHaveAttribute('data-segmented-overflow', '1');
     const segmentedMotherStyle = (selector) => page.locator(selector).evaluate((element) => {
         const computed = getComputedStyle(element);
         const firstOption = element.querySelector('.segmented-control-option');
@@ -11704,7 +11735,11 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
         '#stock_panel .investment-stock-details-range-segmented',
     );
     expect(stockDetailsSegmentedMotherStyle.sharedClasses).toBe(true);
-    expect(stockDetailsSegmentedMotherStyle.signature).toEqual(viewSegmentedMotherStyle.signature);
+    const {overflow: viewOverflow, ...viewSignature} = viewSegmentedMotherStyle.signature;
+    const {overflow: stockDetailsOverflow, ...stockDetailsSignature} = stockDetailsSegmentedMotherStyle.signature;
+    expect(stockDetailsSignature).toEqual(viewSignature);
+    expect(viewOverflow).toBe('visible');
+    expect(stockDetailsOverflow).toBe('auto hidden');
     expect(stockDetailsSegmentedMotherStyle.optionShape).toEqual(viewSegmentedMotherStyle.optionShape);
     const stockDetailsLayers = await readLayerGeometry(
         '#stock_panel .investment-stock-details-range-segmented',
@@ -11712,9 +11747,9 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     );
     expect(stockDetailsLayers).not.toBeNull();
     expect(stockDetailsLayers).toMatchObject({
-        controlOverflowX: 'visible',
-        controlOverflowY: 'visible',
-        overflowState: '0',
+        controlOverflowX: 'auto',
+        controlOverflowY: 'hidden',
+        overflowState: '1',
         shellOverflowX: 'visible',
         shellOverflowY: 'visible',
     });

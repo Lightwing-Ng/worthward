@@ -1,4 +1,4 @@
-/* Code version: v0.19.3 */
+/* Code version: v0.19.4 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -400,9 +400,6 @@ input[type="number"],
 	align-items: start;
 	overflow: visible; /* keep suggestion/tooltips aligned like compare fixed tickers */
 }
-.trade-controls .range-mode-field > .range-mode-shell {
-	width: 100%;
-}
 .ticker-controls .field.range-panel > .backtest-shared-select-row {
 	grid-template-columns: minmax(0, 1fr);
 	width: min(100%, var(--settings-form-control-max-width));
@@ -460,8 +457,6 @@ input[type="number"],
 	font-weight: var(--font-weight-medium);
 }
 .trade-controls .trade-capital-row,
-.trade-controls .range-mode-field > .range-mode-shell,
-.trade-controls .backtest-interval-field > .backtest-interval-segmented,
 .trade-controls .field.range-panel > select,
 .trade-controls .date-picker-trigger,
 .trade-controls .trade-strategy-row,
@@ -534,11 +529,15 @@ input[type="number"],
 	height: 22px;
 }
 .trade-controls .backtest-interval-field > .backtest-interval-segmented {
-	justify-self: stretch;
+	width: fit-content;
+	max-width: 100%;
+	justify-self: center;
 	margin-top: 0;
 }
 .trade-controls .range-mode-field > .range-mode-shell {
-	justify-self: stretch;
+	width: fit-content;
+	max-width: 100%;
+	justify-self: center;
 	margin-top: 0;
 }
 .trade-controls .range-mode-field {
@@ -1527,12 +1526,13 @@ input[type="number"],
 	-webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--segmented-overflow-fade-size), #000 calc(100% - var(--segmented-overflow-fade-size)), transparent 100%);
 }
 .segmented-control[data-segmented-overflow-mode="peek"] {
-	width: 100%;
-	max-width: none;
-	margin-inline: 0;
+	width: fit-content;
+	max-width: 100%;
+	margin-inline: auto;
 }
 .segmented-control[data-segmented-overflow-mode="peek"][data-segmented-overflow="1"] {
 	width: var(--segmented-track-width, 100%);
+	margin-inline: 0;
 	grid-template-columns: repeat(var(--segmented-option-count), var(--segmented-option-width));
 	overflow: visible;
 	mask-image: none;

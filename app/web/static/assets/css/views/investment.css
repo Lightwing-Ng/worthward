@@ -1,4 +1,4 @@
-/* Code version: v1.78.2 */
+/* Code version: v1.78.3 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1105,11 +1105,13 @@
     min-width: 214px;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
 }
 
 .live-trading-range-segmented {
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
 }
 
 .live-trading-range-segmented > .segmented-control-option > span,
@@ -2290,8 +2292,9 @@
 }
 
 .investment-view-segmented {
-    width: 100%;
-    max-width: none;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
     grid-template-columns: repeat(var(--segmented-option-count, 4), minmax(0, 1fr));
 }
 
@@ -4284,9 +4287,9 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     top: 0;
     z-index: 4;
     isolation: isolate;
-    width: 100%;
+    width: fit-content;
     max-width: 100%;
-    margin-inline: 0;
+    margin-inline: auto;
 }
 
 .investment-import-method-segmented[data-segmented-pill="measured"]::before {
@@ -5562,10 +5565,15 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         aspect-ratio: auto;
     }
 
-    .investment-view-segmented-frame,
-    .investment-view-segmented {
+    .investment-view-segmented-frame {
         width: 100%;
         max-width: none;
+    }
+
+    .investment-view-segmented {
+        width: fit-content;
+        max-width: 100%;
+        margin-inline: auto;
     }
 
     .investment-dummy-chart {

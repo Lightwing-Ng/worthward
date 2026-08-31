@@ -1,4 +1,4 @@
-{# Code version: v0.6.0 #}
+{# Code version: v0.6.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -29,7 +29,7 @@
                     </article>
                     <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card" data-layout-role="result-container">
                         {% if backtest_result or dca_result %}
-                            {{ render_investment_share_actions(shell_id='workspace_share_drawer_backtest', share_drawer='backtest', show_mask=false, capture_label='Save backtest screenshot', anchor_label='Export Transactions', anchor_title='Export Transactions') }}
+                            {{ render_investment_share_actions(shell_id='workspace_share_drawer_backtest', share_drawer='backtest', show_mask=false, capture_label='Save backtest screenshot', anchor_label='Export Transactions', anchor_title='Export Transactions', placement='summary-panel') }}
                             <div class="investment-surface-stack investment-view-surface backtest-view-surface" id="backtest_view_surface" data-active-view="overview">
                                 <div class="investment-view-surface-body backtest-view-surface-body" id="backtest_view_surface_body">
                                     <div id="backtest_overview_panel" data-backtest-view-panel="overview">
