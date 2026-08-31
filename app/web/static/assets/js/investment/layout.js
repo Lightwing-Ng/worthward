@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.1.4
+ * Code version: v1.2.0
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.1.4';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.2.0';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -52,6 +52,8 @@ export function bindInvestmentSectionResizer({
     historyTableSelector = '#history_table_wrap',
     reservePrimaryHistoryMinimum = false,
     overviewStageSelector = '.investment-equity-chart-stage',
+    getOverviewStageMinimum = () => 0,
+    overviewMinimumChangeEvent = null,
     windowRef = globalThis.window,
     documentRef = globalThis.document,
     HTMLElementClass = globalThis.HTMLElement,
@@ -130,19 +132,32 @@ export function bindInvestmentSectionResizer({
             '--investment-overview-content-min-height',
             0,
         );
+        const requestedDynamicStageMinimum = typeof getOverviewStageMinimum === 'function'
+            ? Number(getOverviewStageMinimum())
+            : 0;
+        const dynamicStageMinimum = Number.isFinite(requestedDynamicStageMinimum)
+            ? Math.max(0, requestedDynamicStageMinimum)
+            : 0;
         const stage = reportCard.querySelector(overviewStageSelector);
         if (!isVisibleElement(stage)) {
-            return Math.max(holdingsMinimumHeight, declaredContentMinimum);
+            return Math.max(
+                holdingsMinimumHeight,
+                declaredContentMinimum,
+                dynamicStageMinimum,
+            );
         }
         const reportHeight = reportCard.getBoundingClientRect().height;
         const stageHeight = stage.getBoundingClientRect().height;
         if (reportHeight > 0 && stageHeight > 0 && reportHeight >= stageHeight) {
             overviewChromeHeight = Math.max(overviewChromeHeight, reportHeight - stageHeight);
         }
-        const stageMinimum = readPixelProperty(
-            stage,
-            'min-height',
-            readPixelProperty(workspaceHeader, '--investment-equity-stage-min-height', 180),
+        const stageMinimum = Math.max(
+            readPixelProperty(
+                stage,
+                'min-height',
+                readPixelProperty(workspaceHeader, '--investment-equity-stage-min-height', 180),
+            ),
+            dynamicStageMinimum,
         );
         return Math.max(
             holdingsMinimumHeight,
@@ -336,11 +351,18 @@ export function bindInvestmentSectionResizer({
     mutationObserver?.observe(historySurface, {childList: true, subtree: true});
     scheduleRatioReflow();
     windowRef.addEventListener('resize', scheduleRatioReflow, {passive: true});
+    const onOverviewMinimumChange = () => scheduleRatioReflow();
+    if (typeof overviewMinimumChangeEvent === 'string' && overviewMinimumChangeEvent) {
+        workspaceHeader.addEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);
+    }
     const cleanup = () => {
         unbind();
         observer?.disconnect();
         mutationObserver?.disconnect();
         windowRef.removeEventListener('resize', scheduleRatioReflow);
+        if (typeof overviewMinimumChangeEvent === 'string' && overviewMinimumChangeEvent) {
+            workspaceHeader.removeEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);
+        }
         if (resizeFrame) windowRef.cancelAnimationFrame(resizeFrame);
         if (chartResizeFrame) windowRef.cancelAnimationFrame(chartResizeFrame);
     };

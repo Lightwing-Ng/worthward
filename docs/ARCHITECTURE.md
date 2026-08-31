@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.61.0`
+Documentation version: `v1.62.0`
 
 ## Holdings P&L display contract
 
@@ -228,7 +228,7 @@ Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dic
 
 The probability field is not a Frosted Glass consumer. Its strategy-private material uses a 50%-transparent background, which is `alpha: 0.50` under the CSS alpha convention, and explicitly disables background images, blur, borders, and shadows. Standard Frosted Glass tokens and every other material consumer remain unchanged. For one hover instant, let the finite clamped raw posterior cell masses be `p`, `m = max(p)`, the relative masses be `r = p / m`, and the relative baseline be `b = max(min(r), tailRatio)`. The default strategy owns `tailRatio = 0.02` and `exponent = 1.6`. When `m > 0` and `1 - b > 0`, each display intensity is `u = clamp((r - b) / (1 - b), 0, 1)` and its opacity is `u ^ exponent`; the exact maximum is forced to `1`. The ratio-space construction remains invariant when a valid probability field is multiplied by a positive finite scale, including extremely small probability magnitudes. Values at or below the instantaneous baseline are `0`, so every nonconstant field has its own fully opaque winner and invisible tail. An all-zero field remains entirely invisible, while an equal positive field preserves all tied winners rather than inventing a ranking. Raw posterior masses remain unchanged in the cell data and title, and this display-only contrast mapping does not affect model output. Cell opacity has no temporal CSS transition, preventing the prior hover's visible tail from leaking into the new instant. The field always remains to the right of its vertical guide and retains one stable width while the pointer moves. If its right edge exceeds the visible chart stack, the stack derives the exact missing floating visual distance `V` and reuses Motion Core's bouncy spring to reach it. The browser-native rail uses the sufficient integer physical offset `P = ceil(V)`; the controller applies `C = P - V` to both chart panels, the crosshair, the summary tooltip, and the probability tooltip, so their shared visual position is exactly `V` and their 1:1 curve/grid relationship is unchanged. Content-space calculations use `V`, not physical `scrollLeft`; a manual rail position may move left naturally, but its rightmost visual position clamps to the current exact target. The target requires both field edges to remain inside the stack, so the field is fully visible rather than merely right-aligned. The native horizontal scrollbar exists only while that extent is needed and is absolutely positioned inside the existing 12 px Backtest section-resizer grid slot, without changing the measured chart-stack, Canvas, or probability-grid dimensions. The resizer keeps its measurable 12 px geometry for the layout contract but is non-interactive for pointer and keyboard input while the scrollbar is active. The native surface never uses the accent scrollbar token. Returning to a fitting point, hiding the field, clearing the pinned state, or destroying the controller springs back to zero, removes the temporary extent, and restores resizer interaction.
 
-The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each side independently to `min(10, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`. Grid cells use a 1 px logical gap when the valid slot permits it; the same 1 px inset separates the vertical guide from the first column. They map their top and bottom pixels through the live Y scale to exact price intervals and map horizontally to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It retains the 2 px cell radius, 10 px outer radius, 8 px top, bottom, and trailing padding, and strategy-private `alpha: 0.50` non-blurred, borderless, shadowless material. This material has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
+The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each side independently to `min(10, floor(the relevant chart-boundary distance in complete cell slots))`; there is no half-plot ceiling. Grid cells use a 1 px logical gap when the valid slot permits it; the same 1 px inset separates the vertical guide from the first column. They map their top and bottom pixels through the live Y scale to exact price intervals and map horizontally to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It retains the 2 px cell radius, 10 px outer radius, 8 px top, bottom, and trailing padding, and strategy-private `alpha: 0.50` non-blurred, borderless, shadowless material. This material has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
 
 The model's `Bayesian realized-cell score` and `Bayesian lattice coverage` are causal, post-hoc diagnostics for the separate log-return scoring lattice: horizons 1 through 20, with up to 10 rows on each side. They are not a frequency or hit rate for the browser's viewport-quantized 20-column grid, whose time slots depend on the live Chart.js geometry. The strategy exports both lattice descriptions so consumers cannot conflate them. Neither diagnostic is a model feature, a signal input, or a cache key.
 
@@ -591,17 +591,24 @@ assembled browser behavior.
 
 Every current probability field renders 20 columns and starts with up to 10
 rows independently on each side of the price guide. Each side is bounded by
-`min(10, floor(50% of the current vertical plot height in complete slots),
-floor(its chart-boundary distance in complete slots))`, so an edge-adjacent
-guide retains every cell that fits on the opposite side. The 1 px requested
-cell gap is preserved when possible and also separates the vertical guide from
-the first column; 2 px cell radii sit inside the 10 px outer radius with 8 px
-top, bottom, and trailing padding. The private material has
-`alpha: 0.50`, no blur, no border, and no shadow, independently of Frosted
-Glass. Cells are square with exact live-Y price intervals and an integer number
-of trading days per column; the field can therefore span more than 20 trading
-days without a time or price offset. The guide remains the exact zero-return
-boundary and no future observations choose the rendering lattice.
+`min(10, floor(its chart-boundary distance in complete slots))`; an edge-adjacent
+guide retains every cell that fits on the opposite side, and no half-plot cap
+discards it. `computeGridMinimumPlotHeight` derives the needed plot height from
+the actual quantized horizontal cell size. Backtest publishes that private stage
+minimum to the generic split-resizer callback, which applies it at desktop and
+narrow widths without encoding Bayesian rules in Investment. The minimum is
+calibrated to the nearest forecastable curve point within 10% of the plot
+midpoint, so a real center hover keeps 10 rows above and below. A true viewport
+constraint may reduce rows through the same boundary-fit calculation, never by
+compressing a cell, gap, or bar slot. The 1 px requested cell gap is preserved
+when possible and also separates the vertical guide from the first column; 2 px
+cell radii sit inside the 10 px outer radius with 8 px top, bottom, and trailing
+padding. The private material has `alpha: 0.50`, no blur, no border, and no
+shadow, independently of Frosted Glass. Cells are square with exact live-Y price
+intervals and an integer number of trading days per column; the field can
+therefore span more than 20 trading days without a time or price offset. The
+guide remains the exact zero-return boundary and no future observations choose
+the rendering lattice.
 
 The post-hoc field diagnostics are `realized_cell_score_pct` and
 `lattice_coverage_pct`. They score the causal model log-return lattice over

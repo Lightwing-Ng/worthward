@@ -1,12 +1,14 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.1.6
+ * Code version: v0.2.0
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.1.4';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.2.0';
 
 const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';
+const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'antigravity:backtest-probability-stage-minimum-change';
 let cleanupBacktestLayout = () => {};
 
 export function initBacktestLayout() {
@@ -28,6 +30,14 @@ export function initBacktestLayout() {
             })
             .filter(Boolean)
     );
+    const getProbabilityStageMinimum = () => {
+        if (!(workspaceHeader instanceof HTMLElement)) return 0;
+        const value = Number.parseFloat(
+            window.getComputedStyle(workspaceHeader)
+                .getPropertyValue(PROBABILITY_STAGE_MINIMUM_PROPERTY),
+        );
+        return Number.isFinite(value) ? Math.max(0, value) : 0;
+    };
 
     cleanupBacktestLayout = bindInvestmentSectionResizer({
         workspaceHeader,
@@ -38,6 +48,8 @@ export function initBacktestLayout() {
         reservePrimaryHistoryMinimum: true,
         overviewStageSelector: '.trade-chart-stack',
         getChartInstances: getBacktestCharts,
+        getOverviewStageMinimum: getProbabilityStageMinimum,
+        overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,
     });
     return cleanupBacktestLayout;
 }

@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.133.1
+ * Code version: v2.133.2
  * - Added: Shared split layouts can honor a workspace-declared total overview
  *   content minimum before nested chart chrome has a measurable first frame.
  * - Changed: Stock-details and Overview y-axis badges load the shared chart-axis
@@ -408,7 +408,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.1.4';
+} from './investment/layout.js?v=investment-layout-v1.2.0';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -432,7 +432,7 @@ import {
 const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.133.1',
+    entry: 'v2.133.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

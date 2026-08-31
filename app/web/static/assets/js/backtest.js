@@ -1,9 +1,11 @@
-/* Code version: v0.21.0 */
+/* Code version: v0.22.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
 	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 	const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID || {};
+	const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";
+	const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "antigravity:backtest-probability-stage-minimum-change";
 
 	const readThemeToken = (computed, tokenName) => (
 		typeof chartAxis.readThemeToken === "function"
@@ -388,6 +390,17 @@
 		const resultsStack = document.querySelector(
 			".backtest-results-stack.investment-workspace-header",
 		);
+		const clearProbabilityStageMinimum = () => {
+			if (!(resultsStack instanceof HTMLElement)) return;
+			const hadMinimum = Boolean(
+				resultsStack.style.getPropertyValue(PROBABILITY_STAGE_MINIMUM_PROPERTY),
+			);
+			resultsStack.style.removeProperty(PROBABILITY_STAGE_MINIMUM_PROPERTY);
+			delete resultsStack.dataset.backtestProbabilityStageMinimum;
+			if (hadMinimum) {
+				resultsStack.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));
+			}
+		};
 		const resetProbabilityScrollPort = () => {
 			resultsStack?.classList.remove("has-probability-scrollport");
 			const scrollPort = resultsStack?.querySelector("[data-backtest-probability-scrollport]");
@@ -405,6 +418,7 @@
 		const state = window.ANTIGRAVITY_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
 			resultsStack?.classList.remove("has-probability-field");
+			clearProbabilityStageMinimum();
 			resetProbabilityScrollPort();
 			return;
 		}
@@ -413,6 +427,7 @@
 		const equityCanvas = document.getElementById("tradeEquityChart");
 		if (!priceCanvas || !equityCanvas) {
 			resultsStack?.classList.remove("has-probability-field");
+			clearProbabilityStageMinimum();
 			resetProbabilityScrollPort();
 			return;
 		}
@@ -441,7 +456,10 @@
 			)
 			: null;
 		resultsStack?.classList.toggle("has-probability-field", Boolean(strategyPresentation));
-		if (!strategyPresentation) resetProbabilityScrollPort();
+		if (!strategyPresentation) {
+			clearProbabilityStageMinimum();
+			resetProbabilityScrollPort();
+		}
 		
 		const interval = backtestResult.interval || "1d";
 		const rawTimestamps = rawDates.map((value) => {
@@ -516,7 +534,10 @@
 
 		const fixedYAxisWidth = 72;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
-		if (!tradeChartStack) return;
+		if (!tradeChartStack) {
+			clearProbabilityStageMinimum();
+			return;
+		}
 		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
 		const probabilityScrollPort = strategyPresentation
 			? resultsStack?.querySelector("[data-backtest-probability-scrollport]")
@@ -644,6 +665,91 @@
 		let pinState = {mode: "tracking", activeIndex: null};
 		let priceChart;
 		let equityChart;
+		const publishProbabilityStageMinimum = () => {
+			if (
+				!strategyPresentation
+				|| !(resultsStack instanceof HTMLElement)
+				|| !priceChart?.chartArea
+			) {
+				clearProbabilityStageMinimum();
+				return;
+			}
+			const pricePoints = priceChart.getDatasetMeta?.(0)?.data || [];
+			const stepPixels = probabilityGridApi.resolveDatasetStepPixels?.(pricePoints, 0);
+			if (!(stepPixels > 0)) return;
+			const requirement = probabilityGridApi.computeGridMinimumPlotHeight?.({
+				chartArea: priceChart.chartArea,
+				columnCount: strategyPresentation.columns,
+				gapPx: strategyPresentation.gap_px,
+				minCellPx: strategyPresentation.min_cell_px,
+				paddingPx: strategyPresentation.padding_px,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
+				stepPixels,
+				widthFraction: strategyPresentation.width_fraction,
+			});
+			if (!requirement) return;
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const stackRect = tradeChartStack.getBoundingClientRect();
+			const chartHeight = Number(priceChart.height);
+			const chartAreaHeight = Number(priceChart.chartArea.bottom)
+				- Number(priceChart.chartArea.top);
+			if (
+				!(canvasRect.height > 0)
+				|| !(stackRect.height > 0)
+				|| !(chartHeight > 0)
+				|| !(chartAreaHeight > 0)
+			) return;
+			const canvasScaleY = canvasRect.height / chartHeight;
+			const currentPlotHeight = chartAreaHeight * canvasScaleY;
+			const chartAreaCenterY = (
+				Number(priceChart.chartArea.top) + Number(priceChart.chartArea.bottom)
+			) / 2;
+			const centralAnchor = pricePoints.reduce((closest, point, index) => {
+				const mean = strategyPresentation.predictive_mean?.[index];
+				const scale = strategyPresentation.predictive_scale?.[index];
+				const pointY = Number(point?.y);
+				if (
+					mean === null || mean === undefined
+					|| scale === null || scale === undefined
+					|| !Number.isFinite(pointY)
+					|| !(Number(scale) > 0)
+				) return closest;
+				const distance = Math.abs(pointY - chartAreaCenterY);
+				return !closest || distance < closest.distance
+					? {distance, pointY}
+					: closest;
+			}, null);
+			const centerOffsetRatio = centralAnchor
+				? centralAnchor.distance / chartAreaHeight
+				: Number.POSITIVE_INFINITY;
+			// Reserve for a real forecastable curve point near the visual midpoint,
+			// not only an imaginary mathematically centered guide. Off-center and
+			// edge hovers remain governed by their own chart boundary.
+			const minimumBoundaryRatio = centerOffsetRatio <= 0.1
+				? Math.max(0.01, 0.5 - centerOffsetRatio)
+				: 0.5;
+			const requiredChartAreaHeight = requirement.chartAreaMinimumHeight
+				/ (2 * minimumBoundaryRatio);
+			const requiredPlotHeight = requiredChartAreaHeight * canvasScaleY;
+			const chartChromeHeight = Math.max(0, canvasRect.height - currentPlotHeight);
+			const pricePanelShare = canvasRect.height / stackRect.height;
+			if (!(pricePanelShare > 0)) return;
+			const stageMinimum = Math.ceil(
+				(requiredPlotHeight + chartChromeHeight) / pricePanelShare,
+			);
+			if (!Number.isFinite(stageMinimum) || !(stageMinimum > 0)) return;
+			const priorMinimum = Number.parseFloat(
+				resultsStack.style.getPropertyValue(PROBABILITY_STAGE_MINIMUM_PROPERTY),
+			);
+			if (Number.isFinite(priorMinimum) && Math.abs(priorMinimum - stageMinimum) < 1) return;
+			resultsStack.style.setProperty(
+				PROBABILITY_STAGE_MINIMUM_PROPERTY,
+				`${stageMinimum}px`,
+			);
+			resultsStack.dataset.backtestProbabilityStageMinimum = String(stageMinimum);
+			resultsStack.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));
+		};
 		const documentController = new AbortController();
 		const controllerAnimationFrames = new Set();
 		const controllerTaskCleanups = [];
@@ -1877,6 +1983,7 @@
 			priceChartYPadding,
 		);
 		priceChart.update("none");
+		publishProbabilityStageMinimum();
 		const scheduleChartLayoutRefresh = () => {
 			if (layoutFrameId !== null || controllerDestroyed) return;
 			layoutFrameId = requestControllerAnimationFrame(() => {
@@ -1915,6 +2022,7 @@
 					priceChart.update("none");
 					if (showTradeDetails) equityChart.update("none");
 				}
+				publishProbabilityStageMinimum();
 			});
 		};
 		if (typeof ResizeObserver === "function") {
@@ -1974,6 +2082,7 @@
 				probabilityScrollLastTimestamp = null;
 				setProbabilityScrollPosition(0);
 				setProbabilityScrollPortActive(false);
+				clearProbabilityStageMinimum();
 				tradeChartStack.classList.remove("has-probability-field");
 				delete tradeChartStack.dataset.probabilityPanState;
 				delete tradeChartStack.dataset.probabilityPanTarget;

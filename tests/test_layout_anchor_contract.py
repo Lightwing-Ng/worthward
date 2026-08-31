@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.5.9
+Code version: v0.6.0
 """
 
 from pathlib import Path
@@ -277,7 +277,7 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         assert fragment not in backtest_script
 
 
-def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> None:
+def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() -> None:
     tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
@@ -390,10 +390,14 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const gap = requestedGap;",
         "const slotWidth = daysPerColumn * normalizedStepPixels;",
         "const cellSize = slotWidth - gap;",
-        "const availableRowsWithinHalfPlot = rowsThatFit(",
-        "MAX_VERTICAL_PLOT_FRACTION",
-        "const availableRowsPerSide = Math.min(",
+        "const availableRowsPerSide = MAX_ROWS_PER_SIDE;",
         "MAX_ROWS_PER_SIDE",
+        "const computeGridMinimumPlotHeight = ({",
+        "const geometry = computeGridGeometry({",
+        "const halfHeight = computeMaximumGridHalfHeight({",
+        "maxCellPx: geometry.cellSize,",
+        "chartAreaMinimumHeight: 2 * halfHeight,",
+        "const requestedCellSize = finiteOrNull(maxCellPx);",
         "requestedGap,",
         "const horizon = (visualColumn + 1) * daysPerColumn;",
         "const opacityProfile = computeInstantOpacityProfile(",
@@ -412,6 +416,8 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
         "const MAX_ROWS_BELOW",
         "normalizeRows(rowsAbove, rowsBelow)",
         "boundedInteger(value.columns, DEFAULT_COLUMN_COUNT, GEOMETRY_LIMITS.columns)",
+        "MAX_VERTICAL_PLOT_FRACTION",
+        "availableRowsWithinHalfPlot",
     ):
         assert fragment not in probability_grid
 
@@ -432,8 +438,54 @@ def test_bayesian_backtest_reserves_a_readable_fresh_narrow_chart_stage() -> Non
     assert 'data-backtest-probability-scrollport' in backtest_template
 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
+    for fragment in (
+        "const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';",
+        "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'antigravity:backtest-probability-stage-minimum-change';",
+        "const getProbabilityStageMinimum = () => {",
+        "getOverviewStageMinimum: getProbabilityStageMinimum,",
+        "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
+        "investment-layout-v1.2.0",
+    ):
+        assert fragment in backtest_layout
+
+    for fragment in (
+        'const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";',
+        'const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "antigravity:backtest-probability-stage-minimum-change";',
+        "const publishProbabilityStageMinimum = () => {",
+        "probabilityGridApi.computeGridMinimumPlotHeight?.({",
+        "const centralAnchor = pricePoints.reduce((closest, point, index) => {",
+        "const centerOffsetRatio = centralAnchor",
+        "const minimumBoundaryRatio = centerOffsetRatio <= 0.1",
+        "const requiredChartAreaHeight = requirement.chartAreaMinimumHeight",
+        "const requiredPlotHeight = requiredChartAreaHeight * canvasScaleY;",
+        "const pricePanelShare = canvasRect.height / stackRect.height;",
+        "resultsStack.style.setProperty(",
+        "resultsStack.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));",
+        "clearProbabilityStageMinimum();",
+    ):
+        assert fragment in backtest_script
+
     investment_layout = _read(ASSET_ROOT / "js/investment/layout.js")
-    assert "'--investment-overview-content-min-height'" in investment_layout
+    for fragment in (
+        "getOverviewStageMinimum = () => 0,",
+        "overviewMinimumChangeEvent = null,",
+        "const requestedDynamicStageMinimum = typeof getOverviewStageMinimum === 'function'",
+        "const dynamicStageMinimum = Number.isFinite(requestedDynamicStageMinimum)",
+        "dynamicStageMinimum,",
+        "overviewMinimumChangeEvent",
+        "workspaceHeader.addEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
+        "workspaceHeader.removeEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
+        "'--investment-overview-content-min-height'",
+    ):
+        assert fragment in investment_layout
+
+    base_template = _read(TEMPLATE_ROOT / "base.html")
+    for fragment in (
+        "-backtest-probability-grid-v0.16.0",
+        "-backtest-v0.22.0",
+        "-backtest-layout-v0.2.0",
+    ):
+        assert fragment in base_template
 
 
 def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_intro() -> None:

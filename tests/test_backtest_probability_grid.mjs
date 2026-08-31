@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.15.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.16.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,7 +35,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.15.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.16.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -219,15 +219,14 @@ test('quantizes 20 columns below the preferred quarter width when complete day s
     assert.ok(geometry.width + (geometry.columnCount * geometry.stepPixels) > geometry.widthTarget);
 });
 
-test('floors each side within the ten-row ceiling, half plot height, and its boundary', () => {
+test('uses only each chart boundary to floor the ten-row ceiling', () => {
     const centered = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
         anchorX: 200,
         anchorY: 120,
         stepPixels: 6,
     });
-    assert.equal(centered.availableRowsWithinHalfPlot, 9);
-    assert.equal(centered.availableRowsPerSide, 9);
+    assert.equal(centered.availableRowsPerSide, 10);
     assert.equal(centered.rowsAbove, 9);
     assert.equal(centered.rowsBelow, 9);
     assert.equal(centered.gap, 1);
@@ -237,7 +236,6 @@ test('floors each side within the ten-row ceiling, half plot height, and its bou
     const completeRows = (distance) => Math.floor(
         ((distance - centered.padding + (centered.gap / 2)) / centered.slotWidth) + 1e-9,
     );
-    assert.equal(centered.availableRowsWithinHalfPlot, completeRows(120));
     assert.equal(centered.availableRowsAbove, completeRows(120));
     assert.equal(centered.availableRowsBelow, completeRows(120));
 
@@ -247,13 +245,24 @@ test('floors each side within the ten-row ceiling, half plot height, and its bou
         anchorY: 20,
         stepPixels: 6,
     });
-    assert.equal(nearTop.availableRowsPerSide, 9);
+    assert.equal(nearTop.availableRowsPerSide, 10);
     assert.equal(nearTop.rowsAbove, 1);
-    assert.equal(nearTop.rowsBelow, 9);
+    assert.equal(nearTop.rowsBelow, 10);
     assert.ok(nearTop.top >= 0);
     assert.ok(nearTop.top + nearTop.height <= 240);
     assert.equal(nearTop.availableRowsAbove, completeRows(20));
     assert.equal(nearTop.availableRowsBelow, completeRows(220));
+
+    const nearBottom = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 220,
+        stepPixels: 6,
+    });
+    assert.equal(nearBottom.rowsAbove, 10);
+    assert.equal(nearBottom.rowsBelow, 1);
+    assert.equal(nearBottom.availableRowsAbove, completeRows(220));
+    assert.equal(nearBottom.availableRowsBelow, completeRows(20));
 
     const shortPlot = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 80},
@@ -261,9 +270,75 @@ test('floors each side within the ten-row ceiling, half plot height, and its bou
         anchorY: 40,
         stepPixels: 6,
     });
-    assert.equal(shortPlot.availableRowsWithinHalfPlot, 2);
+    assert.equal(shortPlot.availableRowsPerSide, 10);
     assert.equal(shortPlot.rowsAbove, 2);
     assert.equal(shortPlot.rowsBelow, 2);
+});
+
+test('derives the resizer plot minimum from the same quantized horizontal lattice', () => {
+    const probe = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 600},
+        anchorX: 200,
+        anchorY: 300,
+        stepPixels: 6,
+    });
+    const minimum = grid.computeGridMinimumPlotHeight({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 600},
+        widthFraction: 0.25,
+        gapPx: 1,
+        paddingPx: 8,
+        minCellPx: 4,
+        rowsAbove: 10,
+        rowsBelow: 10,
+        stepPixels: 6,
+    });
+    assert.ok(minimum);
+    assert.equal(minimum.cellSize, probe.cellSize);
+    assert.equal(minimum.columnCount, 20);
+    assert.equal(minimum.daysPerColumn, probe.daysPerColumn);
+    assert.equal(minimum.slotWidth, probe.slotWidth);
+    assert.equal(minimum.chartAreaMinimumHeight, 255);
+    assert.equal(
+        minimum.chartAreaMinimumHeight,
+        2 * grid.computeMaximumGridHalfHeight({
+            rowsAbove: 10,
+            rowsBelow: 10,
+            gapPx: probe.gap,
+            paddingPx: probe.padding,
+            maxCellPx: probe.cellSize,
+        }),
+    );
+
+    const fitting = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: minimum.chartAreaMinimumHeight},
+        anchorX: 200,
+        anchorY: minimum.chartAreaMinimumHeight / 2,
+        stepPixels: 6,
+    });
+    assert.equal(fitting.rowsAbove, 10);
+    assert.equal(fitting.rowsBelow, 10);
+    assert.equal(fitting.cellSize, minimum.cellSize);
+});
+
+test('preserves an integer bar lattice for daily and generic minute-scale spacing', () => {
+    const scenarios = [
+        {name: 'daily', stepPixels: 6},
+        {name: 'minute-scale', stepPixels: 0.5},
+    ];
+    scenarios.forEach(({name, stepPixels}) => {
+        const geometry = grid.computeGridGeometry({
+            chartArea: {left: 0, right: 1200, top: 0, bottom: 600},
+            anchorX: 200,
+            anchorY: 300,
+            stepPixels,
+        });
+        assert.equal(geometry.columnCount, 20, name);
+        assert.ok(Number.isInteger(geometry.daysPerColumn), name);
+        assert.ok(geometry.daysPerColumn >= 1, name);
+        assert.equal(geometry.slotWidth / geometry.stepPixels, geometry.daysPerColumn, name);
+        assert.equal(geometry.cellSize + geometry.gap, geometry.slotWidth, name);
+        assert.ok(geometry.cellSize >= 4, name);
+    });
 });
 
 test('keeps a stable rightward width across hover anchors', () => {
@@ -357,6 +432,13 @@ test('reserves the maximum symmetric half-height around an extreme price anchor'
         paddingPx: 6,
         maxCellPx: 8,
     }), 25);
+    assert.equal(grid.computeMaximumGridHalfHeight({
+        rowsAbove: 10,
+        rowsBelow: 10,
+        gapPx: 1,
+        paddingPx: 8,
+        maxCellPx: 128,
+    }), 1297.5);
 });
 
 test('derives one trading-step width from actual Chart.js dataset points', () => {

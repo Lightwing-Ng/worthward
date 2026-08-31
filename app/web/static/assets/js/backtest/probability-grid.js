@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.15.0
+ * Code version: v0.16.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -11,7 +11,6 @@
     const DEFAULT_ROWS_ABOVE = 10;
     const DEFAULT_ROWS_BELOW = 10;
     const MAX_ROWS_PER_SIDE = 10;
-    const MAX_VERTICAL_PLOT_FRACTION = 0.5;
     const DEFAULT_COLUMN_COUNT = 20;
     const DEFAULT_WIDTH_FRACTION = 0.25;
     const DEFAULT_GAP_PX = 1;
@@ -255,10 +254,8 @@
         // to every fixed column instead of shrinking the gap.
         const gap = requestedGap;
         const cellSize = slotWidth - gap;
-        // Count only complete cell slots. This keeps the row limit equivalent
-        // to flooring the smaller of the half-plot height and the relevant
-        // chart-edge distance, after reserving the field's vertical edge
-        // padding and its half-gap around the horizontal guide.
+        // Count only complete cell slots after reserving the field's vertical
+        // edge padding and its half-gap around the horizontal guide.
         const rowsThatFit = (distance) => {
             const numerator = Number(distance) - padding + (gap / 2);
             if (!(numerator > 0) || !(cellSize + gap > 0)) return 0;
@@ -266,16 +263,11 @@
         };
         const availableRowsAbove = rowsThatFit(y - top);
         const availableRowsBelow = rowsThatFit(bottom - y);
-        const availableRowsWithinHalfPlot = rowsThatFit(
-            (bottom - top) * MAX_VERTICAL_PLOT_FRACTION,
-        );
-        // Each side is bounded by the fixed ten-row ceiling and half of the
-        // current plot height. Its own chart boundary applies independently,
-        // so a guide near an edge keeps the available opposite-side cells.
-        const availableRowsPerSide = Math.min(
-            MAX_ROWS_PER_SIDE,
-            availableRowsWithinHalfPlot,
-        );
+        // The fixed ten-row ceiling applies independently to each chart
+        // boundary. A guide near the top must not discard bottom rows simply
+        // because its opposite side is short; only the relevant real edge may
+        // crop a side.
+        const availableRowsPerSide = MAX_ROWS_PER_SIDE;
         const normalizedRowsAbove = Math.min(
             requestedRowsAbove,
             availableRowsPerSide,
@@ -313,7 +305,6 @@
             availableRowsBelow,
             aboveExtent,
             availableRowsPerSide,
-            availableRowsWithinHalfPlot,
             belowExtent,
             gridPaddingInlineStart,
             gridPaddingTop: padding,
@@ -350,7 +341,13 @@
         const symmetricRows = normalizeSymmetricRows(rowsAbove, rowsBelow);
         const gap = boundedNumber(gapPx, DEFAULT_GAP_PX, GEOMETRY_LIMITS.gap);
         const padding = boundedNumber(paddingPx, DEFAULT_PADDING_PX, GEOMETRY_LIMITS.padding);
-        const cellSize = boundedNumber(maxCellPx, DEFAULT_MAX_CELL_PX, [1, 64]);
+        const requestedCellSize = finiteOrNull(maxCellPx);
+        // This helper receives the actual horizontal lattice cell size from
+        // computeGridGeometry. Do not clip it: an upper cap would silently
+        // underestimate the overview minimum on a wide plot.
+        const cellSize = requestedCellSize !== null && requestedCellSize > 0
+            ? Math.max(1, requestedCellSize)
+            : DEFAULT_MAX_CELL_PX;
         const sideExtent = (rowCount, oppositeRowCount) => rowCount > 0
             ? padding + (rowCount * cellSize) + ((rowCount - 1) * gap)
                 + (oppositeRowCount > 0 ? gap / 2 : 0)
@@ -359,6 +356,60 @@
             sideExtent(symmetricRows.rowsAbove, symmetricRows.rowsBelow),
             sideExtent(symmetricRows.rowsBelow, symmetricRows.rowsAbove),
         );
+    };
+
+    const computeGridMinimumPlotHeight = ({
+        chartArea,
+        widthFraction = DEFAULT_WIDTH_FRACTION,
+        gapPx = DEFAULT_GAP_PX,
+        paddingPx = DEFAULT_PADDING_PX,
+        minCellPx = DEFAULT_MIN_CELL_PX,
+        rowsAbove = DEFAULT_ROWS_ABOVE,
+        rowsBelow = DEFAULT_ROWS_BELOW,
+        columnCount = DEFAULT_COLUMN_COUNT,
+        stepPixels,
+    } = {}) => {
+        const top = Number(chartArea?.top);
+        const bottom = Number(chartArea?.bottom);
+        const left = Number(chartArea?.left);
+        const right = Number(chartArea?.right);
+        if (![top, bottom, left, right].every(Number.isFinite) || right <= left || bottom <= top) {
+            return null;
+        }
+        // Probe the existing renderer at the vertical midpoint so the overview
+        // contract inherits its exact quantized bar lattice rather than copying
+        // any width, slot, or cell-size arithmetic.
+        const geometry = computeGridGeometry({
+            chartArea,
+            anchorX: left,
+            anchorY: (top + bottom) / 2,
+            widthFraction,
+            gapPx,
+            paddingPx,
+            minCellPx,
+            rowsAbove,
+            rowsBelow,
+            columnCount,
+            stepPixels,
+        });
+        if (!geometry) return null;
+        const halfHeight = computeMaximumGridHalfHeight({
+            rowsAbove,
+            rowsBelow,
+            gapPx: geometry.gap,
+            paddingPx: geometry.padding,
+            maxCellPx: geometry.cellSize,
+        });
+        return Object.freeze({
+            cellSize: geometry.cellSize,
+            chartAreaMinimumHeight: 2 * halfHeight,
+            columnCount: geometry.columnCount,
+            daysPerColumn: geometry.daysPerColumn,
+            gap: geometry.gap,
+            padding: geometry.padding,
+            slotWidth: geometry.slotWidth,
+            stepPixels: geometry.stepPixels,
+        });
     };
 
     const resolveDatasetStepPixels = (points, anchorIndex) => {
@@ -575,7 +626,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.15.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.16.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -583,6 +634,7 @@
         RENDERER_ID,
         buildProbabilityCells,
         computeInstantOpacityProfile,
+        computeGridMinimumPlotHeight,
         computeMaximumGridHalfHeight,
         computeGridGeometry,
         isPointNearCurve,
