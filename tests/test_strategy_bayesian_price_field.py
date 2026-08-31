@@ -693,6 +693,12 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             changed_params,
             "bundle-a",
         )
+        unchanged_display_threshold = _frame_fingerprint(
+            frame,
+            factors,
+            {**params, "cell_display_threshold": 50.0},
+            "bundle-a",
+        )
         changed_ohlcv_frame = frame.copy()
         changed_ohlcv_frame.loc[10, "High"] += 0.01
         changed_ohlcv_factors = _build_factor_columns(
@@ -729,6 +735,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             ),
             5,
         )
+        self.assertEqual(unchanged_display_threshold, baseline)
 
     def test_presentation_contains_only_finite_probability_values(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(

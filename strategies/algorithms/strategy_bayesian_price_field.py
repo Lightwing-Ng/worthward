@@ -109,6 +109,7 @@ _MIN_NOISE_VARIANCE = 1e-8
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
+_PRESENTATION_ONLY_PARAMETER_KEYS = frozenset({"cell_display_threshold"})
 
 
 @dataclass(frozen=True)
@@ -1291,7 +1292,11 @@ def _frame_fingerprint(
         {
             "bundle_fingerprint": str(bundle_fingerprint or ""),
             "model_version": _MODEL_VERSION,
-            "params": params,
+            "params": {
+                key: value
+                for key, value in params.items()
+                if key not in _PRESENTATION_ONLY_PARAMETER_KEYS
+            },
         },
         sort_keys=True,
         separators=(",", ":"),
