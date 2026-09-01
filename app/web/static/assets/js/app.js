@@ -1,4 +1,4 @@
-/* Code version: v0.48.3 */
+/* Code version: v0.49.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -127,6 +127,7 @@
     const SIDEBAR_MEMORY_KEY = "antigravity:sidebar-open";
     const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
     const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
+    const BACKTEST_STRATEGY_PARAMS_MEMORY_KEY = "antigravity:backtest-strategy-params:v1";
     let hasInitialResult = isBacktestView
         ? Boolean(isDcaStrategy ? state.dcaResult : state.backtestResult)
         : isDcaView
@@ -5087,7 +5088,9 @@
         if (parts.triggerLabel.dataset.fallbackLabel !== nextLabel) {
             parts.triggerLabel.dataset.fallbackLabel = nextLabel;
         }
-        if (parts.trigger.title !== nextLabel) parts.trigger.title = nextLabel;
+        const configuredTitle = String(parts.trigger.dataset.sharedSelectTitle || "").trim();
+        const nextTitle = configuredTitle || nextLabel;
+        if (parts.trigger.title !== nextTitle) parts.trigger.title = nextTitle;
         const strategyParam = field.closest("[data-strategy-param-key]");
         const fieldLabel = strategyParam?.querySelector(":scope > .trade-strategy-param-label .trade-strategy-param-label-trigger > span:first-child")?.textContent?.trim()
             || field.closest(".field")?.querySelector(":scope > label")?.textContent?.trim()
@@ -7822,7 +7825,117 @@
     let strategyFieldsRequestToken = 0;
     let pendingBacktestStrategyNavigation = false;
 
+    const readBacktestStrategyParamMemory = () => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(BACKTEST_STRATEGY_PARAMS_MEMORY_KEY) || "{}");
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            return Object.fromEntries(
+                Object.entries(parsed).flatMap(([strategyId, values]) => {
+                    if (!strategyId || !values || typeof values !== "object" || Array.isArray(values)) {
+                        return [];
+                    }
+                    const normalizedValues = Object.fromEntries(
+                        Object.entries(values).flatMap(([key, value]) => {
+                            const normalizedKey = String(key || "").trim();
+                            const normalizedValue = String(value ?? "").trim();
+                            return normalizedKey && normalizedValue
+                                ? [[normalizedKey, normalizedValue]]
+                                : [];
+                        }),
+                    );
+                    return Object.keys(normalizedValues).length
+                        ? [[strategyId, normalizedValues]]
+                        : [];
+                }),
+            );
+        } catch (_error) {
+            return {};
+        }
+    };
+
+    const writeBacktestStrategyParamMemory = (memory) => {
+        try {
+            localStorage.setItem(
+                BACKTEST_STRATEGY_PARAMS_MEMORY_KEY,
+                JSON.stringify(memory),
+            );
+        } catch (_error) {
+        }
+    };
+
+    const restoreBacktestStrategyParams = (
+        root,
+        strategyId,
+        {respectExplicitUrl = true} = {},
+    ) => {
+        if (!isBacktestView || !(root instanceof HTMLElement)) return false;
+        const normalizedStrategyId = String(strategyId || "").trim();
+        if (!normalizedStrategyId) return false;
+        const remembered = readBacktestStrategyParamMemory()[normalizedStrategyId];
+        if (!remembered || typeof remembered !== "object") return false;
+        const explicitParams = respectExplicitUrl
+            ? new URL(window.location.href).searchParams
+            : null;
+        let restored = false;
+        Object.entries(remembered).forEach(([key, value]) => {
+            const field = Array.from(root.querySelectorAll("[data-strategy-param-key]"))
+                .find((candidate) => candidate.dataset.strategyParamKey === key);
+            const control = field?.querySelector("[data-strategy-param-input][name]");
+            if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement)) {
+                return;
+            }
+            if (explicitParams?.has(control.name)) return;
+            const normalizedValue = String(value || "").trim();
+            if (!normalizedValue) return;
+            if (control.dataset.strategyParamInput === "select") {
+                if (!Array.from(control.options).some((option) => option.value === normalizedValue)) return;
+                if (control.value !== normalizedValue) {
+                    control.value = normalizedValue;
+                    restored = true;
+                }
+                refreshSharedSelectField(field);
+                return;
+            }
+            if (control.dataset.strategyParamInput === "boolean") {
+                const switchInput = field.querySelector("[data-strategy-param-switch]");
+                const onValue = control.dataset.switchOnValue || "1";
+                const offValue = control.dataset.switchOffValue || "0";
+                const nextChecked = normalizedValue === onValue
+                    ? true
+                    : normalizedValue === offValue
+                        ? false
+                        : null;
+                if (nextChecked === null) return;
+                const changed = control.value !== normalizedValue
+                    || (switchInput instanceof HTMLInputElement && switchInput.checked !== nextChecked);
+                control.value = normalizedValue;
+                if (switchInput instanceof HTMLInputElement) switchInput.checked = nextChecked;
+                restored = restored || changed;
+                return;
+            }
+            if (control.value !== normalizedValue) {
+                control.value = normalizedValue;
+                restored = true;
+            }
+        });
+        return restored;
+    };
+
+    const rememberBacktestStrategyParams = (strategyId = "") => {
+        if (!isBacktestView) return;
+        const normalizedStrategyId = String(
+            strategyId || document.getElementById("trade_strategy")?.value || state.selectedStrategyId || "",
+        ).trim();
+        if (!normalizedStrategyId) return;
+        const entries = collectStrategyParamEntries();
+        if (!entries.length) return;
+        const memory = readBacktestStrategyParamMemory();
+        memory[normalizedStrategyId] = Object.fromEntries(entries);
+        writeBacktestStrategyParamMemory(memory);
+    };
+
     const scheduleStrategyParamSubmit = (delay = 160) => {
+        rememberBacktestStrategyParams();
         if (!hasInitialResult) return;
         scheduleAutoSubmit(delay);
     };
@@ -8315,6 +8428,7 @@
             const payload = await response.json();
             if (requestToken !== strategyFieldsRequestToken) return;
             panel.innerHTML = payload.html || "";
+            restoreBacktestStrategyParams(panel, strategyId, {respectExplicitUrl: false});
             panel.querySelectorAll("[data-shared-select-field]").forEach((field) => initializeSharedSelectField(field));
             syncBacktestStrategyTickerContract(payload);
             initStrategyParamControls(panel);
@@ -8332,6 +8446,10 @@
         const refs = getTradeStrategyRefs();
         if (!(refs.field instanceof HTMLElement)) return;
         if (refs.field.dataset.tradeStrategyBound === "1") return;
+        const restored = restoreBacktestStrategyParams(
+            refs.field,
+            refs.select?.value || state.selectedStrategyId,
+        );
         initStrategyParamControls(refs.field);
         syncTradeStrategyTuningAvailability();
         if (refs.tuneButton instanceof HTMLButtonElement && !refs.tuneButton.disabled) {
@@ -8339,6 +8457,7 @@
         }
         syncTradeStrategyTriggerLabel();
         renderTradeStrategyDropdown();
+        if (restored) scheduleStrategyParamSubmit(0);
         refs.field.dataset.tradeStrategyBound = "1";
         if (refs.tuneButton instanceof HTMLButtonElement) {
             refs.tuneButton.addEventListener("click", () => {
@@ -8365,6 +8484,7 @@
             refs.select.addEventListener("change", async () => {
                 const {select} = getTradeStrategyRefs();
                 if (!(select instanceof HTMLSelectElement)) return;
+                rememberBacktestStrategyParams(state.selectedStrategyId);
                 syncStrategyOptionSelection(select, select.value);
                 syncTradeStrategyTriggerLabel();
                 renderTradeStrategyDropdown();
@@ -8504,6 +8624,8 @@
             }
             bootstrap.workspaceTablePage = 1;
             const nextUrl = buildCleanWorkspaceUrl();
+            const strategySelect = document.getElementById("trade_strategy");
+            rememberBacktestStrategyParams(strategySelect?.value);
             const currentUrlObj = new URL(window.location.href);
             const nextUrlObj = new URL(nextUrl, window.location.origin);
             currentUrlObj.searchParams.sort();
@@ -8534,7 +8656,6 @@
             setFormBusyState(true);
             rememberCurrentViewUrl(nextUrl);
 
-            const strategySelect = document.getElementById("trade_strategy");
             if (strategySelect) {
                 const strategyId = strategySelect.value;
                 if (strategyId && strategyId !== "buy-and-hold") {

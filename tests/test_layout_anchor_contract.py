@@ -500,15 +500,15 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.48.3",
-        "-backtest-probability-grid-v0.20.1",
-        "-backtest-v0.28.7",
+        "-app-v0.49.0",
+        "-backtest-probability-grid-v0.21.0",
+        "-backtest-v0.29.0",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
 
 
-def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None:
+def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None:
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
     pending_app = _read(ASSET_ROOT / "js/app.js")
@@ -547,6 +547,8 @@ def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None
         "const renderedTicks = xTickNodes.filter(Boolean);",
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
+        "const buildProbabilityDetailModel = (index, model) => {",
+        "limitRowsToChartArea: false,",
         "const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {",
         "const referenceWindow = rangeEnd - referenceStart;",
         "const hasFullReferenceWindow = (rangeEnd - rangeStart) >= (referenceWindow * 0.9);",

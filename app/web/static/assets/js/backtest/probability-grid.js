@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.20.1
+ * Code version: v0.21.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -198,6 +198,7 @@
         columnCount = DEFAULT_COLUMN_COUNT,
         stepPixels,
         cellSizeTargetPx = null,
+        limitRowsToChartArea = true,
     } = {}) => {
         const left = Number(chartArea?.left);
         const right = Number(chartArea?.right);
@@ -295,16 +296,20 @@
             MAX_ROWS_PER_SIDE,
             availableRowsWithinHalfPlot,
         );
-        const normalizedRowsAbove = Math.min(
-            requestedRowsAbove,
-            availableRowsPerSide,
-            availableRowsAbove,
-        );
-        const normalizedRowsBelow = Math.min(
-            requestedRowsBelow,
-            availableRowsPerSide,
-            availableRowsBelow,
-        );
+        const normalizedRowsAbove = limitRowsToChartArea
+            ? Math.min(
+                requestedRowsAbove,
+                availableRowsPerSide,
+                availableRowsAbove,
+            )
+            : requestedRowsAbove;
+        const normalizedRowsBelow = limitRowsToChartArea
+            ? Math.min(
+                requestedRowsBelow,
+                availableRowsPerSide,
+                availableRowsBelow,
+            )
+            : requestedRowsBelow;
         const sideCellExtent = (rowCount) => rowCount > 0
             ? (rowCount * cellSize)
                 + ((rowCount - 1) * gap)
@@ -723,7 +728,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.20.1",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.21.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

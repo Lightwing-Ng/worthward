@@ -1,6 +1,6 @@
 """Focused tests for the read-only Bayesian Longbridge factor provider.
 
-Code version: v1.6.1
+Code version: v1.7.0
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from threading import Event, Lock
 import unittest
 from unittest.mock import patch
+
+import pandas as pd
 
 from app.core.broker_settings import BrokerSettings
 from app.services import bayesian_market_factors as factors
@@ -45,6 +47,36 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             patch.object(factors, "CLI_MIN_INTERVAL_SECONDS", 0.0),
             patch.object(factors, "_utc_now", return_value=FIXED_NOW),
         )
+
+    def test_local_bundle_uses_existing_daily_store_without_provider_factors(self) -> None:
+        frame = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-08-27", "2026-08-28"]),
+            "Open": [9.0, 10.0],
+            "High": [11.0, 12.0],
+            "Low": [8.0, 9.0],
+            "Close": [10.0, 11.0],
+            "Volume": [1_000.0, 2_000.0],
+            "Turnover": [10_000.0, 22_000.0],
+        })
+        with patch("app.services.market_data.fetch_history", return_value=frame) as fetch:
+            bundle = factors.build_local_bayesian_factor_bundle(
+                "AAPL.US",
+                "2026-08-27",
+                "2026-08-28",
+            )
+
+        fetch.assert_called_once_with(
+            "AAPL",
+            include_dividends=False,
+            interval="1d",
+            dividend_mode="price",
+        )
+        self.assertEqual([bar.close for bar in bundle.ohlcv], [10.0, 11.0])
+        self.assertEqual(bundle.ohlcv[0].source, "local-market-store")
+        self.assertEqual(bundle.factor_status["ohlcv"], "available")
+        self.assertEqual(bundle.factor_status["pe"], "unavailable_point_in_time")
+        self.assertEqual(bundle.factor_status["options"], "unavailable")
+        self.assertEqual(bundle.source_commands, ("local-market-store:historical",))
 
     @staticmethod
     def _ohlcv_fetch_result(

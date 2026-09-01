@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.22.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.24.0."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
+from app.web.strategy_forms import build_strategy_form_field
 from strategies.algorithms.strategy_bayesian_price_field import (
     _MODEL_VERSION,
     _ComputeBackend,
@@ -221,11 +222,17 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(definitions["cell_display_threshold"].default, 5.0)
         self.assertEqual(definitions["cell_display_threshold"].minimum, 0.0)
         self.assertEqual(definitions["cell_display_threshold"].maximum, 50.0)
-        self.assertEqual(definitions["cell_display_threshold"].step, 0.1)
+        self.assertEqual(definitions["cell_display_threshold"].step, 0.01)
         self.assertEqual(definitions["cell_display_threshold"].unit_hint, "%")
+        threshold_field = build_strategy_form_field(
+            definitions["cell_display_threshold"],
+            2.5,
+        )
+        self.assertEqual(threshold_field["value"], "2.50")
         self.assertIn("presentation only", definitions["cell_display_threshold"].help_text)
-        self.assertIn("Auto uses NumPy CPU", definitions["compute_backend"].help_text)
-        self.assertIn("GPU explicitly requests Apple MPS", definitions["compute_backend"].help_text)
+        self.assertIn("CPU work with an available Apple MPS or CUDA GPU", definitions["compute_backend"].help_text)
+        self.assertIn("heterogeneous walk-forward computation", definitions["compute_backend"].help_text)
+        self.assertIn("GPU explicitly requests Apple MPS or CUDA", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
         self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.8.0")
 
@@ -1028,26 +1035,22 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertFalse(result.frame["buy_signal"].any())
         self.assertFalse(result.frame["sell_signal"].any())
 
-    def test_auto_and_cpu_backends_use_numpy_without_loading_torch(self) -> None:
-        for requested in ("Auto", "CPU"):
-            for system_name in ("Darwin", "Windows"):
-                with self.subTest(requested=requested, system=system_name):
-                    with (
-                        patch(
-                            "strategies.algorithms.strategy_bayesian_price_field._load_torch",
-                        ) as load_torch,
-                        patch(
-                            "strategies.algorithms.strategy_bayesian_price_field.platform.system",
-                            return_value=system_name,
-                        ) as platform_system,
-                    ):
-                        backend = _resolve_compute_backend(requested)
+    def test_cpu_backend_does_not_probe_torch(self) -> None:
+        with (
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field._load_torch",
+            ) as load_torch,
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field.platform.system",
+            ) as platform_system,
+        ):
+            backend = _resolve_compute_backend("CPU")
 
-                    self.assertEqual(backend.requested, requested)
-                    self.assertEqual(backend.resolved, "cpu")
-                    self.assertEqual(backend.engine, "numpy")
-                    load_torch.assert_not_called()
-                    platform_system.assert_not_called()
+        self.assertEqual(backend.requested, "CPU")
+        self.assertEqual(backend.resolved, "cpu")
+        self.assertEqual(backend.engine, "numpy")
+        load_torch.assert_not_called()
+        platform_system.assert_not_called()
 
     def test_gpu_backend_falls_back_to_cpu_without_torch(self) -> None:
         for system_name in ("Darwin", "Windows"):
@@ -1176,16 +1179,17 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 self.assertEqual(backend.resolved, expected_device)
                 self.assertEqual(backend.engine, "torch")
 
-    def test_auto_backend_presentation_reports_numpy_cpu_without_loading_torch(self) -> None:
+    def test_auto_backend_presentation_reports_numpy_cpu_without_accelerator(self) -> None:
         with patch(
             "strategies.algorithms.strategy_bayesian_price_field._load_torch",
+            return_value=None,
         ) as load_torch:
             result = BayesianPriceFieldStrategy().compute_signals(
                 _market_frame(),
                 _cpu_params(compute_backend="Auto"),
             )
 
-        load_torch.assert_not_called()
+        load_torch.assert_called_once_with()
         device = result.presentation["device"]
         self.assertEqual(
             {
@@ -1212,6 +1216,60 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             "cpu-process-pool" if device["parallel_workers"] > 1 else "cpu-serial",
         )
         self.assertEqual(result.metadata["compute_device"], "cpu")
+
+    def test_auto_backend_selects_gpu_for_heterogeneous_execution(self) -> None:
+        torch_module = SimpleNamespace(
+            backends=SimpleNamespace(
+                mps=SimpleNamespace(is_available=lambda: True),
+            ),
+            cuda=SimpleNamespace(is_available=lambda: True),
+        )
+        with (
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field._load_torch",
+                return_value=torch_module,
+            ),
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field.platform.system",
+                return_value="Darwin",
+            ),
+        ):
+            backend = _resolve_compute_backend("Auto")
+
+        self.assertEqual(backend.requested, "Auto")
+        self.assertEqual(backend.resolved, "mps")
+        self.assertEqual(backend.engine, "hybrid")
+        self.assertEqual(backend.numeric_precision, "float32")
+
+    def test_auto_backend_coordinates_cpu_and_gpu_origins(self) -> None:
+        frame = _market_frame(40)
+        backend = _ComputeBackend(
+            requested="Auto",
+            resolved="mps",
+            engine="hybrid",
+            torch_module=object(),
+            numeric_precision="float32",
+        )
+        factor_values = {
+            "signal": np.sin(np.linspace(-2.0, 2.0, len(frame))),
+        }
+        with patch(
+            "strategies.algorithms.strategy_bayesian_price_field._torch_bayesian_prediction",
+            return_value=(0.001, 0.01),
+        ) as torch_prediction:
+            predictions = _walk_forward_predictions(
+                frame,
+                factor_values,
+                ["signal"],
+                training_window=30,
+                prior_strength=1.0,
+                backend=backend,
+            )
+
+        self.assertGreater(torch_prediction.call_count, 0)
+        self.assertEqual(backend.parallel_executor, "hybrid")
+        self.assertEqual(backend.parallel_workers, 2)
+        self.assertTrue(np.isfinite(predictions[0][20:]).all())
 
     def test_cpu_parallel_origins_match_serial_results(self) -> None:
         frame = _market_frame(180)
@@ -1305,6 +1363,43 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertFalse(call_args.kwargs["include_pe"])
         self.assertFalse(call_args.kwargs["include_dynamic_pe"])
         self.assertFalse(call_args.kwargs["include_options"])
+
+    def test_market_loader_uses_local_store_when_remote_access_is_disabled(self) -> None:
+        frame = _market_frame(20)
+        bundle = _bundle_from_frame(
+            frame,
+            factor_status={
+                "ohlcv": "available",
+                "pe": "unavailable_point_in_time",
+                "options": "unavailable",
+            },
+        )
+        strategy = BayesianPriceFieldStrategy()
+        with (
+            patch(
+                "strategies.algorithms.strategy_bayesian_price_field.is_remote_market_access_disabled",
+                return_value=True,
+            ),
+            patch(
+                "app.services.bayesian_market_factors.build_local_bayesian_factor_bundle",
+                return_value=bundle,
+            ) as local_bundle,
+            patch(
+                "app.services.bayesian_market_factors.fetch_bayesian_factor_bundle",
+            ) as provider_bundle,
+        ):
+            datasets = strategy.load_market_datasets(
+                ["AAPL"],
+                interval="1d",
+                start=pd.Timestamp("2026-01-02"),
+                end=pd.Timestamp("2026-02-01"),
+                params=_cpu_params(),
+            )
+
+        local_bundle.assert_called_once()
+        provider_bundle.assert_not_called()
+        self.assertEqual(len(datasets), 1)
+        self.assertEqual(datasets[0].attrs["market_data_source"], "longbridge-cli")
 
 
 if __name__ == "__main__":

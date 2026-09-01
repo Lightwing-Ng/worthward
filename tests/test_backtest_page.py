@@ -190,6 +190,31 @@ class BacktestPageTests(unittest.TestCase):
             html.index('data-backtest-history-view-panel="transactions"'),
         )
 
+    def test_bayesian_parameter_api_formats_threshold_and_describes_auto_backend(self) -> None:
+        client = create_app().test_client()
+        response = client.get(
+            "/api/trade-strategy-fields?strategy=bayesian-price-field"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_json()["html"]
+        self.assertIn(
+            'name="cell_display_threshold"',
+            html,
+        )
+        self.assertIn('value="5.00"', html)
+        self.assertIn('step="0.01"', html)
+        self.assertIn(
+            'title="Auto coordinates bounded multi-core CPU work with an available '
+            'Apple MPS or CUDA GPU for heterogeneous walk-forward computation;',
+            html,
+        )
+        self.assertIn(
+            'data-shared-select-title="Auto coordinates bounded multi-core CPU work '
+            'with an available Apple MPS or CUDA GPU for heterogeneous walk-forward computation;',
+            html,
+        )
+
     def test_bayesian_realized_cell_score_is_rendered_as_a_percentage_metric(self) -> None:
         result = backtest_result()
         result["summary"]["probability_field_hit_rate_pct"] = 42.5

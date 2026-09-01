@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.20.1 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.21.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.20.1');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.21.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -301,6 +301,29 @@ test('uses the half-plot cap and each chart boundary to floor the ten-row ceilin
     assert.equal(shortPlot.availableRowsPerSide, 2);
     assert.equal(shortPlot.rowsAbove, 2);
     assert.equal(shortPlot.rowsBelow, 2);
+});
+
+test('can preserve the complete row lattice for an independent detail surface', () => {
+    const detailGeometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 20,
+        rowsAbove: 10,
+        rowsBelow: 10,
+        stepPixels: 6,
+        limitRowsToChartArea: false,
+    });
+    assert.equal(detailGeometry.rowsAbove, 10);
+    assert.equal(detailGeometry.rowsBelow, 10);
+    assert.equal(detailGeometry.rowCount, 20);
+    assert.equal(detailGeometry.availableRowsAbove, 1);
+    assert.equal(detailGeometry.availableRowsBelow, 17);
+    assert.ok(detailGeometry.top < 0);
+    const horizontalGuideY = detailGeometry.top
+        + detailGeometry.gridPaddingTop
+        + (detailGeometry.rowsAbove * detailGeometry.cellSize)
+        + ((detailGeometry.rowsAbove - 0.5) * detailGeometry.gap);
+    assert.equal(horizontalGuideY, detailGeometry.anchorY);
 });
 
 test('derives the resizer plot minimum from the same quantized horizontal lattice', () => {

@@ -1,4 +1,4 @@
-/* Code version: v0.28.7 */
+/* Code version: v0.29.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1336,17 +1336,17 @@
 				|| !(probabilityDetailGrid instanceof HTMLElement)
 				|| !(probabilityDetailYAxis instanceof HTMLElement)
 				|| !(probabilityDetailXAxis instanceof HTMLElement)
-				|| !model?.geometry
-				|| !Array.isArray(model.cells)
-				|| !model.cells.length) return false;
+				|| !model?.geometry) return false;
 
-            const {geometry, cells, anchorPrice} = model;
             latestProbabilityDetailIndex = index;
             const detailViewActive = isProbabilityHistoryViewActive();
             probabilityDetailPanel.hidden = !detailViewActive;
 			probabilityDetailPanel.setAttribute("aria-hidden", String(!detailViewActive));
 			probabilityDetailPanel.dataset.activeIndex = String(index);
             if (!detailViewActive) return false;
+			const detailModel = buildProbabilityDetailModel(index, model);
+			if (!detailModel) return false;
+			const {geometry, cells, anchorPrice} = detailModel;
 			const detailGridViewport = probabilityDetailGrid.parentElement;
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
@@ -1358,7 +1358,7 @@
             const detailViewportReady = detailGridViewportWidth > 0
                 && detailGridViewportHeight > 0;
             const renderKey = [
-                model.cacheKey || [
+                detailModel.cacheKey || [
                     index,
 					geometry.anchorX,
 					geometry.anchorY,
@@ -1374,7 +1374,7 @@
             ).filter((cell) => cell.dataset.thresholdVisible === "false").length;
             const detailPresentationChanged = (
                 probabilityDetailPanel.dataset.cellDisplayThresholdPct
-                    !== String(model.cellDisplayThresholdPct)
+                    !== String(detailModel.cellDisplayThresholdPct)
                 || Number(probabilityDetailPanel.dataset.thresholdHiddenCount)
                     !== modelHiddenCount
                 || probabilityDetailGrid.childElementCount !== cells.length
@@ -1389,7 +1389,7 @@
 			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
 			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			probabilityDetailPanel.dataset.cellDisplayThresholdPct = String(
-				model.cellDisplayThresholdPct,
+				detailModel.cellDisplayThresholdPct,
 			);
 			probabilityDetailPanel.dataset.thresholdHiddenCount = String(
 				cells.filter((cell) => cell.isVisible === false).length,
@@ -1401,7 +1401,7 @@
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatChartDate(anchorDate) : (labels[index] || "selected date");
 			if (probabilityDetailStatus instanceof HTMLElement) {
-				probabilityDetailStatus.textContent = `Selected date: ${selectedDate} · Close: ${formatMoney(anchorPrice)} · Cells below ${Number(model.cellDisplayThresholdPct).toFixed(1)}% hidden`;
+				probabilityDetailStatus.textContent = `Selected date: ${selectedDate} · Close: ${formatMoney(anchorPrice)} · Cells below ${Number(detailModel.cellDisplayThresholdPct).toFixed(1)}% hidden`;
 			}
 			if (probabilityDetailAnchor instanceof HTMLElement) {
 				probabilityDetailAnchor.dataset.price = String(anchorPrice);
@@ -1449,13 +1449,8 @@
 					- ((rowCount - 1) * geometry.gap)
 				) / rowCount
 				: Number.POSITIVE_INFINITY;
-			const detailRowsAbove = (() => {
-				const firstDownCell = cells.find((cell) => (
-					cell.column === 0 && cell.sign === "down"
-				));
-				return firstDownCell ? firstDownCell.row : geometry.rowCount;
-			})();
-			const detailRowsBelow = Math.max(0, geometry.rowCount - detailRowsAbove);
+			const detailRowsAbove = geometry.rowsAbove;
+			const detailRowsBelow = geometry.rowsBelow;
 			const detailCellSize = Math.max(1, Math.min(
 				availableWidth / geometry.columnCount,
 				availableHeight / geometry.rowCount,
@@ -1961,6 +1956,49 @@
 				probabilityModelCache.delete(probabilityModelCache.keys().next().value);
 			}
 			return model;
+		};
+
+		// The hover field is deliberately clipped to Chart.js' plot area. The
+		// history detail is an independent presentation surface, so it keeps the
+		// strategy-owned row lattice even when the selected curve point is near a
+		// chart edge.
+		const buildProbabilityDetailModel = (index, model) => {
+			if (!strategyPresentation || !model?.geometry || !priceChart?.chartArea
+				|| !priceChart?.scales?.y) return null;
+			const geometry = probabilityGridApi.computeGridGeometry?.({
+				chartArea: priceChart.chartArea,
+				anchorX: model.geometry.anchorX,
+				anchorY: model.geometry.anchorY,
+				columnCount: strategyPresentation.columns,
+				widthFraction: strategyPresentation.width_fraction,
+				gapPx: strategyPresentation.gap_px,
+				paddingPx: strategyPresentation.padding_px,
+				minCellPx: strategyPresentation.min_cell_px,
+				rowsAbove: strategyPresentation.rows_above,
+				rowsBelow: strategyPresentation.rows_below,
+				stepPixels: model.stepPixels,
+				cellSizeTargetPx: model.geometry.cellSize,
+				limitRowsToChartArea: false,
+			});
+			if (!geometry) return null;
+			const cells = probabilityGridApi.buildProbabilityCells?.({
+				geometry,
+				anchorPrice: model.anchorPrice,
+				mean: model.mean,
+				scale: model.scale,
+				stepPixels: model.stepPixels,
+				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
+				opacityExponent: strategyPresentation.cell_opacity_exponent,
+				opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
+				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
+			}) || [];
+			if (!cells.length) return null;
+			return {
+				...model,
+				cacheKey: `${model.cacheKey}|detail|${geometry.rowsAbove}|${geometry.rowsBelow}`,
+				cells,
+				geometry,
+			};
 		};
 
 		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {

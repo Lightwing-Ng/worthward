@@ -5,7 +5,10 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.22.0
+Code version: v1.24.0
+- Changed: Auto now coordinates independent walk-forward origins across the
+  bounded CPU executor and an available Apple MPS or CUDA device, with a full
+  NumPy CPU fallback when no accelerator is available or GPU execution fails.
 - Changed: Causal CPU walk-forward origins use the shared bounded spawn process
   pool, with an ordered thread fallback when process execution is unavailable.
   Each worker receives only a causal batch and BLAS is capped to one thread per
@@ -29,9 +32,6 @@ Code version: v1.22.0
 - Changed: The probability field no longer carries private radius or material
   fields; the renderer is a transparent, square-cell matrix only.
 - Changed: NVDA is the default research ticker for this strategy.
-- Changed: Auto and CPU now use NumPy directly for this small-matrix
-  walk-forward workload; only an explicit GPU request imports Torch and probes
-  Apple MPS or CUDA.
 - Changed: Longbridge symbol resolution now reuses the shared adapter contract,
   including canonical US share-class tickers such as BRK-B.
 - Fixed: Ordinary Torch initialization failures now preserve the documented
@@ -55,6 +55,7 @@ Code version: v1.22.0
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 import hashlib
@@ -71,6 +72,7 @@ from app.infrastructure.parallel import (
     map_ordered_batches,
     resolve_worker_count,
 )
+from app.infrastructure.connectivity import is_remote_market_access_disabled
 
 from ..base import (
     BaseStrategy,
@@ -971,7 +973,7 @@ def _torch_device_available(torch_module: Any, device: str) -> bool:
 def _resolve_compute_backend(requested: str) -> _ComputeBackend:
     normalized = requested if requested in {"Auto", "CPU", "GPU"} else "Auto"
     backend = _ComputeBackend(requested=normalized)
-    if normalized in {"Auto", "CPU"}:
+    if normalized == "CPU":
         return backend
 
     torch_module = _load_torch()
@@ -987,7 +989,7 @@ def _resolve_compute_backend(requested: str) -> _ComputeBackend:
     for device in candidate_devices:
         if _torch_device_available(torch_module, device):
             backend.resolved = device
-            backend.engine = "torch"
+            backend.engine = "hybrid" if normalized == "Auto" else "torch"
             backend.torch_module = torch_module
             backend.numeric_precision = "float32" if device == "mps" else "float64"
             return backend
@@ -1060,7 +1062,7 @@ def _bayesian_prediction(
         prior_strength: float,
         noise_variance: float,
 ) -> tuple[float, float]:
-    if backend.engine == "torch":
+    if backend.engine in {"torch", "hybrid"}:
         try:
             return _torch_bayesian_prediction(
                 backend,
@@ -1486,6 +1488,98 @@ def _walk_forward_prediction_batch(
     ]
 
 
+def _walk_forward_predictions_cpu(
+        indices: Sequence[int],
+        close: np.ndarray,
+        forward_return: np.ndarray,
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        training_window: int,
+        prior_strength: float,
+        backend: _ComputeBackend,
+) -> tuple[list[tuple[int, float, float, float]], Any]:
+    """Run the CPU share of origins and return its executor statistics."""
+    cpu_backend = _ComputeBackend(
+        requested=backend.requested,
+        resolved="cpu",
+        engine="numpy",
+        numeric_precision="float64",
+    )
+    predictions, stats = map_ordered_batches(
+        _walk_forward_prediction_batch,
+        indices,
+        mode="cpu",
+        static_args=(
+            close,
+            forward_return,
+            factor_values,
+            tuple(enabled_factors),
+            training_window,
+            prior_strength,
+            cpu_backend,
+        ),
+        min_items=_CPU_PARALLEL_MIN_ROWS,
+        max_workers=_CPU_PARALLEL_MAX_WORKERS,
+    )
+    return predictions, stats
+
+
+def _walk_forward_predictions_hybrid(
+        frame: pd.DataFrame,
+        close: np.ndarray,
+        forward_return: np.ndarray,
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        training_window: int,
+        prior_strength: float,
+        backend: _ComputeBackend,
+) -> list[tuple[int, float, float, float]]:
+    """Coordinate CPU origins and GPU origins concurrently for Auto mode."""
+    del frame
+    indices = tuple(range(len(close)))
+    if not indices:
+        backend.parallel_workers = 1
+        backend.parallel_executor = "serial"
+        backend.parallel_fallback_reason = None
+        return []
+
+    gpu_indices = indices[::2]
+    cpu_indices = indices[1::2]
+
+    def run_cpu() -> tuple[list[tuple[int, float, float, float]], Any]:
+        return _walk_forward_predictions_cpu(
+            cpu_indices,
+            close,
+            forward_return,
+            factor_values,
+            enabled_factors,
+            training_window,
+            prior_strength,
+            backend,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        cpu_future = executor.submit(run_cpu)
+        gpu_future = executor.submit(
+            _walk_forward_prediction_batch,
+            gpu_indices,
+            close,
+            forward_return,
+            factor_values,
+            tuple(enabled_factors),
+            training_window,
+            prior_strength,
+            backend,
+        )
+        cpu_predictions, cpu_stats = cpu_future.result()
+        gpu_predictions = gpu_future.result()
+
+    backend.parallel_workers = cpu_stats.workers + 1
+    backend.parallel_executor = "hybrid"
+    backend.parallel_fallback_reason = cpu_stats.fallback_reason
+    return [*cpu_predictions, *gpu_predictions]
+
+
 def _walk_forward_predictions(
         frame: pd.DataFrame,
         factor_values: dict[str, np.ndarray],
@@ -1524,22 +1618,27 @@ def _walk_forward_predictions(
             prior_strength,
             backend,
         )
+    elif backend.engine == "hybrid":
+        predictions = _walk_forward_predictions_hybrid(
+            frame,
+            close,
+            forward_return,
+            factor_values,
+            enabled_factors,
+            training_window,
+            prior_strength,
+            backend,
+        )
     else:
-        predictions, stats = map_ordered_batches(
-            _walk_forward_prediction_batch,
-            range(row_count),
-            mode="cpu",
-            static_args=(
-                close,
-                forward_return,
-                factor_values,
-                tuple(enabled_factors),
-                training_window,
-                prior_strength,
-                backend,
-            ),
-            min_items=_CPU_PARALLEL_MIN_ROWS,
-            max_workers=_CPU_PARALLEL_MAX_WORKERS,
+        predictions, stats = _walk_forward_predictions_cpu(
+            tuple(range(row_count)),
+            close,
+            forward_return,
+            factor_values,
+            enabled_factors,
+            training_window,
+            prior_strength,
+            backend,
         )
         backend.parallel_workers = stats.workers
         backend.parallel_executor = stats.executor
@@ -1676,7 +1775,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 default=_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT,
                 minimum=_CELL_DISPLAY_THRESHOLD_MIN_PCT,
                 maximum=_CELL_DISPLAY_THRESHOLD_MAX_PCT,
-                step=0.1,
+                step=0.01,
                 unit_hint="%",
                 help_text=(
                     "Hides individual probability-field cells below this absolute "
@@ -1733,7 +1832,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 kind="choice",
                 default="Auto",
                 options=("Auto", "CPU", "GPU"),
-                help_text="Auto uses NumPy CPU with bounded multi-core walk-forward parallelism for larger data sets. GPU explicitly requests Apple MPS on macOS or CUDA on supported Windows or NVIDIA systems, then safely falls back to CPU.",
+                help_text="Auto coordinates bounded multi-core CPU work with an available Apple MPS or CUDA GPU for heterogeneous walk-forward computation; without an accelerator it uses CPU. CPU forces bounded multi-core CPU work. GPU explicitly requests Apple MPS or CUDA, then safely falls back to CPU.",
             ),
         )
 
@@ -1759,7 +1858,10 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         warmup_days = math.ceil(warmup_bars * 7 / 5) + 14
         warmup_start = _normalized_timestamp(start) - timedelta(days=warmup_days)
 
-        from app.services.bayesian_market_factors import fetch_bayesian_factor_bundle
+        from app.services.bayesian_market_factors import (
+            build_local_bayesian_factor_bundle,
+            fetch_bayesian_factor_bundle,
+        )
 
         research_factors = tuple(
             definition.provider_key
@@ -1773,15 +1875,23 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             if definition.observation_key == "option_history"
         )
 
-        bundle = fetch_bayesian_factor_bundle(
-            _longbridge_symbol(str(tickers[0])),
-            warmup_start,
-            end,
-            include_pe=bool(normalized_params["use_pe_ratio"]),
-            include_dynamic_pe=bool(normalized_params["use_dynamic_pe_ratio"]),
-            include_options=option_factors_requested,
-            research_factors=research_factors,
-        )
+        provider_symbol = _longbridge_symbol(str(tickers[0]))
+        if is_remote_market_access_disabled():
+            bundle = build_local_bayesian_factor_bundle(
+                provider_symbol,
+                warmup_start,
+                end,
+            )
+        else:
+            bundle = fetch_bayesian_factor_bundle(
+                provider_symbol,
+                warmup_start,
+                end,
+                include_pe=bool(normalized_params["use_pe_ratio"]),
+                include_dynamic_pe=bool(normalized_params["use_dynamic_pe_ratio"]),
+                include_options=option_factors_requested,
+                research_factors=research_factors,
+            )
         self._warmup_bundle = bundle
         return [_bundle_ohlcv_frame(bundle)]
 
@@ -2051,6 +2161,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "parallel_strategy": (
                     "gpu-device"
                     if backend.engine == "torch"
+                    else "cpu-gpu-heterogeneous"
+                    if backend.engine == "hybrid"
                     else {
                         "process": "cpu-process-pool",
                         "thread": "cpu-thread-fallback",

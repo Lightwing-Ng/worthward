@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Bayesian price models.
 
-Code version: v1.6.0
+Code version: v1.7.0
 - Added: An opt-in current P/E snapshot from Longbridge ``calc-index`` is
   retained only on its own market-local availability date and never backfilled
   into an earlier historical window.
@@ -42,6 +42,8 @@ import time
 from types import MappingProxyType
 from typing import Any, Sequence
 from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 from app.core.broker_settings import BrokerSettings, load_broker_settings
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
@@ -205,6 +207,155 @@ class BayesianFactorBundle:
     source_commands: tuple[str, ...]
     research_history: tuple[ResearchFactorObservation, ...] = ()
     dynamic_pe_history: tuple[PeObservation, ...] = ()
+
+
+def build_local_bayesian_factor_bundle(
+        symbol: str,
+        start: date | datetime | str,
+        end: date | datetime | str,
+) -> BayesianFactorBundle:
+    """Build a factor bundle from the existing local daily market store.
+
+    The browser quality gate deliberately disables remote market access. A
+    local-first process must still be able to render a Bayesian backtest when
+    its OHLCV cache is present, while clearly marking Longbridge-only factors
+    as unavailable. This helper never fabricates factor observations; the
+    standard history loader remains responsible for reading and normalizing
+    the existing local store.
+    """
+    normalized_symbol = _normalize_symbol(symbol)
+    normalized_start = _coerce_date(start, "start", normalized_symbol)
+    normalized_end = _coerce_date(end, "end", normalized_symbol)
+    if normalized_start > normalized_end:
+        raise ValueError("start must not be after end.")
+
+    from app.services.market_data import fetch_history
+
+    # Local storage keeps US symbols bare, while retaining a market suffix for
+    # HK/SH/SZ/SG symbols so ``fetch_history`` resolves the correct store.
+    ticker = (
+        normalized_symbol.rsplit(".", 1)[0]
+        if normalized_symbol.endswith(".US")
+        else normalized_symbol
+    )
+    frame = fetch_history(
+        ticker,
+        include_dividends=False,
+        interval="1d",
+        dividend_mode="price",
+    )
+    if frame.empty:
+        raise ValueError(f"Local daily market data for {ticker} is empty.")
+
+    missing_columns = [
+        column
+        for column in ("Date", "Close")
+        if column not in frame.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            "Local daily market data is missing "
+            f"{', '.join(missing_columns)} for {ticker}."
+        )
+
+    normalized_frame = frame.copy()
+    normalized_frame["Date"] = pd.to_datetime(
+        normalized_frame["Date"],
+        errors="coerce",
+    )
+    for column in ("Open", "High", "Low", "Close", "Volume", "Turnover"):
+        if column in normalized_frame.columns:
+            normalized_frame[column] = pd.to_numeric(
+                normalized_frame[column],
+                errors="coerce",
+            )
+    normalized_frame = normalized_frame.loc[
+        normalized_frame["Date"].notna()
+        & normalized_frame["Close"].notna()
+        & normalized_frame["Close"].map(math.isfinite)
+        & (normalized_frame["Date"].dt.date >= normalized_start)
+        & (normalized_frame["Date"].dt.date <= normalized_end)
+    ].sort_values("Date").drop_duplicates("Date", keep="last").copy()
+    if normalized_frame.empty:
+        raise ValueError(
+            f"Local daily market data for {ticker} does not cover "
+            f"{normalized_start.isoformat()} through {normalized_end.isoformat()}."
+        )
+
+    source = "local-market-store"
+
+    def finite_value(row: pd.Series, column: str, fallback: float) -> float:
+        value = row.get(column)
+        if value is None or not pd.notna(value):
+            return fallback
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else fallback
+
+    ohlcv = tuple(
+        OhlcvBar(
+            observed_at=pd.Timestamp(row["Date"]).to_pydatetime(),
+            open=finite_value(row, "Open", float(row["Close"])),
+            high=finite_value(row, "High", float(row["Close"])),
+            low=finite_value(row, "Low", float(row["Close"])),
+            close=float(row["Close"]),
+            volume=finite_value(row, "Volume", 0.0),
+            turnover=(
+                finite_value(row, "Turnover", 0.0)
+                if row.get("Turnover") is not None
+                and pd.notna(row.get("Turnover"))
+                else None
+            ),
+            source=source,
+        )
+        for _, row in normalized_frame.iterrows()
+    )
+    if not ohlcv:
+        raise ValueError(f"Local daily market data for {ticker} has no usable rows.")
+
+    fingerprint_payload = {
+        "symbol": normalized_symbol,
+        "start": normalized_start.isoformat(),
+        "end": normalized_end.isoformat(),
+        "source": source,
+        "ohlcv": [
+            {
+                "date": bar.observed_at.isoformat(),
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "turnover": bar.turnover,
+            }
+            for bar in ohlcv
+        ],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            fingerprint_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    factor_status = MappingProxyType({
+        "ohlcv": "available",
+        "pe": "unavailable_point_in_time",
+        "dynamic_pe": "unavailable_point_in_time",
+        "options": "unavailable",
+    })
+    return BayesianFactorBundle(
+        symbol=normalized_symbol,
+        start=normalized_start,
+        end=normalized_end,
+        ohlcv=ohlcv,
+        pe_history=(),
+        option_history=(),
+        fetched_at=_utc_now(),
+        fingerprint=fingerprint,
+        factor_status=factor_status,
+        source_commands=("local-market-store:historical",),
+    )
 
 
 def clear_bayesian_factor_cache() -> None:

@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.4.0 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
@@ -117,7 +117,8 @@
                         aria-expanded="false"
                         aria-controls="strategy_param_{{ field.key }}_dropdown"
                         aria-label="{{ field.label }}: {{ field.value }}"
-                        title="{{ field.value }}"
+                        data-shared-select-title="{{ field.help_text or field.value }}"
+                        title="{{ field.help_text or field.value }}"
                 >
                     <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ field.value }}">{{ field.value }}</span>
                 </button>
