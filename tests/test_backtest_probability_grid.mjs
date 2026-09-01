@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.20.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.20.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.20.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.20.1');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -668,6 +668,74 @@ test('anchors an asymmetric detail grid at the horizontal guide', () => {
     assert.equal(position.top + position.aboveExtent, position.anchorY);
     assert.equal(position.top + position.height, position.anchorY + position.belowExtent);
     assert.equal(position.top + position.height, 157);
+});
+
+test('keeps one-sided detail cells outside the horizontal guide', () => {
+    const belowOnly = grid.computeAnchoredDetailGridPosition({
+        viewportHeight: 240,
+        rowsAbove: 0,
+        rowsBelow: 3,
+        cellSize: 8,
+        gapPx: 2,
+        paddingPx: 8,
+    });
+    assert.ok(belowOnly);
+    assert.equal(belowOnly.top + 8, 121);
+    assert.equal(belowOnly.top + belowOnly.height, 157);
+    assert.equal(belowOnly.aboveExtent, 7);
+    assert.equal(belowOnly.belowExtent, 37);
+
+    const aboveOnly = grid.computeAnchoredDetailGridPosition({
+        viewportHeight: 240,
+        rowsAbove: 3,
+        rowsBelow: 0,
+        cellSize: 8,
+        gapPx: 2,
+        paddingPx: 8,
+    });
+    assert.ok(aboveOnly);
+    assert.equal(aboveOnly.top + 8 + 28, 119);
+    assert.equal(aboveOnly.top + aboveOnly.height, 127);
+    assert.equal(aboveOnly.aboveExtent, 37);
+    assert.equal(aboveOnly.belowExtent, 7);
+});
+
+test('keeps one-sided hover cells outside the horizontal guide', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 20,
+        stepPixels: 6,
+    });
+    assert.ok(geometry);
+    assert.equal(geometry.rowsAbove, 1);
+    assert.ok(geometry.rowsBelow > 0);
+
+    const belowOnly = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 4,
+        stepPixels: 6,
+    });
+    assert.ok(belowOnly);
+    assert.equal(belowOnly.rowsAbove, 0);
+    assert.ok(belowOnly.rowsBelow > 0);
+    const belowFirstCellTop = belowOnly.top + belowOnly.gridPaddingTop;
+    assert.equal(belowFirstCellTop - belowOnly.anchorY, belowOnly.gap / 2);
+
+    const aboveOnly = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
+        anchorX: 200,
+        anchorY: 236,
+        stepPixels: 6,
+    });
+    assert.ok(aboveOnly);
+    assert.ok(aboveOnly.rowsAbove > 0);
+    assert.equal(aboveOnly.rowsBelow, 0);
+    const aboveLastCellBottom = aboveOnly.top + aboveOnly.gridPaddingTop
+        + (aboveOnly.rowsAbove * aboveOnly.cellSize)
+        + ((aboveOnly.rowsAbove - 1) * aboveOnly.gap);
+    assert.equal(aboveOnly.anchorY - aboveLastCellBottom, aboveOnly.gap / 2);
 });
 
 test('assigns green only to cells whose full price interval is at or above the anchor', () => {

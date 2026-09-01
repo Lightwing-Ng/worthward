@@ -1,4 +1,4 @@
-/* Code version: v0.24.2 */
+/* Code version: v0.24.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -2375,7 +2375,13 @@
 		teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
 		updatePriceCompareHeadingDate();
 		const initialParams = new URLSearchParams(window.location.search);
-		const initialPeriod = (initialParams.get("period") || "").toLowerCase();
+		const initialWorkspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const initialPeriod = (
+			initialWorkspaceState?.period
+			|| initialParams.get("period")
+			|| initialParams.get("range")
+			|| ""
+		).toLowerCase();
 		if (initialPeriod === "1d") void refreshLivePrices();
 		if (!refreshTimer) refreshTimer = window.setInterval(refreshLivePrices, REFRESH_MS);
 	};

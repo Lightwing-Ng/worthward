@@ -1,4 +1,4 @@
-/* Code version: v0.28.2 */
+/* Code version: v0.28.7 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -696,6 +696,7 @@
 			probabilityScrollSpacer.setAttribute("aria-hidden", "true");
 			tradeChartStack.appendChild(probabilityScrollSpacer);
 		}
+		const probabilityCanvas = strategyPresentation ? document.createElement("canvas") : null;
 		if (probabilityTooltip) {
 			probabilityTooltip.className = "chart-tooltip backtest-probability-tooltip";
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
@@ -710,9 +711,20 @@
 			probabilityTooltip.dataset.cellDisplayThresholdPct = String(
 				strategyPresentation.cell_display_threshold_pct,
 			);
+			probabilityTooltip.style.left = "0px";
+			probabilityTooltip.style.top = "0px";
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
-			probabilityTooltip.innerHTML = '<div class="backtest-probability-grid" data-backtest-probability-grid></div>';
+			if (probabilityCanvas) {
+				probabilityCanvas.className = "backtest-probability-canvas";
+				probabilityCanvas.setAttribute("aria-hidden", "true");
+			}
+			const probabilityGrid = document.createElement("div");
+			probabilityGrid.className = "backtest-probability-grid";
+			probabilityGrid.dataset.backtestProbabilityGrid = "";
+			probabilityGrid.setAttribute("aria-hidden", "true");
+			if (probabilityCanvas) probabilityTooltip.appendChild(probabilityCanvas);
+			probabilityTooltip.appendChild(probabilityGrid);
 			probabilityTooltip.hidden = true;
 			tradeChartStack.appendChild(probabilityTooltip);
 		}
@@ -779,10 +791,16 @@
 				yScale?.max,
 				pointCache.signature,
 				strategyPresentation.columns,
+				strategyPresentation.rows_above,
+				strategyPresentation.rows_below,
 				strategyPresentation.width_fraction,
 				strategyPresentation.gap_px,
 				strategyPresentation.padding_px,
 				strategyPresentation.min_cell_px,
+				strategyPresentation.cell_opacity_mapping,
+				strategyPresentation.cell_opacity_exponent,
+				strategyPresentation.cell_opacity_tail_ratio,
+				strategyPresentation.cell_display_threshold_pct,
 			].join("|");
 			if (
 				probabilityHoverLayout?.signature === signature
@@ -894,7 +912,9 @@
 		let hoverFrameId = null;
 		let pendingHoverUpdate = null;
 		let layoutFrameId = null;
-		let layoutObserver = null;
+		let probabilityDetailRefreshFrameId = null;
+		let probabilityDetailRefreshPasses = 0;
+		let probabilityDetailLayoutObserver = null;
 		let themeCleanup = null;
 		let probabilityScrollTarget = 0;
 		let probabilityScrollVisualPosition = 0;
@@ -903,6 +923,15 @@
 		let probabilityScrollLastTimestamp = null;
 		let probabilityScrollCleanup = null;
 		let isSynchronizingProbabilityScrollPort = false;
+		let probabilityScrollPortIsActive = false;
+		let probabilityScrollStackWidth = 0;
+		let probabilityScrollPortWidth = 0;
+		let probabilityScrollExtentDistance = 0;
+		const setInlineStyleIfChanged = (element, propertyName, value) => {
+			if (!(element instanceof HTMLElement)) return;
+			if (element.style.getPropertyValue(propertyName) === value) return;
+			element.style.setProperty(propertyName, value);
+		};
 		const requestControllerAnimationFrame = (callback) => {
 			if (controllerDestroyed) return null;
 			let frameId = null;
@@ -919,18 +948,23 @@
 			controllerAnimationFrames.delete(frameId);
 		};
 		const setProbabilityScrollVisualOffset = (offsetValue) => {
-			probabilityScrollVisualOffset = Number(offsetValue) || 0;
+			const nextOffset = Number(offsetValue) || 0;
+			if (Math.abs(probabilityScrollVisualOffset - nextOffset) <= 0.001) return;
+			probabilityScrollVisualOffset = nextOffset;
 			tradeChartStack.dataset.probabilityPanVisualOffset = String(
 				probabilityScrollVisualOffset,
 			);
 			probabilityScrollVisualNodes.forEach((node) => {
-				node.style.translate = Math.abs(probabilityScrollVisualOffset) <= 0.001
+				const nextTranslate = Math.abs(probabilityScrollVisualOffset) <= 0.001
 					? probabilityScrollVisualTranslations.get(node)
 					: `${probabilityScrollVisualOffset}px 0px`;
+				if (node.style.translate !== nextTranslate) node.style.translate = nextTranslate;
 			});
 		};
 		const setProbabilityScrollPortActive = (active) => {
 			const isActive = Boolean(active) && probabilityScrollPort instanceof HTMLElement;
+			if (probabilityScrollPortIsActive === isActive) return;
+			probabilityScrollPortIsActive = isActive;
 			resultsStack?.classList.toggle("has-probability-scrollport", isActive);
 			if (probabilityScrollResizer instanceof HTMLElement) {
 				if (isActive) {
@@ -957,27 +991,43 @@
 		const setProbabilityScrollExtent = (scrollDistance) => {
 			if (!probabilityScrollSpacer) return;
 			const distance = Math.max(0, Number(scrollDistance) || 0);
-			const stackScrollWidth = Math.ceil(tradeChartStack.clientWidth + distance);
-			probabilityScrollSpacer.style.display = "block";
-			probabilityScrollSpacer.style.left = `${Math.max(0, stackScrollWidth - 1)}px`;
-			if (
-				probabilityScrollPort instanceof HTMLElement
-				&& probabilityScrollPortSpacer instanceof HTMLElement
-			) {
-				const portWidth = probabilityScrollPort.hidden
-					? 1
-					: Math.max(
-						1,
-						Math.ceil(probabilityScrollPort.clientWidth + distance),
-					);
-				probabilityScrollPortSpacer.style.width = `${portWidth}px`;
-			}
+			const nextDistance = Math.max(probabilityScrollExtentDistance, distance);
+			const stackWidth = probabilityScrollStackWidth > 0
+				? probabilityScrollStackWidth
+				: tradeChartStack.clientWidth;
+			const stackScrollWidth = Math.ceil(stackWidth + nextDistance);
+			setInlineStyleIfChanged(probabilityScrollSpacer, "display", "block");
+			setInlineStyleIfChanged(
+				probabilityScrollSpacer,
+				"left",
+				`${Math.max(0, stackScrollWidth - 1)}px`,
+			);
+            if (
+                probabilityScrollPort instanceof HTMLElement
+                && probabilityScrollPortSpacer instanceof HTMLElement
+            ) {
+                const measuredPortWidth = Math.max(0, probabilityScrollPort.clientWidth);
+                if (measuredPortWidth > 0) probabilityScrollPortWidth = measuredPortWidth;
+                const portViewportWidth = Math.max(
+                    1,
+                    probabilityScrollPortWidth,
+                    measuredPortWidth,
+                );
+                const portWidth = probabilityScrollPort.hidden
+                    ? 1
+                    : Math.ceil(portViewportWidth + nextDistance);
+                setInlineStyleIfChanged(probabilityScrollPortSpacer, "width", `${portWidth}px`);
+            }
+			probabilityScrollExtentDistance = nextDistance;
 		};
 		const setProbabilityScrollPosition = (scrollLeft) => {
 			const next = Math.max(0, Number(scrollLeft) || 0);
 			const nativeScrollLeft = Math.ceil(next);
 			tradeChartStack.scrollLeft = nativeScrollLeft;
-			const actualNativeScrollLeft = tradeChartStack.scrollLeft;
+			// The native rail is integral and the target is already clamped to the
+			// spacer extent. Avoid reading scrollLeft after writing it: that read
+			// synchronously flushes layout on every spring frame.
+			const actualNativeScrollLeft = nativeScrollLeft;
 			probabilityScrollVisualPosition = next;
 			tradeChartStack.dataset.probabilityPanVisualPosition = String(
 				probabilityScrollVisualPosition,
@@ -1002,7 +1052,10 @@
 				tradeChartStack.dataset.probabilityPanState = probabilityTooltip?.classList.contains("is-visible")
 					? (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
 					: "idle";
-				if (probabilityScrollSpacer) probabilityScrollSpacer.style.display = "none";
+				if (probabilityScrollSpacer) {
+					setInlineStyleIfChanged(probabilityScrollSpacer, "display", "none");
+					probabilityScrollExtentDistance = 0;
+				}
 			} else {
 				setProbabilityScrollPortActive(true);
 				setProbabilityScrollExtent(probabilityScrollTarget);
@@ -1016,7 +1069,7 @@
 			if (!strategyPresentation) return;
 			probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);
 			tradeChartStack.dataset.probabilityPanTarget = String(probabilityScrollTarget);
-			tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";
+			tradeChartStack.dataset.probabilityPanMotion = "shared-pointer-follow";
 			tradeChartStack.dataset.probabilityPanState = probabilityScrollTarget > 0
 				? (pinState.mode === "pinned" ? "pinned-pan" : "tracking-pan")
 				: (
@@ -1024,30 +1077,37 @@
 						? "returning"
 						: (pinState.mode === "pinned" ? "pinned-fit" : "tracking-fit")
 				);
-			setProbabilityScrollPortActive(
-				probabilityScrollTarget > 0.01 || probabilityScrollVisualPosition > 0.01,
-			);
-			setProbabilityScrollExtent(Math.max(probabilityScrollVisualPosition, probabilityScrollTarget));
-			if (
-				Math.abs(probabilityScrollVisualPosition - probabilityScrollTarget) <= 0.01
-				&& Math.abs(probabilityScrollVelocity) <= 0.01
-			) {
+			probabilityScrollCleanup?.();
+			probabilityScrollCleanup = null;
+			probabilityScrollVelocity = 0;
+			probabilityScrollLastTimestamp = null;
+			if (probabilityScrollTarget > 0.01) {
+				setProbabilityScrollPortActive(true);
+				setProbabilityScrollExtent(probabilityScrollTarget);
+				setProbabilityScrollPosition(probabilityScrollTarget);
+				tradeChartStack.dataset.probabilityPanState = pinState.mode === "pinned"
+					? "pinned-pan"
+					: "tracking-pan";
+				return;
+			}
+			if (probabilityScrollVisualPosition <= 0.01) {
 				completeProbabilityScroll();
 				return;
 			}
-			if (probabilityScrollCleanup) return;
-			const motion = window.AntigravityMotion;
-			const scheduler = motion?.scheduler;
+			setProbabilityScrollPortActive(true);
+			setProbabilityScrollExtent(probabilityScrollVisualPosition);
+			const scheduler = window.AntigravityMotion?.scheduler;
 			if (!scheduler?.frame) {
-				completeProbabilityScroll();
+				const frameId = window.requestAnimationFrame(() => completeProbabilityScroll());
+				probabilityScrollCleanup = () => window.cancelAnimationFrame(frameId);
 				return;
 			}
-			const preset = motion.springPresets?.bouncy || {
+		const preset = window.AntigravityMotion?.springPresets?.bouncy || {
 				mass: 1,
 				stiffness: 180,
 				damping: 18,
 			};
-			probabilityScrollCleanup = scheduler.frame(
+		probabilityScrollCleanup = scheduler.frame(
 				"backtest-probability-scroll",
 				(timestamp, reducedMotion) => {
 					if (controllerDestroyed) return false;
@@ -1206,7 +1266,12 @@
 			return addTradingDays(parseRawDate(rawDates[anchorIndex]), normalizedHorizon);
 		};
 
-		const applyProbabilityCellNode = (node, cell, modifierClass = "") => {
+		const applyProbabilityCellNode = (
+			node,
+			cell,
+			modifierClass = "",
+			includeGridPlacement = true,
+		) => {
 			const thresholdVisible = cell.isVisible !== false;
 			node.className = `backtest-probability-cell is-${cell.sign}${modifierClass ? ` ${modifierClass}` : ""}`
 				+ (thresholdVisible ? "" : " is-threshold-hidden");
@@ -1219,12 +1284,51 @@
 			node.dataset.lowerPrice = String(cell.lowerPrice);
 			node.dataset.upperPrice = String(cell.upperPrice);
 			node.dataset.thresholdVisible = String(thresholdVisible);
-			node.style.gridColumn = String(cell.column + 1);
-			node.style.gridRow = String(cell.row + 1);
+			if (includeGridPlacement) {
+				node.style.gridColumn = String(cell.column + 1);
+				node.style.gridRow = String(cell.row + 1);
+			}
 			node.style.opacity = thresholdVisible ? String(cell.opacity) : "0";
 			if (thresholdVisible) node.removeAttribute("aria-hidden");
 			else node.setAttribute("aria-hidden", "true");
 			node.title = `${(cell.probability * 100).toFixed(2)}%`;
+		};
+		const probabilityCanvasContext = probabilityCanvas?.getContext?.("2d") || null;
+		const drawProbabilityCanvas = (geometry, cells) => {
+			if (!(probabilityCanvas instanceof HTMLCanvasElement) || !probabilityCanvasContext) return;
+			const width = Math.max(1, Number(geometry?.width) || 0);
+			const height = Math.max(1, Number(geometry?.height) || 0);
+			const deviceScale = Math.max(
+				1,
+				Math.min(2, Number(window.devicePixelRatio) || 1),
+			);
+			const bitmapWidth = Math.ceil(width * deviceScale);
+			const bitmapHeight = Math.ceil(height * deviceScale);
+			if (probabilityCanvas.width !== bitmapWidth) probabilityCanvas.width = bitmapWidth;
+			if (probabilityCanvas.height !== bitmapHeight) probabilityCanvas.height = bitmapHeight;
+			setInlineStyleIfChanged(probabilityCanvas, "width", `${width}px`);
+			setInlineStyleIfChanged(probabilityCanvas, "height", `${height}px`);
+			probabilityCanvasContext.setTransform(deviceScale, 0, 0, deviceScale, 0, 0);
+			probabilityCanvasContext.clearRect(0, 0, width, height);
+			let fillStyle = null;
+			cells.forEach((cell) => {
+				if (cell.isVisible === false || !(Number(cell.opacity) > 0)) return;
+				const nextFillStyle = cell.sign === "down"
+					? resolvedTheme.accentSecondary
+					: resolvedTheme.accentPositive;
+				if (fillStyle !== nextFillStyle) {
+					fillStyle = nextFillStyle;
+					probabilityCanvasContext.fillStyle = fillStyle;
+				}
+				probabilityCanvasContext.globalAlpha = Number(cell.opacity) || 0;
+				probabilityCanvasContext.fillRect(
+					Number(cell.x) - Number(geometry.left),
+					Number(cell.y) - Number(geometry.top),
+					Number(cell.size) || Number(geometry.cellSize),
+					Number(cell.size) || Number(geometry.cellSize),
+				);
+			});
+			probabilityCanvasContext.globalAlpha = 1;
 		};
 
 		const renderProbabilityDetail = (index, model) => {
@@ -1236,33 +1340,51 @@
 				|| !Array.isArray(model.cells)
 				|| !model.cells.length) return false;
 
-			const {geometry, cells, anchorPrice} = model;
-			latestProbabilityDetailIndex = index;
-			const detailViewActive = isProbabilityHistoryViewActive();
-			probabilityDetailPanel.hidden = !detailViewActive;
+            const {geometry, cells, anchorPrice} = model;
+            latestProbabilityDetailIndex = index;
+            const detailViewActive = isProbabilityHistoryViewActive();
+            probabilityDetailPanel.hidden = !detailViewActive;
 			probabilityDetailPanel.setAttribute("aria-hidden", String(!detailViewActive));
 			probabilityDetailPanel.dataset.activeIndex = String(index);
-			if (!detailViewActive) return false;
+            if (!detailViewActive) return false;
 			const detailGridViewport = probabilityDetailGrid.parentElement;
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
 				? Math.max(0, Number(detailGridViewportRect.width))
 				: 0;
-			const detailGridViewportHeight = Number.isFinite(Number(detailGridViewportRect?.height))
-				? Math.max(0, Number(detailGridViewportRect.height))
-				: 0;
-			const renderKey = [
-				model.cacheKey || [
-					index,
+            const detailGridViewportHeight = Number.isFinite(Number(detailGridViewportRect?.height))
+                ? Math.max(0, Number(detailGridViewportRect.height))
+                : 0;
+            const detailViewportReady = detailGridViewportWidth > 0
+                && detailGridViewportHeight > 0;
+            const renderKey = [
+                model.cacheKey || [
+                    index,
 					geometry.anchorX,
 					geometry.anchorY,
 					geometry.cellSize,
 					geometry.rowCount,
 				].join("|"),
-				detailGridViewportWidth,
-				detailGridViewportHeight,
-			].join("|");
-			if (probabilityDetailPanel.dataset.renderKey === renderKey) return true;
+                detailGridViewportWidth,
+                detailGridViewportHeight,
+            ].join("|");
+            const modelHiddenCount = cells.filter((cell) => cell.isVisible === false).length;
+            const detailHiddenCount = Array.from(
+                probabilityDetailGrid.children,
+            ).filter((cell) => cell.dataset.thresholdVisible === "false").length;
+            const detailPresentationChanged = (
+                probabilityDetailPanel.dataset.cellDisplayThresholdPct
+                    !== String(model.cellDisplayThresholdPct)
+                || Number(probabilityDetailPanel.dataset.thresholdHiddenCount)
+                    !== modelHiddenCount
+                || probabilityDetailGrid.childElementCount !== cells.length
+                || detailHiddenCount !== modelHiddenCount
+            );
+            if (
+                probabilityDetailPanel.dataset.renderKey === renderKey
+                && !detailPresentationChanged
+                && detailViewportReady
+            ) return true;
 			probabilityDetailPanel.dataset.columnCount = String(geometry.columnCount);
 			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
 			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
@@ -1303,10 +1425,11 @@
 				cell,
 				"backtest-probability-detail-cell",
 			));
-			probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
-			probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
-			probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
-			const horizontalPadding = geometry.gridPaddingInlineStart + geometry.padding;
+            probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
+            probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
+            probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
+            if (!detailViewportReady) return false;
+            const horizontalPadding = geometry.gridPaddingInlineStart + geometry.padding;
 			const verticalPadding = geometry.gridPaddingTop + geometry.gridPaddingBottom;
 			const availableWidth = Math.max(
 				1,
@@ -1851,10 +1974,23 @@
 				hideProbabilityDetail();
 				return false;
 			}
-			const {anchorPrice, cells, geometry, mean, scale, stepPixels} = model;
-			latestProbabilityDetailIndex = index;
-			if (isProbabilityHistoryViewActive()) {
-				renderProbabilityDetail(index, model);
+            const {anchorPrice, cells, geometry, mean, scale, stepPixels} = model;
+            latestProbabilityDetailIndex = index;
+            if (isProbabilityHistoryViewActive()) {
+                if (!renderProbabilityDetail(index, model)) {
+                    // A chart resize or history-panel transition can leave the
+                    // detail viewport at zero for one frame. Retry after the
+                    // layout settles so the detail grid cannot retain the
+                    // previous presentation (for example, an old threshold).
+                    scheduleProbabilityDetailRefresh(3);
+                }
+            }
+			probabilityScrollStackWidth = Math.max(0, Number(stackRect.width) || 0);
+			if (probabilityScrollPort instanceof HTMLElement) {
+				probabilityScrollPortWidth = Math.max(
+					0,
+					Number(probabilityScrollPort.clientWidth) || probabilityScrollStackWidth,
+				);
 			}
 			setProbabilityScrollExtent(probabilityScrollVisualPosition);
 
@@ -1863,11 +1999,27 @@
 				hideProbabilityTooltip();
 				return false;
 			}
+			drawProbabilityCanvas(geometry, cells);
 			const canReuseCells = grid.childElementCount === cells.length
 				&& Number(grid.dataset.columnCount) === geometry.columnCount
 				&& Number(grid.dataset.rowCount) === geometry.rowCount;
 			const renderKey = model.cacheKey || String(index);
-			const shouldRenderCells = !canReuseCells || grid.dataset.renderKey !== renderKey;
+			const hasDomMirror = Boolean(grid.dataset.renderKey);
+			const shouldUpdateDomMirror = !hasDomMirror
+				|| isProbabilityHistoryViewActive()
+				|| pinState.mode === "pinned";
+			const shouldRenderCells = shouldUpdateDomMirror
+				&& (!canReuseCells || grid.dataset.renderKey !== renderKey);
+			const gridLayoutKey = [
+				geometry.columnCount,
+				geometry.rowCount,
+				geometry.cellSize,
+				geometry.gap,
+				geometry.gridPaddingTop,
+				geometry.gridPaddingBottom,
+				geometry.gridPaddingInlineStart,
+			].join("|");
+			const gridLayoutChanged = grid.dataset.layoutKey !== gridLayoutKey;
 			let cellNodes = canReuseCells ? Array.from(grid.children) : [];
 			if (shouldRenderCells && !canReuseCells) {
 				const fragment = document.createDocumentFragment();
@@ -1879,26 +2031,55 @@
 				grid.replaceChildren(fragment);
 			}
 			if (shouldRenderCells) {
-				cells.forEach((cell, cellIndex) => applyProbabilityCellNode(cellNodes[cellIndex], cell));
+				cells.forEach((cell, cellIndex) => applyProbabilityCellNode(
+					cellNodes[cellIndex],
+					cell,
+					"",
+					!canReuseCells || gridLayoutChanged,
+				));
 				grid.dataset.renderKey = renderKey;
 			}
-			grid.dataset.columnCount = String(geometry.columnCount);
-			grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
-			grid.dataset.rowCount = String(geometry.rowCount);
-			grid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${geometry.cellSize}px)`;
-			grid.style.gridTemplateRows = `repeat(${geometry.rowCount}, ${geometry.cellSize}px)`;
-			grid.style.gap = `${geometry.gap}px`;
-			grid.style.padding = `${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`;
+			if (shouldUpdateDomMirror && grid.dataset.columnCount !== String(geometry.columnCount)) {
+				grid.dataset.columnCount = String(geometry.columnCount);
+			}
+			if (shouldUpdateDomMirror && grid.dataset.daysPerColumn !== String(geometry.daysPerColumn)) {
+				grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
+			}
+			if (shouldUpdateDomMirror && grid.dataset.rowCount !== String(geometry.rowCount)) {
+				grid.dataset.rowCount = String(geometry.rowCount);
+			}
+			if (shouldUpdateDomMirror && gridLayoutChanged) {
+				grid.dataset.layoutKey = gridLayoutKey;
+				setInlineStyleIfChanged(
+					grid,
+					"grid-template-columns",
+					`repeat(${geometry.columnCount}, ${geometry.cellSize}px)`,
+				);
+				setInlineStyleIfChanged(
+					grid,
+					"grid-template-rows",
+					`repeat(${geometry.rowCount}, ${geometry.cellSize}px)`,
+				);
+				setInlineStyleIfChanged(grid, "gap", `${geometry.gap}px`);
+				setInlineStyleIfChanged(
+					grid,
+					"padding",
+					`${geometry.gridPaddingTop}px ${geometry.padding}px ${geometry.gridPaddingBottom}px ${geometry.gridPaddingInlineStart}px`,
+				);
+			}
 
 			const canvasRect = priceCanvas.getBoundingClientRect();
 			const canvasOffsetX = (
 				canvasRect.left - stackRect.left + probabilityScrollVisualPosition
 			);
 			const canvasOffsetY = canvasRect.top - stackRect.top;
-			probabilityTooltip.style.left = `${canvasOffsetX + geometry.left}px`;
-			probabilityTooltip.style.top = `${canvasOffsetY + geometry.top}px`;
-			probabilityTooltip.style.width = `${geometry.width}px`;
-			probabilityTooltip.style.height = `${geometry.height}px`;
+			setInlineStyleIfChanged(
+				probabilityTooltip,
+				"transform",
+				`translate3d(${canvasOffsetX + geometry.left}px, ${canvasOffsetY + geometry.top}px, 0)`,
+			);
+			setInlineStyleIfChanged(probabilityTooltip, "width", `${geometry.width}px`);
+			setInlineStyleIfChanged(probabilityTooltip, "height", `${geometry.height}px`);
 			probabilityTooltip.dataset.direction = geometry.direction;
 			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
 			probabilityTooltip.hidden = false;
@@ -1909,7 +2090,7 @@
 			);
 			probabilityTooltip.classList.add("is-visible");
 			const tooltipContentRight = canvasOffsetX + geometry.left + geometry.width;
-			setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);
+			setProbabilityScrollTarget(tooltipContentRight - probabilityScrollStackWidth);
 			priceChart._activeBacktestProbabilityGridBounds = {
 				...geometry,
 				canvasOffsetX,
@@ -1944,9 +2125,49 @@
 			if (detailModel) renderProbabilityDetail(detailIndex, detailModel);
 			else hideProbabilityDetail();
 		};
+		const scheduleProbabilityDetailRefresh = (passes = 1) => {
+			probabilityDetailRefreshPasses = Math.max(
+				probabilityDetailRefreshPasses,
+				Math.max(1, Number(passes) || 1),
+			);
+			if (probabilityDetailRefreshFrameId !== null) return;
+			const refresh = () => {
+				probabilityDetailRefreshFrameId = null;
+				if (controllerDestroyed) {
+					probabilityDetailRefreshPasses = 0;
+					return;
+				}
+				refreshActiveProbabilityDetail();
+				probabilityDetailRefreshPasses -= 1;
+				if (probabilityDetailRefreshPasses <= 0) {
+					probabilityDetailRefreshPasses = 0;
+					return;
+				}
+				probabilityDetailRefreshFrameId = requestControllerAnimationFrame(refresh);
+			};
+			probabilityDetailRefreshFrameId = requestControllerAnimationFrame(refresh);
+		};
+		const refreshProbabilityDetailAfterViewChange = () => {
+			if (!isProbabilityHistoryViewActive()) {
+				probabilityDetailLayoutObserver?.disconnect?.();
+				probabilityDetailLayoutObserver = null;
+				refreshActiveProbabilityDetail();
+				return;
+			}
+			if (typeof ResizeObserver === "function"
+				&& !probabilityDetailLayoutObserver
+				&& probabilityDetailGrid?.parentElement) {
+				probabilityDetailLayoutObserver = new ResizeObserver(() => {
+					scheduleProbabilityDetailRefresh();
+				});
+				probabilityDetailLayoutObserver.observe(probabilityDetailGrid.parentElement);
+			}
+			refreshActiveProbabilityDetail();
+			scheduleProbabilityDetailRefresh(2);
+		};
 		window.addEventListener(
 			BACKTEST_HISTORY_VIEW_CHANGE_EVENT,
-			refreshActiveProbabilityDetail,
+			refreshProbabilityDetailAfterViewChange,
 			{signal: documentController.signal},
 		);
 
@@ -2064,7 +2285,8 @@
 				if (!chart || !chart.ctx) return;
 				if (chart === equityChart && !showTradeDetails) return;
 				chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
-				chart.update("none");
+				if (typeof chart.draw === "function") chart.draw();
+				else chart.update("none");
 			};
 			setActive(priceChart);
 			setActive(equityChart);
@@ -2510,8 +2732,11 @@
 			const defaultModel = defaultIndex >= 0
 				? buildProbabilityGridModel(defaultIndex, defaultPoint)
 				: null;
-			if (defaultModel) renderProbabilityDetail(defaultIndex, defaultModel);
-			else hideProbabilityDetail();
+            if (defaultModel) {
+                if (!renderProbabilityDetail(defaultIndex, defaultModel)) {
+                    scheduleProbabilityDetailRefresh(3);
+                }
+            } else hideProbabilityDetail();
 		}
 		publishProbabilityStageMinimum();
 		const refreshChartLayout = ({chartsAlreadyResized = false} = {}) => {
@@ -2552,13 +2777,14 @@
 				priceChart.update("none");
 				if (showTradeDetails) equityChart.update("none");
 			}
+			publishProbabilityStageMinimum();
 			if (strategyPresentation && isProbabilityHistoryViewActive() && Number.isInteger(latestProbabilityDetailIndex)) {
 				const detailIndex = latestProbabilityDetailIndex;
 				const detailPoint = getDatasetPoint(priceChart, detailIndex, 0);
 				const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
 				if (detailModel) renderProbabilityDetail(detailIndex, detailModel);
+				scheduleProbabilityDetailRefresh(2);
 			}
-			publishProbabilityStageMinimum();
 		};
 		const scheduleChartLayoutRefresh = () => {
 			if (layoutFrameId !== null || controllerDestroyed) return;
@@ -2575,10 +2801,6 @@
 			refreshChartLayout({chartsAlreadyResized: true});
 		};
 		bootstrap.backtestChartLayoutRefresh = refreshAfterSharedChartResize;
-		if (typeof ResizeObserver === "function") {
-			layoutObserver = new ResizeObserver(scheduleChartLayoutRefresh);
-			layoutObserver.observe(tradeChartStack);
-		}
 		window.addEventListener("resize", scheduleChartLayoutRefresh, {signal: documentController.signal});
 		window.addEventListener(
 			"antigravity:backtest-trade-details-change",
@@ -2611,10 +2833,15 @@
 				if (layoutFrameId !== null) {
 					cancelControllerAnimationFrame(layoutFrameId);
 					layoutFrameId = null;
-					}
-					layoutObserver?.disconnect?.();
-					layoutObserver = null;
-					themeCleanup?.();
+				}
+				if (probabilityDetailRefreshFrameId !== null) {
+					cancelControllerAnimationFrame(probabilityDetailRefreshFrameId);
+					probabilityDetailRefreshFrameId = null;
+				}
+				probabilityDetailRefreshPasses = 0;
+				probabilityDetailLayoutObserver?.disconnect?.();
+				probabilityDetailLayoutObserver = null;
+				themeCleanup?.();
 				themeCleanup = null;
 				documentController.abort();
 				priceCanvas._abortController?.abort?.();

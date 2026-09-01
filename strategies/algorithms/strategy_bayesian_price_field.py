@@ -5,7 +5,11 @@ Every production market input is loaded through the Longbridge CLI factor
 provider. The model predicts the next daily log return and exposes a compact,
 declarative presentation payload for the Backtest probability-grid renderer.
 
-Code version: v1.20.0
+Code version: v1.22.0
+- Changed: Causal CPU walk-forward origins use the shared bounded spawn process
+  pool, with an ordered thread fallback when process execution is unavailable.
+  Each worker receives only a causal batch and BLAS is capped to one thread per
+  worker to use multiple processor cores without nested oversubscription.
 - Added: Opt-in granular historical Longbridge option-volume and open-interest
   factors sit alongside the backward-compatible composite Options factor.
 - Added: An opt-in Dynamic P/E Ratio factor uses the current Longbridge
@@ -63,6 +67,11 @@ from typing import Any, Sequence
 import numpy as np
 import pandas as pd
 
+from app.infrastructure.parallel import (
+    map_ordered_batches,
+    resolve_worker_count,
+)
+
 from ..base import (
     BaseStrategy,
     StrategyParameterDefinition,
@@ -83,6 +92,8 @@ _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
 _MODEL_VERSION = "bayesian-price-field-model/v1.8.0"
 _EPSILON = 1e-12
+_CPU_PARALLEL_MIN_ROWS = 64
+_CPU_PARALLEL_MAX_WORKERS = 8
 _PROBABILITY_FIELD_MAX_HORIZON = 20
 _PROBABILITY_FIELD_ROWS_ABOVE = 10
 _PROBABILITY_FIELD_ROWS_BELOW = 10
@@ -930,6 +941,9 @@ class _ComputeBackend:
     numeric_precision: str = "float64"
     fallback_reason: str | None = None
     runtime_fallback: bool = False
+    parallel_workers: int = 1
+    parallel_executor: str = "serial"
+    parallel_fallback_reason: str | None = None
 
     def fall_back_to_cpu(self, reason: str) -> None:
         self.resolved = "cpu"
@@ -938,6 +952,9 @@ class _ComputeBackend:
         self.numeric_precision = "float64"
         self.fallback_reason = reason
         self.runtime_fallback = True
+        self.parallel_workers = 1
+        self.parallel_executor = "serial"
+        self.parallel_fallback_reason = None
 
 
 def _torch_device_available(torch_module: Any, device: str) -> bool:
@@ -1354,6 +1371,121 @@ def _probability_field_hit_rate(
     }
 
 
+def _cpu_parallel_worker_count(row_count: int) -> int:
+    """Choose a bounded worker count for independent CPU walk-forward origins."""
+    return resolve_worker_count(
+        max(0, int(row_count)),
+        mode="cpu",
+        min_items=_CPU_PARALLEL_MIN_ROWS,
+        max_workers=_CPU_PARALLEL_MAX_WORKERS,
+    )
+
+
+def _walk_forward_prediction_at_index(
+        index: int,
+        close: np.ndarray,
+        forward_return: np.ndarray,
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        training_window: int,
+        prior_strength: float,
+        backend: _ComputeBackend,
+) -> tuple[int, float, float, float]:
+    """Compute one causal origin; no worker reads a future row as a feature."""
+    missing = (index, math.nan, math.nan, math.nan)
+    training_start = max(0, index - training_window)
+    candidate_indices = np.arange(training_start, index, dtype=np.int64)
+    if len(candidate_indices) < _MIN_TRAINING_OBSERVATIONS:
+        return missing
+
+    target_mask = np.isfinite(forward_return[candidate_indices])
+    active_factors = _select_active_factors(
+        factor_values,
+        enabled_factors,
+        candidate_indices,
+        index,
+        target_mask,
+    )
+
+    joint_mask = target_mask.copy()
+    for factor in active_factors:
+        joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
+    training_indices = candidate_indices[joint_mask]
+    if len(training_indices) < _MIN_TRAINING_OBSERVATIONS:
+        return missing
+
+    target = forward_return[training_indices]
+    standardized_training: list[np.ndarray] = []
+    standardized_current: list[float] = []
+    for factor in active_factors:
+        training_values = factor_values[factor][training_indices]
+        center = float(np.mean(training_values))
+        scale = float(np.std(training_values))
+        if not math.isfinite(scale) or scale <= _EPSILON:
+            continue
+        standardized_training.append((training_values - center) / scale)
+        standardized_current.append(
+            (factor_values[factor][index] - center) / scale
+        )
+
+    design = np.ones(
+        (len(training_indices), 1 + len(standardized_training)),
+        dtype=np.float64,
+    )
+    current = np.ones(1 + len(standardized_current), dtype=np.float64)
+    if standardized_training:
+        design[:, 1:] = np.column_stack(standardized_training)
+        current[1:] = standardized_current
+
+    noise_variance = _ridge_residual_variance(
+        design,
+        target,
+        prior_strength,
+    )
+    mean, standard_deviation = _bayesian_prediction(
+        backend,
+        design,
+        target,
+        current,
+        prior_strength,
+        noise_variance,
+    )
+    if not math.isfinite(mean) or not math.isfinite(standard_deviation):
+        return missing
+    return (
+        index,
+        mean,
+        standard_deviation,
+        _normal_probability_above_zero(mean, standard_deviation),
+    )
+
+
+def _walk_forward_prediction_batch(
+        indices: Sequence[int],
+        close: np.ndarray,
+        forward_return: np.ndarray,
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        training_window: int,
+        prior_strength: float,
+        backend: _ComputeBackend,
+) -> list[tuple[int, float, float, float]]:
+    """Evaluate a contiguous causal batch in a process-safe top-level task."""
+    return [
+        _walk_forward_prediction_at_index(
+            int(index),
+            close,
+            forward_return,
+            factor_values,
+            enabled_factors,
+            training_window,
+            prior_strength,
+            backend,
+        )
+        for index in indices
+    ]
+
+
 def _walk_forward_predictions(
         frame: pd.DataFrame,
         factor_values: dict[str, np.ndarray],
@@ -1378,64 +1510,45 @@ def _walk_forward_predictions(
         close[1:][valid_price_pair] / close[:-1][valid_price_pair]
     )
 
-    for index in range(row_count):
-        training_start = max(0, index - training_window)
-        candidate_indices = np.arange(training_start, index, dtype=np.int64)
-        if len(candidate_indices) < _MIN_TRAINING_OBSERVATIONS:
-            continue
-
-        target_mask = np.isfinite(forward_return[candidate_indices])
-        active_factors = _select_active_factors(
+    if backend.engine == "torch":
+        backend.parallel_workers = 1
+        backend.parallel_executor = "serial"
+        backend.parallel_fallback_reason = None
+        predictions = _walk_forward_prediction_batch(
+            tuple(range(row_count)),
+            close,
+            forward_return,
             factor_values,
             enabled_factors,
-            candidate_indices,
-            index,
-            target_mask,
-        )
-
-        joint_mask = target_mask.copy()
-        for factor in active_factors:
-            joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
-        training_indices = candidate_indices[joint_mask]
-        if len(training_indices) < _MIN_TRAINING_OBSERVATIONS:
-            continue
-
-        target = forward_return[training_indices]
-        standardized_training: list[np.ndarray] = []
-        standardized_current: list[float] = []
-        for factor in active_factors:
-            training_values = factor_values[factor][training_indices]
-            center = float(np.mean(training_values))
-            scale = float(np.std(training_values))
-            if not math.isfinite(scale) or scale <= _EPSILON:
-                continue
-            standardized_training.append((training_values - center) / scale)
-            standardized_current.append((factor_values[factor][index] - center) / scale)
-
-        design = np.ones((len(training_indices), 1 + len(standardized_training)), dtype=np.float64)
-        current = np.ones(1 + len(standardized_current), dtype=np.float64)
-        if standardized_training:
-            design[:, 1:] = np.column_stack(standardized_training)
-            current[1:] = standardized_current
-
-        noise_variance = _ridge_residual_variance(
-            design,
-            target,
+            training_window,
             prior_strength,
-        )
-        mean, standard_deviation = _bayesian_prediction(
             backend,
-            design,
-            target,
-            current,
-            prior_strength,
-            noise_variance,
         )
-        if not math.isfinite(mean) or not math.isfinite(standard_deviation):
-            continue
+    else:
+        predictions, stats = map_ordered_batches(
+            _walk_forward_prediction_batch,
+            range(row_count),
+            mode="cpu",
+            static_args=(
+                close,
+                forward_return,
+                factor_values,
+                tuple(enabled_factors),
+                training_window,
+                prior_strength,
+                backend,
+            ),
+            min_items=_CPU_PARALLEL_MIN_ROWS,
+            max_workers=_CPU_PARALLEL_MAX_WORKERS,
+        )
+        backend.parallel_workers = stats.workers
+        backend.parallel_executor = stats.executor
+        backend.parallel_fallback_reason = stats.fallback_reason
+
+    for index, mean, standard_deviation, probability in predictions:
         predictive_mean[index] = mean
         predictive_std[index] = standard_deviation
-        probability_up[index] = _normal_probability_above_zero(mean, standard_deviation)
+        probability_up[index] = probability
 
     return predictive_mean, predictive_std, probability_up
 
@@ -1620,7 +1733,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 kind="choice",
                 default="Auto",
                 options=("Auto", "CPU", "GPU"),
-                help_text="Auto uses NumPy CPU for this small-matrix walk-forward model. GPU explicitly requests Apple MPS on macOS or CUDA on supported Windows or NVIDIA systems, then safely falls back to CPU.",
+                help_text="Auto uses NumPy CPU with bounded multi-core walk-forward parallelism for larger data sets. GPU explicitly requests Apple MPS on macOS or CUDA on supported Windows or NVIDIA systems, then safely falls back to CPU.",
             ),
         )
 
@@ -1934,6 +2047,17 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "engine": backend.engine,
                 "numeric_precision": backend.numeric_precision,
                 "fallback_reason": backend.fallback_reason,
+                "parallel_workers": backend.parallel_workers,
+                "parallel_strategy": (
+                    "gpu-device"
+                    if backend.engine == "torch"
+                    else {
+                        "process": "cpu-process-pool",
+                        "thread": "cpu-thread-fallback",
+                        "serial": "cpu-serial",
+                    }.get(backend.parallel_executor, "cpu-serial")
+                ),
+                "parallel_fallback_reason": backend.parallel_fallback_reason,
             },
             "source": {
                 "market_data": "longbridge-cli",
@@ -1949,6 +2073,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             metadata={
                 "factors": factors,
                 "compute_device": backend.resolved,
+                "compute_parallel_workers": backend.parallel_workers,
+                "compute_parallel_executor": backend.parallel_executor,
+                "compute_parallel_fallback_reason": backend.parallel_fallback_reason,
                 "market_data_source": "longbridge-cli",
                 "fingerprint": fingerprint,
                 "probability_field_hit_rate_pct": hit_rate["score_pct"],

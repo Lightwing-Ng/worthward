@@ -1,7 +1,10 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.102.0
+Code version: v0.103.0
+- Changed: Futu (HK) monthly statement PDFs now use the shared bounded CPU
+  process pool for independent file parsing, preserving upload order and
+  falling back safely when process execution is unavailable.
 - Changed: IBKR Web paste can now parse a full Your Holdings clipboard
   capture into its optional cash and position boundary, preserving the raw
   snapshot as immutable source evidence and rejecting account mismatches.
@@ -230,7 +233,6 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from email import policy
 from email.utils import parsedate_to_datetime
@@ -245,6 +247,7 @@ from app.core.broker_catalog import sort_broker_codes
 from app.core.broker_settings import BrokerSettings, uses_longbridge_cli_oauth
 from app.core.config import SETTINGS_STORE_DIR
 from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status, run_longbridge_cli_json
+from app.infrastructure.parallel import map_ordered
 from app.infrastructure.storage import (
     MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES,
     canonicalize_investment_ticker,
@@ -23027,6 +23030,17 @@ def build_investment_payload_from_futuhk_statement_pdf(
     return payload
 
 
+def _parse_futuhk_statement_pdf_item(
+        item: tuple[bytes, str],
+) -> dict[str, Any]:
+    """Parse one uploaded statement in a process-safe top-level task."""
+    pdf_bytes, source_filename = item
+    return build_investment_payload_from_futuhk_statement_pdf(
+        pdf_bytes,
+        source_filename=source_filename,
+    )
+
+
 def build_investment_payload_from_futuhk_statement_pdfs(
     statement_pdf_payloads: list[tuple[bytes, str]],
 ) -> dict[str, Any]:
@@ -23037,26 +23051,13 @@ def build_investment_payload_from_futuhk_statement_pdfs(
         for pdf_bytes, source_filename in statement_pdf_payloads
         if pdf_bytes
     ]
-    worker_count = min(4, len(non_empty_payloads))
-    if worker_count <= 1:
-        payloads = [
-            build_investment_payload_from_futuhk_statement_pdf(
-                pdf_bytes,
-                source_filename=source_filename,
-            )
-            for pdf_bytes, source_filename in non_empty_payloads
-        ]
-    else:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            payloads = list(
-                executor.map(
-                    lambda item: build_investment_payload_from_futuhk_statement_pdf(
-                        item[0],
-                        source_filename=item[1],
-                    ),
-                    non_empty_payloads,
-                )
-            )
+    payloads, _stats = map_ordered(
+        _parse_futuhk_statement_pdf_item,
+        non_empty_payloads,
+        mode="cpu",
+        min_items=2,
+        max_workers=4,
+    )
     if not payloads:
         raise ValueError("The uploaded Futu (HK) statement PDFs were empty.")
     return _merge_futuhk_statement_payloads(payloads)

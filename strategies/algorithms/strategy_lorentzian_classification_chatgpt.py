@@ -3,11 +3,16 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from app.infrastructure.parallel import map_ordered_batches
+
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 LONG = 1
 SHORT = -1
 NEUTRAL = 0
+
+_PREDICTION_PARALLEL_MIN_ROWS = 64
+_PREDICTION_PARALLEL_MAX_WORKERS = 8
 
 
 def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -214,6 +219,73 @@ def _bars_held_from_signal(signal_series: pd.Series) -> pd.Series:
     return pd.Series(bars_held, index=signal_series.index, dtype="int64")
 
 
+def _lorentzian_prediction_at_index(
+        current_index: int,
+        features: np.ndarray,
+        training_labels: np.ndarray,
+        label_available: np.ndarray,
+        neighbors_count: int,
+        max_bars_back: int,
+        sample_step: int,
+        label_horizon: int,
+        finite_rows: np.ndarray | None = None,
+) -> float:
+    if current_index <= 0 or not np.isfinite(features[current_index]).all():
+        return 0.0
+    matured_end = current_index - label_horizon
+    if matured_end < 0:
+        return 0.0
+    history_start = max(0, matured_end - max_bars_back)
+    sampled_idx = np.arange(history_start, matured_end + 1, sample_step, dtype=np.int64)
+    if sampled_idx.size == 0:
+        return 0.0
+    if finite_rows is None:
+        finite_rows = np.isfinite(features).all(axis=1)
+    valid_idx = sampled_idx[finite_rows[sampled_idx] & label_available[sampled_idx]]
+    if valid_idx.size == 0:
+        return 0.0
+    distances = np.log1p(np.abs(features[valid_idx] - features[current_index])).sum(axis=1)
+    nearest_count = min(neighbors_count, distances.size)
+    if nearest_count <= 0:
+        return 0.0
+    near_idx = (
+        np.argpartition(distances, nearest_count - 1)[:nearest_count]
+        if nearest_count < distances.size
+        else np.arange(distances.size)
+    )
+    near_distances = distances[near_idx]
+    near_labels = training_labels[valid_idx[near_idx]].astype(np.float64)
+    weights = 1.0 / np.maximum(near_distances, 1e-9)
+    return float(np.dot(near_labels, weights) / weights.sum())
+
+
+def _lorentzian_prediction_batch(
+        indices: tuple[int, ...],
+        features: np.ndarray,
+        training_labels: np.ndarray,
+        label_available: np.ndarray,
+        neighbors_count: int,
+        max_bars_back: int,
+        sample_step: int,
+        label_horizon: int,
+        finite_rows: np.ndarray,
+) -> list[float]:
+    return [
+        _lorentzian_prediction_at_index(
+            int(current_index),
+            features,
+            training_labels,
+            label_available,
+            neighbors_count,
+            max_bars_back,
+            sample_step,
+            label_horizon,
+            finite_rows,
+        )
+        for current_index in indices
+    ]
+
+
 def _lorentzian_knn_predictions(
         features: np.ndarray,
         training_labels: np.ndarray,
@@ -230,41 +302,25 @@ def _lorentzian_knn_predictions(
         return predictions
 
     finite_rows = np.isfinite(features).all(axis=1)
-
-    for current_index in range(1, n_rows):
-        if not finite_rows[current_index]:
-            continue
-
-        matured_end = current_index - label_horizon
-        if matured_end < 0:
-            continue
-
-        history_start = max(0, matured_end - max_bars_back)
-        sampled_idx = np.arange(history_start, matured_end + 1, sample_step, dtype=np.int64)
-        if sampled_idx.size == 0:
-            continue
-
-        valid_idx = sampled_idx[finite_rows[sampled_idx] & label_available[sampled_idx]]
-        if valid_idx.size == 0:
-            continue
-
-        hist_features = features[valid_idx]
-        distances = np.log1p(np.abs(hist_features - features[current_index])).sum(axis=1)
-
-        k = min(neighbors_count, distances.size)
-        if k <= 0:
-            continue
-
-        if k < distances.size:
-            near_idx = np.argpartition(distances, k - 1)[:k]
-        else:
-            near_idx = np.arange(distances.size)
-
-        near_distances = distances[near_idx]
-        near_labels = training_labels[valid_idx[near_idx]].astype(np.float64)
-        weights = 1.0 / np.maximum(near_distances, 1e-9)
-
-        predictions[current_index] = float(np.dot(near_labels, weights) / weights.sum())
+    prediction_values, _ = map_ordered_batches(
+        _lorentzian_prediction_batch,
+        range(1, n_rows),
+        mode="cpu",
+        static_args=(
+            features,
+            training_labels,
+            label_available,
+            neighbors_count,
+            max_bars_back,
+            sample_step,
+            label_horizon,
+            finite_rows,
+        ),
+        min_items=_PREDICTION_PARALLEL_MIN_ROWS,
+        max_workers=_PREDICTION_PARALLEL_MAX_WORKERS,
+    )
+    if prediction_values:
+        predictions[1:] = np.asarray(prediction_values, dtype=np.float64)
 
     return predictions
 
@@ -584,13 +640,15 @@ class LorentzianClassificationStrategy(BaseStrategy):
             params: dict | None = None,
     ) -> StrategySignalResult:
         """
-        Code version: v0.3.0
+        Code version: v0.3.1
         Changes:
         - Use forward labels for a true 4-bar-ahead classification target.
         - Exclude non-matured samples from the k-NN history window.
         - Use distance-weighted Lorentzian voting instead of raw vote sum.
         - Add two-bar confirmation before signal flips to reduce whipsaw.
         - Preserve the original dataset index.
+        - Run independent causal neighbor predictions through the shared
+          bounded CPU process pool before signal replay.
         """
         frame = _ensure_ohlcv_columns(dataset.copy())
         if frame.empty:

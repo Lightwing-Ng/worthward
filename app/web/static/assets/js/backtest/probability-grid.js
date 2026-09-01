@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.20.0
+ * Code version: v0.20.1
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -311,10 +311,18 @@
             : 0;
         const aboveCellExtent = sideCellExtent(normalizedRowsAbove);
         const belowCellExtent = sideCellExtent(normalizedRowsBelow);
-        const guideGapAbove = normalizedRowsBelow > 0 ? gap / 2 : 0;
-        const guideGapBelow = normalizedRowsAbove > 0 ? gap / 2 : 0;
-        const aboveExtent = padding + aboveCellExtent + guideGapAbove;
-        const belowExtent = padding + belowCellExtent + guideGapBelow;
+        // Keep the first cell on its semantic side of the guide even when the
+        // chart boundary leaves only one side of the field visible. With both
+        // sides present, the CSS grid gap is split around the guide. With one
+        // side absent, the empty side gives back its half-gap so the remaining
+        // side still starts or ends exactly half a gap away from the guide.
+        const guideGap = gap / 2;
+        const aboveExtent = normalizedRowsAbove > 0
+            ? padding + aboveCellExtent + guideGap
+            : padding - (normalizedRowsBelow > 0 ? guideGap : 0);
+        const belowExtent = normalizedRowsBelow > 0
+            ? padding + belowCellExtent + guideGap
+            : padding - (normalizedRowsAbove > 0 ? guideGap : 0);
         const height = aboveExtent + belowExtent;
         const halfHeight = height / 2;
         const rowCount = normalizedRowsAbove + normalizedRowsBelow;
@@ -458,21 +466,28 @@
         const normalizedRowsAbove = boundedInteger(
             rowsAbove,
             DEFAULT_ROWS_ABOVE,
-            GEOMETRY_LIMITS.rows,
+            [0, MAX_ROWS_PER_SIDE],
         );
         const normalizedRowsBelow = boundedInteger(
             rowsBelow,
             DEFAULT_ROWS_BELOW,
-            GEOMETRY_LIMITS.rows,
+            [0, MAX_ROWS_PER_SIDE],
         );
         if (!(height > 0) || !(normalizedCellSize > 0)) return null;
         const sideCellExtent = (rowCount) => rowCount > 0
             ? (rowCount * normalizedCellSize) + ((rowCount - 1) * gap)
             : 0;
-        const aboveExtent = padding + sideCellExtent(normalizedRowsAbove)
-            + (normalizedRowsBelow > 0 ? gap / 2 : 0);
-        const belowExtent = padding + sideCellExtent(normalizedRowsBelow)
-            + (normalizedRowsAbove > 0 ? gap / 2 : 0);
+        const aboveCellExtent = sideCellExtent(normalizedRowsAbove);
+        const belowCellExtent = sideCellExtent(normalizedRowsBelow);
+        // Mirror computeGridGeometry so the detail panel and the hover field
+        // place one-sided cells on the same side of the horizontal guide.
+        const guideGap = gap / 2;
+        const aboveExtent = normalizedRowsAbove > 0
+            ? padding + aboveCellExtent + guideGap
+            : padding - (normalizedRowsBelow > 0 ? guideGap : 0);
+        const belowExtent = normalizedRowsBelow > 0
+            ? padding + belowCellExtent + guideGap
+            : padding - (normalizedRowsAbove > 0 ? guideGap : 0);
         const anchorY = height / 2;
         return Object.freeze({
             anchorY,
@@ -708,7 +723,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.20.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.20.1",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

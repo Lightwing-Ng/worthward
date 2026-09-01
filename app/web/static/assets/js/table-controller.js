@@ -1,7 +1,7 @@
 /**
  * Standard scrollable table alignment controller.
  *
- * Code version: v1.0.3
+ * Code version: v1.0.4
  */
 (function bootstrapStandardTableController(globalScope) {
     "use strict";
@@ -9,6 +9,18 @@
     const HEADER_HEIGHT_PROPERTY = "--scrollable-data-table-header-height";
     const SCROLLBAR_WIDTH_PROPERTY = "--scrollable-data-table-scrollbar-width";
     const BORDER_COMPENSATION_PROPERTY = "--scrollable-data-table-overlay-border-compensation";
+
+    const setInlineStyleIfChanged = (element, propertyName, value) => {
+        if (!element || element.style.getPropertyValue(propertyName) === value) return false;
+        element.style.setProperty(propertyName, value);
+        return true;
+    };
+
+    const removeInlineStyleIfPresent = (element, propertyName) => {
+        if (!element || !element.style.getPropertyValue(propertyName)) return false;
+        element.style.removeProperty(propertyName);
+        return true;
+    };
 
     const getHeaderHorizontalTranslate = (scrollLeft = 0) => {
         const offset = Number(scrollLeft);
@@ -113,7 +125,7 @@
         const hasMatchingColumnGroup = headerColumns.length === columnWidths.length;
         if (hasMatchingColumnGroup) {
             headerColumns.forEach((column, index) => {
-                column.style.width = `${columnWidths[index]}px`;
+                setInlineStyleIfChanged(column, "width", `${columnWidths[index]}px`);
             });
         }
         Array.from(headerTable.rows).forEach((row) => {
@@ -121,14 +133,14 @@
                 if (getCellSpan(cell) !== 1 || index >= columnWidths.length) return;
                 const bodyStyle = globalScope.getComputedStyle(bodyRow.cells[index]);
                 const bodyEndPadding = Number.parseFloat(bodyStyle.paddingInlineEnd) || 0;
-                cell.style.paddingInlineStart = bodyStyle.paddingInlineStart;
-                cell.style.paddingInlineEnd = `${bodyEndPadding + (
+                setInlineStyleIfChanged(cell, "padding-inline-start", bodyStyle.paddingInlineStart);
+                setInlineStyleIfChanged(cell, "padding-inline-end", `${bodyEndPadding + (
                     index === columnWidths.length - 1 ? trailingTrackWidth : 0
-                )}px`;
+                )}px`);
                 if (hasMatchingColumnGroup) {
-                    cell.style.removeProperty("width");
+                    removeInlineStyleIfPresent(cell, "width");
                 } else {
-                    cell.style.width = `${columnWidths[index]}px`;
+                    setInlineStyleIfChanged(cell, "width", `${columnWidths[index]}px`);
                 }
             });
         });
@@ -153,8 +165,8 @@
                 initialHeaderTranslations.set(headerTable, headerTable.style.translate);
             }
             const initialTranslate = initialHeaderTranslations.get(headerTable) || "";
-            headerTable.style.translate = getHeaderHorizontalTranslate(scrollContainer.scrollLeft)
-                || initialTranslate;
+            const nextTranslate = getHeaderHorizontalTranslate(scrollContainer.scrollLeft) || initialTranslate;
+            if (headerTable.style.translate !== nextTranslate) headerTable.style.translate = nextTranslate;
         };
 
         const scheduleHeaderHorizontalPosition = () => {
@@ -190,13 +202,13 @@
             const trailingTrackWidth = lastCell
                 ? Math.max(0, shell.getBoundingClientRect().right - lastCell.getBoundingClientRect().right)
                 : scrollbarWidth;
-            shell.style.setProperty(SCROLLBAR_WIDTH_PROPERTY, `${trailingTrackWidth}px`);
-            shell.style.setProperty(BORDER_COMPENSATION_PROPERTY, `${trailingTrackWidth > 0 ? 1 : 0}px`);
-            if (scrollbarProperty) shell.style.setProperty(scrollbarProperty, `${scrollbarWidth}px`);
+            setInlineStyleIfChanged(shell, SCROLLBAR_WIDTH_PROPERTY, `${trailingTrackWidth}px`);
+            setInlineStyleIfChanged(shell, BORDER_COMPENSATION_PROPERTY, `${trailingTrackWidth > 0 ? 1 : 0}px`);
+            if (scrollbarProperty) setInlineStyleIfChanged(shell, scrollbarProperty, `${scrollbarWidth}px`);
             syncColumnWidths(headerTable, bodyTable, trailingTrackWidth);
             const headerHeight = headerTable.getBoundingClientRect().height;
             if (headerHeight > 0) {
-                shell.style.setProperty(HEADER_HEIGHT_PROPERTY, `${roundUpToDevicePixel(headerHeight)}px`);
+                setInlineStyleIfChanged(shell, HEADER_HEIGHT_PROPERTY, `${roundUpToDevicePixel(headerHeight)}px`);
             }
             syncHeaderHorizontalPosition();
         };
@@ -225,10 +237,10 @@
                 headerTable.style.translate = initialTranslate;
             });
             visualOverlay.remove();
-            shell.style.removeProperty(HEADER_HEIGHT_PROPERTY);
-            shell.style.removeProperty(SCROLLBAR_WIDTH_PROPERTY);
-            shell.style.removeProperty(BORDER_COMPENSATION_PROPERTY);
-            if (scrollbarProperty) shell.style.removeProperty(scrollbarProperty);
+            removeInlineStyleIfPresent(shell, HEADER_HEIGHT_PROPERTY);
+            removeInlineStyleIfPresent(shell, SCROLLBAR_WIDTH_PROPERTY);
+            removeInlineStyleIfPresent(shell, BORDER_COMPENSATION_PROPERTY);
+            if (scrollbarProperty) removeInlineStyleIfPresent(shell, scrollbarProperty);
         };
     };
 

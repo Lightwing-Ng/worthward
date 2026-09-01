@@ -6,7 +6,10 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v0.3.1
+Code version: v0.3.2
+- Changed: Independent causal Lorentzian neighbor predictions use the shared
+  bounded CPU process pool before stateful signal replay; each prediction still
+  sees only matured historical labels.
 """
 
 from __future__ import annotations
@@ -15,11 +18,16 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from app.infrastructure.parallel import map_ordered_batches
+
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 LONG = 1
 SHORT = -1
 NEUTRAL = 0
+
+_PREDICTION_PARALLEL_MIN_ROWS = 64
+_PREDICTION_PARALLEL_MAX_WORKERS = 8
 
 
 def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -191,6 +199,50 @@ def _shift_bool(series: pd.Series, periods: int) -> pd.Series:
 
 def _shift_int(series: pd.Series, periods: int, fill_value: int = 0) -> pd.Series:
     return series.shift(periods).fillna(fill_value).astype(int)
+
+
+def _lorentzian_prediction_at_index(
+        index: int,
+        features: np.ndarray,
+        training_labels: np.ndarray,
+        neighbors_count: int,
+        max_bars_back: int,
+) -> float:
+    """Compute one causal neighbor vote from matured historical labels."""
+    if index <= 0 or not np.isfinite(features[index]).all():
+        return 0.0
+    start = max(0, index - max_bars_back)
+    hist_features = features[start:index]
+    sub_indices = np.arange(0, len(hist_features), step=4)
+    if len(sub_indices) == 0:
+        return 0.0
+    sampled_hist = hist_features[sub_indices]
+    dist = np.log1p(np.abs(sampled_hist - features[index])).sum(axis=1)
+    nearest_count = min(neighbors_count, len(dist))
+    if nearest_count <= 0:
+        return 0.0
+    nearest_indices = np.argpartition(dist, nearest_count - 1)[:nearest_count]
+    actual_indices = start + sub_indices[nearest_indices]
+    return float(np.sum(training_labels[actual_indices]))
+
+
+def _lorentzian_prediction_batch(
+        indices: tuple[int, ...],
+        features: np.ndarray,
+        training_labels: np.ndarray,
+        neighbors_count: int,
+        max_bars_back: int,
+) -> list[float]:
+    return [
+        _lorentzian_prediction_at_index(
+            int(index),
+            features,
+            training_labels,
+            neighbors_count,
+            max_bars_back,
+        )
+        for index in indices
+    ]
 
 
 class LorentzianClassificationStrategy(BaseStrategy):
@@ -608,28 +660,21 @@ class LorentzianClassificationStrategy(BaseStrategy):
         # Optimization: Use numpy for k-NN search
         features = np.stack(feature_matrix, axis=1)  # (N, features)
         training_labels_np = training_labels.astype(np.int64)
+        prediction_values_list, _ = map_ordered_batches(
+            _lorentzian_prediction_batch,
+            range(1, len(frame)),
+            mode="cpu",
+            static_args=(features, training_labels_np, neighbors_count, max_bars_back),
+            min_items=_PREDICTION_PARALLEL_MIN_ROWS,
+            max_workers=_PREDICTION_PARALLEL_MAX_WORKERS,
+        )
+        prediction_values = np.zeros(len(frame), dtype=np.float64)
+        if prediction_values_list:
+            prediction_values[1:] = np.asarray(prediction_values_list, dtype=np.float64)
         current_signal = NEUTRAL
 
         for i in range(1, len(frame)):
-            start = max(0, i - max_bars_back)
-            prediction = 0.0
-
-            if np.all(np.isfinite(features[i])):
-                # Vectorized Lorentzian distance: sum(log(1 + abs(F_current - F_history)))
-                hist_features = features[start:i]
-                sub_indices = np.arange(0, len(hist_features), step=4)
-
-                if len(sub_indices) > 0:
-                    sampled_hist = hist_features[sub_indices]
-                    dist = np.log1p(np.abs(sampled_hist - features[i])).sum(axis=1)
-
-                    k = min(neighbors_count, len(dist))
-                    if k > 0:
-                        near_idx = np.argpartition(dist, k - 1)[:k]
-                        actual_indices = start + sub_indices[near_idx]
-                        prediction = float(np.sum(training_labels_np[actual_indices]))
-
-            prediction_values[i] = prediction
+            prediction = float(prediction_values[i])
             volatility_ok = (atr_fast.iloc[i] > atr_slow.iloc[i]) if use_volatility_filter else True
             regime_ok = (regime_series.iloc[i] > regime_threshold) if use_regime_filter else True
             adx_ok = (adx_series.iloc[i] > adx_threshold) if use_adx_filter else True

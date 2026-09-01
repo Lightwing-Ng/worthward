@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.20.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.22.0."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from strategies.algorithms.strategy_bayesian_price_field import (
     BayesianPriceFieldStrategy,
     _build_factor_columns,
     _bundle_ohlcv_frame,
+    _cpu_parallel_worker_count,
     _frame_fingerprint,
     _longbridge_symbol,
     _merge_bundle_observations,
@@ -1185,8 +1186,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             )
 
         load_torch.assert_not_called()
+        device = result.presentation["device"]
         self.assertEqual(
-            result.presentation["device"],
+            {
+                key: device[key]
+                for key in (
+                    "requested",
+                    "resolved",
+                    "engine",
+                    "numeric_precision",
+                    "fallback_reason",
+                )
+            },
             {
                 "requested": "Auto",
                 "resolved": "cpu",
@@ -1195,7 +1206,55 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "fallback_reason": None,
             },
         )
+        self.assertEqual(device["parallel_workers"], _cpu_parallel_worker_count(180))
+        self.assertEqual(
+            device["parallel_strategy"],
+            "cpu-process-pool" if device["parallel_workers"] > 1 else "cpu-serial",
+        )
         self.assertEqual(result.metadata["compute_device"], "cpu")
+
+    def test_cpu_parallel_origins_match_serial_results(self) -> None:
+        frame = _market_frame(180)
+        factor_values = {
+            "signal": np.sin(np.linspace(-2.0, 2.0, len(frame))),
+        }
+        with patch(
+            "app.infrastructure.parallel.os.cpu_count",
+            return_value=8,
+        ):
+            parallel_backend = _resolve_compute_backend("CPU")
+            parallel = _walk_forward_predictions(
+                frame,
+                factor_values,
+                ["signal"],
+                training_window=60,
+                prior_strength=1.0,
+                backend=parallel_backend,
+            )
+        with patch(
+            "app.infrastructure.parallel.os.cpu_count",
+            return_value=1,
+        ):
+            serial_backend = _resolve_compute_backend("CPU")
+            serial = _walk_forward_predictions(
+                frame,
+                factor_values,
+                ["signal"],
+                training_window=60,
+                prior_strength=1.0,
+                backend=serial_backend,
+            )
+
+        self.assertGreater(parallel_backend.parallel_workers, 1)
+        self.assertEqual(serial_backend.parallel_workers, 1)
+        for parallel_values, serial_values in zip(parallel, serial, strict=True):
+            np.testing.assert_allclose(
+                parallel_values,
+                serial_values,
+                rtol=0.0,
+                atol=1e-12,
+                equal_nan=True,
+            )
 
     def test_market_loader_requests_warmup_and_preserves_the_bundle(self) -> None:
         bars = tuple(

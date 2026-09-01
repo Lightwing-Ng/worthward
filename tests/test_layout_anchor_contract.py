@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.1
+Code version: v0.8.3
 """
 
 from pathlib import Path
@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.4");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.0" in app_css
+    assert "v0.65.2" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -175,7 +175,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.54.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.1");' in app_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -249,7 +249,7 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         'probabilityScrollResizer.blur();',
         'const setProbabilityScrollPosition = (scrollLeft) => {',
         'const stackScrollWidth = Math.ceil(',
-        'tradeChartStack.clientWidth + distance);',
+        'const stackScrollWidth = Math.ceil(stackWidth + nextDistance);',
         'const nativeScrollLeft = Math.ceil(next);',
         'const setProbabilityScrollVisualOffset = (offsetValue) => {',
         'const probabilityScrollVisualNodes = [',
@@ -283,6 +283,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
     backtest_layout = _read(ASSET_ROOT / "js/backtest/layout.js")
     probability_grid = _read(ASSET_ROOT / "js/backtest/probability-grid.js")
+    app_script = _read(ASSET_ROOT / "js/app.js")
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
 
     for fragment in (
@@ -294,15 +295,14 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         'const setProbabilityScrollPosition = (scrollLeft) => {',
         'probabilityScrollPort.addEventListener("scroll", () => {',
         'probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);',
-        'tradeChartStack.dataset.probabilityPanMotion = "shared-bouncy-spring";',
-        "const motion = window.AntigravityMotion;",
-        "const preset = motion.springPresets?.bouncy || {",
-        '"backtest-probability-scroll",',
+        'tradeChartStack.dataset.probabilityPanMotion = "shared-pointer-follow";',
+        "probabilityScrollCleanup?.();",
+        "setProbabilityScrollPosition(probabilityScrollTarget);",
         "x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,",
         "const canvasOffsetX = (",
         "canvasRect.left - stackRect.left + probabilityScrollVisualPosition",
         ");",
-        "setProbabilityScrollTarget(tooltipContentRight - tradeChartStack.clientWidth);",
+        "setProbabilityScrollTarget(tooltipContentRight - probabilityScrollStackWidth);",
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
         "rowsBelow: strategyPresentation.rows_below,",
@@ -315,6 +315,14 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         'tradeChartStack.classList.remove("has-probability-field");',
     ):
         assert fragment in backtest_script
+
+    for fragment in (
+        'if (parts.triggerLabel.textContent !== nextLabel) parts.triggerLabel.textContent = nextLabel;',
+        'if (parts.triggerLabel.dataset.fallbackLabel !== nextLabel)',
+        'const nextEmptyState = nextLabel ? "0" : "1";',
+        'if (parts.trigger.dataset.empty !== nextEmptyState)',
+    ):
+        assert fragment in app_script
 
     for fragment in (
         "--backtest-probability-narrow-results-min-height: 600px;",
@@ -443,7 +451,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const getProbabilityStageMinimum = () => {",
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.3.0",
+        "investment-layout-v1.3.4",
+        "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
+        "observeHistorySurfaceResize: false,",
     ):
         assert fragment in backtest_layout
 
@@ -474,6 +484,14 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "dynamicStageMinimum,",
         "overviewMinimumChangeEvent",
         "onChartsResized",
+        "ignoreMutationSelector",
+        "const stackedLayoutMedia = typeof windowRef?.ANTIGRAVITY_RESPONSIVE?.media === 'function'",
+        "const isStackedLayout = () => Boolean(stackedLayoutMedia?.matches);",
+        "const clearInlineSplitLayoutStyles = () => {",
+        "overviewRatio = Number.NaN;",
+        "if (!isStackedLayout()) {",
+        "stackedLayoutMedia.addEventListener('change', onStackedLayoutChange);",
+        "stackedLayoutMedia.removeEventListener('change', onStackedLayoutChange);",
         "workspaceHeader.addEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
         "workspaceHeader.removeEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);",
         "'--investment-overview-content-min-height'",
@@ -482,10 +500,10 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.48.0",
-        "-backtest-probability-grid-v0.20.0",
-        "-backtest-v0.28.2",
-        "-backtest-layout-v0.3.0",
+        "-app-v0.48.3",
+        "-backtest-probability-grid-v0.20.1",
+        "-backtest-v0.28.7",
+        "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
 
@@ -493,6 +511,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None:
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    pending_app = _read(ASSET_ROOT / "js/app.js")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
 
     for fragment in (
@@ -508,13 +527,21 @@ def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None
     ):
         assert fragment in backtest_template
     assert 'backtest-probability-detail-y-axis-title' not in backtest_template
+    assert 'backtest-probability-detail-y-axis-title' not in pending_app
+    assert (
+        '.backtest-history-view-body > '
+        '[data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel)'
+    ) in trade_css
+    assert (
+        '.backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]) {'
+    ) not in trade_css
     assert backtest_template.index('"value": "metrics"') < backtest_template.index('"value": "probability"')
     assert backtest_template.index('"value": "probability"') < backtest_template.index('"value": "transactions"')
     assert backtest_template.index('data-backtest-history-view-panel="metrics"') < backtest_template.index('data-backtest-history-view-panel="probability"')
     assert backtest_template.index('data-backtest-history-view-panel="probability"') < backtest_template.index('data-backtest-history-view-panel="transactions"')
     for fragment in (
         "const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {",
-        "const applyProbabilityCellNode = (node, cell, modifierClass = \"\") => {",
+        "const applyProbabilityCellNode = (",
         "const renderProbabilityDetail = (index, model) => {",
         "const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {",
         "const renderedTicks = xTickNodes.filter(Boolean);",
@@ -527,11 +554,18 @@ def test_bayesian_history_detail_reuses_hover_cells_and_settings_dates() -> None
         "const probabilityModelCache = new Map();",
         "const getProbabilityHoverLayout = () => {",
         "const cachedModel = probabilityModelCache.get(index);",
-        "const shouldRenderCells = !canReuseCells || grid.dataset.renderKey !== renderKey;",
+        "const shouldRenderCells = shouldUpdateDomMirror",
+        "&& (!canReuseCells || grid.dataset.renderKey !== renderKey);",
+        "const shouldUpdateDomMirror = !hasDomMirror",
+        "const drawProbabilityCanvas = (geometry, cells) => {",
         "if (chart === equityChart && !showTradeDetails) return;",
         "let latestProbabilityDetailIndex = null;",
+        "const scheduleProbabilityDetailRefresh = (passes = 1) => {",
+        "const refreshProbabilityDetailAfterViewChange = () => {",
+        "probabilityDetailLayoutObserver = new ResizeObserver(() => {",
+        "probabilityDetailLayoutObserver.observe(probabilityDetailGrid.parentElement);",
         "cellSizeTargetPx",
-        "renderProbabilityDetail(index, model);",
+        "if (detailModel) renderProbabilityDetail(detailIndex, detailModel);",
         "formatChartDateLines(dateParts)",
         "buildProbabilityDetailTickIndexSet(geometry.columnCount",
         "probabilityDetailPanel.dataset.activeIndex = String(index);",

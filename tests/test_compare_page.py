@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.7
+Code version: v0.14.8
 """
 
 from __future__ import annotations
@@ -1353,6 +1353,11 @@ class ComparePageTests(unittest.TestCase):
                 return temp_root / f"{ticker}.parquet"
 
             with (
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-07-23 16:00", tz="Asia/Shanghai"),
+                ),
                 patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
                 patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
                 patch("app.web.runtime.is_one_minute_store_fresh", return_value=False),
@@ -1433,6 +1438,11 @@ class ComparePageTests(unittest.TestCase):
                 return temp_root / f"{ticker}.parquet"
 
             with (
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-07-23 16:00", tz="Asia/Shanghai"),
+                ),
                 patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
                 patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
                 patch("app.web.runtime.is_one_minute_store_fresh", return_value=False),

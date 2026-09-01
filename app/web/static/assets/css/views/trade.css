@@ -1,4 +1,4 @@
-/* Code version: v3.54.0 */
+/* Code version: v3.55.1 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -103,13 +103,6 @@
     );
 }
 
-.backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"]) {
-    --workspace-article-pad-block-start: calc(
-        var(--backtest-share-action-inset-block-start)
-        + var(--backtest-share-action-clearance)
-    );
-}
-
 .backtest-trade-performance-card > .investment-share-actions[data-share-placement="summary-panel"] {
     position: absolute;
     top: var(--backtest-share-action-inset-block-start);
@@ -121,6 +114,11 @@
         + (var(--investment-share-action-gap) * 2)
     );
     height: var(--settings-round-icon-button-size);
+}
+
+.backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"])
+    > .backtest-view-surface {
+    padding-block-start: var(--backtest-share-action-clearance);
 }
 
 .backtest-section-resizer {
@@ -474,7 +472,7 @@
     }
 }
 
-.backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]) {
+.backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel) {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
@@ -1085,6 +1083,7 @@
     box-sizing: border-box;
     min-width: 0;
     max-width: none;
+    contain: layout paint;
     padding: 0;
     overflow: hidden;
     background: transparent;
@@ -1095,6 +1094,7 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     pointer-events: none;
+    will-change: transform;
 }
 
 .backtest-probability-tooltip.chart-tooltip[hidden] {
@@ -1106,12 +1106,25 @@
 }
 
 .backtest-probability-grid {
+    contain: strict;
     display: grid;
     width: 100%;
     height: 100%;
     box-sizing: border-box;
     align-content: start;
     justify-content: start;
+    position: relative;
+    visibility: hidden;
+    z-index: 1;
+}
+
+.backtest-probability-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
 }
 
 .backtest-probability-cell {

@@ -1,7 +1,10 @@
 """
 Project entrypoint.
 
-Code version: v0.5.2
+Code version: v0.5.3
+- Changed: Spawned CPU workers skip application bootstrap when importing this
+  entrypoint, preventing Flask and broker prewarm side effects in child
+  processes while preserving the normal WSGI and CLI launch paths.
 """
 
 from json import JSONDecodeError
@@ -92,7 +95,14 @@ def _initialize_runtime():
     return create_app(), runtime_settings
 
 
-app, settings = _initialize_runtime()
+if __name__ == "__mp_main__":
+    # ``spawn`` imports the parent's entrypoint in each worker. The worker only
+    # needs the pickled strategy task; it must not create a Flask app or touch
+    # broker/network bootstrap state.
+    app = None
+    settings = {}
+else:
+    app, settings = _initialize_runtime()
 
 if __name__ == "__main__":
     app.run(**_build_run_options(settings))

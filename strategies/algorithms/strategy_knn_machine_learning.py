@@ -6,7 +6,10 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v0.3.0
+Code version: v0.3.1
+- Changed: Independent causal kNN origins use the shared bounded CPU process
+  pool before the stateful signal replay, preserving the original ordering and
+  no-future-data boundary.
 """
 
 from __future__ import annotations
@@ -16,11 +19,16 @@ import math
 import numpy as np
 import pandas as pd
 
+from app.infrastructure.parallel import map_ordered_batches
+
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 BUY = 1
 SELL = -1
 CLEAR = 0
+
+_PREDICTION_PARALLEL_MIN_ROWS = 64
+_PREDICTION_PARALLEL_MAX_WORKERS = 8
 
 
 def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -119,6 +127,56 @@ def _select_feature_pair(
         pd.concat([rs, cs, os, vs], axis=1).mean(axis=1),
         pd.concat([rf, cf, of, vf], axis=1).mean(axis=1),
     )
+
+
+def _knn_prediction_at_index(
+        index: int,
+        feature1_values: np.ndarray,
+        feature2_values: np.ndarray,
+        direction_values: np.ndarray,
+        k_value: int,
+) -> float:
+    """Compute one causal kNN vote using only rows before ``index``."""
+    current_f1 = feature1_values[index]
+    current_f2 = feature2_values[index]
+    if index <= 0 or not np.isfinite(current_f1) or not np.isfinite(current_f2):
+        return 0.0
+    history_f1 = feature1_values[:index]
+    history_f2 = feature2_values[:index]
+    history_directions = direction_values[:index]
+    valid_mask = (
+        np.isfinite(history_f1)
+        & np.isfinite(history_f2)
+        & (history_directions != 0)
+    )
+    if not np.any(valid_mask):
+        return 0.0
+    distances = np.sqrt(
+        np.square(current_f1 - history_f1[valid_mask])
+        + np.square(current_f2 - history_f2[valid_mask])
+    )
+    nearest_count = min(k_value, len(distances))
+    nearest_indices = np.argpartition(distances, nearest_count - 1)[:nearest_count]
+    return float(history_directions[valid_mask][nearest_indices].sum())
+
+
+def _knn_prediction_batch(
+        indices: tuple[int, ...],
+        feature1_values: np.ndarray,
+        feature2_values: np.ndarray,
+        direction_values: np.ndarray,
+        k_value: int,
+) -> list[float]:
+    return [
+        _knn_prediction_at_index(
+            int(index),
+            feature1_values,
+            feature2_values,
+            direction_values,
+            k_value,
+        )
+        for index in indices
+    ]
 
 
 class KnnMachineLearningStrategy(BaseStrategy):
@@ -231,7 +289,6 @@ class KnnMachineLearningStrategy(BaseStrategy):
         feature1, feature2 = _select_feature_pair(indicator_name, rs, rf, cs, cf, os, of, vs, vf)
 
         directions = np.sign(frame["Close"].shift(-1) - frame["Close"]).fillna(0.0).astype(int)
-        prediction_scores = np.zeros(len(frame), dtype=np.float64)
         raw_signal = np.zeros(len(frame), dtype=int)
 
         k_value = max(1, int(math.floor(math.sqrt(max(base_k, 1)))))
@@ -245,30 +302,18 @@ class KnnMachineLearningStrategy(BaseStrategy):
         feature2_values = feature2.to_numpy(dtype=np.float64)
         direction_values = directions.to_numpy(dtype=np.int64)
 
+        prediction_values, _ = map_ordered_batches(
+            _knn_prediction_batch,
+            range(len(frame)),
+            mode="cpu",
+            static_args=(feature1_values, feature2_values, direction_values, k_value),
+            min_items=_PREDICTION_PARALLEL_MIN_ROWS,
+            max_workers=_PREDICTION_PARALLEL_MAX_WORKERS,
+        )
+        prediction_scores = np.asarray(prediction_values, dtype=np.float64)
+
         for index in range(len(frame)):
-            current_f1 = feature1_values[index]
-            current_f2 = feature2_values[index]
-            prediction = 0.0
-
-            if index > 0 and np.isfinite(current_f1) and np.isfinite(current_f2):
-                history_f1 = feature1_values[:index]
-                history_f2 = feature2_values[:index]
-                history_directions = direction_values[:index]
-                valid_mask = (
-                        np.isfinite(history_f1)
-                        & np.isfinite(history_f2)
-                        & (history_directions != 0)
-                )
-                if np.any(valid_mask):
-                    distances = np.sqrt(
-                        np.square(current_f1 - history_f1[valid_mask])
-                        + np.square(current_f2 - history_f2[valid_mask])
-                    )
-                    nearest_count = min(k_value, len(distances))
-                    nearest_indices = np.argpartition(distances, nearest_count - 1)[:nearest_count]
-                    prediction = float(history_directions[valid_mask][nearest_indices].sum())
-
-            prediction_scores[index] = prediction
+            prediction = float(prediction_scores[index])
 
             filter_passes = True
             if use_volatility_filter:

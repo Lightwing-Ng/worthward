@@ -1,4 +1,4 @@
-/* Code version: v0.48.0 */
+/* Code version: v0.48.3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -114,6 +114,12 @@
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+    const setInlineStyleIfChanged = (element, propertyName, value) => {
+        if (!(element instanceof HTMLElement)) return false;
+        if (element.style.getPropertyValue(propertyName) === value) return false;
+        element.style.setProperty(propertyName, value);
+        return true;
+    };
     const WORKSPACE_VIEWS = new Set(["tickers", "prices", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
@@ -1721,7 +1727,7 @@
         let frameId = 0;
         let resizeObserver = null;
         const resetLayoutHeight = () => {
-            layout.style.setProperty("--workspace-mode-aligned-height", "auto");
+            setInlineStyleIfChanged(layout, "--workspace-mode-aligned-height", "auto");
         };
         const syncLayoutHeight = () => {
             if (stackedWorkspaceMedia.matches) {
@@ -1732,7 +1738,7 @@
             const layoutRect = layout.getBoundingClientRect();
             const alignedHeight = Math.floor(sidebarRect.bottom - layoutRect.top);
             if (alignedHeight > 360) {
-                layout.style.setProperty("--workspace-mode-aligned-height", `${alignedHeight}px`);
+                setInlineStyleIfChanged(layout, "--workspace-mode-aligned-height", `${alignedHeight}px`);
                 return;
             }
             resetLayoutHeight();
@@ -2137,7 +2143,6 @@
                             </div>
                             <div class="backtest-probability-detail-plot" data-backtest-probability-detail-plot>
                                 <div class="backtest-probability-detail-y-axis">
-                                    <span class="backtest-probability-detail-axis-title backtest-probability-detail-y-axis-title">Price</span>
                                     <div class="backtest-probability-detail-y-axis-viewport" data-backtest-probability-detail-y-axis></div>
                                 </div>
                                 <div class="backtest-probability-detail-main">
@@ -4892,21 +4897,21 @@
         const iconAlt = String(selectedOption?.dataset.iconAlt || "").trim()
             || `${selectedOption?.textContent?.trim() || selectedOption?.value || "Selected"} logo`;
         if (!iconUrl) {
-            parts.triggerLogo.hidden = true;
-            parts.triggerLogo.alt = "";
-            parts.triggerLogo.removeAttribute("src");
+            if (!parts.triggerLogo.hidden) parts.triggerLogo.hidden = true;
+            if (parts.triggerLogo.alt !== "") parts.triggerLogo.alt = "";
+            if (parts.triggerLogo.hasAttribute("src")) parts.triggerLogo.removeAttribute("src");
             if (parts.triggerPlaceholder) {
-                parts.triggerPlaceholder.hidden = false;
+                if (parts.triggerPlaceholder.hidden) parts.triggerPlaceholder.hidden = false;
             }
             return;
         }
-        parts.triggerLogo.alt = iconAlt;
-        parts.triggerLogo.hidden = false;
+        if (parts.triggerLogo.alt !== iconAlt) parts.triggerLogo.alt = iconAlt;
+        if (parts.triggerLogo.hidden) parts.triggerLogo.hidden = false;
         if (parts.triggerLogo.getAttribute("src") !== iconUrl) {
             parts.triggerLogo.src = iconUrl;
         }
         if (parts.triggerPlaceholder) {
-            parts.triggerPlaceholder.hidden = true;
+            if (!parts.triggerPlaceholder.hidden) parts.triggerPlaceholder.hidden = true;
         }
         parts.triggerLogo.onerror = () => {
             parts.triggerLogo.hidden = true;
@@ -5078,17 +5083,25 @@
             || parts.trigger.textContent?.trim()
             || parts.select.options[0]?.textContent?.trim()
             || "";
-        parts.triggerLabel.textContent = nextLabel;
-        parts.triggerLabel.dataset.fallbackLabel = nextLabel;
-        parts.trigger.title = nextLabel;
+        if (parts.triggerLabel.textContent !== nextLabel) parts.triggerLabel.textContent = nextLabel;
+        if (parts.triggerLabel.dataset.fallbackLabel !== nextLabel) {
+            parts.triggerLabel.dataset.fallbackLabel = nextLabel;
+        }
+        if (parts.trigger.title !== nextLabel) parts.trigger.title = nextLabel;
         const strategyParam = field.closest("[data-strategy-param-key]");
         const fieldLabel = strategyParam?.querySelector(":scope > .trade-strategy-param-label .trade-strategy-param-label-trigger > span:first-child")?.textContent?.trim()
             || field.closest(".field")?.querySelector(":scope > label")?.textContent?.trim()
             || "";
         if (fieldLabel) {
-            parts.trigger.setAttribute("aria-label", `${fieldLabel}: ${nextLabel}`);
+            const nextAriaLabel = `${fieldLabel}: ${nextLabel}`;
+            if (parts.trigger.getAttribute("aria-label") !== nextAriaLabel) {
+                parts.trigger.setAttribute("aria-label", nextAriaLabel);
+            }
         }
-        parts.trigger.dataset.empty = nextLabel ? "0" : "1";
+        const nextEmptyState = nextLabel ? "0" : "1";
+        if (parts.trigger.dataset.empty !== nextEmptyState) {
+            parts.trigger.dataset.empty = nextEmptyState;
+        }
         parts.field.classList.add("backtest-shared-select-field");
         syncSharedSelectTriggerMedia(parts, selectedOption);
     };

@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.133.2
+ * Code version: v2.133.3
  * - Added: Shared split layouts can honor a workspace-declared total overview
  *   content minimum before nested chart chrome has a measurable first frame.
  * - Changed: Stock-details and Overview y-axis badges load the shared chart-axis
@@ -408,7 +408,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.3.0';
+} from './investment/layout.js?v=investment-layout-v1.3.4';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -432,7 +432,7 @@ import {
 const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.133.2',
+    entry: 'v2.133.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -16868,13 +16868,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 {isSettlementBoundary = false} = {},
             ) => {
                 const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
-                const brokerCorrections = getBrokerCorrections(brokerCode);
-                const brokerSettlementAccruals = getBrokerSettlementAccruals(brokerCode);
+                // The current holdings snapshot is an authoritative balance
+                // boundary. Historical settlement corrections model the path
+                // to that boundary, but must not be applied on top of the
+                // already-authoritative balances or the final equity is
+                // double-counted.
+                const isAuthoritativeCurrentCashSnapshot = (
+                    txn?.authoritative_current_cash_snapshot === true
+                );
+                const aggregateCorrections = isAuthoritativeCurrentCashSnapshot
+                    ? {}
+                    : aggregateCorrectionsByCurrency;
+                const brokerCorrections = isAuthoritativeCurrentCashSnapshot
+                    ? {}
+                    : getBrokerCorrections(brokerCode);
+                const aggregateSettlementAccruals = isAuthoritativeCurrentCashSnapshot
+                    ? {}
+                    : aggregateSettlementAccrualsByCurrency;
+                const brokerSettlementAccruals = isAuthoritativeCurrentCashSnapshot
+                    ? {}
+                    : getBrokerSettlementAccruals(brokerCode);
                 const rawAggregateBalances = latestRawAggregateBalances;
-                const rawBrokerBalances = latestRawBrokerBalances.get(brokerCode)
+                const rawBrokerBalances = isAuthoritativeCurrentCashSnapshot
+                    ? (txn?.broker_cash_by_currency || txn?.calculated_broker_cash_by_currency || {})
+                    : (latestRawBrokerBalances.get(brokerCode)
                     || txn?.calculated_broker_cash_by_currency
                     || txn?.broker_cash_by_currency
-                    || {};
+                    || {});
                 const rawAggregateRunningCash = Number(
                     txn?.aggregate_running_cash ?? txn?.running_cash,
                 ) || 0;
@@ -16888,7 +16908,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rawAggregatePendingSettlementCash = Number(txn?.aggregate_pending_settlement_cash) || 0;
                 const rawBrokerPendingSettlementCash = Number(txn?.broker_pending_settlement_cash) || 0;
                 const aggregateSettlementAccrualCash = getCashCorrectionInBaseCurrency(
-                    aggregateSettlementAccrualsByCurrency,
+                    aggregateSettlementAccruals,
                     ledgerDate,
                 );
                 const brokerSettlementAccrualCash = getCashCorrectionInBaseCurrency(
@@ -16902,7 +16922,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const adjustedAggregateRunningCash = getAdjustedReplayCash(
                     rawAggregateRunningCash,
                     rawAggregateBalances,
-                    aggregateCorrectionsByCurrency,
+                    aggregateCorrections,
                     ledgerDate,
                 );
                 const adjustedBrokerRunningCash = getAdjustedReplayCash(
@@ -16940,7 +16960,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     aggregate_history_display_cash: aggregateHistoryDisplayCash,
                     aggregate_cash_by_currency: addCashBalanceCorrection(
                         rawAggregateBalances,
-                        aggregateCorrectionsByCurrency,
+                        aggregateCorrections,
                     ),
                     aggregate_pending_settlement_cash: adjustedAggregatePendingSettlementCash,
                     aggregate_holdings: { ...(txn?.aggregate_holdings || txn?.holdings || {}) },
@@ -16950,7 +16970,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     running_cash: adjustedAggregateRunningCash,
                     cash_by_currency: addCashBalanceCorrection(
                         rawAggregateBalances,
-                        aggregateCorrectionsByCurrency,
+                        aggregateCorrections,
                     ),
                     holdings: { ...(txn?.aggregate_holdings || txn?.holdings || {}) },
                     money_market_anchors: {

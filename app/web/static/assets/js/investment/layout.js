@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.4
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.0';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.4';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -54,6 +54,8 @@ export function bindInvestmentSectionResizer({
     overviewStageSelector = '.investment-equity-chart-stage',
     getOverviewStageMinimum = () => 0,
     overviewMinimumChangeEvent = null,
+    ignoreMutationSelector = null,
+    observeHistorySurfaceResize = true,
     onChartsResized = null,
     windowRef = globalThis.window,
     documentRef = globalThis.document,
@@ -62,6 +64,16 @@ export function bindInvestmentSectionResizer({
     const isElement = (value) => (
         typeof HTMLElementClass === 'function' && value instanceof HTMLElementClass
     );
+    const setInlineStyleIfChanged = (element, propertyName, value) => {
+        if (!isElement(element) || element.style.getPropertyValue(propertyName) === value) return false;
+        element.style.setProperty(propertyName, value);
+        return true;
+    };
+    const removeInlineStyleIfPresent = (element, propertyName) => {
+        if (!isElement(element) || !element.style.getPropertyValue(propertyName)) return false;
+        element.style.removeProperty(propertyName);
+        return true;
+    };
     if (
         !isElement(workspaceHeader)
         || !isElement(reportCard)
@@ -69,6 +81,11 @@ export function bindInvestmentSectionResizer({
         || !isElement(sectionResizer)
         || typeof windowRef?.ANTIGRAVITY_RESIZER?.bind !== 'function'
     ) return () => {};
+
+    const stackedLayoutMedia = typeof windowRef?.ANTIGRAVITY_RESPONSIVE?.media === 'function'
+        ? windowRef.ANTIGRAVITY_RESPONSIVE.media('contentStackMax')
+        : null;
+    const isStackedLayout = () => Boolean(stackedLayoutMedia?.matches);
 
     let overviewRatio = Number.NaN;
     let resizeFrame = 0;
@@ -241,6 +258,11 @@ export function bindInvestmentSectionResizer({
         if (availableHeight > 0) return availableHeight;
         return reportCard.getBoundingClientRect().height + historySurface.getBoundingClientRect().height;
     };
+    const clearInlineSplitLayoutStyles = () => {
+        removeInlineStyleIfPresent(workspaceHeader, '--investment-overview-track');
+        removeInlineStyleIfPresent(workspaceHeader, '--investment-overview-min-height');
+        removeInlineStyleIfPresent(workspaceHeader, '--investment-history-min-height');
+    };
     const getRange = () => {
         const availableHeight = getAvailableTrackHeight();
         const baselineMinimum = Math.min(getBaselineMinimumHeight(), availableHeight / 2);
@@ -250,8 +272,10 @@ export function bindInvestmentSectionResizer({
             desiredOverviewMinimum: getOverviewMinimumHeight(baselineMinimum),
             desiredHistoryMinimum: getHistoryMinimumHeight(baselineMinimum),
         });
-        workspaceHeader.style.setProperty('--investment-overview-min-height', `${range.minimum}px`);
-        workspaceHeader.style.setProperty('--investment-history-min-height', `${range.historyMinimum}px`);
+        if (!isStackedLayout()) {
+            setInlineStyleIfChanged(workspaceHeader, '--investment-overview-min-height', `${range.minimum}px`);
+            setInlineStyleIfChanged(workspaceHeader, '--investment-history-min-height', `${range.historyMinimum}px`);
+        }
         return {minimum: range.minimum, maximum: range.maximum};
     };
     const getValue = () => reportCard.getBoundingClientRect().height;
@@ -272,12 +296,21 @@ export function bindInvestmentSectionResizer({
         });
     };
     const setValue = (height) => {
+        if (isStackedLayout()) {
+            overviewRatio = Number.NaN;
+            clearInlineSplitLayoutStyles();
+            scheduleOverviewChartResize();
+            return;
+        }
         const availableHeight = getAvailableTrackHeight();
         if (!(availableHeight > 0)) return;
         overviewRatio = height / availableHeight;
-        workspaceHeader.style.setProperty('--investment-overview-track', `${height}px`);
+        setInlineStyleIfChanged(workspaceHeader, '--investment-overview-track', `${height}px`);
         scheduleOverviewChartResize();
-        sectionResizer.setAttribute('aria-valuetext', `Overview ${Math.round(overviewRatio * 100)} percent`);
+        const ariaValueText = `Overview ${Math.round(overviewRatio * 100)} percent`;
+        if (sectionResizer.getAttribute('aria-valuetext') !== ariaValueText) {
+            sectionResizer.setAttribute('aria-valuetext', ariaValueText);
+        }
     };
     const syncSectionResizerAria = (range) => {
         const availableHeight = getAvailableTrackHeight();
@@ -287,13 +320,15 @@ export function bindInvestmentSectionResizer({
         const roundedValue = Math.round(value);
         const minimum = Math.min(Math.round(resolvedRange.minimum), roundedValue);
         const maximum = Math.max(Math.round(resolvedRange.maximum), roundedValue);
-        sectionResizer.setAttribute('aria-valuemin', String(minimum));
-        sectionResizer.setAttribute('aria-valuemax', String(maximum));
-        sectionResizer.setAttribute('aria-valuenow', String(roundedValue));
-        sectionResizer.setAttribute(
-            'aria-valuetext',
-            `Overview ${Math.round((value / availableHeight) * 100)} percent`,
-        );
+        const attributes = {
+            'aria-valuemin': String(minimum),
+            'aria-valuemax': String(maximum),
+            'aria-valuenow': String(roundedValue),
+            'aria-valuetext': `Overview ${Math.round((value / availableHeight) * 100)} percent`,
+        };
+        Object.entries(attributes).forEach(([name, nextValue]) => {
+            if (sectionResizer.getAttribute(name) !== nextValue) sectionResizer.setAttribute(name, nextValue);
+        });
     };
     const valueFromPointer = (clientY) => {
         const reportRect = reportCard.getBoundingClientRect();
@@ -303,6 +338,13 @@ export function bindInvestmentSectionResizer({
     };
     const reflowRatio = () => {
         resizeFrame = 0;
+        if (isStackedLayout()) {
+            overviewRatio = Number.NaN;
+            clearInlineSplitLayoutStyles();
+            scheduleOverviewChartResize();
+            syncSectionResizerAria();
+            return;
+        }
         const availableHeight = getAvailableTrackHeight();
         const range = getRange();
         const defaultOverviewShare = Math.min(0.8, Math.max(
@@ -317,7 +359,7 @@ export function bindInvestmentSectionResizer({
             syncSectionResizerAria(range);
             return;
         }
-        workspaceHeader.style.setProperty('--investment-overview-track', `${nextHeight}px`);
+        setInlineStyleIfChanged(workspaceHeader, '--investment-overview-track', `${nextHeight}px`);
         scheduleOverviewChartResize();
         syncSectionResizerAria(range);
     };
@@ -325,6 +367,12 @@ export function bindInvestmentSectionResizer({
         if (resizeFrame) return;
         resizeFrame = windowRef.requestAnimationFrame(reflowRatio);
     };
+    const onStackedLayoutChange = () => scheduleRatioReflow();
+    if (typeof stackedLayoutMedia?.addEventListener === 'function') {
+        stackedLayoutMedia.addEventListener('change', onStackedLayoutChange);
+    } else if (typeof stackedLayoutMedia?.addListener === 'function') {
+        stackedLayoutMedia.addListener(onStackedLayoutChange);
+    }
     const unbind = windowRef.ANTIGRAVITY_RESIZER.bind(sectionResizer, {
         axis: 'block',
         root: workspaceHeader,
@@ -343,9 +391,18 @@ export function bindInvestmentSectionResizer({
         : null;
     observer?.observe(workspaceHeader);
     observer?.observe(reportCard);
-    observer?.observe(historySurface);
+    if (observeHistorySurfaceResize) observer?.observe(historySurface);
     const mutationObserver = typeof MutationObserverClass === 'function'
-        ? new MutationObserverClass(scheduleRatioReflow)
+        ? new MutationObserverClass((records) => {
+            const hasRelevantMutation = records.some((record) => {
+                if (!ignoreMutationSelector) return true;
+                const target = isElement(record.target)
+                    ? record.target
+                    : record.target?.parentElement;
+                return !target?.closest?.(ignoreMutationSelector);
+            });
+            if (hasRelevantMutation) scheduleRatioReflow();
+        })
         : null;
     mutationObserver?.observe(reportCard, {
         attributes: true,
@@ -365,6 +422,11 @@ export function bindInvestmentSectionResizer({
         observer?.disconnect();
         mutationObserver?.disconnect();
         windowRef.removeEventListener('resize', scheduleRatioReflow);
+        if (typeof stackedLayoutMedia?.removeEventListener === 'function') {
+            stackedLayoutMedia.removeEventListener('change', onStackedLayoutChange);
+        } else if (typeof stackedLayoutMedia?.removeListener === 'function') {
+            stackedLayoutMedia.removeListener(onStackedLayoutChange);
+        }
         if (typeof overviewMinimumChangeEvent === 'string' && overviewMinimumChangeEvent) {
             workspaceHeader.removeEventListener(overviewMinimumChangeEvent, onOverviewMinimumChange);
         }
