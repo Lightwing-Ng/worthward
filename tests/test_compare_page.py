@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.8
+Code version: v0.14.9
 """
 
 from __future__ import annotations
@@ -1283,7 +1283,14 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, interval
             return close_frame_for_ticker(ticker, dates=["2026-07-22", "2026-07-23"])
 
-        with _write_intraday_stores(frames) as tempdir:
+        with (
+            patch.object(
+                pd.Timestamp,
+                "now",
+                return_value=pd.Timestamp("2026-07-25 12:00", tz="Asia/Shanghai"),
+            ),
+            _write_intraday_stores(frames) as tempdir,
+        ):
             temp_root = Path(tempdir)
 
             def _store_path(ticker: str, interval: str = "1m") -> Path:
