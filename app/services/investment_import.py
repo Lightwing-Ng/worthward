@@ -1,7 +1,10 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.103.0
+Code version: v0.104.0
+- Fixed: HSBC non-USD cash-only refreshes now retain the authoritative current
+  USD cash boundary from the existing ledger, so the merged multi-currency
+  snapshot remains eligible for current total-equity calculations.
 - Changed: Futu (HK) monthly statement PDFs now use the shared bounded CPU
   process pool for independent file parsing, preserving upload order and
   falling back safely when process execution is unavailable.
@@ -19752,12 +19755,17 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
         available_cash,
         broker_cash_balance=current_cash,
     )
+    cash_snapshot_updates = {
+        "cash_snapshot_authoritative": True,
+        "cash_snapshot_status": "current",
+    }
     summary_updates = {
         "hsbc_ending_cash_components": serialized_components,
         "hsbc_cash_component_post_dates": serialized_dates,
         "cash_ledger_balance": current_cash_text,
         "cash_ledger_balance_as_of": cash_post_date,
         "cash_ledger_balance_source": current_cash_source,
+        **cash_snapshot_updates,
         **pending_summary,
     }
     if _normalize_broker_code(payload.get("broker")) == "hsbc":
@@ -19781,6 +19789,7 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
             "cash_ledger_balance": current_cash_text,
             "cash_ledger_balance_as_of": cash_post_date,
             "cash_ledger_balance_source": current_cash_source,
+            **cash_snapshot_updates,
             **pending_summary,
         })
         hsbc_summary["ending_cash_base_currency_status"] = (

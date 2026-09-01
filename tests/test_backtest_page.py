@@ -178,7 +178,9 @@ class BacktestPageTests(unittest.TestCase):
         )
         self.assertIn('data-option-count="3"', html)
         self.assertIn('data-backtest-history-view-panel="probability"', html)
+        self.assertIn('class="backtest-probability-detail-status-row"', html)
         self.assertIn('class="backtest-probability-detail-legend-bar"', html)
+        self.assertNotIn('>Forecast date<', html)
         self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
         self.assertLess(html.index('id="backtest_history_probability"'), html.index('id="backtest_history_transactions"'))
         self.assertLess(

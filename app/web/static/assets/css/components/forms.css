@@ -1,4 +1,4 @@
-/* Code version: v0.19.4 */
+/* Code version: v0.19.6 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -238,8 +238,7 @@ input[type="number"],
 .date-picker-trigger,
 .trade-strategy-param-select,
 .trade-strategy-number-input,
-.strategy-param-text-control input,
-.trade-strategy-boolean-row {
+.strategy-param-text-control input {
 	border: var(--control-liquid-border);
 	background: var(--control-liquid-background);
 	box-shadow: var(--control-liquid-shadow);
@@ -267,12 +266,19 @@ input[type="number"],
 .trade-strategy-number-input:hover,
 .trade-strategy-number-input:focus,
 .strategy-param-text-control input:hover,
-.strategy-param-text-control input:focus,
-.trade-strategy-boolean-row:hover,
-.trade-strategy-boolean-row:focus-within {
+.strategy-param-text-control input:focus {
 	background: var(--control-liquid-background-hover);
 	box-shadow: var(--control-liquid-shadow-focus);
 	outline: none;
+}
+.switch-row.switch-row--plain,
+.switch-row.switch-row--plain:hover,
+.switch-row.switch-row--plain:focus-within,
+.switch-row.switch-row--plain:focus-visible {
+	padding: 0;
+	background: transparent;
+	border: none;
+	box-shadow: none;
 }
 .ticker-input-control input:hover,
 .ticker-input-control input:focus,
@@ -1145,9 +1151,7 @@ input[type="number"],
 	position: static;
 	margin-top: 4px;
 	padding: 10px;
-	overflow-x: hidden;
-	overflow-x: clip;
-	overflow-y: visible;
+	overflow: visible;
 	border-radius: var(--radius-soft);
 	background: var(--glass-popover-background);
 	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
@@ -1379,45 +1383,9 @@ input[type="number"],
 }
 .trade-strategy-boolean-row {
 	grid-column: 1 / -1;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	min-height: var(--strategy-param-field-height);
-	padding: 6px 10px 6px 0;
-	background: transparent;
-	border-radius: 0;
-	box-shadow: none !important;
-}
-.trade-strategy-boolean-row:hover,
-.trade-strategy-boolean-row:focus-within,
-.trade-strategy-boolean-row:focus-visible {
-	background: transparent;
-	box-shadow: none !important;
-	outline: none;
-}
-.trade-strategy-boolean-row .switch-label {
-	flex: 1 1 auto;
-	display: inline-flex;
-	align-items: center;
-	font-size: var(--font-form-label);
-	line-height: 1;
-	font-weight: var(--font-weight-bold);
-	color: var(--text);
-}
-.trade-strategy-boolean-row .switch-label > span:not(.field-tooltip) {
-	display: inline-flex;
-	align-items: center;
-	padding: 6px 10px;
-	border-radius: var(--radius-pill);
-	background: var(--panel-strong);
 }
 .trade-strategy-boolean-row .trade-strategy-param-label-trigger {
 	display: inline-flex;
-}
-.trade-strategy-boolean-row .ios-switch-shell {
-	flex: 0 0 40px;
-	justify-self: auto;
 }
 .text-input-clear, .ticker-clear, .ticker-remove { padding: 0; border: 0; background: var(--theme-glass-border); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms var(--motion-standard), background 160ms var(--motion-standard), transform 160ms var(--motion-press); }
 .text-input-clear { --text-input-clear-inset: 4px; position: absolute; top: 50%; right: var(--text-input-clear-inset); width: calc(var(--text-input-control-height, var(--sidebar-form-control-min-height)) - (2 * var(--text-input-clear-inset))); height: calc(var(--text-input-control-height, var(--sidebar-form-control-min-height)) - (2 * var(--text-input-clear-inset))); min-width: 0; min-height: 0; border-radius: 50%; transform: translateY(-50%); z-index: var(--layer-control-affordance); opacity: 0; pointer-events: none; }
@@ -1459,14 +1427,14 @@ input[type="number"],
 	will-change: transform, opacity, filter;
 }
 @keyframes strategy-params-flow-in {
-	0% { opacity: 0; transform: scaleY(0.96); clip-path: inset(0 0 100% 0); filter: saturate(82%); }
-	68% { opacity: 1; transform: scaleY(1.005); clip-path: inset(0); filter: saturate(108%); }
-	100% { opacity: 1; transform: scaleY(1); clip-path: inset(0); filter: saturate(100%); }
+	0% { opacity: 0; transform: scaleY(0.96); filter: saturate(82%); }
+	68% { opacity: 1; transform: scaleY(1.005); filter: saturate(108%); }
+	100% { opacity: 1; transform: scaleY(1); filter: saturate(100%); }
 }
 .trade-strategy-params-popover:not([hidden]) {
 	transform-origin: top center;
 	animation: strategy-params-flow-in 260ms var(--motion-bouncy) both;
-	will-change: transform, opacity, filter, clip-path;
+	will-change: transform, opacity, filter;
 }
 @media (prefers-reduced-motion: reduce) {
 	.suggestions.is-open,

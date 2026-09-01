@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.68.2`
+Documentation version: `v1.68.7`
 
 ## Bayesian Price Field detail view contract
 
@@ -13,7 +13,14 @@ model is clipped to the current Chart.js plot boundaries, while the persistent
 detail model rebuilds the complete strategy-owned row lattice around the same
 selected origin and scales it into its own viewport. A chart hover changes the
 detail panel's selected origin; clearing hover hides only the floating overlay,
-so the last valid forecast remains inspectable.
+so the last valid forecast remains inspectable. Hovering any detail-grid row
+shows its exact price interval and the cumulative raw probability mass across
+all forecast cells in that row, including cells hidden by the display threshold;
+the hovered row carries that summary without changing the status-line layout, and
+only the contained detail grid makes those hidden cells hit-testable. The detail
+heading keeps the selected date as the sole status-line text, places the lower-to-
+higher-price legend on the same row at the trailing edge, and omits the redundant
+`Forecast date` axis title while retaining the forecast-date ticks.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
 columns, 2px gaps, opacity mapping, and square-cell geometry. A cell is green
@@ -35,6 +42,15 @@ non-under-sized complete slot when quantization makes an exact match
 impossible. Chart boundaries, the 20-column contract, the 4px floor, and the
 existing strategy row limits remain authoritative; chart-boundary limits apply
 to hover, not to the contained detail surface.
+
+The overview hover surface uses the stationary chart-stack bounds as its
+interaction coordinate system while the price and probability visuals are
+temporarily translated to fit a right-edge field. Pointer deltas therefore
+advance the selected chart origin one-for-one even when the visual canvas has
+already moved, and the stack continues to receive rightward hover input while
+the translated canvas is outside the pointer location. Moving into another
+chart subplot or leaving the stack still follows the existing shared-tooltip
+ownership rules.
 
 ## Holdings P&L display contract
 

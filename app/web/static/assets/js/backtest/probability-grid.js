@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.21.0
+ * Code version: v0.22.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -702,6 +702,40 @@
         }));
     };
 
+    // The contained detail view reports raw probability mass for one price
+    // row across every forecast horizon. Threshold-hidden cells remain part
+    // of the row so the readout reflects the complete model lattice.
+    const summarizeProbabilityRow = (cells, row) => {
+        const normalizedRow = finiteOrNull(row);
+        if (!Array.isArray(cells) || normalizedRow === null || !Number.isInteger(normalizedRow)) {
+            return null;
+        }
+        const rowCells = cells.filter((cell) => Number(cell?.row) === normalizedRow);
+        if (!rowCells.length) return null;
+        let lowerPrice = Number.POSITIVE_INFINITY;
+        let upperPrice = Number.NEGATIVE_INFINITY;
+        let cumulativeProbability = 0;
+        let hiddenCellCount = 0;
+        rowCells.forEach((cell) => {
+            const lower = finiteOrNull(cell?.lowerPrice);
+            const upper = finiteOrNull(cell?.upperPrice);
+            if (lower !== null) lowerPrice = Math.min(lowerPrice, lower);
+            if (upper !== null) upperPrice = Math.max(upperPrice, upper);
+            const probability = finiteOrNull(cell?.probability);
+            if (probability !== null) cumulativeProbability += Math.max(0, probability);
+            if (cell?.isVisible === false) hiddenCellCount += 1;
+        });
+        if (!Number.isFinite(lowerPrice) || !Number.isFinite(upperPrice)) return null;
+        return Object.freeze({
+            row: normalizedRow,
+            lowerPrice,
+            upperPrice,
+            cumulativeProbability,
+            cellCount: rowCells.length,
+            hiddenCellCount,
+        });
+    };
+
     const reducePinState = (state, action) => {
         const current = state && typeof state === "object"
             ? state
@@ -728,7 +762,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.21.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.22.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -746,6 +780,7 @@
         probabilityBetweenPrices,
         reducePinState,
         resolveDatasetStepPixels,
+        summarizeProbabilityRow,
     });
 
     globalScope.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID = api;

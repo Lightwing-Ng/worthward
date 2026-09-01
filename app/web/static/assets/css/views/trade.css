@@ -1,4 +1,4 @@
-/* Code version: v3.55.1 */
+/* Code version: v3.55.6 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -27,12 +27,14 @@
 }
 
 .trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {
+    --compute-backend-trigger-label-offset: calc((36px - var(--sidebar-form-control-padding-inline)) / 2);
     justify-content: center;
     text-align: center;
 }
 
 .trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger-label {
     justify-content: center;
+    transform: translateX(var(--compute-backend-trigger-label-offset));
 }
 .trade-sidebar-card {
     padding: 12px 12px 10px;
@@ -276,11 +278,7 @@
 }
 
 .backtest-probability-detail-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 16px;
+    display: block;
     min-width: 0;
     margin-bottom: 10px;
 }
@@ -293,11 +291,24 @@
 }
 
 .backtest-probability-detail-status {
+    flex: 1 1 220px;
+    min-width: 0;
     min-height: 16px;
-    margin: 3px 0 0;
+    margin: 0;
     color: var(--muted);
     font-size: var(--font-form-label);
     line-height: 1.35;
+}
+
+.backtest-probability-detail-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+    margin-top: 3px;
+    flex-wrap: wrap;
+    pointer-events: none;
 }
 
 .backtest-probability-detail-legend {
@@ -395,6 +406,7 @@
     min-width: 0;
     min-height: 0;
     transform: translateY(-50%);
+    cursor: crosshair;
 }
 
 .backtest-probability-detail-cell {
@@ -402,6 +414,14 @@
     min-height: 0;
     width: 100%;
     height: 100%;
+}
+
+.backtest-probability-detail-cell.is-threshold-hidden {
+    pointer-events: auto;
+}
+
+.backtest-probability-detail-cell.is-row-hovered {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 72%, white);
 }
 
 .backtest-probability-detail-anchor {
@@ -445,15 +465,6 @@
     display: block;
 }
 
-.backtest-probability-detail-x-axis-title {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1;
-}
-
 @media (max-width: 767px) {
     .backtest-history-view-body > .backtest-probability-detail-panel {
         flex-basis: 380px;
@@ -462,13 +473,14 @@
         padding-inline: 12px;
     }
 
-    .backtest-probability-detail-heading {
-        display: block;
+    .backtest-probability-detail-status-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 8px 12px;
     }
 
     .backtest-probability-detail-legend {
-        justify-content: flex-start;
-        margin-top: 8px;
+        margin-inline-start: auto;
     }
 }
 

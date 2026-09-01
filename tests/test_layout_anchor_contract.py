@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.3
+Code version: v0.8.8
 """
 
 from pathlib import Path
@@ -153,9 +153,9 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
 
     assert '@import url("./views/settings.css?v=0.25.3");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
-    assert '@import url("./components/forms.css?v=3.40.4");' in app_css
+    assert '@import url("./components/forms.css?v=3.40.6");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.2" in app_css
+    assert "v0.65.8" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -175,7 +175,31 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "width: min(100%, 160px);" in trade_css
     assert '.trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger {' in trade_css
     assert "justify-content: center;" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.1");' in app_css
+    assert "--compute-backend-trigger-label-offset" in trade_css
+    assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
+    assert '@import url("./views/trade.css?v=3.55.6");' in app_css
+
+
+def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    backtest_template = _read(TEMPLATE_ROOT / "_backtest_form.html")
+    dca_template = _read(TEMPLATE_ROOT / "_dca_form.html")
+    strategy_template = _read(TEMPLATE_ROOT / "_trade_strategy_params_panel.html")
+
+    plain_rule_start = forms_css.index(".switch-row.switch-row--plain,")
+    plain_rule = forms_css[plain_rule_start : forms_css.index("\n}", plain_rule_start)]
+    for fragment in (
+        "padding: 0;",
+        "background: transparent;",
+        "border: none;",
+        "box-shadow: none;",
+    ):
+        assert fragment in plain_rule
+
+    assert backtest_template.count('row_class="switch-row switch-row--plain"') == 4
+    assert dca_template.count('row_class="switch-row switch-row--plain"') == 2
+    assert 'row_class="switch-row switch-row--plain trade-strategy-boolean-row"' in strategy_template
+    assert ".trade-strategy-boolean-row .switch-label > span:not(.field-tooltip)" not in forms_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -500,9 +524,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.49.0",
-        "-backtest-probability-grid-v0.21.0",
-        "-backtest-v0.29.0",
+        "-app-v0.50.0",
+        "-backtest-probability-grid-v0.22.0",
+        "-backtest-v0.34.0",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -520,6 +544,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'data-backtest-probability-detail-grid',
         'data-backtest-probability-detail-y-axis',
         'data-backtest-probability-detail-x-axis',
+        'class="backtest-probability-detail-status-row"',
         '"value": "probability", "label": "Price Field"',
         'data-option-count="',
         'class="backtest-probability-detail-legend-bar"',
@@ -528,6 +553,10 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         assert fragment in backtest_template
     assert 'backtest-probability-detail-y-axis-title' not in backtest_template
     assert 'backtest-probability-detail-y-axis-title' not in pending_app
+    assert 'backtest-probability-detail-x-axis-title' not in backtest_template
+    assert '>Forecast date<' not in backtest_template
+    assert 'backtest-probability-detail-x-axis-title' not in pending_app
+    assert 'Forecast date' not in pending_app
     assert (
         '.backtest-history-view-body > '
         '[data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel)'
@@ -543,11 +572,21 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {",
         "const applyProbabilityCellNode = (",
         "const renderProbabilityDetail = (index, model) => {",
+        "const formatSelectedDate = (dateParts) => {",
+        'formatFullDateParts(dateParts, { includeTime: false })',
+        "latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;",
         "const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {",
         "const renderedTicks = xTickNodes.filter(Boolean);",
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
         "const buildProbabilityDetailModel = (index, model) => {",
+        "const renderProbabilityDetailRowHover = (row) => {",
+        "Cumulative probability across all ${summary.cellCount} forecast cells",
+        "including ${summary.hiddenCellCount} hidden",
+        "probabilityDetailGrid.dataset.hoverSummary = hoverSummary;",
+        'probabilityDetailGrid.setAttribute("title", hoverSummary);',
+        'cell.setAttribute("title", hoverSummary);',
+        "probabilityGridApi.summarizeProbabilityRow?.(",
         "limitRowsToChartArea: false,",
         "const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {",
         "const referenceWindow = rangeEnd - referenceStart;",
@@ -576,9 +615,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         assert fragment in backtest_script
     for fragment in (
         ".backtest-probability-detail-panel",
+        ".backtest-probability-detail-status-row",
+        "flex-wrap: wrap;",
         "flex: 0 0 clamp(320px, 52vh, 520px);",
         "transform: translateY(-50%);",
         ".backtest-probability-detail-cell",
+        ".backtest-probability-detail-cell.is-threshold-hidden",
+        ".backtest-probability-detail-cell.is-row-hovered",
         ".backtest-probability-detail-x-tick.is-first",
         ".backtest-probability-detail-x-tick.is-last",
         ".backtest-probability-detail-legend-bar",
@@ -713,15 +756,18 @@ def test_strategy_parameters_reveal_downward_without_crossing_the_strategy_row()
     ]
     assert "position: static;" in popover_rule
     assert "margin-top: 4px;" in popover_rule
+    assert "overflow: visible;" in popover_rule
+    assert "overflow-x: clip;" not in popover_rule
 
     animation = forms_css[
         forms_css.index("@keyframes strategy-params-flow-in {"):
         forms_css.index("@media (prefers-reduced-motion: reduce)")
     ]
-    assert "clip-path: inset(0 0 100% 0);" in animation
+    assert "clip-path" not in animation
     assert "transform-origin: top center;" in animation
     assert "animation: strategy-params-flow-in" in animation
     assert "translateY(-" not in animation
+    assert "will-change: transform, opacity, filter;" in animation
 
 
 def test_broker_select_options_are_name_only() -> None:

@@ -1,4 +1,4 @@
-/* Code version: v0.29.0 */
+/* Code version: v0.34.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -444,9 +444,61 @@
 			"[data-backtest-probability-detail-anchor]",
 		);
 		let latestProbabilityDetailIndex = null;
+		let latestProbabilityDetailModel = null;
+		let latestProbabilityDetailBaseStatus = "";
+		let activeProbabilityDetailRow = null;
 		const probabilityDetailXAxisTickNodes = new Map();
+		const clearProbabilityDetailRowHover = () => {
+			activeProbabilityDetailRow = null;
+			if (probabilityDetailGrid instanceof HTMLElement) {
+				delete probabilityDetailGrid.dataset.hoveredRow;
+				delete probabilityDetailGrid.dataset.hoverSummary;
+				probabilityDetailGrid.removeAttribute("title");
+				probabilityDetailGrid.querySelectorAll(".backtest-probability-detail-cell").forEach((cell) => {
+					cell.classList.remove("is-row-hovered");
+					if (cell.dataset.baseTitle) {
+						cell.setAttribute("title", cell.dataset.baseTitle);
+					} else {
+						cell.removeAttribute("title");
+					}
+				});
+			}
+			if (probabilityDetailStatus instanceof HTMLElement && latestProbabilityDetailBaseStatus) {
+				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
+			}
+		};
+		const renderProbabilityDetailRowHover = (row) => {
+			const summary = probabilityGridApi.summarizeProbabilityRow?.(
+				latestProbabilityDetailModel?.cells,
+				row,
+			);
+			if (!summary || !(probabilityDetailGrid instanceof HTMLElement)) return false;
+			activeProbabilityDetailRow = summary.row;
+			probabilityDetailGrid.dataset.hoveredRow = String(summary.row);
+			const hoverSummary = [
+				`Price interval: ${formatMoney(summary.lowerPrice)}–${formatMoney(summary.upperPrice)}`,
+				`Cumulative probability across all ${summary.cellCount} forecast cells: ${(summary.cumulativeProbability * 100).toFixed(2)}%`,
+				`including ${summary.hiddenCellCount} hidden`,
+			].join(" · ");
+			probabilityDetailGrid.dataset.hoverSummary = hoverSummary;
+			probabilityDetailGrid.setAttribute("title", hoverSummary);
+			probabilityDetailGrid.querySelectorAll(".backtest-probability-detail-cell").forEach((cell) => {
+				const isHoveredRow = Number(cell.dataset.row) === summary.row;
+				cell.classList.toggle("is-row-hovered", isHoveredRow);
+				if (isHoveredRow) {
+					if (!cell.dataset.baseTitle) cell.dataset.baseTitle = cell.getAttribute("title") || "";
+					cell.setAttribute("title", hoverSummary);
+				} else if (cell.dataset.baseTitle) {
+					cell.setAttribute("title", cell.dataset.baseTitle);
+				}
+			});
+			return true;
+		};
 		const hideProbabilityDetail = () => {
 			if (!(probabilityDetailPanel instanceof HTMLElement)) return;
+			clearProbabilityDetailRowHover();
+			latestProbabilityDetailModel = null;
+			latestProbabilityDetailBaseStatus = "";
 			latestProbabilityDetailIndex = null;
 			probabilityDetailPanel.hidden = true;
 			probabilityDetailPanel.setAttribute("aria-hidden", "true");
@@ -906,6 +958,21 @@
 			resultsStack.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));
 		};
 		const documentController = new AbortController();
+		if (probabilityDetailGrid instanceof HTMLElement) {
+			probabilityDetailGrid.addEventListener("pointermove", (event) => {
+				const target = event.target instanceof Element
+					? event.target.closest(".backtest-probability-detail-cell")
+					: null;
+				if (!(target instanceof HTMLElement) || !probabilityDetailGrid.contains(target)) {
+					clearProbabilityDetailRowHover();
+					return;
+				}
+				renderProbabilityDetailRowHover(Number(target.dataset.row));
+			}, {signal: documentController.signal});
+			probabilityDetailGrid.addEventListener("pointerleave", clearProbabilityDetailRowHover, {
+				signal: documentController.signal,
+			});
+		}
 		const controllerAnimationFrames = new Set();
 		const controllerTaskCleanups = [];
 		let controllerDestroyed = false;
@@ -927,6 +994,12 @@
 		let probabilityScrollStackWidth = 0;
 		let probabilityScrollPortWidth = 0;
 		let probabilityScrollExtentDistance = 0;
+		let probabilityHoverPointerX = null;
+		let probabilityHoverLogicalX = null;
+		const resetProbabilityHoverPointer = () => {
+			probabilityHoverPointerX = null;
+			probabilityHoverLogicalX = null;
+		};
 		const setInlineStyleIfChanged = (element, propertyName, value) => {
 			if (!(element instanceof HTMLElement)) return;
 			if (element.style.getPropertyValue(propertyName) === value) return;
@@ -1198,6 +1271,16 @@
 			}
 			return `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`;
 		};
+		const formatSelectedDate = (dateParts) => {
+			if (typeof formatFullDateParts === "function") {
+				return formatFullDateParts(dateParts, { includeTime: false });
+			}
+			const monthNames = [
+				"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+				"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+			];
+			return `${dateParts.day} ${monthNames[dateParts.monthIndex] || ""} ${dateParts.year}`.trim();
+		};
 
 		const formatChartDateLines = (dateParts) => {
 			const displayDateParts = interval === "1d"
@@ -1347,6 +1430,10 @@
 			const detailModel = buildProbabilityDetailModel(index, model);
 			if (!detailModel) return false;
 			const {geometry, cells, anchorPrice} = detailModel;
+			latestProbabilityDetailModel = detailModel;
+			const anchorDate = parseRawDate(rawDates[index]);
+			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
+			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
 			const detailGridViewport = probabilityDetailGrid.parentElement;
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
@@ -1380,11 +1467,16 @@
                 || probabilityDetailGrid.childElementCount !== cells.length
                 || detailHiddenCount !== modelHiddenCount
             );
-            if (
-                probabilityDetailPanel.dataset.renderKey === renderKey
-                && !detailPresentationChanged
-                && detailViewportReady
-            ) return true;
+			if (
+				probabilityDetailPanel.dataset.renderKey === renderKey
+				&& !detailPresentationChanged
+				&& detailViewportReady
+			) {
+				if (Number.isInteger(activeProbabilityDetailRow)) {
+					renderProbabilityDetailRowHover(activeProbabilityDetailRow);
+				}
+				return true;
+			}
 			probabilityDetailPanel.dataset.columnCount = String(geometry.columnCount);
 			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
 			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
@@ -1398,10 +1490,8 @@
 				"aria-label",
 				`Bayesian future price probability field for ${labels[index] || "selected date"}`,
 			);
-			const anchorDate = parseRawDate(rawDates[index]);
-			const selectedDate = anchorDate ? formatChartDate(anchorDate) : (labels[index] || "selected date");
 			if (probabilityDetailStatus instanceof HTMLElement) {
-				probabilityDetailStatus.textContent = `Selected date: ${selectedDate} · Close: ${formatMoney(anchorPrice)} · Cells below ${Number(detailModel.cellDisplayThresholdPct).toFixed(1)}% hidden`;
+				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
 			}
 			if (probabilityDetailAnchor instanceof HTMLElement) {
 				probabilityDetailAnchor.dataset.price = String(anchorPrice);
@@ -1425,6 +1515,9 @@
 				cell,
 				"backtest-probability-detail-cell",
 			));
+			if (Number.isInteger(activeProbabilityDetailRow)) {
+				renderProbabilityDetailRowHover(activeProbabilityDetailRow);
+			}
             probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
             probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
             probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
@@ -1829,9 +1922,26 @@
 			const chartArea = chart?.chartArea;
 			if (!chartArea || !labels.length) return null;
 			const canvasRect = chart.canvas.getBoundingClientRect();
-			const relativeX = event.clientX - canvasRect.left;
+			const interactionRect = chart.canvas === priceCanvas && strategyPresentation
+				? tradeChartStack.getBoundingClientRect()
+				: canvasRect;
+			const relativeX = event.clientX - interactionRect.left;
+			let logicalRelativeX = relativeX;
+			if (chart.canvas === priceCanvas && strategyPresentation) {
+				// The Bayesian field moves the visual canvas to make the field fit.
+				// Track pointer deltas against the stationary stack interaction
+				// surface so that chart translation cannot be mistaken for extra
+				// pointer movement on the next event.
+				const pointerX = Number(event.clientX);
+				if (Number.isFinite(probabilityHoverPointerX)
+					&& Number.isFinite(probabilityHoverLogicalX)) {
+					logicalRelativeX = probabilityHoverLogicalX + pointerX - probabilityHoverPointerX;
+				}
+				probabilityHoverPointerX = pointerX;
+				probabilityHoverLogicalX = logicalRelativeX;
+			}
 			const relativeY = event.clientY - canvasRect.top;
-			if (!Number.isFinite(relativeX)) return null;
+			if (!Number.isFinite(logicalRelativeX)) return null;
 			const pointCache = getChartHoverPointCache(chart);
 			const {points, finitePoints} = pointCache;
 			if (!finitePoints.length) return null;
@@ -1839,12 +1949,13 @@
 			let high = finitePoints.length - 1;
 			while (low < high) {
 				const midpoint = Math.floor((low + high) / 2);
-				if (finitePoints[midpoint].x < relativeX) low = midpoint + 1;
+				if (finitePoints[midpoint].x < logicalRelativeX) low = midpoint + 1;
 				else high = midpoint;
 			}
 			const rightPoint = finitePoints[low];
 			const leftPoint = finitePoints[Math.max(0, low - 1)];
-			const nearestPoint = Math.abs(leftPoint.x - relativeX) <= Math.abs(rightPoint.x - relativeX)
+			const nearestPoint = Math.abs(leftPoint.x - logicalRelativeX)
+				<= Math.abs(rightPoint.x - logicalRelativeX)
 				? leftPoint
 				: rightPoint;
 			const nearestIndex = nearestPoint.index;
@@ -1870,7 +1981,7 @@
 				if (Math.abs(markerY - relativeY) >= TRADE_MARKER_SNAP_VERTICAL_PX) return;
 				const markerPoint = points[marker.index];
 				if (!markerPoint || !Number.isFinite(markerPoint.x)) return;
-				const markerDistance = Math.abs(markerPoint.x - relativeX);
+				const markerDistance = Math.abs(markerPoint.x - logicalRelativeX);
 				if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
 				if (markerDistance < snappedMarkerDistance) {
 					snappedMarkerDistance = markerDistance;
@@ -1882,6 +1993,7 @@
 		};
 
 		const hideProbabilityTooltip = () => {
+			resetProbabilityHoverPointer();
 			probabilityTooltip?.classList.remove("is-visible");
 			if (probabilityTooltip) {
 				probabilityTooltip.hidden = true;
@@ -2387,10 +2499,19 @@
 			const controller = new AbortController();
 			canvas._abortController = controller;
 			const { signal } = controller;
+			const hoverSurface = canvas === priceCanvas && strategyPresentation
+				? tradeChartStack
+				: canvas;
 
-			canvas.addEventListener("mousemove", (event) => {
+			hoverSurface.addEventListener("mousemove", (event) => {
 				if (!chart || !chart.ctx) return;
 				if (pinState.mode === "pinned") return;
+				if (
+					canvas === priceCanvas
+					&& strategyPresentation
+					&& event.target instanceof Node
+					&& equityCanvas?.closest(".trade-chart-panel")?.contains(event.target)
+				) return;
 				const nearestIndex = resolveNearestHoverIndex(chart, event);
 				scheduleHoverSync(nearestIndex, canvas, chart);
 			}, { signal });

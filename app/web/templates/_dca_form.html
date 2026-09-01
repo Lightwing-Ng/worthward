@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.3.1 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set weekly_label = namespace(value=labels.dca_frequency_weekly) %}
 {% if dca_weekday == 0 %}{% set weekly_label.value = "Monday" %}{% endif %}
@@ -41,10 +41,10 @@
         </div>
     </div>
     <div class="field-checkbox field-switch">
-        {{ render_switch("price_only", labels.price_only, "price_only", checked=price_only) }}
+        {{ render_switch("price_only", labels.price_only, "price_only", checked=price_only, row_class="switch-row switch-row--plain") }}
     </div>
     <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
-        {{ render_switch("include_dividends", labels.include_dividends, "dividends", checked=include_dividends and not price_only) }}
+        {{ render_switch("include_dividends", labels.include_dividends, "dividends", checked=include_dividends and not price_only, row_class="switch-row switch-row--plain") }}
     </div>
     <div class="field dca-frequency-field">
         <label for="dca_frequency_weekly">{{ labels.dca_frequency }}</label>

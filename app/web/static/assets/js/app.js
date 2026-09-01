@@ -1,4 +1,4 @@
-/* Code version: v0.49.0 */
+/* Code version: v0.50.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2128,18 +2128,18 @@
                                  hidden
                                  aria-hidden="true">
                             <div class="backtest-probability-detail-heading">
-                                <div>
-                                    <p class="chart-heading" id="backtest_probability_detail_title">Bayesian Price Field detail</p>
+                                <p class="chart-heading" id="backtest_probability_detail_title">Bayesian Price Field detail</p>
+                                <div class="backtest-probability-detail-status-row">
                                     <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
                                         Hover a price point to inspect its forecast field.
                                     </p>
-                                </div>
-                                <div class="backtest-probability-detail-legend"
-                                     role="img"
-                                     aria-label="Lower price to higher price probability legend">
-                                    <span class="backtest-probability-detail-legend-label">Lower price</span>
-                                    <span class="backtest-probability-detail-legend-bar" aria-hidden="true"></span>
-                                    <span class="backtest-probability-detail-legend-label">Higher price</span>
+                                    <div class="backtest-probability-detail-legend"
+                                         role="img"
+                                         aria-label="Lower price to higher price probability legend">
+                                        <span class="backtest-probability-detail-legend-label">Lower price</span>
+                                        <span class="backtest-probability-detail-legend-bar" aria-hidden="true"></span>
+                                        <span class="backtest-probability-detail-legend-label">Higher price</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="backtest-probability-detail-plot" data-backtest-probability-detail-plot>
@@ -2152,7 +2152,6 @@
                                         <span class="backtest-probability-detail-anchor" data-backtest-probability-detail-anchor aria-hidden="true"></span>
                                     </div>
                                     <div class="backtest-probability-detail-x-axis" data-backtest-probability-detail-x-axis>
-                                        <span class="backtest-probability-detail-axis-title backtest-probability-detail-x-axis-title">Forecast date</span>
                                     </div>
                                 </div>
                             </div>

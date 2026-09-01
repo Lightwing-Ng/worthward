@@ -1,7 +1,9 @@
 """
 Investment page regression tests.
 
-Code version: v1.7.0
+Code version: v1.8.0
+- Added: Investment API cache reads reapply HSBC current-cash boundary
+  normalization after a non-USD cash-only refresh.
 - Added: IBKR CNH deposits can be validated against BOCHK CNH withdrawals through the browser binding endpoint.
 - Added: IBKR equivalent-USD funding rows can be validated against CNH BOCHK withdrawals through the browser binding endpoint.
 """
@@ -88,6 +90,86 @@ def test_investment_transactions_response_exposes_price_histories_and_failures(t
     assert payload["price_history_by_ticker"]["AAPL"][0]["date"] == "2025-09-03"
     assert payload["price_history_by_ticker"]["AAPL"][0]["close"] == 201.25
     assert any(item["ticker"] == "MSFT" for item in payload["price_history_failures"])
+
+
+def test_investment_transactions_read_repairs_hsbc_current_cash_boundary(
+    tmp_path, monkeypatch
+) -> None:
+    investment_store_path = tmp_path / "investment.json"
+    save_investment_store_payload(
+        {
+            "schema_version": "3.0.0",
+            "broker": "multiple",
+            "account": "multiple",
+            "summary": {
+                "authoritative_current_cash_brokers": ["hsbc"],
+                "cash_ledger_balance": "100.00",
+                "cash_ledger_balance_as_of": "2026-08-26",
+                "cash_ledger_balance_source": "hsbc_usd_savings_ledger_balance",
+                "cash_snapshot_authoritative": False,
+                "hsbc_ending_cash_components": {"HKD:SAVINGS": "10.00"},
+                "hsbc_cash_component_post_dates": {
+                    "HKD:SAVINGS": "2026-08-31"
+                },
+            },
+            "broker_summaries": {
+                "hsbc": {
+                    "broker": "hsbc",
+                    "cash_ledger_balance": "100.00",
+                    "cash_ledger_balance_as_of": "2026-08-26",
+                    "cash_ledger_balance_source": "hsbc_usd_savings_ledger_balance",
+                    "cash_snapshot_authoritative": False,
+                    "ending_cash_base_currency_status": (
+                        "authoritative_current_cash_boundary"
+                    ),
+                    "ending_cash_by_currency": {"HKD": "10.00"},
+                    "hsbc_ending_cash_components": {"HKD:SAVINGS": "10.00"},
+                    "hsbc_cash_component_post_dates": {
+                        "HKD:SAVINGS": "2026-08-31"
+                    },
+                }
+            },
+            "transactions": [],
+        },
+        investment_store_path,
+    )
+
+    monkeypatch.setattr(runtime, "INVESTMENT_STORE_PATH", investment_store_path)
+    monkeypatch.setattr(
+        runtime,
+        "INVESTMENT_TRANSACTIONS_CACHE_PATH",
+        tmp_path / "investment-cache.json",
+    )
+    monkeypatch.setattr(runtime, "ensure_latest_investment_daily_caches", lambda tickers: [])
+    monkeypatch.setattr(runtime, "load_investment_cost_basis_method", lambda: "fifo")
+
+    response = create_app().test_client().get("/api/investment/transactions")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["summary"]["cash_snapshot_authoritative"] is True
+    assert payload["broker_summaries"]["hsbc"]["cash_snapshot_authoritative"] is True
+    assert payload["broker_summaries"]["hsbc"]["ending_cash"] == "100.00"
+
+    cached_payload = json.loads(
+        (tmp_path / "investment-cache.json").read_text(encoding="utf-8")
+    )
+    cached_payload["payload"]["summary"]["cash_snapshot_authoritative"] = False
+    cached_payload["payload"]["broker_summaries"]["hsbc"][
+        "cash_snapshot_authoritative"
+    ] = False
+    (tmp_path / "investment-cache.json").write_text(
+        json.dumps(cached_payload),
+        encoding="utf-8",
+    )
+
+    cached_response = create_app().test_client().get("/api/investment/transactions")
+    cached_result = cached_response.get_json()
+
+    assert cached_response.status_code == 200
+    assert cached_result["investment_cache"]["status"] == "hit"
+    assert cached_result["summary"]["cash_snapshot_authoritative"] is True
+    assert cached_result["broker_summaries"]["hsbc"]["cash_snapshot_authoritative"] is True
 
 
 def test_investment_transactions_skips_live_refresh_for_closed_tickers(tmp_path, monkeypatch) -> None:

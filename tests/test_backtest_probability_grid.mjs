@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.21.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.22.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.21.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.22.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -642,6 +642,23 @@ test('marks cells below the absolute display threshold without changing their ge
         && cell.lowerPrice === allCells[index].lowerPrice
         && cell.upperPrice === allCells[index].upperPrice
     )));
+});
+
+test('summarizes every probability in a detail row, including threshold-hidden cells', () => {
+    const summary = grid.summarizeProbabilityRow([
+        {row: 4, lowerPrice: 49.6, upperPrice: 50.2, probability: 0.12, isVisible: true},
+        {row: 4, lowerPrice: 49.6, upperPrice: 50.2, probability: 0.025, isVisible: false},
+        {row: 4, lowerPrice: 49.6, upperPrice: 50.2, probability: 0.003, isVisible: false},
+        {row: 3, lowerPrice: 50.2, upperPrice: 50.8, probability: 0.9, isVisible: true},
+    ], 4);
+    assert.equal(summary.row, 4);
+    assert.equal(summary.lowerPrice, 49.6);
+    assert.equal(summary.upperPrice, 50.2);
+    assert.ok(Math.abs(summary.cumulativeProbability - 0.148) < 1e-12);
+    assert.equal(summary.cellCount, 3);
+    assert.equal(summary.hiddenCellCount, 2);
+    assert.equal(grid.summarizeProbabilityRow([], 4), null);
+    assert.equal(grid.summarizeProbabilityRow([{row: 4, probability: 0.2}], 3), null);
 });
 
 test('maps every cell to an exact price interval around the horizontal guide', () => {

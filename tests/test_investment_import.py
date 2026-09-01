@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.37.0
+Code version: v0.38.0
+- Added: HSBC non-USD cash-only merges retain the existing authoritative USD
+  current-cash boundary for current total-equity calculations.
 - Added: IBKR Your Holdings clipboard captures produce validated cash and
   position boundaries, retain raw evidence, and reject cross-account pairing.
 - Added: Re-importing a complete GainsKeeper window replaces every matching
@@ -2009,6 +2011,15 @@ Fees: 0.12
             {"USD": "60.99", "HKD": "1046.10", "CNH": "12.00"},
         )
         self.assertEqual(merged["summary"]["hsbc_paste_import_scope"], "usd_composite")
+        self.assertTrue(merged["summary"]["cash_snapshot_authoritative"])
+        self.assertEqual(merged["summary"]["cash_snapshot_status"], "current")
+        self.assertTrue(
+            merged["broker_summaries"]["hsbc"]["cash_snapshot_authoritative"]
+        )
+        self.assertEqual(
+            merged["broker_summaries"]["hsbc"]["cash_snapshot_status"],
+            "current",
+        )
 
         legacy_usd_payload = deepcopy(usd_payload)
         legacy_usd_payload["summary"].pop("hsbc_paste_import_scope", None)

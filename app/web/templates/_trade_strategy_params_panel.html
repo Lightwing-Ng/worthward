@@ -1,4 +1,4 @@
-{# Code version: v0.4.0 #}
+{# Code version: v0.4.1 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
@@ -38,7 +38,7 @@
         {% elif field.field_type == "switch" %}
         {% call render_switch(
             "strategy_param_" ~ field.key ~ "_switch",
-            row_class="switch-row trade-strategy-boolean-row",
+            row_class="switch-row switch-row--plain trade-strategy-boolean-row",
             label_class="switch-label trade-strategy-param-label-trigger",
             input_attrs=('data-strategy-param-switch' ~ (' title="' ~ field.help_text ~ '"' if field.help_text else '')),
             checked=field.switch_checked

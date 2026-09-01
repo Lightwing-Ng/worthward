@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.41.9`
+Documentation version: `v1.42.4`
 
 ## Bayesian Price Field detail view coverage
 
@@ -17,6 +17,14 @@ layout change. An edge-adjacent hover regression proves that the floating field
 may be boundary-capped while the detail panel still renders the complete
 strategy-owned row lattice and contains it within the detail viewport on
 desktop and narrow layouts.
+Hovering a detail row must expose its exact price interval and the sum of all
+raw row probabilities across the complete forecast horizon through the hovered
+row's native hover label, with threshold-hidden cells included in that sum. The
+detail heading contract also checks that the status line contains only `Selected
+date: D Mmm yyyy`, the probability legend shares that row at the trailing edge,
+and the redundant `Forecast date` axis title is absent while forecast-date ticks
+remain; clearing a row hover restores the date-only status and original cell
+labels.
 The probability-grid unit contract additionally verifies the private 0–50%
 absolute cell-display threshold, default 5% value, inclusive boundary, and
 unchanged cell geometry; strategy tests verify that changing this parameter
@@ -33,7 +41,10 @@ three-month reference cell size through integer trading-day quantization.
 The overview-hover regression also covers the `show_trade_details=0` path:
 hidden Price Field detail cells stay untouched during repeated pointer moves,
 the hidden equity Chart.js instance is not updated, and only the visible
-probability field is refreshed.
+probability field is refreshed. It also moves the pointer in one-pixel steps
+while the right-edge field is active and verifies that the visual pan does not
+amplify that input; the chart stack remains the stationary interaction surface
+after the translated canvas leaves the pointer location.
 
 ## Supported commands
 

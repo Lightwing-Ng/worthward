@@ -1,7 +1,10 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.89.2
+Code version: v0.89.3
+- Fixed: Investment reads now reapply the HSBC current-cash boundary
+  normalization, allowing an existing ledger to recover immediately after a
+  non-USD cash-only refresh without requiring a duplicate import.
 - Fixed: Mixed-market relative one-day comparisons render the current local
   trading session on the first response, while pending markets keep an empty
   aligned series until their first live bar arrives.
@@ -248,6 +251,7 @@ from app.services.range_options import (
     resolve_requested_period_from_supported,
 )
 from app.services.investment_import import (
+    _synchronize_hsbc_authoritative_current_cash_boundary,
     build_investment_internal_transfer_binding_index,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
@@ -1194,12 +1198,7 @@ def build_web_runtime() -> WebRuntime:
         )
         if cached.get("price_stores") != price_store_fingerprints:
             return None
-        return cast(
-            dict[str, Any],
-            refresh_investment_security_transfer_reconciliation(
-                normalize_investment_payload_tickers(payload)
-            ),
-        )
+        return normalize_loaded_investment_payload(payload)
 
     def write_investment_transactions_cache(
             *,
@@ -1224,11 +1223,17 @@ def build_web_runtime() -> WebRuntime:
                 exc_info=True,
             )
 
+    def normalize_loaded_investment_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized_payload = normalize_investment_payload_tickers(payload)
+        _synchronize_hsbc_authoritative_current_cash_boundary(normalized_payload)
+        return cast(
+            dict[str, Any],
+            refresh_investment_security_transfer_reconciliation(normalized_payload),
+        )
+
     def load_normalized_investment_payload() -> dict[str, Any]:
-        return refresh_investment_security_transfer_reconciliation(
-            normalize_investment_payload_tickers(
-                load_investment_store_payload(INVESTMENT_STORE_PATH)
-            )
+        return normalize_loaded_investment_payload(
+            load_investment_store_payload(INVESTMENT_STORE_PATH)
         )
 
     def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
