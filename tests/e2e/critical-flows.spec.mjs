@@ -17964,23 +17964,6 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             hitsPriceCanvas: true,
             insideVisibleCrop: true,
         });
-        console.log('Bayesian move anchor geometry', label, anchor, await page.evaluate(() => {
-            const canvas = document.querySelector('#tradePriceChart');
-            const chart = window.Chart?.getChart?.(canvas);
-            const rect = canvas?.getBoundingClientRect();
-            const points = chart?.getDatasetMeta?.(0)?.data || [];
-            const finitePoints = points.filter((point) => Number.isFinite(point?.x));
-            return {
-                canvasLeft: rect?.left,
-                canvasRight: rect?.right,
-                firstCurve: rect && chart && finitePoints[0]
-                    ? rect.left + (finitePoints[0].x * (rect.width / chart.width))
-                    : null,
-                lastCurve: rect && chart && finitePoints.at(-1)
-                    ? rect.left + (finitePoints.at(-1).x * (rect.width / chart.width))
-                    : null,
-            };
-        }));
         await page.mouse.move(anchor.x, anchor.y);
         await expect.poll(() => page.evaluate(() => (
             window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
@@ -18136,10 +18119,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     const trackingTargetDistance = trackingEnd?.target - trackingStart?.target;
     expect(trackingStart?.target).toBeGreaterThan(0);
     expect(trackingPointerDistance).toBe(24);
-    expect(trackingTargetDistance).toBeGreaterThan(0);
-    // A rightward pointer step may move the chart just enough to keep the
-    // field visible, but the moving canvas must not amplify that step.
-    expect(trackingTargetDistance).toBeLessThanOrEqual(trackingPointerDistance + 10);
+    expect(trackingTargetDistance).toBeLessThanOrEqual(0);
+    // A rightward pointer step moves the curve endpoint toward the pointer,
+    // but the moving canvas must not amplify that step.
+    expect(Math.abs(trackingTargetDistance)).toBeLessThanOrEqual(trackingPointerDistance + 10);
     expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToLine)))
         .toBeLessThanOrEqual(1.5);
     expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToHorizontalLine)))
@@ -18339,6 +18322,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         if (!bounds || !guide) return null;
         const tooltipRect = tooltip.getBoundingClientRect();
         const canvasRect = canvas.getBoundingClientRect();
+        const lastCurvePoint = [...(chart.getDatasetMeta(0)?.data || [])]
+            .reverse()
+            .find((point) => Number.isFinite(point?.x));
+        const curveRight = lastCurvePoint && Number(chart.width) > 0
+            ? canvasRect.left + (lastCurvePoint.x * (canvasRect.width / chart.width))
+            : Number.NaN;
         const first = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '0');
         const nextColumn = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '1');
         const nextRow = cells.find((cell) => cell.dataset.row === '1' && cell.dataset.column === '0');
@@ -18479,7 +18468,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && cell.probability <= 1
             )),
             outerBorderRadius: tooltipStyle.borderRadius,
-            rightwardStartDelta: Math.abs(tooltipRect.left - (canvasRect.left + bounds.intersectionX)),
+            rightwardStartDelta: Math.abs(tooltipRect.left - curveRight),
             rows: new Set(cells.map((cell) => cell.dataset.row)).size,
             rowsDown: new Set(cells.filter((cell) => cell.classList.contains('is-down'))
                 .map((cell) => cell.dataset.row)).size,
@@ -19011,9 +19000,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const scrollbarThumbStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar-thumb');
         const visualPosition = Number(stack.dataset.probabilityPanVisualPosition || 0);
         const visualOffset = Number(stack.dataset.probabilityPanVisualOffset || 0);
+        const lastCurvePoint = [...(chart.getDatasetMeta(0)?.data || [])]
+            .reverse()
+            .find((candidate) => Number.isFinite(candidate?.x));
+        const curveRightContentLeft = lastCurvePoint && Number(chart.width) > 0
+            ? priceRect.left - stackRect.left + visualPosition
+                + (lastCurvePoint.x * (priceRect.width / chart.width))
+            : Number.NaN;
         const expectedTarget = Math.max(
             0,
-            pointerX - stackRect.left + tooltipRect.width - stack.clientWidth,
+            curveRightContentLeft - (pointerX - stackRect.left),
         );
         return {
             activeIndex: bounds?.index,

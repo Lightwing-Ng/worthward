@@ -1946,6 +1946,7 @@
 		const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
 		const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
 		const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
+		const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;
 
 		const resolveNearestHoverIndex = (chart, event) => {
 			const chartArea = chart?.chartArea;
@@ -1980,9 +1981,7 @@
 			let hoverRelativeX = logicalRelativeX;
 			if (strategyPresentation) {
 				const scaleX = canvasRect.width / Number(chart.width);
-				const firstCurveX = finitePoints[0].x;
 				const lastCurveX = finitePoints[finitePoints.length - 1].x;
-				const firstCurveScreenX = canvasRect.left + (firstCurveX * scaleX);
 				const lastCurveScreenX = canvasRect.left
 					+ (lastCurveX * scaleX);
 				// The stack receives events while the translated canvas is moving,
@@ -1990,8 +1989,7 @@
 				// The field to the right of the last point is visual output, not more
 				// data, so it must never create a second hover region.
 				if (!Number.isFinite(scaleX)
-					|| event.clientX < firstCurveScreenX
-					|| event.clientX > lastCurveScreenX) {
+					|| event.clientX > lastCurveScreenX + PROBABILITY_HOVER_EDGE_HANDOFF_PX) {
 					resetProbabilityHoverPointer();
 					return null;
 				}
@@ -2570,13 +2568,10 @@
 				// The scroll target is a content-space coordinate. Do not derive it
 				// from contentLeft, which already includes the current scroll position
 				// and would compound on every same-index pointer move.
-				const pointerContentLeft = Number.isFinite(probabilityHoverLogicalX)
-					? probabilityHoverLogicalX
-					: contentLeft - probabilityScrollVisualPosition;
-				const curveRightContentLeft = getPriceCurveRightContentLeft(currentStackRect);
 				const nextTarget = Math.max(
 					0,
-					Number(curveRightContentLeft) - pointerContentLeft,
+					Number(getPriceCurveRightContentLeft(currentStackRect))
+						- (probabilityHoverPointerX - currentStackRect.left),
 				);
 				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
 					setProbabilityScrollTarget(nextTarget);
