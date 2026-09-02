@@ -1,4 +1,4 @@
-/* Code version: v1.201.17 */
+/* Code version: v1.201.18 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -18076,15 +18076,26 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const predictiveScale = Array.isArray(presentation?.predictive_scale)
             ? presentation.predictive_scale
             : [];
+        const returnAutoregression = Array.isArray(presentation?.return_autoregression)
+            ? presentation.return_autoregression
+            : [];
+        const returnLongRunMean = Array.isArray(presentation?.return_long_run_mean)
+            ? presentation.return_long_run_mean
+            : [];
+        const returnInnovationScale = Array.isArray(presentation?.return_innovation_scale)
+            ? presentation.return_innovation_scale
+            : [];
+        const hasFiniteModelValue = (value) => (
+            value !== null && value !== undefined && Number.isFinite(Number(value))
+        );
         const finitePoints = (chart?.getDatasetMeta?.(0)?.data || [])
             .map((point, index) => ({index, point}))
             .filter(({index, point}) => Number.isFinite(point?.x) && Number.isFinite(point?.y)
-                && predictiveMean[index] !== null
-                && predictiveMean[index] !== undefined
-                && predictiveScale[index] !== null
-                && predictiveScale[index] !== undefined
-                && Number.isFinite(Number(predictiveMean[index]))
-                && Number.isFinite(Number(predictiveScale[index])));
+                && hasFiniteModelValue(predictiveMean[index])
+                && hasFiniteModelValue(predictiveScale[index])
+                && hasFiniteModelValue(returnAutoregression[index])
+                && hasFiniteModelValue(returnLongRunMean[index])
+                && hasFiniteModelValue(returnInnovationScale[index]));
         if (finitePoints.length < 2) return [];
         const sampleIndices = Array.from({length: 11}, (_, sampleIndex) => (
             Math.round((finitePoints.length - 1) * (sampleIndex / 10))

@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.16
+Code version: v0.8.17
 """
 
 from pathlib import Path
@@ -362,17 +362,17 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         'probabilityScrollPort.addEventListener("scroll", () => {',
         'probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);',
         'tradeChartStack.dataset.probabilityPanMotion = "shared-pointer-follow";',
-        "const canvasContentLeft = canvasRect.left",
-        "const lastCurveContentX = canvasContentLeft + (lastCurveX * scaleX);",
-        "logicalRelativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX",
-        "hoverRelativeX = (logicalRelativeX - canvasContentLeft) / scaleX;",
+        "const getStaticStackContentLeft = (element) => {",
+        "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
+        "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
+        "const canvasContentLeft = getPriceCanvasContentLeft();",
+        "relativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX",
+        "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
-        "x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,",
-        "const canvasOffsetX = (",
-        "canvasRect.left - stackRect.left + probabilityScrollVisualPosition",
-        ");",
-            "Number(getPriceCurveRightContentLeft(currentStackRect))",
+        "x: contentLeft + point.x,",
+        "const canvasOffsetX = getPriceCanvasContentLeft();",
+            "Number(getPriceCurveRightContentLeft())",
             'tradeChartStack.dataset.probabilityPanTarget = "0";',
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
@@ -499,6 +499,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     ):
         assert fragment not in probability_grid
 
+    assert "probabilityHoverLogicalX" not in backtest_script
+    assert "logicalRelativeX" not in backtest_script
+
     assert "--backtest-probability-tooltip-transparency" not in tokens
     assert "--backtest-probability-tooltip-radius" not in tokens
     assert "--backtest-probability-cell-radius" not in tokens
@@ -573,7 +576,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.50.1",
         "-backtest-probability-grid-v0.23.1",
-        "-backtest-v0.35.13",
+        "-backtest-v0.35.14",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -658,10 +661,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const snapProbabilityScrollToFit = () => {",
         "const lastCurveX = finitePoints[finitePoints.length - 1].x;",
         "const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;",
-        "const canvasContentLeft = canvasRect.left",
-        "const lastCurveContentX = canvasContentLeft + (lastCurveX * scaleX);",
-        "|| logicalRelativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX)",
-        "hoverRelativeX = (logicalRelativeX - canvasContentLeft) / scaleX;",
+        "const getStaticStackContentLeft = (element) => {",
+        "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
+        "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
+        "const canvasContentLeft = getPriceCanvasContentLeft();",
+        "const lastCurveContentX = Number(canvasContentLeft) + (lastCurveX * scaleX);",
+        "|| relativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX)",
+        "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
         'hoverSurface.addEventListener("mouseleave", (event) => {',
         "resetProbabilityHoverPointer();",
         "resetProbabilityHoverPointer();",
