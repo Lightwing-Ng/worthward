@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.9.0
+Code version: v0.9.1
 """
 
 from __future__ import annotations
@@ -179,6 +179,10 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('data-option-count="3"', html)
         self.assertIn('data-backtest-history-view-panel="probability"', html)
         self.assertIn('class="backtest-probability-detail-status-row"', html)
+        self.assertIn(
+            "Display anchor: signal close · Executable target: next open → following open",
+            html,
+        )
         self.assertIn('class="backtest-probability-detail-legend-bar"', html)
         self.assertNotIn('>Forecast date<', html)
         self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
@@ -245,6 +249,28 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertIn(">78.25%</span>", html)
+
+    def test_bayesian_scores_render_na_when_no_executable_points_are_scored(self) -> None:
+        result = backtest_result()
+        result["summary"].update({
+            "probability_field_direction_hit_rate_pct": 0.0,
+            "probability_field_probability_score_pct": 0.0,
+            "probability_field_direction_scored_points": 0,
+            "probability_field_scored_points": 0,
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(">N/A</span>", html)
 
     def test_backtest_stop_loss_copy_has_default_chinese_translations(self) -> None:
         labels = {

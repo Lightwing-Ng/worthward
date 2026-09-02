@@ -1,4 +1,4 @@
-{# Code version: v0.4.0 #}
+{# Code version: v0.4.2 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
@@ -29,7 +29,7 @@
          data-probability-field-metric="next-open-direction-hit-rate"
          title="Percentage of causal predictions whose 50% direction matched the executable next-open-to-following-open return. This is an observed direction hit rate, not a probability-grid cell score.">
         <span class="trade-metric-label">Bayesian direction hit rate</span>
-        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_direction_hit_rate_pct) }}%</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.probability_field_direction_hit_rate_pct is none or (backtest_result.summary.probability_field_direction_scored_points is defined and backtest_result.summary.probability_field_direction_scored_points == 0) else "%.2f"|format(backtest_result.summary.probability_field_direction_hit_rate_pct) ~ "%" }}</span>
     </div>
     {% endif %}
     {% if backtest_result.summary.probability_field_probability_score_pct is defined %}
@@ -37,7 +37,7 @@
          data-probability-field-metric="one-minus-brier-score"
          title="Bounded proper probability score: 100% times one minus the mean Brier loss for the executable next-open direction. Higher is better; this is not a hit rate.">
         <span class="trade-metric-label">Bayesian probability score</span>
-        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.probability_field_probability_score_pct) }}%</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.probability_field_probability_score_pct is none or (backtest_result.summary.probability_field_scored_points is defined and backtest_result.summary.probability_field_scored_points == 0) else "%.2f"|format(backtest_result.summary.probability_field_probability_score_pct) ~ "%" }}</span>
     </div>
     {% endif %}
     <div class="trade-metric-card"

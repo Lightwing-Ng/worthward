@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.236.0`
+Documentation version: `v1.236.1`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -92,11 +92,16 @@ references, transaction descriptions, or copied statement content.
   following-session-open return. The absolute-price grid remains visually
   anchored to the signal close because the unknown entry Open does not exist at
   forecast time; this display anchor is not treated as a fill price or model
-  target. A missing execution Open fails closed.
+  target. The Price Field detail panel labels this distinction explicitly. A
+  missing execution Open fails closed.
 - The 20 browser columns retain their accepted square-cell geometry and may
   cover more than 20 trading days under integer-day quantization. Their
   probability masses use the fitted causal AR(1) return-state transition at the
   selected origin; they are not 20 separately fitted future factor paths.
+- Provider factor `status` is separate from latest-origin `eligible` and
+  `selected` metadata. An available factor can therefore be intentionally
+  excluded by causal incremental evidence, and the UI must not interpret
+  availability alone as posterior inclusion.
 - Bayesian Price Field remains a daily posterior model. Its `1m` option uses
   real local one-minute bars only for execution prices and the equity axis;
   the daily probability field is intentionally unavailable in that mode. Daily

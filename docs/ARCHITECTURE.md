@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.0`
+Documentation version: `v1.69.2`
 
 ## Bayesian Price Field detail view contract
 
@@ -48,8 +48,11 @@ interaction coordinate system while the price and probability visuals are
 temporarily translated to fit a right-edge field. Pointer deltas therefore
 advance the selected chart origin one-for-one even when the visual canvas has
 already moved, and the stack continues to receive rightward hover input while
-the translated canvas is outside the pointer location. Moving into another
-chart subplot or leaving the stack still follows the existing shared-tooltip
+the translated canvas is outside the pointer location. During tracking, the
+vertical guide is updated from the latest screen-space pointer position on
+every move, including moves that keep the same nearest data point; a pinned
+field returns the guide to its selected data point. Moving into another chart
+subplot or leaving the stack still follows the existing shared-tooltip
 ownership rules.
 
 ## Holdings P&L display contract
@@ -272,6 +275,10 @@ Strategies declare their input contract through `StrategySupportMatrix.required_
 
 The causal volume-at-price factor spreads each trailing Longbridge bar's volume uniformly across the fixed price bins intersecting its Low-High range, then records the current close's volume-weighted cumulative percentile; current `trade-stats` data is not rewritten into historical cost-basis evidence. Historical P/E and option observations join backward as-of with maximum ages of 14 and 7 calendar days respectively. Dynamic P/E is a separate opt-in `calc-index` snapshot bound only to its own market-local availability date, with a one-day maximum age, and is never backfilled across an earlier historical window. Optional research factors use Longbridge valuation history, capital flow, market temperature, shareholder and fund-holder reports, short-interest and short-volume reports, and HK broker holding history; each is disabled by default, fetched only when selected, filtered to dated observations, and joined backward as-of with a bounded 90-day staleness window. Snapshot-only values are never backfilled across a historical window. Quantitative-factor controls are registered once and sorted alphabetically; model parameters remain after the factor list. Every close-origin prediction targets `Open[t+1] -> Open[t+2]`, and training excludes the immediately preceding factor row until both opens required by its target are observable. Eligible factors are admitted sequentially only when they improve causal expanding-window Gaussian log score on identical validation rows after a one-parameter complexity penalty. Probability thresholds emit persistent buy or sell intent on every qualifying bar, while the backtest engine remains the sole owner of actual position state. The `Allow algorithmic stop-loss exits` switch is enabled by default; disabling it blocks a strategy sell or cover from closing below its entry price. This is a price-only gate that excludes dividends and total return, and it does not add a separate fixed-price stop. A rejected exit intent can therefore be attempted again on the next qualifying bar. Because walk-forward origins are independent, `Auto` and `CPU` use the shared bounded spawn process pool for sufficiently large workloads, keep small workloads inline, and fall back to an ordered thread pool when a process cannot be started; neither mode imports Torch. Only an explicit `GPU` request probes Apple MPS on macOS or CUDA on supported Windows/NVIDIA systems; an unavailable device or ordinary Torch failure falls back to NumPy CPU without changing the strategy contract.
 
+Factor metadata keeps provider `status` separate from latest-origin `eligible`,
+`selected`, and `selection_status` fields, so data availability is not
+presented as evidence that a factor entered the posterior.
+
 The v1.24.0 execution amendment supersedes the Auto portion of the preceding
 release paragraph: `Auto` probes for an available Apple MPS or CUDA device and
 coordinates independent walk-forward origins between that device and the
@@ -284,7 +291,7 @@ existing local daily market store for its OHLCV model input and marks
 Longbridge-only factors unavailable; it does not synthesize factor values or
 change the production Longbridge provider path.
 
-The v1.25.0 model amendment supersedes the preceding one-step target, prior,
+The v1.26.0 model amendment supersedes the preceding one-step target, prior,
 factor-selection, multi-step, and diagnostic wording. `Prior Strength` now maps
 to a direct ridge penalty equal to its percentage of the standardized sample
 information diagonal. Each origin also estimates a stable causal AR(1) return
@@ -293,7 +300,9 @@ for every viewport-selected integer horizon, including mean reversion,
 autocorrelation, innovation variance, and cumulative state covariance; the
 renderer no longer applies frozen `h * mean` and `sqrt(h) * scale` diffusion.
 The user-facing `Bayesian direction hit rate` is the observed 0-100% accuracy
-of the 50% next-open direction decision. `Bayesian probability score` is the
+of the 50% next-open direction decision, counting only non-flat executable
+returns and non-neutral forecasts. Empty or all-neutral direction samples are
+unscored. `Bayesian probability score` is the
 bounded proper transformation `100% * (1 - mean Brier loss)`. Gaussian negative
 log predictive density and CRPS remain research metadata and are not presented
 as hit rates. The signal-close remains an explicitly declared display anchor

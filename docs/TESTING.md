@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.0`
+Documentation version: `v1.43.2`
 
 ## Bayesian Price Field detail view coverage
 
@@ -38,7 +38,7 @@ staleness boundaries. Real-time-only option contract quote fields must not be
 introduced into the historical feature matrix. Longer ranges must preserve the
 three-month reference cell size through integer trading-day quantization.
 
-The v1.25.0 model regressions separately prove that a factor row targets
+The v1.26.0 model regressions separately prove that a factor row targets
 `Open[t+1] -> Open[t+2]`, that the immediately preceding target remains
 unavailable at a close-origin fit, and that changing any future Open cannot
 alter an earlier posterior. A missing next-session Open makes `next_open`
@@ -48,15 +48,20 @@ reverts rather than being multiplied unchanged across every horizon. Prior
 tests assert the percentage-of-sample-information mapping, while synthetic
 factor tests require positive causal incremental log-score evidence and reject
 a noise factor. Diagnostics are bounded 0-100% direction hit-rate and Brier
-probability-score values; raw Gaussian log score and CRPS remain metadata.
+  probability-score values; flat returns and neutral 50/50 forecasts are not
+  counted as directional decisions, and empty samples remain unscored. Raw
+  Gaussian log score and CRPS remain metadata. Factor tests also verify that
+  provider availability is reported separately from latest-origin eligibility
+  and selection.
 
 The overview-hover regression also covers the `show_trade_details=0` path:
 hidden Price Field detail cells stay untouched during repeated pointer moves,
 the hidden equity Chart.js instance is not updated, and only the visible
 probability field is refreshed. It also moves the pointer in one-pixel steps
 while the right-edge field is active and verifies that the visual pan does not
-amplify that input; the chart stack remains the stationary interaction surface
-after the translated canvas leaves the pointer location.
+amplify that input, while the vertical guide stays within 1.5 CSS pixels of the
+pointer; the chart stack remains the stationary interaction surface after the
+translated canvas leaves the pointer location.
 
 ## Supported commands
 

@@ -1,4 +1,4 @@
-/* Code version: v0.35.0 */
+/* Code version: v0.35.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -699,6 +699,13 @@
 		const hoverLine = document.createElement("div");
 		hoverLine.className = "trade-chart-hover-line";
 		tradeChartStack.appendChild(hoverLine);
+		const existingHoverCrosshairLine = tradeChartStack.querySelector(
+			".trade-chart-hover-horizontal-line",
+		);
+		if (existingHoverCrosshairLine) existingHoverCrosshairLine.remove();
+		const hoverCrosshairLine = document.createElement("div");
+		hoverCrosshairLine.className = "trade-chart-hover-horizontal-line";
+		tradeChartStack.appendChild(hoverCrosshairLine);
 
 		tradeChartStack.querySelectorAll("[data-backtest-chart-tooltip]").forEach((node) => node.remove());
 		const tooltip = document.createElement("div");
@@ -753,6 +760,12 @@
 			probabilityTooltip.className = "chart-tooltip backtest-probability-tooltip";
 			probabilityTooltip.dataset.backtestChartTooltip = "probability-grid";
 			probabilityTooltip.dataset.renderer = strategyPresentation.renderer;
+			probabilityTooltip.dataset.targetInterval = String(
+				strategyPresentation.target_interval || "next-open-to-following-open",
+			);
+			probabilityTooltip.dataset.priceAnchorKind = String(
+				strategyPresentation.price_anchor_kind || "signal-close-display-anchor",
+			);
 			probabilityTooltip.dataset.cellOpacityMapping = strategyPresentation.cell_opacity_mapping;
 			probabilityTooltip.dataset.cellOpacityExponent = String(
 				strategyPresentation.cell_opacity_exponent,
@@ -766,7 +779,10 @@
 			probabilityTooltip.style.left = "0px";
 			probabilityTooltip.style.top = "0px";
 			probabilityTooltip.setAttribute("role", "img");
-			probabilityTooltip.setAttribute("aria-label", "Bayesian future price probability field");
+			probabilityTooltip.setAttribute(
+				"aria-label",
+				"Bayesian future price probability field; displayed from the signal-close anchor; executable target is next-open to-following-open",
+			);
 			if (probabilityCanvas) {
 				probabilityCanvas.className = "backtest-probability-canvas";
 				probabilityCanvas.setAttribute("aria-hidden", "true");
@@ -784,6 +800,7 @@
 			priceCanvas.closest(".trade-chart-panel"),
 			equityCanvas.closest(".trade-chart-panel"),
 			hoverLine,
+			hoverCrosshairLine,
 			tooltip,
 			probabilityTooltip,
 		].filter((node) => node instanceof HTMLElement);
@@ -977,6 +994,7 @@
 		const controllerTaskCleanups = [];
 		let controllerDestroyed = false;
 		let hoverFrameId = null;
+		let pointerHoverFrameId = null;
 		let pendingHoverUpdate = null;
 		let layoutFrameId = null;
 		let probabilityDetailRefreshFrameId = null;
@@ -995,10 +1013,15 @@
 		let probabilityScrollPortWidth = 0;
 		let probabilityScrollExtentDistance = 0;
 		let probabilityHoverPointerX = null;
+		let probabilityHoverPointerY = null;
 		let probabilityHoverLogicalX = null;
+		let probabilityHoverPointerActive = false;
+		let probabilityFieldPositionUpdater = null;
 		const resetProbabilityHoverPointer = () => {
 			probabilityHoverPointerX = null;
+			probabilityHoverPointerY = null;
 			probabilityHoverLogicalX = null;
+			probabilityHoverPointerActive = false;
 		};
 		const setInlineStyleIfChanged = (element, propertyName, value) => {
 			if (!(element instanceof HTMLElement)) return;
@@ -1106,6 +1129,7 @@
 				probabilityScrollVisualPosition,
 			);
 			setProbabilityScrollVisualOffset(actualNativeScrollLeft - probabilityScrollVisualPosition);
+			probabilityFieldPositionUpdater?.();
 			if (
 				!(probabilityScrollPort instanceof HTMLElement)
 				|| probabilityScrollPort.hidden
@@ -1248,6 +1272,9 @@
 					? Math.min(nativeNext, probabilityScrollTarget)
 					: nativeNext;
 				setProbabilityScrollPosition(visualNext);
+				if (!isProbabilityHoverPointerOverStack(tradeChartStack.getBoundingClientRect())) {
+					updateCurveHoverLine();
+				}
 			}, {signal: documentController.signal});
 		}
 
@@ -1488,7 +1515,7 @@
 			);
 			probabilityDetailGrid.setAttribute(
 				"aria-label",
-				`Bayesian future price probability field for ${labels[index] || "selected date"}`,
+				`Bayesian future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`,
 			);
 			if (probabilityDetailStatus instanceof HTMLElement) {
 				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
@@ -1815,6 +1842,14 @@
 				const price = Number(close[activeIndex]);
 				const {ctx, chartArea} = chart;
 				if (!point || !chartArea || !Number.isFinite(point.y) || !Number.isFinite(price)) return;
+				chart._activeBacktestPriceGuideBounds = {
+					index: activeIndex,
+					left: chartArea.left,
+					price,
+					right: chartArea.right,
+					y: point.y,
+				};
+				if (strategyPresentation) return;
 				const mutedSoft = getComputedStyle(document.body).getPropertyValue("--theme-muted-soft").trim()
 					|| resolvedTheme.muted;
 				ctx.save();
@@ -1825,15 +1860,9 @@
 				ctx.lineTo(chartArea.right, point.y);
 				ctx.stroke();
 				ctx.restore();
-				chart._activeBacktestPriceGuideBounds = {
-					index: activeIndex,
-					left: chartArea.left,
-					price,
-					right: chartArea.right,
-					y: point.y,
-				};
 			},
 			afterDatasetsDraw(chart) {
+				if (strategyPresentation) return;
 				const bounds = chart._activeBacktestPriceGuideBounds;
 				if (!bounds || typeof chartAxis.drawYAxisValueBadge !== "function") return;
 				const formattedPrice = new Intl.NumberFormat("en-US", {
@@ -1933,12 +1962,15 @@
 				// surface so that chart translation cannot be mistaken for extra
 				// pointer movement on the next event.
 				const pointerX = Number(event.clientX);
+				const pointerY = Number(event.clientY);
 				if (Number.isFinite(probabilityHoverPointerX)
 					&& Number.isFinite(probabilityHoverLogicalX)) {
 					logicalRelativeX = probabilityHoverLogicalX + pointerX - probabilityHoverPointerX;
 				}
 				probabilityHoverPointerX = pointerX;
+				probabilityHoverPointerY = pointerY;
 				probabilityHoverLogicalX = logicalRelativeX;
+				probabilityHoverPointerActive = true;
 			}
 			const relativeY = event.clientY - canvasRect.top;
 			if (!Number.isFinite(logicalRelativeX)) return null;
@@ -2257,7 +2289,7 @@
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
 				"aria-label",
-				`${labels[index] || "Selected date"}, ${formatMoney(anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability above the selected price on the next bar`,
+				`${labels[index] || "Selected date"}, ${formatMoney(anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability field; displayed from the signal-close anchor; executable target is next-open to-following-open`,
 			);
 			probabilityTooltip.classList.add("is-visible");
 			const tooltipContentRight = canvasOffsetX + geometry.left + geometry.width;
@@ -2341,6 +2373,15 @@
 			refreshProbabilityDetailAfterViewChange,
 			{signal: documentController.signal},
 		);
+		const isProbabilityHoverPointerOverStack = (stackRect) => (
+			probabilityHoverPointerActive
+			&& Number.isFinite(probabilityHoverPointerX)
+			&& Number.isFinite(probabilityHoverPointerY)
+			&& probabilityHoverPointerX >= stackRect.left
+			&& probabilityHoverPointerX <= stackRect.right
+			&& probabilityHoverPointerY >= stackRect.top
+			&& probabilityHoverPointerY <= stackRect.bottom
+		);
 
 		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
@@ -2361,9 +2402,33 @@
 				hideProbabilityTooltip();
 				return false;
 			}
-			const hoverLinePosition = getRelativePointPosition(canonicalLineCanvas, stackRect, canonicalLinePoint);
 			const tooltipAnchorPosition = getRelativePointPosition(sourceCanvas, stackRect, sourcePoint);
-			if (!hoverLinePosition || !tooltipAnchorPosition) {
+			if (!tooltipAnchorPosition) {
+				hoverLine.classList.remove("is-visible");
+				tooltip.classList.remove("is-visible");
+				hideProbabilityTooltip();
+				return false;
+			}
+			let probabilityRendered = false;
+			if (activePriceOverlay && pricePoint) {
+				probabilityRendered = renderProbabilityTooltip(index, stackRect, pricePoint);
+			}
+			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			const curveHoverLinePosition = getRelativePointPosition(
+				canonicalLineCanvas,
+				currentStackRect,
+				canonicalLinePoint,
+			);
+			const pointerHoverLinePosition = probabilityRendered
+				&& pinState.mode !== "pinned"
+				&& isProbabilityHoverPointerOverStack(currentStackRect)
+				? {
+					x: probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition,
+					y: null,
+				}
+				: null;
+			const hoverLinePosition = pointerHoverLinePosition || curveHoverLinePosition;
+			if (!hoverLinePosition) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				hideProbabilityTooltip();
@@ -2376,7 +2441,7 @@
 			}
 			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
 			hoverLine.classList.add("is-visible");
-			if (activePriceOverlay && pricePoint && renderProbabilityTooltip(index, stackRect, pricePoint)) {
+			if (probabilityRendered) {
 				tooltip.classList.remove("is-visible");
 				return true;
 			}
@@ -2419,6 +2484,57 @@
 			tooltip.style.top = `${Math.max(padding, top)}px`;
 			tooltip.classList.add("is-visible");
 			return false;
+		};
+		const updatePointerHoverLine = () => {
+			if (
+				!strategyPresentation
+				|| !activePriceOverlay
+				|| pinState.mode === "pinned"
+				|| !Number.isInteger(activeIndex)
+			) return;
+			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			if (!isProbabilityHoverPointerOverStack(currentStackRect)) return;
+			const currentPricePoint = getDatasetPoint(priceChart, activeIndex, 0);
+			if (!currentPricePoint) return;
+			const hoverLineFrame = updateHoverLineFrame();
+			if (hoverLineFrame) {
+				hoverLine.style.top = `${hoverLineFrame.top}px`;
+				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			}
+			hoverLine.style.setProperty(
+				"--trade-chart-hover-line-x",
+				`${probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition}px`,
+			);
+			hoverLine.classList.add("is-visible");
+		};
+		const updateCurveHoverLine = () => {
+			if (!Number.isInteger(activeIndex)) return;
+			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			const currentPricePoint = getDatasetPoint(priceChart, activeIndex, 0);
+			if (!currentPricePoint) return;
+			const curveHoverLinePosition = getRelativePointPosition(
+				priceCanvas,
+				currentStackRect,
+				currentPricePoint,
+			);
+			if (!curveHoverLinePosition) return;
+			const hoverLineFrame = updateHoverLineFrame();
+			if (hoverLineFrame) {
+				hoverLine.style.top = `${hoverLineFrame.top}px`;
+				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			}
+			hoverLine.style.setProperty(
+				"--trade-chart-hover-line-x",
+				`${curveHoverLinePosition.x}px`,
+			);
+			hoverLine.classList.add("is-visible");
+		};
+		const schedulePointerHoverLineUpdate = () => {
+			if (pointerHoverFrameId !== null) return;
+			pointerHoverFrameId = requestControllerAnimationFrame(() => {
+				pointerHoverFrameId = null;
+				updatePointerHoverLine();
+			});
 		};
 
 		let activeBacktestRowElements = [];
@@ -2534,6 +2650,7 @@
 					&& equityCanvas?.closest(".trade-chart-panel")?.contains(event.target)
 				) return;
 				const nearestIndex = resolveNearestHoverIndex(chart, event);
+				if (canvas === priceCanvas && strategyPresentation) schedulePointerHoverLineUpdate();
 				scheduleHoverSync(nearestIndex, canvas, chart);
 			}, { signal });
 
@@ -2872,9 +2989,19 @@
 				)
 			);
 			const clearProbabilityFieldOnLeave = (relatedTarget) => {
-				if (isProbabilityHoverSurface(relatedTarget)) return;
+				const remainsOnProbabilitySurface = isProbabilityHoverSurface(relatedTarget);
+				probabilityHoverPointerActive = remainsOnProbabilitySurface
+					&& tradeChartStack.contains(relatedTarget);
+				if (remainsOnProbabilitySurface) {
+					if (!probabilityHoverPointerActive) updateCurveHoverLine();
+					return;
+				}
 				if (!priceChart?.ctx || pinState.mode === "pinned") return;
 				cancelScheduledHoverSync();
+				if (pointerHoverFrameId !== null) {
+					cancelControllerAnimationFrame(pointerHoverFrameId);
+					pointerHoverFrameId = null;
+				}
 				pinState = probabilityGridApi.reducePinState?.(pinState, {type: "clear"})
 					|| {mode: "tracking", activeIndex: null};
 				syncHoverState(null, priceCanvas, priceChart);
@@ -2933,6 +3060,7 @@
 				: activeSourceChart;
 			if (!chartsAlreadyResized) priceChart.resize();
 			if (showTradeDetails && !chartsAlreadyResized) equityChart.resize();
+			resetProbabilityHoverPointer();
 			chartHoverPointCaches.clear();
 			probabilityHoverLayout = null;
 			probabilityModelCache.clear();
@@ -3010,6 +3138,10 @@
 				if (controllerDestroyed) return;
 				controllerDestroyed = true;
 				cancelScheduledHoverSync();
+				if (pointerHoverFrameId !== null) {
+					cancelControllerAnimationFrame(pointerHoverFrameId);
+					pointerHoverFrameId = null;
+				}
 				if (layoutFrameId !== null) {
 					cancelControllerAnimationFrame(layoutFrameId);
 					layoutFrameId = null;

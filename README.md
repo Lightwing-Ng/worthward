@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v3.2.0`
+Documentation version: `v3.2.1`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -130,7 +130,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 
   The Backtest-wide `Show trade details` switch defaults on for every strategy, including DCA. Turning it off hides the trade markers and equity comparison subplot, gives the price subplot the released space while retaining its time axis, and disables the `Transactions` history option in favor of `Metrics`; it is a display preference and never changes strategy computation or the result cache.
 
-  The long Bayesian contract immediately below is retained as historical release prose. The current implementation version is v1.25.0; its accepted probability-grid geometry remains unchanged.
+  The long Bayesian contract immediately below is retained as historical release prose. The current implementation version is v1.26.0; its accepted probability-grid geometry remains unchanged. Direction diagnostics exclude flat executable returns and neutral 50/50 forecasts; empty samples are reported as unavailable rather than 0%.
 
   Bayesian `Auto` execution coordinates independent causal walk-forward origins across the shared bounded CPU executor and an available Apple MPS or CUDA device; without an accelerator it uses the CPU executor. The same process layer serves independent kNN/Lorentzian predictions and Futu (HK) PDF parsing; it caps nested BLAS threads, preserves deterministic input order, and falls back to an ordered thread pool when process execution is unavailable. I/O probes and Longbridge fetches remain thread-parallel, while cash replay, stateful SuperTrend recurrences, and signal finite-state machines remain serial by design because their ordering is part of the causal contract. The presentation reports the effective executor and worker count; explicit GPU execution remains device-parallel and restarts cleanly on CPU after a runtime failure.
 
@@ -139,7 +139,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   The historical paragraph above retains its original v1.22.0 label for compatibility; its Auto scheduler wording is superseded by the v1.23.0 execution contract stated above.
   The rendered cell-size target is derived from the trailing three-month data density on the current chart. Other available ranges reuse that target when the integer trading-day lattice permits it; when exact matching is impossible, the renderer chooses the smallest complete slot that does not undershoot the three-month target. Chart boundaries remain authoritative for hover, while the detail panel's separate complete-row geometry is authoritative for its own contained grid; the 20-column density, 4 px floor, and existing strategy row limits remain shared.
 
-  The current implementation version is strategy v1.25.0. Its `Auto` walk-forward scheduler coordinates the shared CPU executor with an available GPU as described above; when remote market access is explicitly disabled, the strategy reads the existing local daily store and marks Longbridge-only factors unavailable instead of failing the Backtest page. The v1.25.0 executable-target, dynamic multi-step, prior-scaling, factor-evidence, and scoring contract is stated above. The historical v1.21.0 release note remains only as a compatibility record.
+  The current implementation version is strategy v1.26.0. Its `Auto` walk-forward scheduler coordinates the shared CPU executor with an available GPU as described above; when remote market access is explicitly disabled, the strategy reads the existing local daily store and marks Longbridge-only factors unavailable instead of failing the Backtest page. The v1.26.0 executable-target, dynamic multi-step, prior-scaling, factor-evidence, and scoring contract is stated above. Factor metadata now separates provider status, latest-origin eligibility, and actual latest-origin selection. The historical v1.21.0 release note remains only as a compatibility record.
 
 - `Grid Trading`
   Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and opens through the shared tune control with Trigger price min, Trigger price max, Rise %, and Fall %; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.

@@ -1,4 +1,4 @@
-/* Code version: v1.201.0 */
+/* Code version: v1.201.2 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -17741,6 +17741,13 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             cell_opacity_tail_ratio: 0.02,
             cell_display_threshold_pct: 0,
             time_quantization: 'integer-trading-days',
+            distribution_kind: 'dynamic-normal-log-return',
+            target_interval: 'next-open-to-following-open',
+            price_anchor_kind: 'signal-close-display-anchor',
+            multi_step_kind: 'causal-ar1-return-state',
+            return_autoregression: rawDates.map((_, index) => (index < 3 ? null : 0.5)),
+            return_long_run_mean: rawDates.map((_, index) => (index < 3 ? null : 0)),
+            return_innovation_scale: rawDates.map((_, index) => (index < 3 ? null : 0.012)),
             data_keys: [...rawDates],
             predictive_mean: rawDates.map((_, index) => (index < 3 ? null : 0.0015)),
             predictive_scale: rawDates.map((_, index) => (index < 3 ? null : 0.018)),
@@ -18056,7 +18063,29 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         await page.mouse.move(pointerX, edgeAnchor.y);
         await page.waitForTimeout(16);
         const snapshot = await panSnapshot();
-        trackingSamples.push({pointerX, snapshot});
+        const alignment = await page.evaluate(({pointerX: currentPointerX}) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const hoverLine = document.querySelector('.trade-chart-hover-line');
+            const bounds = chart?._activeBacktestProbabilityGridBounds;
+            const point = Number.isInteger(bounds?.index)
+                ? chart?.getDatasetMeta?.(0)?.data?.[bounds.index]
+                : null;
+            const canvasRect = canvas?.getBoundingClientRect();
+            const lineRect = hoverLine?.getBoundingClientRect();
+            const curveX = canvasRect && chart?.width > 0 && point
+                ? canvasRect.left + (point.x * (canvasRect.width / chart.width))
+                : Number.NaN;
+            const lineX = lineRect ? lineRect.left + (lineRect.width / 2) : Number.NaN;
+            return {
+                curveX,
+                lineX,
+                pointerX: currentPointerX,
+                pointerToLine: Math.abs(lineX - currentPointerX),
+                pointerToCurve: Math.abs(curveX - currentPointerX),
+            };
+        }, {pointerX});
+        trackingSamples.push({pointerX, snapshot, alignment});
     }
     const trackingEnd = trackingSamples.at(-1)?.snapshot;
     const trackingPointerDistance = trackingSamples.at(-1)?.pointerX - trackingPointerStart;
@@ -18067,6 +18096,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     // A rightward pointer step may move the chart just enough to keep the
     // field visible, but the moving canvas must not amplify that step.
     expect(trackingTargetDistance).toBeLessThanOrEqual(trackingPointerDistance + 10);
+    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToLine)))
+        .toBeLessThanOrEqual(1.5);
 
     await movePointerOutsideProbabilitySurface();
     const resetLeftAnchor = await pointAtIndex(leftAnchor.index);
@@ -18393,6 +18424,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const detailAnchor = panel?.querySelector('[data-backtest-probability-detail-anchor]');
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const tooltipCells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID;
         const yTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-y-axis] .backtest-probability-detail-y-tick') || []);
         const xTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-x-tick]') || []);
         const legendBar = panel?.querySelector('.backtest-probability-detail-legend-bar');
@@ -18440,6 +18473,20 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             index === 0 || rect.left >= xTickRects[index - 1].right - 0.5
         ));
         const activeIndex = Number(panel?.dataset.activeIndex);
+        const dynamicCell = tooltipCells.find((cell) => Number(cell.dataset.horizon) > 1);
+        const dynamicExpectedProbability = dynamicCell && probabilityGridApi
+            ? probabilityGridApi.probabilityBetweenPrices({
+                anchorPrice: Number(window.ANTIGRAVITY_APP?.backtestResult?.chart?.close?.[activeIndex]),
+                lowerPrice: Number(dynamicCell.dataset.lowerPrice),
+                upperPrice: Number(dynamicCell.dataset.upperPrice),
+                mean: Number(presentation?.predictive_mean?.[activeIndex]),
+                scale: Number(presentation?.predictive_scale?.[activeIndex]),
+                horizon: Number(dynamicCell.dataset.horizon),
+                autoregression: Number(presentation?.return_autoregression?.[activeIndex]),
+                longRunMean: Number(presentation?.return_long_run_mean?.[activeIndex]),
+                innovationScale: Number(presentation?.return_innovation_scale?.[activeIndex]),
+            })
+            : Number.NaN;
         const firstTick = xTicks[0];
         const firstHorizon = Number(firstTick?.dataset.horizon);
         const rawDates = window.ANTIGRAVITY_APP?.backtestResult?.chart?.raw_dates || [];
@@ -18465,6 +18512,19 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             detailGridWidth: detailGridRect?.width ?? Number.NaN,
             detailGridHeight: detailGridRect?.height ?? Number.NaN,
             detailColorsStayOnPriceSide,
+            dynamicProbabilityMatchesState: Boolean(
+                dynamicCell
+                && Number.isFinite(dynamicExpectedProbability)
+                && Math.abs(
+                    dynamicExpectedProbability - Number(dynamicCell.dataset.probability),
+                ) <= 1e-12,
+            ),
+            dynamicStateLengths: {
+                autoregression: presentation?.return_autoregression?.length || 0,
+                longRunMean: presentation?.return_long_run_mean?.length || 0,
+                innovationScale: presentation?.return_innovation_scale?.length || 0,
+            },
+            multiStepKind: presentation?.multi_step_kind || null,
             expectedDateText,
             firstDateText: firstTick?.textContent?.trim() || '',
             legendSharesStatusRow: Boolean(statusRow instanceof HTMLElement && legendBar && statusRow.contains(legendBar)),
@@ -18496,6 +18556,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(detailContract.cellCount).toBe(detailContract.rows * detailContract.columns);
     expect(detailContract.hoverCellDataMatches).toBe(true);
     expect(detailContract.detailColorsStayOnPriceSide).toBe(true);
+    expect(detailContract.multiStepKind).toBe('causal-ar1-return-state');
+    expect(detailContract.dynamicStateLengths.autoregression).toBe(80);
+    expect(detailContract.dynamicStateLengths.longRunMean).toBe(80);
+    expect(detailContract.dynamicStateLengths.innovationScale).toBe(80);
+    expect(detailContract.dynamicProbabilityMatchesState).toBe(true);
     expect(detailContract.legendGradient).toBe(true);
     expect(detailContract.legendSharesStatusRow).toBe(true);
     expect(detailContract.legendTrailingGap).toBeLessThanOrEqual(1);

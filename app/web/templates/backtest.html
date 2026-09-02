@@ -1,4 +1,4 @@
-{# Code version: v0.8.2 #}
+{# Code version: v0.8.3 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -133,6 +133,10 @@
                                  aria-hidden="true">
                             <div class="backtest-probability-detail-heading">
                                 <p class="chart-heading" id="backtest_probability_detail_title">Bayesian Price Field detail</p>
+                                <p class="backtest-probability-detail-status backtest-probability-detail-contract"
+                                   data-backtest-probability-detail-contract>
+                                    Display anchor: signal close · Executable target: next open → following open
+                                </p>
                                 <div class="backtest-probability-detail-status-row">
                                     <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
                                         Hover a price point to inspect its forecast field.

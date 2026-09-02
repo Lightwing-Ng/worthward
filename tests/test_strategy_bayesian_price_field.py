@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.25.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.26.0."""
 
 from __future__ import annotations
 
@@ -245,7 +245,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("heterogeneous walk-forward computation", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS or CUDA", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.9.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.10.0")
 
     def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
         strategy = BayesianPriceFieldStrategy()
@@ -303,7 +303,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertGreaterEqual(diagnostics["direction_hits"], 0)
         self.assertLessEqual(
             diagnostics["direction_hits"],
-            diagnostics["scored_points"],
+            diagnostics["direction_scored_points"],
         )
         self.assertGreaterEqual(diagnostics["brier_score"], 0.0)
         self.assertLessEqual(diagnostics["brier_score"], 1.0)
@@ -336,7 +336,28 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
 
         self.assertEqual(diagnostics["scored_points"], 0)
-        self.assertEqual(diagnostics["direction_hit_rate_pct"], 0.0)
+        self.assertEqual(diagnostics["direction_scored_points"], 0)
+        self.assertIsNone(diagnostics["direction_hit_rate_pct"])
+        self.assertIsNone(diagnostics["probability_score_pct"])
+        self.assertIsNone(diagnostics["brier_score"])
+
+    def test_direction_diagnostics_exclude_flat_returns_and_neutral_forecasts(self) -> None:
+        open_prices = np.asarray([100.0, 100.0, 100.0, 101.0, 99.0, 100.0])
+        means = np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        scales = np.full(6, 0.02)
+        probabilities = np.asarray([0.5, 0.5, 0.4, 0.6, 0.5, 0.5])
+
+        diagnostics = _probabilistic_diagnostics(
+            open_prices,
+            means,
+            scales,
+            probabilities,
+        )
+
+        self.assertEqual(diagnostics["scored_points"], 4)
+        self.assertEqual(diagnostics["direction_scored_points"], 2)
+        self.assertEqual(diagnostics["direction_hits"], 2)
+        self.assertEqual(diagnostics["direction_hit_rate_pct"], 100.0)
 
     def test_target_excludes_the_untradable_overnight_gap(self) -> None:
         open_prices = np.asarray([100.0, 120.0, 126.0, 113.4])
@@ -952,6 +973,15 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             presentation["metric_geometry"]["render_lattice"]["horizon_mapping"],
             "viewport-quantized",
         )
+        self.assertEqual(
+            presentation["factor_selection"]["method"],
+            "latest-causal-expanding-window-incremental-gaussian-log-score",
+        )
+        self.assertTrue(
+            set(presentation["factor_selection"]["selected"]).issubset(
+                presentation["factor_selection"]["eligible"]
+            )
+        )
         self.assertEqual(len(presentation["predictive_mean"]), len(result.frame))
         self.assertEqual(len(presentation["predictive_scale"]), len(result.frame))
         self.assertEqual(len(presentation["probability_up"]), len(result.frame))
@@ -992,6 +1022,10 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 if value is not None
             )
         )
+        for factor in presentation["factors"]:
+            self.assertIn("eligible", factor)
+            self.assertIn("selected", factor)
+            self.assertIn("selection_status", factor)
 
     def test_missing_pe_and_options_are_reported_without_blocking_prediction(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
@@ -1019,6 +1053,39 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(factor_details["volume"]["coverage"], 1.0)
         self.assertGreater(result.frame["bayesian_probability_up"].notna().sum(), 0)
+
+    def test_factor_status_separates_provider_activity_from_model_selection(self) -> None:
+        frame = _market_frame(90)
+        strategy = BayesianPriceFieldStrategy()
+        with patch(
+            "strategies.algorithms.strategy_bayesian_price_field._select_active_factors",
+            return_value=[],
+        ):
+            result = strategy.compute_signals(
+                frame,
+                _cpu_params(
+                    use_pe_ratio=False,
+                    use_options=False,
+                    use_volume=True,
+                ),
+            )
+
+        factor_details = {
+            factor["key"]: factor
+            for factor in result.presentation["factors"]
+        }
+        volume = factor_details["volume"]
+        self.assertEqual(volume["status"], "active")
+        self.assertTrue(volume["eligible"])
+        self.assertFalse(volume["selected"])
+        self.assertEqual(volume["selection_status"], "eligible-not-selected")
+        selection = result.presentation["factor_selection"]
+        self.assertEqual(selection["selected"], [])
+        self.assertIn("volume", selection["eligible"])
+        self.assertEqual(
+            result.metadata["factor_selection"],
+            selection,
+        )
 
     def test_research_factor_observations_join_as_of_and_are_exposed_in_the_model(self) -> None:
         frame = _market_frame(80)

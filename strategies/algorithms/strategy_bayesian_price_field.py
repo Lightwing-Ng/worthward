@@ -6,7 +6,7 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.25.0
+Code version: v1.26.0
 - Changed: The signal target is the executable ``Open[t+1] -> Open[t+2]`` log
   return, so a close-origin prediction no longer receives credit for an
   overnight gap that has already occurred before the required next-open fill.
@@ -21,6 +21,10 @@ Code version: v1.25.0
 - Changed: User-facing diagnostics are a 0-100% executable-direction hit rate
   and a bounded proper Brier probability score. Gaussian log score and CRPS
   remain research diagnostics and are not mislabeled as hit rates.
+- Changed: Direction diagnostics exclude flat executable returns and neutral
+  50/50 forecasts; empty diagnostic samples remain explicitly unscored.
+- Added: Factor presentation metadata separates provider availability,
+  point-in-time eligibility, and actual selection at the latest model origin.
 - Changed: Auto now coordinates independent walk-forward origins across the
   bounded CPU executor and an available Apple MPS or CUDA device, with a full
   NumPy CPU fallback when no accelerator is available or GPU execution fails.
@@ -105,7 +109,7 @@ _DYNAMIC_PE_MAX_STALENESS_DAYS = 1
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.9.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.10.0"
 _EPSILON = 1e-12
 _CPU_PARALLEL_MIN_ROWS = 64
 _CPU_PARALLEL_MAX_WORKERS = 8
@@ -1309,6 +1313,36 @@ def _causal_incremental_factor_evidence(
     return adjusted_improvement, len(base_scores)
 
 
+def _eligible_factor_candidates(
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        candidate_indices: np.ndarray,
+        current_index: int,
+) -> list[tuple[str, int, float]]:
+    """Return enabled factors that can enter one causal model origin."""
+    candidates: list[tuple[str, int, float]] = []
+    seen: set[str] = set()
+    for raw_factor in enabled_factors:
+        factor = str(raw_factor)
+        if factor in seen or factor not in factor_values:
+            continue
+        seen.add(factor)
+        values = np.asarray(factor_values[factor], dtype=np.float64)
+        if current_index < 0 or current_index >= len(values):
+            continue
+        candidate_values = values[candidate_indices]
+        finite = np.isfinite(candidate_values)
+        coverage = int(np.count_nonzero(finite))
+        if not np.isfinite(values[current_index]) or coverage < _MIN_TRAINING_OBSERVATIONS:
+            continue
+        finite_values = candidate_values[finite]
+        dispersion = float(np.std(finite_values)) if len(finite_values) > 1 else 0.0
+        if not math.isfinite(dispersion):
+            dispersion = 0.0
+        candidates.append((factor, coverage, dispersion))
+    return candidates
+
+
 def _select_active_factors(
         factor_values: dict[str, np.ndarray],
         enabled_factors: Sequence[str],
@@ -1324,26 +1358,12 @@ def _select_active_factors(
     after a one-parameter complexity penalty, and every comparison uses the
     same point-in-time rows for its base and augmented models.
     """
-    candidates: list[tuple[str, int, float]] = []
-    seen: set[str] = set()
-    for raw_factor in enabled_factors:
-        factor = str(raw_factor)
-        if factor in seen or factor not in factor_values:
-            continue
-        seen.add(factor)
-        values = np.asarray(factor_values[factor], dtype=np.float64)
-        if current_index >= len(values):
-            continue
-        candidate_values = values[candidate_indices]
-        finite = np.isfinite(candidate_values)
-        coverage = int(np.count_nonzero(finite))
-        if not np.isfinite(values[current_index]) or coverage < _MIN_TRAINING_OBSERVATIONS:
-            continue
-        finite_values = candidate_values[finite]
-        dispersion = float(np.std(finite_values)) if len(finite_values) > 1 else 0.0
-        if not math.isfinite(dispersion):
-            dispersion = 0.0
-        candidates.append((factor, coverage, dispersion))
+    candidates = _eligible_factor_candidates(
+        factor_values,
+        enabled_factors,
+        candidate_indices,
+        current_index,
+    )
 
     candidate_metadata = {
         factor: (coverage, dispersion)
@@ -1382,6 +1402,55 @@ def _select_active_factors(
         active.append(best_factor)
         remaining.remove(best_factor)
     return active
+
+
+def _latest_factor_selection(
+        factor_values: dict[str, np.ndarray],
+        enabled_factors: Sequence[str],
+        training_window: int,
+        target_values: np.ndarray,
+        current_index: int,
+        prior_strength: float,
+) -> dict[str, Any]:
+    """Describe eligibility and selection for the latest causal origin."""
+    normalized_index = min(max(0, int(current_index)), max(0, len(target_values) - 1))
+    training_end = max(0, normalized_index - 1)
+    training_start = max(0, training_end - int(training_window))
+    candidate_indices = np.arange(training_start, training_end, dtype=np.int64)
+    candidates = _eligible_factor_candidates(
+        factor_values,
+        enabled_factors,
+        candidate_indices,
+        normalized_index,
+    )
+    eligible = [factor for factor, _, _ in candidates]
+    selected = _select_active_factors(
+        factor_values,
+        enabled_factors,
+        candidate_indices,
+        normalized_index,
+        target_values,
+        prior_strength,
+    )
+    selected_set = set(selected)
+    eligible_set = set(eligible)
+    return {
+        "origin_index": normalized_index,
+        "eligible": eligible,
+        "selected": selected,
+        "selection_status": {
+            factor: (
+                "selected"
+                if factor in selected_set
+                else "eligible-not-selected"
+                if factor in eligible_set
+                else "ineligible"
+            )
+            for factor in dict.fromkeys(
+                [*map(str, enabled_factors), *eligible, *selected]
+            )
+        },
+    }
 
 
 def _normal_probability_above_zero(mean: float, standard_deviation: float) -> float:
@@ -1523,6 +1592,7 @@ def _probabilistic_diagnostics(
     probabilities = np.asarray(probability_up, dtype=np.float64)
     row_count = min(len(targets), len(means), len(scales), len(probabilities))
     direction_hits = 0
+    direction_scored_points = 0
     brier_losses: list[float] = []
     negative_log_scores: list[float] = []
     crps_values: list[float] = []
@@ -1541,7 +1611,12 @@ def _probabilistic_diagnostics(
             continue
         outcome = 1.0 if observed > 0.0 else 0.0
         bounded_probability = min(1.0, max(0.0, probability))
-        direction_hits += int((bounded_probability >= 0.5) == bool(outcome))
+        # A flat return has no direction, and a 50/50 forecast is deliberately
+        # neutral. Excluding both prevents the human-facing directional rate
+        # from receiving a systematic tie-break bias.
+        if observed != 0.0 and bounded_probability != 0.5:
+            direction_scored_points += 1
+            direction_hits += int((bounded_probability > 0.5) == bool(outcome))
         brier_losses.append((bounded_probability - outcome) ** 2)
         negative_log_scores.append(
             _gaussian_negative_log_score(observed, mean, scale)
@@ -1549,16 +1624,31 @@ def _probabilistic_diagnostics(
         crps_values.append(_normal_crps(observed, mean, scale))
 
     scored_points = len(brier_losses)
-    brier_score = float(np.mean(brier_losses)) if scored_points else 1.0
+    brier_score = float(np.mean(brier_losses)) if scored_points else None
     direction_hit_rate_pct = (
-        direction_hits / scored_points * 100.0 if scored_points else 0.0
+        direction_hits / direction_scored_points * 100.0
+        if direction_scored_points
+        else None
     )
-    probability_score_pct = min(100.0, max(0.0, (1.0 - brier_score) * 100.0))
+    probability_score_pct = (
+        min(100.0, max(0.0, (1.0 - brier_score) * 100.0))
+        if brier_score is not None
+        else None
+    )
     return {
-        "direction_hit_rate_pct": round(direction_hit_rate_pct, 2),
+        "direction_hit_rate_pct": (
+            round(direction_hit_rate_pct, 2)
+            if direction_hit_rate_pct is not None
+            else None
+        ),
         "direction_hits": direction_hits,
-        "probability_score_pct": round(probability_score_pct, 2),
-        "brier_score": round(brier_score, 8),
+        "direction_scored_points": direction_scored_points,
+        "probability_score_pct": (
+            round(probability_score_pct, 2)
+            if probability_score_pct is not None
+            else None
+        ),
+        "brier_score": round(brier_score, 8) if brier_score is not None else None,
         "mean_negative_log_predictive_density": (
             round(float(np.mean(negative_log_scores)), 8)
             if negative_log_scores
@@ -2125,6 +2215,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             frame: pd.DataFrame,
             factor_values: dict[str, np.ndarray],
             normalized_params: dict[str, Any],
+            selection: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         bundle_status = dict(
             _record_value(self._warmup_bundle, "factor_status", {}) or {}
@@ -2135,6 +2226,13 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             if total_observations > 0
             else None
         )
+        selection = selection or {}
+        eligible_factors = {
+            str(factor) for factor in tuple(selection.get("eligible", ()) or ())
+        }
+        selected_factors = {
+            str(factor) for factor in tuple(selection.get("selected", ()) or ())
+        }
         factors: list[dict[str, Any]] = []
         for definition in _BAYESIAN_FACTOR_DEFINITIONS:
             enabled = bool(normalized_params[definition.parameter_key])
@@ -2220,12 +2318,30 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     status = "active"
                 else:
                     status = "insufficient"
+            is_eligible = definition.key in eligible_factors
+            is_selected = definition.key in selected_factors
+            selection_status = (
+                "disabled"
+                if not enabled
+                else "selected"
+                if is_selected
+                else "eligible-not-selected"
+                if is_eligible
+                else "ineligible"
+            )
             factors.append(
                 {
                     "key": definition.key,
                     "label": definition.label,
                     "enabled": enabled,
                     "status": status,
+                    # ``status`` describes provider/data availability. These
+                    # fields describe the latest causal model-origin decision
+                    # so an available factor cannot be mistaken for an active
+                    # posterior coefficient.
+                    "eligible": is_eligible,
+                    "selected": is_selected,
+                    "selection_status": selection_status,
                     "finite_observations": finite_observations,
                     "total_observations": total_observations,
                     "coverage": round(coverage, 6),
@@ -2255,6 +2371,19 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             for definition in _BAYESIAN_FACTOR_DEFINITIONS
             if bool(normalized_params[definition.parameter_key])
         ]
+        target_values = _executable_return_targets(
+            pd.to_numeric(full_frame["Open"], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+        )
+        factor_selection = _latest_factor_selection(
+            factor_values,
+            enabled_factors,
+            int(normalized_params["training_window"]),
+            target_values,
+            len(full_frame) - 1,
+            float(normalized_params["prior_strength"]),
+        )
         backend = _resolve_compute_backend(str(normalized_params["compute_backend"]))
         (
             predictive_mean,
@@ -2348,6 +2477,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             full_frame,
             factor_values,
             normalized_params,
+            factor_selection,
         )
         presentation = {
             "schema": "bayesian-price-field/v1",
@@ -2407,6 +2537,15 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 for value in output["Date"].tolist()
             ],
             "factors": factors,
+            "factor_selection": {
+                "origin_index": factor_selection["origin_index"],
+                "eligible": list(factor_selection["eligible"]),
+                "selected": list(factor_selection["selected"]),
+                "selection_status": dict(factor_selection["selection_status"]),
+                "method": (
+                    "latest-causal-expanding-window-incremental-gaussian-log-score"
+                ),
+            },
             "device": {
                 "requested": backend.requested,
                 "resolved": backend.resolved,
@@ -2440,6 +2579,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             required_execution_mode="next_open",
             metadata={
                 "factors": factors,
+                "factor_selection": presentation["factor_selection"],
                 "compute_device": backend.resolved,
                 "compute_parallel_workers": backend.parallel_workers,
                 "compute_parallel_executor": backend.parallel_executor,
@@ -2450,6 +2590,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     "direction_hit_rate_pct"
                 ],
                 "probability_field_direction_hits": diagnostics["direction_hits"],
+                "probability_field_direction_scored_points": diagnostics[
+                    "direction_scored_points"
+                ],
                 "probability_field_probability_score_pct": diagnostics[
                     "probability_score_pct"
                 ],

@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ def _attach_strategy_presentation(
             probability_score = diagnostics.get("probability_score_pct")
             scored_points = diagnostics.get("scored_points")
             direction_hits = diagnostics.get("direction_hits")
+            direction_scored_points = diagnostics.get("direction_scored_points")
             if isinstance(direction_hit_rate, (int, float)):
                 normalized_hit_rate = round(float(direction_hit_rate), 2)
                 summary["probability_field_direction_hit_rate_pct"] = normalized_hit_rate
@@ -63,6 +64,10 @@ def _attach_strategy_presentation(
                 summary["probability_field_hit_rate_scored_points"] = scored_points
             if isinstance(direction_hits, int):
                 summary["probability_field_direction_hits"] = direction_hits
+            if isinstance(direction_scored_points, int):
+                summary["probability_field_direction_scored_points"] = (
+                    direction_scored_points
+                )
             brier_score = diagnostics.get("brier_score")
             if isinstance(brier_score, (int, float)):
                 summary["probability_field_brier_score"] = float(brier_score)
