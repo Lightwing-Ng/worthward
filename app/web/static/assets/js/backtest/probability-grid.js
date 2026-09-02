@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.23.1
+ * Code version: v0.25.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -901,8 +901,64 @@
         && Math.abs(Number(pointerY) - Number(curveY)) <= Math.max(0, Number(tolerancePx) || 0)
     );
 
+    const intersectPolylineAtX = (points, x) => {
+        const queryX = Number(x);
+        if (!Array.isArray(points) || !Number.isFinite(queryX)) return null;
+        const finitePoints = [];
+        points.forEach((point, fallbackIndex) => {
+            const pointX = Number(point?.x);
+            const pointY = Number(point?.y);
+            if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) return;
+            const index = Number.isInteger(point?.index) ? point.index : fallbackIndex;
+            finitePoints.push({index, x: pointX, y: pointY});
+        });
+        if (!finitePoints.length) return null;
+        const firstPoint = finitePoints[0];
+        const lastPoint = finitePoints[finitePoints.length - 1];
+        if (queryX >= lastPoint.x) {
+            return Object.freeze({
+                index: lastPoint.index,
+                x: lastPoint.x,
+                y: lastPoint.y,
+            });
+        }
+        if (queryX <= firstPoint.x) {
+            return Object.freeze({
+                index: firstPoint.index,
+                x: firstPoint.x,
+                y: firstPoint.y,
+            });
+        }
+        let low = 0;
+        let high = finitePoints.length - 1;
+        while (low < high) {
+            const midpoint = Math.floor((low + high) / 2);
+            if (finitePoints[midpoint].x < queryX) low = midpoint + 1;
+            else high = midpoint;
+        }
+        const rightPoint = finitePoints[low];
+        const leftPoint = finitePoints[Math.max(0, low - 1)];
+        if (rightPoint.x === queryX) {
+            return Object.freeze({
+                index: rightPoint.index,
+                x: queryX,
+                y: rightPoint.y,
+            });
+        }
+        const span = rightPoint.x - leftPoint.x;
+        const progress = span > 0 ? (queryX - leftPoint.x) / span : 0;
+        const nearestPoint = Math.abs(leftPoint.x - queryX) <= Math.abs(rightPoint.x - queryX)
+            ? leftPoint
+            : rightPoint;
+        return Object.freeze({
+            index: nearestPoint.index,
+            x: queryX,
+            y: leftPoint.y + ((rightPoint.y - leftPoint.y) * progress),
+        });
+    };
+
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.23.1",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.25.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -914,6 +970,7 @@
         computeMaximumGridHalfHeight,
         computeGridGeometry,
         computeAnchoredDetailGridPosition,
+        intersectPolylineAtX,
         isPointNearCurve,
         multiStepNormalParameters,
         normalCdf,

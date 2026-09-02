@@ -1,4 +1,4 @@
-/* Code version: v1.201.18 */
+/* Code version: v1.203.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -18164,6 +18164,65 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await page.mouse.move(leftAnchor.x, leftAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await waitForPanTarget();
+    const leftHoverAlignment = await page.evaluate(({pointerX, expectedIndex}) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const stack = canvas?.closest('.trade-chart-stack');
+        const chart = window.Chart?.getChart?.(canvas);
+        const hoverLine = document.querySelector('.trade-chart-hover-line');
+        const horizontalHoverLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        const probabilityField = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const firstProbabilityCell = probabilityField?.querySelector('.backtest-probability-cell');
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const canvasRect = canvas?.getBoundingClientRect();
+        const stackRect = stack?.getBoundingClientRect();
+        const lastCurvePoint = [...(chart?.getDatasetMeta?.(0)?.data || [])]
+            .reverse()
+            .find((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+        const lastCurveX = canvasRect && chart?.width > 0 && lastCurvePoint
+            ? canvasRect.left + (lastCurvePoint.x * (canvasRect.width / chart.width))
+            : Number.NaN;
+        const lineRect = hoverLine?.getBoundingClientRect();
+        const horizontalLineRect = horizontalHoverLine?.getBoundingClientRect();
+        const fieldRect = probabilityField?.getBoundingClientRect();
+        const firstCellRect = firstProbabilityCell?.getBoundingClientRect();
+        const scaleY = canvasRect && chart?.height > 0 ? canvasRect.height / chart.height : Number.NaN;
+        const curveY = canvasRect && Number.isFinite(bounds?.intersectionY) && Number.isFinite(scaleY)
+            ? canvasRect.top + (bounds.intersectionY * scaleY)
+            : Number.NaN;
+        return {
+            activeIndex: Number.isInteger(bounds?.index) ? bounds.index : null,
+            expectedIndex,
+            lastIndex: lastCurvePoint
+                ? (chart?.getDatasetMeta?.(0)?.data || []).length - 1
+                : null,
+            panTarget: Number(stack?.dataset.probabilityPanTarget || 0),
+            pointerToLastCurve: Math.abs(lastCurveX - pointerX),
+            pointerToVerticalLine: lineRect
+                ? Math.abs((lineRect.left + (lineRect.width / 2)) - pointerX)
+                : Number.NaN,
+            curveToHorizontalLine: horizontalLineRect && Number.isFinite(curveY)
+                ? Math.abs((horizontalLineRect.top + (horizontalLineRect.height / 2)) - curveY)
+                : Number.NaN,
+            fieldRightOfVerticalLine: firstCellRect && lineRect
+                ? firstCellRect.left - lineRect.right
+                : Number.NaN,
+            fieldAtVerticalLine: fieldRect && lineRect
+                ? Math.abs(fieldRect.left - (lineRect.left + (lineRect.width / 2)))
+                : Number.NaN,
+            linePastLast: lineRect && Number.isFinite(lastCurveX)
+                ? (lineRect.left + (lineRect.width / 2)) - lastCurveX
+                : Number.NaN,
+            stackWidth: stackRect?.width ?? Number.NaN,
+        };
+    }, {pointerX: leftAnchor.x, expectedIndex: leftAnchor.index});
+    expect(leftHoverAlignment.activeIndex).toBe(leftAnchor.index);
+    expect(leftHoverAlignment.panTarget).toBeLessThan(leftHoverAlignment.stackWidth * 0.2);
+    expect(leftHoverAlignment.pointerToLastCurve).toBeGreaterThan(48);
+    expect(leftHoverAlignment.pointerToVerticalLine).toBeLessThanOrEqual(1.5);
+    expect(leftHoverAlignment.curveToHorizontalLine).toBeLessThanOrEqual(1.5);
+    expect(leftHoverAlignment.linePastLast).toBeLessThanOrEqual(1.5);
+    expect(leftHoverAlignment.fieldRightOfVerticalLine).toBeGreaterThanOrEqual(0.5);
+    expect(leftHoverAlignment.fieldAtVerticalLine).toBeLessThanOrEqual(1.5);
 
     // Select the independent right-side anchor from the stationary baseline;
     // tracking must then use pointer deltas while the field pans.
@@ -18197,15 +18256,30 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             const curveX = canvasRect && chart?.width > 0 && point
                 ? canvasRect.left + (point.x * (canvasRect.width / chart.width))
                 : Number.NaN;
+            const scaleY = canvasRect && chart?.height > 0 ? canvasRect.height / chart.height : Number.NaN;
+            const curveY = canvasRect && Number.isFinite(bounds?.intersectionY) && Number.isFinite(scaleY)
+                ? canvasRect.top + (bounds.intersectionY * scaleY)
+                : Number.NaN;
             const lineX = lineRect ? lineRect.left + (lineRect.width / 2) : Number.NaN;
+            const lastPoint = [...(chart?.getDatasetMeta?.(0)?.data || [])]
+                .reverse()
+                .find((candidate) => Number.isFinite(candidate?.x) && Number.isFinite(candidate?.y));
+            const lastX = canvasRect && chart?.width > 0 && lastPoint
+                ? canvasRect.left + (lastPoint.x * (canvasRect.width / chart.width))
+                : Number.NaN;
             return {
                 curveX,
                 lineX,
+                lastX,
+                linePastLast: Number.isFinite(lastX) ? lineX - lastX : Number.NaN,
                 pointerX: currentPointerX,
                 pointerToLine: Math.abs(lineX - currentPointerX),
                 pointerToCurve: Math.abs(curveX - currentPointerX),
                 pointerToHorizontalLine: horizontalLineRect
                     ? Math.abs((horizontalLineRect.top + (horizontalLineRect.height / 2)) - currentPointerY)
+                    : Number.NaN,
+                curveToHorizontalLine: horizontalLineRect && Number.isFinite(curveY)
+                    ? Math.abs((horizontalLineRect.top + (horizontalLineRect.height / 2)) - curveY)
                     : Number.NaN,
                 horizontalGuidePastVertical: horizontalLineRect && lineRect
                     ? horizontalLineRect.right - (lineRect.left + (lineRect.width / 2))
@@ -18222,26 +18296,40 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     const trackingTargetDistance = trackingEnd?.target - trackingStart?.target;
     expect(trackingStart?.target).toBeGreaterThan(0);
     expect(trackingPointerDistance).toBe(24);
-    expect(trackingTargetDistance).toBeLessThanOrEqual(0);
-    // A rightward pointer step moves the curve endpoint toward the pointer,
-    // but the moving canvas must not amplify that step.
+    // A rightward pointer step may increase the overflow pan, but the moving
+    // canvas must not amplify that step into a jump to the series endpoint.
     expect(Math.abs(trackingTargetDistance)).toBeLessThanOrEqual(trackingPointerDistance + 10);
-    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToLine)))
+    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.linePastLast)))
         .toBeLessThanOrEqual(1.5);
-    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToHorizontalLine)))
+    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.curveToHorizontalLine)))
         .toBeLessThanOrEqual(1.5);
+    trackingSamples.forEach((sample) => {
+        if (sample.alignment.linePastLast <= -2) {
+            expect(sample.alignment.pointerToLine).toBeLessThanOrEqual(1.5);
+        }
+    });
     expect(Math.min(...trackingSamples.map((sample) => sample.alignment.horizontalGuidePastVertical)))
         .toBeGreaterThanOrEqual(8);
     expect(Math.min(...trackingSamples.map((sample) => sample.alignment.fieldRightOfVerticalLine)))
         .toBeGreaterThanOrEqual(0.5);
 
-    const offCurvePointer = await page.evaluate(({x, y}) => {
-        const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
+    const offCurvePointer = await page.evaluate(({x}) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const stack = canvas?.closest('.trade-chart-stack');
         const stackRect = stack?.getBoundingClientRect();
-        if (!(stackRect instanceof DOMRect)) return null;
-        const delta = y + 18 <= stackRect.bottom - 12 ? 18 : -18;
-        return {x, y: y + delta};
-    }, {x: trackingSamples.at(-1)?.pointerX, y: edgeAnchor.y});
+        const canvasRect = canvas?.getBoundingClientRect();
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const scaleY = canvasRect && chart?.height > 0
+            ? canvasRect.height / chart.height
+            : Number.NaN;
+        const curveY = canvasRect && Number.isFinite(bounds?.intersectionY) && Number.isFinite(scaleY)
+            ? canvasRect.top + (bounds.intersectionY * scaleY)
+            : Number.NaN;
+        if (!(stackRect instanceof DOMRect) || !Number.isFinite(curveY)) return null;
+        const delta = curveY + 18 <= stackRect.bottom - 12 ? 18 : -18;
+        return {x, y: curveY + delta};
+    }, {x: trackingSamples.at(-1)?.pointerX});
     expect(offCurvePointer).not.toBeNull();
     await page.mouse.move(offCurvePointer.x, offCurvePointer.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
@@ -18249,6 +18337,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const hoverLine = document.querySelector('.trade-chart-hover-line');
         const horizontalHoverLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
         const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
         if (!(tooltip instanceof HTMLElement)
             || !(hoverLine instanceof HTMLElement)
@@ -18257,6 +18347,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const horizontalLineRect = horizontalHoverLine.getBoundingClientRect();
         const hoverLineRect = hoverLine.getBoundingClientRect();
         const tooltipRect = tooltip.getBoundingClientRect();
+        const canvasRect = canvas?.getBoundingClientRect();
+        const bounds = chart?._activeBacktestProbabilityGridBounds;
+        const scaleY = canvasRect && chart?.height > 0 ? canvasRect.height / chart.height : Number.NaN;
+        const curveY = canvasRect && Number.isFinite(bounds?.intersectionY) && Number.isFinite(scaleY)
+            ? canvasRect.top + (bounds.intersectionY * scaleY)
+            : Number.NaN;
         const lineY = horizontalLineRect.top + (horizontalLineRect.height / 2);
         const upCells = cells.filter((cell) => cell.classList.contains('is-up'));
         const downCells = cells.filter((cell) => cell.classList.contains('is-down'));
@@ -18268,13 +18364,15 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             horizontalGuidePastVertical: horizontalLineRect.right
                 - (hoverLineRect.left + (hoverLineRect.width / 2)),
             pointerToHorizontalLine: Math.abs(lineY - pointerY),
+            curveToHorizontalLine: Number.isFinite(curveY) ? Math.abs(lineY - curveY) : Number.NaN,
             upViolations: upCells.filter((cell) => (
                 cell.getBoundingClientRect().bottom > lineY + 1.5
             )).length,
         };
     }, {pointerY: offCurvePointer.y});
     expect(offCurveAlignment).not.toBeNull();
-    expect(offCurveAlignment.pointerToHorizontalLine).toBeLessThanOrEqual(1.5);
+    expect(offCurveAlignment.curveToHorizontalLine).toBeLessThanOrEqual(1.5);
+    expect(offCurveAlignment.pointerToHorizontalLine).toBeGreaterThan(8);
     expect(offCurveAlignment.horizontalGuidePastVertical).toBeGreaterThanOrEqual(8);
     expect(offCurveAlignment.horizontalGuidePastField).toBeGreaterThanOrEqual(-0.5);
     expect(offCurveAlignment.upViolations).toBe(0);
@@ -18422,11 +18520,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         if (!bounds || !guide) return null;
         const tooltipRect = tooltip.getBoundingClientRect();
         const canvasRect = canvas.getBoundingClientRect();
-        const lastCurvePoint = [...(chart.getDatasetMeta(0)?.data || [])]
-            .reverse()
-            .find((point) => Number.isFinite(point?.x));
-        const curveRight = lastCurvePoint && Number(chart.width) > 0
-            ? canvasRect.left + (lastCurvePoint.x * (canvasRect.width / chart.width))
+        const hoverLine = document.querySelector('.trade-chart-hover-line');
+        const hoverLineRect = hoverLine?.getBoundingClientRect();
+        const verticalLineX = hoverLineRect
+            ? hoverLineRect.left + (hoverLineRect.width / 2)
             : Number.NaN;
         const first = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '0');
         const nextColumn = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '1');
@@ -18568,7 +18665,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && cell.probability <= 1
             )),
             outerBorderRadius: tooltipStyle.borderRadius,
-            rightwardStartDelta: Math.abs(tooltipRect.left - curveRight),
+            rightwardStartDelta: Math.abs(tooltipRect.left - verticalLineX),
             rows: new Set(cells.map((cell) => cell.dataset.row)).size,
             rowsDown: new Set(cells.filter((cell) => cell.classList.contains('is-down'))
                 .map((cell) => cell.dataset.row)).size,
@@ -18635,7 +18732,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.centerDelta).toBeGreaterThanOrEqual(0);
     expect(contract.guideTopInset).toBeGreaterThanOrEqual(0);
     expect(contract.guideBottomInset).toBeGreaterThanOrEqual(0);
-    expect(contract.intersectionDelta).toBeLessThanOrEqual(0.01);
+    expect(contract.intersectionDelta).toBeLessThanOrEqual(1.5);
     expect(contract.opacityMapping).toBe('instant-contrast-power-v1');
     expect(contract.opacityExponent).toBe(1.6);
     expect(contract.opacityTailRatio).toBe(0.02);
@@ -18927,9 +19024,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     if (!dragAnchor) throw new Error('Bayesian left-side drag anchor is unavailable.');
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await waitForPanTarget();
-    // Tracking aligns the rendered curve endpoint with the pointer, so the
-    // originally hovered curve coordinate remains the stable click surface
-    // even after the canvas has translated under the pointer.
+    // Tracking keeps the vertical guide on the pointer. Clicking that same
+    // screen coordinate still pins the selected origin after any overflow pan.
     await page.mouse.click(dragAnchor.x, dragAnchor.y);
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
     await expect.poll(() => page.evaluate(() => (
@@ -19050,7 +19146,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     baselineGeometry = await readBaselineGeometry();
     expect(baselineGeometry).not.toBeNull();
 
-    const rightAnchor = await pointAt(0.96);
+    const rightAnchor = await pointAt(1);
     if (!rightAnchor) throw new Error('Bayesian right-side hover anchor is unavailable.');
     await page.mouse.move(rightAnchor.x, rightAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
@@ -19106,18 +19202,26 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             ? priceRect.left - stackRect.left + visualPosition
                 + (lastCurvePoint.x * (priceRect.width / chart.width))
             : Number.NaN;
+        const lastVisualX = lastCurvePoint && Number(chart.width) > 0
+            ? priceRect.left + (lastCurvePoint.x * (priceRect.width / chart.width))
+            : Number.NaN;
         const expectedTarget = Math.max(
             0,
-            curveRightContentLeft - (pointerX - stackRect.left),
+            Math.min(pointerX - stackRect.left, curveRightContentLeft)
+                + tooltipRect.width
+                - stackRect.width,
         );
         return {
             activeIndex: bounds?.index,
             canvasTooltipAnchorDelta: Number.isFinite(curveRightContentLeft)
                 ? Math.abs(
                     tooltipRect.left
-                    - (priceRect.left + (lastCurvePoint.x * (priceRect.width / chart.width))),
+                    - (hoverLineRect.left + (hoverLineRect.width / 2)),
                 )
                 : Number.POSITIVE_INFINITY,
+            linePastLast: Number.isFinite(lastVisualX)
+                ? (hoverLineRect.left + (hoverLineRect.width / 2)) - lastVisualX
+                : Number.NaN,
             fieldRightOfVerticalLine: firstProbabilityCellRect.left - hoverLineRect.right,
             domOrderStable: stack.children[0]?.contains(priceCanvasElement)
                 && stack.children[1]?.contains(equityCanvasElement),
@@ -19139,6 +19243,17 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             pointerToHorizontalLine: Math.abs(
                 (horizontalHoverLineRect.top + (horizontalHoverLineRect.height / 2)) - pointerY,
             ),
+            curveToHorizontalLine: (() => {
+                const scaleY = chart.height > 0 ? priceRect.height / chart.height : Number.NaN;
+                const curveY = Number.isFinite(bounds?.intersectionY) && Number.isFinite(scaleY)
+                    ? priceRect.top + (bounds.intersectionY * scaleY)
+                    : Number.NaN;
+                return Number.isFinite(curveY)
+                    ? Math.abs(
+                        (horizontalHoverLineRect.top + (horizontalHoverLineRect.height / 2)) - curveY,
+                    )
+                    : Number.NaN;
+            })(),
             pointerToVerticalLine: Math.abs(
                 (hoverLineRect.left + (hoverLineRect.width / 2)) - pointerX,
             ),
@@ -19228,12 +19343,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan.resizerTabIndex).toBeNull();
     expect(rightPan.leftInset).toBeGreaterThanOrEqual(0);
     expect(rightPan.tooltipWidthDelta).toBeLessThanOrEqual(0.1);
-    expect(rightPan.pointerToVerticalLine).toBeLessThanOrEqual(1.5);
-    expect(rightPan.pointerToHorizontalLine).toBeLessThanOrEqual(1.5);
+    expect(rightPan.linePastLast).toBeLessThanOrEqual(1.5);
+    expect(rightPan.curveToHorizontalLine).toBeLessThanOrEqual(1.5);
     expect(rightPan.horizontalGuidePastVertical).toBeGreaterThanOrEqual(8);
     expect(rightPan.horizontalGuidePastField).toBeGreaterThanOrEqual(-0.5);
     expect(rightPan.fieldRightOfVerticalLine).toBeGreaterThanOrEqual(0.5);
-    expect(rightPan.pointerToField).toBeLessThanOrEqual(0.75);
+    expect(rightPan.canvasTooltipAnchorDelta).toBeLessThanOrEqual(0.75);
     expect(rightPan.motion).toBe('shared-pointer-follow');
     expect(Math.abs(rightPan.stackLeft - baselineGeometry.stackLeft)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.priceWidth - baselineGeometry.priceWidth)).toBeLessThanOrEqual(0.1);
@@ -19483,7 +19598,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Math.abs(resetGeometry.resizerSlotHeight - baselineGeometry.resizerSlotHeight)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.resizerSlotTop - baselineGeometry.resizerSlotTop)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(resetGeometry.historyTop - baselineGeometry.historyTop)).toBeLessThanOrEqual(0.1);
-    const secondRightAnchor = await pointAt(0.96);
+    const secondRightAnchor = await pointAt(1);
     if (!secondRightAnchor) throw new Error('Bayesian second right-side hover anchor is unavailable.');
     await page.mouse.move(secondRightAnchor.x, secondRightAnchor.y);
     await waitForPanTarget();

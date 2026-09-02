@@ -1,4 +1,4 @@
-/* Code version: v3.55.12 */
+/* Code version: v3.55.13 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -684,8 +684,12 @@
     flex-direction: column;
 }
 
+.trade-detail-shell .segmented-control-option {
+    align-items: center;
+}
+
 .trade-detail-shell .segmented-control-option span {
-    height: 100%;
+    height: auto;
     min-height: calc(var(--trade-detail-track-height) - 8px);
 }
 

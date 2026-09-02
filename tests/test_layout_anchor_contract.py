@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.17
+Code version: v0.8.22
 """
 
 from pathlib import Path
@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.6");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.14" in app_css
+    assert "v0.65.15" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -177,7 +177,24 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.12");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.13");' in app_css
+
+
+def test_backtest_history_labels_use_intrinsic_centering() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    option_start = trade_css.index(".trade-detail-shell .segmented-control-option {")
+    option_rule = trade_css[option_start : trade_css.index("\n}", option_start)]
+    label_start = trade_css.index(
+        ".trade-detail-shell .segmented-control-option span {",
+        option_start,
+    )
+    label_rule = trade_css[label_start : trade_css.index("\n}", label_start)]
+
+    assert "align-items: center;" in option_rule
+    assert "height: auto;" in label_rule
+    assert "min-height: calc(var(--trade-detail-track-height) - 8px);" in label_rule
+    assert "height: 100%;" not in label_rule
 
 
 def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
@@ -366,13 +383,13 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
-        "relativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX",
         "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
+        "Math.min(pointerScreenX, lastContentX) + fieldWidth - visibleWidth",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
         "x: contentLeft + point.x,",
         "const canvasOffsetX = getPriceCanvasContentLeft();",
-            "Number(getPriceCurveRightContentLeft())",
+            "Math.min(pointerScreenX, lastContentX) + fieldWidth - visibleWidth",
             'tradeChartStack.dataset.probabilityPanTarget = "0";',
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
@@ -575,8 +592,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         "-app-v0.50.1",
-        "-backtest-probability-grid-v0.23.1",
-        "-backtest-v0.35.14",
+        "-backtest-probability-grid-v0.25.0",
+        "-backtest-v0.37.0",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -653,8 +670,10 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const chartHoverPointCaches = new Map();",
         "const probabilityModelCache = new Map();",
         "const getProbabilityHoverLayout = () => {",
-        "const visualTop = pointerAnchored",
-        "probabilityHoverPointerY - currentStackRect.top - Number(geometry.aboveExtent || 0)",
+        "const visualTop = Number.isFinite(intersectionTop)",
+        "intersectionTop - Number(geometry.aboveExtent || 0)",
+        "const getProbabilityHoverGuide = (stackRect) => {",
+        "intersectPolylineAtX",
         "const updateHoverCrosshair = (x, y, plotFrame, horizontalEnd = null) =>",
         "Math.max(plotFrame.right, horizontalEnd)",
         "const fieldRight = fieldLeft + Number(probabilityBounds.width || 0);",
@@ -663,11 +682,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;",
         "const getStaticStackContentLeft = (element) => {",
         "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
+        "const updatePointerHoverLine = ({synchronizeScroll = true} = {}) => {",
+        "updatePointerHoverLine({synchronizeScroll: false});",
+        "resetProbabilityHoverPointer();",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
-        "const lastCurveContentX = Number(canvasContentLeft) + (lastCurveX * scaleX);",
-        "|| relativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX)",
         "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
+        "Math.max(firstCurveX, hoverRelativeX),",
         'hoverSurface.addEventListener("mouseleave", (event) => {',
         "resetProbabilityHoverPointer();",
         "resetProbabilityHoverPointer();",

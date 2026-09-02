@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.23.1 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.25.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,7 +40,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.23.1');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.25.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -894,4 +894,24 @@ test('tracks, pins, and clears one immutable hover state', () => {
 test('requires a click to land near the actual price curve before pinning', () => {
     assert.equal(grid.isPointNearCurve(102, 100, 14), true);
     assert.equal(grid.isPointNearCurve(116, 100, 14), false);
+});
+
+test('intersects a price polyline at the cursor x, including interrupted gaps', () => {
+    const points = [
+        {index: 0, x: 10, y: 40},
+        {index: 1, x: 20, y: 20},
+        {index: 2, x: Number.NaN, y: 10},
+        {index: 3, x: 50, y: 80},
+        {index: 4, x: 70, y: 60},
+    ];
+    assert.deepEqual(grid.intersectPolylineAtX(points, 10), {index: 0, x: 10, y: 40});
+    assert.deepEqual(grid.intersectPolylineAtX(points, 15), {index: 0, x: 15, y: 30});
+    assert.deepEqual(grid.intersectPolylineAtX(points, 20), {index: 1, x: 20, y: 20});
+    const interrupted = grid.intersectPolylineAtX(points, 35);
+    assert.equal(interrupted.index, 1);
+    assert.equal(interrupted.x, 35);
+    assert.equal(interrupted.y, 50);
+    assert.equal(grid.intersectPolylineAtX(points, 70)?.index, 4);
+    assert.deepEqual(grid.intersectPolylineAtX(points, 70.01), {index: 4, x: 70, y: 60});
+    assert.deepEqual(grid.intersectPolylineAtX(points, 8), {index: 0, x: 10, y: 40});
 });
