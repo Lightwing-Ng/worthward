@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.1.1`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
@@ -15,13 +15,13 @@ long-form synchronization state lives in:
 4. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
    `docs/ARCHITECTURE.md`, `docs/TESTING.md`, and `docs/KNOWN_ISSUES.md`.
 5. Inspect the current `Worthward` implementation and the named
-   `CacheLikesFromTwitter` implementation before editing either one.
+   `agenticContext` implementation before editing either one.
 
 ## Contract
 
 - `Worthward` is the canonical complete baseline and the final convergence target.
   Shared improvements discovered anywhere must be promoted here.
-- CacheLikesFromTwitter is an adapter: its product-specific routes and markup may
+- agenticContext is an adapter: its product-specific routes and markup may
   differ, but its shared tokens, states, responsive behavior, and accessibility
   invariants must remain aligned.
 - A Cache-first improvement is a `Candidate review`, not a finished synchronization.

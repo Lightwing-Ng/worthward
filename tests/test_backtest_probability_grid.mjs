@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.23.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.23.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,7 +40,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.23.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.23.1');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -667,6 +667,25 @@ test('summarizes every probability in a detail row, including threshold-hidden c
     assert.equal(summary.hiddenCellCount, 2);
     assert.equal(grid.summarizeProbabilityRow([], 4), null);
     assert.equal(grid.summarizeProbabilityRow([{row: 4, probability: 0.2}], 3), null);
+});
+
+test('summarizes up and down probability mass across hidden and visible field cells', () => {
+    const summary = grid.summarizeProbabilityField([
+        {sign: 'up', probability: 0.12, isVisible: true},
+        {sign: 'up', probability: 0.025, isVisible: false},
+        {sign: 'down', probability: 0.7, isVisible: true},
+        {sign: 'down', probability: 0.003, isVisible: false},
+        {sign: 'other', probability: 0.9, isVisible: true},
+    ]);
+    assert.ok(Math.abs(summary.upProbability - 0.145) < 1e-12);
+    assert.ok(Math.abs(summary.downProbability - 0.703) < 1e-12);
+    assert.equal(summary.upCellCount, 2);
+    assert.equal(summary.downCellCount, 2);
+    assert.equal(summary.upHiddenCellCount, 1);
+    assert.equal(summary.downHiddenCellCount, 1);
+    assert.equal(summary.cellCount, 4);
+    assert.equal(summary.hiddenCellCount, 2);
+    assert.equal(grid.summarizeProbabilityField([], 4), null);
 });
 
 test('maps every cell to an exact price interval around the horizontal guide', () => {

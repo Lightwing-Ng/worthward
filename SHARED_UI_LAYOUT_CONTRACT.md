@@ -1,10 +1,10 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.1`
 
 This is the normative spatial contract for the sibling projects
 `/Users/example/Desktop/antigravity` and
-`/Users/example/Desktop/CacheLikesFromTwitter`. The two implementations may have
+`/Users/example/Desktop/agenticContext`. The two implementations may have
 different product surfaces, but shared shell geometry, token meanings, ownership
 boundaries, and acceptance tolerances are the same.
 

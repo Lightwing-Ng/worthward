@@ -1,4 +1,4 @@
-/* Code version: v0.35.6 */
+/* Code version: v0.35.14 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -443,6 +443,12 @@
 		const probabilityDetailAnchor = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-anchor]",
 		);
+		const probabilityDetailUpSummary = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-up-summary]",
+		);
+		const probabilityDetailDownSummary = probabilityDetailPanel?.querySelector(
+			"[data-backtest-probability-detail-down-summary]",
+		);
 		let latestProbabilityDetailIndex = null;
 		let latestProbabilityDetailModel = null;
 		let latestProbabilityDetailBaseStatus = "";
@@ -492,6 +498,23 @@
 					cell.setAttribute("title", cell.dataset.baseTitle);
 				}
 			});
+			return true;
+		};
+		const formatProbabilityMass = (value) => `${new Intl.NumberFormat("en-US", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		}).format(Math.max(0, Number(value) || 0) * 100)}%`;
+		const renderProbabilityDetailSideSummary = (cells) => {
+			const summary = probabilityGridApi.summarizeProbabilityField?.(cells);
+			if (!summary) return false;
+			if (probabilityDetailUpSummary instanceof HTMLElement) {
+				probabilityDetailUpSummary.textContent = `Higher price: ${formatProbabilityMass(summary.upProbability)}`;
+				probabilityDetailUpSummary.title = `Higher-price probability mass across all ${summary.upCellCount} forecast cells, including ${summary.upHiddenCellCount} hidden: ${formatProbabilityMass(summary.upProbability)}`;
+			}
+			if (probabilityDetailDownSummary instanceof HTMLElement) {
+				probabilityDetailDownSummary.textContent = `Lower price: ${formatProbabilityMass(summary.downProbability)}`;
+				probabilityDetailDownSummary.title = `Lower-price probability mass across all ${summary.downCellCount} forecast cells, including ${summary.downHiddenCellCount} hidden: ${formatProbabilityMass(summary.downProbability)}`;
+			}
 			return true;
 		};
 		const hideProbabilityDetail = () => {
@@ -686,6 +709,13 @@
 			"[data-backtest-probability-scrollport-spacer]",
 		);
 		const probabilityScrollResizer = resultsStack?.querySelector("#backtest_section_resizer");
+		const isProbabilityAuxiliarySurface = (target) => (
+			target instanceof Node
+			&& (
+				(probabilityScrollPort instanceof HTMLElement && probabilityScrollPort.contains(target))
+				|| (probabilityScrollResizer instanceof HTMLElement && probabilityScrollResizer.contains(target))
+			)
+		);
 		if (probabilityScrollPort instanceof HTMLElement) {
 			probabilityScrollPort.scrollLeft = 0;
 			probabilityScrollPort.tabIndex = -1;
@@ -1014,13 +1044,11 @@
 		let probabilityScrollExtentDistance = 0;
 		let probabilityHoverPointerX = null;
 		let probabilityHoverPointerY = null;
-		let probabilityHoverLogicalX = null;
 		let probabilityHoverPointerActive = false;
 		let probabilityFieldPositionUpdater = null;
 		const resetProbabilityHoverPointer = () => {
 			probabilityHoverPointerX = null;
 			probabilityHoverPointerY = null;
-			probabilityHoverLogicalX = null;
 			probabilityHoverPointerActive = false;
 		};
 		const setInlineStyleIfChanged = (element, propertyName, value) => {
@@ -1062,18 +1090,6 @@
 			if (probabilityScrollPortIsActive === isActive) return;
 			probabilityScrollPortIsActive = isActive;
 			resultsStack?.classList.toggle("has-probability-scrollport", isActive);
-			if (probabilityScrollResizer instanceof HTMLElement) {
-				if (isActive) {
-					if (document.activeElement === probabilityScrollResizer) {
-						probabilityScrollResizer.blur();
-					}
-					probabilityScrollResizer.tabIndex = -1;
-					probabilityScrollResizer.setAttribute("aria-hidden", "true");
-				} else {
-					probabilityScrollResizer.removeAttribute("tabindex");
-					probabilityScrollResizer.removeAttribute("aria-hidden");
-				}
-			}
 			if (!(probabilityScrollPort instanceof HTMLElement)) return;
 			probabilityScrollPort.hidden = !isActive;
 			probabilityScrollPort.tabIndex = isActive ? 0 : -1;
@@ -1249,6 +1265,15 @@
 					return true;
 				},
 			);
+		};
+		const snapProbabilityScrollToFit = () => {
+			probabilityScrollCleanup?.();
+			probabilityScrollCleanup = null;
+			probabilityScrollTarget = 0;
+			tradeChartStack.dataset.probabilityPanTarget = "0";
+			probabilityScrollVelocity = 0;
+			probabilityScrollLastTimestamp = null;
+			completeProbabilityScroll();
 		};
 		if (probabilityScrollPort instanceof HTMLElement) {
 			probabilityScrollPort.addEventListener("scroll", () => {
@@ -1458,6 +1483,7 @@
 			if (!detailModel) return false;
 			const {geometry, cells, anchorPrice} = detailModel;
 			latestProbabilityDetailModel = detailModel;
+			renderProbabilityDetailSideSummary(cells);
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
@@ -1934,11 +1960,26 @@
 			return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
 		};
 
+		const getStaticStackContentLeft = (element) => {
+			if (!(element instanceof HTMLElement)) return null;
+			let contentLeft = 0;
+			let current = element;
+			while (current instanceof HTMLElement && current !== tradeChartStack) {
+				contentLeft += Number(current.offsetLeft) || 0;
+				current = current.offsetParent;
+			}
+			return current === tradeChartStack && Number.isFinite(contentLeft)
+				? contentLeft
+				: null;
+		};
+		const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);
 		const getRelativePointPosition = (canvas, stackRect, point) => {
 			if (!canvas || !point) return null;
+			const contentLeft = getStaticStackContentLeft(canvas);
+			if (!Number.isFinite(contentLeft)) return null;
 			const canvasRect = canvas.getBoundingClientRect();
 			return {
-				x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,
+				x: contentLeft + point.x,
 				y: canvasRect.top - stackRect.top + point.y,
 			};
 		};
@@ -1952,48 +1993,38 @@
 			const chartArea = chart?.chartArea;
 			if (!chartArea || !labels.length) return null;
 			const canvasRect = chart.canvas.getBoundingClientRect();
-			const interactionRect = chart.canvas === priceCanvas && strategyPresentation
+			const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;
+			const interactionRect = isProbabilityPriceHover
 				? tradeChartStack.getBoundingClientRect()
 				: canvasRect;
 			const relativeX = event.clientX - interactionRect.left;
-			let logicalRelativeX = relativeX;
-			if (chart.canvas === priceCanvas && strategyPresentation) {
-				// The Bayesian field moves the visual canvas to make the field fit.
-				// Track pointer deltas against the stationary stack interaction
-				// surface so that chart translation cannot be mistaken for extra
-				// pointer movement on the next event.
-				const pointerX = Number(event.clientX);
-				const pointerY = Number(event.clientY);
-				if (Number.isFinite(probabilityHoverPointerX)
-					&& Number.isFinite(probabilityHoverLogicalX)) {
-					logicalRelativeX = probabilityHoverLogicalX + pointerX - probabilityHoverPointerX;
-				}
-				probabilityHoverPointerX = pointerX;
-				probabilityHoverPointerY = pointerY;
-				probabilityHoverLogicalX = logicalRelativeX;
+			if (isProbabilityPriceHover) {
+				probabilityHoverPointerX = Number(event.clientX);
+				probabilityHoverPointerY = Number(event.clientY);
 				probabilityHoverPointerActive = true;
 			}
 			const relativeY = event.clientY - canvasRect.top;
-			if (!Number.isFinite(logicalRelativeX)) return null;
+			if (!Number.isFinite(relativeX)) return null;
 			const pointCache = getChartHoverPointCache(chart);
 			const {points, finitePoints} = pointCache;
 			if (!finitePoints.length) return null;
-			let hoverRelativeX = logicalRelativeX;
-			if (strategyPresentation) {
+			let hoverRelativeX = relativeX;
+			if (isProbabilityPriceHover) {
 				const scaleX = canvasRect.width / Number(chart.width);
 				const lastCurveX = finitePoints[finitePoints.length - 1].x;
-				const lastCurveScreenX = canvasRect.left
-					+ (lastCurveX * scaleX);
+				const canvasContentLeft = getPriceCanvasContentLeft();
+				const lastCurveContentX = Number(canvasContentLeft) + (lastCurveX * scaleX);
 				// The stack receives events while the translated canvas is moving,
-				// but the rendered price series remains the complete hover domain.
-				// The field to the right of the last point is visual output, not more
-				// data, so it must never create a second hover region.
+				// so resolve every event in the immutable, unscrolled chart-content
+				// coordinate system. A prior pointer event and a transient native
+				// scroll position must never affect the current hit test.
 				if (!Number.isFinite(scaleX)
-					|| event.clientX > lastCurveScreenX + PROBABILITY_HOVER_EDGE_HANDOFF_PX) {
+					|| !Number.isFinite(canvasContentLeft)
+					|| relativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX) {
 					resetProbabilityHoverPointer();
 					return null;
 				}
-				hoverRelativeX = (event.clientX - canvasRect.left) / scaleX;
+				hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;
 			}
 			let low = 0;
 			let high = finitePoints.length - 1;
@@ -2031,7 +2062,7 @@
 				if (Math.abs(markerY - relativeY) >= TRADE_MARKER_SNAP_VERTICAL_PX) return;
 				const markerPoint = points[marker.index];
 				if (!markerPoint || !Number.isFinite(markerPoint.x)) return;
-				const markerDistance = Math.abs(markerPoint.x - logicalRelativeX);
+				const markerDistance = Math.abs(markerPoint.x - relativeX);
 				if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
 				if (markerDistance < snappedMarkerDistance) {
 					snappedMarkerDistance = markerDistance;
@@ -2290,9 +2321,11 @@
 			}
 
 			const canvasRect = priceCanvas.getBoundingClientRect();
-			const canvasOffsetX = (
-				canvasRect.left - stackRect.left + probabilityScrollVisualPosition
-			);
+			const canvasOffsetX = getPriceCanvasContentLeft();
+			if (!Number.isFinite(canvasOffsetX)) {
+				hideProbabilityTooltip();
+				return false;
+			}
 			const canvasOffsetY = canvasRect.top - stackRect.top;
 			const fieldPosition = syncProbabilityFieldVisualPosition(
 				stackRect,
@@ -2516,27 +2549,27 @@
 		const getPricePlotFrame = (stackRect) => {
 			if (!priceChart?.chartArea || !priceChart?.width || !priceChart?.height) return null;
 			const canvasRect = priceCanvas.getBoundingClientRect();
+			const canvasContentLeft = getPriceCanvasContentLeft();
+			if (!Number.isFinite(canvasContentLeft)) return null;
 			const scaleX = canvasRect.width / priceChart.width;
 			const scaleY = canvasRect.height / priceChart.height;
 			return {
-				left: canvasRect.left - stackRect.left + probabilityScrollVisualPosition
-					+ (priceChart.chartArea.left * scaleX),
-				right: canvasRect.left - stackRect.left + probabilityScrollVisualPosition
-					+ (priceChart.chartArea.right * scaleX),
+				left: canvasContentLeft + (priceChart.chartArea.left * scaleX),
+				right: canvasContentLeft + (priceChart.chartArea.right * scaleX),
 				top: canvasRect.top - stackRect.top + (priceChart.chartArea.top * scaleY),
 				bottom: canvasRect.top - stackRect.top + (priceChart.chartArea.bottom * scaleY),
 			};
 		};
-		const getPriceCurveRightContentLeft = (stackRect) => {
+		const getPriceCurveRightContentLeft = () => {
 			if (!priceChart?.width || !priceChart?.height) return null;
 			const pointCache = getChartHoverPointCache(priceChart);
 			const lastCurvePoint = pointCache.finitePoints.at(-1);
 			if (!lastCurvePoint) return null;
 			const canvasRect = priceCanvas.getBoundingClientRect();
+			const canvasContentLeft = getPriceCanvasContentLeft();
+			if (!Number.isFinite(canvasContentLeft)) return null;
 			const scaleX = canvasRect.width / Number(priceChart.width);
-			const contentRight = canvasRect.left - stackRect.left
-				+ probabilityScrollVisualPosition
-				+ (lastCurvePoint.x * scaleX);
+			const contentRight = canvasContentLeft + (lastCurvePoint.x * scaleX);
 			return Number.isFinite(contentRight) ? contentRight : null;
 		};
 		const getProbabilityFieldContentLeft = (stackRect, geometry) => {
@@ -2545,11 +2578,13 @@
 				&& pinState.mode !== "pinned"
 				&& isProbabilityHoverPointerOverStack(stackRect)
 			) {
-				const curveRight = getPriceCurveRightContentLeft(stackRect);
+				const curveRight = getPriceCurveRightContentLeft();
 				if (Number.isFinite(curveRight)) return curveRight;
 			}
-			const canvasRect = priceCanvas.getBoundingClientRect();
-			return canvasRect.left - stackRect.left + probabilityScrollVisualPosition + Number(geometry?.left || 0);
+			const canvasContentLeft = getPriceCanvasContentLeft();
+			return Number.isFinite(canvasContentLeft)
+				? canvasContentLeft + Number(geometry?.left || 0)
+				: null;
 		};
 		const syncProbabilityFieldVisualPosition = (
 			stackRect,
@@ -2570,7 +2605,7 @@
 				// and would compound on every same-index pointer move.
 				const nextTarget = Math.max(
 					0,
-					Number(getPriceCurveRightContentLeft(currentStackRect))
+					Number(getPriceCurveRightContentLeft())
 						- (probabilityHoverPointerX - currentStackRect.left),
 				);
 				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
@@ -2821,6 +2856,16 @@
 			}
 
 			if (canvas === priceCanvas && strategyPresentation) {
+				hoverSurface.addEventListener("mouseleave", (event) => {
+					if (!chart || !chart.ctx) return;
+					if (pinState.mode === "pinned") return;
+					if (isProbabilityAuxiliarySurface(event.relatedTarget)) return;
+					resetProbabilityHoverPointer();
+					scheduleHoverSync(null, canvas, chart);
+				}, { signal });
+			}
+
+			if (canvas === priceCanvas && strategyPresentation) {
 				canvas.addEventListener("click", (event) => {
 					if (!chart || !chart.ctx) return;
 					cancelScheduledHoverSync();
@@ -2850,6 +2895,7 @@
 							pinState,
 							{type: "pin", index: trackedIndex},
 						) || {mode: "pinned", activeIndex: trackedIndex};
+						snapProbabilityScrollToFit();
 						syncHoverState(trackedIndex, canvas, chart);
 						return;
 					}
@@ -3144,7 +3190,7 @@
 				target instanceof Node
 				&& (
 					tradeChartStack.contains(target)
-					|| (probabilityScrollPort instanceof HTMLElement && probabilityScrollPort.contains(target))
+					|| isProbabilityAuxiliarySurface(target)
 				)
 			);
 			const clearProbabilityFieldOnLeave = (relatedTarget) => {
@@ -3168,9 +3214,12 @@
 			tradeChartStack.addEventListener("mouseleave", (event) => {
 				clearProbabilityFieldOnLeave(event.relatedTarget);
 			}, {signal: documentController.signal});
-			probabilityScrollPort?.addEventListener("mouseleave", (event) => {
-				clearProbabilityFieldOnLeave(event.relatedTarget);
-			}, {signal: documentController.signal});
+				probabilityScrollPort?.addEventListener("mouseleave", (event) => {
+					clearProbabilityFieldOnLeave(event.relatedTarget);
+				}, {signal: documentController.signal});
+				probabilityScrollResizer?.addEventListener("mouseleave", (event) => {
+					clearProbabilityFieldOnLeave(event.relatedTarget);
+				}, {signal: documentController.signal});
 		}
 		// Probability cells are clipped to the existing Chart.js plot area. They
 		// must not expand Y-axis padding or change the curve's drawing range.

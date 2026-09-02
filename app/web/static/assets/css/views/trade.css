@@ -1,4 +1,4 @@
-/* Code version: v3.55.8 */
+/* Code version: v3.55.12 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -128,6 +128,7 @@
 }
 
 .backtest-section-resizer-slot {
+    isolation: isolate;
     position: relative;
     width: 100%;
     height: var(--investment-section-resizer-size);
@@ -181,8 +182,7 @@
 }
 
 .backtest-results-stack.has-probability-scrollport .backtest-section-resizer {
-    opacity: 0;
-    pointer-events: none;
+    clip-path: inset(4px 0);
 }
 
 .backtest-workspace-main {
@@ -301,44 +301,10 @@
 }
 
 .backtest-probability-detail-status-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    display: block;
     min-width: 0;
     margin-top: 3px;
-    flex-wrap: wrap;
     pointer-events: none;
-}
-
-.backtest-probability-detail-legend {
-    display: grid;
-    grid-template-columns: auto minmax(84px, 132px) auto;
-    align-items: center;
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    gap: 7px;
-    color: var(--muted);
-    font-size: var(--font-form-label);
-    line-height: 1.2;
-    margin-inline-start: auto;
-}
-
-.backtest-probability-detail-legend-label {
-    white-space: nowrap;
-}
-
-.backtest-probability-detail-legend-bar {
-    display: block;
-    width: 100%;
-    height: 8px;
-    border-radius: 999px;
-    background: linear-gradient(
-        90deg,
-        var(--theme-accent-secondary),
-        color-mix(in srgb, var(--theme-accent-secondary) 45%, var(--theme-accent-positive)),
-        var(--theme-accent-positive)
-    );
 }
 
 .backtest-probability-detail-plot {
@@ -347,6 +313,7 @@
     grid-template-columns: 52px minmax(0, 1fr);
     min-height: 0;
     min-width: 0;
+    overflow: hidden;
 }
 
 .backtest-probability-detail-y-axis {
@@ -386,6 +353,7 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 .backtest-probability-detail-grid-viewport {
@@ -393,6 +361,8 @@
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
+    contain: layout paint;
+    overflow: hidden;
 }
 
 .backtest-probability-detail-grid {
@@ -405,6 +375,8 @@
     justify-content: stretch;
     min-width: 0;
     min-height: 0;
+    contain: strict;
+    overflow: hidden;
     transform: translateY(-50%);
     cursor: crosshair;
 }
@@ -432,6 +404,36 @@
     background: color-mix(in srgb, var(--theme-muted) 72%, transparent);
     pointer-events: none;
     transform: translateY(-0.5px);
+}
+
+.backtest-probability-detail-side-summary {
+    position: absolute;
+    inset-inline-end: 0;
+    top: 50%;
+    z-index: 1;
+    display: grid;
+    gap: 2px;
+    justify-items: end;
+    max-width: 100%;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.backtest-probability-detail-side-summary-value {
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.backtest-probability-detail-side-summary-value.is-up {
+    color: var(--theme-accent-positive);
+}
+
+.backtest-probability-detail-side-summary-value.is-down {
+    color: var(--theme-accent-secondary);
 }
 
 .backtest-probability-detail-x-axis {
@@ -473,15 +475,6 @@
         padding-inline: 12px;
     }
 
-    .backtest-probability-detail-status-row {
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 8px 12px;
-    }
-
-    .backtest-probability-detail-legend {
-        margin-inline-start: auto;
-    }
 }
 
 .backtest-history-view-body > [data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel) {

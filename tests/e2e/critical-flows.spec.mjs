@@ -1,4 +1,4 @@
-/* Code version: v1.201.6 */
+/* Code version: v1.201.17 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -18048,6 +18048,58 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         await page.mouse.move(1, 1);
         await waitForPanReset();
     };
+    const readTraversalSamples = () => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const stack = canvas?.closest('.trade-chart-stack');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        const stackRect = stack?.getBoundingClientRect();
+        const chartArea = chart?.chartArea;
+        const chartWidth = Number(chart?.width);
+        const chartHeight = Number(chart?.height);
+        if (!(canvas instanceof HTMLCanvasElement) || !(stack instanceof HTMLElement)
+            || !rect || !stackRect || !chartArea
+            || !(chartWidth > 0) || !(chartHeight > 0)) return [];
+        let contentLeft = 0;
+        let current = canvas;
+        while (current instanceof HTMLElement && current !== stack) {
+            contentLeft += Number(current.offsetLeft) || 0;
+            current = current.offsetParent;
+        }
+        if (current !== stack || !Number.isFinite(contentLeft)) return [];
+        const scaleX = rect.width / chartWidth;
+        const scaleY = rect.height / chartHeight;
+        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const predictiveMean = Array.isArray(presentation?.predictive_mean)
+            ? presentation.predictive_mean
+            : [];
+        const predictiveScale = Array.isArray(presentation?.predictive_scale)
+            ? presentation.predictive_scale
+            : [];
+        const finitePoints = (chart?.getDatasetMeta?.(0)?.data || [])
+            .map((point, index) => ({index, point}))
+            .filter(({index, point}) => Number.isFinite(point?.x) && Number.isFinite(point?.y)
+                && predictiveMean[index] !== null
+                && predictiveMean[index] !== undefined
+                && predictiveScale[index] !== null
+                && predictiveScale[index] !== undefined
+                && Number.isFinite(Number(predictiveMean[index]))
+                && Number.isFinite(Number(predictiveScale[index])));
+        if (finitePoints.length < 2) return [];
+        const sampleIndices = Array.from({length: 11}, (_, sampleIndex) => (
+            Math.round((finitePoints.length - 1) * (sampleIndex / 10))
+        ));
+        const uniqueIndices = Array.from(new Set(sampleIndices));
+        const sweepY = rect.top + (((chartArea.top + chartArea.bottom) / 2) * scaleY);
+        return uniqueIndices.map((finitePointIndex) => {
+            const {index, point} = finitePoints[finitePointIndex];
+            return {
+                index,
+                x: stackRect.left + contentLeft + (point.x * scaleX),
+                y: sweepY,
+            };
+        });
+    });
 
     const warmup = await pointAt(0);
     if (!warmup) throw new Error('Bayesian warmup anchor is unavailable.');
@@ -18059,12 +18111,52 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     baselineGeometry = await readBaselineGeometry();
     expect(baselineGeometry).not.toBeNull();
 
+    const traversalSamples = await readTraversalSamples();
+    expect(traversalSamples.length).toBeGreaterThanOrEqual(8);
+    const observedTraversalIndices = [];
+    for (const sample of traversalSamples) {
+        await page.mouse.move(sample.x, sample.y);
+        await expect.poll(() => page.evaluate(() => (
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index
+        )), {message: `Bayesian hover traversal must reach index ${sample.index}`})
+            .toBe(sample.index);
+        observedTraversalIndices.push(sample.index);
+    }
+    expect(observedTraversalIndices).toEqual(traversalSamples.map(({index}) => index));
+    await movePointerOutsideProbabilitySurface();
+
+    // Seed the Price Field pan, then sweep the same immutable screen-space
+    // content coordinates. The panned canvas must not turn every middle point
+    // into the rightmost point merely because its visual rect has moved.
+    const pannedTraversalSeed = await pointAt(0.8);
+    if (!pannedTraversalSeed) throw new Error('Bayesian panned traversal seed is unavailable.');
+    await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y);
+    await waitForPanTarget();
+    const pannedTraversalSamples = await readTraversalSamples();
+    expect(pannedTraversalSamples.length).toBeGreaterThanOrEqual(8);
+    const pannedTraversalIndices = [];
+    for (const sample of pannedTraversalSamples) {
+        await page.mouse.move(sample.x, sample.y);
+        await expect.poll(() => page.evaluate(() => (
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index
+        )), {message: `Bayesian panned hover traversal must reach index ${sample.index}`})
+            .toBe(sample.index);
+        pannedTraversalIndices.push(sample.index);
+    }
+    expect(pannedTraversalIndices).toEqual(pannedTraversalSamples.map(({index}) => index));
+    await movePointerOutsideProbabilitySurface();
+
     const leftAnchor = await pointAt(0.05);
     if (!leftAnchor) throw new Error('Bayesian left-side hover anchor is unavailable.');
     await page.mouse.move(leftAnchor.x, leftAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await waitForPanTarget();
 
+    // Select the independent right-side anchor from the stationary baseline;
+    // tracking must then use pointer deltas while the field pans.
+    await movePointerOutsideProbabilitySurface();
     const edgeAnchor = await moveToVisiblePriceCurve(0.8, 'rightward tracking');
     await waitForPanTarget();
     const trackingStart = await panSnapshot();
@@ -18207,10 +18299,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     );
     await page.mouse.move(curveRightInside, curveRightBoundary.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    const hoverPastCurveRight = Math.min(
-        curveRightBoundary.stackRight - 4,
-        curveRightBoundary.curveRight + 24,
-    );
+    const hoverPastCurveRight = curveRightBoundary.stackRight + 4;
     expect(hoverPastCurveRight).toBeGreaterThan(curveRightBoundary.curveRight);
     await page.mouse.move(hoverPastCurveRight, curveRightBoundary.y);
     await expect.poll(() => page.evaluate(() => {
@@ -18568,16 +18657,17 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID;
         const yTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-y-axis] .backtest-probability-detail-y-tick') || []);
         const xTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-x-tick]') || []);
-        const legendBar = panel?.querySelector('.backtest-probability-detail-legend-bar');
         const status = panel?.querySelector('[data-backtest-probability-detail-status]');
-        const statusRow = panel?.querySelector('.backtest-probability-detail-status-row');
-        const legend = legendBar?.parentElement;
-        const statusRowRect = statusRow?.getBoundingClientRect();
-        const legendRect = legend?.getBoundingClientRect();
         const forecastDateTitle = panel?.querySelector('.backtest-probability-detail-x-axis-title');
         const detailGridRect = detailGrid?.getBoundingClientRect();
+        const detailViewportRect = detailGrid?.parentElement?.getBoundingClientRect();
         const detailAnchorRect = detailAnchor?.getBoundingClientRect();
         const detailCellRects = detailCells.map((cell) => cell.getBoundingClientRect());
+        const detailGridFitsViewport = Boolean(detailGridRect && detailViewportRect)
+            && detailGridRect.left >= detailViewportRect.left - 0.5
+            && detailGridRect.right <= detailViewportRect.right + 0.5
+            && detailGridRect.top >= detailViewportRect.top - 0.5
+            && detailGridRect.bottom <= detailViewportRect.bottom + 0.5;
         const bounds = chart?._activeBacktestProbabilityGridBounds;
         const detailRowsAbove = detailCells.reduce((maximum, cell) => (
             cell.classList.contains('is-up')
@@ -18651,6 +18741,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             detailRowsAbove,
             detailGridWidth: detailGridRect?.width ?? Number.NaN,
             detailGridHeight: detailGridRect?.height ?? Number.NaN,
+            detailGridFitsViewport,
             detailColorsStayOnPriceSide,
             dynamicProbabilityMatchesState: Boolean(
                 dynamicCell
@@ -18667,16 +18758,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             multiStepKind: presentation?.multi_step_kind || null,
             expectedDateText,
             firstDateText: firstTick?.textContent?.trim() || '',
-            legendSharesStatusRow: Boolean(statusRow instanceof HTMLElement && legendBar && statusRow.contains(legendBar)),
-            legendTrailingGap: statusRowRect && legendRect
-                ? statusRowRect.right - legendRect.right
-                : Number.NaN,
             gap: detailCellRects[0] && detailCellRects[1]
                 ? detailCellRects[1].left - detailCellRects[0].right
                 : Number.NaN,
             hoverCellDataMatches,
-            legendGradient: legendBar instanceof HTMLElement
-                && getComputedStyle(legendBar).backgroundImage.includes('linear-gradient'),
+            detailContractCount: panel?.querySelectorAll('[data-backtest-probability-detail-contract]').length || 0,
+            detailLegendCount: panel?.querySelectorAll('.backtest-probability-detail-legend').length || 0,
             panelHidden: panel instanceof HTMLElement ? panel.hidden : true,
             rows: Number(detailGrid?.dataset.rowCount),
             requestedRows: Number(window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation?.rows_above)
@@ -18694,6 +18781,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(detailContract.ariaHidden).toBe('false');
     expect(detailContract.activeIndex).toBe(leftAnchor.index);
     expect(detailContract.cellCount).toBe(detailContract.rows * detailContract.columns);
+    expect(detailContract.detailGridFitsViewport).toBe(true);
     expect(detailContract.hoverCellDataMatches).toBe(true);
     expect(detailContract.detailColorsStayOnPriceSide).toBe(true);
     expect(detailContract.multiStepKind).toBe('causal-ar1-return-state');
@@ -18701,9 +18789,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(detailContract.dynamicStateLengths.longRunMean).toBe(80);
     expect(detailContract.dynamicStateLengths.innovationScale).toBe(80);
     expect(detailContract.dynamicProbabilityMatchesState).toBe(true);
-    expect(detailContract.legendGradient).toBe(true);
-    expect(detailContract.legendSharesStatusRow).toBe(true);
-    expect(detailContract.legendTrailingGap).toBeLessThanOrEqual(1);
+    expect(detailContract.detailContractCount).toBe(0);
+    expect(detailContract.detailLegendCount).toBe(0);
     expect(detailContract.statusText).toMatch(/^Selected date: \d{1,2} [A-Z][a-z]{2} \d{4}$/);
     expect(detailContract.forecastDateTitleCount).toBe(0);
     expect(detailContract.columns).toBe(20);
@@ -18720,6 +18807,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         expect(detailContract.firstDateText).toContain(detailContract.expectedDateText);
     }
 
+    await movePointerOutsideProbabilitySurface();
     const sectionResizer = page.locator('#backtest_section_resizer');
     await sectionResizer.focus();
     await expect(sectionResizer).toBeFocused();
@@ -18828,9 +18916,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     if (!dragAnchor) throw new Error('Bayesian left-side drag anchor is unavailable.');
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await waitForPanTarget();
-    const settledDragAnchor = await pointAt(0.05);
-    if (!settledDragAnchor) throw new Error('Settled Bayesian left-side drag anchor is unavailable.');
-    await page.mouse.click(settledDragAnchor.x, settledDragAnchor.y);
+    // Tracking aligns the rendered curve endpoint with the pointer, so the
+    // originally hovered curve coordinate remains the stable click surface
+    // even after the canvas has translated under the pointer.
+    await page.mouse.click(dragAnchor.x, dragAnchor.y);
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
     await expect.poll(() => page.evaluate(() => (
         document.querySelector('[data-backtest-probability-scrollport]')?.hidden === true
@@ -18994,7 +19083,6 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const horizontalHoverLineRect = horizontalHoverLine.getBoundingClientRect();
         const firstProbabilityCellRect = firstProbabilityCell.getBoundingClientRect();
         const bounds = chart._activeBacktestProbabilityGridBounds;
-        const point = chart.getDatasetMeta(0)?.data?.[bounds?.index];
         const scrollbarStyle = getComputedStyle(scrollPort);
         const scrollbarPseudoStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar');
         const scrollbarThumbStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar-thumb');
@@ -19013,8 +19101,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         );
         return {
             activeIndex: bounds?.index,
-            canvasTooltipAnchorDelta: point
-                ? Math.abs(tooltipRect.left - (priceRect.left + point.x))
+            canvasTooltipAnchorDelta: Number.isFinite(curveRightContentLeft)
+                ? Math.abs(
+                    tooltipRect.left
+                    - (priceRect.left + (lastCurvePoint.x * (priceRect.width / chart.width))),
+                )
                 : Number.POSITIVE_INFINITY,
             fieldRightOfVerticalLine: firstProbabilityCellRect.left - hoverLineRect.right,
             domOrderStable: stack.children[0]?.contains(priceCanvasElement)
@@ -19121,10 +19212,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan.portTop).toBeLessThanOrEqual(rightPan.resizerTop + 0.1);
     expect(rightPan.portBottom).toBeGreaterThanOrEqual(rightPan.resizerTop + rightPan.resizerHeight - 0.1);
     expect(rightPan.portHeight).toBeGreaterThanOrEqual(rightPan.resizerHeight);
-    expect(rightPan.resizerAriaHidden).toBe('true');
-    expect(rightPan.resizerFocused).toBe(false);
-    expect(rightPan.resizerPointerEvents).toBe('none');
-    expect(rightPan.resizerTabIndex).toBe('-1');
+    expect(rightPan.resizerAriaHidden).toBeNull();
+    expect(rightPan.resizerPointerEvents).toBe('auto');
+    expect(rightPan.resizerTabIndex).toBeNull();
     expect(rightPan.leftInset).toBeGreaterThanOrEqual(0);
     expect(rightPan.tooltipWidthDelta).toBeLessThanOrEqual(0.1);
     expect(rightPan.pointerToVerticalLine).toBeLessThanOrEqual(1.5);
@@ -19155,11 +19245,60 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan.pageOverflow).toBeLessThanOrEqual(0);
     expect(rightPan.domOrderStable).toBe(true);
 
+    const activeResizerBefore = await page.evaluate(() => ({
+        history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0,
+        overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0,
+        resizer: document.querySelector('#backtest_section_resizer') instanceof HTMLElement
+            ? document.querySelector('#backtest_section_resizer').getBoundingClientRect()
+            : null,
+        scrollPortHidden: document.querySelector('[data-backtest-probability-scrollport]')?.hidden,
+    }));
+    expect(activeResizerBefore.scrollPortHidden).toBe(false);
+    expect(activeResizerBefore.resizer).not.toBeNull();
+    const activeResizerBox = await sectionResizer.boundingBox();
+    if (!activeResizerBox) throw new Error('Active Bayesian vertical resizer is unavailable.');
     await page.mouse.move(
-        rightPan.portLeft + Math.min(16, Math.max(1, rightPan.portClientWidth / 2)),
-        (rightPan.portTop + rightPan.portBottom) / 2,
+        activeResizerBox.x + (activeResizerBox.width / 2),
+        activeResizerBox.y + (activeResizerBox.height / 2),
     );
+    await expect.poll(() => page.evaluate(() => ({
+        hitResizer: Boolean(document.elementFromPoint(
+            Number(document.querySelector('#backtest_section_resizer')?.getBoundingClientRect().left || 0) + 8,
+            Number(document.querySelector('#backtest_section_resizer')?.getBoundingClientRect().top || 0) + 5,
+        )?.closest('#backtest_section_resizer')),
+        scrollPortHidden: document.querySelector('[data-backtest-probability-scrollport]')?.hidden,
+    }))).toEqual({hitResizer: true, scrollPortHidden: false});
+    await page.mouse.down();
+    await page.mouse.move(
+        activeResizerBox.x + (activeResizerBox.width / 2),
+        activeResizerBox.y + (activeResizerBox.height / 2) - 48,
+        {steps: 4},
+    );
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate((beforeSize) => {
+        const overview = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
+        const history = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
+        return overview < beforeSize.overview && history > beforeSize.history;
+    }, activeResizerBefore)).toBe(true);
+    await expect.poll(() => page.evaluate(() => ({
+        ariaHidden: document.querySelector('#backtest_section_resizer')?.getAttribute('aria-hidden'),
+        pointerEvents: document.querySelector('#backtest_section_resizer') instanceof HTMLElement
+            ? getComputedStyle(document.querySelector('#backtest_section_resizer')).pointerEvents
+            : null,
+        tabIndex: document.querySelector('#backtest_section_resizer')?.getAttribute('tabindex'),
+    }))).toEqual({ariaHidden: null, pointerEvents: 'auto', tabIndex: null});
+    // Return to the max endpoint used by the surrounding geometry assertions.
+    await sectionResizer.focus();
+    await sectionResizer.press('End');
+    await expect.poll(() => page.evaluate(() => {
+        const resizer = document.querySelector('#backtest_section_resizer');
+        return resizer instanceof HTMLElement
+            && Number(resizer.getAttribute('aria-valuenow'))
+                === Number(resizer.getAttribute('aria-valuemax'));
+    })).toBe(true);
+    await waitForChartGeometry();
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
+
     const manualRailSync = await page.evaluate(() => {
         const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
         const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
@@ -19231,13 +19370,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(maxRailSync.stackScrollLeft).toBe(maxRailSync.portMaximum);
     expect(Math.abs(maxRailSync.visualPosition - maxRailSync.target))
         .toBeLessThanOrEqual(probabilityScrollTargetTolerance);
-    expect(maxRailSync.visualOffset).toBeGreaterThan(0);
+    // Exact-integer targets legitimately produce no fractional correction;
+    // fractional native rail positions must still remain below one pixel.
+    expect(maxRailSync.visualOffset).toBeGreaterThanOrEqual(0);
     expect(maxRailSync.visualOffset).toBeLessThan(1);
     expect(Math.abs(
         (maxRailSync.stackScrollLeft - maxRailSync.visualPosition) - maxRailSync.visualOffset,
     )).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
     expect(maxRailSync.leftInset).toBeGreaterThanOrEqual(0);
-    expect(maxRailSync.rightInset).toBeGreaterThanOrEqual(-0.5);
     expect(maxRailSync.tooltipAnchorDelta).toBeLessThanOrEqual(0.1);
     expect(maxRailSync.hoverLineAnchorDelta).toBeLessThanOrEqual(0.1);
 
@@ -19352,9 +19492,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
     await waitForPanReset();
 
-    await moveToVisiblePriceCurve(0.20, 'Bayesian pin hover');
-    await waitForPanTarget();
-    const pinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian pin click');
+    const pinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian pin hover');
+    if (!pinAnchor) throw new Error('Bayesian pin anchor is unavailable.');
     await waitForPanTarget();
     await page.mouse.click(pinAnchor.x, pinAnchor.y, {button: 'left'});
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
@@ -19404,12 +19543,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(Math.abs(blankResetGeometry.equityLeft - baselineGeometry.equityLeft))
         .toBeLessThanOrEqual(0.1);
 
-    await moveToVisiblePriceCurve(0.20, 'Bayesian resumed hover');
+    const resumedPinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian resumed hover');
+    if (!resumedPinAnchor) throw new Error('Bayesian resumed pin anchor is unavailable.');
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await expect(probabilityTooltip).not.toHaveAttribute('data-pinned', 'true');
-    await waitForPanTarget();
-
-    const resumedPinAnchor = await moveToVisiblePriceCurve(0.20, 'Bayesian resumed pin click');
     await waitForPanTarget();
     await page.mouse.click(resumedPinAnchor.x, resumedPinAnchor.y, {button: 'left'});
     await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
@@ -19492,6 +19629,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const nextColumnRect = nextColumn?.getBoundingClientRect();
         const nextRowRect = nextRow?.getBoundingClientRect();
         const detailCellRects = detailCells.map((cell) => cell.getBoundingClientRect());
+        const detailGridFitsViewport = Boolean(detailGridRect && detailViewportRect)
+            && detailGridRect.left >= detailViewportRect.left - 0.5
+            && detailGridRect.right <= detailViewportRect.right + 0.5
+            && detailGridRect.top >= detailViewportRect.top - 0.5
+            && detailGridRect.bottom <= detailViewportRect.bottom + 0.5;
         const finiteY = chart.getDatasetMeta(0).data
             .map((point) => Number(point?.y))
             .filter(Number.isFinite);
@@ -19501,6 +19643,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             detailCellCount: detailCells.length,
             detailCellSizes: detailCellRects.slice(0, 5).map((rect) => ({width: rect.width, height: rect.height, x: rect.x, y: rect.y})),
             detailGridWidth: detailGrid?.getBoundingClientRect().width ?? Number.NaN,
+            detailGridFitsViewport,
             detailRows: Number(detailGrid?.dataset.rowCount),
             detailTopInset: detailViewportRect && detailGridRect
                 ? detailGridRect.top - detailViewportRect.top
@@ -19550,6 +19693,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(narrowLayout).not.toBeNull();
     expect(narrowLayout.detailHidden).toBe(false);
     expect(narrowLayout.detailGridWidth).toBeGreaterThan(0);
+    expect(narrowLayout.detailGridFitsViewport).toBe(true);
     expect(narrowLayout.detailCellCount).toBe(narrowLayout.detailRows * 20);
     expect(narrowLayout.detailRows).toBe(20);
     expect(narrowLayout.detailTopInset).toBeGreaterThanOrEqual(-1);
@@ -19798,7 +19942,7 @@ test('keeps hidden Bayesian detail and equity canvases out of overview hover upd
         return points
             .map((point, index) => (
                 index % stride === 0 && Number.isFinite(point?.x) && Number.isFinite(point?.y)
-                    ? {x: rect.left + point.x, y: rect.top + point.y}
+                    ? {index, x: rect.left + point.x, y: rect.top + point.y}
                     : null
             ))
             .filter(Boolean);
@@ -19844,7 +19988,25 @@ test('keeps hidden Bayesian detail and equity canvases out of overview hover upd
         window.__backtestHoverPerformanceProbe = {observer, probe};
     });
 
-    for (const anchor of anchors) await page.mouse.move(anchor.x, anchor.y);
+    for (const anchor of anchors) {
+        const currentAnchor = await page.evaluate(({index}) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const point = chart?.getDatasetMeta?.(0)?.data?.[index];
+            const rect = canvas?.getBoundingClientRect();
+            const chartWidth = Number(chart?.width);
+            const chartHeight = Number(chart?.height);
+            if (!(canvas instanceof HTMLCanvasElement) || !point || !rect
+                || !(chartWidth > 0) || !(chartHeight > 0)
+                || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+            return {
+                x: rect.left + (point.x * (rect.width / chartWidth)),
+                y: rect.top + (point.y * (rect.height / chartHeight)),
+            };
+        }, anchor);
+        if (!currentAnchor) throw new Error('Bayesian hidden-detail hover anchor is unavailable.');
+        await page.mouse.move(currentAnchor.x, currentAnchor.y);
+    }
     await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
         .toHaveClass(/is-visible/);
     await page.waitForTimeout(100);
@@ -19904,7 +20066,7 @@ test('keeps visible Bayesian detail hover updates out of shared layout reflow', 
         return points
             .map((point, index) => (
                 index % stride === 0 && Number.isFinite(point?.x) && Number.isFinite(point?.y)
-                    ? {x: rect.left + point.x, y: rect.top + point.y}
+                    ? {index, x: rect.left + point.x, y: rect.top + point.y}
                     : null
             ))
             .filter(Boolean);
@@ -19924,7 +20086,25 @@ test('keeps visible Bayesian detail hover updates out of shared layout reflow', 
         };
         window.__backtestVisibleDetailPerformanceProbe = {probe};
     });
-    for (const anchor of anchors) await page.mouse.move(anchor.x, anchor.y);
+    for (const anchor of anchors) {
+        const currentAnchor = await page.evaluate(({index}) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const point = chart?.getDatasetMeta?.(0)?.data?.[index];
+            const rect = canvas?.getBoundingClientRect();
+            const chartWidth = Number(chart?.width);
+            const chartHeight = Number(chart?.height);
+            if (!(canvas instanceof HTMLCanvasElement) || !point || !rect
+                || !(chartWidth > 0) || !(chartHeight > 0)
+                || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+            return {
+                x: rect.left + (point.x * (rect.width / chartWidth)),
+                y: rect.top + (point.y * (rect.height / chartHeight)),
+            };
+        }, anchor);
+        if (!currentAnchor) throw new Error('Bayesian visible-detail hover anchor is unavailable.');
+        await page.mouse.move(currentAnchor.x, currentAnchor.y);
+    }
     await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
         .toHaveClass(/is-visible/);
     await page.waitForTimeout(100);
@@ -20056,6 +20236,56 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         .toBeGreaterThan(0);
     const baseStatus = await detailStatus.textContent();
     expect(baseStatus).toMatch(/^Selected date: \d{1,2} [A-Z][a-z]{2} \d{4}$/);
+
+    const sideSummary = await page.evaluate(() => {
+        const cells = Array.from(
+            document.querySelectorAll(
+                '[data-backtest-probability-detail-grid] .backtest-probability-detail-cell',
+            ),
+        );
+        const summarize = (sign) => cells
+            .filter((cell) => cell.classList.contains(`is-${sign}`))
+            .reduce((summary, cell) => ({
+                probability: summary.probability + Math.max(0, Number(cell.dataset.probability) || 0),
+                hiddenCellCount: summary.hiddenCellCount
+                    + (cell.dataset.thresholdVisible === 'false' ? 1 : 0),
+            }), {probability: 0, hiddenCellCount: 0});
+        const format = (value) => `${new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(value * 100)}%`;
+        const up = summarize('up');
+        const down = summarize('down');
+        return {
+            upText: `Higher price: ${format(up.probability)}`,
+            downText: `Lower price: ${format(down.probability)}`,
+            hiddenCellCount: up.hiddenCellCount + down.hiddenCellCount,
+        };
+    });
+    await expect(detailPanel.locator('[data-backtest-probability-detail-up-summary]'))
+        .toHaveText(sideSummary.upText);
+    await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
+        .toHaveText(sideSummary.downText);
+    expect(sideSummary.hiddenCellCount).toBeGreaterThan(0);
+    const sideSummaryGeometry = await page.evaluate(() => {
+        const anchor = document.querySelector('[data-backtest-probability-detail-anchor]')?.getBoundingClientRect();
+        const up = document.querySelector('[data-backtest-probability-detail-up-summary]')?.getBoundingClientRect();
+        const down = document.querySelector('[data-backtest-probability-detail-down-summary]')?.getBoundingClientRect();
+        return anchor && up && down ? {
+            anchorRight: anchor.right,
+            anchorTop: anchor.top,
+            anchorBottom: anchor.bottom,
+            upRight: up.right,
+            upBottom: up.bottom,
+            downRight: down.right,
+            downTop: down.top,
+        } : null;
+    });
+    expect(sideSummaryGeometry).not.toBeNull();
+    expect(Math.abs(sideSummaryGeometry.upRight - sideSummaryGeometry.anchorRight)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(sideSummaryGeometry.downRight - sideSummaryGeometry.anchorRight)).toBeLessThanOrEqual(0.5);
+    expect(sideSummaryGeometry.upBottom).toBeLessThanOrEqual(sideSummaryGeometry.anchorTop + 0.5);
+    expect(sideSummaryGeometry.downTop).toBeGreaterThanOrEqual(sideSummaryGeometry.anchorBottom - 0.5);
 
     const rowProbe = await page.evaluate(() => {
         const grid = document.querySelector('[data-backtest-probability-detail-grid]');

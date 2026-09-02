@@ -1,4 +1,4 @@
-/* Code version: v1.1.0-codex.1 */
+/* Code version: v1.1.1-codex.1 */
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import path from 'node:path';
@@ -343,17 +343,13 @@ test('boot contains malformed manifest errors without affecting the page', async
     assert.match(result.failed[0].message, /Unsupported Agent Optimization contract version/);
 });
 
-const siblingRuntimePaths = [
-    path.join(projectRoot, '..', 'CacheLikesFromTwitter', 'app/web/static/agent-optimization.js'),
-    path.join(projectRoot, '..', 'antigravity', 'app/web/static/assets/js/agent-optimization.js'),
-];
-const siblingCopiesAvailable = siblingRuntimePaths.every((candidate) => existsSync(candidate));
+const siblingRuntimePath = path.basename(projectRoot) === 'worthward'
+    ? path.join(projectRoot, '..', 'agenticContext', 'app/web/static/agent-optimization.js')
+    : path.join(projectRoot, '..', 'worthward', 'app/web/static/assets/js/agent-optimization.js');
+const siblingCopiesAvailable = existsSync(runtimePath) && existsSync(siblingRuntimePath);
 
 test('local sibling runtime copies remain byte-identical', {
     skip: !siblingCopiesAvailable,
 }, () => {
-    assert.deepEqual(
-        readFileSync(siblingRuntimePaths[0]),
-        readFileSync(siblingRuntimePaths[1]),
-    );
+    assert.deepEqual(readFileSync(runtimePath), readFileSync(siblingRuntimePath));
 });

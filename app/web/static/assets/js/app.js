@@ -1,4 +1,4 @@
-/* Code version: v0.50.0 */
+/* Code version: v0.50.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2133,13 +2133,6 @@
                                     <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
                                         Hover a price point to inspect its forecast field.
                                     </p>
-                                    <div class="backtest-probability-detail-legend"
-                                         role="img"
-                                         aria-label="Lower price to higher price probability legend">
-                                        <span class="backtest-probability-detail-legend-label">Lower price</span>
-                                        <span class="backtest-probability-detail-legend-bar" aria-hidden="true"></span>
-                                        <span class="backtest-probability-detail-legend-label">Higher price</span>
-                                    </div>
                                 </div>
                             </div>
                             <div class="backtest-probability-detail-plot" data-backtest-probability-detail-plot>

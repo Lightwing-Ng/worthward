@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.9.1
+Code version: v0.9.2
 """
 
 from __future__ import annotations
@@ -178,12 +178,11 @@ class BacktestPageTests(unittest.TestCase):
         )
         self.assertIn('data-option-count="3"', html)
         self.assertIn('data-backtest-history-view-panel="probability"', html)
+        self.assertIn('data-backtest-probability-detail-up-summary', html)
+        self.assertIn('data-backtest-probability-detail-down-summary', html)
         self.assertIn('class="backtest-probability-detail-status-row"', html)
-        self.assertIn(
-            "Display anchor: signal close · Executable target: next open → following open",
-            html,
-        )
-        self.assertIn('class="backtest-probability-detail-legend-bar"', html)
+        self.assertNotIn("Display anchor: signal close · Executable target:", html)
+        self.assertNotIn('class="backtest-probability-detail-legend"', html)
         self.assertNotIn('>Forecast date<', html)
         self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
         self.assertLess(html.index('id="backtest_history_probability"'), html.index('id="backtest_history_transactions"'))

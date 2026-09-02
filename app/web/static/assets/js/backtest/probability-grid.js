@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.23.0
+ * Code version: v0.23.1
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -839,6 +839,43 @@
         });
     };
 
+    // The detail view reports raw probability mass by price direction across
+    // the complete field. Threshold-hidden cells remain part of each sum.
+    const summarizeProbabilityField = (cells) => {
+        if (!Array.isArray(cells) || !cells.length) return null;
+        let upProbability = 0;
+        let downProbability = 0;
+        let upCellCount = 0;
+        let downCellCount = 0;
+        let upHiddenCellCount = 0;
+        let downHiddenCellCount = 0;
+        cells.forEach((cell) => {
+            const probability = finiteOrNull(cell?.probability);
+            if (probability === null) return;
+            const normalizedProbability = Math.max(0, probability);
+            if (cell?.sign === "up") {
+                upProbability += normalizedProbability;
+                upCellCount += 1;
+                if (cell?.isVisible === false) upHiddenCellCount += 1;
+            } else if (cell?.sign === "down") {
+                downProbability += normalizedProbability;
+                downCellCount += 1;
+                if (cell?.isVisible === false) downHiddenCellCount += 1;
+            }
+        });
+        if (!upCellCount && !downCellCount) return null;
+        return Object.freeze({
+            upProbability,
+            downProbability,
+            upCellCount,
+            downCellCount,
+            upHiddenCellCount,
+            downHiddenCellCount,
+            cellCount: upCellCount + downCellCount,
+            hiddenCellCount: upHiddenCellCount + downHiddenCellCount,
+        });
+    };
+
     const reducePinState = (state, action) => {
         const current = state && typeof state === "object"
             ? state
@@ -865,7 +902,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.23.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.23.1",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -884,6 +921,7 @@
         probabilityBetweenPrices,
         reducePinState,
         resolveDatasetStepPixels,
+        summarizeProbabilityField,
         summarizeProbabilityRow,
     });
 

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.6`
+Documentation version: `v1.43.12`
 
 ## Bayesian Price Field detail view coverage
 
@@ -9,22 +9,33 @@ option sits between `Metrics` and `Transactions`, that selecting it preserves
 both existing views, follows the active hover index, preserves the shared
 probability model and live price scale, preserves square cells and the 2px lattice gap,
 and retains the last valid field after hover is cleared. It also checks the
-bar-gradient legend, Settings-formatted forecast dates, edge-aware tick
-placement, the live price axis, accessible state, and narrow-layout geometry.
+Settings-formatted forecast dates, edge-aware tick placement, the live price
+axis, accessible state, and narrow-layout geometry. The detail heading has
+no Display anchor contract line or price-probability legend.
+The detail plot, main column, grid viewport, and complete lattice also remain
+contained within their owning surfaces, including at the narrow breakpoint.
+The right end of the horizontal detail guide displays separate higher-price
+and lower-price cumulative probability sums, and the E2E assertion recomputes
+both values from every detail cell, including threshold-hidden cells.
 The detail contract also requires that green cells stay wholly above the live
 price guide and red cells wholly below it, including the first render after a
 layout change. An edge-adjacent hover regression proves that the floating field
 may be boundary-capped while the detail panel still renders the complete
 strategy-owned row lattice and contains it within the detail viewport on
 desktop and narrow layouts.
+The desktop Bayesian hover flow also sweeps the pointer from the first valid
+forecast point to the final point through fixed screen-space samples while the
+field pans, requiring every sampled middle index to arrive in order. It
+verifies that the translated Canvas cannot skip the middle of the curve, that
+leaving the chart stack clears both guides and the field, and that moving onto
+the native scroll rail preserves the active field.
 Hovering a detail row must expose its exact price interval and the sum of all
 raw row probabilities across the complete forecast horizon through the hovered
 row's native hover label, with threshold-hidden cells included in that sum. The
 detail heading contract also checks that the status line contains only `Selected
-date: D Mmm yyyy`, the probability legend shares that row at the trailing edge,
-and the redundant `Forecast date` axis title is absent while forecast-date ticks
-remain; clearing a row hover restores the date-only status and original cell
-labels.
+date: D Mmm yyyy`, and the redundant `Forecast date` axis title is absent while
+forecast-date ticks remain; clearing a row hover restores the date-only status
+and original cell labels.
 The probability-grid unit contract additionally verifies the private 0–50%
 absolute cell-display threshold, default 5% value, inclusive boundary, and
 unchanged cell geometry; strategy tests verify that changing this parameter
@@ -60,15 +71,19 @@ the hidden equity Chart.js instance is not updated, and only the visible
 probability field is refreshed. It also moves the pointer in one-pixel steps
 while the right-edge field is active and verifies that the visual pan does not
 amplify that input, both fine guides stay within 1.5 CSS pixels of the pointer,
-the horizontal guide continues through the field to its right edge, and the
-first probability-field column stays to the right of the vertical guide. An
+the rendered price curve's right endpoint equals the field's left boundary at
+the vertical guide, the horizontal guide continues through the field to its
+right edge, and the first probability-field column stays to the right of the
+vertical guide. An
 off-curve pointer move additionally verifies that green rows remain above the
 horizontal guide and red rows remain below it. The chart stack remains the
 stationary interaction surface after the translated canvas leaves the pointer
 location, and Bayesian overview tracking does not render the rounded Y-axis
 value badge. Moving beyond the rightmost finite price-curve point is rejected
 as hover input and clears the floating field plus both guides, even though the
-chart stack remains wider than the price curve.
+chart stack remains wider than the price curve. Pinning after a translated
+tracking hover also snaps the shared chart back to its fit coordinate system
+and hides the temporary native horizontal rail.
 It also verifies that the hovered price-curve point keeps a zero radius, so no
 circular hover bubble is painted over the curve.
 
@@ -275,7 +290,7 @@ Current suite inventory remeasured on 28 Aug 2026:
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
 - `tests/test_backtest_probability_grid.mjs`: deterministic schema and date-key validation for the fixed 20-column tooltip; actual-cell-size minimum-plot-height derivation; independent up-to-10-row clamping by the 50% current-plot cap and the relevant chart boundary; the opt-in complete-row geometry used by the detail surface; stable median point spacing; integer-trading-day slots with a one-day minimum; fixed 2 px logical guide-to-first-cell and cell-to-cell gaps with 1:1 square geometry; exact price/time mapping; 4 px cell floor, no-radius transparent matrix, 8 px top, bottom, and trailing padding; nonlinear per-hover opacity normalization; and curve-hit plus pin-state contracts. The dedicated Chromium flow uses `NVDA`, checks the transparent matrix without changing Frosted Glass tokens, proves the dynamic Backtest resizer lower bound preserves a real near-midpoint forecastable point at full 10-by-10 density, exercises a real pointer drag with a pinned field, preserves exact content-space mapping through the temporary scroll rail, and verifies tracking, pin, blank-clear, Escape-clear, resize, and narrow-screen behavior.
 - `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
-  The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(10, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders the complete strategy-owned row counts and scales them without clipping; the field fixes 20 columns, actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer, square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The shared resizer callback is verified after Chart.js resize, including a real pointer drag while the field is pinned. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells, gaps, or fractional bars.
+  The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(10, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders the complete strategy-owned row counts and scales them without clipping; the field fixes 20 columns, actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer, square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The shared resizer callback is verified after Chart.js resize, including a real pointer drag while the field is pinned and while the native probability rail is active; the rail keeps its own browser hit area and the resizer remains keyboard-accessible. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells, gaps, or fractional bars.
 - `tests/test_parallel.py`: bounded worker sizing, deterministic ordered results, spawn-process execution, contiguous batch argument handling, and safe thread fallback for unpicklable CPU tasks.
 - `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; bounded direction hit rate and proper Brier probability score; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
 - `tests/test_strategy_variants.py`: signal-result contracts for the kNN, Lorentzian, and SuperTrend variants, parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.

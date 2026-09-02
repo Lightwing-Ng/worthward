@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.10
+Code version: v0.8.16
 """
 
 from pathlib import Path
@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.6");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.10" in app_css
+    assert "v0.65.14" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -177,7 +177,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.8");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.12");' in app_css
 
 
 def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
@@ -253,9 +253,49 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         ".backtest-probability-scrollport::-webkit-scrollbar-track,",
         ".backtest-probability-scrollport::-webkit-scrollbar-thumb,",
         ".backtest-results-stack.has-probability-scrollport .backtest-section-resizer {",
-        "pointer-events: none;",
+        "clip-path: inset(4px 0);",
     ):
         assert fragment in trade_css
+    assert (
+        ".backtest-probability-detail-plot {\n"
+        "    display: grid;\n"
+        "    flex: 1 1 auto;\n"
+        "    grid-template-columns: 52px minmax(0, 1fr);\n"
+        "    min-height: 0;\n"
+        "    min-width: 0;\n"
+        "    overflow: hidden;\n"
+    ) in trade_css
+    assert (
+        ".backtest-probability-detail-main {\n"
+        "    display: flex;\n"
+        "    flex-direction: column;\n"
+        "    min-width: 0;\n"
+        "    min-height: 0;\n"
+        "    overflow: hidden;\n"
+    ) in trade_css
+    assert (
+        ".backtest-probability-detail-grid-viewport {\n"
+        "    position: relative;\n"
+        "    flex: 1 1 auto;\n"
+        "    min-width: 0;\n"
+        "    min-height: 0;\n"
+        "    contain: layout paint;\n"
+        "    overflow: hidden;\n"
+    ) in trade_css
+    assert (
+        ".backtest-probability-detail-grid {\n"
+        "    position: absolute;\n"
+        "    top: 50%;\n"
+        "    left: 0;\n"
+        "    display: grid;\n"
+        "    box-sizing: border-box;\n"
+        "    align-content: stretch;\n"
+        "    justify-content: stretch;\n"
+        "    min-width: 0;\n"
+        "    min-height: 0;\n"
+        "    contain: strict;\n"
+        "    overflow: hidden;\n"
+    ) in trade_css
 
     assert "var(--accent-scrollbar)" not in scroll_contract
     assert ".trade-chart-stack.has-probability-scroll {" not in trade_css
@@ -270,7 +310,9 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         '"[data-backtest-probability-scrollport]"',
         '"[data-backtest-probability-scrollport-spacer]"',
         'const setProbabilityScrollPortActive = (active) => {',
-        'probabilityScrollResizer.blur();',
+        'probabilityScrollPortIsActive = isActive;',
+        'probabilityScrollResizer.contains(target)',
+        'probabilityScrollResizer?.addEventListener("mouseleave",',
         'const setProbabilityScrollPosition = (scrollLeft) => {',
         'const stackScrollWidth = Math.ceil(',
         'const stackScrollWidth = Math.ceil(stackWidth + nextDistance);',
@@ -320,13 +362,18 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         'probabilityScrollPort.addEventListener("scroll", () => {',
         'probabilityScrollTarget = Math.max(0, Number(targetValue) || 0);',
         'tradeChartStack.dataset.probabilityPanMotion = "shared-pointer-follow";',
+        "const canvasContentLeft = canvasRect.left",
+        "const lastCurveContentX = canvasContentLeft + (lastCurveX * scaleX);",
+        "logicalRelativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX",
+        "hoverRelativeX = (logicalRelativeX - canvasContentLeft) / scaleX;",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
         "x: canvasRect.left - stackRect.left + probabilityScrollVisualPosition + point.x,",
         "const canvasOffsetX = (",
         "canvasRect.left - stackRect.left + probabilityScrollVisualPosition",
         ");",
-            "pointerContentLeft + Number(geometry.width || 0) - currentStackRect.width,",
+            "Number(getPriceCurveRightContentLeft(currentStackRect))",
+            'tradeChartStack.dataset.probabilityPanTarget = "0";',
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
         "rowsBelow: strategyPresentation.rows_below,",
@@ -524,9 +571,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.50.0",
-        "-backtest-probability-grid-v0.23.0",
-        "-backtest-v0.35.6",
+        "-app-v0.50.1",
+        "-backtest-probability-grid-v0.23.1",
+        "-backtest-v0.35.13",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -544,13 +591,17 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'data-backtest-probability-detail-grid',
         'data-backtest-probability-detail-y-axis',
         'data-backtest-probability-detail-x-axis',
+        'data-backtest-probability-detail-up-summary',
+        'data-backtest-probability-detail-down-summary',
         'class="backtest-probability-detail-status-row"',
         '"value": "probability", "label": "Price Field"',
         'data-option-count="',
-        'class="backtest-probability-detail-legend-bar"',
         'aria-live="polite"',
     ):
         assert fragment in backtest_template
+    assert 'backtest-probability-detail-contract' not in backtest_template
+    assert 'backtest-probability-detail-legend' not in backtest_template
+    assert 'backtest-probability-detail-legend' not in pending_app
     assert 'backtest-probability-detail-y-axis-title' not in backtest_template
     assert 'backtest-probability-detail-y-axis-title' not in pending_app
     assert 'backtest-probability-detail-x-axis-title' not in backtest_template
@@ -582,12 +633,16 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const buildProbabilityGridModel = (index, pricePoint) => {",
         "const buildProbabilityDetailModel = (index, model) => {",
         "const renderProbabilityDetailRowHover = (row) => {",
+        "const renderProbabilityDetailSideSummary = (cells) => {",
+        "formatProbabilityMass(summary.upProbability)",
+        "formatProbabilityMass(summary.downProbability)",
         "Cumulative probability across all ${summary.cellCount} forecast cells",
         "including ${summary.hiddenCellCount} hidden",
         "probabilityDetailGrid.dataset.hoverSummary = hoverSummary;",
         'probabilityDetailGrid.setAttribute("title", hoverSummary);',
         'cell.setAttribute("title", hoverSummary);',
         "probabilityGridApi.summarizeProbabilityRow?.(",
+        "probabilityGridApi.summarizeProbabilityField?.(cells)",
         "limitRowsToChartArea: false,",
         "const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {",
         "const referenceWindow = rangeEnd - referenceStart;",
@@ -600,9 +655,15 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const updateHoverCrosshair = (x, y, plotFrame, horizontalEnd = null) =>",
         "Math.max(plotFrame.right, horizontalEnd)",
         "const fieldRight = fieldLeft + Number(probabilityBounds.width || 0);",
+        "const snapProbabilityScrollToFit = () => {",
         "const lastCurveX = finitePoints[finitePoints.length - 1].x;",
         "const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;",
-        "|| event.clientX > lastCurveScreenX + PROBABILITY_HOVER_EDGE_HANDOFF_PX)",
+        "const canvasContentLeft = canvasRect.left",
+        "const lastCurveContentX = canvasContentLeft + (lastCurveX * scaleX);",
+        "|| logicalRelativeX > lastCurveContentX + PROBABILITY_HOVER_EDGE_HANDOFF_PX)",
+        "hoverRelativeX = (logicalRelativeX - canvasContentLeft) / scaleX;",
+        'hoverSurface.addEventListener("mouseleave", (event) => {',
+        "resetProbabilityHoverPointer();",
         "resetProbabilityHoverPointer();",
         "const cachedModel = probabilityModelCache.get(index);",
         "const shouldRenderCells = shouldUpdateDomMirror",
@@ -626,17 +687,17 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     for fragment in (
         ".backtest-probability-detail-panel",
         ".backtest-probability-detail-status-row",
-        "flex-wrap: wrap;",
-        "flex: 0 0 clamp(320px, 52vh, 520px);",
+            "flex: 0 0 clamp(320px, 52vh, 520px);",
         "transform: translateY(-50%);",
         ".backtest-probability-detail-cell",
         ".backtest-probability-detail-cell.is-threshold-hidden",
         ".backtest-probability-detail-cell.is-row-hovered",
         ".backtest-probability-detail-x-tick.is-first",
         ".backtest-probability-detail-x-tick.is-last",
-        ".backtest-probability-detail-legend-bar",
+        ".backtest-probability-detail-side-summary",
+        ".backtest-probability-detail-side-summary-value.is-up",
+        ".backtest-probability-detail-side-summary-value.is-down",
         "z-index: calc(var(--layer-chart-overlay-line) + 2);",
-        "linear-gradient(",
     ):
         assert fragment in trade_css
 

@@ -1,6 +1,6 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.2.1`
 
 This project implements the shared Agent Optimization contract at
 `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
@@ -18,7 +18,7 @@ Worthward adapter and its verification evidence.
 | Flask render tests | `tests/test_agent_optimization.py` |
 | Disposable-browser tests | `tests/test_agent_optimization_browser.py` and `tests/e2e/agent-optimization.spec.mjs` |
 
-The runtime is byte-identical to the sibling CacheLikesFromTwitter copy and registers tools only when
+The runtime is byte-identical to the sibling agenticContext copy and registers tools only when
 the top-level document exposes `document.modelContext.registerTool`. Unsupported browsers receive the
 normal interface without an error or behavioral fork. The project manifest publishes the executable
 `webmcpTools` metadata consumed by the shared runtime; the adapter remains the owner of its trusted
@@ -79,7 +79,7 @@ contexts; neither submits a broker import or order.
 
 Current automated evidence from 30 Aug 2026: all 9 shared Node contract cases, the focused Flask
 and random-port browser cases, 954 full-suite Python tests, all 293 Node tests, and all 267
-repository-native Playwright tests passed. The shared runtime is byte-identical to CacheLikesFromTwitter
+repository-native Playwright tests passed. The shared runtime is byte-identical to agenticContext
 at SHA-256 `bffacd17ddfd40c0febd57e6ecb53022b7f5f68ba0238808433a09011214ed5c`. The full gate's
 JavaScript report measured the shared runtime at 86.84% lines, 67.46% branches, and 100.00%
 functions.
