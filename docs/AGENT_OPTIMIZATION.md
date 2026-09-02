@@ -1,11 +1,11 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.0`
 
 This project implements the shared Agent Optimization contract at
 `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
 schema, result, security, lifecycle, evaluation, and promotion rules. This document owns only the
-antigravity adapter and its verification evidence.
+Worthward adapter and its verification evidence.
 
 ## Runtime adapter
 

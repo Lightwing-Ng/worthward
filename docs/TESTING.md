@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.4`
+Documentation version: `v1.43.6`
 
 ## Bayesian Price Field detail view coverage
 
@@ -59,12 +59,16 @@ hidden Price Field detail cells stay untouched during repeated pointer moves,
 the hidden equity Chart.js instance is not updated, and only the visible
 probability field is refreshed. It also moves the pointer in one-pixel steps
 while the right-edge field is active and verifies that the visual pan does not
-amplify that input, both fine guides stay within 1.5 CSS pixels of the pointer
-and intersect at the same coordinate, and the first probability-field column
-stays to the right of the vertical guide. The chart stack remains the
+amplify that input, both fine guides stay within 1.5 CSS pixels of the pointer,
+the horizontal guide continues through the field to its right edge, and the
+first probability-field column stays to the right of the vertical guide. An
+off-curve pointer move additionally verifies that green rows remain above the
+horizontal guide and red rows remain below it. The chart stack remains the
 stationary interaction surface after the translated canvas leaves the pointer
 location, and Bayesian overview tracking does not render the rounded Y-axis
-value badge.
+value badge. Moving beyond the rightmost finite price-curve point is rejected
+as hover input and clears the floating field plus both guides, even though the
+chart stack remains wider than the price curve.
 It also verifies that the hovered price-curve point keeps a zero radius, so no
 circular hover bubble is painted over the curve.
 

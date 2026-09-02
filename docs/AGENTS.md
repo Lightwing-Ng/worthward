@@ -57,7 +57,7 @@ discovery. This file remains the canonical guide.
    [`COMPATIBILITY.md`](COMPATIBILITY.md) before a cross-cutting change.
 2. Read [`SHARED_UI_WORKFLOW.md`](SHARED_UI_WORKFLOW.md) before changing a shared UI
    pattern, then read the single local synchronization ledger at
-   `/Users/example/Desktop/SHARED_UI_SYNC.md`. `antigravity` is the canonical complete
+   `/Users/example/Desktop/SHARED_UI_SYNC.md`. `Worthward` is the canonical complete
    baseline and final convergence target; a Cache-first improvement is a `Candidate review`
    until it is promoted here. Update the ledger whenever one project advances first, do
    not edit the sibling unless the task authorizes both projects, and include the ledger's

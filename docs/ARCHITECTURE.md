@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.4`
+Documentation version: `v1.69.6`
 
 ## Bayesian Price Field detail view contract
 
@@ -51,11 +51,17 @@ already moved, and the stack continues to receive rightward hover input while
 the translated canvas is outside the pointer location. During tracking, the
 vertical and horizontal guides share the latest screen-space pointer position
 on every move, including moves that keep the same nearest data point. The
-probability field begins at that vertical guide and lays out its first column
-to the right, so panning cannot make the field cross or detach from the
-crosshair. Bayesian overview tracking does not draw the rounded Y-axis value
-badge or a Chart.js hover point; a pinned field returns both guides to its selected
-data point. Moving into another chart subplot or leaving the stack still follows the existing
+horizontal guide continues through the probability field to its right edge
+and is painted above the cells, while the field's green/up rows remain above
+that guide and its red/down rows remain below it. The probability field begins
+at the vertical guide and lays out its first column to the right, so panning
+cannot make the field cross or detach from the crosshair. The terminal hover
+boundary is the rightmost finite price-curve point; the field's visual
+continuation never becomes an additional hover domain, and a pointer beyond
+that curve endpoint clears both guides and the floating field. Bayesian
+overview tracking does not draw the rounded Y-axis value badge or a Chart.js hover point;
+a pinned field returns both guides to its selected data point. Moving into
+another chart subplot or leaving the stack still follows the existing
 shared-tooltip ownership rules.
 
 ## Holdings P&L display contract

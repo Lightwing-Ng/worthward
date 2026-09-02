@@ -1,4 +1,4 @@
-/* Code version: v3.55.7 */
+/* Code version: v3.55.8 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -1101,7 +1101,7 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 120ms var(--motion-standard);
-    z-index: var(--layer-chart-overlay-line);
+    z-index: calc(var(--layer-chart-overlay-line) + 2);
 }
 
 .trade-chart-hover-horizontal-line.is-visible {

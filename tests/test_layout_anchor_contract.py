@@ -155,7 +155,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.6");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.9" in app_css
+    assert "v0.65.10" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -177,7 +177,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.7");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.8");' in app_css
 
 
 def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
@@ -526,7 +526,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.50.0",
         "-backtest-probability-grid-v0.23.0",
-        "-backtest-v0.35.4",
+        "-backtest-v0.35.6",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -595,6 +595,15 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const chartHoverPointCaches = new Map();",
         "const probabilityModelCache = new Map();",
         "const getProbabilityHoverLayout = () => {",
+        "const visualTop = pointerAnchored",
+        "probabilityHoverPointerY - currentStackRect.top - Number(geometry.aboveExtent || 0)",
+        "const updateHoverCrosshair = (x, y, plotFrame, horizontalEnd = null) =>",
+        "Math.max(plotFrame.right, horizontalEnd)",
+        "const fieldRight = fieldLeft + Number(probabilityBounds.width || 0);",
+        "const firstCurveX = finitePoints[0].x;",
+        "const firstCurveScreenX = canvasRect.left + (finitePoints[0].x * scaleX);",
+        "|| event.clientX > lastCurveScreenX)",
+        "resetProbabilityHoverPointer();",
         "const cachedModel = probabilityModelCache.get(index);",
         "const shouldRenderCells = shouldUpdateDomMirror",
         "&& (!canReuseCells || grid.dataset.renderKey !== renderKey);",
@@ -626,6 +635,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         ".backtest-probability-detail-x-tick.is-first",
         ".backtest-probability-detail-x-tick.is-last",
         ".backtest-probability-detail-legend-bar",
+        "z-index: calc(var(--layer-chart-overlay-line) + 2);",
         "linear-gradient(",
     ):
         assert fragment in trade_css

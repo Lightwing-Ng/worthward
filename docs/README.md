@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.2.1`
+Documentation version: `v1.3.0`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -91,7 +91,7 @@ agent-started server must be stopped before handoff.
   one maintained owner.
 - Keep the cross-project numbered-copy rules in the shared contract at
   `../../SHARED_STATIC_FILE_HOUSEKEEPING.md`; this repository's entrypoint may
-  only add antigravity-specific boundaries.
+  only add Worthward-specific boundaries.
 - When a tracked file appears unused, check dynamic loading, route aliases,
   template maps, strategy discovery, and reserved-asset catalogs before
   removal.

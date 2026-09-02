@@ -1,4 +1,4 @@
-/* Code version: v0.35.4 */
+/* Code version: v0.35.6 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1977,17 +1977,37 @@
 			const pointCache = getChartHoverPointCache(chart);
 			const {points, finitePoints} = pointCache;
 			if (!finitePoints.length) return null;
+			let hoverRelativeX = logicalRelativeX;
+			if (strategyPresentation) {
+				const scaleX = canvasRect.width / Number(chart.width);
+				const firstCurveX = finitePoints[0].x;
+				const lastCurveX = finitePoints[finitePoints.length - 1].x;
+				const firstCurveScreenX = canvasRect.left + (firstCurveX * scaleX);
+				const lastCurveScreenX = canvasRect.left
+					+ (lastCurveX * scaleX);
+				// The stack receives events while the translated canvas is moving,
+				// but the rendered price series remains the complete hover domain.
+				// The field to the right of the last point is visual output, not more
+				// data, so it must never create a second hover region.
+				if (!Number.isFinite(scaleX)
+					|| event.clientX < firstCurveScreenX
+					|| event.clientX > lastCurveScreenX) {
+					resetProbabilityHoverPointer();
+					return null;
+				}
+				hoverRelativeX = (event.clientX - canvasRect.left) / scaleX;
+			}
 			let low = 0;
 			let high = finitePoints.length - 1;
 			while (low < high) {
 				const midpoint = Math.floor((low + high) / 2);
-				if (finitePoints[midpoint].x < logicalRelativeX) low = midpoint + 1;
+				if (finitePoints[midpoint].x < hoverRelativeX) low = midpoint + 1;
 				else high = midpoint;
 			}
 			const rightPoint = finitePoints[low];
 			const leftPoint = finitePoints[Math.max(0, low - 1)];
-			const nearestPoint = Math.abs(leftPoint.x - logicalRelativeX)
-				<= Math.abs(rightPoint.x - logicalRelativeX)
+			const nearestPoint = Math.abs(leftPoint.x - hoverRelativeX)
+				<= Math.abs(rightPoint.x - hoverRelativeX)
 				? leftPoint
 				: rightPoint;
 			const nearestIndex = nearestPoint.index;
@@ -2509,13 +2529,26 @@
 				bottom: canvasRect.top - stackRect.top + (priceChart.chartArea.bottom * scaleY),
 			};
 		};
+		const getPriceCurveRightContentLeft = (stackRect) => {
+			if (!priceChart?.width || !priceChart?.height) return null;
+			const pointCache = getChartHoverPointCache(priceChart);
+			const lastCurvePoint = pointCache.finitePoints.at(-1);
+			if (!lastCurvePoint) return null;
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const scaleX = canvasRect.width / Number(priceChart.width);
+			const contentRight = canvasRect.left - stackRect.left
+				+ probabilityScrollVisualPosition
+				+ (lastCurvePoint.x * scaleX);
+			return Number.isFinite(contentRight) ? contentRight : null;
+		};
 		const getProbabilityFieldContentLeft = (stackRect, geometry) => {
 			if (
 				strategyPresentation
 				&& pinState.mode !== "pinned"
 				&& isProbabilityHoverPointerOverStack(stackRect)
 			) {
-				return probabilityHoverPointerX - stackRect.left + probabilityScrollVisualPosition;
+				const curveRight = getPriceCurveRightContentLeft(stackRect);
+				if (Number.isFinite(curveRight)) return curveRight;
 			}
 			const canvasRect = priceCanvas.getBoundingClientRect();
 			return canvasRect.left - stackRect.left + probabilityScrollVisualPosition + Number(geometry?.left || 0);
@@ -2540,9 +2573,10 @@
 				const pointerContentLeft = Number.isFinite(probabilityHoverLogicalX)
 					? probabilityHoverLogicalX
 					: contentLeft - probabilityScrollVisualPosition;
+				const curveRightContentLeft = getPriceCurveRightContentLeft(currentStackRect);
 				const nextTarget = Math.max(
 					0,
-					pointerContentLeft + Number(geometry.width || 0) - currentStackRect.width,
+					Number(curveRightContentLeft) - pointerContentLeft,
 				);
 				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
 					setProbabilityScrollTarget(nextTarget);
@@ -2551,15 +2585,25 @@
 				}
 			}
 			const canvasRect = priceCanvas.getBoundingClientRect();
+			const visualTop = pointerAnchored
+				? probabilityHoverPointerY - currentStackRect.top - Number(geometry.aboveExtent || 0)
+				: canvasRect.top - currentStackRect.top + Number(geometry.top || 0);
 			setInlineStyleIfChanged(
 				probabilityTooltip,
 				"transform",
-				`translate3d(${contentLeft}px, ${canvasRect.top - currentStackRect.top + Number(geometry.top || 0)}px, 0)`,
+				`translate3d(${contentLeft}px, ${visualTop}px, 0)`,
 			);
-			return { left: contentLeft, pointerAnchored };
+			return {
+				left: contentLeft,
+				right: contentLeft + Number(geometry.width || 0),
+				pointerAnchored,
+			};
 		};
-		const updateHoverCrosshair = (x, y, plotFrame) => {
+		const updateHoverCrosshair = (x, y, plotFrame, horizontalEnd = null) => {
 			if (!Number.isFinite(x) || !Number.isFinite(y) || !plotFrame) return false;
+			const resolvedHorizontalEnd = Number.isFinite(horizontalEnd)
+				? Math.max(plotFrame.right, horizontalEnd)
+				: plotFrame.right;
 			const hoverLineFrame = updateHoverLineFrame();
 			if (hoverLineFrame) {
 				hoverLine.style.top = `${hoverLineFrame.top}px`;
@@ -2568,7 +2612,7 @@
 			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${x}px`);
 			hoverLine.classList.add("is-visible");
 			hoverCrosshairLine.style.left = `${plotFrame.left}px`;
-			hoverCrosshairLine.style.width = `${Math.max(0, x - plotFrame.left)}px`;
+			hoverCrosshairLine.style.width = `${Math.max(0, resolvedHorizontalEnd - plotFrame.left)}px`;
 			hoverCrosshairLine.style.top = `${y}px`;
 			hoverCrosshairLine.classList.add("is-visible");
 			return true;
@@ -2592,8 +2636,15 @@
 			const plotFrame = getPricePlotFrame(currentStackRect);
 			const pointerX = probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition;
 			const pointerY = probabilityHoverPointerY - currentStackRect.top;
-			if (updateHoverCrosshair(pointerX, pointerY, plotFrame)) {
-				probabilityBounds.displayLeft = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds);
+			const fieldLeft = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds);
+			const fieldRight = fieldLeft + Number(probabilityBounds.width || 0);
+			if (updateHoverCrosshair(
+				pointerX,
+				pointerY,
+				plotFrame,
+				Number.isFinite(fieldRight) ? fieldRight : null,
+			)) {
+				probabilityBounds.displayLeft = fieldLeft;
 				probabilityBounds.pointerAnchored = true;
 			}
 		};
@@ -2614,10 +2665,13 @@
 					synchronizeScroll: true,
 				});
 			}
+			const fieldRight = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds)
+				+ Number(probabilityBounds?.width || 0);
 			updateHoverCrosshair(
 				curveHoverLinePosition.x,
 				curveHoverLinePosition.y,
 				getPricePlotFrame(currentStackRect),
+				Number.isFinite(fieldRight) ? fieldRight : null,
 			);
 		};
 		probabilityFieldPositionUpdater = () => {

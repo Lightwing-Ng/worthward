@@ -1,8 +1,12 @@
-# antigravity
+# Worthward
 
-Documentation version: `v3.2.1`
+Documentation version: `v3.3.0`
 
-`antigravity` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
+`Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
+
+The product name is `Worthward`. Legacy `ANTIGRAVITY_*` environment variables,
+browser namespaces, and persisted identifiers remain compatibility interfaces until
+their dedicated migration is completed.
 
 ## What the app does
 
@@ -489,7 +493,7 @@ py -3.14 scripts/verify_investment_evidence.py
 For a non-default ledger location, pass its Parquet path explicitly:
 
 ```powershell
-py -3.14 scripts/verify_investment_evidence.py --store D:\antigravity\settings_store\investment.parquet
+py -3.14 scripts/verify_investment_evidence.py --store D:\worthward\settings_store\investment.parquet
 ```
 
 If verification reports a missing or changed artifact, read-only startup remains
@@ -499,7 +503,7 @@ that directory, or the original broker export files, into a temporary Windows
 folder, safely materialize only exact manifest matches:
 
 ```powershell
-py -3.14 scripts/verify_investment_evidence.py --restore-from D:\antigravity-evidence-recovery
+py -3.14 scripts/verify_investment_evidence.py --restore-from D:\worthward-evidence-recovery
 ```
 
 The recovery mode does not rewrite the ledger and does not overwrite an existing

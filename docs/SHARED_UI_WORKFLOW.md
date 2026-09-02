@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.0.1`
+Documentation version: `v1.1.0`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
@@ -14,12 +14,12 @@ long-form synchronization state lives in:
 3. Read the central ledger's `Fast path for agents` section and the matching row.
 4. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
    `docs/ARCHITECTURE.md`, `docs/TESTING.md`, and `docs/KNOWN_ISSUES.md`.
-5. Inspect the current `antigravity` implementation and the named
+5. Inspect the current `Worthward` implementation and the named
    `CacheLikesFromTwitter` implementation before editing either one.
 
 ## Contract
 
-- `antigravity` is the canonical complete baseline and the final convergence target.
+- `Worthward` is the canonical complete baseline and the final convergence target.
   Shared improvements discovered anywhere must be promoted here.
 - CacheLikesFromTwitter is an adapter: its product-specific routes and markup may
   differ, but its shared tokens, states, responsive behavior, and accessibility
