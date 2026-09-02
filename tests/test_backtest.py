@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -515,6 +515,31 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["trades"][1]["date"], "2026/02/24")
         self.assertEqual(result["trades"][1]["price"], 118.0)
         self.assertEqual(result["execution_mode"], "next_open")
+
+    def test_next_open_execution_fails_closed_when_following_open_is_missing(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-19", "2026-02-20"]),
+                "Open": [100.0, float("nan")],
+                "Close": [101.0, 110.0],
+                "buy_signal": [True, False],
+                "sell_signal": [False, False],
+            }
+        )
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "next_open execution requires a finite positive Open price",
+        ):
+            run_single_ticker_backtest(
+                StrategySignalResult(
+                    frame=frame,
+                    buy_signal_column="buy_signal",
+                    sell_signal_column="sell_signal",
+                    required_execution_mode="next_open",
+                ),
+                initial_capital=10_000.0,
+            )
 
     def test_strategy_required_execution_mode_overrides_global_signal_close(self) -> None:
         frame = pd.DataFrame(

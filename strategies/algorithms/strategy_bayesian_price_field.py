@@ -1,11 +1,26 @@
 """
-Walk-forward Bayesian price-distribution strategy.
+Walk-forward Bayesian executable-return strategy.
 
 Every production market input is loaded through the Longbridge CLI factor
-provider. The model predicts the next daily log return and exposes a compact,
-declarative presentation payload for the Backtest probability-grid renderer.
+provider. The model predicts the tradable next-open-to-next-open log return and
+exposes a compact, declarative presentation payload for the Backtest
+probability-grid renderer.
 
-Code version: v1.24.0
+Code version: v1.25.0
+- Changed: The signal target is the executable ``Open[t+1] -> Open[t+2]`` log
+  return, so a close-origin prediction no longer receives credit for an
+  overnight gap that has already occurred before the required next-open fill.
+- Changed: Multi-column probabilities evolve through a causal AR(1) return
+  state fitted at each origin instead of freezing one daily posterior mean and
+  applying ``h * mean`` and ``sqrt(h) * scale`` diffusion extrapolation.
+- Changed: Prior Strength is a direct percentage of standardized sample
+  information, making the full slider range produce meaningful shrinkage.
+- Changed: Enabled factors must add positive causal expanding-window log-score
+  evidence after a complexity penalty; coverage and dispersion are only
+  deterministic eligibility and tie-break inputs.
+- Changed: User-facing diagnostics are a 0-100% executable-direction hit rate
+  and a bounded proper Brier probability score. Gaussian log score and CRPS
+  remain research diagnostics and are not mislabeled as hit rates.
 - Changed: Auto now coordinates independent walk-forward origins across the
   bounded CPU executor and an available Apple MPS or CUDA device, with a full
   NumPy CPU fallback when no accelerator is available or GPU execution fails.
@@ -38,16 +53,11 @@ Code version: v1.24.0
   NumPy CPU fallback while process-control exceptions still propagate.
 - Fixed: Provider trading dates remain market-local naive midnights throughout
   the model frame and presentation time-axis contract.
-- Changed: The probability field reports a clearly named probability-weighted
-  realized-cell score and lattice coverage; both metrics use only later
-  observations and neither is presented as a viewport-grid hit rate.
 - Fixed: A GPU runtime failure now restarts the full walk-forward pass on one
   NumPy CPU backend, so a single backtest cannot mix MPS/CUDA and CPU values.
 - Fixed: Research factors that lack a verifiable point-in-time availability
   status surface as unavailable rather than silently acting like ordinary
   sparse historical factors.
-- Fixed: Sparse-factor fallback ranks candidates by causal coverage and
-  dispersion with deterministic tie-breaking instead of parameter order.
 - Added: The probability field now exposes opt-in Longbridge research factors.
 - Added: The Bayesian Price Field exposes a private absolute probability display
   threshold for focusing the rendered field without changing signals or scores.
@@ -86,21 +96,22 @@ from ..interval_bridge import DAILY_CLOSE_TO_NEXT_SESSION_OPEN
 _PREDICTION_MEAN_COLUMN = "bayesian_predictive_mean"
 _PREDICTION_STD_COLUMN = "bayesian_predictive_std"
 _PROBABILITY_COLUMN = "bayesian_probability_up"
+_AUTOREGRESSION_COLUMN = "bayesian_return_autoregression"
+_LONG_RUN_MEAN_COLUMN = "bayesian_return_long_run_mean"
+_INNOVATION_STD_COLUMN = "bayesian_return_innovation_std"
 _MIN_TRAINING_OBSERVATIONS = 20
 _PE_MAX_STALENESS_DAYS = 14
 _DYNAMIC_PE_MAX_STALENESS_DAYS = 1
 _OPTIONS_MAX_STALENESS_DAYS = 7
 _RESEARCH_MAX_STALENESS_DAYS = 90
 _VOLUME_AT_PRICE_BIN_COUNT = 32
-_MODEL_VERSION = "bayesian-price-field-model/v1.8.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.9.0"
 _EPSILON = 1e-12
 _CPU_PARALLEL_MIN_ROWS = 64
 _CPU_PARALLEL_MAX_WORKERS = 8
-_PROBABILITY_FIELD_MAX_HORIZON = 20
 _PROBABILITY_FIELD_ROWS_ABOVE = 10
 _PROBABILITY_FIELD_ROWS_BELOW = 10
 _PROBABILITY_FIELD_COLUMNS = 20
-_PROBABILITY_FIELD_RETURN_SIGMA = 6.0
 _FACTOR_SELECTION_PRIORITY = (
     "volume",
     "pe",
@@ -129,6 +140,9 @@ _FACTOR_SELECTION_PRIORITY_INDEX = {
     factor: index for index, factor in enumerate(_FACTOR_SELECTION_PRIORITY)
 }
 _MIN_NOISE_VARIANCE = 1e-8
+_MAX_ABS_AUTOREGRESSION = 0.95
+_FACTOR_VALIDATION_POINTS = 6
+_MIN_FACTOR_VALIDATION_POINTS = 4
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
@@ -482,8 +496,14 @@ def _normalize_ohlcv_frame(dataset: pd.DataFrame) -> pd.DataFrame:
 
     if "Close" not in frame.columns:
         raise ValueError("Bayesian Price Field requires a Close column.")
+    if "Open" not in frame.columns:
+        raise ValueError(
+            "Bayesian Price Field requires observed Open prices for its "
+            "next-open execution target."
+        )
     frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
-    for column in ("Open", "High", "Low"):
+    frame["Open"] = pd.to_numeric(frame["Open"], errors="coerce")
+    for column in ("High", "Low"):
         if column not in frame.columns:
             frame[column] = frame["Close"]
         else:
@@ -996,6 +1016,18 @@ def _resolve_compute_backend(requested: str) -> _ComputeBackend:
     return backend
 
 
+def _ridge_penalty(prior_strength: float, observation_count: int) -> float:
+    """Map the UI percentage to standardized sample information.
+
+    A standardized non-intercept factor contributes approximately ``n`` to the
+    diagonal of ``X'X``. Treating Prior Strength as a percentage of that amount
+    gives the slider a stable meaning across training-window lengths: 100 means
+    a ridge penalty equal to one full sample-information diagonal.
+    """
+    normalized_strength = max(0.0, float(prior_strength)) / 100.0
+    return normalized_strength * max(1, int(observation_count))
+
+
 def _numpy_bayesian_prediction(
         design: np.ndarray,
         target: np.ndarray,
@@ -1005,7 +1037,10 @@ def _numpy_bayesian_prediction(
 ) -> tuple[float, float]:
     identity = np.eye(design.shape[1], dtype=np.float64)
     identity[0, 0] = 0.1
-    precision = (design.T @ design) / noise_variance + prior_strength * identity
+    ridge_penalty = _ridge_penalty(prior_strength, len(target))
+    precision = (
+        design.T @ design + ridge_penalty * identity
+    ) / noise_variance
     right_hand_side = (design.T @ target) / noise_variance
     posterior_mean = np.linalg.solve(precision, right_hand_side)
     current_precision_solution = np.linalg.solve(precision, current)
@@ -1034,10 +1069,10 @@ def _torch_bayesian_prediction(
     current_tensor = torch_module.as_tensor(current, dtype=dtype, device=device)
     identity = torch_module.eye(design.shape[1], dtype=dtype, device=device)
     identity[0, 0] = 0.1
+    ridge_penalty = _ridge_penalty(prior_strength, len(target))
     precision = (
-        design_tensor.T @ design_tensor / noise_variance
-        + prior_strength * identity
-    )
+        design_tensor.T @ design_tensor + ridge_penalty * identity
+    ) / noise_variance
     right_hand_side = design_tensor.T @ target_tensor / noise_variance
     posterior_mean = torch_module.linalg.solve(precision, right_hand_side)
     precision_solution = torch_module.linalg.solve(precision, current_tensor)
@@ -1108,61 +1143,170 @@ def _ridge_residual_variance(
     sample_variance = float(np.var(numeric_target, ddof=1))
     if not math.isfinite(sample_variance):
         sample_variance = 0.0
-    # `_bayesian_prediction` is equivalent to ridge regression with a penalty
-    # of `prior_strength * noise_variance` after multiplying its precision
-    # system by the noise scale. Iterate that fixed point a few times so the
-    # residual estimate and the eventual posterior use the same regularizer.
-    noise_variance = max(_MIN_NOISE_VARIANCE, sample_variance)
     identity = np.eye(numeric_design.shape[1], dtype=np.float64)
     identity[0, 0] = 0.1
-    regularization = max(0.0, float(prior_strength))
-    ridge_variance = noise_variance
-    for _ in range(4):
-        precision = numeric_design.T @ numeric_design + (
-            regularization * noise_variance * identity
+    precision = numeric_design.T @ numeric_design + (
+        _ridge_penalty(prior_strength, observation_count) * identity
+    )
+    try:
+        coefficients = np.linalg.solve(
+            precision,
+            numeric_design.T @ numeric_target,
         )
-        try:
-            coefficients = np.linalg.solve(
-                precision,
-                numeric_design.T @ numeric_target,
-            )
-            # trace(H) is the effective parameter count for a ridge fit.
-            leverage = np.linalg.solve(precision, numeric_design.T)
-            effective_degrees_of_freedom = observation_count - float(
-                np.trace(numeric_design @ leverage)
-            )
-        except (np.linalg.LinAlgError, ValueError):
-            # Keep the recovery path on the same ridge precision system. An
-            # unregularized OLS fallback would reintroduce the exact
-            # overconfidence this estimator is intended to avoid.
-            precision_inverse = np.linalg.pinv(precision)
-            coefficients = precision_inverse @ numeric_design.T @ numeric_target
-            leverage = precision_inverse @ numeric_design.T
-            effective_degrees_of_freedom = observation_count - float(
-                np.trace(numeric_design @ leverage)
-            )
+        leverage = np.linalg.solve(precision, numeric_design.T)
+    except (np.linalg.LinAlgError, ValueError):
+        # Keep the recovery path on the same regularized precision system.
+        precision_inverse = np.linalg.pinv(precision)
+        coefficients = precision_inverse @ numeric_design.T @ numeric_target
+        leverage = precision_inverse @ numeric_design.T
 
-        residuals = numeric_target - numeric_design @ coefficients
-        residual_sum = float(np.sum(np.square(residuals)))
-        effective_degrees_of_freedom = max(1.0, effective_degrees_of_freedom)
-        ridge_variance = residual_sum / effective_degrees_of_freedom
-        if not math.isfinite(ridge_variance):
-            ridge_variance = 0.0
-        next_noise_variance = max(
-            _MIN_NOISE_VARIANCE,
-            ridge_variance,
-            sample_variance * 0.05,
-        )
-        if abs(next_noise_variance - noise_variance) <= max(
-            1e-12,
-            noise_variance * 1e-6,
-        ):
-            noise_variance = next_noise_variance
-            break
-        noise_variance = next_noise_variance
+    effective_degrees_of_freedom = observation_count - float(
+        np.trace(numeric_design @ leverage)
+    )
+    residuals = numeric_target - numeric_design @ coefficients
+    residual_sum = float(np.sum(np.square(residuals)))
+    effective_degrees_of_freedom = max(1.0, effective_degrees_of_freedom)
+    ridge_variance = residual_sum / effective_degrees_of_freedom
+    if not math.isfinite(ridge_variance):
+        ridge_variance = 0.0
+    noise_variance = max(
+        _MIN_NOISE_VARIANCE,
+        ridge_variance,
+        sample_variance * 0.05,
+    )
     # A modest fraction of the observed return dispersion is retained as
     # irreducible process noise even when the training design interpolates it.
     return max(_MIN_NOISE_VARIANCE, float(noise_variance), ridge_variance)
+
+
+def _standardized_design_at_index(
+        factor_values: dict[str, np.ndarray],
+        factors: Sequence[str],
+        training_indices: np.ndarray,
+        current_index: int,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Build one causal standardized design and its current feature row."""
+    standardized_training: list[np.ndarray] = []
+    standardized_current: list[float] = []
+    for factor in factors:
+        training_values = np.asarray(
+            factor_values[factor][training_indices],
+            dtype=np.float64,
+        )
+        center = float(np.mean(training_values))
+        scale = float(np.std(training_values))
+        current_value = float(factor_values[factor][current_index])
+        if (
+                not math.isfinite(center)
+                or not math.isfinite(scale)
+                or scale <= _EPSILON
+                or not math.isfinite(current_value)
+        ):
+            return None
+        standardized_training.append((training_values - center) / scale)
+        standardized_current.append((current_value - center) / scale)
+
+    design = np.ones(
+        (len(training_indices), 1 + len(standardized_training)),
+        dtype=np.float64,
+    )
+    current = np.ones(1 + len(standardized_current), dtype=np.float64)
+    if standardized_training:
+        design[:, 1:] = np.column_stack(standardized_training)
+        current[1:] = standardized_current
+    return design, current
+
+
+def _gaussian_negative_log_score(value: float, mean: float, scale: float) -> float:
+    """Return the proper Gaussian negative log predictive density."""
+    normalized_scale = max(float(scale), math.sqrt(_MIN_NOISE_VARIANCE))
+    z_score = (float(value) - float(mean)) / normalized_scale
+    return (
+        math.log(normalized_scale)
+        + 0.5 * math.log(2.0 * math.pi)
+        + 0.5 * z_score * z_score
+    )
+
+
+def _causal_incremental_factor_evidence(
+        factor_values: dict[str, np.ndarray],
+        selected_factors: Sequence[str],
+        candidate_factor: str,
+        candidate_indices: np.ndarray,
+        target_values: np.ndarray,
+        prior_strength: float,
+) -> tuple[float, int]:
+    """Score one added factor on identical expanding-window validation rows."""
+    augmented_factors = [*selected_factors, candidate_factor]
+    common_mask = np.isfinite(target_values[candidate_indices])
+    for factor in augmented_factors:
+        common_mask &= np.isfinite(factor_values[factor][candidate_indices])
+    common_indices = candidate_indices[common_mask]
+    if len(common_indices) < (
+            _MIN_TRAINING_OBSERVATIONS + _MIN_FACTOR_VALIDATION_POINTS
+    ):
+        return -math.inf, 0
+
+    validation_positions = list(
+        range(_MIN_TRAINING_OBSERVATIONS, len(common_indices))
+    )[-_FACTOR_VALIDATION_POINTS:]
+    base_scores: list[float] = []
+    augmented_scores: list[float] = []
+    complexity_penalties: list[float] = []
+    for position in validation_positions:
+        validation_index = int(common_indices[position])
+        # Recreate the same availability lag as a real close-origin fit. The
+        # target on ``validation_index - 1`` still needs an Open after the
+        # validation origin and must not enter this inner historical model.
+        training_indices = common_indices[
+            common_indices <= validation_index - 2
+        ]
+        if len(training_indices) < _MIN_TRAINING_OBSERVATIONS:
+            continue
+        base_design = _standardized_design_at_index(
+            factor_values,
+            selected_factors,
+            training_indices,
+            validation_index,
+        )
+        augmented_design = _standardized_design_at_index(
+            factor_values,
+            augmented_factors,
+            training_indices,
+            validation_index,
+        )
+        if base_design is None or augmented_design is None:
+            continue
+        observed = float(target_values[validation_index])
+        for destination, (design, current) in (
+                (base_scores, base_design),
+                (augmented_scores, augmented_design),
+        ):
+            variance = _ridge_residual_variance(
+                design,
+                target_values[training_indices],
+                prior_strength,
+            )
+            mean, scale = _numpy_bayesian_prediction(
+                design,
+                target_values[training_indices],
+                current,
+                prior_strength,
+                variance,
+            )
+            destination.append(
+                _gaussian_negative_log_score(observed, mean, scale)
+            )
+        complexity_penalties.append(
+            math.log(max(2, len(training_indices)))
+            / (2.0 * len(training_indices))
+        )
+
+    if len(base_scores) < _MIN_FACTOR_VALIDATION_POINTS:
+        return -math.inf, len(base_scores)
+    improvement = float(np.mean(np.asarray(base_scores) - np.asarray(augmented_scores)))
+    adjusted_improvement = improvement - float(np.mean(complexity_penalties))
+    return adjusted_improvement, len(base_scores)
 
 
 def _select_active_factors(
@@ -1170,15 +1314,15 @@ def _select_active_factors(
         enabled_factors: Sequence[str],
         candidate_indices: np.ndarray,
         current_index: int,
-        target_mask: np.ndarray,
+        target_values: np.ndarray,
+        prior_strength: float,
 ) -> list[str]:
-    """Select a stable factor subset using point-in-time coverage.
+    """Select factors by causal incremental predictive evidence.
 
-    Every candidate is scored only from observations available before the
-    current origin. Candidates are then ordered by finite coverage, useful
-    dispersion, and a fixed product priority; the caller's parameter order is
-    intentionally ignored. If the joint training mask is too sparse, the
-    lowest-information candidate is removed deterministically.
+    Coverage and dispersion determine eligibility only. Each admitted factor
+    must improve expanding-window Gaussian log score on later historical rows
+    after a one-parameter complexity penalty, and every comparison uses the
+    same point-in-time rows for its base and augmented models.
     """
     candidates: list[tuple[str, int, float]] = []
     seen: set[str] = set()
@@ -1201,38 +1345,42 @@ def _select_active_factors(
             dispersion = 0.0
         candidates.append((factor, coverage, dispersion))
 
-    candidates.sort(
-        key=lambda item: (
-            -item[1],
-            -item[2],
-            _FACTOR_SELECTION_PRIORITY_INDEX.get(item[0], len(_FACTOR_SELECTION_PRIORITY)),
-            item[0],
-        )
-    )
-    active = [item[0] for item in candidates]
-    coverage_by_factor = {item[0]: item[1] for item in candidates}
-    dispersion_by_factor = {item[0]: item[2] for item in candidates}
-
-    def joint_training_count(selected: Sequence[str]) -> int:
-        joint_mask = target_mask.copy()
-        for factor in selected:
-            joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
-        return int(np.count_nonzero(joint_mask))
-
-    while active and joint_training_count(active) < _MIN_TRAINING_OBSERVATIONS:
-        drop_factor = min(
-            active,
-            key=lambda factor: (
-                coverage_by_factor[factor],
-                dispersion_by_factor[factor],
-                -_FACTOR_SELECTION_PRIORITY_INDEX.get(
-                    factor,
+    candidate_metadata = {
+        factor: (coverage, dispersion)
+        for factor, coverage, dispersion in candidates
+    }
+    active: list[str] = []
+    remaining = {factor for factor, _, _ in candidates}
+    while remaining:
+        evidence: list[tuple[str, float, int]] = []
+        for factor in remaining:
+            improvement, validation_points = _causal_incremental_factor_evidence(
+                factor_values,
+                active,
+                factor,
+                candidate_indices,
+                target_values,
+                prior_strength,
+            )
+            evidence.append((factor, improvement, validation_points))
+        evidence.sort(
+            key=lambda item: (
+                -item[1],
+                -item[2],
+                -candidate_metadata[item[0]][0],
+                -candidate_metadata[item[0]][1],
+                _FACTOR_SELECTION_PRIORITY_INDEX.get(
+                    item[0],
                     len(_FACTOR_SELECTION_PRIORITY),
                 ),
-                factor,
-            ),
+                item[0],
+            )
         )
-        active.remove(drop_factor)
+        best_factor, best_improvement, _ = evidence[0]
+        if not math.isfinite(best_improvement) or best_improvement <= 0.0:
+            break
+        active.append(best_factor)
+        remaining.remove(best_factor)
     return active
 
 
@@ -1253,122 +1401,178 @@ def _normal_cdf(value: float) -> float:
     return min(1.0, max(0.0, 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))))
 
 
-def _probability_field_hit_rate(
-        close: Sequence[float],
+def _executable_return_targets(open_prices: Sequence[float]) -> np.ndarray:
+    """Map a close-origin row to its next-open-to-following-open return."""
+    open_values = np.asarray(open_prices, dtype=np.float64)
+    targets = np.full(len(open_values), np.nan, dtype=np.float64)
+    if len(open_values) < 3:
+        return targets
+    valid_pair = (
+        np.isfinite(open_values[1:-1])
+        & np.isfinite(open_values[2:])
+        & (open_values[1:-1] > 0.0)
+        & (open_values[2:] > 0.0)
+    )
+    targets[:-2][valid_pair] = np.log(
+        open_values[2:][valid_pair] / open_values[1:-1][valid_pair]
+    )
+    return targets
+
+
+def _estimate_return_state(
+        target_values: np.ndarray,
+        training_indices: np.ndarray,
+        fallback_scale: float,
+) -> tuple[float, float, float]:
+    """Estimate one stable causal AR(1) state from contiguous executable returns."""
+    values = np.asarray(target_values[training_indices], dtype=np.float64)
+    long_run_mean = float(np.mean(values)) if len(values) else 0.0
+    if not math.isfinite(long_run_mean):
+        long_run_mean = 0.0
+    consecutive = np.diff(training_indices) == 1
+    previous = values[:-1][consecutive]
+    following = values[1:][consecutive]
+    autoregression = 0.0
+    residuals = values - long_run_mean
+    if len(previous) >= 2:
+        centered_previous = previous - long_run_mean
+        centered_following = following - long_run_mean
+        denominator = float(centered_previous @ centered_previous)
+        if denominator > _EPSILON:
+            autoregression = float(
+                centered_previous @ centered_following / denominator
+            )
+            autoregression = min(
+                _MAX_ABS_AUTOREGRESSION,
+                max(-_MAX_ABS_AUTOREGRESSION, autoregression),
+            )
+            residuals = centered_following - autoregression * centered_previous
+    innovation_variance = (
+        float(np.var(residuals, ddof=1))
+        if len(residuals) > 1
+        else float(fallback_scale) ** 2
+    )
+    if not math.isfinite(innovation_variance):
+        innovation_variance = float(fallback_scale) ** 2
+    innovation_scale = math.sqrt(max(_MIN_NOISE_VARIANCE, innovation_variance))
+    return autoregression, long_run_mean, innovation_scale
+
+
+def _multi_step_normal_parameters(
+        one_step_mean: float,
+        one_step_scale: float,
+        horizon: int,
+        autoregression: float,
+        long_run_mean: float,
+        innovation_scale: float,
+) -> tuple[float, float]:
+    """Evolve cumulative return moments through the fitted AR(1) state."""
+    normalized_horizon = max(1, int(horizon))
+    phi = min(
+        _MAX_ABS_AUTOREGRESSION,
+        max(-_MAX_ABS_AUTOREGRESSION, float(autoregression)),
+    )
+    state_mean = float(one_step_mean)
+    state_variance = max(_EPSILON, float(one_step_scale) ** 2)
+    cumulative_mean = state_mean
+    cumulative_variance = state_variance
+    cumulative_state_covariance = state_variance
+    innovation_variance = max(_EPSILON, float(innovation_scale) ** 2)
+    for _ in range(1, normalized_horizon):
+        state_mean = float(long_run_mean) + phi * (
+            state_mean - float(long_run_mean)
+        )
+        next_state_variance = phi * phi * state_variance + innovation_variance
+        previous_cumulative_next_state_covariance = (
+            phi * cumulative_state_covariance
+        )
+        cumulative_mean += state_mean
+        cumulative_variance += (
+            next_state_variance
+            + 2.0 * previous_cumulative_next_state_covariance
+        )
+        cumulative_state_covariance = (
+            previous_cumulative_next_state_covariance + next_state_variance
+        )
+        state_variance = next_state_variance
+    return cumulative_mean, math.sqrt(max(_EPSILON, cumulative_variance))
+
+
+def _normal_crps(observed: float, mean: float, scale: float) -> float:
+    """Return Gaussian CRPS in log-return units."""
+    normalized_scale = max(float(scale), math.sqrt(_MIN_NOISE_VARIANCE))
+    z_score = (float(observed) - float(mean)) / normalized_scale
+    density = math.exp(-0.5 * z_score * z_score) / math.sqrt(2.0 * math.pi)
+    return normalized_scale * (
+        z_score * (2.0 * _normal_cdf(z_score) - 1.0)
+        + 2.0 * density
+        - (1.0 / math.sqrt(math.pi))
+    )
+
+
+def _probabilistic_diagnostics(
+        open_prices: Sequence[float],
         predictive_mean: Sequence[float],
         predictive_std: Sequence[float],
-        *,
-        max_horizon: int = _PROBABILITY_FIELD_MAX_HORIZON,
-        rows_above: int = _PROBABILITY_FIELD_ROWS_ABOVE,
-        rows_below: int = _PROBABILITY_FIELD_ROWS_BELOW,
+        probability_up: Sequence[float],
 ) -> dict[str, Any]:
-    """Score a causal model lattice against observations after each origin.
-
-    At origin ``i`` the posterior was fitted only with rows before ``i``. The
-    score then evaluates each available future trading-day close ``i + h``
-    against a finite ten-row-per-side return lattice. The probability mass of
-    the cell containing that future close is accumulated; unavailable horizons
-    near the end of a sample are not counted. Both the weighted score and the
-    separate lattice-coverage rate are therefore honest walk-forward
-    diagnostics, rather than future features. This is intentionally not a
-    score for the browser's viewport-dependent probability field: that field
-    quantizes time and price from the live canvas dimensions.
-    """
-    close_values = np.asarray(close, dtype=np.float64)
+    """Score only the executable next-open-to-next-open outcome."""
+    targets = _executable_return_targets(open_prices)
     means = np.asarray(predictive_mean, dtype=np.float64)
     scales = np.asarray(predictive_std, dtype=np.float64)
-    row_count = min(len(close_values), len(means), len(scales))
-    row_count = max(0, row_count)
-    normalized_horizon = max(1, min(_PROBABILITY_FIELD_MAX_HORIZON, int(max_horizon)))
-    normalized_rows_above = max(1, min(_PROBABILITY_FIELD_ROWS_ABOVE, int(rows_above)))
-    normalized_rows_below = max(1, min(_PROBABILITY_FIELD_ROWS_BELOW, int(rows_below)))
-    total_weight = 0.0
-    hit_weight = 0.0
-    scored_points = 0
-    event_hits = 0
-    row_count_lattice = normalized_rows_above + normalized_rows_below
-
-    for origin in range(row_count):
-        anchor = float(close_values[origin])
-        mean = float(means[origin])
-        scale = float(scales[origin])
+    probabilities = np.asarray(probability_up, dtype=np.float64)
+    row_count = min(len(targets), len(means), len(scales), len(probabilities))
+    direction_hits = 0
+    brier_losses: list[float] = []
+    negative_log_scores: list[float] = []
+    crps_values: list[float] = []
+    for index in range(row_count):
+        observed = float(targets[index])
+        mean = float(means[index])
+        scale = float(scales[index])
+        probability = float(probabilities[index])
         if (
-                not math.isfinite(anchor)
-                or anchor <= 0.0
+                not math.isfinite(observed)
                 or not math.isfinite(mean)
                 or not math.isfinite(scale)
                 or scale <= _EPSILON
+                or not math.isfinite(probability)
         ):
             continue
-        last_horizon = min(normalized_horizon, row_count - origin - 1)
-        for horizon in range(1, last_horizon + 1):
-            future_close = float(close_values[origin + horizon])
-            if not math.isfinite(future_close) or future_close <= 0.0:
-                continue
-            horizon_scale = scale * math.sqrt(float(horizon))
-            horizon_mean = mean * float(horizon)
-            if not math.isfinite(horizon_scale) or horizon_scale <= _EPSILON:
-                continue
-            # The horizontal guide is the zero-return axis. Keep at most ten
-            # rows on each side while extending the side containing the
-            # posterior mean, so a strongly directional but valid forecast is
-            # still scored instead of producing an empty lattice.
-            lower_extent = _PROBABILITY_FIELD_RETURN_SIGMA * horizon_scale + max(0.0, -horizon_mean)
-            upper_extent = _PROBABILITY_FIELD_RETURN_SIGMA * horizon_scale + max(0.0, horizon_mean)
-            boundaries = np.concatenate((
-                np.linspace(-lower_extent, 0.0, normalized_rows_below + 1),
-                np.linspace(0.0, upper_extent, normalized_rows_above + 1)[1:],
-            ))
-            log_return = math.log(future_close / anchor)
-            cell_index = int(np.searchsorted(boundaries, log_return, side="right") - 1)
-            probabilities = []
-            for lower, upper in zip(boundaries[:-1], boundaries[1:], strict=True):
-                probabilities.append(
-                    _normal_cdf((float(upper) - horizon_mean) / horizon_scale)
-                    - _normal_cdf((float(lower) - horizon_mean) / horizon_scale)
-                )
-            lattice_mass = max(0.0, float(sum(probabilities)))
-            if lattice_mass <= _EPSILON:
-                continue
-            probability_mass = (
-                max(0.0, float(probabilities[cell_index]))
-                if 0 <= cell_index < row_count_lattice
-                else 0.0
-            )
-            if 0 <= cell_index < row_count_lattice:
-                event_hits += 1
-            total_weight += lattice_mass
-            hit_weight += probability_mass
-            scored_points += 1
+        outcome = 1.0 if observed > 0.0 else 0.0
+        bounded_probability = min(1.0, max(0.0, probability))
+        direction_hits += int((bounded_probability >= 0.5) == bool(outcome))
+        brier_losses.append((bounded_probability - outcome) ** 2)
+        negative_log_scores.append(
+            _gaussian_negative_log_score(observed, mean, scale)
+        )
+        crps_values.append(_normal_crps(observed, mean, scale))
 
-    score_pct = (hit_weight / total_weight) * 100.0 if total_weight > _EPSILON else 0.0
-    event_hit_rate_pct = (
-        (event_hits / scored_points) * 100.0
-        if scored_points
-        else 0.0
+    scored_points = len(brier_losses)
+    brier_score = float(np.mean(brier_losses)) if scored_points else 1.0
+    direction_hit_rate_pct = (
+        direction_hits / scored_points * 100.0 if scored_points else 0.0
     )
+    probability_score_pct = min(100.0, max(0.0, (1.0 - brier_score) * 100.0))
     return {
-        # ``score_pct`` and the hit-rate names remain compatibility aliases
-        # for existing saved result payloads. New consumers must use the
-        # explicit realized-cell and coverage names below.
-        "score_pct": round(float(score_pct), 2),
-        "probability_weighted_score_pct": round(float(score_pct), 2),
-        "realized_cell_score_pct": round(float(score_pct), 2),
-        "event_hit_rate_pct": round(float(event_hit_rate_pct), 2),
-        "lattice_coverage_pct": round(float(event_hit_rate_pct), 2),
-        "event_hits": event_hits,
+        "direction_hit_rate_pct": round(direction_hit_rate_pct, 2),
+        "direction_hits": direction_hits,
+        "probability_score_pct": round(probability_score_pct, 2),
+        "brier_score": round(brier_score, 8),
+        "mean_negative_log_predictive_density": (
+            round(float(np.mean(negative_log_scores)), 8)
+            if negative_log_scores
+            else None
+        ),
+        "mean_crps_log_return": (
+            round(float(np.mean(crps_values)), 8)
+            if crps_values
+            else None
+        ),
         "scored_points": scored_points,
-        "max_horizon": normalized_horizon,
-        "rows_above": normalized_rows_above,
-        "rows_below": normalized_rows_below,
-        "metric_kind": "causal-log-return-realized-cell-score",
-        "weighting": "probability-mass-of-realized-cell",
-        "scoring_lattice": {
-            "horizons": f"1..{normalized_horizon}",
-            "rows_above": normalized_rows_above,
-            "rows_below": normalized_rows_below,
-            "bounds": "six-sigma-plus-directional-mean",
-        },
+        "metric_kind": "causal-next-open-direction-and-probability-score",
+        "target_interval": "next-open-to-following-open",
+        "proper_probability_rule": "one-minus-brier-score",
         "causal": True,
     }
 
@@ -1385,59 +1589,58 @@ def _cpu_parallel_worker_count(row_count: int) -> int:
 
 def _walk_forward_prediction_at_index(
         index: int,
-        close: np.ndarray,
-        forward_return: np.ndarray,
+        target_values: np.ndarray,
         factor_values: dict[str, np.ndarray],
         enabled_factors: Sequence[str],
         training_window: int,
         prior_strength: float,
         backend: _ComputeBackend,
-) -> tuple[int, float, float, float]:
+) -> tuple[int, float, float, float, float, float, float]:
     """Compute one causal origin; no worker reads a future row as a feature."""
-    missing = (index, math.nan, math.nan, math.nan)
-    training_start = max(0, index - training_window)
-    candidate_indices = np.arange(training_start, index, dtype=np.int64)
+    missing = (
+        index,
+        math.nan,
+        math.nan,
+        math.nan,
+        math.nan,
+        math.nan,
+        math.nan,
+    )
+    # A factor row ``j`` targets Open[j+1] -> Open[j+2]. At the close of
+    # origin ``index`` only targets through ``j = index - 2`` are observable;
+    # the immediately preceding factor row still depends on the next open.
+    training_end = max(0, index - 1)
+    training_start = max(0, training_end - training_window)
+    candidate_indices = np.arange(training_start, training_end, dtype=np.int64)
     if len(candidate_indices) < _MIN_TRAINING_OBSERVATIONS:
         return missing
 
-    target_mask = np.isfinite(forward_return[candidate_indices])
     active_factors = _select_active_factors(
         factor_values,
         enabled_factors,
         candidate_indices,
         index,
-        target_mask,
+        target_values,
+        prior_strength,
     )
 
-    joint_mask = target_mask.copy()
+    joint_mask = np.isfinite(target_values[candidate_indices])
     for factor in active_factors:
         joint_mask &= np.isfinite(factor_values[factor][candidate_indices])
     training_indices = candidate_indices[joint_mask]
     if len(training_indices) < _MIN_TRAINING_OBSERVATIONS:
         return missing
 
-    target = forward_return[training_indices]
-    standardized_training: list[np.ndarray] = []
-    standardized_current: list[float] = []
-    for factor in active_factors:
-        training_values = factor_values[factor][training_indices]
-        center = float(np.mean(training_values))
-        scale = float(np.std(training_values))
-        if not math.isfinite(scale) or scale <= _EPSILON:
-            continue
-        standardized_training.append((training_values - center) / scale)
-        standardized_current.append(
-            (factor_values[factor][index] - center) / scale
-        )
-
-    design = np.ones(
-        (len(training_indices), 1 + len(standardized_training)),
-        dtype=np.float64,
+    target = target_values[training_indices]
+    design_contract = _standardized_design_at_index(
+        factor_values,
+        active_factors,
+        training_indices,
+        index,
     )
-    current = np.ones(1 + len(standardized_current), dtype=np.float64)
-    if standardized_training:
-        design[:, 1:] = np.column_stack(standardized_training)
-        current[1:] = standardized_current
+    if design_contract is None:
+        return missing
+    design, current = design_contract
 
     noise_variance = _ridge_residual_variance(
         design,
@@ -1454,30 +1657,36 @@ def _walk_forward_prediction_at_index(
     )
     if not math.isfinite(mean) or not math.isfinite(standard_deviation):
         return missing
+    autoregression, long_run_mean, innovation_scale = _estimate_return_state(
+        target_values,
+        training_indices,
+        standard_deviation,
+    )
     return (
         index,
         mean,
         standard_deviation,
         _normal_probability_above_zero(mean, standard_deviation),
+        autoregression,
+        long_run_mean,
+        innovation_scale,
     )
 
 
 def _walk_forward_prediction_batch(
         indices: Sequence[int],
-        close: np.ndarray,
-        forward_return: np.ndarray,
+        target_values: np.ndarray,
         factor_values: dict[str, np.ndarray],
         enabled_factors: Sequence[str],
         training_window: int,
         prior_strength: float,
         backend: _ComputeBackend,
-) -> list[tuple[int, float, float, float]]:
+) -> list[tuple[int, float, float, float, float, float, float]]:
     """Evaluate a contiguous causal batch in a process-safe top-level task."""
     return [
         _walk_forward_prediction_at_index(
             int(index),
-            close,
-            forward_return,
+            target_values,
             factor_values,
             enabled_factors,
             training_window,
@@ -1490,14 +1699,13 @@ def _walk_forward_prediction_batch(
 
 def _walk_forward_predictions_cpu(
         indices: Sequence[int],
-        close: np.ndarray,
-        forward_return: np.ndarray,
+        target_values: np.ndarray,
         factor_values: dict[str, np.ndarray],
         enabled_factors: Sequence[str],
         training_window: int,
         prior_strength: float,
         backend: _ComputeBackend,
-) -> tuple[list[tuple[int, float, float, float]], Any]:
+) -> tuple[list[tuple[int, float, float, float, float, float, float]], Any]:
     """Run the CPU share of origins and return its executor statistics."""
     cpu_backend = _ComputeBackend(
         requested=backend.requested,
@@ -1510,8 +1718,7 @@ def _walk_forward_predictions_cpu(
         indices,
         mode="cpu",
         static_args=(
-            close,
-            forward_return,
+            target_values,
             factor_values,
             tuple(enabled_factors),
             training_window,
@@ -1526,17 +1733,16 @@ def _walk_forward_predictions_cpu(
 
 def _walk_forward_predictions_hybrid(
         frame: pd.DataFrame,
-        close: np.ndarray,
-        forward_return: np.ndarray,
+        target_values: np.ndarray,
         factor_values: dict[str, np.ndarray],
         enabled_factors: Sequence[str],
         training_window: int,
         prior_strength: float,
         backend: _ComputeBackend,
-) -> list[tuple[int, float, float, float]]:
+) -> list[tuple[int, float, float, float, float, float, float]]:
     """Coordinate CPU origins and GPU origins concurrently for Auto mode."""
     del frame
-    indices = tuple(range(len(close)))
+    indices = tuple(range(len(target_values)))
     if not indices:
         backend.parallel_workers = 1
         backend.parallel_executor = "serial"
@@ -1546,11 +1752,13 @@ def _walk_forward_predictions_hybrid(
     gpu_indices = indices[::2]
     cpu_indices = indices[1::2]
 
-    def run_cpu() -> tuple[list[tuple[int, float, float, float]], Any]:
+    def run_cpu() -> tuple[
+            list[tuple[int, float, float, float, float, float, float]],
+            Any,
+    ]:
         return _walk_forward_predictions_cpu(
             cpu_indices,
-            close,
-            forward_return,
+            target_values,
             factor_values,
             enabled_factors,
             training_window,
@@ -1563,8 +1771,7 @@ def _walk_forward_predictions_hybrid(
         gpu_future = executor.submit(
             _walk_forward_prediction_batch,
             gpu_indices,
-            close,
-            forward_return,
+            target_values,
             factor_values,
             tuple(enabled_factors),
             training_window,
@@ -1587,22 +1794,19 @@ def _walk_forward_predictions(
         training_window: int,
         prior_strength: float,
         backend: _ComputeBackend,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     row_count = len(frame)
     predictive_mean = np.full(row_count, np.nan, dtype=np.float64)
     predictive_std = np.full(row_count, np.nan, dtype=np.float64)
     probability_up = np.full(row_count, np.nan, dtype=np.float64)
-    close = pd.to_numeric(frame["Close"], errors="coerce").to_numpy(dtype=np.float64)
-    forward_return = np.full(row_count, np.nan, dtype=np.float64)
-    valid_price_pair = (
-        np.isfinite(close[:-1])
-        & np.isfinite(close[1:])
-        & (close[:-1] > 0)
-        & (close[1:] > 0)
-    )
-    forward_return[:-1][valid_price_pair] = np.log(
-        close[1:][valid_price_pair] / close[:-1][valid_price_pair]
-    )
+    autoregression = np.full(row_count, np.nan, dtype=np.float64)
+    long_run_mean = np.full(row_count, np.nan, dtype=np.float64)
+    innovation_std = np.full(row_count, np.nan, dtype=np.float64)
+    open_prices = pd.to_numeric(
+        frame["Open"],
+        errors="coerce",
+    ).to_numpy(dtype=np.float64)
+    target_values = _executable_return_targets(open_prices)
 
     if backend.engine == "torch":
         backend.parallel_workers = 1
@@ -1610,8 +1814,7 @@ def _walk_forward_predictions(
         backend.parallel_fallback_reason = None
         predictions = _walk_forward_prediction_batch(
             tuple(range(row_count)),
-            close,
-            forward_return,
+            target_values,
             factor_values,
             enabled_factors,
             training_window,
@@ -1621,8 +1824,7 @@ def _walk_forward_predictions(
     elif backend.engine == "hybrid":
         predictions = _walk_forward_predictions_hybrid(
             frame,
-            close,
-            forward_return,
+            target_values,
             factor_values,
             enabled_factors,
             training_window,
@@ -1632,8 +1834,7 @@ def _walk_forward_predictions(
     else:
         predictions, stats = _walk_forward_predictions_cpu(
             tuple(range(row_count)),
-            close,
-            forward_return,
+            target_values,
             factor_values,
             enabled_factors,
             training_window,
@@ -1644,12 +1845,30 @@ def _walk_forward_predictions(
         backend.parallel_executor = stats.executor
         backend.parallel_fallback_reason = stats.fallback_reason
 
-    for index, mean, standard_deviation, probability in predictions:
+    for (
+            index,
+            mean,
+            standard_deviation,
+            probability,
+            origin_autoregression,
+            origin_long_run_mean,
+            origin_innovation_std,
+    ) in predictions:
         predictive_mean[index] = mean
         predictive_std[index] = standard_deviation
         probability_up[index] = probability
+        autoregression[index] = origin_autoregression
+        long_run_mean[index] = origin_long_run_mean
+        innovation_std[index] = origin_innovation_std
 
-    return predictive_mean, predictive_std, probability_up
+    return (
+        predictive_mean,
+        predictive_std,
+        probability_up,
+        autoregression,
+        long_run_mean,
+        innovation_std,
+    )
 
 
 def _json_number_list(values: Sequence[float]) -> list[float | None]:
@@ -1683,6 +1902,7 @@ def _frame_fingerprint(
         column
         for column in (
             "Date",
+            "Open",
             "High",
             "Low",
             "Close",
@@ -1728,9 +1948,9 @@ class BayesianPriceFieldStrategy(BaseStrategy):
     strategy_id = "bayesian-price-field"
     strategy_name = "Bayesian Price Field"
     strategy_description = (
-        "Walk-forward Bayesian regression estimates the next-price probability field "
+        "Walk-forward Bayesian regression estimates executable next-open returns "
         "from point-in-time-safe Longbridge CLI price, volume, options, valuation, "
-        "and sentiment factors, while exposing unavailable research sources honestly."
+        "and sentiment factors, then evolves a causal multi-step price field."
     )
     strategy_category = "machine-learning"
     strategy_display_order = 42
@@ -1813,7 +2033,12 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 minimum=0.01,
                 maximum=100.0,
                 step=0.01,
-                help_text="Controls Bayesian coefficient shrinkage; larger values favor a more conservative posterior.",
+                unit_hint="% sample information",
+                help_text=(
+                    "Sets coefficient shrinkage as a percentage of the standardized "
+                    "training sample's information. 100% adds a ridge penalty equal "
+                    "to one factor-information diagonal."
+                ),
             ),
             StrategyParameterDefinition(
                 key="entry_probability",
@@ -2031,7 +2256,14 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             if bool(normalized_params[definition.parameter_key])
         ]
         backend = _resolve_compute_backend(str(normalized_params["compute_backend"]))
-        predictive_mean, predictive_std, probability_up = _walk_forward_predictions(
+        (
+            predictive_mean,
+            predictive_std,
+            probability_up,
+            autoregression,
+            long_run_mean,
+            innovation_std,
+        ) = _walk_forward_predictions(
             full_frame,
             factor_values,
             enabled_factors,
@@ -2051,7 +2283,14 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 fallback_reason=backend.fallback_reason,
                 runtime_fallback=True,
             )
-            predictive_mean, predictive_std, probability_up = _walk_forward_predictions(
+            (
+                predictive_mean,
+                predictive_std,
+                probability_up,
+                autoregression,
+                long_run_mean,
+                innovation_std,
+            ) = _walk_forward_predictions(
                 full_frame,
                 factor_values,
                 enabled_factors,
@@ -2066,16 +2305,20 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 _PREDICTION_MEAN_COLUMN: predictive_mean,
                 _PREDICTION_STD_COLUMN: predictive_std,
                 _PROBABILITY_COLUMN: probability_up,
+                _AUTOREGRESSION_COLUMN: autoregression,
+                _LONG_RUN_MEAN_COLUMN: long_run_mean,
+                _INNOVATION_STD_COLUMN: innovation_std,
             }
         )
         output = visible_frame.merge(prediction_frame, on="Date", how="left", validate="one_to_one")
         # Score only the visible backtest interval. The hidden warm-up bars
         # may train a posterior, but they are not part of the user-facing
         # equity curve or its diagnostic denominator.
-        hit_rate = _probability_field_hit_rate(
-            output["Close"].to_numpy(dtype=np.float64),
+        diagnostics = _probabilistic_diagnostics(
+            output["Open"].to_numpy(dtype=np.float64),
             output[_PREDICTION_MEAN_COLUMN].to_numpy(dtype=np.float64),
             output[_PREDICTION_STD_COLUMN].to_numpy(dtype=np.float64),
+            output[_PROBABILITY_COLUMN].to_numpy(dtype=np.float64),
         )
 
         entry_probability = float(normalized_params["entry_probability"]) / 100.0
@@ -2124,19 +2367,32 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 normalized_params["cell_display_threshold"]
             ),
             "time_quantization": "integer-trading-days",
-            "distribution_kind": "normal-log-return",
+            "distribution_kind": "dynamic-normal-log-return",
+            "target_interval": "next-open-to-following-open",
+            "price_anchor_kind": "signal-close-display-anchor",
+            "multi_step_kind": "causal-ar1-return-state",
             "step_unit": "trading-day",
             "predictive_mean": _json_number_list(output[_PREDICTION_MEAN_COLUMN]),
             "predictive_scale": _json_number_list(output[_PREDICTION_STD_COLUMN]),
             "probability_up": _json_number_list(output[_PROBABILITY_COLUMN]),
-            "hit_rate": hit_rate,
+            "return_autoregression": _json_number_list(
+                output[_AUTOREGRESSION_COLUMN]
+            ),
+            "return_long_run_mean": _json_number_list(
+                output[_LONG_RUN_MEAN_COLUMN]
+            ),
+            "return_innovation_scale": _json_number_list(
+                output[_INNOVATION_STD_COLUMN]
+            ),
+            "diagnostics": diagnostics,
+            # The compatibility key now points to a genuine direction hit-rate
+            # payload rather than the retired realized-cell lattice score.
+            "hit_rate": diagnostics,
             "metric_geometry": {
-                "scoring_lattice": {
-                    "horizons": f"1..{_PROBABILITY_FIELD_MAX_HORIZON}",
-                    "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
-                    "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
-                    "horizon_unit": "trading-day",
-                    "bounds": "six-sigma-plus-directional-mean",
+                "diagnostic_outcome": {
+                    "horizon": 1,
+                    "horizon_unit": "executed-open-to-open-session",
+                    "proper_probability_rule": "one-minus-brier-score",
                 },
                 "render_lattice": {
                     "columns": _PROBABILITY_FIELD_COLUMNS,
@@ -2190,15 +2446,20 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 "compute_parallel_fallback_reason": backend.parallel_fallback_reason,
                 "market_data_source": "longbridge-cli",
                 "fingerprint": fingerprint,
-                "probability_field_hit_rate_pct": hit_rate["score_pct"],
-                "probability_field_hit_rate_scored_points": hit_rate["scored_points"],
-                "probability_field_event_hit_rate_pct": hit_rate["event_hit_rate_pct"],
-                "probability_field_event_hits": hit_rate["event_hits"],
-                "probability_field_realized_cell_score_pct": hit_rate[
-                    "realized_cell_score_pct"
+                "probability_field_direction_hit_rate_pct": diagnostics[
+                    "direction_hit_rate_pct"
                 ],
-                "probability_field_lattice_coverage_pct": hit_rate[
-                    "lattice_coverage_pct"
+                "probability_field_direction_hits": diagnostics["direction_hits"],
+                "probability_field_probability_score_pct": diagnostics[
+                    "probability_score_pct"
+                ],
+                "probability_field_brier_score": diagnostics["brier_score"],
+                "probability_field_scored_points": diagnostics["scored_points"],
+                "probability_field_mean_nlpd": diagnostics[
+                    "mean_negative_log_predictive_density"
+                ],
+                "probability_field_mean_crps_log_return": diagnostics[
+                    "mean_crps_log_return"
                 ],
             },
             presentation=presentation,

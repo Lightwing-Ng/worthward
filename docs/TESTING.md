@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.42.4`
+Documentation version: `v1.43.0`
 
 ## Bayesian Price Field detail view coverage
 
@@ -37,6 +37,18 @@ Longbridge volume/open-interest fields, raw-ratio fallback, and backward as-of
 staleness boundaries. Real-time-only option contract quote fields must not be
 introduced into the historical feature matrix. Longer ranges must preserve the
 three-month reference cell size through integer trading-day quantization.
+
+The v1.25.0 model regressions separately prove that a factor row targets
+`Open[t+1] -> Open[t+2]`, that the immediately preceding target remains
+unavailable at a close-origin fit, and that changing any future Open cannot
+alter an earlier posterior. A missing next-session Open makes `next_open`
+execution fail closed instead of filling at Close. Python and Node tests compare
+the same AR(1) cumulative-return moments and prove that a nonzero one-step mean
+reverts rather than being multiplied unchanged across every horizon. Prior
+tests assert the percentage-of-sample-information mapping, while synthetic
+factor tests require positive causal incremental log-score evidence and reject
+a noise factor. Diagnostics are bounded 0-100% direction hit-rate and Brier
+probability-score values; raw Gaussian log score and CRPS remain metadata.
 
 The overview-hover regression also covers the `show_trade_details=0` path:
 hidden Price Field detail cells stay untouched during repeated pointer moves,
@@ -251,7 +263,7 @@ Current suite inventory remeasured on 28 Aug 2026:
 - `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
   The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(10, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders the complete strategy-owned row counts and scales them without clipping; the field fixes 20 columns, actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer, square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The shared resizer callback is verified after Chart.js resize, including a real pointer drag while the field is pinned. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells, gaps, or fractional bars.
 - `tests/test_parallel.py`: bounded worker sizing, deterministic ordered results, spawn-process execution, contiguous batch argument handling, and safe thread fallback for unpicklable CPU tasks.
-- `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, walk-forward no-lookahead for price, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; causal-model-lattice realized-cell score and coverage with no same-day scoring; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
+- `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; bounded direction hit rate and proper Brier probability score; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
 - `tests/test_strategy_variants.py`: signal-result contracts for the kNN, Lorentzian, and SuperTrend variants, parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.
 - `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
 - `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-on and explicit-off algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.

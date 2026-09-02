@@ -1,4 +1,4 @@
-/* Code version: v0.34.0 */
+/* Code version: v0.35.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -2015,12 +2015,24 @@
 			}
 			const meanValue = strategyPresentation.predictive_mean?.[index];
 			const scaleValue = strategyPresentation.predictive_scale?.[index];
+			const autoregressionValue = strategyPresentation.return_autoregression?.[index];
+			const longRunMeanValue = strategyPresentation.return_long_run_mean?.[index];
+			const innovationScaleValue = strategyPresentation.return_innovation_scale?.[index];
 			const mean = Number(meanValue);
 			const scale = Number(scaleValue);
+			const autoregression = Number(autoregressionValue);
+			const longRunMean = Number(longRunMeanValue);
+			const innovationScale = Number(innovationScaleValue);
 			const anchorPrice = Number(close[index]);
 			if (meanValue === null || meanValue === undefined
 				|| scaleValue === null || scaleValue === undefined
-				|| !Number.isFinite(mean) || !Number.isFinite(scale) || !(scale > 0) || !(anchorPrice > 0)) {
+				|| autoregressionValue === null || autoregressionValue === undefined
+				|| longRunMeanValue === null || longRunMeanValue === undefined
+				|| innovationScaleValue === null || innovationScaleValue === undefined
+				|| !Number.isFinite(mean) || !Number.isFinite(scale) || !(scale > 0)
+				|| !Number.isFinite(autoregression) || !Number.isFinite(longRunMean)
+				|| !Number.isFinite(innovationScale) || !(innovationScale > 0)
+				|| !(anchorPrice > 0)) {
 				return null;
 			}
 			const hoverLayout = getProbabilityHoverLayout();
@@ -2046,6 +2058,9 @@
 				anchorPrice,
 				mean,
 				scale,
+				autoregression,
+				longRunMean,
+				innovationScale,
 				stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
@@ -2060,6 +2075,9 @@
 				geometry,
 				mean,
 				scale,
+				autoregression,
+				longRunMean,
+				innovationScale,
 				stepPixels,
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			};
@@ -2098,6 +2116,9 @@
 				anchorPrice: model.anchorPrice,
 				mean: model.mean,
 				scale: model.scale,
+				autoregression: model.autoregression,
+				longRunMean: model.longRunMean,
+				innovationScale: model.innovationScale,
 				stepPixels: model.stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,

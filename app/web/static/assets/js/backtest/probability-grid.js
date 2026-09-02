@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.22.0
+ * Code version: v0.23.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -22,6 +22,7 @@
     const DEFAULT_CELL_DISPLAY_THRESHOLD_PCT = 5;
     const DEFAULT_MAX_CELL_PX = 10;
     const MAX_TARGET_CELL_PX = 64;
+    const MAX_ABS_AUTOREGRESSION = 0.95;
 
     const GEOMETRY_LIMITS = Object.freeze({
         columns: Object.freeze([1, 72]),
@@ -113,6 +114,46 @@
             : [];
         if (!predictiveMean.length || predictiveMean.length !== predictiveScale.length) return null;
         if (expected.length !== null && predictiveMean.length !== expected.length) return null;
+        const usesDynamicReturnState = String(value.multi_step_kind || "")
+            === "causal-ar1-return-state";
+        const normalizeStateSeries = (rawValues, fallbackBuilder, validator) => {
+            if (!Array.isArray(rawValues)) {
+                return usesDynamicReturnState
+                    ? null
+                    : predictiveMean.map((item, index) => (
+                        item === null ? null : fallbackBuilder(index)
+                    ));
+            }
+            if (rawValues.length !== predictiveMean.length) return null;
+            return rawValues.map((item, index) => {
+                if (predictiveMean[index] === null) return null;
+                const numeric = finiteOrNull(item);
+                return numeric !== null && validator(numeric) ? numeric : null;
+            });
+        };
+        const returnAutoregression = normalizeStateSeries(
+            value.return_autoregression,
+            () => 0,
+            (numeric) => Math.abs(numeric) <= MAX_ABS_AUTOREGRESSION,
+        );
+        const returnLongRunMean = normalizeStateSeries(
+            value.return_long_run_mean,
+            () => 0,
+            () => true,
+        );
+        const returnInnovationScale = normalizeStateSeries(
+            value.return_innovation_scale,
+            (index) => predictiveScale[index],
+            (numeric) => numeric > 0,
+        );
+        if (!returnAutoregression || !returnLongRunMean || !returnInnovationScale) return null;
+        if (usesDynamicReturnState && predictiveMean.some((mean, index) => (
+            mean !== null && (
+                returnAutoregression[index] === null
+                || returnLongRunMean[index] === null
+                || returnInnovationScale[index] === null
+            )
+        ))) return null;
         const hasDataKeys = Object.prototype.hasOwnProperty.call(value, "data_keys");
         let dataKeys;
         if (hasDataKeys) {
@@ -161,6 +202,9 @@
             width_fraction: widthFraction,
             predictive_mean: predictiveMean,
             predictive_scale: predictiveScale,
+            return_autoregression: returnAutoregression,
+            return_long_run_mean: returnLongRunMean,
+            return_innovation_scale: returnInnovationScale,
             ...(hasDataKeys ? {data_keys: dataKeys} : {}),
         });
     };
@@ -529,21 +573,74 @@
             : (positiveSteps[midpoint - 1] + positiveSteps[midpoint]) / 2;
     };
 
-    const probabilityBetweenPrices = ({anchorPrice, lowerPrice, upperPrice, mean, scale, horizon}) => {
-        const anchor = Number(anchorPrice);
-        const lower = Number(lowerPrice);
-        const upper = Number(upperPrice);
+    const multiStepNormalParameters = ({
+        mean,
+        scale,
+        horizon,
+        autoregression = 0,
+        longRunMean = 0,
+        innovationScale = scale,
+    } = {}) => {
         const oneStepMean = Number(mean);
         const oneStepScale = Number(scale);
         const steps = Number(horizon);
-        if (!(anchor > 0) || !(lower > 0) || !(upper > lower) || !(oneStepScale > 0)
-            || !Number.isFinite(steps) || !(steps > 0)) {
+        const phi = clamp(Number(autoregression), -MAX_ABS_AUTOREGRESSION, MAX_ABS_AUTOREGRESSION);
+        const equilibriumMean = Number(longRunMean);
+        const nextInnovationScale = Number(innovationScale);
+        if (!Number.isFinite(oneStepMean) || !(oneStepScale > 0)
+            || !Number.isInteger(steps) || !(steps > 0)
+            || !Number.isFinite(phi) || !Number.isFinite(equilibriumMean)
+            || !(nextInnovationScale > 0)) return null;
+        let stateMean = oneStepMean;
+        let stateVariance = oneStepScale * oneStepScale;
+        let cumulativeMean = stateMean;
+        let cumulativeVariance = stateVariance;
+        let cumulativeStateCovariance = stateVariance;
+        const innovationVariance = nextInnovationScale * nextInnovationScale;
+        for (let step = 1; step < steps; step += 1) {
+            stateMean = equilibriumMean + (phi * (stateMean - equilibriumMean));
+            const nextStateVariance = (phi * phi * stateVariance) + innovationVariance;
+            const previousCumulativeNextStateCovariance = phi * cumulativeStateCovariance;
+            cumulativeMean += stateMean;
+            cumulativeVariance += nextStateVariance
+                + (2 * previousCumulativeNextStateCovariance);
+            cumulativeStateCovariance = previousCumulativeNextStateCovariance
+                + nextStateVariance;
+            stateVariance = nextStateVariance;
+        }
+        return Object.freeze({
+            mean: cumulativeMean,
+            scale: Math.sqrt(Math.max(Number.EPSILON, cumulativeVariance)),
+        });
+    };
+
+    const probabilityBetweenPrices = ({
+        anchorPrice,
+        lowerPrice,
+        upperPrice,
+        mean,
+        scale,
+        horizon,
+        autoregression,
+        longRunMean,
+        innovationScale,
+    }) => {
+        const anchor = Number(anchorPrice);
+        const lower = Number(lowerPrice);
+        const upper = Number(upperPrice);
+        const forecast = multiStepNormalParameters({
+            mean,
+            scale,
+            horizon,
+            autoregression,
+            longRunMean,
+            innovationScale,
+        });
+        if (!(anchor > 0) || !(lower > 0) || !(upper > lower) || !forecast) {
             return 0;
         }
-        const cumulativeMean = oneStepMean * steps;
-        const cumulativeScale = oneStepScale * Math.sqrt(steps);
-        const lowerZ = (Math.log(lower / anchor) - cumulativeMean) / cumulativeScale;
-        const upperZ = (Math.log(upper / anchor) - cumulativeMean) / cumulativeScale;
+        const lowerZ = (Math.log(lower / anchor) - forecast.mean) / forecast.scale;
+        const upperZ = (Math.log(upper / anchor) - forecast.mean) / forecast.scale;
         return clamp(normalCdf(upperZ) - normalCdf(lowerZ), 0, 1);
     };
 
@@ -621,6 +718,9 @@
         anchorPrice,
         mean,
         scale,
+        autoregression = 0,
+        longRunMean = 0,
+        innovationScale = scale,
         stepPixels,
         valueForPixel,
         opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
@@ -665,6 +765,9 @@
                     mean,
                     scale,
                     horizon,
+                    autoregression,
+                    longRunMean,
+                    innovationScale,
                 });
                 cells.push({
                     centerX,
@@ -762,7 +865,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.22.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.23.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -775,6 +878,7 @@
         computeGridGeometry,
         computeAnchoredDetailGridPosition,
         isPointNearCurve,
+        multiStepNormalParameters,
         normalCdf,
         normalizePresentation,
         probabilityBetweenPrices,

@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.22.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.23.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,13 +30,17 @@ const presentation = {
     cell_opacity_tail_ratio: 0.02,
     cell_display_threshold_pct: 5,
     time_quantization: 'integer-trading-days',
+    multi_step_kind: 'causal-ar1-return-state',
     data_keys: rawDates,
     predictive_mean: [0.001, null, -0.002],
     predictive_scale: [0.02, null, 0.03],
+    return_autoregression: [0.2, null, -0.1],
+    return_long_run_mean: [0.0005, null, 0.0002],
+    return_innovation_scale: [0.018, null, 0.025],
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.22.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.23.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -59,8 +63,12 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.equal(normalized.time_quantization, 'integer-trading-days');
     assert.deepEqual(normalized.data_keys, rawDates);
     assert.deepEqual(normalized.predictive_mean, [0.001, null, -0.002]);
+    assert.deepEqual(normalized.return_autoregression, [0.2, null, -0.1]);
+    assert.deepEqual(normalized.return_long_run_mean, [0.0005, null, 0.0002]);
+    assert.deepEqual(normalized.return_innovation_scale, [0.018, null, 0.025]);
     assert.equal(grid.normalizePresentation({...presentation, schema: 'other/v1'}, rawDates, rawDates.length), null);
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
+    assert.equal(grid.normalizePresentation({...presentation, return_autoregression: [0.2]}, rawDates, rawDates.length), null);
 });
 
 test('preserves bounded strategy-owned symmetric geometry while fixing the 20-column horizon', () => {
@@ -818,6 +826,21 @@ test('evaluates probability mass at complete one-day and two-day horizons', () =
         horizon: 2,
     });
     assert.ok(oneDay > twoDays);
+});
+
+test('evolves multi-step moments through mean reversion instead of frozen diffusion', () => {
+    const forecast = grid.multiStepNormalParameters({
+        mean: 0.02,
+        scale: 0.01,
+        horizon: 4,
+        autoregression: 0.5,
+        longRunMean: 0,
+        innovationScale: 0.01,
+    });
+    assert.ok(forecast);
+    assert.ok(Math.abs(forecast.mean - 0.0375) < 1e-12);
+    assert.ok(forecast.scale > 0.01);
+    assert.ok(forecast.mean < 0.08);
 });
 
 test('keeps zero-probability cells fully invisible', () => {

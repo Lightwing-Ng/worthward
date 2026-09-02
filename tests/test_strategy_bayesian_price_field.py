@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.24.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.25.0."""
 
 from __future__ import annotations
 
@@ -20,11 +20,15 @@ from strategies.algorithms.strategy_bayesian_price_field import (
     _bundle_ohlcv_frame,
     _cpu_parallel_worker_count,
     _frame_fingerprint,
+    _executable_return_targets,
     _longbridge_symbol,
     _merge_bundle_observations,
+    _multi_step_normal_parameters,
+    _numpy_bayesian_prediction,
     _option_ratio,
-    _probability_field_hit_rate,
+    _probabilistic_diagnostics,
     _probability_threshold_signals,
+    _ridge_penalty,
     _ridge_residual_variance,
     _resolve_compute_backend,
     _rolling_volume_at_price_percentile,
@@ -98,6 +102,13 @@ def _bundle_from_frame(
 
 
 class BayesianPriceFieldStrategyTests(unittest.TestCase):
+    def test_strategy_requires_observed_open_prices(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires observed Open prices"):
+            BayesianPriceFieldStrategy().compute_signals(
+                _market_frame(40).drop(columns=["Open"]),
+                _cpu_params(),
+            )
+
     def test_longbridge_symbol_reuses_the_shared_share_class_contract(self) -> None:
         self.assertEqual(_longbridge_symbol("AAPL"), "AAPL.US")
         self.assertEqual(_longbridge_symbol("BRK.B"), "BRK.B.US")
@@ -234,7 +245,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("heterogeneous walk-forward computation", definitions["compute_backend"].help_text)
         self.assertIn("GPU explicitly requests Apple MPS or CUDA", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.8.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.9.0")
 
     def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
         strategy = BayesianPriceFieldStrategy()
@@ -274,51 +285,82 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(baseline.presentation["cell_display_threshold_pct"], 0.0)
         self.assertEqual(focused.presentation["cell_display_threshold_pct"], 50.0)
 
-    def test_probability_field_hit_rate_is_bounded_and_uses_only_later_observations(self) -> None:
+    def test_probability_diagnostics_are_bounded_and_score_executable_returns(self) -> None:
         frame = _market_frame(90)
         strategy = BayesianPriceFieldStrategy()
         result = strategy.compute_signals(
             frame,
             _cpu_params(use_pe_ratio=False, use_options=False),
         )
-        hit_rate = result.presentation["hit_rate"]
+        diagnostics = result.presentation["diagnostics"]
 
-        self.assertTrue(hit_rate["causal"])
-        self.assertGreater(hit_rate["scored_points"], 0)
-        self.assertGreaterEqual(hit_rate["score_pct"], 0.0)
-        self.assertLessEqual(hit_rate["score_pct"], 100.0)
-        self.assertEqual(
-            hit_rate["probability_weighted_score_pct"],
-            hit_rate["score_pct"],
+        self.assertTrue(diagnostics["causal"])
+        self.assertGreater(diagnostics["scored_points"], 0)
+        self.assertGreaterEqual(diagnostics["direction_hit_rate_pct"], 0.0)
+        self.assertLessEqual(diagnostics["direction_hit_rate_pct"], 100.0)
+        self.assertGreaterEqual(diagnostics["probability_score_pct"], 0.0)
+        self.assertLessEqual(diagnostics["probability_score_pct"], 100.0)
+        self.assertGreaterEqual(diagnostics["direction_hits"], 0)
+        self.assertLessEqual(
+            diagnostics["direction_hits"],
+            diagnostics["scored_points"],
         )
-        self.assertEqual(hit_rate["realized_cell_score_pct"], hit_rate["score_pct"])
-        self.assertGreaterEqual(hit_rate["event_hit_rate_pct"], 0.0)
-        self.assertLessEqual(hit_rate["event_hit_rate_pct"], 100.0)
-        self.assertGreaterEqual(hit_rate["event_hits"], 0)
-        self.assertLessEqual(hit_rate["event_hits"], hit_rate["scored_points"])
-        self.assertEqual(hit_rate["lattice_coverage_pct"], hit_rate["event_hit_rate_pct"])
-        self.assertEqual(hit_rate["metric_kind"], "causal-log-return-realized-cell-score")
-        self.assertEqual(hit_rate["scoring_lattice"]["horizons"], "1..20")
-        self.assertEqual(hit_rate["max_horizon"], 20)
-        self.assertEqual(hit_rate["rows_above"], 10)
-        self.assertEqual(hit_rate["rows_below"], 10)
+        self.assertGreaterEqual(diagnostics["brier_score"], 0.0)
+        self.assertLessEqual(diagnostics["brier_score"], 1.0)
         self.assertEqual(
-            result.metadata["probability_field_hit_rate_pct"],
-            hit_rate["score_pct"],
+            diagnostics["metric_kind"],
+            "causal-next-open-direction-and-probability-score",
+        )
+        self.assertEqual(
+            diagnostics["target_interval"],
+            "next-open-to-following-open",
+        )
+        self.assertEqual(
+            result.metadata["probability_field_direction_hit_rate_pct"],
+            diagnostics["direction_hit_rate_pct"],
         )
 
-    def test_probability_field_hit_rate_does_not_score_same_day_predictions(self) -> None:
-        close = np.full(45, 100.0)
+    def test_probability_diagnostics_do_not_score_without_two_later_opens(self) -> None:
+        open_prices = np.full(45, 100.0)
         means = np.full(45, np.nan)
         scales = np.full(45, np.nan)
+        probabilities = np.full(45, np.nan)
         means[-1] = 0.0
         scales[-1] = 0.02
-        hit_rate = _probability_field_hit_rate(close, means, scales)
+        probabilities[-1] = 0.5
+        diagnostics = _probabilistic_diagnostics(
+            open_prices,
+            means,
+            scales,
+            probabilities,
+        )
 
-        # The final origin has no later trading-day close, so a same-day
-        # prediction can never contribute a point to the score.
-        self.assertEqual(hit_rate["scored_points"], 0)
-        self.assertEqual(hit_rate["score_pct"], 0.0)
+        self.assertEqual(diagnostics["scored_points"], 0)
+        self.assertEqual(diagnostics["direction_hit_rate_pct"], 0.0)
+
+    def test_target_excludes_the_untradable_overnight_gap(self) -> None:
+        open_prices = np.asarray([100.0, 120.0, 126.0, 113.4])
+
+        targets = _executable_return_targets(open_prices)
+
+        self.assertAlmostEqual(targets[0], math.log(126.0 / 120.0), places=12)
+        self.assertAlmostEqual(targets[1], math.log(113.4 / 126.0), places=12)
+        self.assertTrue(np.isnan(targets[2]))
+        self.assertTrue(np.isnan(targets[3]))
+
+    def test_multi_step_state_reverts_instead_of_freezing_the_one_step_mean(self) -> None:
+        mean, scale = _multi_step_normal_parameters(
+            one_step_mean=0.02,
+            one_step_scale=0.01,
+            horizon=4,
+            autoregression=0.5,
+            long_run_mean=0.0,
+            innovation_scale=0.01,
+        )
+
+        self.assertAlmostEqual(mean, 0.0375, places=12)
+        self.assertGreater(scale, 0.01)
+        self.assertLess(mean, 4.0 * 0.02)
 
     def test_walk_forward_prediction_has_no_future_lookahead(self) -> None:
         original = _market_frame()
@@ -327,6 +369,11 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         changed_future.loc[future_start:, "Close"] *= np.linspace(
             1.2,
             2.5,
+            len(changed_future) - future_start,
+        )
+        changed_future.loc[future_start:, "Open"] *= np.linspace(
+            0.8,
+            1.8,
             len(changed_future) - future_start,
         )
         changed_future.loc[future_start:, "High"] = changed_future.loc[future_start:, "Close"] * 1.02
@@ -458,7 +505,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         close[0] = 100.0
         for index, forward_return in enumerate(forward_returns, start=1):
             close[index] = close[index - 1] * math.exp(float(forward_return))
-        frame = pd.DataFrame({"Close": close})
+        frame = pd.DataFrame({"Open": close, "Close": close})
         factor = np.concatenate((forward_returns, [forward_returns[-1]]))
         backend = _resolve_compute_backend("CPU")
         observed_noise_variances: list[float] = []
@@ -490,8 +537,8 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
 
         self.assertTrue(observed_noise_variances)
         self.assertGreaterEqual(min(observed_noise_variances), _MIN_NOISE_VARIANCE)
-        self.assertLess(max(observed_noise_variances), float(np.var(forward_returns[:20], ddof=1)))
-        self.assertGreater(float(np.var(forward_returns[:20], ddof=1)), 1e-5)
+        self.assertLess(max(observed_noise_variances), float(np.var(forward_returns, ddof=1)))
+        self.assertGreater(float(np.var(forward_returns, ddof=1)), 1e-5)
 
     def test_ridge_noise_fallback_keeps_regularization_when_direct_solve_fails(self) -> None:
         design = np.column_stack((np.ones(30), np.linspace(-1.0, 1.0, 30)))
@@ -505,31 +552,61 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertTrue(math.isfinite(variance))
         self.assertGreaterEqual(variance, _MIN_NOISE_VARIANCE)
 
-    def test_sparse_factor_fallback_is_independent_of_parameter_order(self) -> None:
-        candidate_indices = np.arange(40, dtype=np.int64)
-        target_mask = np.ones(40, dtype=bool)
-        first = np.full(41, np.nan)
-        second = np.full(41, np.nan)
-        first[:25] = np.linspace(1.0, 2.0, 25)
-        second[10:41] = np.linspace(3.0, 5.0, 31)
-        factor_values = {"sparse": first, "dense": second}
+    def test_factor_selection_uses_causal_incremental_predictive_evidence(self) -> None:
+        generator = np.random.default_rng(742)
+        candidate_indices = np.arange(60, dtype=np.int64)
+        predictive = np.linspace(-2.0, 2.0, 61)
+        noise = generator.normal(0.0, 1.0, 61)
+        target_values = np.full(61, np.nan)
+        target_values[:60] = (
+            0.025 * predictive[:60]
+            + generator.normal(0.0, 0.001, 60)
+        )
+        factor_values = {"predictive": predictive, "noise": noise}
 
         selected_forward = _select_active_factors(
             factor_values,
-            ["sparse", "dense"],
+            ["noise", "predictive"],
             candidate_indices,
-            40,
-            target_mask,
+            60,
+            target_values,
+            10.0,
         )
         selected_reversed = _select_active_factors(
             factor_values,
-            ["dense", "sparse"],
+            ["predictive", "noise"],
             candidate_indices,
-            40,
-            target_mask,
+            60,
+            target_values,
+            10.0,
         )
         self.assertEqual(selected_forward, selected_reversed)
-        self.assertEqual(selected_forward, ["dense"])
+        self.assertEqual(selected_forward, ["predictive"])
+
+    def test_prior_strength_is_scaled_to_standardized_sample_information(self) -> None:
+        self.assertAlmostEqual(_ridge_penalty(10.52, 425), 44.71, places=12)
+        self.assertAlmostEqual(_ridge_penalty(100.0, 425), 425.0, places=12)
+
+        factor = np.linspace(-1.0, 1.0, 80)
+        design = np.column_stack((np.ones(len(factor)), factor))
+        target = 0.03 * factor
+        current = np.asarray([1.0, 1.0])
+        weak_mean, _ = _numpy_bayesian_prediction(
+            design,
+            target,
+            current,
+            prior_strength=0.01,
+            noise_variance=0.0004,
+        )
+        strong_mean, _ = _numpy_bayesian_prediction(
+            design,
+            target,
+            current,
+            prior_strength=100.0,
+            noise_variance=0.0004,
+        )
+        self.assertGreater(weak_mean, 0.0)
+        self.assertLess(abs(strong_mean), abs(weak_mean))
 
     def test_volume_at_price_factor_is_a_causal_volume_weighted_cdf(self) -> None:
         low_close_frame = pd.DataFrame(
@@ -856,8 +933,16 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["cell_display_threshold_pct"], 5.0)
         self.assertEqual(presentation["time_quantization"], "integer-trading-days")
         self.assertEqual(
-            presentation["metric_geometry"]["scoring_lattice"]["horizons"],
-            "1..20",
+            presentation["target_interval"],
+            "next-open-to-following-open",
+        )
+        self.assertEqual(
+            presentation["multi_step_kind"],
+            "causal-ar1-return-state",
+        )
+        self.assertEqual(
+            presentation["metric_geometry"]["diagnostic_outcome"]["horizon"],
+            1,
         )
         self.assertEqual(
             presentation["metric_geometry"]["render_lattice"]["columns"],
@@ -870,12 +955,22 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(len(presentation["predictive_mean"]), len(result.frame))
         self.assertEqual(len(presentation["predictive_scale"]), len(result.frame))
         self.assertEqual(len(presentation["probability_up"]), len(result.frame))
+        self.assertEqual(len(presentation["return_autoregression"]), len(result.frame))
+        self.assertEqual(len(presentation["return_long_run_mean"]), len(result.frame))
+        self.assertEqual(len(presentation["return_innovation_scale"]), len(result.frame))
         self.assertEqual(
             presentation["data_keys"],
             [pd.Timestamp(value).isoformat() for value in result.frame["Date"]],
         )
         self.assertEqual(result.required_execution_mode, "next_open")
-        for key in ("predictive_mean", "predictive_scale", "probability_up"):
+        for key in (
+                "predictive_mean",
+                "predictive_scale",
+                "probability_up",
+                "return_autoregression",
+                "return_long_run_mean",
+                "return_innovation_scale",
+        ):
             finite_values = [
                 value
                 for value in presentation[key]
@@ -1269,7 +1364,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertGreater(torch_prediction.call_count, 0)
         self.assertEqual(backend.parallel_executor, "hybrid")
         self.assertEqual(backend.parallel_workers, 2)
-        self.assertTrue(np.isfinite(predictions[0][20:]).all())
+        self.assertTrue(np.isfinite(predictions[0][21:]).all())
 
     def test_cpu_parallel_origins_match_serial_results(self) -> None:
         frame = _market_frame(180)

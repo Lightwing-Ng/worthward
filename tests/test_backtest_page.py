@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.8.2
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -217,9 +217,10 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
 
-    def test_bayesian_realized_cell_score_is_rendered_as_a_percentage_metric(self) -> None:
+    def test_bayesian_direction_and_probability_scores_render_as_percentages(self) -> None:
         result = backtest_result()
-        result["summary"]["probability_field_hit_rate_pct"] = 42.5
+        result["summary"]["probability_field_direction_hit_rate_pct"] = 62.5
+        result["summary"]["probability_field_probability_score_pct"] = 78.25
         with (
             patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
@@ -232,9 +233,18 @@ class BacktestPageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Bayesian realized-cell score", html)
-        self.assertIn('data-backtest-metric="probability-field-realized-cell-score"', html)
-        self.assertIn(">42.50%</span>", html)
+        self.assertIn("Bayesian direction hit rate", html)
+        self.assertIn(
+            'data-backtest-metric="probability-field-direction-hit-rate"',
+            html,
+        )
+        self.assertIn(">62.50%</span>", html)
+        self.assertIn("Bayesian probability score", html)
+        self.assertIn(
+            'data-backtest-metric="probability-field-probability-score"',
+            html,
+        )
+        self.assertIn(">78.25%</span>", html)
 
     def test_backtest_stop_loss_copy_has_default_chinese_translations(self) -> None:
         labels = {

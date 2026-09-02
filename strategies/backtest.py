@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -41,39 +41,44 @@ def _attach_strategy_presentation(
                 )
         result["strategy_presentation"] = presentation
         summary = result.get("summary")
-        hit_rate = presentation.get("hit_rate")
-        if isinstance(summary, dict) and isinstance(hit_rate, dict):
-            score_pct = hit_rate.get(
-                "realized_cell_score_pct",
-                hit_rate.get(
-                    "probability_weighted_score_pct",
-                    hit_rate.get("score_pct"),
-                ),
-            )
-            scored_points = hit_rate.get("scored_points")
-            if isinstance(score_pct, (int, float)) and isinstance(scored_points, int):
-                summary["probability_field_hit_rate_pct"] = round(float(score_pct), 2)
-                summary["probability_field_realized_cell_score_pct"] = round(
-                    float(score_pct),
+        diagnostics = presentation.get("diagnostics")
+        if isinstance(summary, dict) and isinstance(diagnostics, dict):
+            direction_hit_rate = diagnostics.get("direction_hit_rate_pct")
+            probability_score = diagnostics.get("probability_score_pct")
+            scored_points = diagnostics.get("scored_points")
+            direction_hits = diagnostics.get("direction_hits")
+            if isinstance(direction_hit_rate, (int, float)):
+                normalized_hit_rate = round(float(direction_hit_rate), 2)
+                summary["probability_field_direction_hit_rate_pct"] = normalized_hit_rate
+                # Preserve the generic historical summary key with truthful new
+                # semantics for downstream consumers that have not migrated.
+                summary["probability_field_hit_rate_pct"] = normalized_hit_rate
+            if isinstance(probability_score, (int, float)):
+                summary["probability_field_probability_score_pct"] = round(
+                    float(probability_score),
                     2,
                 )
+            if isinstance(scored_points, int):
+                summary["probability_field_scored_points"] = scored_points
                 summary["probability_field_hit_rate_scored_points"] = scored_points
-                event_hit_rate_pct = hit_rate.get(
-                    "lattice_coverage_pct",
-                    hit_rate.get("event_hit_rate_pct"),
-                )
-                event_hits = hit_rate.get("event_hits")
-                if isinstance(event_hit_rate_pct, (int, float)):
-                    summary["probability_field_event_hit_rate_pct"] = round(
-                        float(event_hit_rate_pct),
-                        2,
-                    )
-                    summary["probability_field_lattice_coverage_pct"] = round(
-                        float(event_hit_rate_pct),
-                        2,
-                    )
-                if isinstance(event_hits, int):
-                    summary["probability_field_event_hits"] = event_hits
+            if isinstance(direction_hits, int):
+                summary["probability_field_direction_hits"] = direction_hits
+            brier_score = diagnostics.get("brier_score")
+            if isinstance(brier_score, (int, float)):
+                summary["probability_field_brier_score"] = float(brier_score)
+            for source_key, destination_key in (
+                    (
+                        "mean_negative_log_predictive_density",
+                        "probability_field_mean_nlpd",
+                    ),
+                    (
+                        "mean_crps_log_return",
+                        "probability_field_mean_crps_log_return",
+                    ),
+            ):
+                value = diagnostics.get(source_key)
+                if isinstance(value, (int, float)):
+                    summary[destination_key] = float(value)
     return result
 
 
@@ -675,7 +680,12 @@ def run_single_ticker_backtest(
         is_at_backtest_start = False
 
         if normalized_execution_mode == "next_open" and pending_order and not is_first_row:
-            execution_price = open_price if open_price > 0 else close_price
+            if not isfinite(open_price) or open_price <= 0.0:
+                raise ValueError(
+                    "next_open execution requires a finite positive Open price; "
+                    "Close fallback is not permitted."
+                )
+            execution_price = open_price
 
             if pending_order == "buy" and execution_price > 0:
                 if shares == 0:  # Entry Long
