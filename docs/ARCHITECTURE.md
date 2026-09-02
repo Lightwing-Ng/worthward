@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.2`
+Documentation version: `v1.69.4`
 
 ## Bayesian Price Field detail view contract
 
@@ -49,11 +49,14 @@ temporarily translated to fit a right-edge field. Pointer deltas therefore
 advance the selected chart origin one-for-one even when the visual canvas has
 already moved, and the stack continues to receive rightward hover input while
 the translated canvas is outside the pointer location. During tracking, the
-vertical guide is updated from the latest screen-space pointer position on
-every move, including moves that keep the same nearest data point; a pinned
-field returns the guide to its selected data point. Moving into another chart
-subplot or leaving the stack still follows the existing shared-tooltip
-ownership rules.
+vertical and horizontal guides share the latest screen-space pointer position
+on every move, including moves that keep the same nearest data point. The
+probability field begins at that vertical guide and lays out its first column
+to the right, so panning cannot make the field cross or detach from the
+crosshair. Bayesian overview tracking does not draw the rounded Y-axis value
+badge or a Chart.js hover point; a pinned field returns both guides to its selected
+data point. Moving into another chart subplot or leaving the stack still follows the existing
+shared-tooltip ownership rules.
 
 ## Holdings P&L display contract
 

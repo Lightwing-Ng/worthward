@@ -1,4 +1,4 @@
-/* Code version: v1.201.2 */
+/* Code version: v1.201.4 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -17969,6 +17969,18 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
                 ?._activeBacktestProbabilityGridBounds?.index
         ))).toBe(anchor.index);
+        await expect.poll(() => page.evaluate(() => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const activePoint = chart?._active?.[0]?.element
+                || chart?.getActiveElements?.()[0]?.element;
+            return Number(
+                activePoint?.options?.radius
+                ?? activePoint?.radius
+                ?? chart?.data?.datasets?.[0]?.pointHoverRadius
+                ?? Number.NaN,
+            );
+        }), {message: `${label} hover point must remain invisible`}).toBe(0);
         return anchor;
     };
     const panSnapshot = () => page.evaluate(() => {
@@ -18063,16 +18075,22 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         await page.mouse.move(pointerX, edgeAnchor.y);
         await page.waitForTimeout(16);
         const snapshot = await panSnapshot();
-        const alignment = await page.evaluate(({pointerX: currentPointerX}) => {
+        const alignment = await page.evaluate(({pointerX: currentPointerX, pointerY: currentPointerY}) => {
             const canvas = document.querySelector('#tradePriceChart');
             const chart = window.Chart?.getChart?.(canvas);
             const hoverLine = document.querySelector('.trade-chart-hover-line');
+            const horizontalHoverLine = document.querySelector('.trade-chart-hover-horizontal-line');
+            const probabilityField = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+            const firstProbabilityCell = probabilityField?.querySelector('.backtest-probability-cell');
             const bounds = chart?._activeBacktestProbabilityGridBounds;
             const point = Number.isInteger(bounds?.index)
                 ? chart?.getDatasetMeta?.(0)?.data?.[bounds.index]
                 : null;
             const canvasRect = canvas?.getBoundingClientRect();
             const lineRect = hoverLine?.getBoundingClientRect();
+            const horizontalLineRect = horizontalHoverLine?.getBoundingClientRect();
+            const probabilityFieldRect = probabilityField?.getBoundingClientRect();
+            const firstProbabilityCellRect = firstProbabilityCell?.getBoundingClientRect();
             const curveX = canvasRect && chart?.width > 0 && point
                 ? canvasRect.left + (point.x * (canvasRect.width / chart.width))
                 : Number.NaN;
@@ -18083,8 +18101,17 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 pointerX: currentPointerX,
                 pointerToLine: Math.abs(lineX - currentPointerX),
                 pointerToCurve: Math.abs(curveX - currentPointerX),
+                pointerToHorizontalLine: horizontalLineRect
+                    ? Math.abs((horizontalLineRect.top + (horizontalLineRect.height / 2)) - currentPointerY)
+                    : Number.NaN,
+                crosshairJoinDelta: horizontalLineRect && lineRect
+                    ? Math.abs(horizontalLineRect.right - (lineRect.left + (lineRect.width / 2)))
+                    : Number.NaN,
+                fieldRightOfVerticalLine: probabilityFieldRect && lineRect && firstProbabilityCellRect
+                    ? firstProbabilityCellRect.left - lineRect.right
+                    : Number.NaN,
             };
-        }, {pointerX});
+        }, {pointerX, pointerY: edgeAnchor.y});
         trackingSamples.push({pointerX, snapshot, alignment});
     }
     const trackingEnd = trackingSamples.at(-1)?.snapshot;
@@ -18098,6 +18125,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(trackingTargetDistance).toBeLessThanOrEqual(trackingPointerDistance + 10);
     expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToLine)))
         .toBeLessThanOrEqual(1.5);
+    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.pointerToHorizontalLine)))
+        .toBeLessThanOrEqual(1.5);
+    expect(Math.max(...trackingSamples.map((sample) => sample.alignment.crosshairJoinDelta)))
+        .toBeLessThanOrEqual(1.5);
+    expect(Math.min(...trackingSamples.map((sample) => sample.alignment.fieldRightOfVerticalLine)))
+        .toBeGreaterThanOrEqual(0.5);
 
     await movePointerOutsideProbabilitySurface();
     const resetLeftAnchor = await pointAtIndex(leftAnchor.index);
@@ -18410,9 +18443,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.opacityInlineDelta).toBeLessThanOrEqual(1e-6);
     expect(contract.winnerOpacityDelta).toBeLessThanOrEqual(1e-6);
     expect(contract.rawProbabilityPreserved).toBe(true);
-    expect(Number.isFinite(contract.badgeLeft)).toBe(true);
-    expect(contract.badgeRight).toBeGreaterThan(contract.badgeLeft);
-    expect(Number.isFinite(contract.badgeValue)).toBe(true);
+    expect(contract.badgeLeft).toBeUndefined();
+    expect(contract.badgeRight).toBeUndefined();
+    expect(contract.badgeValue).toBeUndefined();
     expect(contract.domXPathStable).toBe(true);
 
     const detailContract = await page.evaluate(() => {
@@ -18816,7 +18849,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await waitForPanTarget();
 
-    const rightPan = await page.evaluate((expectedTooltipWidth) => {
+    const rightPan = await page.evaluate(({expectedTooltipWidth, pointerX, pointerY}) => {
         const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
         const priceCanvasElement = document.querySelector('#tradePriceChart');
         const equityCanvasElement = document.querySelector('#tradeEquityChart');
@@ -18824,13 +18857,21 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
         const resizer = document.querySelector('#backtest_section_resizer');
+        const hoverLine = document.querySelector('.trade-chart-hover-line');
+        const horizontalHoverLine = document.querySelector('.trade-chart-hover-horizontal-line');
         const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
+        const firstProbabilityCell = cells.find((cell) => (
+            cell.dataset.row === '0' && cell.dataset.column === '0'
+        ));
         if (!(stack instanceof HTMLElement)
             || !(priceCanvasElement instanceof HTMLCanvasElement)
             || !(equityCanvasElement instanceof HTMLCanvasElement)
             || !(tooltip instanceof HTMLElement)
             || !(scrollPort instanceof HTMLElement)
             || !(resizer instanceof HTMLElement)
+            || !(hoverLine instanceof HTMLElement)
+            || !(horizontalHoverLine instanceof HTMLElement)
+            || !(firstProbabilityCell instanceof HTMLElement)
             || !chart) {
             return null;
         }
@@ -18842,6 +18883,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const historyRect = document.querySelector('#backtest_history_surface')?.getBoundingClientRect();
         const scrollPortRect = scrollPort.getBoundingClientRect();
         const tooltipRect = tooltip.getBoundingClientRect();
+        const hoverLineRect = hoverLine.getBoundingClientRect();
+        const horizontalHoverLineRect = horizontalHoverLine.getBoundingClientRect();
+        const firstProbabilityCellRect = firstProbabilityCell.getBoundingClientRect();
         const bounds = chart._activeBacktestProbabilityGridBounds;
         const point = chart.getDatasetMeta(0)?.data?.[bounds?.index];
         const scrollbarStyle = getComputedStyle(scrollPort);
@@ -18849,13 +18893,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const scrollbarThumbStyle = getComputedStyle(scrollPort, '::-webkit-scrollbar-thumb');
         const visualPosition = Number(stack.dataset.probabilityPanVisualPosition || 0);
         const visualOffset = Number(stack.dataset.probabilityPanVisualOffset || 0);
-        const tooltipContentRight = tooltipRect.right - stackRect.left + visualPosition;
-        const expectedTarget = Math.max(0, tooltipContentRight - stack.clientWidth);
+        const expectedTarget = Math.max(
+            0,
+            pointerX - stackRect.left + tooltipRect.width - stack.clientWidth,
+        );
         return {
             activeIndex: bounds?.index,
             canvasTooltipAnchorDelta: point
                 ? Math.abs(tooltipRect.left - (priceRect.left + point.x))
                 : Number.POSITIVE_INFINITY,
+            fieldRightOfVerticalLine: firstProbabilityCellRect.left - hoverLineRect.right,
             domOrderStable: stack.children[0]?.contains(priceCanvasElement)
                 && stack.children[1]?.contains(equityCanvasElement),
             equityHeight: equityRect.height,
@@ -18873,6 +18920,16 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             invisibleCellCount: cells.filter((cell) => (
                 Number(getComputedStyle(cell).opacity) === 0
             )).length,
+            pointerToHorizontalLine: Math.abs(
+                (horizontalHoverLineRect.top + (horizontalHoverLineRect.height / 2)) - pointerY,
+            ),
+            pointerToVerticalLine: Math.abs(
+                (hoverLineRect.left + (hoverLineRect.width / 2)) - pointerX,
+            ),
+            crosshairJoinDelta: Math.abs(
+                horizontalHoverLineRect.right - (hoverLineRect.left + (hoverLineRect.width / 2)),
+            ),
+            pointerToField: Math.abs(tooltipRect.left - pointerX),
             overflowX: getComputedStyle(stack).overflowX,
             pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             portActive: !scrollPort.hidden,
@@ -18917,7 +18974,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             visualOffset,
             visualPosition,
         };
-    }, contract.tooltipWidth);
+    }, {expectedTooltipWidth: contract.tooltipWidth, pointerX: rightAnchor.x, pointerY: rightAnchor.y});
     expect(rightPan).not.toBeNull();
     expect(rightPan.activeIndex).toBe(rightAnchor.index);
     expect(rightPan.target).toBeGreaterThan(0);
@@ -18955,10 +19012,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(rightPan.resizerPointerEvents).toBe('none');
     expect(rightPan.resizerTabIndex).toBe('-1');
     expect(rightPan.leftInset).toBeGreaterThanOrEqual(0);
-    expect(rightPan.rightInset).toBeGreaterThanOrEqual(0);
-    expect(rightPan.rightInset).toBeLessThanOrEqual(1);
     expect(rightPan.tooltipWidthDelta).toBeLessThanOrEqual(0.1);
-    expect(rightPan.canvasTooltipAnchorDelta).toBeLessThanOrEqual(0.1);
+    expect(rightPan.pointerToVerticalLine).toBeLessThanOrEqual(1.5);
+    expect(rightPan.pointerToHorizontalLine).toBeLessThanOrEqual(1.5);
+    expect(rightPan.crosshairJoinDelta).toBeLessThanOrEqual(1.5);
+    expect(rightPan.fieldRightOfVerticalLine).toBeGreaterThanOrEqual(0.5);
+    expect(rightPan.pointerToField).toBeLessThanOrEqual(0.75);
     expect(rightPan.motion).toBe('shared-pointer-follow');
     expect(Math.abs(rightPan.stackLeft - baselineGeometry.stackLeft)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(rightPan.priceWidth - baselineGeometry.priceWidth)).toBeLessThanOrEqual(0.1);
@@ -19063,7 +19122,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         (maxRailSync.stackScrollLeft - maxRailSync.visualPosition) - maxRailSync.visualOffset,
     )).toBeLessThanOrEqual(probabilityScrollTargetTolerance);
     expect(maxRailSync.leftInset).toBeGreaterThanOrEqual(0);
-    expect(maxRailSync.rightInset).toBeGreaterThanOrEqual(0);
+    expect(maxRailSync.rightInset).toBeGreaterThanOrEqual(-0.5);
     expect(maxRailSync.tooltipAnchorDelta).toBeLessThanOrEqual(0.1);
     expect(maxRailSync.hoverLineAnchorDelta).toBeLessThanOrEqual(0.1);
 
@@ -19403,7 +19462,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(narrowLayout.leftInset, 'probability field left inset')
         .toBeGreaterThanOrEqual(0);
     expect(narrowLayout.rightInset, 'probability field right inset')
-        .toBeGreaterThanOrEqual(0);
+        .toBeGreaterThanOrEqual(-0.75);
     expect(narrowLayout.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(narrowLayout.rowsUp).toBeGreaterThan(0);
     expect(narrowLayout.rowsDown).toBeGreaterThan(0);

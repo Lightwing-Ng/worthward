@@ -1,4 +1,4 @@
-/* Code version: v0.35.2 */
+/* Code version: v0.35.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -2276,11 +2276,15 @@
 				canvasRect.left - stackRect.left + probabilityScrollVisualPosition
 			);
 			const canvasOffsetY = canvasRect.top - stackRect.top;
-			setInlineStyleIfChanged(
-				probabilityTooltip,
-				"transform",
-				`translate3d(${canvasOffsetX + geometry.left}px, ${canvasOffsetY + geometry.top}px, 0)`,
+			const fieldPosition = syncProbabilityFieldVisualPosition(
+				stackRect,
+				geometry,
+				{ synchronizeScroll: true },
 			);
+			if (!fieldPosition) {
+				hideProbabilityTooltip();
+				return false;
+			}
 			setInlineStyleIfChanged(probabilityTooltip, "width", `${geometry.width}px`);
 			setInlineStyleIfChanged(probabilityTooltip, "height", `${geometry.height}px`);
 			probabilityTooltip.dataset.direction = geometry.direction;
@@ -2292,12 +2296,12 @@
 				`${labels[index] || "Selected date"}, ${formatMoney(anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability field; displayed from the signal-close anchor; executable target is next-open to-following-open`,
 			);
 			probabilityTooltip.classList.add("is-visible");
-			const tooltipContentRight = canvasOffsetX + geometry.left + geometry.width;
-			setProbabilityScrollTarget(tooltipContentRight - probabilityScrollStackWidth);
 			priceChart._activeBacktestProbabilityGridBounds = {
 				...geometry,
 				canvasOffsetX,
 				canvasOffsetY,
+				displayLeft: fieldPosition.left,
+				pointerAnchored: fieldPosition.pointerAnchored,
 				index,
 				intersectionX: pricePoint.x,
 				intersectionY: pricePoint.y,
@@ -2386,6 +2390,7 @@
 		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
 				hoverLine.classList.remove("is-visible");
+				hoverCrosshairLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				hideProbabilityTooltip();
 				return false;
@@ -2398,6 +2403,7 @@
 			const canonicalLineCanvas = pricePoint ? priceCanvas : (equityPoint ? equityCanvas : sourceCanvas);
 			if (!sourcePoint) {
 				hoverLine.classList.remove("is-visible");
+				hoverCrosshairLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				hideProbabilityTooltip();
 				return false;
@@ -2405,6 +2411,7 @@
 			const tooltipAnchorPosition = getRelativePointPosition(sourceCanvas, stackRect, sourcePoint);
 			if (!tooltipAnchorPosition) {
 				hoverLine.classList.remove("is-visible");
+				hoverCrosshairLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				hideProbabilityTooltip();
 				return false;
@@ -2419,28 +2426,31 @@
 				currentStackRect,
 				canonicalLinePoint,
 			);
-			const pointerHoverLinePosition = probabilityRendered
-				&& pinState.mode !== "pinned"
-				&& isProbabilityHoverPointerOverStack(currentStackRect)
-				? {
-					x: probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition,
-					y: null,
-				}
-				: null;
-			const hoverLinePosition = pointerHoverLinePosition || curveHoverLinePosition;
-			if (!hoverLinePosition) {
+			if (!curveHoverLinePosition) {
 				hoverLine.classList.remove("is-visible");
+				hoverCrosshairLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				hideProbabilityTooltip();
 				return false;
 			}
-			const hoverLineFrame = updateHoverLineFrame();
-			if (hoverLineFrame) {
-				hoverLine.style.top = `${hoverLineFrame.top}px`;
-				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			const hoverLinePosition = curveHoverLinePosition;
+			if (strategyPresentation) {
+				if (probabilityRendered && pinState.mode !== "pinned"
+					&& isProbabilityHoverPointerOverStack(currentStackRect)) {
+					updatePointerHoverLine();
+				} else {
+					updateCurveHoverLine();
+				}
+			} else {
+				const hoverLineFrame = updateHoverLineFrame();
+				if (hoverLineFrame) {
+					hoverLine.style.top = `${hoverLineFrame.top}px`;
+					hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+				}
+				hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
+				hoverLine.classList.add("is-visible");
+				hoverCrosshairLine.classList.remove("is-visible");
 			}
-			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
-			hoverLine.classList.add("is-visible");
 			if (probabilityRendered) {
 				tooltip.classList.remove("is-visible");
 				return true;
@@ -2485,6 +2495,84 @@
 			tooltip.classList.add("is-visible");
 			return false;
 		};
+		const getPricePlotFrame = (stackRect) => {
+			if (!priceChart?.chartArea || !priceChart?.width || !priceChart?.height) return null;
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const scaleX = canvasRect.width / priceChart.width;
+			const scaleY = canvasRect.height / priceChart.height;
+			return {
+				left: canvasRect.left - stackRect.left + probabilityScrollVisualPosition
+					+ (priceChart.chartArea.left * scaleX),
+				right: canvasRect.left - stackRect.left + probabilityScrollVisualPosition
+					+ (priceChart.chartArea.right * scaleX),
+				top: canvasRect.top - stackRect.top + (priceChart.chartArea.top * scaleY),
+				bottom: canvasRect.top - stackRect.top + (priceChart.chartArea.bottom * scaleY),
+			};
+		};
+		const getProbabilityFieldContentLeft = (stackRect, geometry) => {
+			if (
+				strategyPresentation
+				&& pinState.mode !== "pinned"
+				&& isProbabilityHoverPointerOverStack(stackRect)
+			) {
+				return probabilityHoverPointerX - stackRect.left + probabilityScrollVisualPosition;
+			}
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			return canvasRect.left - stackRect.left + probabilityScrollVisualPosition + Number(geometry?.left || 0);
+		};
+		const syncProbabilityFieldVisualPosition = (
+			stackRect,
+			geometry,
+			{ synchronizeScroll = false } = {},
+		) => {
+			if (!(probabilityTooltip instanceof HTMLElement) || !geometry) return null;
+			let currentStackRect = stackRect || tradeChartStack.getBoundingClientRect();
+			let contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
+			const pointerAnchored = (
+				strategyPresentation
+				&& pinState.mode !== "pinned"
+				&& isProbabilityHoverPointerOverStack(currentStackRect)
+			);
+			if (synchronizeScroll && pointerAnchored) {
+				// The scroll target is a content-space coordinate. Do not derive it
+				// from contentLeft, which already includes the current scroll position
+				// and would compound on every same-index pointer move.
+				const pointerContentLeft = Number.isFinite(probabilityHoverLogicalX)
+					? probabilityHoverLogicalX
+					: contentLeft - probabilityScrollVisualPosition;
+				const nextTarget = Math.max(
+					0,
+					pointerContentLeft + Number(geometry.width || 0) - currentStackRect.width,
+				);
+				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
+					setProbabilityScrollTarget(nextTarget);
+					currentStackRect = tradeChartStack.getBoundingClientRect();
+					contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
+				}
+			}
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			setInlineStyleIfChanged(
+				probabilityTooltip,
+				"transform",
+				`translate3d(${contentLeft}px, ${canvasRect.top - currentStackRect.top + Number(geometry.top || 0)}px, 0)`,
+			);
+			return { left: contentLeft, pointerAnchored };
+		};
+		const updateHoverCrosshair = (x, y, plotFrame) => {
+			if (!Number.isFinite(x) || !Number.isFinite(y) || !plotFrame) return false;
+			const hoverLineFrame = updateHoverLineFrame();
+			if (hoverLineFrame) {
+				hoverLine.style.top = `${hoverLineFrame.top}px`;
+				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			}
+			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${x}px`);
+			hoverLine.classList.add("is-visible");
+			hoverCrosshairLine.style.left = `${plotFrame.left}px`;
+			hoverCrosshairLine.style.width = `${Math.max(0, x - plotFrame.left)}px`;
+			hoverCrosshairLine.style.top = `${y}px`;
+			hoverCrosshairLine.classList.add("is-visible");
+			return true;
+		};
 		const updatePointerHoverLine = () => {
 			if (
 				!strategyPresentation
@@ -2492,20 +2580,22 @@
 				|| pinState.mode === "pinned"
 				|| !Number.isInteger(activeIndex)
 			) return;
-			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			let currentStackRect = tradeChartStack.getBoundingClientRect();
 			if (!isProbabilityHoverPointerOverStack(currentStackRect)) return;
 			const currentPricePoint = getDatasetPoint(priceChart, activeIndex, 0);
-			if (!currentPricePoint) return;
-			const hoverLineFrame = updateHoverLineFrame();
-			if (hoverLineFrame) {
-				hoverLine.style.top = `${hoverLineFrame.top}px`;
-				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			const probabilityBounds = priceChart._activeBacktestProbabilityGridBounds;
+			if (!currentPricePoint || !probabilityBounds) return;
+			syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds, {
+				synchronizeScroll: true,
+			});
+			currentStackRect = tradeChartStack.getBoundingClientRect();
+			const plotFrame = getPricePlotFrame(currentStackRect);
+			const pointerX = probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition;
+			const pointerY = probabilityHoverPointerY - currentStackRect.top;
+			if (updateHoverCrosshair(pointerX, pointerY, plotFrame)) {
+				probabilityBounds.displayLeft = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds);
+				probabilityBounds.pointerAnchored = true;
 			}
-			hoverLine.style.setProperty(
-				"--trade-chart-hover-line-x",
-				`${probabilityHoverPointerX - currentStackRect.left + probabilityScrollVisualPosition}px`,
-			);
-			hoverLine.classList.add("is-visible");
 		};
 		const updateCurveHoverLine = () => {
 			if (!Number.isInteger(activeIndex)) return;
@@ -2518,16 +2608,35 @@
 				currentPricePoint,
 			);
 			if (!curveHoverLinePosition) return;
-			const hoverLineFrame = updateHoverLineFrame();
-			if (hoverLineFrame) {
-				hoverLine.style.top = `${hoverLineFrame.top}px`;
-				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			const probabilityBounds = priceChart._activeBacktestProbabilityGridBounds;
+			if (probabilityBounds) {
+				syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds, {
+					synchronizeScroll: true,
+				});
 			}
-			hoverLine.style.setProperty(
-				"--trade-chart-hover-line-x",
-				`${curveHoverLinePosition.x}px`,
+			updateHoverCrosshair(
+				curveHoverLinePosition.x,
+				curveHoverLinePosition.y,
+				getPricePlotFrame(currentStackRect),
 			);
-			hoverLine.classList.add("is-visible");
+		};
+		probabilityFieldPositionUpdater = () => {
+			if (!activePriceOverlay || pinState.mode === "pinned") return;
+			const bounds = priceChart?._activeBacktestProbabilityGridBounds;
+			if (!bounds || !probabilityTooltip?.classList.contains("is-visible")) return;
+			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			if (isProbabilityHoverPointerOverStack(currentStackRect)) {
+				syncProbabilityFieldVisualPosition(
+					currentStackRect,
+					bounds,
+					{ synchronizeScroll: false },
+				);
+				return;
+			}
+			// Once the pointer is on the native rail, the chart is no longer a
+			// pointer-anchored surface. Keep the active field attached to its
+			// selected curve point while the rail moves.
+			updateCurveHoverLine();
 		};
 		const schedulePointerHoverLineUpdate = () => {
 			if (pointerHoverFrameId !== null) return;
@@ -2761,6 +2870,7 @@
 						borderColor: isCandlestick ? "transparent" : resolvedTheme.accentPrimary,
 						borderWidth: isCandlestick ? 0 : seriesLineWidth,
 						pointRadius: 0,
+						pointHoverRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",
 						borderCapStyle: "round",
@@ -3180,6 +3290,7 @@
 				delete tradeChartStack.dataset.probabilityPanVisualPosition;
 				activateBacktestRows([], null);
 				hoverLine.remove();
+				hoverCrosshairLine.remove();
 				tooltip.remove();
 				probabilityTooltip?.remove();
 				probabilityScrollSpacer?.remove();
