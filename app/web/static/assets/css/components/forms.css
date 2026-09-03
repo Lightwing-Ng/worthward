@@ -1,4 +1,4 @@
-/* Code version: v0.19.6 */
+/* Code version: v0.19.7 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -10,7 +10,7 @@
 	--strategy-param-field-height: var(--numeric-input-control-height);
 	--strategy-param-control-height: var(--numeric-input-control-height);
 	--ticker-control-width: 80%;
-	--ticker-suggestions-radius: 10px;
+	--ticker-suggestions-radius: var(--radius-soft);
 	--ticker-validation-arrow-size: 12px;
 	--ticker-validation-arrow-rise: calc(var(--ticker-validation-arrow-size) * 0.70710678);
 }
@@ -82,7 +82,7 @@ input[type="number"],
 	padding: 0 10px;
 	background: var(--glass-popover-background);
 	border: var(--glass-popover-border);
-	border-radius: 10px;
+	border-radius: var(--radius-soft);
 	box-shadow: var(--glass-popover-shadow);
 	overflow: hidden;
 	backdrop-filter: var(--glass-popover-blur);

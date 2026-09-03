@@ -1,4 +1,4 @@
-{# Code version: v1.5.58 #}
+{# Code version: v1.5.61 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -115,7 +115,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.65.17') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.65.19') }}">
     <style>
         html,
         body {
@@ -140,7 +140,7 @@
             gap: 0;
             width: min(var(--live-trading-pin-dialog-width), calc(100vw - 32px));
             padding: var(--live-trading-pin-dialog-padding);
-            border: 1px solid color-mix(in srgb, var(--theme-glass-highlight) 58%, var(--theme-glass-border));
+            border: 0;
             border-radius: var(--live-trading-pin-dialog-radius);
             background: color-mix(in srgb, var(--glass-surface-background-dense) 94%, transparent);
             box-shadow:
@@ -265,7 +265,7 @@
             width: var(--live-trading-pin-slot-dot-size);
             height: var(--live-trading-pin-slot-dot-size);
             border-radius: 50%;
-            background: var(--text);
+            background: var(--accent-fill);
         }
 
         .live-trading-pin-field:focus-within .live-trading-pin-slot:not(.is-filled)::before {

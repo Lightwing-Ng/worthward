@@ -1,4 +1,4 @@
-/* Code version: v0.25.3 */
+/* Code version: v0.25.4 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -368,7 +368,7 @@
     justify-content: center;
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: var(--radius-soft);
     background: var(--settings-icon-surface, var(--accent-surface-icon));
     color: var(--settings-icon-tint, var(--accent-text));
     box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
@@ -2363,7 +2363,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding-top: 6px;
     padding-bottom: 6px;
     line-height: 1.2;
-    border-radius: 10px;
+    border-radius: var(--radius-soft);
 }
 
 .settings-language-table th.is-current-language {
@@ -2987,7 +2987,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     scrollbar-width: none;
     -ms-overflow-style: none;
     border: var(--frosted-glass-border);
-    border-radius: 10px;
+    border-radius: var(--radius-soft);
     background: var(--frosted-glass-opaque-background, var(--glass-popover-background));
     background-clip: padding-box;
     box-shadow: var(--glass-popover-shadow);

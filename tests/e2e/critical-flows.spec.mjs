@@ -1,4 +1,4 @@
-/* Code version: v1.203.5 */
+/* Code version: v1.203.8 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -2330,14 +2330,17 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
         return {
             buttonPaddingInline: Number.parseFloat(buttonStyles.paddingInlineStart),
             buttonWidth: buttonRect.width,
+            dialogBorderWidth: Number.parseFloat(getComputedStyle(element).borderTopWidth),
             dialogRadius: Number.parseFloat(getComputedStyle(element).borderRadius),
             dialogWidth: dialogRect.width,
             iconCenterY: icon.top + (icon.height / 2),
+            iconColor: getComputedStyle(element.querySelector('.live-trading-pin-icon')).backgroundColor,
             titleCenterY: title.top + (title.height / 2),
         };
     });
     expect(Math.abs(geometry.iconCenterY - geometry.titleCenterY)).toBeLessThanOrEqual(0.5);
-    expect(geometry.dialogRadius).toBe(24);
+    expect(geometry.dialogBorderWidth).toBe(0);
+    expect(geometry.dialogRadius).toBe(10);
     expect(geometry.dialogWidth).toBeLessThanOrEqual(392);
     expect(geometry.buttonPaddingInline).toBe(14);
     expect(geometry.buttonWidth).toBeLessThan(82);
@@ -2349,6 +2352,7 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
             centerX: slotRect.left + (slotRect.width / 2),
             centerY: slotRect.top + (slotRect.height / 2),
             height: Number.parseFloat(mark.height),
+            color: mark.backgroundColor,
             width: Number.parseFloat(mark.width),
         };
     }));
@@ -2365,9 +2369,9 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
     await dialog.locator('#live_trading_pin').fill('123');
     await expect(unlock).toBeDisabled();
     await expect.poll(readSlotMarks).toEqual([
-        expect.objectContaining({width: 8, height: 8}),
-        expect.objectContaining({width: 8, height: 8}),
-        expect.objectContaining({width: 8, height: 8}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
         expect.objectContaining({width: 20, height: 1}),
         expect.objectContaining({width: 20, height: 1}),
         expect.objectContaining({width: 20, height: 1}),
@@ -2375,10 +2379,10 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
 
     await dialog.locator('#live_trading_pin').fill('1234');
     await expect.poll(readSlotMarks).toEqual([
-        expect.objectContaining({width: 8, height: 8}),
-        expect.objectContaining({width: 8, height: 8}),
-        expect.objectContaining({width: 8, height: 8}),
-        expect.objectContaining({width: 8, height: 8}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
+        expect.objectContaining({width: 8, height: 8, color: geometry.iconColor}),
         expect.objectContaining({width: 20, height: 1}),
         expect.objectContaining({width: 20, height: 1}),
     ]);
@@ -8609,7 +8613,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.4';
+            && url.searchParams.get('v') === '1.78.5';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');

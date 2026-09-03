@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.26
+Code version: v0.8.28
 """
 
 from pathlib import Path
@@ -152,11 +152,11 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.25.3");' in app_css
-    assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
-    assert '@import url("./components/forms.css?v=3.40.6");' in app_css
-    assert '@import url("./views/investment.css?v=1.78.4");' in app_css
-    assert "v0.65.17" in app_css
+    assert '@import url("./views/settings.css?v=0.25.4");' in app_css
+    assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
+    assert '@import url("./components/forms.css?v=3.40.7");' in app_css
+    assert '@import url("./views/investment.css?v=1.78.5");' in app_css
+    assert "v0.65.19" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.13");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.14");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -1016,4 +1016,4 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
     trade_stack_start = trade_css.rindex(".trade-chart-stack {")
     trade_stack = trade_css[trade_stack_start : trade_css.index("\n}", trade_stack_start)]
     assert "overflow: hidden;" in trade_stack
-    assert '@import url("./views/workspace.css?v=1.22.1");' in app_css
+    assert '@import url("./views/workspace.css?v=1.22.2");' in app_css

@@ -1,7 +1,8 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.9.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.9.1."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from app import create_app
@@ -350,7 +351,7 @@ def test_pagination_range_menu_hides_the_scrollbar_track() -> None:
     assert "overflow-y: auto;" in menu_rule
     assert "scrollbar-width: none;" in menu_rule
     assert "-ms-overflow-style: none;" in menu_rule
-    assert "border-radius: 10px;" in menu_rule
+    assert "border-radius: var(--radius-soft);" in menu_rule
     assert "scrollbar-gutter:" not in menu_rule
     assert "scrollbar-color:" not in menu_rule
     scrollbar_start = settings_css.index(
@@ -409,9 +410,30 @@ def test_investment_history_scroll_shell_keeps_rounded_bottom_corners() -> None:
         ".investment-history-table tbody tr:last-child > :last-child {",
         maxsplit=1,
     )[1].split("}", maxsplit=1)[0]
-    assert "border-radius: 0 0 10px 10px;" in scroll_rule
-    assert "border-bottom-left-radius: 10px;" in first_corner_rule
-    assert "border-bottom-right-radius: 10px;" in last_corner_rule
+    assert "border-radius: 0 0 var(--radius-panel) var(--radius-panel);" in scroll_rule
+    assert "border-bottom-left-radius: var(--radius-panel);" in first_corner_rule
+    assert "border-bottom-right-radius: var(--radius-panel);" in last_corner_rule
+
+
+def test_ordinary_ten_pixel_radii_use_foundation_tokens() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    css_root = project_root / "app/web/static/assets/css"
+    foundation_tokens = css_root / "foundation/tokens.css"
+    literal_radius_pattern = re.compile(
+        r"(?m)^\s*(?:--[a-z0-9_-]*radius|border(?:-[a-z]+)*-radius)"
+        r"\s*:[^;\n]*\b10px\b"
+    )
+
+    violations = []
+    for css_path in sorted(css_root.rglob("*.css")):
+        if css_path == foundation_tokens:
+            continue
+        css_text = css_path.read_text(encoding="utf-8")
+        for match in literal_radius_pattern.finditer(css_text):
+            line_number = css_text.count("\n", 0, match.start()) + 1
+            violations.append(f"{css_path}:{line_number}: {match.group(0).strip()}")
+
+    assert violations == []
 
 
 def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:
@@ -639,7 +661,7 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert "body.is-investment-import-modal-open #global_quick_actions" in investment_css
     assert "position: sticky;" in investment_css
     assert "pointer-events: none;" in investment_css
-    assert "border-radius: 10px;" in investment_css
+    assert "border-radius: var(--radius-soft);" in investment_css
     assert "inset: 0;" in investment_css
     assert "backdrop-filter: saturate(84%) blur(18px);" in investment_css
     assert "body.is-investment-import-modal-open" in investment_css

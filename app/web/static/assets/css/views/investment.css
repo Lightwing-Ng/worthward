@@ -1,4 +1,4 @@
-/* Code version: v1.78.4 */
+/* Code version: v1.78.5 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -19,7 +19,7 @@
     --investment-community-share-footer-qr-size: 108px;
     --investment-community-share-ticker-identity-logo-size: 36px;
     --investment-community-share-ticker-identity-logo-base: 20px;
-    --investment-unbound-alert-radius: 10px;
+    --investment-unbound-alert-radius: var(--radius-soft);
 }
 
 .investment-workspace-header {
@@ -73,7 +73,7 @@
 }
 
 .investment-surface-stack>.chart-surface {
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
 }
 
 .investment-nav-icon-shell {
@@ -576,7 +576,7 @@
     max-width: min(360px, calc(100vw - 24px));
     padding: 8px 10px;
     border: var(--tooltip-border);
-    border-radius: 10px;
+    border-radius: var(--radius-soft);
     background: var(--tooltip-background);
     box-shadow: var(--tooltip-shadow);
     backdrop-filter: var(--tooltip-blur);
@@ -2522,7 +2522,7 @@
     flex-direction: column;
     height: 100%;
     padding: 0 !important;
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     background: var(--panel-strong);
     scrollbar-gutter: auto !important;
     overflow: hidden;
@@ -2617,7 +2617,7 @@
     align-items: center;
     justify-content: center;
     min-height: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     background: var(--glass-surface-background-soft);
     backdrop-filter: var(--frosted-glass-blur);
     -webkit-backdrop-filter: var(--frosted-glass-blur);
@@ -2644,7 +2644,7 @@
 .investment-stock-details-metrics,
 .investment-stock-details-price-chart-card,
 .investment-stock-details-donut-card {
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -3024,7 +3024,7 @@
 
 .scrollable-data-table-shell {
     /* The shell alone clips every fixed and scrolling table layer at its corners. */
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -3054,7 +3054,7 @@
     z-index: var(--layer-surface-content);
     pointer-events: none;
     overflow: hidden;
-    border-radius: 10px 10px 0 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     opacity: 0.74;
 }
 
@@ -3067,7 +3067,7 @@
     z-index: var(--layer-surface-content);
     pointer-events: none;
     overflow: hidden;
-    border-radius: 10px 10px 0 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     background: var(--frosted-glass-background);
     box-shadow: var(--frosted-glass-shadow);
     backdrop-filter: var(--frosted-glass-blur);
@@ -3096,7 +3096,7 @@
     inset-inline-start: calc(-1 * var(--scrollable-data-table-overlay-border-compensation));
     z-index: calc(var(--layer-surface-content) + 1);
     pointer-events: none;
-    border-radius: 10px 10px 0 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     background: var(--frosted-glass-background);
     box-shadow: var(--frosted-glass-shadow);
     backdrop-filter: var(--frosted-glass-blur);
@@ -3134,7 +3134,7 @@
     overflow-x: auto;
     overflow-y: auto;
     border-top: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-panel);
     background: var(--panel-strong);
     background-clip: padding-box;
     scrollbar-gutter: stable;
@@ -3168,7 +3168,7 @@
 }
 
 .scrollable-data-table-scroll:not(.investment-holdings-table-scroll) {
-    border-radius: 0 0 10px 10px;
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 }
 
 .scrollable-data-table,
@@ -3252,7 +3252,7 @@
 
 .scrollable-data-table thead th:first-child,
 .investment-holdings-table thead th:first-child {
-    border-top-left-radius: 10px;
+    border-top-left-radius: var(--radius-panel);
 }
 
 .scrollable-data-table thead th:first-child {
@@ -3261,7 +3261,7 @@
 
 .scrollable-data-table thead th:last-child,
 .investment-holdings-table thead th:last-child {
-    border-top-right-radius: 10px;
+    border-top-right-radius: var(--radius-panel);
 }
 
 .scrollable-data-table thead th:last-child {
@@ -3276,12 +3276,12 @@
 
 .scrollable-data-table tbody tr:last-child td:first-child,
 .investment-holdings-table tbody tr:last-child td:first-child {
-    border-bottom-left-radius: 10px;
+    border-bottom-left-radius: var(--radius-panel);
 }
 
 .scrollable-data-table tbody tr:last-child td:last-child,
 .investment-holdings-table tbody tr:last-child td:last-child {
-    border-bottom-right-radius: 10px;
+    border-bottom-right-radius: var(--radius-panel);
 }
 
 /* Keep the four table layers rectangular; the shell above provides the only corner mask. */
@@ -3299,7 +3299,7 @@
 }
 
 .investment-history-table-shell > .investment-history-table-scroll {
-    border-radius: 0 0 10px 10px;
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 }
 
 .investment-holdings-cell {
@@ -4472,7 +4472,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 132px;
     resize: vertical;
     font: inherit;
-    border-radius: 10px;
+    border-radius: var(--radius-soft);
 }
 
 .investment-import-paste-row {
@@ -4855,7 +4855,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-history-table-shell > .investment-history-table[data-table-header] {
     min-width: 0;
     width: 100%;
-    border-radius: 10px 10px 0 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
 }
 
 .investment-history-table-scroll {
@@ -4865,15 +4865,15 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     inset-block-end: 0;
     flex: 0 0 auto;
     height: auto;
-    border-radius: 0 0 10px 10px;
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 }
 
 .investment-history-table-shell > .investment-history-table-scroll > .investment-history-table tbody tr:last-child > :first-child {
-    border-bottom-left-radius: 10px;
+    border-bottom-left-radius: var(--radius-panel);
 }
 
 .investment-history-table-shell > .investment-history-table-scroll > .investment-history-table tbody tr:last-child > :last-child {
-    border-bottom-right-radius: 10px;
+    border-bottom-right-radius: var(--radius-panel);
 }
 
 .investment-history-table-scroll > .investment-history-table {

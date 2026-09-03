@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.14.0
+Code version: v1.14.1
 """
 
 from __future__ import annotations
@@ -654,7 +654,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 raw_token("--settings-general-option-max-width", "var(--layout-content-width)"),
-                px_token("--settings-general-option-radius", 10, 0),
+                raw_token("--settings-general-option-radius", "var(--radius-soft)"),
                 px_token("--settings-general-option-pad-block", 14, 0),
                 px_token("--settings-general-option-pad-inline", 16, 0),
                 raw_token("--settings-general-option-background", "var(--glass-surface-background-strong)"),
@@ -674,7 +674,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 material_reference_token("--workspace-modal-material", "Frosted glass"),
-                px_token("--workspace-modal-radius", 10),
+                raw_token("--workspace-modal-radius", "var(--radius-panel)"),
                 px_token("--workspace-modal-pad-block", 18),
                 px_token("--workspace-modal-pad-inline", 18),
                 px_token("--workspace-modal-close-offset", 10),
@@ -717,7 +717,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 px_token("--strategy-stepper-width", 20, 1),
-                px_token("--strategy-stepper-radius", 6, 0),
+                raw_token("--strategy-stepper-radius", "var(--radius-soft)"),
                 px_token("--strategy-param-control-height", 36, 1),
                 px_token("--strategy-stepper-button-height", 18, 1),
                 px_token("--strategy-stepper-font-size", 9, 1),

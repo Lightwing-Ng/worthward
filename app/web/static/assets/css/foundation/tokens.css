@@ -1,4 +1,4 @@
-/* Code version: v0.26.0 */
+/* Code version: v0.26.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -63,7 +63,7 @@
 	--glass-highlight: var(--theme-glass-highlight);
 	--radius-panel: 10px;
 	--radius-control: 999px;
-	--radius-soft: 10px;
+	--radius-soft: var(--radius-panel);
 	--radius-pill: 999px;
 	--layout-glass-border-width: 1px;
 	--layout-content-width: 640px;
@@ -140,10 +140,10 @@
 	--settings-strategy-params-indent: 64px;
 	--settings-strategy-param-cell-pad-block: 5px;
 	--settings-strategy-param-cell-pad-inline: 6px;
-	--settings-general-card-radius: 10px;
+	--settings-general-card-radius: var(--radius-panel);
 	--settings-general-panel-pad: 10px;
 	--settings-general-panel-gap: 10px;
-	--settings-general-option-radius: 10px;
+	--settings-general-option-radius: var(--radius-soft);
 	--settings-general-option-pad-block: 14px;
 	--settings-general-option-pad-inline: 16px;
 	--settings-general-option-max-width: var(--layout-content-width);
@@ -281,10 +281,10 @@
 	--switch-thumb-transition: transform 260ms var(--motion-emphasized), box-shadow 220ms var(--motion-standard);
 	--demo-accent-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
 	--strategy-stepper-width: 20px;
-	--strategy-stepper-radius: 6px;
+	--strategy-stepper-radius: var(--radius-soft);
 	--strategy-stepper-button-height: 18px;
 	--strategy-stepper-font-size: 9px;
-	--workspace-modal-radius: 10px;
+	--workspace-modal-radius: var(--radius-panel);
 	--workspace-modal-pad-block: 18px;
 	--workspace-modal-pad-inline: 18px;
 	--workspace-modal-close-offset: 10px;
@@ -295,7 +295,7 @@
 	--workspace-modal-row-gap: 4px;
 	--workspace-modal-title-margin-end: 32px;
 	--live-trading-pin-dialog-width: 392px;
-	--live-trading-pin-dialog-radius: 24px;
+	--live-trading-pin-dialog-radius: var(--workspace-modal-radius);
 	--live-trading-pin-dialog-padding: 24px;
 	--live-trading-pin-icon-size: 32px;
 	--live-trading-pin-slot-size: 28px;

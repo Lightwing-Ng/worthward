@@ -1,4 +1,4 @@
-/* Code version: v1.22.1 */
+/* Code version: v1.22.2 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -910,7 +910,7 @@
     left: 0;
     right: 0;
     z-index: var(--layer-global-popover);
-    border-radius: var(--ticker-suggestions-radius, 10px);
+    border-radius: var(--ticker-suggestions-radius, var(--radius-soft));
     background: var(--glass-popover-background);
     border: var(--glass-popover-border);
     box-shadow: var(--glass-popover-shadow);
