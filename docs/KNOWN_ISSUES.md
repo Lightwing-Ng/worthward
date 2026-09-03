@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.236.1`
+Documentation version: `v1.237.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -85,6 +85,19 @@ references, transaction descriptions, or copied statement content.
   compare it with the canonical cache, and obtain explicit user authorization
   before removing it. Zero-byte companion locks follow the same ownership
   boundary while a writer may be active.
+
+## LSTM Price Field compute backends
+
+- LSTM `Auto` uses NumPy CPU because origin-local tiny LSTM training is faster
+  on unified-memory CPU than GPU kernel launch. An explicit `GPU` request uses
+  Apple MPS or CUDA only after a real tensor readback.
+- Neural Engine is never claimed from a static import or an unconfirmed Core ML
+  compile. `Auto` does not select it. An explicit `Neural Engine` request falls
+  back to CPU when compute-unit execution is not confirmed.
+- Walk-forward LSTM origins run serially to bound unified-memory occupancy.
+  Intermediate sequences are released after each origin.
+- MLX and coremltools are not required packages. They are probed when present
+  and otherwise recorded as unavailable.
 
 ## Backtest interval constraints
 

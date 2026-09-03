@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.37
+Code version: v0.9.0
 """
 
 from pathlib import Path
@@ -625,9 +625,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.50.1",
-        "-backtest-probability-grid-v0.25.1",
-        "-backtest-v0.37.6",
+        "-app-v0.51.0",
+        "-backtest-probability-grid-v0.26.0",
+        "-backtest-v0.38.0",
         "-backtest-layout-v0.3.4",
     ):
         assert fragment in base_template
@@ -635,9 +635,24 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
 def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None:
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
+    probability_field_partial = _read(TEMPLATE_ROOT / "_backtest_probability_field.html")
     backtest_script = _read(ASSET_ROOT / "js/backtest.js")
     pending_app = _read(ASSET_ROOT / "js/app.js")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+    probability_grid = _read(ASSET_ROOT / "js/backtest/probability-grid.js")
+    lstm_strategy = _read(PROJECT_ROOT / "strategies/algorithms/strategy_lstm_price_field.py")
+    bayesian_strategy = _read(PROJECT_ROOT / "strategies/algorithms/strategy_bayesian_price_field.py")
+
+    assert '{% include "_backtest_probability_field.html" %}' in backtest_template
+    assert "show_probability_field" in backtest_template
+    assert "selected_strategy_id == 'bayesian-price-field'" not in backtest_template
+    assert "lstm-price-field" in probability_grid
+    assert "computeGridGeometry" not in lstm_strategy
+    assert "backtest-probability-grid" not in lstm_strategy
+    assert "backtest-probability-grid" not in bayesian_strategy
+    assert "build_probability_grid_presentation" in lstm_strategy
+    assert "probability_grid_geometry_fields" in bayesian_strategy
+    assert "PROBABILITY_GRID_RENDERER" in lstm_strategy or "probability-grid-v1" in lstm_strategy
 
     for fragment in (
         'id="backtest_probability_detail_panel"',
@@ -648,9 +663,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'data-backtest-probability-detail-up-summary',
         'data-backtest-probability-detail-down-summary',
         'class="backtest-probability-detail-status-row"',
+        'aria-live="polite"',
+    ):
+        assert fragment in probability_field_partial
+        assert fragment in pending_app
+    for fragment in (
         '"value": "probability", "label": "Price Field"',
         'data-option-count="',
-        'aria-live="polite"',
     ):
         assert fragment in backtest_template
     assert 'backtest-probability-detail-contract' not in backtest_template
@@ -662,7 +681,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     assert '>Forecast date<' not in backtest_template
     assert 'backtest-probability-detail-x-axis-title' not in pending_app
     assert 'Forecast date' not in pending_app
-    assert 'aria-label="Average probability mass per forecast horizon by price direction"' in backtest_template
+    assert 'aria-label="Average probability mass per forecast horizon by price direction"' in probability_field_partial
     assert (
         '.backtest-history-view-body > '
         '[data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel)'
@@ -672,8 +691,12 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     ) not in trade_css
     assert backtest_template.index('"value": "metrics"') < backtest_template.index('"value": "probability"')
     assert backtest_template.index('"value": "probability"') < backtest_template.index('"value": "transactions"')
-    assert backtest_template.index('data-backtest-history-view-panel="metrics"') < backtest_template.index('data-backtest-history-view-panel="probability"')
-    assert backtest_template.index('data-backtest-history-view-panel="probability"') < backtest_template.index('data-backtest-history-view-panel="transactions"')
+    assert backtest_template.index('data-backtest-history-view-panel="metrics"') < backtest_template.index(
+        '{% include "_backtest_probability_field.html" %}'
+    )
+    assert backtest_template.index('{% include "_backtest_probability_field.html" %}') < backtest_template.index(
+        'data-backtest-history-view-panel="transactions"'
+    )
     for fragment in (
         "pointRadius: 0,\n\t\t\t\t\t\tpointHoverRadius: 0,",
         "const buildProbabilityForecastDateParts = (anchorIndex, horizon) => {",

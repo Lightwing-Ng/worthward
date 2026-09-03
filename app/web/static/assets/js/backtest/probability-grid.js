@@ -1,12 +1,25 @@
 /**
- * Bayesian probability-grid geometry and interaction helpers.
+ * Shared probability-grid geometry and interaction helpers.
  *
- * Code version: v0.25.1
+ * Bayesian and LSTM Price Field strategies emit this renderer payload.
+ * Layout, hover, pin, resize, thresholding, and styling live only here.
+ *
+ * Code version: v0.26.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
 
-    const PRESENTATION_SCHEMA = "bayesian-price-field/v1";
+    const BAYESIAN_PRESENTATION_SCHEMA = "bayesian-price-field/v1";
+    const LSTM_PRESENTATION_SCHEMA = "lstm-price-field/v1";
+    const PRESENTATION_SCHEMAS = Object.freeze([
+        BAYESIAN_PRESENTATION_SCHEMA,
+        LSTM_PRESENTATION_SCHEMA,
+    ]);
+    const PRESENTATION_SCHEMA = BAYESIAN_PRESENTATION_SCHEMA;
+    const PRICE_FIELD_STRATEGY_IDS = Object.freeze([
+        "bayesian-price-field",
+        "lstm-price-field",
+    ]);
     const RENDERER_ID = "probability-grid-v1";
     const DEFAULT_ROWS_ABOVE = 10;
     const DEFAULT_ROWS_BELOW = 10;
@@ -93,7 +106,8 @@
 
     const normalizePresentation = (value, expectedRawDatesOrOptions = null, expectedLength = null) => {
         if (!value || typeof value !== "object") return null;
-        if (String(value.schema || "") !== PRESENTATION_SCHEMA) return null;
+        const schema = String(value.schema || "");
+        if (!PRESENTATION_SCHEMAS.includes(schema)) return null;
         if (String(value.renderer || "") !== RENDERER_ID) return null;
         const presentation = {...value};
         // These fields belonged to the retired frosted-field material. Drop
@@ -169,7 +183,7 @@
         const symmetricRows = normalizeSymmetricRows(value.rows_above, value.rows_below);
         return Object.freeze({
             ...presentation,
-            schema: PRESENTATION_SCHEMA,
+            schema,
             renderer: RENDERER_ID,
             rows_above: symmetricRows.rowsAbove,
             rows_below: symmetricRows.rowsBelow,
@@ -973,13 +987,20 @@
         });
     };
 
+    const isPriceFieldStrategy = (strategyId) => PRICE_FIELD_STRATEGY_IDS.includes(
+        String(strategyId || ""),
+    );
+
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.25.1",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.26.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
         PRESENTATION_SCHEMA,
+        PRESENTATION_SCHEMAS,
+        PRICE_FIELD_STRATEGY_IDS,
         RENDERER_ID,
+        isPriceFieldStrategy,
         buildProbabilityCells,
         computeInstantOpacityProfile,
         computeGridMinimumPlotHeight,

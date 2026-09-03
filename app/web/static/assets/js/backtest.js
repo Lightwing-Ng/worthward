@@ -1,4 +1,4 @@
-/* Code version: v0.37.6 */
+/* Code version: v0.38.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -842,7 +842,7 @@
 			probabilityTooltip.setAttribute("role", "img");
 			probabilityTooltip.setAttribute(
 				"aria-label",
-				"Bayesian future price probability field; displayed from the signal-close anchor; executable target is next-open to-following-open",
+				"Future price probability field; displayed from the signal-close anchor; executable target is next-open to-following-open",
 			);
 			if (probabilityCanvas) {
 				probabilityCanvas.className = "backtest-probability-canvas";
@@ -1608,7 +1608,7 @@
 			);
 			probabilityDetailGrid.setAttribute(
 				"aria-label",
-				`Bayesian future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`,
+				`Future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`,
 			);
 			if (probabilityDetailStatus instanceof HTMLElement) {
 				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;

@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.25.1 */
+/* Shared Backtest probability-grid contracts. Code version: v0.26.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,12 +40,24 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.25.1');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.26.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
+    assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
+        'bayesian-price-field/v1',
+        'lstm-price-field/v1',
+    ]);
+    assert.deepEqual(grid.PRICE_FIELD_STRATEGY_IDS, [
+        'bayesian-price-field',
+        'lstm-price-field',
+    ]);
+    assert.equal(grid.isPriceFieldStrategy('bayesian-price-field'), true);
+    assert.equal(grid.isPriceFieldStrategy('lstm-price-field'), true);
+    assert.equal(grid.isPriceFieldStrategy('macd'), false);
 });
 
-test('accepts only the versioned Bayesian presentation schema', () => {
+test('accepts the versioned Bayesian and LSTM presentation schemas', () => {
     const normalized = grid.normalizePresentation(presentation, {raw_dates: rawDates, length: rawDates.length});
+    assert.equal(normalized.schema, 'bayesian-price-field/v1');
     assert.equal(normalized.renderer, 'probability-grid-v1');
     assert.equal(normalized.rows_above, 10);
     assert.equal(normalized.rows_below, 10);
@@ -66,6 +78,15 @@ test('accepts only the versioned Bayesian presentation schema', () => {
     assert.deepEqual(normalized.return_autoregression, [0.2, null, -0.1]);
     assert.deepEqual(normalized.return_long_run_mean, [0.0005, null, 0.0002]);
     assert.deepEqual(normalized.return_innovation_scale, [0.018, null, 0.025]);
+    const lstmNormalized = grid.normalizePresentation(
+        {...presentation, schema: 'lstm-price-field/v1'},
+        {raw_dates: rawDates, length: rawDates.length},
+    );
+    assert.equal(lstmNormalized.schema, 'lstm-price-field/v1');
+    assert.equal(lstmNormalized.renderer, 'probability-grid-v1');
+    assert.equal(lstmNormalized.columns, normalized.columns);
+    assert.equal(lstmNormalized.rows_above, normalized.rows_above);
+    assert.equal(lstmNormalized.gap_px, normalized.gap_px);
     assert.equal(grid.normalizePresentation({...presentation, schema: 'other/v1'}, rawDates, rawDates.length), null);
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
     assert.equal(grid.normalizePresentation({...presentation, return_autoregression: [0.2]}, rawDates, rawDates.length), null);

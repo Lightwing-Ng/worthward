@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.9.2
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -194,6 +194,54 @@ class BacktestPageTests(unittest.TestCase):
             html.index('data-backtest-history-view-panel="probability"'),
             html.index('data-backtest-history-view-panel="transactions"'),
         )
+        self.assertIn(">Bayesian Price Field detail<", html)
+        self.assertIn('id="backtest_probability_detail_panel"', html)
+
+    def test_lstm_history_reuses_the_same_price_field_surface(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            'id="backtest_history_probability" name="backtest_history_view_tab" '
+            'type="radio" value="probability"',
+            html,
+        )
+        self.assertIn('data-option-count="3"', html)
+        self.assertIn('data-backtest-history-view-panel="probability"', html)
+        self.assertIn(">LSTM Price Field detail<", html)
+        self.assertIn('id="backtest_probability_detail_panel"', html)
+        self.assertIn("lstm-price-field", html)
+        self.assertIn("LSTM Price Field", html)
+        self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
+        self.assertLess(html.index('id="backtest_history_probability"'), html.index('id="backtest_history_transactions"'))
+
+    def test_lstm_parameter_api_exposes_namespaced_model_controls(self) -> None:
+        client = create_app().test_client()
+        response = client.get(
+            "/api/trade-strategy-fields?strategy=lstm-price-field"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_json()["html"]
+        self.assertIn('name="lstm_lookback"', html)
+        self.assertIn('name="lstm_hidden_size"', html)
+        self.assertIn('name="lstm_epochs"', html)
+        self.assertIn('name="lstm_seed"', html)
+        self.assertIn('name="cell_display_threshold"', html)
+        self.assertIn("Neural Engine", html)
+        self.assertNotIn('name="prior_strength"', html)
 
     def test_bayesian_parameter_api_formats_threshold_and_describes_auto_backend(self) -> None:
         client = create_app().test_client()

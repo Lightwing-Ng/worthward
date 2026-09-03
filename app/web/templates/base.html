@@ -1,4 +1,4 @@
-{# Code version: v0.31.38 #}
+{# Code version: v0.32.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -242,6 +242,8 @@
     "dcaResult": dca_result,
     "backtestResult": backtest_result,
     "selectedStrategyId": selected_strategy_id,
+    "priceFieldStrategyIds": price_field_strategy_ids|default(['bayesian-price-field', 'lstm-price-field']),
+    "showProbabilityField": show_probability_field|default(false),
     "backtestPeriodOptions": backtest_periods_by_interval,
     "strategyRequiredTickers": strategy_required_tickers,
     "strategySupports": strategy_supports,
@@ -364,13 +366,13 @@
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.4.1') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.24.3') }}"></script>
 {% endif %}
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.50.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.51.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.25.1') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.37.6') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.26.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.38.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.3.4') }}"></script>
 {% if selected_strategy_id == 'dca' %}
     <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>

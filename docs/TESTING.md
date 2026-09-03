@@ -1,6 +1,18 @@
 # Testing guide
 
-Documentation version: `v1.43.25`
+Documentation version: `v1.44.0`
+
+## Price Field shared-grid coverage
+
+Python tests cover LSTM strategy registration, the shared `probability-grid-v1`
+payload, causal walk-forward with no future lookahead, fail-closed short
+windows, and backend readback that reports the resolved CPU engine rather than
+the requested GPU or Neural Engine label. Node tests accept both
+`bayesian-price-field/v1` and `lstm-price-field/v1` through one
+`probability-grid.js` module. The isolated Chromium file
+`tests/e2e/lstm-price-field.spec.mjs` checks the LSTM selector, namespaced
+parameters, shared Price Field DOM, cache-busted `probability-grid-v0.26.0`
+asset, square cells, and 390px overflow on port `8699`.
 
 ## Bayesian Price Field detail view coverage
 

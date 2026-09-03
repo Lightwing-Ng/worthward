@@ -1,4 +1,4 @@
-/* Code version: v0.50.1 */
+/* Code version: v0.51.0 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -2029,7 +2029,14 @@
             const showBacktestTradeDetails = showTradeDetailsInput instanceof HTMLInputElement
                 ? showTradeDetailsInput.checked
                 : true;
-            const showBacktestProbabilityField = state.selectedStrategyId === "bayesian-price-field";
+            const priceFieldStrategyIds = Array.isArray(state.priceFieldStrategyIds)
+                && state.priceFieldStrategyIds.length
+                ? state.priceFieldStrategyIds
+                : (window.WORTHWARD_BACKTEST_PROBABILITY_GRID?.PRICE_FIELD_STRATEGY_IDS
+                    || ["bayesian-price-field", "lstm-price-field"]);
+            const showBacktestProbabilityField = priceFieldStrategyIds.includes(
+                state.selectedStrategyId,
+            );
             const tradeMetricLabels = [
                 "Initial capital",
                 "Final equity",
@@ -2132,7 +2139,7 @@
                                  hidden
                                  aria-hidden="true">
                             <div class="backtest-probability-detail-heading">
-                                <p class="chart-heading" id="backtest_probability_detail_title">Bayesian Price Field detail</p>
+                                <p class="chart-heading" id="backtest_probability_detail_title">${state.selectedStrategyId === "lstm-price-field" ? "LSTM Price Field detail" : "Bayesian Price Field detail"}</p>
                                 <div class="backtest-probability-detail-status-row">
                                     <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
                                         Hover a price point to inspect its forecast field.
@@ -2145,8 +2152,12 @@
                                 </div>
                                 <div class="backtest-probability-detail-main">
                                     <div class="backtest-probability-detail-grid-viewport" data-backtest-probability-detail-grid-viewport>
-                                        <div class="backtest-probability-detail-grid" data-backtest-probability-detail-grid role="img" aria-label="Bayesian future price probability field"></div>
+                                        <div class="backtest-probability-detail-grid" data-backtest-probability-detail-grid role="img" aria-label="Future price probability field"></div>
                                         <span class="backtest-probability-detail-anchor" data-backtest-probability-detail-anchor aria-hidden="true"></span>
+                                        <div class="backtest-probability-detail-side-summary" role="group" aria-label="Average probability mass per forecast horizon by price direction">
+                                            <span class="backtest-probability-detail-side-summary-value is-up" data-backtest-probability-detail-up-summary></span>
+                                            <span class="backtest-probability-detail-side-summary-value is-down" data-backtest-probability-detail-down-summary></span>
+                                        </div>
                                     </div>
                                     <div class="backtest-probability-detail-x-axis" data-backtest-probability-detail-x-axis>
                                     </div>

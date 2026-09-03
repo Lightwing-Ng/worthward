@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -50,6 +50,8 @@ class StrategyLoaderTests(unittest.TestCase):
         self.assertEqual(categories["buy-and-hold"], "baseline")
         self.assertEqual(categories["macd"], "momentum")
         self.assertEqual(categories["supertrend-ai"], "trend")
+        self.assertEqual(categories["lstm-price-field"], "machine-learning")
+        self.assertEqual(categories["bayesian-price-field"], "machine-learning")
 
     def test_catalog_class_resolution_matches_instantiation(self) -> None:
         catalog_item = next(item for item in list_enabled_strategies() if item["id"] == "supertrend-ai")

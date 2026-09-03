@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.91.0
+Code version: v0.92.0
+- Added: LSTM Price Field shares the Bayesian probability-grid UI through the
+  shared Price Field contract and strategy-id allowlist.
 - Changed: Bayesian Markdown exports now report the executable-direction hit
   rate and bounded Brier probability score instead of the retired adaptive-cell
   score and lattice coverage diagnostics.
@@ -205,6 +207,10 @@ from app.core.email_settings import (
     test_smtp_connection,
 )
 from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
+from strategies.price_field_contract import (
+    PRICE_FIELD_STRATEGY_IDS,
+    is_price_field_strategy,
+)
 from strategies.interval_bridge import (
     DAILY_CLOSE_TO_NEXT_SESSION_OPEN,
     bridge_daily_signals_to_intraday,
@@ -5488,6 +5494,8 @@ def build_web_runtime() -> WebRuntime:
             strategy_options=strategy_options,
             strategy_option_groups=strategy_option_groups,
             selected_strategy_id=selected_strategy_id,
+            show_probability_field=is_price_field_strategy(selected_strategy_id),
+            price_field_strategy_ids=sorted(PRICE_FIELD_STRATEGY_IDS),
             strategy_required_tickers=strategy_required_tickers,
             strategy_supports=strategy_supports,
             strategy_default_tickers=strategy_default_tickers,

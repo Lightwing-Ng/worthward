@@ -6,7 +6,9 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.26.0
+Code version: v1.26.1
+- Changed: Probability-grid geometry now comes from the shared Price Field
+  contract so Bayesian and LSTM emit one renderer payload.
 - Changed: The signal target is the executable ``Open[t+1] -> Open[t+2]`` log
   return, so a close-origin prediction no longer receives credit for an
   overnight gap that has already occurred before the required next-open fill.
@@ -88,6 +90,11 @@ from app.infrastructure.parallel import (
 )
 from app.infrastructure.connectivity import is_remote_market_access_disabled
 
+from strategies.price_field_contract import (
+    BAYESIAN_PRICE_FIELD_SCHEMA,
+    probability_grid_geometry_fields,
+)
+
 from ..base import (
     BaseStrategy,
     StrategyParameterDefinition,
@@ -113,9 +120,6 @@ _MODEL_VERSION = "bayesian-price-field-model/v1.10.0"
 _EPSILON = 1e-12
 _CPU_PARALLEL_MIN_ROWS = 64
 _CPU_PARALLEL_MAX_WORKERS = 8
-_PROBABILITY_FIELD_ROWS_ABOVE = 10
-_PROBABILITY_FIELD_ROWS_BELOW = 10
-_PROBABILITY_FIELD_COLUMNS = 20
 _FACTOR_SELECTION_PRIORITY = (
     "volume",
     "pe",
@@ -2480,28 +2484,13 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             factor_selection,
         )
         presentation = {
-            "schema": "bayesian-price-field/v1",
-            "renderer": "probability-grid-v1",
+            "schema": BAYESIAN_PRICE_FIELD_SCHEMA,
             "model_version": _MODEL_VERSION,
-            "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
-            "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
-            "columns": _PROBABILITY_FIELD_COLUMNS,
-            "width_fraction": 0.25,
-            "gap_px": 2,
-            "padding_px": 8,
-            "min_cell_px": 4,
-            "cell_opacity_mapping": "instant-contrast-power-v1",
-            "cell_opacity_exponent": 1.6,
-            "cell_opacity_tail_ratio": 0.02,
+            **probability_grid_geometry_fields(),
             "cell_display_threshold_pct": float(
                 normalized_params["cell_display_threshold"]
             ),
-            "time_quantization": "integer-trading-days",
             "distribution_kind": "dynamic-normal-log-return",
-            "target_interval": "next-open-to-following-open",
-            "price_anchor_kind": "signal-close-display-anchor",
-            "multi_step_kind": "causal-ar1-return-state",
-            "step_unit": "trading-day",
             "predictive_mean": _json_number_list(output[_PREDICTION_MEAN_COLUMN]),
             "predictive_scale": _json_number_list(output[_PREDICTION_STD_COLUMN]),
             "probability_up": _json_number_list(output[_PROBABILITY_COLUMN]),
@@ -2518,20 +2507,6 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             # The compatibility key now points to a genuine direction hit-rate
             # payload rather than the retired realized-cell lattice score.
             "hit_rate": diagnostics,
-            "metric_geometry": {
-                "diagnostic_outcome": {
-                    "horizon": 1,
-                    "horizon_unit": "executed-open-to-open-session",
-                    "proper_probability_rule": "one-minus-brier-score",
-                },
-                "render_lattice": {
-                    "columns": _PROBABILITY_FIELD_COLUMNS,
-                    "rows_above": _PROBABILITY_FIELD_ROWS_ABOVE,
-                    "rows_below": _PROBABILITY_FIELD_ROWS_BELOW,
-                    "horizon_unit": "integer-trading-days-per-viewport-column",
-                    "horizon_mapping": "viewport-quantized",
-                },
-            },
             "data_keys": [
                 pd.Timestamp(value).isoformat()
                 for value in output["Date"].tolist()
