@@ -61,7 +61,7 @@ LONGBRIDGE_REVIEW_TOLERANCE_PERCENT = 10.0
 _LONGBRIDGE_SNAPSHOT_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _SEC_TICKER_INDEX: dict[str, int] | None = None
 _SEC_FUND_SERIES_INDEX: dict[str, tuple[int, str]] | None = None
-SEC_USER_AGENT = "Antigravity local portfolio application contact@example.invalid"
+SEC_USER_AGENT = "Worthward local portfolio application contact@example.invalid"
 SEC_FUND_SERIES_METADATA_URLS = (
     "https://www.sec.gov/files/investment/data/other/"
     "investment-company-series-and-class-information/investment_company_series_class.xml",

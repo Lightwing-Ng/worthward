@@ -709,7 +709,7 @@ export {
 };
 
 if (typeof window !== 'undefined') {
-    window.ANTIGRAVITY_LOCAL_STORE_PAGINATION = Object.freeze({
+    window.WORTHWARD_LOCAL_STORE_PAGINATION = Object.freeze({
         LOCAL_STORE_PAGINATION_CHUNK_SIZE,
         LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE,
         LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE,
@@ -728,5 +728,5 @@ if (typeof window !== 'undefined') {
         setLocalStorePaginationActivePage,
         syncLocalStorePaginationActivePage,
     });
-    window.dispatchEvent(new Event('antigravity:local-store-pagination-ready'));
+    window.dispatchEvent(new Event('worthward:local-store-pagination-ready'));
 }

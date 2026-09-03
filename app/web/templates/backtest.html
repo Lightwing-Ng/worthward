@@ -1,4 +1,4 @@
-{# Code version: v0.8.5 #}
+{# Code version: v0.8.6 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -147,7 +147,7 @@
                                     <div class="backtest-probability-detail-grid-viewport" data-backtest-probability-detail-grid-viewport>
                                         <div class="backtest-probability-detail-grid" data-backtest-probability-detail-grid role="img" aria-label="Bayesian future price probability field"></div>
                                         <span class="backtest-probability-detail-anchor" data-backtest-probability-detail-anchor aria-hidden="true"></span>
-                                        <div class="backtest-probability-detail-side-summary" role="group" aria-label="Probability mass by price direction">
+                                        <div class="backtest-probability-detail-side-summary" role="group" aria-label="Average probability mass per forecast horizon by price direction">
                                             <span class="backtest-probability-detail-side-summary-value is-up" data-backtest-probability-detail-up-summary></span>
                                             <span class="backtest-probability-detail-side-summary-value is-down" data-backtest-probability-detail-down-summary></span>
                                         </div>
@@ -240,7 +240,7 @@
 {% endblock %}
 {% block scripts %}
     <script>
-        window.ANTIGRAVITY_APP = window.ANTIGRAVITY_APP || {};
-        window.ANTIGRAVITY_APP.backtestResult = {{ backtest_result|tojson if backtest_result else 'null' }};
+        window.WORTHWARD_APP = window.WORTHWARD_APP || {};
+        window.WORTHWARD_APP.backtestResult = {{ backtest_result|tojson if backtest_result else 'null' }};
     </script>
 {% endblock %}

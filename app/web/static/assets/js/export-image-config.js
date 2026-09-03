@@ -7,9 +7,10 @@
  */
 (() => {
     "use strict";
+    const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
     const MODULE_VERSION = "v0.1.1";
-    const STORAGE_KEY = "antigravity:export-image-config:v1";
+    const STORAGE_KEY = "worthward:export-image-config:v1";
     const DEFAULT_PROFILE_ID = "investment-community-share";
     const profiles = new Map();
 
@@ -37,7 +38,7 @@
 
     const readStoredState = () => {
         try {
-            const raw = window.localStorage.getItem(STORAGE_KEY);
+            const raw = preferenceStorage.local.getItem(STORAGE_KEY);
             const parsed = raw ? JSON.parse(raw) : null;
             return parsed && typeof parsed === "object" ? parsed : {};
         } catch (_error) {
@@ -47,7 +48,7 @@
 
     const writeStoredState = (state) => {
         try {
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            preferenceStorage.local.setItem(STORAGE_KEY, JSON.stringify(state));
             return true;
         } catch (_error) {
             return false;
@@ -115,7 +116,7 @@
 
     const emitConfigChange = (profileId, config) => {
         if (typeof window.dispatchEvent !== "function" || typeof window.CustomEvent !== "function") return;
-        window.dispatchEvent(new window.CustomEvent("antigravity:export-image-config-change", {
+        window.dispatchEvent(new window.CustomEvent("worthward:export-image-config-change", {
             detail: {
                 profileId,
                 config,
@@ -222,6 +223,6 @@
         isFiniteNumber,
     };
 
-    window.ANTIGRAVITY_EXPORT_IMAGE = Object.freeze(api);
+    window.WORTHWARD_EXPORT_IMAGE = Object.freeze(api);
     applyProfileConfig(document.documentElement, DEFAULT_PROFILE_ID);
 })();

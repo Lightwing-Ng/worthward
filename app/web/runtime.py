@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.90.0
+Code version: v0.91.0
 - Changed: Bayesian Markdown exports now report the executable-direction hit
   rate and bounded Brier probability score instead of the retired adaptive-cell
   score and lattice coverage diagnostics.
@@ -149,6 +149,7 @@ from app.core.language_settings import (
     translate_text,
 )
 from app.core.live_trading_security import (
+    LEGACY_LIVE_TRADING_TOKEN_HEADER,
     LIVE_TRADING_TOKEN_HEADER,
     authorize_live_trading_api_request,
     validate_live_trading_pin,
@@ -417,7 +418,7 @@ FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
     "frontend-fetch-aborts.env",
     "frontend-fetch-aborts",
 )
-PROJECT_SOURCE_URL = "https://github.com/Lightwing-Ng/compareStocks"
+PROJECT_SOURCE_URL = "https://github.com/Lightwing-Ng/worthward"
 PROJECT_DISPLAY_URL = PROJECT_SOURCE_URL.removeprefix("https://").removeprefix("http://")
 
 
@@ -452,7 +453,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
 }
 LOCAL_STORE_PAGE_SIZE = 10
 SETTINGS_LANGUAGE_PAGE_SIZE = 10
-SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
+SETTINGS_FEEDBACK_COOKIE = "worthward_settings_feedback"
 
 
 def _resolve_strategy_provider_end(
@@ -1097,7 +1098,8 @@ def build_web_runtime() -> WebRuntime:
     def live_trading_api_authorization_failure_response():
         access_granted, error_status, error_message = authorize_live_trading_api_request(
             bool(session.get("live_trading_unlocked")),
-            request.headers.get(LIVE_TRADING_TOKEN_HEADER),
+            request.headers.get(LIVE_TRADING_TOKEN_HEADER)
+            or request.headers.get(LEGACY_LIVE_TRADING_TOKEN_HEADER),
         )
         if access_granted:
             return None
@@ -1105,7 +1107,7 @@ def build_web_runtime() -> WebRuntime:
         response = jsonify({"success": False, "error": error_message})
         response.status_code = error_status
         if error_status == 401:
-            response.headers["WWW-Authenticate"] = 'Bearer realm="antigravity-live-trading"'
+            response.headers["WWW-Authenticate"] = 'Bearer realm="worthward-live-trading"'
         return apply_no_store_headers(response)
 
     def ensure_investment_transactions_cache_dir() -> None:
@@ -5776,7 +5778,7 @@ def build_web_runtime() -> WebRuntime:
                 "*Copy and paste the prompt below into any SOTA LLMs to recreate or iterate on this strategy.*",
                 "",
                 "````",
-                "You are an elite quantitative trading developer and Python engineer. Your task is to write a trading strategy plugin for the `antigravity` trading system.",
+                "You are an elite quantitative trading developer and Python engineer. Your task is to write a trading strategy plugin for the `worthward` trading system.",
                 "",
                 "The user will provide a trading logic or indicator concept. You must output a fully functional, production-ready Python file named `strategy_{strategy_id}.py` that acts as a drop-in component for the `strategies/algorithms/` directory.",
                 "",
@@ -6177,7 +6179,7 @@ def build_web_runtime() -> WebRuntime:
             buffer,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             as_attachment=True,
-            download_name="antigravity-i18n-mapping.xlsx",
+            download_name="worthward-i18n-mapping.xlsx",
         )
 
     def language_settings_api():

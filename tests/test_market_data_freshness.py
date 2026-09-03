@@ -440,14 +440,14 @@ class MarketDataFreshnessTests(unittest.TestCase):
     def test_store_directory_override_is_explicit_and_process_local(self) -> None:
         fallback = BASE_DIR / "market_store"
         with TemporaryDirectory() as temp_dir:
-            with patch.dict("os.environ", {"ANTIGRAVITY_TEST_STORE": temp_dir}):
-                resolved = resolve_store_directory("ANTIGRAVITY_TEST_STORE", fallback)
+            with patch.dict("os.environ", {"WORTHWARD_TEST_STORE": temp_dir}):
+                resolved = resolve_store_directory("WORTHWARD_TEST_STORE", fallback)
 
         self.assertEqual(resolved, Path(temp_dir).resolve())
 
     def test_remote_market_access_environment_override_skips_probes(self) -> None:
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_REMOTE_MARKET_ACCESS": "disabled"}),
+            patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "disabled"}),
             patch("app.infrastructure.connectivity._probe_yahoo_chart_endpoint") as chart_probe,
             patch("app.infrastructure.connectivity._probe_yfinance_history") as yfinance_probe,
         ):
@@ -459,7 +459,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
     def test_remote_market_access_environment_override_blocks_minute_refresh(self) -> None:
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_REMOTE_MARKET_ACCESS": "disabled"}),
+            patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "disabled"}),
             patch(
                 "app.services.market_data._download_recent_one_minute_history_with_yfinance"
             ) as yfinance_download,

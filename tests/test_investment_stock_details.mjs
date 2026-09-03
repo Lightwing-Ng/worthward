@@ -326,16 +326,16 @@ test('pure-trade realized breakdown follows authoritative broker-scoped totals',
 
 test('average-price labels stay presentation-neutral across cost methods', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {}};
     try {
         const methods = ['lowest_cost_first', 'fifo', 'lifo', 'moving_average'];
         for (const method of methods) {
-            globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method = method;
+            globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = method;
             assert.equal(getInvestmentStockDetailsAveragePriceLabel(), 'Average price', method);
         }
 
-        globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method = 'FIFO reconstructed';
-        globalThis.window.ANTIGRAVITY_APP = {investmentCostBasisMethod: 'fifo'};
+        globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = 'FIFO reconstructed';
+        globalThis.window.WORTHWARD_APP = {investmentCostBasisMethod: 'fifo'};
         assert.equal(getInvestmentStockDetailsAveragePriceLabel(), 'Average price');
     } finally {
         if (previousWindow === undefined) {
@@ -406,7 +406,7 @@ test('broker metrics move in-kind shares between brokers without counting a trad
         {date: '2026-07-31', broker: 'schwab', type: 'transfer_in', ticker: 'QQQI', quantity: 5},
     ];
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {price_history_by_ticker: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {price_history_by_ticker: {}}};
     try {
         const metrics = createBrokerMetricsBuilder(transactions)(transactions, 'QQQI', 53.04);
         assert.deepEqual(
@@ -447,7 +447,7 @@ test('DRAM broker metrics retain IBKR, Schwab transfer-in, and HSBC holdings', (
         schwabTransferIn,
     ];
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {price_history_by_ticker: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {price_history_by_ticker: {}}};
     try {
         const metrics = createBrokerMetricsBuilder(transactions)(transactions, 'DRAM', 70);
         assert.deepEqual(
@@ -478,7 +478,7 @@ test('broker metrics keep IBKR and other stock grants out of trade counts', () =
         {broker: 'hsbc', account: '000-999999-999', date: '2026-08-01', type: 'grant', ticker: 'DRAM', currency: 'USD', quantity: 2, price: 50},
     ];
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {price_history_by_ticker: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {price_history_by_ticker: {}}};
     try {
         const metrics = createBrokerMetricsBuilder(transactions)(transactions, 'DRAM', 60);
         assert.deepEqual(

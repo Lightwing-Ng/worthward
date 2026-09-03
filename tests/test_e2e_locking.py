@@ -79,12 +79,12 @@ def test_concurrent_e2e_launchers_cannot_clean_the_active_runtime(tmp_path: Path
     environment = os.environ.copy()
     environment.update(
         {
-            "ANTIGRAVITY_PYTHON": sys.executable,
+            "WORTHWARD_PYTHON": sys.executable,
             "FAKE_NPX_CALLS": str(calls),
             "FAKE_NPX_RELEASE": str(release),
             "FAKE_NPX_STARTED": str(started),
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
-            "ANTIGRAVITY_E2E_LOCK_FILE_OVERRIDE": str(tmp_path / "host.lock"),
+            "WORTHWARD_E2E_LOCK_FILE_OVERRIDE": str(tmp_path / "host.lock"),
         }
     )
 
@@ -150,7 +150,7 @@ def test_default_lock_is_shared_across_repository_roots(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.delenv("ANTIGRAVITY_E2E_LOCK_FILE_OVERRIDE", raising=False)
+    monkeypatch.delenv("WORTHWARD_E2E_LOCK_FILE_OVERRIDE", raising=False)
 
     first_path = e2e_lock_path(tmp_path / "repository-one")
     second_path = e2e_lock_path(tmp_path / "repository-two")
@@ -167,9 +167,9 @@ def test_playwright_config_requires_the_exclusive_launcher() -> None:
 
     environment = os.environ.copy()
     for variable in (
-        "ANTIGRAVITY_E2E_LOCK_FILE",
-        "ANTIGRAVITY_E2E_LOCK_ROOT",
-        "ANTIGRAVITY_E2E_LOCK_TOKEN",
+        "WORTHWARD_E2E_LOCK_FILE",
+        "WORTHWARD_E2E_LOCK_ROOT",
+        "WORTHWARD_E2E_LOCK_TOKEN",
     ):
         environment.pop(variable, None)
     imported = subprocess.run(

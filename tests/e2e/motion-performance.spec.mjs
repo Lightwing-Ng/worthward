@@ -62,8 +62,8 @@ test.describe('shared motion performance', () => {
         await page.waitForTimeout(120);
         const state = await page.evaluate(() => ({
             dpr: window.devicePixelRatio,
-            reduced: window.AntigravityMotion?.isReducedMotion?.(),
-            activeSchedulerTasks: window.AntigravityMotion?.scheduler?.activeCount,
+            reduced: window.WorthwardMotion?.isReducedMotion?.(),
+            activeSchedulerTasks: window.WorthwardMotion?.scheduler?.activeCount,
             motionDurations: getComputedStyle(document.querySelector('.settings-nav-item')).transitionDuration,
         }));
         expect(state.dpr).toBe(2);

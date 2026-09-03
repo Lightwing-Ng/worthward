@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.7.0
+Code version: v0.8.0
 - Added: parallel, transport-aware dependency self-checks for Settings.
 - Removed: The retired TradingView analysis and unused legacy connectivity
   cache accessors.
@@ -31,6 +31,7 @@ from urllib.request import Request
 
 import yfinance as yf
 
+from app.core.branding import read_compatible_environment
 from app.infrastructure.runtime_network import (
     get_yfinance_session,
     open_scoped_network_url as urlopen,
@@ -50,14 +51,15 @@ GOOGLE_HK_PING_URLS = (
 SEC_PING_URL = "https://data.sec.gov/submissions/CIK0000320193.json"
 SEC_FACTS_PING_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json"
 SEC_WEB_PING_URL = "https://www.sec.gov/robots.txt"
-SEC_USER_AGENT = "Antigravity local portfolio application contact@example.invalid"
+SEC_USER_AGENT = "Worthward local portfolio application contact@example.invalid"
 LONGBRIDGE_OPENAPI_PING_URL = "https://openapi.longbridge.com/"
 NETWORK_HTTP_TIMEOUT_SECONDS = 4.0
 NETWORK_SMTP_TIMEOUT_SECONDS = 4.0
 REMOTE_MARKET_SUCCESS_TTL_SECONDS = 900
 REMOTE_MARKET_FAILURE_TTL_SECONDS = 45
 REMOTE_MARKET_STALE_GRACE_SECONDS = 3600
-REMOTE_MARKET_ACCESS_ENV = "ANTIGRAVITY_REMOTE_MARKET_ACCESS"
+REMOTE_MARKET_ACCESS_ENV = "WORTHWARD_REMOTE_MARKET_ACCESS"
+LEGACY_REMOTE_MARKET_ACCESS_ENV = "ANTIGRAVITY_REMOTE_MARKET_ACCESS"
 REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
 _remote_market_access_cache: tuple[float, float, bool] | None = None
@@ -399,7 +401,7 @@ def _probe_longbridge_service(broker_settings: object) -> dict[str, object]:
 
     outcome = _http_probe(
         LONGBRIDGE_OPENAPI_PING_URL,
-        headers={"User-Agent": "antigravity/1.0", "Accept": "application/json"},
+        headers={"User-Agent": "worthward/1.0", "Accept": "application/json"},
     )
     if bool(outcome.get("reachable")):
         return _network_result(
@@ -494,7 +496,10 @@ def network_transport_summary() -> dict[str, str]:
         str(os.environ.get(name, "") or "").strip()
         for name in ("NO_PROXY", "no_proxy")
     )
-    custom_ca_configured = bool(str(os.environ.get("ANTIGRAVITY_YAHOO_CA_PEM", "") or "").strip())
+    custom_ca_configured = bool(read_compatible_environment(
+        "WORTHWARD_YAHOO_CA_PEM",
+        "ANTIGRAVITY_YAHOO_CA_PEM",
+    ))
     return {
         "proxy": "configured" if proxy_detected else "not detected",
         "no_proxy": "configured" if no_proxy_configured else "not configured",
@@ -561,7 +566,11 @@ def run_network_self_check(
 def is_remote_market_access_disabled(environ: Mapping[str, str] | None = None) -> bool:
     """Return whether this process explicitly disables remote market access."""
     environment = os.environ if environ is None else environ
-    value = str(environment.get(REMOTE_MARKET_ACCESS_ENV, "") or "").strip().lower()
+    value = read_compatible_environment(
+        REMOTE_MARKET_ACCESS_ENV,
+        LEGACY_REMOTE_MARKET_ACCESS_ENV,
+        environ=environment,
+    ).lower()
     return value in {"0", "disabled", "false", "off"}
 
 

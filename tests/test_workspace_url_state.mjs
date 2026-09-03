@@ -13,7 +13,7 @@ const createRuntime = () => {
     vm.runInNewContext(SOURCE, {URL, Set, Map, Number, String, Array, Object, window}, {
         filename: SOURCE_PATH.pathname,
     });
-    return window.ANTIGRAVITY_WORKSPACE_URL_STATE;
+    return window.WORTHWARD_WORKSPACE_URL_STATE;
 };
 
 test("publishes the canonical Workspace query contract", () => {

@@ -1082,7 +1082,7 @@ export function drawInvestmentYAxisValueBadge(chartInstance, {
     boundsProperty = '',
     boundsAliases = {},
 } = {}) {
-    const sharedDrawer = globalThis.ANTIGRAVITY_CHART_AXIS?.drawYAxisValueBadge;
+    const sharedDrawer = globalThis.WORTHWARD_CHART_AXIS?.drawYAxisValueBadge;
     if (typeof sharedDrawer !== 'function') return null;
     return sharedDrawer(chartInstance, {
         y,
@@ -1183,7 +1183,7 @@ export function createInvestmentStockDetailsUtils({
         const sourceTransactions = Array.isArray(processedTransactions) ? processedTransactions : [];
         const stockStates = new Map();
         const moneyMarketTickers = getMoneyMarketTickerSet();
-        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const priceHistoryRows = window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(processedTransactions, tickerPriceIndex);
         let lastKnownTickerPrice = null;
@@ -1424,7 +1424,7 @@ export function createInvestmentStockDetailsUtils({
             .reverse()
             .sort((left, right) => compareInvestmentTaxLotTransactions(left, right));
         if (!normalizedTicker || !orderedRows.length) return [];
-        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const priceHistoryRows = window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedRows, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
@@ -1642,7 +1642,7 @@ export function createInvestmentStockDetailsUtils({
             if (renderRequestId !== getInvestmentStockDetailsPriceChartRequestSerial()) return;
         }
 
-        const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
+        const priceHistoryByTicker = normalizePriceHistoryPayload(window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {});
         const tickerPriceIndex = buildTickerPriceIndex(priceHistoryByTicker);
         const tickerPriceMap = getInvestmentMarketStoreTickerCandidates(normalizedTicker).reduce((selectedMap, candidate) => {
             if (selectedMap && Object.keys(selectedMap).length) return selectedMap;
@@ -2162,7 +2162,7 @@ export function createInvestmentStockDetailsUtils({
                 })
                 .filter(Boolean);
         };
-        const chartAxis = (typeof window !== "undefined" && window.ANTIGRAVITY_CHART_AXIS) || {};
+        const chartAxis = (typeof window !== "undefined" && window.WORTHWARD_CHART_AXIS) || {};
         const buildTickIndexSet = (count, plotWidth) => (
             typeof chartAxis.buildTickIndexSet === "function"
                 ? chartAxis.buildTickIndexSet(count, plotWidth)
@@ -2773,7 +2773,7 @@ export function createInvestmentStockDetailsUtils({
             yScale.max = nextYScale.max;
             chartInstance.update('none');
         };
-        const readyScheduler = window.AntigravityMotion?.scheduler;
+        const readyScheduler = window.WorthwardMotion?.scheduler;
         if (readyScheduler?.frame) {
             let readyFrameCount = 0;
             readyScheduler.frame(`investment-stock-details-chart-ready-${renderRequestId}`, () => {

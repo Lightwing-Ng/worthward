@@ -6,7 +6,7 @@ test('separates wide market-cap magnitudes without transforming their absolute v
     await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('#returnsChart'))));
 
     const chartState = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         const rawDates = ['2026-01-01 00:00', '2026-01-02 00:00', '2026-01-03 00:00'];
         const terminalValues = [5_500_000_000_000, 1_300_000_000_000, 900_000_000_000, 600_000_000_000, 350_000_000_000];
         state.currentView = 'prices';
@@ -25,7 +25,7 @@ test('separates wide market-cap magnitudes without transforming their absolute v
                 color: ['#7f3fbf', '#ff2f92', '#0055cc', '#2fff9c', '#ff6b35'][index],
             })),
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
         const canvas = document.querySelector('#returnsChart');
         const chart = window.Chart.getChart(canvas);
         const terminalPixels = terminalValues.map((value) => chart.scales.y.getPixelForValue(value));
@@ -47,7 +47,7 @@ test('separates wide market-cap magnitudes without transforming their absolute v
                 color: index === 0 ? '#0055cc' : '#ff2f92',
             })),
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
         const peerChart = window.Chart.getChart(canvas);
 
         return {
@@ -80,7 +80,7 @@ test('uses the primary-blue token for Price curves while preserving the Market c
     ));
 
     const priceState = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         const primary = getComputedStyle(document.body).getPropertyValue('--theme-accent-primary').trim();
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         return {
@@ -102,7 +102,7 @@ test('uses the primary-blue token for Price curves while preserving the Market c
     await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&range=2y');
     await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('#returnsChart'))));
     const marketCapState = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         const chart = window.Chart.getChart(document.querySelector('#returnsChart'));
         return {
             seriesColors: state.chart.series.map((item) => item.color),

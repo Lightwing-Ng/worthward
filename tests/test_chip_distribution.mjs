@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 require(path.join(root, 'app/web/static/assets/js/chip-distribution.js'));
-const calculator = globalThis.ANTIGRAVITY_CHIP_DISTRIBUTION;
+const calculator = globalThis.WORTHWARD_CHIP_DISTRIBUTION;
 
 const sampleRows = [
     {t: '2026-08-20', o: 98, h: 104, l: 96, c: 102, v: 1_000},

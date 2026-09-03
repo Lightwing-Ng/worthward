@@ -13,7 +13,7 @@ export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.38.0';
 const investmentDonutOrbitLayerState = new WeakMap();
 
 const getMotionDuration = (name, fallback) => (
-    window.AntigravityMotion?.durations?.[name] ?? fallback
+    window.WorthwardMotion?.durations?.[name] ?? fallback
 );
 
 export function getInvestmentDonutOrbitAnimationState(logoLayer) {
@@ -37,8 +37,8 @@ function getShortestOrbitAngleDelta(fromAngle, toAngle) {
 }
 
 function easeInOutCubic(progress) {
-    if (window.AntigravityMotion?.easing?.inOut) {
-        return window.AntigravityMotion.easing.inOut(progress);
+    if (window.WorthwardMotion?.easing?.inOut) {
+        return window.WorthwardMotion.easing.inOut(progress);
     }
     if (progress <= 0) return 0;
     if (progress >= 1) return 1;
@@ -170,7 +170,7 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
             if (!(logoElement instanceof HTMLElement) || !logoElement.isConnected || !orbitMetrics) return;
             const animationStartTime = Number.isFinite(entry.animationStartTime) ? entry.animationStartTime : now;
             const duration = Math.max(1, Number(entry.duration) || 1);
-            const progress = reduced || window.AntigravityMotion?.isReducedMotion?.()
+            const progress = reduced || window.WorthwardMotion?.isReducedMotion?.()
                 ? 1
                 : Math.max(0, Math.min(1, (now - animationStartTime) / duration));
             const easedProgress = easeInOutCubic(progress);
@@ -206,8 +206,8 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
         if (!hasActiveAnimation) layerState.animationCancel = null;
         return hasActiveAnimation;
     };
-    if (window.AntigravityMotion?.scheduler?.frame) {
-        layerState.animationCancel = window.AntigravityMotion.scheduler.frame(layerState, step);
+    if (window.WorthwardMotion?.scheduler?.frame) {
+        layerState.animationCancel = window.WorthwardMotion.scheduler.frame(layerState, step);
         return;
     }
     const fallbackStep = (now) => {
@@ -336,7 +336,7 @@ export function registerInvestmentChartHelpers(targetWindow = window) {
         const canvas = document.createElement('canvas');
         container.appendChild(canvas);
 
-        const theme = targetWindow.ANTIGRAVITY_APP.theme;
+        const theme = targetWindow.WORTHWARD_APP.theme;
         const themePrimaryColor = String(theme?.accent_primary || '').trim();
         const themeSecondaryColor = String(theme?.accent_secondary || '').trim();
         const themeMutedColor = String(theme?.muted || '').trim();

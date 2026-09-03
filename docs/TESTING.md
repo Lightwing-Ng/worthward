@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.18`
+Documentation version: `v1.43.20`
 
 ## Bayesian Price Field detail view coverage
 
@@ -15,8 +15,10 @@ no Display anchor contract line or price-probability legend.
 The detail plot, main column, grid viewport, and complete lattice also remain
 contained within their owning surfaces, including at the narrow breakpoint.
 The right end of the horizontal detail guide displays separate higher-price
-and lower-price cumulative probability sums, and the E2E assertion recomputes
-both values from every detail cell, including threshold-hidden cells.
+and lower-price mean probability masses per forecast horizon, and the E2E
+assertion recomputes both values from every detail cell, including
+threshold-hidden cells. Independent horizons are averaged rather than added,
+so the numeric labels remain bounded to 0–100% and contain no direction text.
 The detail contract also requires that green cells stay wholly above the live
 price guide and red cells wholly below it, including the first render after a
 layout change. An edge-adjacent hover regression proves that the floating field
@@ -170,7 +172,7 @@ coverage.py `7.15.0`:
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
-  regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
+  regress below the current safety floor. Set `WORTHWARD_COVERAGE_MINIMUM` to
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
@@ -197,9 +199,9 @@ first-party modules loaded by direct Node suites. The current baseline, remeasur
 branches, and `85.45%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
-`ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
-`ANTIGRAVITY_JS_COVERAGE_BRANCHES_MINIMUM`, or
-`ANTIGRAVITY_JS_COVERAGE_FUNCTIONS_MINIMUM`. This is not whole-browser bundle
+`WORTHWARD_JS_COVERAGE_LINES_MINIMUM`,
+`WORTHWARD_JS_COVERAGE_BRANCHES_MINIMUM`, or
+`WORTHWARD_JS_COVERAGE_FUNCTIONS_MINIMUM`. This is not whole-browser bundle
 coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
@@ -293,7 +295,7 @@ Current suite inventory remeasured on 28 Aug 2026:
 - `tests/test_settings_url_state.mjs`: Node unit tests for canonical Settings
   sections, language tabs, pagination, default omission, and legacy aliases.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
-- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
+- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `WORTHWARD_APP.theme`, empty string), and safe dynamic logo URL normalization.
 - `tests/test_backtest_probability_grid.mjs`: deterministic schema and date-key validation for the fixed 20-column tooltip; actual-cell-size minimum-plot-height derivation; independent up-to-10-row clamping by the 50% current-plot cap and the relevant chart boundary; the opt-in complete-row geometry used by the detail surface; stable median point spacing; integer-trading-day slots with a one-day minimum; fixed 2 px logical guide-to-first-cell and cell-to-cell gaps with 1:1 square geometry; exact price/time mapping; 4 px cell floor, no-radius transparent matrix, 8 px top, bottom, and trailing padding; nonlinear per-hover opacity normalization; curve-hit plus pin-state contracts; and polyline intersection at the cursor X, including interrupted trading-day gaps. The dedicated Chromium flow uses `NVDA`, checks the transparent matrix without changing Frosted Glass tokens, proves the dynamic Backtest resizer lower bound preserves a real near-midpoint forecastable point at full 10-by-10 density, exercises a real pointer drag with a pinned field, preserves exact content-space mapping through the temporary scroll rail, and verifies tracking, pin, blank-clear, Escape-clear, resize, and narrow-screen behavior.
 - `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
   The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(10, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders the complete strategy-owned row counts and scales them without clipping; the field fixes 20 columns, actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer, square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The isolated flow seeds a horizontal pan and then traverses immutable pre-pan content coordinates, proving every intermediate curve index remains reachable instead of collapsing to the rightmost point. A left-side hover must keep the last trading day away from the pointer, place the vertical guide on the cursor, place the horizontal guide on the curve intersection, and draw the Price Field to the right of that guide. The shared resizer callback is verified after Chart.js resize, including a real pointer drag while the field is pinned and while the native probability rail is active; the rail keeps its own browser hit area and the resizer remains keyboard-accessible. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells, gaps, or fractional bars.
@@ -395,7 +397,7 @@ Investment Markdown export E2E tests must observe the downloaded file and assert
 
 ## Python settings-store isolation
 
-The root pytest bootstrap assigns `ANTIGRAVITY_SETTINGS_STORE_DIR` to one
+The root pytest bootstrap assigns `WORTHWARD_SETTINGS_STORE_DIR` to one
 process-scoped temporary directory before importing the Flask application.
 This applies whether tests run through `scripts/test.sh`, `scripts/check.sh`,
 or a direct root-level pytest invocation. Module-level transaction-cache,

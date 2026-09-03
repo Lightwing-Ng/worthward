@@ -1,12 +1,13 @@
 # Worthward
 
-Documentation version: `v3.3.0`
+Documentation version: `v3.4.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
-The product name is `Worthward`. Legacy `ANTIGRAVITY_*` environment variables,
-browser namespaces, and persisted identifiers remain compatibility interfaces until
-their dedicated migration is completed.
+The product name is `Worthward`. `WORTHWARD_*` environment variables and
+`WORTHWARD_*` browser namespaces are canonical. Legacy `ANTIGRAVITY_*` environment
+variables, browser namespaces, and persisted transaction identifiers remain
+read-compatible interfaces; the application writes only the Worthward names.
 
 ## What the app does
 
@@ -64,7 +65,7 @@ By default, the setup script uses:
 If your Python `3.13` or `3.14` executable lives elsewhere, override it explicitly:
 
 ```bash
-ANTIGRAVITY_PYTHON=/absolute/path/to/python3.14 ./scripts/setup_python.sh
+WORTHWARD_PYTHON=/absolute/path/to/python3.14 ./scripts/setup_python.sh
 ```
 
 Run the app from the project root with the pinned interpreter:
@@ -97,7 +98,7 @@ network. Host and port are configured in `config.toml`.
 
 The Live trading workspace is separately protected by a 6-digit browser PIN.
 The configured PIN can be overridden for one launch with
-`ANTIGRAVITY_LIVE_TRADING_PIN`. A successful unlock lasts for the current
+`WORTHWARD_LIVE_TRADING_PIN`. A successful unlock lasts for the current
 browser session; the existing strong access-token header remains available for
 non-browser API clients.
 
@@ -257,7 +258,7 @@ before starting the app:
 ```bash
 export HTTP_PROXY="http://proxy.example:8080"
 export HTTPS_PROXY="http://proxy.example:8080"
-export ANTIGRAVITY_YAHOO_CA_PEM="/absolute/path/to/corporate-ca.pem"
+export WORTHWARD_YAHOO_CA_PEM="/absolute/path/to/corporate-ca.pem"
 ./scripts/run_app.sh
 ```
 
@@ -268,7 +269,7 @@ The CA path can instead be stored in the existing versioned configuration:
 yahoo_ca_pem = "/absolute/path/to/corporate-ca.pem"
 ```
 
-`ANTIGRAVITY_YAHOO_CA_PEM` takes precedence over
+`WORTHWARD_YAHOO_CA_PEM` takes precedence over
 `[network].yahoo_ca_pem`. When both settings are empty on macOS, the app
 automatically exports the System Roots and System keychains as a third-precedence
 fallback. The selected corporate or system CA bundle is appended to certifi's
@@ -443,11 +444,11 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   APIs authorize a request through either that signed PIN session or a correctly
   presented configured server access token of at least 32 characters:
   ```bash
-  export ANTIGRAVITY_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  export WORTHWARD_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
   ./scripts/run_app.sh
   ```
 - Non-browser API clients present the token through the
-  `X-Antigravity-Live-Trading-Token` header. The browser unlock uses the PIN
+  `X-Worthward-Live-Trading-Token` header. The browser unlock uses the PIN
   session and does not expose or persist the server token.
 
 ### IBKR

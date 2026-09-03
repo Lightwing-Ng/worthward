@@ -202,7 +202,7 @@ export function createInvestmentLiveValueAnimator({
     windowRef = globalThis.window,
     documentRef = globalThis.document,
     HTMLElementClass = globalThis.HTMLElement,
-    scheduler = windowRef?.AntigravityMotion?.scheduler,
+    scheduler = windowRef?.WorthwardMotion?.scheduler,
 } = {}) {
     const charWidthCache = new Map();
     const animationCancels = new WeakMap();

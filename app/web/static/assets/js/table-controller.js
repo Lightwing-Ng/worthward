@@ -278,6 +278,6 @@
         syncColumnWidths,
         getHeaderHorizontalTranslate,
     });
-    globalScope.ANTIGRAVITY_TABLES = api;
+    globalScope.WORTHWARD_TABLES = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;
 }(typeof window !== "undefined" ? window : globalThis));

@@ -411,13 +411,13 @@ class LiveTradingAuthorizationContractTests(unittest.TestCase):
                 None,
                 False,
                 503,
-                "Live trading is locked. Set ANTIGRAVITY_LIVE_TRADING_TOKEN to a random token of "
+                "Live trading is locked. Set WORTHWARD_LIVE_TRADING_TOKEN to a random token of "
                 "at least 32 characters before reading account data or submitting orders.",
             ),
             (
                 "no session and wrong token",
                 False,
-                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
                 "wrong",
                 False,
                 401,
@@ -426,7 +426,7 @@ class LiveTradingAuthorizationContractTests(unittest.TestCase):
             (
                 "no session and correct token",
                 False,
-                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
                 LIVE_TRADING_TEST_TOKEN,
                 True,
                 200,
@@ -436,7 +436,7 @@ class LiveTradingAuthorizationContractTests(unittest.TestCase):
             (
                 "pin session and wrong token header",
                 True,
-                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
                 "wrong",
                 True,
                 200,
@@ -476,7 +476,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertIn('class="workspace-modal-overlay live-trading-pin-overlay"', locked_body)
         self.assertIn('class="workspace-modal-dialog live-trading-pin-dialog"', locked_body)
         self.assertIn("assets/css/app.css", locked_body)
-        self.assertIn('window.localStorage.getItem(storageKey)', locked_body)
+        self.assertIn('window.WORTHWARD_STORAGE?.local || window.localStorage', locked_body)
         self.assertIn('@media (prefers-color-scheme: dark)', locked_body)
         self.assertIn(':root[data-theme-override="dark"]', locked_body)
         self.assertIn('id="live_trading_pin"', locked_body)
@@ -488,7 +488,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
 
         with patch.dict(
             "os.environ",
-            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            {"WORTHWARD_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
             clear=True,
         ):
             response = client.post(
@@ -515,7 +515,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
 
         with patch.dict(
             "os.environ",
-            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            {"WORTHWARD_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
             clear=True,
         ):
             response = client.post(
@@ -529,7 +529,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
     def test_live_trading_pin_session_authorizes_positions_api(self) -> None:
         with patch.dict(
             "os.environ",
-            {"ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
+            {"WORTHWARD_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN},
             clear=True,
         ):
             client = create_app().test_client()
@@ -554,8 +554,8 @@ class LiveTradingOrderApiTests(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
-                    "ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
+                    "WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
+                    "WORTHWARD_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
                 },
             ),
             patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
@@ -564,7 +564,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         ):
             response = client.get(
                 "/api/live-trading/positions",
-                headers={"X-Antigravity-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
+                headers={"X-Worthward-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -579,8 +579,8 @@ class LiveTradingOrderApiTests(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
-                    "ANTIGRAVITY_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
+                    "WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN,
+                    "WORTHWARD_LIVE_TRADING_PIN": LIVE_TRADING_TEST_PIN,
                 },
             ),
             patch(
@@ -604,7 +604,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
             )
             response = client.post(
                 "/api/live-trading/orders",
-                headers={"X-Antigravity-Live-Trading-Token": "wrong-token"},
+                headers={"X-Worthward-Live-Trading-Token": "wrong-token"},
                 json={"ticker": "TSLA.US", "side": "buy", "price": "250", "quantity": "1"},
             )
 
@@ -617,7 +617,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict("os.environ", {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
             patch(
                 "app.web.runtime.load_broker_settings",
                 return_value=BrokerSettings(selected_broker="longbridge"),
@@ -639,7 +639,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/live-trading/orders",
-                headers={"X-Antigravity-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
+                headers={"X-Worthward-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
                 json={
                     "ticker": "TSLA.US",
                     "side": "buy",
@@ -666,7 +666,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict("os.environ", {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
             patch(
                 "app.web.runtime.load_broker_settings",
                 return_value=BrokerSettings(selected_broker="longbridge"),
@@ -678,7 +678,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/live-trading/orders",
-                headers={"X-Antigravity-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
+                headers={"X-Worthward-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
                 json={
                     "ticker": "TSLA.US",
                     "side": "buy",
@@ -712,17 +712,17 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict("os.environ", {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
             patch("app.web.runtime.submit_longbridge_limit_order") as mocked_submit_order,
         ):
             response = client.post(
                 "/api/live-trading/orders",
-                headers={"X-Antigravity-Live-Trading-Token": "incorrect-token"},
+                headers={"X-Worthward-Live-Trading-Token": "incorrect-token"},
                 json={"ticker": "TSLA.US", "side": "buy", "price": "250", "quantity": "1"},
             )
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.headers["WWW-Authenticate"], 'Bearer realm="antigravity-live-trading"')
+        self.assertEqual(response.headers["WWW-Authenticate"], 'Bearer realm="worthward-live-trading"')
         self.assertFalse(response.get_json()["success"])
         mocked_submit_order.assert_not_called()
 
@@ -730,14 +730,14 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         client = create_app().test_client()
 
         with (
-            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch.dict("os.environ", {"WORTHWARD_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
             patch("app.web.runtime.load_longbridge_account_balances") as mocked_balances,
             patch("app.web.runtime.load_longbridge_stock_positions") as mocked_positions,
         ):
             response = client.get("/api/live-trading/positions")
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.headers["WWW-Authenticate"], 'Bearer realm="antigravity-live-trading"')
+        self.assertEqual(response.headers["WWW-Authenticate"], 'Bearer realm="worthward-live-trading"')
         self.assertFalse(response.get_json()["success"])
         mocked_balances.assert_not_called()
         mocked_positions.assert_not_called()

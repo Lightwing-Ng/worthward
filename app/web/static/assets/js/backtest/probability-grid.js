@@ -1,7 +1,7 @@
 /**
  * Bayesian probability-grid geometry and interaction helpers.
  *
- * Code version: v0.25.0
+ * Code version: v0.25.1
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -839,40 +839,56 @@
         });
     };
 
-    // The detail view reports raw probability mass by price direction across
-    // the complete field. Threshold-hidden cells remain part of each sum.
+    // The detail view reports mean probability mass by price direction for
+    // each forecast horizon. Threshold-hidden cells remain part of each
+    // horizon's mass, but independent horizons are not added together.
     const summarizeProbabilityField = (cells) => {
         if (!Array.isArray(cells) || !cells.length) return null;
-        let upProbability = 0;
-        let downProbability = 0;
         let upCellCount = 0;
         let downCellCount = 0;
         let upHiddenCellCount = 0;
         let downHiddenCellCount = 0;
+        const horizonMass = new Map();
         cells.forEach((cell) => {
             const probability = finiteOrNull(cell?.probability);
             if (probability === null) return;
             const normalizedProbability = Math.max(0, probability);
+            let direction = null;
             if (cell?.sign === "up") {
-                upProbability += normalizedProbability;
+                direction = "up";
                 upCellCount += 1;
                 if (cell?.isVisible === false) upHiddenCellCount += 1;
             } else if (cell?.sign === "down") {
-                downProbability += normalizedProbability;
+                direction = "down";
                 downCellCount += 1;
                 if (cell?.isVisible === false) downHiddenCellCount += 1;
             }
+            if (!direction) return;
+            const horizon = finiteOrNull(cell?.horizon);
+            const horizonKey = horizon === null ? "default" : horizon;
+            const mass = horizonMass.get(horizonKey) || {up: 0, down: 0};
+            mass[direction] += normalizedProbability;
+            horizonMass.set(horizonKey, mass);
         });
         if (!upCellCount && !downCellCount) return null;
+        const forecastHorizonCount = horizonMass.size;
+        if (!forecastHorizonCount) return null;
+        const meanMass = (direction) => clamp(
+            [...horizonMass.values()].reduce((sum, mass) => sum + mass[direction], 0)
+                / forecastHorizonCount,
+            0,
+            1,
+        );
         return Object.freeze({
-            upProbability,
-            downProbability,
+            upProbability: meanMass("up"),
+            downProbability: meanMass("down"),
             upCellCount,
             downCellCount,
             upHiddenCellCount,
             downHiddenCellCount,
             cellCount: upCellCount + downCellCount,
             hiddenCellCount: upHiddenCellCount + downHiddenCellCount,
+            forecastHorizonCount,
         });
     };
 
@@ -958,7 +974,7 @@
     };
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.25.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.25.1",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -982,6 +998,6 @@
         summarizeProbabilityRow,
     });
 
-    globalScope.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID = api;
+    globalScope.WORTHWARD_BACKTEST_PROBABILITY_GRID = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : window);

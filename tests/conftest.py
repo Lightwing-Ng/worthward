@@ -11,8 +11,8 @@ from flask.testing import FlaskClient
 
 # Configure the settings store before importing the application so every module-level
 # derived path remains isolated for the complete pytest process.
-_PYTEST_SETTINGS_STORE = TemporaryDirectory(prefix="antigravity-pytest-settings-")
-os.environ["ANTIGRAVITY_SETTINGS_STORE_DIR"] = _PYTEST_SETTINGS_STORE.name
+_PYTEST_SETTINGS_STORE = TemporaryDirectory(prefix="worthward-pytest-settings-")
+os.environ["WORTHWARD_SETTINGS_STORE_DIR"] = _PYTEST_SETTINGS_STORE.name
 
 
 def pytest_sessionfinish() -> None:

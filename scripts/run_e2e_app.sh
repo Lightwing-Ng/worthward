@@ -9,13 +9,14 @@ source "$ROOT_DIR/scripts/resolve_python.sh"
 PYTHON_BIN="$(resolve_python_bin)"
 RUNTIME_ROOT="$ROOT_DIR/test-results/runtime-store"
 APP_PID=""
+WORTHWARD_E2E_LOCK_TOKEN="${WORTHWARD_E2E_LOCK_TOKEN:-${ANTIGRAVITY_E2E_LOCK_TOKEN:-}}"
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
 	exit 1
 fi
 
-if [[ -z "${ANTIGRAVITY_E2E_LOCK_TOKEN:-}" ]]; then
+if [[ -z "${WORTHWARD_E2E_LOCK_TOKEN:-}" ]]; then
 	exec "$PYTHON_BIN" "$ROOT_DIR/scripts/e2e_lock.py" run \
 		--root "$ROOT_DIR" -- "$ROOT_DIR/scripts/run_e2e_app.sh" "$@"
 fi
@@ -64,12 +65,12 @@ if (( TRACKED_LOGO_COUNT == 0 )); then
 fi
 mkdir -p "$RUNTIME_ROOT/settings_store"
 
-export ANTIGRAVITY_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"
-export ANTIGRAVITY_SETTINGS_STORE_DIR="$RUNTIME_ROOT/settings_store"
-export ANTIGRAVITY_REMOTE_MARKET_ACCESS="disabled"
-export ANTIGRAVITY_PORT="8699"
+export WORTHWARD_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"
+export WORTHWARD_SETTINGS_STORE_DIR="$RUNTIME_ROOT/settings_store"
+export WORTHWARD_REMOTE_MARKET_ACCESS="disabled"
+export WORTHWARD_PORT="8699"
 
-PYTHONPATH="$ROOT_DIR" "$PYTHON_BIN" "$ROOT_DIR/scripts/seed_e2e_market_store.py" "$ANTIGRAVITY_MARKET_STORE_DIR"
+PYTHONPATH="$ROOT_DIR" "$PYTHON_BIN" "$ROOT_DIR/scripts/seed_e2e_market_store.py" "$WORTHWARD_MARKET_STORE_DIR"
 
 "$PYTHON_BIN" "$ROOT_DIR/main.py" &
 APP_PID="$!"

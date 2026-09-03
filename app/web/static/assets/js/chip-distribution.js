@@ -361,7 +361,7 @@
 		};
 	};
 
-	globalThis.ANTIGRAVITY_CHIP_DISTRIBUTION = Object.freeze({
+	globalThis.WORTHWARD_CHIP_DISTRIBUTION = Object.freeze({
 		calculateChipDistribution,
 		calculateChipStatistics,
 		calculatePriceLevelDistribution,

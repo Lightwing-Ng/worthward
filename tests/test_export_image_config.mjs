@@ -59,7 +59,7 @@ const createRuntime = (localStorage = new FakeStorage()) => {
     };
     vm.runInNewContext(SOURCE, context, {filename: SOURCE_PATH.pathname});
     return {
-        api: window.ANTIGRAVITY_EXPORT_IMAGE,
+        api: window.WORTHWARD_EXPORT_IMAGE,
         events,
         localStorage,
         root,
@@ -93,7 +93,7 @@ test('token changes persist and apply derived dimensions to detached export targ
     assert.equal(target.style.values['--investment-community-share-shell-width'], '1200px');
     assert.equal(target.style.values['--investment-community-share-logical-width'], '600px');
     assert.equal(target.dataset.exportImageTemplate, 'stable-v1');
-    assert.equal(runtime.events.at(-1).type, 'antigravity:export-image-config-change');
+    assert.equal(runtime.events.at(-1).type, 'worthward:export-image-config-change');
 
     const reloaded = createRuntime(runtime.localStorage);
     assert.equal(

@@ -20,6 +20,6 @@ def require_supported_python(version_info: Sequence[int]) -> None:
         f"{major}.{minor}" for major, minor in SUPPORTED_PYTHON_VERSIONS
     )
     raise RuntimeError(
-        f"Antigravity requires Python {supported_versions}. "
+        f"Worthward requires Python {supported_versions}. "
         f"Detected Python {detected_version}."
     )

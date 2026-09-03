@@ -1,8 +1,8 @@
 /* Code version: v0.11.1 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
-	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+	const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 	const ONE_DAY_COMPARE_SESSION_MARKERS = Object.freeze([
 		{ minutes: (4 * 60), timeLabel: "04:00", align: "left" },
 		{ minutes: (9 * 60) + 30, timeLabel: "09:30", align: "center" },
@@ -63,8 +63,8 @@
 			media.addListener(handler);
 			cleanups.push(() => media.removeListener(handler));
 		}
-		window.addEventListener("antigravity:theme-mode-change", handler);
-		cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+		window.addEventListener("worthward:theme-mode-change", handler);
+		cleanups.push(() => window.removeEventListener("worthward:theme-mode-change", handler));
 		chartThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
 	};
 	const consumeChartWorkspaceRefreshTransition = (viewName) => {
@@ -930,7 +930,7 @@
 					drewMarker = true;
 				});
 				if (!drewMarker || chartInstance.$compareLiveMarkerFrame) return;
-				const scheduler = window.AntigravityMotion?.scheduler;
+				const scheduler = window.WorthwardMotion?.scheduler;
 				if (scheduler?.frame) {
 					chartInstance.$compareLiveMarkerFrame = scheduler.frame(chartInstance, (_now, reduced) => {
 						if (reduced || !chartInstance.canvas?.isConnected || window.Chart?.getChart?.(chartInstance.canvas) !== chartInstance) {
@@ -1388,12 +1388,12 @@
 				});
 				chart.update("none");
 			};
-			const scheduler = window.AntigravityMotion?.scheduler;
+			const scheduler = window.WorthwardMotion?.scheduler;
 			if (scheduler?.animate) {
 				scheduler.animate({
 					key: canvas,
-					duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
-					ease: window.AntigravityMotion?.easing?.emphasized,
+					duration: window.WorthwardMotion?.durations?.emphasized ?? 420,
+					ease: window.WorthwardMotion?.easing?.emphasized,
 					update: applySeriesProgress,
 					complete: () => applySeriesProgress(1),
 				});
@@ -1408,7 +1408,7 @@
 	};
 
 	const initChartWorkspace = () => {
-		const state = window.ANTIGRAVITY_APP;
+		const state = window.WORTHWARD_APP;
 		const canvas = document.getElementById("returnsChart");
 		if (!state || !state.chart || !canvas) return;
 		renderReturnsChart({ canvas }, { state });

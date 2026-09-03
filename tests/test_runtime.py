@@ -17,7 +17,7 @@ class RuntimeVersionTests(unittest.TestCase):
     def test_rejects_unsupported_python_versions_with_detected_version(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,
-            r"Antigravity requires Python 3\.13 or 3\.14\. Detected Python 3\.12\.9\.",
+            r"Worthward requires Python 3\.13 or 3\.14\. Detected Python 3\.12\.9\.",
         ):
             require_supported_python((3, 12, 9))
 

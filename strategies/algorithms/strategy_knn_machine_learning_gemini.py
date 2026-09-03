@@ -1,7 +1,7 @@
 """
 kNN-based machine learning strategy.
 
-Refactored to strictly adhere to the antigravity trading system's
+Refactored to strictly adhere to the Worthward trading system's
 LLM Strategy Developer Prompt guidelines. Reverts to the core
 unfiltered majority-vote logic to preserve high-frequency alpha.
 
@@ -159,7 +159,7 @@ def _knn_prediction_batch(
 class KnnMachineLearningStrategy(BaseStrategy):
     strategy_id = "knn-machine-learning-gemini"
     strategy_name = "kNN Machine Learning (Gemini)"
-    strategy_description = "kNN regime classifier adhering strictly to the antigravity LLM Strategy Developer Prompt guidelines."
+    strategy_description = "kNN regime classifier adhering strictly to the Worthward LLM Strategy Developer Prompt guidelines."
     strategy_category = "machine_learning"
     strategy_display_order = 41
     strategy_supports = StrategySupportMatrix(

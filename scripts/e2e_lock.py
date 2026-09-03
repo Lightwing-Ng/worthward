@@ -22,16 +22,27 @@ LOCK_BUSY_EXIT = 73
 E2E_PORT = 8699
 
 
+def _compatible_environment(primary_name: str, legacy_name: str) -> str:
+    return str(
+        os.environ.get(primary_name)
+        or os.environ.get(legacy_name)
+        or ""
+    ).strip()
+
+
 def _repository_root(raw_root: str) -> Path:
     return Path(raw_root).resolve(strict=True)
 
 
 def e2e_lock_path(root: Path) -> Path:
-    override = os.environ.get("ANTIGRAVITY_E2E_LOCK_FILE_OVERRIDE")
+    override = _compatible_environment(
+        "WORTHWARD_E2E_LOCK_FILE_OVERRIDE",
+        "ANTIGRAVITY_E2E_LOCK_FILE_OVERRIDE",
+    )
     if override:
         return Path(override).resolve()
     user_id = os.getuid() if hasattr(os, "getuid") else 0
-    return Path(tempfile.gettempdir()) / f"antigravity-e2e-{user_id}-port-{E2E_PORT}.lock"
+    return Path(tempfile.gettempdir()) / f"worthward-e2e-{user_id}-port-{E2E_PORT}.lock"
 
 
 def _read_owner(lock_handle: object) -> str:
@@ -97,6 +108,10 @@ def _run_locked(root: Path, command: Sequence[str]) -> int:
         environment = os.environ.copy()
         environment.update(
             {
+                "WORTHWARD_E2E_LOCK_FD": str(lock_fd),
+                "WORTHWARD_E2E_LOCK_FILE": str(lock_path),
+                "WORTHWARD_E2E_LOCK_ROOT": str(root),
+                "WORTHWARD_E2E_LOCK_TOKEN": token,
                 "ANTIGRAVITY_E2E_LOCK_FD": str(lock_fd),
                 "ANTIGRAVITY_E2E_LOCK_FILE": str(lock_path),
                 "ANTIGRAVITY_E2E_LOCK_ROOT": str(root),
@@ -117,9 +132,22 @@ def _run_locked(root: Path, command: Sequence[str]) -> int:
 
 def _verify_inherited(root: Path) -> int:
     try:
-        inherited_path = Path(os.environ["ANTIGRAVITY_E2E_LOCK_FILE"])
-        inherited_root = Path(os.environ["ANTIGRAVITY_E2E_LOCK_ROOT"])
-        inherited_token = os.environ["ANTIGRAVITY_E2E_LOCK_TOKEN"]
+        inherited_path_raw = _compatible_environment(
+            "WORTHWARD_E2E_LOCK_FILE",
+            "ANTIGRAVITY_E2E_LOCK_FILE",
+        )
+        inherited_root_raw = _compatible_environment(
+            "WORTHWARD_E2E_LOCK_ROOT",
+            "ANTIGRAVITY_E2E_LOCK_ROOT",
+        )
+        inherited_token = _compatible_environment(
+            "WORTHWARD_E2E_LOCK_TOKEN",
+            "ANTIGRAVITY_E2E_LOCK_TOKEN",
+        )
+        if not inherited_path_raw or not inherited_root_raw or not inherited_token:
+            raise KeyError("incomplete lock metadata")
+        inherited_path = Path(inherited_path_raw)
+        inherited_root = Path(inherited_root_raw)
     except (KeyError, TypeError):
         print(
             "Missing inherited E2E lock metadata. "
@@ -145,7 +173,10 @@ def _verify_inherited(root: Path) -> int:
         print("Inherited E2E lock metadata does not match its owner.", file=sys.stderr)
         return LOCK_BUSY_EXIT
 
-    raw_lock_fd = os.environ.get("ANTIGRAVITY_E2E_LOCK_FD")
+    raw_lock_fd = _compatible_environment(
+        "WORTHWARD_E2E_LOCK_FD",
+        "ANTIGRAVITY_E2E_LOCK_FD",
+    )
     if raw_lock_fd:
         try:
             descriptor_stat = os.fstat(int(raw_lock_fd))

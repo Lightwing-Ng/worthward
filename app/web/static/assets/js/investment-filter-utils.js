@@ -52,6 +52,6 @@
         normalizeSummaryScope,
         normalizeTransactionType,
     });
-    globalScope.ANTIGRAVITY_INVESTMENT_FILTERS = api;
+    globalScope.WORTHWARD_INVESTMENT_FILTERS = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;
 }(typeof window !== "undefined" ? window : globalThis));

@@ -70,7 +70,7 @@ def test_css_breakpoints_have_one_semantic_registry() -> None:
 
 def test_javascript_reads_width_media_queries_from_shared_responsive_api() -> None:
     responsive_source = _read(RESPONSIVE_JS)
-    assert "window.ANTIGRAVITY_RESPONSIVE = Object.freeze" in responsive_source
+    assert "window.WORTHWARD_RESPONSIVE = Object.freeze" in responsive_source
     assert "contentStackMax: layoutSwitchMin - 1" in responsive_source
     fallback_source = responsive_source.split(
         "const fallbackValues = Object.freeze({", maxsplit=1
@@ -96,7 +96,7 @@ def test_javascript_reads_width_media_queries_from_shared_responsive_api() -> No
     base_source = _read(BASE_HTML)
     assert 'assets/js/responsive.js' in base_source
     assert base_source.index('assets/js/responsive.js') < base_source.index(
-        'window.sessionStorage.getItem("antigravity:sidebar-open")'
+        'window.WORTHWARD_STORAGE.session.getItem("worthward:sidebar-open")'
     )
 
 

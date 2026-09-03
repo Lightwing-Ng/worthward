@@ -230,7 +230,6 @@ import email
 import hashlib
 import json
 import logging
-import os
 import re
 import subprocess
 import tempfile
@@ -247,6 +246,7 @@ from zoneinfo import ZoneInfo
 from zipfile import BadZipFile, ZipFile
 
 from app.core.broker_catalog import sort_broker_codes
+from app.core.branding import read_compatible_environment
 from app.core.broker_settings import BrokerSettings, uses_longbridge_cli_oauth
 from app.core.config import SETTINGS_STORE_DIR
 from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status, run_longbridge_cli_json
@@ -422,14 +422,14 @@ MIXED_BROKER_SNAPSHOT_WARNING = (
 # Account validation is opt-in through local environment configuration. This
 # keeps broker identifiers out of source control while still allowing a local
 # deployment to enforce a known account boundary.
-HSBC_EXPECTED_ACCOUNT_NUMBER = os.environ.get(
+HSBC_EXPECTED_ACCOUNT_NUMBER = read_compatible_environment(
+    "WORTHWARD_HSBC_ACCOUNT_NUMBER",
     "ANTIGRAVITY_HSBC_ACCOUNT_NUMBER",
-    "",
-).strip()
-HSBC_EXPECTED_INVESTMENT_ACCOUNT_NUMBER = os.environ.get(
+)
+HSBC_EXPECTED_INVESTMENT_ACCOUNT_NUMBER = read_compatible_environment(
+    "WORTHWARD_HSBC_INVESTMENT_ACCOUNT_NUMBER",
     "ANTIGRAVITY_HSBC_INVESTMENT_ACCOUNT_NUMBER",
-    "",
-).strip()
+)
 HSBC_PASTE_CHUNK_MARKER = "===== HSBC PASTE CHUNK ====="
 HSBC_CASH_ACCOUNT_FILE_KINDS = frozenset({
     "hsbc_usd_account_text",

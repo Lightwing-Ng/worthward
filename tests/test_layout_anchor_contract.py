@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.22
+Code version: v0.8.24
 """
 
 from pathlib import Path
@@ -123,6 +123,7 @@ def test_portfolio_result_owns_date_and_share_action() -> None:
         ".portfolio-workspace .workspace-mode-main > .workspace-header {",
         "width: min(100%, var(--layout-content-width));",
         "max-width: var(--layout-content-width);",
+        "    .portfolio-workspace .workspace-mode-main > .workspace-header {\n        width: 100%;\n        max-width: none;\n    }",
         ".portfolio-summary-content-card {\n    overflow: visible;\n}",
         "#portfolio_summary_region > .investment-share-actions[data-share-placement=\"summary-panel\"] {",
         "right: var(--layout-edge-gap);",
@@ -155,7 +156,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.6");' in app_css
     assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.15" in app_css
+    assert "v0.65.16" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -538,7 +539,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
     for fragment in (
         "const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';",
-        "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'antigravity:backtest-probability-stage-minimum-change';",
+        "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';",
         "const getProbabilityStageMinimum = () => {",
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
@@ -550,7 +551,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     for fragment in (
         'const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";',
-        'const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "antigravity:backtest-probability-stage-minimum-change";',
+        'const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "worthward:backtest-probability-stage-minimum-change";',
         "const publishProbabilityStageMinimum = () => {",
         "probabilityGridApi.computeGridMinimumPlotHeight?.({",
         "const centralAnchor = pricePoints.reduce((closest, point, index) => {",
@@ -576,7 +577,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "overviewMinimumChangeEvent",
         "onChartsResized",
         "ignoreMutationSelector",
-        "const stackedLayoutMedia = typeof windowRef?.ANTIGRAVITY_RESPONSIVE?.media === 'function'",
+        "const stackedLayoutMedia = typeof windowRef?.WORTHWARD_RESPONSIVE?.media === 'function'",
         "const isStackedLayout = () => Boolean(stackedLayoutMedia?.matches);",
         "const clearInlineSplitLayoutStyles = () => {",
         "overviewRatio = Number.NaN;",
@@ -592,8 +593,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         "-app-v0.50.1",
-        "-backtest-probability-grid-v0.25.0",
-        "-backtest-v0.37.0",
+        "-backtest-probability-grid-v0.25.1",
+        "-backtest-v0.37.1",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -628,6 +629,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     assert '>Forecast date<' not in backtest_template
     assert 'backtest-probability-detail-x-axis-title' not in pending_app
     assert 'Forecast date' not in pending_app
+    assert 'aria-label="Average probability mass per forecast horizon by price direction"' in backtest_template
     assert (
         '.backtest-history-view-body > '
         '[data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel)'
@@ -654,8 +656,14 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const buildProbabilityDetailModel = (index, model) => {",
         "const renderProbabilityDetailRowHover = (row) => {",
         "const renderProbabilityDetailSideSummary = (cells) => {",
+        "const upText = formatProbabilityMass(summary.upProbability);",
+        "const downText = formatProbabilityMass(summary.downProbability);",
+        "probabilityDetailUpSummary.textContent = upText;",
+        "probabilityDetailDownSummary.textContent = downText;",
         "formatProbabilityMass(summary.upProbability)",
         "formatProbabilityMass(summary.downProbability)",
+        "Average higher-price probability mass per forecast horizon across ${horizonDescription}",
+        "Average lower-price probability mass per forecast horizon across ${horizonDescription}",
         "Cumulative probability across all ${summary.cellCount} forecast cells",
         "including ${summary.hiddenCellCount} hidden",
         "probabilityDetailGrid.dataset.hoverSummary = hoverSummary;",
@@ -995,4 +1003,4 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
     trade_stack_start = trade_css.rindex(".trade-chart-stack {")
     trade_stack = trade_css[trade_stack_start : trade_css.index("\n}", trade_stack_start)]
     assert "overflow: hidden;" in trade_stack
-    assert '@import url("./views/workspace.css?v=1.22.0");' in app_css
+    assert '@import url("./views/workspace.css?v=1.22.1");' in app_css

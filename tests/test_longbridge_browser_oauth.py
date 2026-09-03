@@ -38,7 +38,7 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
         self.assertIn("browser", message.lower())
         self.assertEqual(
             popen.call_args.args[0],
-            ["/tmp/longbridge", "auth", "login", "--auth-code", "--client-name", "antigravity"],
+            ["/tmp/longbridge", "auth", "login", "--auth-code", "--client-name", "worthward"],
         )
         self.assertEqual(popen.call_args.kwargs["env"], {"HOME": "/tmp/profile"})
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
@@ -153,7 +153,7 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
             ):
                 client = create_app().test_client()
                 client.set_cookie(
-                    "antigravity_settings_feedback",
+                    "worthward_settings_feedback",
                     json.dumps({"broker_test_status": "success", "broker_test_message": "Connected."}),
                     path="/settings",
                 )

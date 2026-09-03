@@ -1,7 +1,7 @@
 /* Code version: v0.5.2 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
-	const appState = () => window.ANTIGRAVITY_APP || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+	const appState = () => window.WORTHWARD_APP || {};
 	const share = () => bootstrap.workspaceShare || {};
 	const COMPARE_LIVE_REFRESH_MS = 45000;
 	const COMPARE_LIVE_INITIAL_DELAY_MS = 1500;
@@ -71,7 +71,7 @@
 
 		if (nextSeries.length >= minimumRequiredTickers) {
 			window.requestAnimationFrame(() => {
-				window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
+				window.WORTHWARD_BOOTSTRAP?.initChartWorkspace?.();
 			});
 		}
 	};
@@ -199,14 +199,14 @@
 		&& tickers.every((ticker) => !nonUsMarketSuffixPattern.test(normalizeTicker(ticker)));
 
 	const getComparePeriod = () => {
-		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const workspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		if (workspaceState?.period) return workspaceState.period;
 		const params = new URLSearchParams(window.location.search);
 		return (params.get("period") || "").trim().toLowerCase();
 	};
 
 	const getCompareRangeMode = () => {
-		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const workspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		if (workspaceState?.rangeMode) return workspaceState.rangeMode;
 		const params = new URLSearchParams(window.location.search);
 		return (params.get("range") || params.get("range_mode") || "").trim().toLowerCase();
@@ -225,7 +225,7 @@
 		const params = new URLSearchParams(window.location.search);
 		return getCompareRangeMode() === "exact"
 			&& getComparePeriod() === "1d"
-			&& Boolean(window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.date
+			&& Boolean(window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.date
 				|| params.get("trading_date") || params.get("exact_trading_date") || params.get("from") || params.get("exact_start"));
 	};
 
@@ -237,7 +237,7 @@
 	};
 
 	const getCompareSelectedDate = () => {
-		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const workspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		if (workspaceState?.date) return workspaceState.date;
 		const params = new URLSearchParams(window.location.search);
 		return params.get("trading_date")
@@ -312,7 +312,7 @@
 			return;
 		}
 		valueNode.dataset.numericDisplayValue = display;
-		const enhanceNumericDisplay = window.ANTIGRAVITY_NUMERIC_DISPLAY?.enhanceNumericDisplayElements;
+		const enhanceNumericDisplay = window.WORTHWARD_NUMERIC_DISPLAY?.enhanceNumericDisplayElements;
 		if (typeof enhanceNumericDisplay === "function") {
 			enhanceNumericDisplay(valueNode);
 			return;

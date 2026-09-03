@@ -28,7 +28,7 @@ function createMotionHarness({reduced = false} = {}) {
     };
     vm.runInNewContext(source, context);
     return {
-        motion: windowRef.AntigravityMotion,
+        motion: windowRef.WorthwardMotion,
         flush(now) {
             const callbacks = [...pendingFrames.values()];
             pendingFrames.clear();

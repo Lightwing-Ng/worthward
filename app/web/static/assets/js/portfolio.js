@@ -1,9 +1,9 @@
 /* Code version: v0.3.1 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 
 	const initPortfolioWorkspace = () => {
-		const state = window.ANTIGRAVITY_APP;
+		const state = window.WORTHWARD_APP;
 		if (!state || state.currentView !== "portfolio") return;
 
 		const startDonut = document.getElementById("portfolio_donut_start");
@@ -242,17 +242,17 @@
 			renderDonut({ donut: endDonut, orbit: endOrbit, logoLayer: endLogoLayer, entries: buildEndingEntries(resolvedEntries) });
 		};
 
-		if (window.__antigravityPortfolioPreviewHandler) {
-			window.removeEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
+		if (window.__worthwardPortfolioPreviewHandler) {
+			window.removeEventListener("worthward:portfolio-preview", window.__worthwardPortfolioPreviewHandler);
 		}
-		window.__antigravityPortfolioPreviewHandler = (event) => {
+		window.__worthwardPortfolioPreviewHandler = (event) => {
 			renderPortfolioPreview(resolvePreviewEntries(event.detail?.entries));
 		};
-		window.addEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
+		window.addEventListener("worthward:portfolio-preview", window.__worthwardPortfolioPreviewHandler);
 
-		if (typeof window.__antigravityPortfolioThemeCleanup === "function") {
-			window.__antigravityPortfolioThemeCleanup();
-			window.__antigravityPortfolioThemeCleanup = null;
+		if (typeof window.__worthwardPortfolioThemeCleanup === "function") {
+			window.__worthwardPortfolioThemeCleanup();
+			window.__worthwardPortfolioThemeCleanup = null;
 		}
 		const portfolioThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 		const handlePortfolioThemeChange = () => {
@@ -267,18 +267,18 @@
 		} else if (typeof portfolioThemeMedia.addListener === "function") {
 			portfolioThemeMedia.addListener(handlePortfolioThemeChange);
 		}
-		window.addEventListener("antigravity:theme-mode-change", handlePortfolioThemeChange);
-		window.__antigravityPortfolioThemeCleanup = () => {
+		window.addEventListener("worthward:theme-mode-change", handlePortfolioThemeChange);
+		window.__worthwardPortfolioThemeCleanup = () => {
 			if (typeof portfolioThemeMedia.removeEventListener === "function") {
 				portfolioThemeMedia.removeEventListener("change", handlePortfolioThemeChange);
 			} else if (typeof portfolioThemeMedia.removeListener === "function") {
 				portfolioThemeMedia.removeListener(handlePortfolioThemeChange);
 			}
-			window.removeEventListener("antigravity:theme-mode-change", handlePortfolioThemeChange);
+			window.removeEventListener("worthward:theme-mode-change", handlePortfolioThemeChange);
 		};
 
-		if (window.__antigravityPortfolioGeometrySync) {
-			const { observer, resizeHandler, cancelFrame } = window.__antigravityPortfolioGeometrySync;
+		if (window.__worthwardPortfolioGeometrySync) {
+			const { observer, resizeHandler, cancelFrame } = window.__worthwardPortfolioGeometrySync;
 			observer?.disconnect?.();
 			window.removeEventListener("resize", resizeHandler);
 			cancelFrame?.();
@@ -303,7 +303,7 @@
 			geometryObserver?.observe(element);
 		});
 		window.addEventListener("resize", handleGeometryResize, { passive: true });
-		window.__antigravityPortfolioGeometrySync = {
+		window.__worthwardPortfolioGeometrySync = {
 			observer: geometryObserver,
 			resizeHandler: handleGeometryResize,
 			cancelFrame: () => {
@@ -350,7 +350,7 @@
 	};
 
 	const buildPortfolioShareFilename = () => {
-		const tickers = (window.ANTIGRAVITY_APP?.portfolio?.items || [])
+		const tickers = (window.WORTHWARD_APP?.portfolio?.items || [])
 			.map((item) => String(item?.ticker || "").trim().toLowerCase())
 			.filter(Boolean)
 			.join("-") || "portfolio";
@@ -360,7 +360,7 @@
 	bootstrap.registerWorkspaceShareProvider?.("portfolio", {
 		isReady: () => {
 			const chartCanvas = document.getElementById("returnsChart");
-			const hasSeries = Array.isArray(window.ANTIGRAVITY_APP?.chart?.series) && window.ANTIGRAVITY_APP.chart.series.length > 0;
+			const hasSeries = Array.isArray(window.WORTHWARD_APP?.chart?.series) && window.WORTHWARD_APP.chart.series.length > 0;
 			return hasSeries && chartCanvas?.dataset.chartMounted === "1";
 		},
 		buildCard: buildPortfolioCommunityShareCard,

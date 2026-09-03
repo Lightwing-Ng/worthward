@@ -379,7 +379,7 @@ class ComparePageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         state_match = re.search(
-            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            r'<script id="worthward_state" type="application/json">(.*?)</script>',
             html,
             re.DOTALL,
         )
@@ -403,7 +403,7 @@ class ComparePageTests(unittest.TestCase):
 
         price_html = price_response.get_data(as_text=True)
         price_state_match = re.search(
-            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            r'<script id="worthward_state" type="application/json">(.*?)</script>',
             price_html,
             re.DOTALL,
         )
@@ -1627,7 +1627,7 @@ class ComparePageTests(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         state_match = re.search(
-            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            r'<script id="worthward_state" type="application/json">(.*?)</script>',
             html,
             re.DOTALL,
         )
@@ -1707,7 +1707,7 @@ class ComparePageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         state_match = re.search(
-            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            r'<script id="worthward_state" type="application/json">(.*?)</script>',
             html,
             re.DOTALL,
         )

@@ -48,7 +48,7 @@ def test_canonical_page_publishes_one_versioned_top_level_site_tools_adapter(
     manifest = _manifest_from_body(body)
     assert manifest["contractVersion"] == "1.1.0"
     assert manifest["status"] == "project-convention"
-    assert manifest["site"]["id"] == "antigravity"
+    assert manifest["site"]["id"] == "worthward"
     assert [tool["name"] for tool in manifest["webmcpTools"]] == [
         "get_site_capabilities",
         "get_page_context",

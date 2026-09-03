@@ -202,7 +202,7 @@
         return () => animations.forEach((animation) => animation?.cancel());
     };
 
-    window.AntigravityMotion = Object.freeze({
+    window.WorthwardMotion = Object.freeze({
         animate,
         clamp,
         durations,

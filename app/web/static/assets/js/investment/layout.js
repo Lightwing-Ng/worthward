@@ -79,11 +79,11 @@ export function bindInvestmentSectionResizer({
         || !isElement(reportCard)
         || !isElement(historySurface)
         || !isElement(sectionResizer)
-        || typeof windowRef?.ANTIGRAVITY_RESIZER?.bind !== 'function'
+        || typeof windowRef?.WORTHWARD_RESIZER?.bind !== 'function'
     ) return () => {};
 
-    const stackedLayoutMedia = typeof windowRef?.ANTIGRAVITY_RESPONSIVE?.media === 'function'
-        ? windowRef.ANTIGRAVITY_RESPONSIVE.media('contentStackMax')
+    const stackedLayoutMedia = typeof windowRef?.WORTHWARD_RESPONSIVE?.media === 'function'
+        ? windowRef.WORTHWARD_RESPONSIVE.media('contentStackMax')
         : null;
     const isStackedLayout = () => Boolean(stackedLayoutMedia?.matches);
 
@@ -373,7 +373,7 @@ export function bindInvestmentSectionResizer({
     } else if (typeof stackedLayoutMedia?.addListener === 'function') {
         stackedLayoutMedia.addListener(onStackedLayoutChange);
     }
-    const unbind = windowRef.ANTIGRAVITY_RESIZER.bind(sectionResizer, {
+    const unbind = windowRef.WORTHWARD_RESIZER.bind(sectionResizer, {
         axis: 'block',
         root: workspaceHeader,
         getRange,

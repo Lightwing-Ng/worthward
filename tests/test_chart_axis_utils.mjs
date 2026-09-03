@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // package.json sets "type": "module", so the classic script attaches to globalThis.
 require(path.join(root, 'app/web/static/assets/js/chart-axis-utils.js'));
-const utils = globalThis.ANTIGRAVITY_CHART_AXIS;
+const utils = globalThis.WORTHWARD_CHART_AXIS;
 
 const TOKEN_SPECS = Object.freeze([
     {
@@ -63,12 +63,12 @@ function withThemeEnvironment({ cssTokens = {}, appTheme, run }) {
     const previousGetComputedStyle = Object.prototype.hasOwnProperty.call(globalThis, 'getComputedStyle')
         ? globalThis.getComputedStyle
         : undefined;
-    const previousApp = Object.prototype.hasOwnProperty.call(globalThis, 'ANTIGRAVITY_APP')
-        ? globalThis.ANTIGRAVITY_APP
+    const previousApp = Object.prototype.hasOwnProperty.call(globalThis, 'WORTHWARD_APP')
+        ? globalThis.WORTHWARD_APP
         : undefined;
     const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
     const hadGetComputedStyle = Object.prototype.hasOwnProperty.call(globalThis, 'getComputedStyle');
-    const hadApp = Object.prototype.hasOwnProperty.call(globalThis, 'ANTIGRAVITY_APP');
+    const hadApp = Object.prototype.hasOwnProperty.call(globalThis, 'WORTHWARD_APP');
 
     try {
         globalThis.document = { body: {} };
@@ -79,9 +79,9 @@ function withThemeEnvironment({ cssTokens = {}, appTheme, run }) {
             },
         });
         if (appTheme === undefined) {
-            delete globalThis.ANTIGRAVITY_APP;
+            delete globalThis.WORTHWARD_APP;
         } else {
-            globalThis.ANTIGRAVITY_APP = { theme: appTheme };
+            globalThis.WORTHWARD_APP = { theme: appTheme };
         }
         return run();
     } finally {
@@ -96,15 +96,15 @@ function withThemeEnvironment({ cssTokens = {}, appTheme, run }) {
             delete globalThis.getComputedStyle;
         }
         if (hadApp) {
-            globalThis.ANTIGRAVITY_APP = previousApp;
+            globalThis.WORTHWARD_APP = previousApp;
         } else {
-            delete globalThis.ANTIGRAVITY_APP;
+            delete globalThis.WORTHWARD_APP;
         }
     }
 }
 
 test('exposes a versioned shared chart axis API', () => {
-    assert.ok(utils, 'ANTIGRAVITY_CHART_AXIS should be installed on globalThis');
+    assert.ok(utils, 'WORTHWARD_CHART_AXIS should be installed on globalThis');
     assert.match(utils.CHART_AXIS_UTILS_VERSION, /^v\d+\.\d+\.\d+$/);
     assert.equal(typeof utils.buildTickIndexSet, 'function');
     assert.equal(typeof utils.sortedTickIndexes, 'function');
@@ -413,7 +413,7 @@ test('readThemeTokens uses explicit fallbacks when CSS tokens are missing', () =
     }
 });
 
-test('readThemeTokens uses ANTIGRAVITY_APP.theme when CSS and fallbacks are missing', () => {
+test('readThemeTokens uses WORTHWARD_APP.theme when CSS and fallbacks are missing', () => {
     const appTheme = Object.fromEntries(
         TOKEN_SPECS.map((spec) => [spec.appThemeKey, spec.themeValue]),
     );
@@ -448,7 +448,7 @@ test('readThemeTokens restores global document theme state after each assertion 
 
     globalThis.document = sentinelDocument;
     globalThis.getComputedStyle = sentinelStyle;
-    globalThis.ANTIGRAVITY_APP = sentinelApp;
+    globalThis.WORTHWARD_APP = sentinelApp;
 
     try {
         withThemeEnvironment({
@@ -461,10 +461,10 @@ test('readThemeTokens restores global document theme state after each assertion 
         });
         assert.equal(globalThis.document, sentinelDocument);
         assert.equal(globalThis.getComputedStyle, sentinelStyle);
-        assert.equal(globalThis.ANTIGRAVITY_APP, sentinelApp);
+        assert.equal(globalThis.WORTHWARD_APP, sentinelApp);
     } finally {
         delete globalThis.document;
         delete globalThis.getComputedStyle;
-        delete globalThis.ANTIGRAVITY_APP;
+        delete globalThis.WORTHWARD_APP;
     }
 });

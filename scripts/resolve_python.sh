@@ -3,8 +3,9 @@
 # Code version: v0.1.0
 
 resolve_python_bin() {
-	if [[ -n "${ANTIGRAVITY_PYTHON:-}" ]]; then
-		printf '%s\n' "$ANTIGRAVITY_PYTHON"
+	local configured_python="${WORTHWARD_PYTHON:-${ANTIGRAVITY_PYTHON:-}}"
+	if [[ -n "$configured_python" ]]; then
+		printf '%s\n' "$configured_python"
 		return 0
 	fi
 

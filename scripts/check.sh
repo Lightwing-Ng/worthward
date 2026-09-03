@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/resolve_python.sh"
 PYTHON_BIN="$(resolve_python_bin)"
-COVERAGE_MINIMUM="${ANTIGRAVITY_COVERAGE_MINIMUM:-50}"
+COVERAGE_MINIMUM="${WORTHWARD_COVERAGE_MINIMUM:-${ANTIGRAVITY_COVERAGE_MINIMUM:-50}}"
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
@@ -22,7 +22,7 @@ for required_command in node npm; do
 done
 
 if [[ ! "$COVERAGE_MINIMUM" =~ ^[0-9]+$ ]] || (( COVERAGE_MINIMUM < 0 || COVERAGE_MINIMUM > 100 )); then
-	echo "ANTIGRAVITY_COVERAGE_MINIMUM must be an integer from 0 to 100." >&2
+	echo "WORTHWARD_COVERAGE_MINIMUM must be an integer from 0 to 100." >&2
 	exit 1
 fi
 

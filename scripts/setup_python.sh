@@ -10,7 +10,7 @@ PYTHON_BIN="$(resolve_python_bin)"
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
-	echo "Set ANTIGRAVITY_PYTHON to a valid Python 3.13 or 3.14 executable and rerun." >&2
+	echo "Set WORTHWARD_PYTHON to a valid Python 3.13 or 3.14 executable and rerun." >&2
 	exit 1
 fi
 

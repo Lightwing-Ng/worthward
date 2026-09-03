@@ -6,9 +6,9 @@
 
 import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.3.4';
 
-const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';
-const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'antigravity:backtest-probability-stage-minimum-change';
+const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';
 let cleanupBacktestLayout = () => {};
 
 export function initBacktestLayout() {

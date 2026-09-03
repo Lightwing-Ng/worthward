@@ -429,9 +429,10 @@ import {
     renderNumericDisplayContent as renderWorkspaceMetricValueContent,
 } from './numeric-display.js?v=numeric-display-v1.1.0';
 
-const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+const chartAxis = window.WORTHWARD_CHART_AXIS || {};
+const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
-window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
+window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
     entry: 'v2.133.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
@@ -449,8 +450,8 @@ window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
 registerInvestmentChartHelpers(window);
 
 document.addEventListener('DOMContentLoaded', () => {
-    const theme = window.ANTIGRAVITY_APP?.theme || {};
-    const fetchAbortDebugConfig = window.ANTIGRAVITY_APP?.debug?.fetchAbort || null;
+    const theme = window.WORTHWARD_APP?.theme || {};
+    const fetchAbortDebugConfig = window.WORTHWARD_APP?.debug?.fetchAbort || null;
     const reportInvestmentFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = 'post-fix') => {
         // #region debug-point C:investment-fetch-abort
         if (!fetchAbortDebugConfig?.url) return;
@@ -663,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentHistoryPagination = document.getElementById('investment_history_pagination');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
-    const INVESTMENT_PAGE_MEMORY_STORAGE_KEY = 'antigravity:investment:page-memory:v1';
+    const INVESTMENT_PAGE_MEMORY_STORAGE_KEY = 'worthward:investment:page-memory:v1';
     const INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS = 7;
     const INVESTMENT_INTERNAL_TRANSFER_BANK_BROKERS = new Set(['hsbc', 'boc_hk', 'cmbwl']);
     const INVESTMENT_INTERNAL_TRANSFER_UNDATED_POSTING_LAG_DAYS = 1;
@@ -1314,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         epsilon: INVESTMENT_LIVE_DIGIT_EPSILON,
         easeOutCubic,
         renderWorkspaceMetricValueContent,
-        scheduler: window.AntigravityMotion?.scheduler,
+        scheduler: window.WorthwardMotion?.scheduler,
     });
 
     const investmentRealtimeQuotePoller = createInvestmentRealtimeQuotePoller({
@@ -1348,11 +1349,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentRealtimeQuoteEndpoint() {
-        return window.ANTIGRAVITY_APP?.endpoints?.investmentRealtimeQuotes || '/api/investment/realtime-quotes';
+        return window.WORTHWARD_APP?.endpoints?.investmentRealtimeQuotes || '/api/investment/realtime-quotes';
     }
 
     function getInvestmentMarketSessionEndpoint() {
-        return window.ANTIGRAVITY_APP?.endpoints?.investmentMarketSession || '/api/market-session/us-equity';
+        return window.WORTHWARD_APP?.endpoints?.investmentMarketSession || '/api/market-session/us-equity';
     }
 
     function getSafeInvestmentMarketSessionState() {
@@ -1878,7 +1879,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentEmbeddedRealtimeQuotes() {
-        const quotes = window.ANTIGRAVITY_INVESTMENT_DATA?.realtime_quotes;
+        const quotes = window.WORTHWARD_INVESTMENT_DATA?.realtime_quotes;
         return Array.isArray(quotes) ? quotes : [];
     }
 
@@ -2283,7 +2284,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function readInvestmentPageMemory() {
         try {
-            const raw = window.localStorage.getItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY);
+            const raw = preferenceStorage.local.getItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY);
             if (!raw) return {};
             const parsed = JSON.parse(raw);
             return parsed && typeof parsed === 'object' ? parsed : {};
@@ -2294,7 +2295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function writeInvestmentPageMemory(nextMemory) {
         try {
-            window.localStorage.setItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY, JSON.stringify(nextMemory));
+            preferenceStorage.local.setItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY, JSON.stringify(nextMemory));
         } catch (_error) {
         }
     }
@@ -2392,29 +2393,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function readInvestmentInternalTransferBindings() {
         return normalizeInvestmentInternalTransferBindings(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.manual_internal_transfer_bindings
+            window.WORTHWARD_INVESTMENT_DATA?.manual_internal_transfer_bindings
         );
     }
 
     function writeInvestmentInternalTransferBindings(nextBindings) {
         const normalizedBindings = normalizeInvestmentInternalTransferBindings(nextBindings);
-        if (!window.ANTIGRAVITY_INVESTMENT_DATA || typeof window.ANTIGRAVITY_INVESTMENT_DATA !== 'object') {
+        if (!window.WORTHWARD_INVESTMENT_DATA || typeof window.WORTHWARD_INVESTMENT_DATA !== 'object') {
             return;
         }
-        window.ANTIGRAVITY_INVESTMENT_DATA.manual_internal_transfer_bindings = normalizedBindings;
+        window.WORTHWARD_INVESTMENT_DATA.manual_internal_transfer_bindings = normalizedBindings;
     }
 
     function readInvestmentInternalTransferIgnoredSourceKeys() {
         return new Set(normalizeInvestmentInternalTransferIgnoredSourceKeys(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.manual_internal_transfer_ignored_source_keys,
+            window.WORTHWARD_INVESTMENT_DATA?.manual_internal_transfer_ignored_source_keys,
         ));
     }
 
     function writeInvestmentInternalTransferIgnoredSourceKeys(nextKeys) {
-        if (!window.ANTIGRAVITY_INVESTMENT_DATA || typeof window.ANTIGRAVITY_INVESTMENT_DATA !== 'object') {
+        if (!window.WORTHWARD_INVESTMENT_DATA || typeof window.WORTHWARD_INVESTMENT_DATA !== 'object') {
             return;
         }
-        window.ANTIGRAVITY_INVESTMENT_DATA.manual_internal_transfer_ignored_source_keys = (
+        window.WORTHWARD_INVESTMENT_DATA.manual_internal_transfer_ignored_source_keys = (
             normalizeInvestmentInternalTransferIgnoredSourceKeys(nextKeys)
         );
     }
@@ -2460,15 +2461,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 payload.manual_internal_transfer_ignored_source_keys,
             );
         }
-        if (payload?.summary && window.ANTIGRAVITY_INVESTMENT_DATA) {
-            window.ANTIGRAVITY_INVESTMENT_DATA.summary = payload.summary;
+        if (payload?.summary && window.WORTHWARD_INVESTMENT_DATA) {
+            window.WORTHWARD_INVESTMENT_DATA.summary = payload.summary;
         }
         applyInvestmentSecurityTransferBasisToTransactions(investmentRawTransactionsCache);
         return payload || {success: true};
     }
 
     function getInvestmentSecurityTransferReconciliation() {
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.summary;
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.summary;
         const reconciliation = summary?.security_transfer_reconciliation;
         return reconciliation && typeof reconciliation === 'object' ? reconciliation : {};
     }
@@ -2588,7 +2589,7 @@ document.addEventListener('DOMContentLoaded', () => {
             excludedReceiptKeys,
             pnlUnavailableTickers,
         };
-        const sourceAttributionByReceiptKey = window.ANTIGRAVITY_INVESTMENT_DATA?.manual_security_transfer_attributions;
+        const sourceAttributionByReceiptKey = window.WORTHWARD_INVESTMENT_DATA?.manual_security_transfer_attributions;
         const normalizedAttributions = sourceAttributionByReceiptKey && typeof sourceAttributionByReceiptKey === 'object'
             ? sourceAttributionByReceiptKey
             : {};
@@ -2752,14 +2753,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 String(payload?.error || 'The Schwab transfer attribution could not be saved.').trim()
             );
         }
-        if (window.ANTIGRAVITY_INVESTMENT_DATA && payload?.summary) {
-            window.ANTIGRAVITY_INVESTMENT_DATA.summary = payload.summary;
+        if (window.WORTHWARD_INVESTMENT_DATA && payload?.summary) {
+            window.WORTHWARD_INVESTMENT_DATA.summary = payload.summary;
         }
         if (
-            window.ANTIGRAVITY_INVESTMENT_DATA
+            window.WORTHWARD_INVESTMENT_DATA
             && Object.prototype.hasOwnProperty.call(payload || {}, 'manual_security_transfer_attributions')
         ) {
-            window.ANTIGRAVITY_INVESTMENT_DATA.manual_security_transfer_attributions = (
+            window.WORTHWARD_INVESTMENT_DATA.manual_security_transfer_attributions = (
                 payload.manual_security_transfer_attributions
             );
         }
@@ -3581,7 +3582,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const endingCashAsOf = getInvestmentBrokerEndingCashAsOf(brokerCode);
             const endingCashAsOfDateTime = getInvestmentBrokerEndingCashAsOfDateTime(brokerCode);
             if (!endingCashAsOf) return;
-            const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
+            const brokerSummary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
             if (brokerSummary?.cash_snapshot_authoritative === false) return;
             const hasAuthoritativeBalances = authoritativeEndingCashBalances !== null;
             const brokerRows = transactions.filter(
@@ -3942,10 +3943,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!latestProcessed) return;
 
         const configuredCashBrokerCodes = Array.isArray(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.authoritative_current_cash_brokers,
+            window.WORTHWARD_INVESTMENT_DATA?.summary?.authoritative_current_cash_brokers,
         )
             ? Array.from(new Set(
-                window.ANTIGRAVITY_INVESTMENT_DATA.summary.authoritative_current_cash_brokers
+                window.WORTHWARD_INVESTMENT_DATA.summary.authoritative_current_cash_brokers
                     .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
                     .filter(Boolean),
             ))
@@ -3961,7 +3962,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentCashSnapshots = [];
         const unsupportedCashBrokers = [];
         brokerCodes.forEach((brokerCode) => {
-            const brokerSummary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
+            const brokerSummary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
             const latestBrokerTxn = [...transactions].reverse().find(
                 (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode,
             );
@@ -4235,7 +4236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let renderedControlWidth = renderedControlRect.width;
         let shouldOverflow = false;
         if (usesSharedOverflowFrame) {
-            window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(control, {
+            window.WORTHWARD_SEGMENTED_CONTROLS?.sync?.(control, {
                 activeIndex,
                 options,
             });
@@ -4345,9 +4346,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (
             activeOption instanceof HTMLElement
             && control.closest('[data-segmented-overflow-frame]') instanceof HTMLElement
-            && window.ANTIGRAVITY_SEGMENTED_CONTROLS?.keepOptionVisible
+            && window.WORTHWARD_SEGMENTED_CONTROLS?.keepOptionVisible
         ) {
-            window.ANTIGRAVITY_SEGMENTED_CONTROLS.keepOptionVisible(control, activeOption);
+            window.WORTHWARD_SEGMENTED_CONTROLS.keepOptionVisible(control, activeOption);
             return;
         }
         const maxScrollLeft = Math.max(0, control.scrollWidth - control.clientWidth);
@@ -5835,7 +5836,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 all: allBrokersSelected,
                 codes: allBrokersSelected ? [] : Array.from(selectedBrokerCodes),
             },
-            typeFilter: window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(investmentSideFilter) || 'all',
+            typeFilter: window.WORTHWARD_INVESTMENT_FILTERS?.normalizeSideFilter(investmentSideFilter) || 'all',
             currencyFilter: investmentCurrencyFilter,
             descriptionFilter: investmentDescriptionBindingFilter,
             dateFilter: investmentStockDetailsDateFilter,
@@ -6261,8 +6262,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     logo.style.opacity = '1';
                     return false;
                 };
-                if (window.AntigravityMotion?.scheduler?.frame) {
-                    window.AntigravityMotion.scheduler.frame(logo, reveal);
+                if (window.WorthwardMotion?.scheduler?.frame) {
+                    window.WorthwardMotion.scheduler.frame(logo, reveal);
                 } else {
                     window.requestAnimationFrame(reveal);
                 }
@@ -6619,7 +6620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         stockDetailsDonutAnimationCancel?.();
-        const duration = window.AntigravityMotion?.durations?.emphasized ?? 420;
+        const duration = window.WorthwardMotion?.durations?.emphasized ?? 420;
         const finish = () => {
             stockDetailsDonutAnimatedState = targetState;
             applyStockDetailsDonutState(targetState);
@@ -6635,8 +6636,8 @@ document.addEventListener('DOMContentLoaded', () => {
             stockDetailsDonutAnimatedState = frameState;
             applyStockDetailsDonutState(frameState, {refreshOrbit: false});
         };
-        if (window.AntigravityMotion?.scheduler?.animate) {
-            stockDetailsDonutAnimationCancel = window.AntigravityMotion.scheduler.animate({
+        if (window.WorthwardMotion?.scheduler?.animate) {
+            stockDetailsDonutAnimationCancel = window.WorthwardMotion.scheduler.animate({
                 key: 'investment-stock-details-donut',
                 duration,
                 ease: easeOutCubic,
@@ -6671,7 +6672,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activeTicker) return;
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = resolveInvestmentTickerProfile(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {},
+            window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {},
             activeTicker,
         );
         const pointRecord = activeStockDetailsHoverPointRecord
@@ -7195,7 +7196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentKnownTickerCompanyNames() {
-        const payloadNames = window.ANTIGRAVITY_INVESTMENT_DATA?.known_ticker_company_names;
+        const payloadNames = window.WORTHWARD_INVESTMENT_DATA?.known_ticker_company_names;
         return payloadNames && typeof payloadNames === 'object' && !Array.isArray(payloadNames)
             ? payloadNames
             : {};
@@ -7304,8 +7305,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function rebuildInvestmentBrokerFilterTransactionIndex(processedTransactions = investmentProcessedTransactionsCache) {
         const source = Array.isArray(processedTransactions) ? processedTransactions : [];
-        const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
-            ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
+        const payloadBrokerCodes = Array.isArray(window.WORTHWARD_INVESTMENT_DATA?.brokers)
+            ? window.WORTHWARD_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
             : [];
         const labels = Object.fromEntries(
             Object.entries(INVESTMENT_BROKER_META).map(([brokerCode, metadata]) => [brokerCode, metadata.label]),
@@ -8043,7 +8044,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyInvestmentSideFilter(nextFilter, { keepOpenFilterId = '' } = {}) {
-        investmentSideFilter = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(nextFilter) || 'all';
+        investmentSideFilter = window.WORTHWARD_INVESTMENT_FILTERS?.normalizeSideFilter(nextFilter) || 'all';
         syncInvestmentUrl({historyMode: 'replace'});
         closeInvestmentSideFilterDropdowns();
         mountInvestmentSideFilterHeaders();
@@ -8333,7 +8334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // controls the Overview chart and must not change this table's scope.
             selectedRange: 'max',
             matchesSide: (transaction) => (
-                window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(
+                window.WORTHWARD_INVESTMENT_FILTERS?.matchesSideFilter(
                     transaction,
                     investmentSideFilter,
                 ) ?? true
@@ -8820,7 +8821,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dateInput = field.querySelector('#investment_stock_details_date_start');
         const clearButton = field.querySelector('[data-investment-stock-details-time-filter-clear]');
         if (!(panel instanceof HTMLElement) || !(dateInput instanceof HTMLInputElement)) return;
-        window.ANTIGRAVITY_DATE_PICKERS?.initialize(panel);
+        window.WORTHWARD_DATE_PICKERS?.initialize(panel);
         trigger?.addEventListener('click', (event) => {
             event.stopPropagation();
             const wasOpen = field.classList.contains('is-open');
@@ -8835,7 +8836,7 @@ document.addEventListener('DOMContentLoaded', () => {
             syncInvestmentUrl({historyMode: 'replace'});
             applyInvestmentStockDetailsDateFilter();
         });
-        dateInput.addEventListener('antigravity:date-picker-month-select', (event) => {
+        dateInput.addEventListener('worthward:date-picker-month-select', (event) => {
             const value = String(event.detail?.value || '').trim();
             if (!/^\d{4}-\d{2}$/.test(value)) return;
             investmentStockDetailsDateFilter = { mode: 'month', value };
@@ -9818,7 +9819,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                     : (usesStandardXlsxImport
                                         ? (isStandardXlsx
-                                            ? 'Upload any antigravity standard XLSX workbook. Each row retains its own broker identity and is validated before import.'
+                                            ? 'Upload any Worthward standard XLSX workbook. Each row retains its own broker identity and is validated before import.'
                                             : 'Download the typed standard workbook, enter only real broker activity, then upload it for server validation before importing.')
                                     : (isSchwab
                                 ? 'Upload the Charles Schwab Transactions and Positions CSV exports together. Exact same-day ticker and quantity matches are linked as in-kind transfers; ambiguous matches require manual binding.'
@@ -9853,7 +9854,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalizeInvestmentBroker(
             txn?.broker
             || txn?.source?.broker
-            || window.ANTIGRAVITY_INVESTMENT_DATA?.broker
+            || window.WORTHWARD_INVESTMENT_DATA?.broker
             || 'ibkr'
         );
     }
@@ -9929,8 +9930,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function easeOutCubic(t) {
-        if (window.AntigravityMotion?.easing?.emphasized) {
-            return window.AntigravityMotion.easing.emphasized(t);
+        if (window.WorthwardMotion?.easing?.emphasized) {
+            return window.WorthwardMotion.easing.emphasized(t);
         }
         const clamped = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
         const inverse = 1 - clamped;
@@ -10006,7 +10007,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentDateDisplayHelpers() {
-        return window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay || {};
+        return window.WORTHWARD_BOOTSTRAP?.dateDisplay || {};
     }
 
     function parseInvestmentDateParts(rawValue) {
@@ -10583,7 +10584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const allBrokersSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
         return (Array.isArray(detailRows) ? detailRows : []).filter((txn) => (
             (allBrokersSelected || selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn))))
-            && (window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(txn, investmentSideFilter) ?? true)
+            && (window.WORTHWARD_INVESTMENT_FILTERS?.matchesSideFilter(txn, investmentSideFilter) ?? true)
             && matchesInvestmentCurrencyFilter(txn)
             && matchesInvestmentStockDetailsDateFilter(txn)
         ));
@@ -10746,7 +10747,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildTableAlignmentSync(tableShell, scrollContainer, scrollbarVariableName) {
         if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return null;
 
-        if (window.ANTIGRAVITY_TABLES?.attach) {
+        if (window.WORTHWARD_TABLES?.attach) {
             // The global standard table controller owns measurement and observes
             // dynamically rendered shells. Investment keeps only its visual underlay lifecycle.
             return () => {};
@@ -11094,8 +11095,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentProjectMeta() {
-        const sourceUrl = String(window.ANTIGRAVITY_APP?.project?.sourceUrl || '').trim();
-        const displayUrl = String(window.ANTIGRAVITY_APP?.project?.displayUrl || '').trim();
+        const sourceUrl = String(window.WORTHWARD_APP?.project?.sourceUrl || '').trim();
+        const displayUrl = String(window.WORTHWARD_APP?.project?.displayUrl || '').trim();
         return {
             sourceUrl: sourceUrl || window.location.href,
             displayUrl: displayUrl || sourceUrl.replace(/^https?:\/\//, '') || window.location.host,
@@ -11274,7 +11275,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         card.appendChild(createInvestmentShareHeader(normalizedView));
         card.appendChild(body);
-        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const exportImageConfig = window.WORTHWARD_EXPORT_IMAGE;
         const profileId = exportImageConfig?.defaultProfileId || 'investment-community-share';
         if (typeof exportImageConfig?.applyConfigToTargets === 'function') {
             exportImageConfig.applyConfigToTargets([host, card], profileId);
@@ -11290,7 +11291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function readInvestmentShareSafePaddingPx(scope = document.documentElement) {
-        const readFromBootstrap = window.ANTIGRAVITY_BOOTSTRAP?.workspaceShare?.readSafePaddingPx;
+        const readFromBootstrap = window.WORTHWARD_BOOTSTRAP?.workspaceShare?.readSafePaddingPx;
         if (typeof readFromBootstrap === 'function') {
             return readFromBootstrap(scope);
         }
@@ -11314,7 +11315,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createInvestmentShareChartDataUrl(canvas) {
         if (!(canvas instanceof HTMLCanvasElement)) return null;
-        const capture = window.ANTIGRAVITY_BOOTSTRAP?.workspaceShare?.captureChartDataUrl;
+        const capture = window.WORTHWARD_BOOTSTRAP?.workspaceShare?.captureChartDataUrl;
         const chartInstance = resolveInvestmentShareChartInstance(canvas);
         if (typeof capture === 'function') {
             return capture(canvas, chartInstance) || canvas.toDataURL('image/png');
@@ -11437,7 +11438,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const buildShareTickerCell = (ticker) => {
             const normalizedTicker = String(ticker || '').trim().toUpperCase();
-            const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
+            const tickerProfiles = window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {};
             const profile = resolveInvestmentTickerProfile(tickerProfiles, normalizedTicker);
             const tickerLabel = formatInvestmentTickerForDisplay(normalizedTicker);
             const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, normalizedTicker);
@@ -12821,7 +12822,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildInvestmentRequestOptions(overrides = {}) {
         const csrfToken = String(
-            window.ANTIGRAVITY_APP?.security?.investmentCsrfToken || ''
+            window.WORTHWARD_APP?.security?.investmentCsrfToken || ''
         ).trim();
         const headers = {
             'Cache-Control': 'no-cache',
@@ -12892,7 +12893,7 @@ document.addEventListener('DOMContentLoaded', () => {
             transactionCount: Array.isArray(data.transactions) ? data.transactions.length : -1,
             success: data.success,
         });
-        window.ANTIGRAVITY_INVESTMENT_DATA = data;
+        window.WORTHWARD_INVESTMENT_DATA = data;
         const previousUrlStateApplying = investmentUrlStateApplying;
         investmentUrlStateApplying = true;
         let valuationStatus;
@@ -13259,7 +13260,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const workbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
                 const workbookSignature = getImportFileSignature(workbookFile);
                 if (!workbookFile || !isLikelyXlsxFile(workbookFile)) {
-                    setImportFeedback('Please upload a completed antigravity standard .xlsx workbook.', 'error');
+                    setImportFeedback('Please upload a completed Worthward standard .xlsx workbook.', 'error');
                     return;
                 }
                 if (
@@ -13500,9 +13501,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        const normalizedSummaryScope = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSummaryScope(summaryScope) || 'all';
+        const normalizedSummaryScope = window.WORTHWARD_INVESTMENT_FILTERS?.normalizeSummaryScope(summaryScope) || 'all';
         const summarySummaries = normalizedSummaryScope === 'all' ? summaries : filteredSummaries;
-        const summaryCountLabel = window.ANTIGRAVITY_INVESTMENT_FILTERS?.buildSummaryCountLabel({
+        const summaryCountLabel = window.WORTHWARD_INVESTMENT_FILTERS?.buildSummaryCountLabel({
             allCount: summaries.length,
             filteredCount: filteredSummaries.length,
             scope: normalizedSummaryScope,
@@ -15023,7 +15024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
         if (investmentStockDetailsTableHost instanceof HTMLElement) {
             closeInvestmentStockDetailsTimeFilters();
-            window.ANTIGRAVITY_DATE_PICKERS?.dispose(investmentStockDetailsTableHost);
+            window.WORTHWARD_DATE_PICKERS?.dispose(investmentStockDetailsTableHost);
         }
         if (investmentAggregateSecurityTransferState.blocked) {
             clearInvestmentStockDetailsRangeControlBindings();
@@ -15360,7 +15361,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (focusView) {
             setInvestmentView('stock_details', { syncHash: false });
         }
-        renderInvestmentStockDetailsPanel(window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {});
+        renderInvestmentStockDetailsPanel(window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {});
         if (focusView || activeInvestmentView === 'stock_details') {
             syncInvestmentUrl({
                 historyMode: focusView ? 'push' : 'replace',
@@ -15424,7 +15425,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? selectedBrokerCodes
                     : availableBrokerCodes);
             }
-            investmentSideFilter = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(urlState.typeFilter) || 'all';
+            investmentSideFilter = window.WORTHWARD_INVESTMENT_FILTERS?.normalizeSideFilter(urlState.typeFilter) || 'all';
             investmentCurrencyFilter = normalizeInvestmentCurrencyFilter(urlState.currencyFilter);
             investmentDescriptionBindingFilter = normalizeInvestmentDescriptionBindingFilter(urlState.descriptionFilter);
             investmentStockDetailsDateFilter = urlState.dateFilter;
@@ -15749,8 +15750,8 @@ document.addEventListener('DOMContentLoaded', () => {
             aggregateLedgerState.cashBalances,
         );
         const moneyMarketTickers = getMoneyMarketTickerSet();
-        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
-        const priceHistoryFailures = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_failures || [];
+        const priceHistoryRows = window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const priceHistoryFailures = window.WORTHWARD_INVESTMENT_DATA?.price_history_failures || [];
         const tickerClosePrices = normalizePriceHistoryPayload(priceHistoryRows);
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const lastKnownTickerPrices = {};
@@ -15796,14 +15797,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return !latestDate || settlementDate > latestDate ? settlementDate : latestDate;
         }, '');
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
-        const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
-            ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
+        const payloadBrokerCodes = Array.isArray(window.WORTHWARD_INVESTMENT_DATA?.brokers)
+            ? window.WORTHWARD_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
             : [];
         const orderedBrokerCodes = Array.from(new Set(orderedTransactions.map((txn) => getTransactionBrokerCode(txn))));
         const effectiveBrokerCodes = payloadBrokerCodes.length ? payloadBrokerCodes : orderedBrokerCodes;
         const isSingleBrokerPortfolio = effectiveBrokerCodes.length <= 1;
         const singleBrokerCode = isSingleBrokerPortfolio
-            ? normalizeInvestmentBroker(effectiveBrokerCodes[0] || window.ANTIGRAVITY_INVESTMENT_DATA?.broker || 'ibkr')
+            ? normalizeInvestmentBroker(effectiveBrokerCodes[0] || window.WORTHWARD_INVESTMENT_DATA?.broker || 'ibkr')
             : '';
         const brokerLedgerStates = new Map();
 
@@ -17489,7 +17490,7 @@ document.addEventListener('DOMContentLoaded', () => {
             backendFailures: priceHistoryFailures,
             fallbackTickers: [],
             missingTickers: Array.from(missingTickers),
-            openTickers: window.ANTIGRAVITY_INVESTMENT_DATA?.section_freshness?.open_tickers || [],
+            openTickers: window.WORTHWARD_INVESTMENT_DATA?.section_freshness?.open_tickers || [],
         });
 
         // 3. Render reverse chronological rows constrained by the active equity range
@@ -17547,7 +17548,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lockInvestmentSurfaceHeight();
         }
 
-        const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
+        const tickerProfiles = window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {};
         investmentDummyTickerProfiles = tickerProfiles;
         investmentTickerClosePricesCache = tickerClosePrices && typeof tickerClosePrices === 'object'
             ? { ...tickerClosePrices }
@@ -18084,7 +18085,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEquityChartWithEquity(inputPoints);
     }
 
-    window.addEventListener('antigravity:theme-mode-change', () => {
+    window.addEventListener('worthward:theme-mode-change', () => {
         window.requestAnimationFrame(() => {
             if (investmentEquityChartInstance?.canvas?.isConnected) {
                 renderEquityChartWithEquity(investmentChartPointsCache);
@@ -18948,7 +18949,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeHoldingsHoverLedgerNo > 0) {
             investmentEquityChartInstance.update('none');
         }
-        const readyScheduler = window.AntigravityMotion?.scheduler;
+        const readyScheduler = window.WorthwardMotion?.scheduler;
         if (readyScheduler?.frame) {
             let readyFrameCount = 0;
             readyScheduler.frame('investment-equity-chart-ready', () => {
@@ -19138,7 +19139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
         const priceHistory = normalizePriceHistoryPayload(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {},
+            window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {},
         );
         const tickerPriceIndex = buildTickerPriceIndex(priceHistory);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(safeTransactions, tickerPriceIndex);
@@ -19325,7 +19326,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 safeTransactions,
                 safeLatestPrices,
                 TOTAL_EQUITY,
-                normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
+                normalizePriceHistoryPayload(window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {})
             ),
         );
         const resolvedBrokerBenefitMetrics = brokerBenefitMetrics || getBrokerBenefitMetrics(
@@ -19528,7 +19529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getStockGrantBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
-        const priceHistory = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
+        const priceHistory = normalizePriceHistoryPayload(window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {});
         const tickerPriceIndex = buildTickerPriceIndex(priceHistory);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(safeTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
@@ -19788,8 +19789,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderMetricValueWithTooltip(metric, { keyPrefix = '' } = {}) {
-        const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
-            ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
+        const sortedLedgerEntries = Array.isArray(window.WORTHWARD_INVESTMENT_DATA?.transactions)
+            ? [...window.WORTHWARD_INVESTMENT_DATA.transactions]
                 .sort((left, right) => compareInvestmentTransactions(left, right))
                 .map((txn, index) => ({
                     ledgerNo: index + 1,

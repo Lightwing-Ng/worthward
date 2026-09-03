@@ -1,4 +1,4 @@
-{# Code version: v0.31.27 #}
+{# Code version: v0.31.29 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -125,8 +125,9 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
+    <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.65.15') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.65.16') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
 </head>
 <body>
@@ -135,8 +136,8 @@
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
     try {
-        const storedSidebarState = window.sessionStorage.getItem("antigravity:sidebar-open");
-        const sidebarOverlayMedia = window.ANTIGRAVITY_RESPONSIVE?.media?.("sidebarOverlayMax");
+        const storedSidebarState = window.WORTHWARD_STORAGE.session.getItem("worthward:sidebar-open");
+        const sidebarOverlayMedia = window.WORTHWARD_RESPONSIVE?.media?.("sidebarOverlayMax");
         const shouldStartCollapsed = storedSidebarState === "false"
             || (storedSidebarState === null && Boolean(sidebarOverlayMedia?.matches));
         if (shouldStartCollapsed) {
@@ -224,7 +225,7 @@
         <p id="workspace_modal_overlay_copy" class="workspace-modal-copy">{{ translate_ui('This may take a moment while the app checks remote data and refreshes the local store.') }}</p>
     </div>
 </div>
-<script id="antigravity_state" type="application/json">{{ {
+<script id="worthward_state" type="application/json">{{ {
     "defaults": defaults,
     "labels": labels,
     "theme": theme,
@@ -268,13 +269,13 @@
     },
 }|tojson }}</script>
 <script>
-    window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
-    window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    window.WORTHWARD_APP = JSON.parse(document.getElementById("worthward_state").textContent);
+    window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 </script>
 <script>
     // Code version: v0.1.1
     (() => {
-        const appState = window.ANTIGRAVITY_APP || {};
+        const appState = window.WORTHWARD_APP || {};
         const comparisonViews = new Set(["tickers", "prices"]);
         const currentView = String(appState.currentView || "").trim().toLowerCase();
         if (!comparisonViews.has(currentView)) return;
@@ -307,7 +308,7 @@
         };
         const readMemory = () => {
             try {
-                const value = JSON.parse(window.sessionStorage.getItem("antigravity:view-memory") || "{}");
+                const value = JSON.parse(window.WORTHWARD_STORAGE.session.getItem("worthward:view-memory") || "{}");
                 return value && typeof value === "object" ? value : {};
             } catch (_error) {
                 return {};
@@ -315,7 +316,7 @@
         };
         const writeMemory = (memory) => {
             try {
-                window.sessionStorage.setItem("antigravity:view-memory", JSON.stringify(memory));
+                window.WORTHWARD_STORAGE.session.setItem("worthward:view-memory", JSON.stringify(memory));
             } catch (_error) {
             }
         };
@@ -368,8 +369,8 @@
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.25.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.37.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.25.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.37.1') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.3.3') }}"></script>
 {% if selected_strategy_id == 'dca' %}
     <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>

@@ -109,8 +109,8 @@ const numericDisplayApi = Object.freeze({
 });
 
 if (typeof window !== 'undefined') {
-    window.ANTIGRAVITY_NUMERIC_DISPLAY = numericDisplayApi;
-    window.dispatchEvent(new CustomEvent('antigravity:numeric-display-ready'));
+    window.WORTHWARD_NUMERIC_DISPLAY = numericDisplayApi;
+    window.dispatchEvent(new CustomEvent('worthward:numeric-display-ready'));
 }
 
 if (typeof document !== 'undefined') {

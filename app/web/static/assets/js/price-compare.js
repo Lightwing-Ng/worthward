@@ -1,8 +1,8 @@
 /* Code version: v0.24.3 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
-	const state = window.ANTIGRAVITY_APP;
-	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+	const state = window.WORTHWARD_APP;
+	const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 	if (!state) return;
 	const isPriceComparison = () => (
 		state.currentView === "prices"
@@ -223,7 +223,7 @@
 
 	const updatePriceCompareHeadingDate = (tradingDateOverride = "") => {
 		const params = new URLSearchParams(window.location.search);
-		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const workspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		const period = workspaceState?.period || (params.get("period") || "").toLowerCase();
 		if (period !== "1d") return;
 		const rangeMode = workspaceState?.rangeMode || (params.get("range") || "period").toLowerCase();
@@ -448,7 +448,7 @@
 
 	const prepareChipRevealMotion = () => {
 		settleChipRevealMotion();
-		if (window.AntigravityMotion?.isReducedMotion?.()) return false;
+		if (window.WorthwardMotion?.isReducedMotion?.()) return false;
 		const origins = new Map();
 		priceCharts.forEach((chart, index) => {
 			const position = chart?.$closingLogoPosition;
@@ -468,7 +468,7 @@
 
 	const startChipRevealMotion = () => {
 		if (!chipRevealMotion.active || !isChipsEnabled()) return;
-		const motion = window.AntigravityMotion;
+		const motion = window.WorthwardMotion;
 		const scheduler = motion?.scheduler;
 		if (!scheduler?.animate || !motion?.easing?.spring) {
 			settleChipRevealMotion();
@@ -564,7 +564,7 @@
 			.map((item) => String(item?.ticker || "").trim().toUpperCase())
 			.filter(Boolean)
 			.join("|");
-		const period = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
+		const period = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
 			|| new URLSearchParams(window.location.search).get("period")?.toLowerCase()
 			|| "";
 		const {from, to} = chipVisibleDateBounds();
@@ -797,7 +797,7 @@
 	};
 
 	const getCachedOhlcvChipDistribution = (item, fallbackItem, period) => {
-		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		const calculator = window.WORTHWARD_CHIP_DISTRIBUTION;
 		if (!calculator) return null;
 		const ohlcvSource = resolveOhlcvChipSource(item, fallbackItem);
 		if (!ohlcvSource) return null;
@@ -825,7 +825,7 @@
 	};
 
 	const getChipDistribution = (item, fallbackItem, period) => {
-		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		const calculator = window.WORTHWARD_CHIP_DISTRIBUTION;
 		if (!calculator) return null;
 		const ohlcvDistribution = getCachedOhlcvChipDistribution(item, fallbackItem, period);
 		const tradeRows = Array.isArray(fallbackItem?.trades) ? fallbackItem.trades : [];
@@ -882,7 +882,7 @@
 	};
 
 	const getChipSnapshotState = (context, dataIndex, cutoffDate) => {
-		const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+		const calculator = window.WORTHWARD_CHIP_DISTRIBUTION;
 		const cutoffTimestamp = normalizeChipSnapshotTimestamp(cutoffDate);
 		if (!calculator || !context || !cutoffTimestamp) return null;
 		const cacheKey = `${dataIndex}:${cutoffTimestamp}`;
@@ -1400,7 +1400,7 @@
 			const nextTop = section.getBoundingClientRect().top;
 			const deltaY = Number(previousTop) - nextTop;
 			if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
-			window.AntigravityMotion?.animate?.(
+			window.WorthwardMotion?.animate?.(
 				section,
 				[
 					{
@@ -1413,8 +1413,8 @@
 					},
 				],
 				{
-					duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
-					easing: window.AntigravityMotion?.easingTokens?.emphasized,
+					duration: window.WorthwardMotion?.durations?.emphasized ?? 420,
+					easing: window.WorthwardMotion?.easingTokens?.emphasized,
 				},
 			);
 		});
@@ -1631,7 +1631,7 @@
 		let shouldLoadFallbackChips = chipsEnabled && !hasCompleteChipPayload;
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
-		const requestedPeriod = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
+		const requestedPeriod = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.period
 			|| new URLSearchParams(window.location.search).get("period")?.toLowerCase()
 			|| "";
 		const sharedRawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
@@ -1720,7 +1720,7 @@
 				: null;
 			const chipBins = Array.isArray(chipDistribution?.bins) ? chipDistribution.bins : [];
 			const chipStatistics = chipsEnabled
-				? window.ANTIGRAVITY_CHIP_DISTRIBUTION?.calculateChipStatistics(chipDistribution, lastPrice)
+				? window.WORTHWARD_CHIP_DISTRIBUTION?.calculateChipStatistics(chipDistribution, lastPrice)
 				: null;
 			const fullChipState = chipDistribution ? {
 				distribution: chipDistribution,
@@ -2286,7 +2286,7 @@
 	const refreshLivePrices = async () => {
 		if (!isPriceComparison()) return;
 		const pageParams = new URLSearchParams(window.location.search);
-		const workspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const workspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		const period = workspaceState?.period || (pageParams.get("period") || "").toLowerCase();
 		const rangeMode = workspaceState?.rangeMode || (pageParams.get("range") || "period").toLowerCase();
 		if (!state.endpoints?.compareLive || !["1d", "3d", "1w"].includes(period)) return;
@@ -2375,7 +2375,7 @@
 		teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
 		updatePriceCompareHeadingDate();
 		const initialParams = new URLSearchParams(window.location.search);
-		const initialWorkspaceState = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
+		const initialWorkspaceState = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href);
 		const initialPeriod = (
 			initialWorkspaceState?.period
 			|| initialParams.get("period")
@@ -2397,5 +2397,5 @@
 		teardownPriceSubplotOrdering();
 		destroyPriceCharts();
 	}, {once: true});
-	window.addEventListener("antigravity:theme-mode-change", () => window.requestAnimationFrame(renderPriceSubplots));
+	window.addEventListener("worthward:theme-mode-change", () => window.requestAnimationFrame(renderPriceSubplots));
 })();

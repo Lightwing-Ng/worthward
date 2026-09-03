@@ -1,7 +1,7 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -22,7 +22,10 @@ from urllib.request import HTTPSHandler, OpenerDirector, ProxyHandler, build_ope
 import certifi
 from curl_cffi import requests as curl_requests
 
-YAHOO_CA_PEM_ENV = "ANTIGRAVITY_YAHOO_CA_PEM"
+from app.core.branding import read_compatible_environment
+
+YAHOO_CA_PEM_ENV = "WORTHWARD_YAHOO_CA_PEM"
+LEGACY_YAHOO_CA_PEM_ENV = "ANTIGRAVITY_YAHOO_CA_PEM"
 _TLS_ERROR_MARKERS = (
     "certificateverifyerror",
     "certificate verify failed",
@@ -75,7 +78,7 @@ def detect_macos_system_ca_pem() -> Path | None:
             )
             if _CA_BUNDLE_DIRECTORY is None:
                 _CA_BUNDLE_DIRECTORY = Path(
-                    tempfile.mkdtemp(prefix="antigravity-yahoo-ca-")
+                    tempfile.mkdtemp(prefix="worthward-yahoo-ca-")
                 )
             detected_path = _CA_BUNDLE_DIRECTORY / "macos-system-keychains.pem"
             detected_path.write_bytes(combined_pem)
@@ -102,7 +105,11 @@ def resolve_yahoo_enterprise_ca_path(
 ) -> Path | None:
     """Resolve the environment override before the versioned configuration value."""
     environment = os.environ if environ is None else environ
-    raw_path = str(environment.get(YAHOO_CA_PEM_ENV, "") or configured_path or "").strip()
+    raw_path = read_compatible_environment(
+        YAHOO_CA_PEM_ENV,
+        LEGACY_YAHOO_CA_PEM_ENV,
+        environ=environment,
+    ) or str(configured_path or "").strip()
     if not raw_path:
         return detect_macos_system_ca_pem()
     path = Path(raw_path).expanduser()
@@ -138,7 +145,7 @@ def build_yahoo_ca_bundle(enterprise_ca_path: Path) -> Path:
         ) from exc
 
     if _CA_BUNDLE_DIRECTORY is None:
-        _CA_BUNDLE_DIRECTORY = Path(tempfile.mkdtemp(prefix="antigravity-yahoo-ca-"))
+        _CA_BUNDLE_DIRECTORY = Path(tempfile.mkdtemp(prefix="worthward-yahoo-ca-"))
     combined_bundle = _CA_BUNDLE_DIRECTORY / "certifi-plus-enterprise.pem"
     separator = b"" if public_ca.endswith(b"\n") else b"\n"
     combined_bundle.write_bytes(public_ca + separator + enterprise_ca.lstrip())

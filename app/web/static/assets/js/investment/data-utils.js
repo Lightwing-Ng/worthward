@@ -201,8 +201,8 @@ export function normalizeInvestmentCostBasisMethod(value) {
 
 export function getInvestmentCostBasisMethod() {
     const configuredValues = [
-        globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.investment_cost_basis_method,
-        globalThis.window?.ANTIGRAVITY_APP?.investmentCostBasisMethod,
+        globalThis.window?.WORTHWARD_INVESTMENT_DATA?.investment_cost_basis_method,
+        globalThis.window?.WORTHWARD_APP?.investmentCostBasisMethod,
     ];
     for (const value of configuredValues) {
         const normalized = String(value || '').trim().toLowerCase();
@@ -656,7 +656,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentStartingCash() {
-        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash;
+        const rawValue = window.WORTHWARD_INVESTMENT_DATA?.starting_cash;
         if (rawValue === undefined || rawValue === null || rawValue === '') {
             return 0;
         }
@@ -665,12 +665,12 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentStartingCashBalances() {
-        const rawBalances = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash_by_currency;
+        const rawBalances = window.WORTHWARD_INVESTMENT_DATA?.starting_cash_by_currency;
         if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
             const normalizedBalances = cloneCashLedgerBalances(rawBalances);
             if (Object.keys(normalizedBalances).length) return normalizedBalances;
         }
-        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const aggregateBrokerBalances = {};
         let hasBrokerStartingBalances = false;
         if (brokerSummaries && typeof brokerSummaries === 'object') {
@@ -693,7 +693,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerStartingCash(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return 0;
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return 0;
         const rawValue = summary.starting_cash
             ?? summary.starting_cash_raw
@@ -705,7 +705,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerStartingCashBalances(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return {};
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return {};
         const rawBalances = summary.starting_cash_by_currency;
         if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
@@ -722,7 +722,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentEndingCash() {
-        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash;
+        const rawValue = window.WORTHWARD_INVESTMENT_DATA?.ending_cash;
         if (rawValue === undefined || rawValue === null || rawValue === '') {
             return null;
         }
@@ -731,7 +731,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentEndingCashBalances() {
-        const rawBalances = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash_by_currency;
+        const rawBalances = window.WORTHWARD_INVESTMENT_DATA?.ending_cash_by_currency;
         if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
             const normalizedBalances = cloneCashLedgerBalances(rawBalances);
             if (Object.keys(normalizedBalances).length) return normalizedBalances;
@@ -743,7 +743,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentEndingCashInBaseCurrency() {
-        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash_base_currency;
+        const rawValue = window.WORTHWARD_INVESTMENT_DATA?.ending_cash_base_currency;
         if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
             const numericValue = Number(rawValue);
             if (Number.isFinite(numericValue)) return numericValue;
@@ -752,7 +752,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentEndingCashInBaseCurrencyAsOf() {
-        const data = window.ANTIGRAVITY_INVESTMENT_DATA || {};
+        const data = window.WORTHWARD_INVESTMENT_DATA || {};
         const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
         return normalizeLedgerDate(
             data.ending_cash_base_currency_as_of
@@ -764,7 +764,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerEndingCash(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
-        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         if (!summaries || typeof summaries !== 'object') return null;
         const summary = summaries[normalizedBroker];
         if (!summary || typeof summary !== 'object') return null;
@@ -779,7 +779,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerEndingCashBalances(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
-        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         if (!summaries || typeof summaries !== 'object') return null;
         const summary = summaries[normalizedBroker];
         if (!summary || typeof summary !== 'object') return null;
@@ -797,7 +797,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
-        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const summary = summaries?.[normalizedBroker];
         const rawValue = summary?.ending_cash_base_currency;
         if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
@@ -810,7 +810,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerCurrentPendingSettlementCash(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (normalizedBroker !== 'hsbc') return 0;
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         const pendingCash = Number(summary?.hsbc_pending_settlement_cash);
         if (Number.isFinite(pendingCash)) return pendingCash;
         const estimate = Number(summary?.hsbc_broker_cash_estimate);
@@ -823,7 +823,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerCurrentDisplayCash(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object' || summary.cash_snapshot_authoritative === false) {
             return null;
         }
@@ -845,7 +845,7 @@ export function createInvestmentDataUtils({
     ) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object' || summary.cash_snapshot_authoritative === false) {
             return null;
         }
@@ -860,7 +860,7 @@ export function createInvestmentDataUtils({
         }
         if (!Object.keys(runningBalances).length) return null;
         const resolvedFxTimeline = fxTimeline || buildInvestmentFxRateTimeline(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [],
+            window.WORTHWARD_INVESTMENT_DATA?.transactions || [],
             baseCurrency,
         );
         const resolvedDate = normalizeLedgerDate(targetDate) || getTodayLedgerDate();
@@ -893,7 +893,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerEndingCashAsOf(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return '';
-        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const summary = summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return '';
         const explicitDate = normalizeLedgerDate(
@@ -919,7 +919,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerEndingCashAsOfDateTime(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return '';
-        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const summaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const summary = summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return '';
         const rawValue = String(
@@ -932,7 +932,7 @@ export function createInvestmentDataUtils({
     }
 
     function getInvestmentPositionSnapshotAsOf() {
-        const data = window.ANTIGRAVITY_INVESTMENT_DATA || {};
+        const data = window.WORTHWARD_INVESTMENT_DATA || {};
         const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
         const explicitDate = normalizeLedgerDate(
             data.position_snapshot_as_of
@@ -953,7 +953,7 @@ export function createInvestmentDataUtils({
     function getInvestmentBrokerPositionSnapshotAsOf(brokerCode) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return '';
-        const summary = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return '';
         const explicitDate = normalizeLedgerDate(summary.position_snapshot_as_of);
         if (explicitDate) return explicitDate;
@@ -1143,8 +1143,8 @@ export function createInvestmentDataUtils({
         if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
         const canonicalTicker = getInvestmentCanonicalTicker(normalizedTicker);
         const configuredMoneyMarketCurrency = normalizeCurrencyCode(
-            globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_quote_currencies?.[canonicalTicker]
-            ?? globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_quote_currencies?.[normalizedTicker],
+            globalThis.window?.WORTHWARD_INVESTMENT_DATA?.money_market_quote_currencies?.[canonicalTicker]
+            ?? globalThis.window?.WORTHWARD_INVESTMENT_DATA?.money_market_quote_currencies?.[normalizedTicker],
         );
         if (configuredMoneyMarketCurrency) return configuredMoneyMarketCurrency;
         if (normalizedTicker.startsWith(`${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.`)) {
@@ -1410,7 +1410,7 @@ export function createInvestmentDataUtils({
         });
 
         const dateRates = {};
-        const externalHistory = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.fx_rate_history_by_currency;
+        const externalHistory = globalThis.window?.WORTHWARD_INVESTMENT_DATA?.fx_rate_history_by_currency;
         if (externalHistory && typeof externalHistory === 'object') {
             Object.entries(externalHistory).forEach(([currency, entry]) => {
                 const normalizedCurrency = normalizeCurrencyCode(currency);
@@ -1824,7 +1824,7 @@ export function createInvestmentDataUtils({
             .trim()
             .toUpperCase();
         if (!canonicalTicker) return '';
-        const payloadNames = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.known_ticker_company_names;
+        const payloadNames = globalThis.window?.WORTHWARD_INVESTMENT_DATA?.known_ticker_company_names;
         const payloadName = payloadNames && typeof payloadNames === 'object' && !Array.isArray(payloadNames)
             ? String(payloadNames[canonicalTicker] || '').trim()
             : '';
@@ -2623,16 +2623,16 @@ export function createInvestmentDataUtils({
     }
 
     function getAuthoritativePositionSnapshot() {
-        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
+        if (window.WORTHWARD_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
             return null;
         }
         return normalizeAuthoritativePositionSnapshot(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.position_snapshot,
+            window.WORTHWARD_INVESTMENT_DATA?.position_snapshot,
         );
     }
 
     function getAuthoritativeBrokerPositionSnapshots() {
-        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
         const snapshots = [];
         Object.entries(brokerSummaries).forEach(([broker, summary]) => {
@@ -3129,17 +3129,17 @@ export function createInvestmentDataUtils({
     }
 
     function getAuthoritativePerformanceSnapshot() {
-        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.performance_snapshot_authoritative !== true) {
+        if (window.WORTHWARD_INVESTMENT_DATA?.summary?.performance_snapshot_authoritative !== true) {
             return null;
         }
         return normalizeAuthoritativePerformanceSnapshot(
-            window.ANTIGRAVITY_INVESTMENT_DATA?.performance_snapshot,
+            window.WORTHWARD_INVESTMENT_DATA?.performance_snapshot,
         );
     }
 
     function getAuthoritativeBrokerPerformanceSnapshots() {
-        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
-        const brokerSnapshots = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_snapshots;
+        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
+        const brokerSnapshots = window.WORTHWARD_INVESTMENT_DATA?.broker_snapshots;
         const snapshotsByAccount = new Map();
         if (brokerSnapshots && typeof brokerSnapshots === 'object') {
             Object.values(brokerSnapshots).forEach((snapshot) => {
@@ -3186,7 +3186,7 @@ export function createInvestmentDataUtils({
     }
 
     function getVerifiedTaxLotHistoryScopes() {
-        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const scopes = new Map();
         if (!brokerSummaries || typeof brokerSummaries !== 'object') return scopes;
         Object.entries(brokerSummaries).forEach(([broker, summary]) => {
@@ -3250,7 +3250,7 @@ export function createInvestmentDataUtils({
     }
 
     function getDynamicallyVerifiedTaxLotHistoryScopes(lotScopeMap) {
-        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const scopes = new Map();
         if (!brokerSummaries || typeof brokerSummaries !== 'object') return scopes;
 
@@ -4029,7 +4029,7 @@ export function createInvestmentDataUtils({
     }
 
     function getMoneyMarketTickerSet() {
-        const configuredTickers = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers;
+        const configuredTickers = globalThis.window?.WORTHWARD_INVESTMENT_DATA?.money_market_tickers;
         const sourceTickers = Array.isArray(configuredTickers)
             ? configuredTickers
             : Object.keys(INVESTMENT_MONEY_MARKET_STANDARD_NAMES);
@@ -4041,7 +4041,7 @@ export function createInvestmentDataUtils({
     }
 
     function getCashEquivalentTickerSet() {
-        const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
+        const configuredTickers = window.WORTHWARD_INVESTMENT_DATA?.cash_equivalent_tickers;
         return new Set(
             [
                 ...(Array.isArray(configuredTickers) ? configuredTickers : []),
@@ -4419,7 +4419,7 @@ export function createInvestmentDataUtils({
     };
 
     function getInvestmentTickerLineageMap() {
-        const payloadLineage = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.ticker_lineage;
+        const payloadLineage = globalThis.window?.WORTHWARD_INVESTMENT_DATA?.ticker_lineage;
         if (payloadLineage && typeof payloadLineage === 'object' && !Array.isArray(payloadLineage)) {
             return payloadLineage;
         }

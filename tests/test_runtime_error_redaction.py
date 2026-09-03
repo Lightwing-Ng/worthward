@@ -26,7 +26,7 @@ class RuntimeClientErrorRedactionTests(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": configured_token},
+                {"WORTHWARD_LIVE_TRADING_TOKEN": configured_token},
                 clear=False,
             ),
             patch(
@@ -37,7 +37,7 @@ class RuntimeClientErrorRedactionTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/live-trading/orders",
-                headers={"X-Antigravity-Live-Trading-Token": configured_token},
+                headers={"X-Worthward-Live-Trading-Token": configured_token},
                 json={
                     "ticker": "TSLA.US",
                     "side": "buy",

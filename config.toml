@@ -1,8 +1,8 @@
 [app]
-name = "antigravity"
-version = "v2.59.2"
+name = "worthward"
+version = "v2.60.0"
 debug = false
-updated_on = "29 Aug 2026"
+updated_on = "2 Sep 2026"
 
 [server]
 host = "0.0.0.0"
@@ -10,12 +10,14 @@ port = 8688
 
 [security]
 # Temporary browser gate for the Live trading workspace. Override with the
-# ANTIGRAVITY_LIVE_TRADING_PIN environment variable when needed.
+# WORTHWARD_LIVE_TRADING_PIN environment variable when needed. The legacy
+# ANTIGRAVITY_LIVE_TRADING_PIN alias remains readable during migration.
 live_trading_pin = ""
 
 [network]
-# Optional corporate CA PEM for Yahoo Finance. The ANTIGRAVITY_YAHOO_CA_PEM
-# environment variable takes precedence over this value.
+# Optional corporate CA PEM for Yahoo Finance. The WORTHWARD_YAHOO_CA_PEM
+# environment variable takes precedence over this value; the legacy
+# ANTIGRAVITY_YAHOO_CA_PEM alias remains readable during migration.
 yahoo_ca_pem = ""
 
 [persistence]

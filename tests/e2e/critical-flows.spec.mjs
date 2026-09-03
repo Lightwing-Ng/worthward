@@ -1,4 +1,4 @@
-/* Code version: v1.203.0 */
+/* Code version: v1.203.2 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -397,7 +397,7 @@ test('resolves Longbridge OAuth notice into verified connection feedback', async
         });
     });
     await page.context().addCookies([{
-        name: 'antigravity_settings_feedback',
+        name: 'worthward_settings_feedback',
         value: JSON.stringify({
             notice: 'Longbridge authorization opened in your browser. Complete it there, then return here and test the connection.',
             longbridge_oauth_pending: '1',
@@ -474,7 +474,7 @@ test('stops Longbridge OAuth polling when the status service returns a JSON 503 
         });
     });
     await page.context().addCookies([{
-        name: 'antigravity_settings_feedback',
+        name: 'worthward_settings_feedback',
         value: JSON.stringify({longbridge_oauth_pending: '1'}),
         url: `${baseURL}/settings/broker-access`,
     }]);
@@ -494,7 +494,7 @@ test('reports a sustained Longbridge OAuth status connection failure', async ({p
         await route.abort('failed');
     });
     await page.context().addCookies([{
-        name: 'antigravity_settings_feedback',
+        name: 'worthward_settings_feedback',
         value: JSON.stringify({longbridge_oauth_pending: '1'}),
         url: `${baseURL}/settings/broker-access`,
     }]);
@@ -696,7 +696,7 @@ test('keeps style-token values aligned within their shared value column and omit
 
 test('exposes paired Light and Dark color tokens with live tuning controls', async ({page}) => {
     await page.goto('/settings/color-tokens');
-    await page.evaluate(() => window.localStorage.removeItem('antigravity:color-token-overrides'));
+    await page.evaluate(() => window.localStorage.removeItem('worthward:color-token-overrides'));
 
     await expect(page.locator('[data-color-token-layout]')).toHaveCount(1);
     await expect(page.locator('.settings-nav-item-color-tokens')).toHaveCount(1);
@@ -708,7 +708,7 @@ test('exposes paired Light and Dark color tokens with live tuning controls', asy
     await page.evaluate(() => {
         document.documentElement.dataset.themeMode = 'light';
         document.documentElement.setAttribute('data-theme-override', 'light');
-        window.dispatchEvent(new CustomEvent('antigravity:theme-mode-change', {detail: {mode: 'light'}}));
+        window.dispatchEvent(new CustomEvent('worthward:theme-mode-change', {detail: {mode: 'light'}}));
     });
     const lightValue = page.locator('[data-color-token-name="--theme-accent-positive"][data-color-token-mode="light"] [data-color-token-value]');
     await lightValue.fill('#123456');
@@ -950,7 +950,7 @@ test('redraws export-image preview charts immediately when sensitive values are 
 
 test('keeps Settings export tokens on detached Investment export targets', async ({page}) => {
     await page.goto('/settings/export-image');
-    await page.evaluate(() => window.localStorage.removeItem('antigravity:export-image-config:v1'));
+    await page.evaluate(() => window.localStorage.removeItem('worthward:export-image-config:v1'));
     await page.reload();
 
     const control = page.locator(
@@ -965,7 +965,7 @@ test('keeps Settings export tokens on detached Investment export targets', async
 
     await page.goto('/trade/investment');
     const captureState = await page.evaluate(() => {
-        const api = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const api = window.WORTHWARD_EXPORT_IMAGE;
         const host = document.createElement('div');
         host.className = 'investment-community-share-capture';
         const card = document.createElement('article');
@@ -1103,7 +1103,7 @@ test('keeps the merged DCA strategy out of the optimistic workspace sidebar', as
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT');
 
     const navigationState = await page.evaluate(() => {
-        const rendered = window.ANTIGRAVITY_BOOTSTRAP.renderOptimisticNavigationSkeleton({view: 'backtest'});
+        const rendered = window.WORTHWARD_BOOTSTRAP.renderOptimisticNavigationSkeleton({view: 'backtest'});
         const sidebar = document.querySelector('#app_sidebar');
         return {
             rendered,
@@ -1122,7 +1122,7 @@ test('keeps the merged DCA strategy out of the optimistic workspace sidebar', as
 
 test('anchors the comparison share control to the summary panel without overlapping the theme control', async ({page}) => {
     await page.addInitScript(() => {
-        window.sessionStorage.setItem('antigravity:sidebar-open', 'false');
+        window.sessionStorage.setItem('worthward:sidebar-open', 'false');
     });
     await page.setViewportSize({width: 810, height: 834});
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&ticker=MU&period=1y');
@@ -1183,7 +1183,7 @@ test('keeps shared shell anchors on the ten-pixel spatial grid across desktop an
     ]) {
         await page.setViewportSize(viewport);
         await page.goto('/workspaces/compare?ticker=SGOV&ticker=BOXX');
-        await page.evaluate(() => window.sessionStorage.setItem('antigravity:sidebar-open', 'true'));
+        await page.evaluate(() => window.sessionStorage.setItem('worthward:sidebar-open', 'true'));
         await page.reload();
         await setSidebarExpanded(page, true);
         await page.waitForFunction(() => {
@@ -1305,7 +1305,7 @@ test('keeps shared shell anchors on the ten-pixel spatial grid across desktop an
     }
 });
 
-test('keeps Portfolio summary metadata and sharing inside the 640px result card', async ({page}) => {
+test('keeps Portfolio summary metadata inside the desktop card and fills narrow result width', async ({page}) => {
     await page.setViewportSize({width: 1_352, height: 1_050});
     await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
 
@@ -1350,6 +1350,26 @@ test('keeps Portfolio summary metadata and sharing inside the 640px result card'
     expect(geometry.shareInsideResult).toBe(true);
     expect(geometry.shareTopInset).toBeGreaterThanOrEqual(-1);
     expect(geometry.shareRightInset).toBeGreaterThanOrEqual(8);
+
+    await page.setViewportSize({width: 727, height: 1_178});
+    await page.reload();
+    await expect(page.locator('.portfolio-summary-range')).toBeVisible();
+    const mediumNarrowGeometry = await page.evaluate(() => {
+        const layout = document.querySelector('.workspace-mode-layout')?.getBoundingClientRect();
+        const summary = document.querySelector('.workspace-mode-main > .workspace-header')?.getBoundingClientRect();
+        const resultCard = document.querySelector('.portfolio-summary-content-card')?.getBoundingClientRect();
+        if (!layout || !summary || !resultCard) return null;
+        return {
+            layoutWidth: layout.width,
+            summaryWidth: summary.width,
+            resultWidth: resultCard.width,
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+        };
+    });
+    expect(mediumNarrowGeometry).not.toBeNull();
+    expect(mediumNarrowGeometry.summaryWidth).toBeCloseTo(mediumNarrowGeometry.layoutWidth, 0);
+    expect(mediumNarrowGeometry.resultWidth).toBeCloseTo(mediumNarrowGeometry.layoutWidth, 0);
+    expect(mediumNarrowGeometry.noHorizontalOverflow).toBe(true);
 
     await page.setViewportSize({width: 390, height: 844});
     await page.reload();
@@ -1476,7 +1496,7 @@ test('renders cross-market one-day returns as visible lines', async ({page}) => 
             '2026-07-10 10:30',
         ];
         const tickers = ['5.HK', 'HSBA.L', 'HSBC'];
-        window.ANTIGRAVITY_APP.chart = {
+        window.WORTHWARD_APP.chart = {
             profiles: tickers.map((ticker) => ({ticker, company_name: ticker, logo_url: null})),
             series: tickers.map((ticker, index) => ({
                 ticker,
@@ -1495,7 +1515,7 @@ test('renders cross-market one-day returns as visible lines', async ({page}) => 
             })),
             tradingDate: '2026-07-10',
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
         const canvas = document.querySelector('#returnsChart');
         const chart = window.Chart.getChart(canvas);
         return {
@@ -1609,7 +1629,7 @@ test('draws no return zero baseline for a market-cap chart', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=6mo');
 
     const chartState = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         state.currentView = 'prices';
         state.comparisonMetric = 'market-cap';
         state.chart = {
@@ -1624,7 +1644,7 @@ test('draws no return zero baseline for a market-cap chart', async ({page}) => {
                 color: '#0055cc',
             }],
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
         const chart = window.Chart.getChart(document.querySelector('#returnsChart'));
         const zeroBandPlugin = chart.config._config.plugins.find((plugin) => plugin.id === 'zeroBandPlugin');
         const calls = [];
@@ -1655,7 +1675,7 @@ test('formats market-cap y-axis values without fixed trailing zeroes', async ({p
     await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('#returnsChart'))));
 
     const formattedTicks = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         state.currentView = 'prices';
         state.comparisonMetric = 'market-cap';
         state.chart = {
@@ -1670,7 +1690,7 @@ test('formats market-cap y-axis values without fixed trailing zeroes', async ({p
                 color: '#0055cc',
             }],
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
         const chart = window.Chart.getChart(document.querySelector('#returnsChart'));
         const callback = chart.options.scales.y.ticks.callback;
         const ticks = [{value: 1_000}, {value: 1_234}, {value: 1_500}];
@@ -1688,7 +1708,7 @@ test('omits midnight from long market-cap x-axis labels', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=6mo');
 
     const axisLabels = await page.evaluate(() => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         const rawDates = Array.from({length: 10}, (_, index) => `2026-01-${String(index + 1).padStart(2, '0')} 00:00`);
         const series = {
             ticker: 'QQQ',
@@ -1703,7 +1723,7 @@ test('omits midnight from long market-cap x-axis labels', async ({page}) => {
             state.currentView = 'prices';
             state.comparisonMetric = 'market-cap';
             state.chart = {...state.chart, profiles: [], series: [series]};
-            window.ANTIGRAVITY_BOOTSTRAP.initChartWorkspace();
+            window.WORTHWARD_BOOTSTRAP.initChartWorkspace();
             const canvas = document.querySelector('#returnsChart');
             const chart = window.Chart.getChart(canvas);
             const plugin = chart.config._config.plugins.find((item) => item.id === 'xAxisLabelPlugin');
@@ -1867,7 +1887,7 @@ test('pre-fills Exact with the rendered multi-day market-cap range', async ({pag
         form.addEventListener('submit', (event) => event.preventDefault(), {capture: true});
     });
     const expectedRange = await page.evaluate(() => {
-        const dates = window.ANTIGRAVITY_APP.chart.series[0].raw_dates;
+        const dates = window.WORTHWARD_APP.chart.series[0].raw_dates;
         return {
             start: String(dates[0]).slice(0, 10),
             end: String(dates[dates.length - 1]).slice(0, 10),
@@ -1898,7 +1918,7 @@ test('retains rendered exact-date labels after a market-cap page reload', async 
             const [year, month, day] = String(document.querySelector(inputId)?.value || '')
                 .split('-')
                 .map((value) => Number.parseInt(value, 10));
-            return window.ANTIGRAVITY_BOOTSTRAP.dateDisplay.formatFullDateParts({
+            return window.WORTHWARD_BOOTSTRAP.dateDisplay.formatFullDateParts({
                 year,
                 monthIndex: month - 1,
                 day,
@@ -2079,7 +2099,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
         const chart = window.Chart.getChart(canvas);
         const callback = chart.options.scales.y.ticks.callback;
         return {
-            helperVersion: window.ANTIGRAVITY_CHART_AXIS?.CHART_AXIS_UTILS_VERSION || '',
+            helperVersion: window.WORTHWARD_CHART_AXIS?.CHART_AXIS_UTILS_VERSION || '',
             samples: [1234, 567, 12.5, 5.5].map((value) => callback(value, 1, [{}, {}, {}])),
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
@@ -2115,7 +2135,7 @@ test('connects daily price points across market-calendar gaps without filling mi
     ));
 
     const dailyGapContract = await page.evaluate(() => {
-        const series = window.ANTIGRAVITY_APP.chart.series;
+        const series = window.WORTHWARD_APP.chart.series;
         const target = series.find((item) => item.ticker === '000660.KS') || series[0];
         const prices = [...target.prices];
         const gapIndex = prices.findIndex((value, index) => (
@@ -2128,7 +2148,7 @@ test('connects daily price points across market-calendar gaps without filling mi
         if (gapIndex < 0) throw new Error('The fixture needs three adjacent daily price points.');
         prices[gapIndex] = null;
         target.prices = prices;
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         const canvas = document.querySelector('[data-price-subplot-canvas]');
         const chart = window.Chart.getChart(canvas);
         return {
@@ -2155,14 +2175,14 @@ test('keeps the bottom price axis on the shared range when its ticker starts lat
     ));
 
     const sharedRangeAxis = await page.evaluate(() => {
-        const series = window.ANTIGRAVITY_APP.chart.series;
+        const series = window.WORTHWARD_APP.chart.series;
         const bottomIndex = series.length - 1;
         const lateStartIndex = Math.max(1, Math.floor(series[bottomIndex].prices.length * 0.7));
-        window.ANTIGRAVITY_APP.chart.series = series.map((item, index) => index === bottomIndex ? {
+        window.WORTHWARD_APP.chart.series = series.map((item, index) => index === bottomIndex ? {
             ...item,
             prices: item.prices.map((value, priceIndex) => priceIndex < lateStartIndex ? null : value),
         } : item);
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
 
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         const topChart = window.Chart.getChart(canvases[0]);
@@ -2270,7 +2290,7 @@ test('reorders price subplots and ticker fields without recreating charts', asyn
     const orderState = await page.evaluate(() => ({
         subplots: [...document.querySelectorAll('[data-price-subplot]')].map((section) => section.dataset.ticker),
         fields: [...document.querySelectorAll('#ticker_fields [data-ticker-input]')].map((input) => input.value),
-        series: window.ANTIGRAVITY_APP.chart.series.map((item) => item.ticker),
+        series: window.WORTHWARD_APP.chart.series.map((item) => item.ticker),
         url: new URL(window.location.href).searchParams.getAll('ticker'),
         chartIdentity: [...document.querySelectorAll('[data-price-subplot]')].map((section) => {
             const canvas = section.querySelector('[data-price-subplot-canvas]');
@@ -2370,7 +2390,7 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
 test('applies the stored light and dark appearance to the Live trading PIN gate', async ({page}) => {
     await page.goto('/trade/live-trading');
     await page.evaluate(() => {
-        window.localStorage.setItem('antigravity:theme-mode', 'dark');
+        window.localStorage.setItem('worthward:theme-mode', 'dark');
     });
     await page.reload();
 
@@ -2394,7 +2414,7 @@ test('applies the stored light and dark appearance to the Live trading PIN gate'
     expect(darkTheme.bodyBackground).not.toBe('rgb(255, 255, 255)');
 
     await page.evaluate(() => {
-        window.localStorage.setItem('antigravity:theme-mode', 'light');
+        window.localStorage.setItem('worthward:theme-mode', 'light');
     });
     await page.reload();
     await expect(html).toHaveAttribute('data-theme-override', 'light');
@@ -2463,7 +2483,7 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
         (label) => getComputedStyle(label).color,
     );
     expect(pricePillColor).toBe('rgb(0, 85, 204)');
-    expect(await page.evaluate(() => window.ANTIGRAVITY_APP.constraints.maxTickers)).toBe(5);
+    expect(await page.evaluate(() => window.WORTHWARD_APP.constraints.maxTickers)).toBe(5);
 
     await page.evaluate(() => {
         window.__priceMetricForm = document.querySelector('form.controls');
@@ -2501,7 +2521,7 @@ test('switches the Ticker comparison metric at the requested sidebar position', 
     await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await expect(page.locator('[data-chips-field]')).toBeHidden();
     await expect(page.locator('[data-chips-input]')).toBeDisabled();
-    expect(await page.evaluate(() => window.ANTIGRAVITY_APP.constraints.maxTickers)).toBe(10);
+    expect(await page.evaluate(() => window.WORTHWARD_APP.constraints.maxTickers)).toBe(10);
     expect(await page.evaluate(() => document.querySelector('form.controls') === window.__priceMetricForm)).toBe(true);
     expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(navigationEntryCount);
 
@@ -2597,7 +2617,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     });
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
-    const serverOhlcv = await page.evaluate(() => window.ANTIGRAVITY_APP.chart.series.map((item) => ({
+    const serverOhlcv = await page.evaluate(() => window.WORTHWARD_APP.chart.series.map((item) => ({
         ticker: item.ticker,
         rows: Array.isArray(item.ohlcv) ? item.ohlcv.length : 0,
         positiveVolumeRows: Array.isArray(item.ohlcv)
@@ -2610,7 +2630,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
         JSON.stringify(serverOhlcv),
     ).toBe(true);
     await page.evaluate(() => {
-        window.ANTIGRAVITY_APP.chart.series.forEach((item, itemIndex) => {
+        window.WORTHWARD_APP.chart.series.forEach((item, itemIndex) => {
             const start = Date.UTC(2026, 4, 1);
             const basePrice = 100 + (itemIndex * 100);
             const rows = Array.from({length: 90}, (_, rowIndex) => {
@@ -2638,7 +2658,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
             item.normalized_returns = rows.map((row) => ((row.c / rows[0].o) - 1) * 100);
             item.candlestick_prices = null;
         });
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
     });
     const chipsInput = page.locator('#show_chips');
     await expect(chipsInput).toBeVisible();
@@ -2731,7 +2751,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     const historicalHoverPoint = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
         const chart = window.Chart.getChart(canvas);
         const rect = canvas.getBoundingClientRect();
-        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const item = window.WORTHWARD_APP.chart.series[0];
         const dataIndex = 30;
         return {
             dataIndex,
@@ -2771,7 +2791,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     const laterHoverPoint = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
         const chart = window.Chart.getChart(canvas);
         const rect = canvas.getBoundingClientRect();
-        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const item = window.WORTHWARD_APP.chart.series[0];
         const dataIndex = 70;
         return {
             dataIndex,
@@ -2945,7 +2965,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
 
     const recalculatedPoc = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
         const previousPoc = Number(canvas.dataset.chipPocPrice);
-        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const item = window.WORTHWARD_APP.chart.series[0];
         item.ohlcv = item.ohlcv.map((row) => ({
             ...row,
             o: row.o + 30,
@@ -2953,7 +2973,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
             l: row.l + 30,
             c: row.c + 30,
         }));
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return {previousPoc};
     });
     await expect(page.locator('[data-price-subplot-canvas]').first()).toHaveAttribute('data-chip-source', 'ohlcv-estimate');
@@ -3111,14 +3131,14 @@ test('renders Longbridge price-level chips with price-relative colors', async ({
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
     await page.evaluate(() => {
-        window.ANTIGRAVITY_APP.chart.series.forEach((series) => {
+        window.WORTHWARD_APP.chart.series.forEach((series) => {
             series.ohlcv = [];
         });
-        const item = window.ANTIGRAVITY_APP.chart.series[0];
+        const item = window.WORTHWARD_APP.chart.series[0];
         item.prices = item.prices.map((_value, index, values) => (
             index === values.length - 1 ? 100.5 : 190 + (index * 0.01)
         ));
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
     });
     await page.locator('label[for="show_chips"]').click();
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="longbridge-trade-stats"]')).toHaveCount(4);
@@ -3209,7 +3229,7 @@ test('uses range-wide OHLCV chips when Longbridge price buckets are too narrow',
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
     await page.evaluate(() => {
         const start = Date.UTC(2026, 0, 2);
-        window.ANTIGRAVITY_APP.chart.series.forEach((item, tickerIndex) => {
+        window.WORTHWARD_APP.chart.series.forEach((item, tickerIndex) => {
             const base = 100 + (tickerIndex * 100);
             item.ohlcv = Array.from({length: 90}, (_, rowIndex) => {
                 const close = base + (rowIndex * 0.9);
@@ -3225,7 +3245,7 @@ test('uses range-wide OHLCV chips when Longbridge price buckets are too narrow',
                 };
             });
         });
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
     });
 
     await page.locator('label[for="show_chips"]').click();
@@ -3438,7 +3458,7 @@ test('ignores partial cached volume rows when loading the chip distribution', as
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=QQQ&ticker=SPY&ticker=DRAM&period=1y');
     const partialRows = await page.evaluate(() => {
-        window.ANTIGRAVITY_APP.chart.series
+        window.WORTHWARD_APP.chart.series
             .filter((item) => ['QQQ', 'SPY'].includes(item.ticker))
             .forEach((item) => {
                 item.ohlcv = item.ohlcv.map((row, rowIndex, rows) => ({
@@ -3446,7 +3466,7 @@ test('ignores partial cached volume rows when loading the chip distribution', as
                     v: rowIndex >= rows.length - 2 ? 100_000 : null,
                 }));
             });
-        return window.ANTIGRAVITY_APP.chart.series
+        return window.WORTHWARD_APP.chart.series
             .filter((item) => ['QQQ', 'SPY'].includes(item.ticker))
             .map((item) => item.ohlcv.filter((row) => Number(row.v) > 0).length);
     });
@@ -3458,7 +3478,7 @@ test('ignores partial cached volume rows when loading the chip distribution', as
 
     const expectedPocs = await page.evaluate((series) => series.map((item) => ({
         ticker: item.ticker,
-        poc: window.ANTIGRAVITY_CHIP_DISTRIBUTION.calculateChipDistribution(item.ohlcv, {binCount: 100}).pocPrice,
+        poc: window.WORTHWARD_CHIP_DISTRIBUTION.calculateChipDistribution(item.ohlcv, {binCount: 100}).pocPrice,
     })), fallbackSeries);
     const actualPocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => ({
@@ -3516,9 +3536,9 @@ test('loads range-bounded Longbridge OHLCV when a legacy price cache has no volu
 
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MU&ticker=AMD&period=1y');
     const expectedBounds = await page.evaluate(() => {
-        const rows = window.ANTIGRAVITY_APP.chart.series.flatMap((item) => item.ohlcv || []);
+        const rows = window.WORTHWARD_APP.chart.series.flatMap((item) => item.ohlcv || []);
         const dates = rows.map((row) => String(row.t).slice(0, 10)).sort();
-        window.ANTIGRAVITY_APP.chart.series.forEach((item) => {
+        window.WORTHWARD_APP.chart.series.forEach((item) => {
             item.ohlcv = item.ohlcv.map((row) => ({...row, v: null}));
         });
         return {from: dates[0], to: dates[dates.length - 1]};
@@ -3544,7 +3564,7 @@ test('exposes turnover-survival metadata and dense cost ranges in the browser bu
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
 
     const result = await page.evaluate(() => {
-        const calculator = window.ANTIGRAVITY_CHIP_DISTRIBUTION;
+        const calculator = window.WORTHWARD_CHIP_DISTRIBUTION;
         const distribution = calculator.calculateChipDistribution([
             {t: '2026-08-20', o: 100, h: 100, l: 100, c: 100, v: 100},
             {t: '2026-08-21', o: 200, h: 200, l: 200, c: 200, v: 100},
@@ -3632,7 +3652,7 @@ test('keeps the production chip panel on the complete selected-range volume prof
     const hoverPoint = await canvases.first().evaluate((canvas) => {
         const chart = window.Chart.getChart(canvas);
         const rect = canvas.getBoundingClientRect();
-        const dataIndex = Math.floor((window.ANTIGRAVITY_APP.chart.series[0].prices.length - 1) / 2);
+        const dataIndex = Math.floor((window.WORTHWARD_APP.chart.series[0].prices.length - 1) / 2);
         return {
             x: rect.left + (chart.scales.x.getPixelForValue(dataIndex) * (rect.width / chart.width)),
             y: rect.top + (chart.chartArea.top * (rect.height / chart.height)) + 8,
@@ -3809,7 +3829,7 @@ test('keeps the active one-day trading date when switching Price performance to 
     await page.evaluate(() => {
         const currentTradingDate = '2026-07-23';
         const staleReferenceDate = '2026-07-13';
-        window.ANTIGRAVITY_APP.chart.tradingDate = staleReferenceDate;
+        window.WORTHWARD_APP.chart.tradingDate = staleReferenceDate;
         for (const id of ['exact_trading_date', 'exact_start', 'exact_end']) {
             document.getElementById(id).value = staleReferenceDate;
         }
@@ -3870,25 +3890,25 @@ test('presents an active cross-market one-day refresh on the live trading date',
     await page.goto('/workspaces/prices?ticker=000660.KS&ticker=7709.HK&period=1d');
 
     const headingDates = await page.evaluate(() => ({
-        base: window.ANTIGRAVITY_BOOTSTRAP.dateDisplay.formatFullDateParts({year: 2026, monthIndex: 6, day: 14}),
-        local: window.ANTIGRAVITY_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14'),
-        hongKong: window.ANTIGRAVITY_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14', 'Asia/Hong_Kong'),
-        seoul: window.ANTIGRAVITY_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14', 'Asia/Seoul'),
+        base: window.WORTHWARD_BOOTSTRAP.dateDisplay.formatFullDateParts({year: 2026, monthIndex: 6, day: 14}),
+        local: window.WORTHWARD_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14'),
+        hongKong: window.WORTHWARD_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14', 'Asia/Hong_Kong'),
+        seoul: window.WORTHWARD_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14', 'Asia/Seoul'),
     }));
     await expect(page.locator('.price-compare-range')).toHaveText(headingDates.local);
     expect(headingDates.hongKong).toBe(`${headingDates.base} HKT`);
     expect(headingDates.seoul).toBe(`${headingDates.base} KST`);
-    await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_APP.chart.tradingDate)).toBe('2026-07-14');
-    const rawDates = await page.evaluate(() => window.ANTIGRAVITY_APP.chart.series[0].raw_dates);
+    await expect.poll(() => page.evaluate(() => window.WORTHWARD_APP.chart.tradingDate)).toBe('2026-07-14');
+    const rawDates = await page.evaluate(() => window.WORTHWARD_APP.chart.series[0].raw_dates);
     expect(rawDates).toHaveLength(480);
     expect(rawDates[0]).toBe('2026-07-13 20:00');
     expect(rawDates.at(-1)).toBe('2026-07-14 03:59');
 
     const exactHeading = await page.evaluate(() => {
         window.history.replaceState({}, '', '/workspaces/prices?ticker=000660.KS&ticker=7709.HK&range=exact&period=1d&trading_date=2026-07-14');
-        window.ANTIGRAVITY_APP.chart.tradingDate = '2026-07-13';
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
-        return window.ANTIGRAVITY_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14');
+        window.WORTHWARD_APP.chart.tradingDate = '2026-07-13';
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
+        return window.WORTHWARD_BOOTSTRAP.formatPriceCompareHeadingDate('2026-07-14');
     });
     await expect(page.locator('.price-compare-range')).toHaveText(exactHeading);
 });
@@ -4123,12 +4143,12 @@ test('switches short price ranges and formats price axes by currency precision',
     ))).toBe(true);
 
     const oneDaySessionDividers = await page.evaluate(() => {
-        const originalSeries = window.ANTIGRAVITY_APP.chart.series;
+        const originalSeries = window.WORTHWARD_APP.chart.series;
         const minutes = Array.from({length: 960}, (_, index) => {
             const totalMinutes = (4 * 60) + index;
             return `2026-07-10 ${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
         });
-        window.ANTIGRAVITY_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
+        window.WORTHWARD_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
             ...item,
             raw_dates: minutes,
             dates: minutes,
@@ -4138,7 +4158,7 @@ test('switches short price ranges and formats price axes by currency precision',
                 return {x: index, o: price, h: price + 0.2, l: price - 0.2, c: price + 0.1, v: 100};
             }),
         }));
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         const result = canvases.map((canvas, index) => {
             const chart = window.Chart.getChart(canvas);
@@ -4154,8 +4174,8 @@ test('switches short price ranges and formats price axes by currency precision',
                 chartArea: {top: chart.chartArea.top, bottom: chart.chartArea.bottom},
             };
         });
-        window.ANTIGRAVITY_APP.chart.series = originalSeries;
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_APP.chart.series = originalSeries;
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return result;
     });
     expect(oneDaySessionDividers.every((item) => (
@@ -4175,7 +4195,7 @@ test('switches short price ranges and formats price axes by currency precision',
     )))).toBe(true);
 
     const overnightSessionDividers = await page.evaluate(() => {
-        const originalSeries = window.ANTIGRAVITY_APP.chart.series;
+        const originalSeries = window.WORTHWARD_APP.chart.series;
         const originalHref = window.location.href;
         const overnightInput = document.querySelector('#include_overnight_hours');
         const originalChecked = Boolean(overnightInput?.checked);
@@ -4186,7 +4206,7 @@ test('switches short price ranges and formats price axes by currency precision',
         const params = new URLSearchParams(window.location.search);
         params.set('overnight', '1');
         window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-        window.ANTIGRAVITY_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
+        window.WORTHWARD_APP.chart.series = originalSeries.map((item, seriesIndex) => ({
             ...item,
             raw_dates: minutes,
             dates: minutes,
@@ -4196,7 +4216,7 @@ test('switches short price ranges and formats price axes by currency precision',
                 return {x: index, o: price, h: price + 0.2, l: price - 0.2, c: price + 0.1, v: 100};
             }),
         }));
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         const result = canvases.map((canvas, index) => {
             const chart = window.Chart.getChart(canvas);
@@ -4212,10 +4232,10 @@ test('switches short price ranges and formats price axes by currency precision',
                 chartArea: {top: chart.chartArea.top, bottom: chart.chartArea.bottom},
             };
         });
-        window.ANTIGRAVITY_APP.chart.series = originalSeries;
+        window.WORTHWARD_APP.chart.series = originalSeries;
         if (overnightInput) overnightInput.checked = originalChecked;
         window.history.replaceState({}, '', originalHref);
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return result;
     });
     expect(overnightSessionDividers.every((item) => (
@@ -4235,8 +4255,8 @@ test('switches short price ranges and formats price axes by currency precision',
     )))).toBe(true);
 
     const referenceLine = await page.evaluate(() => {
-        const originalSeries = window.ANTIGRAVITY_APP.chart.series[2];
-        const originalProfile = window.ANTIGRAVITY_APP.chart.profiles[2];
+        const originalSeries = window.WORTHWARD_APP.chart.series[2];
+        const originalProfile = window.WORTHWARD_APP.chart.profiles[2];
         const minutes = Array.from({length: 121}, (_, index) => {
             const totalMinutes = (9 * 60) + 30 + index;
             return `2026-07-10 ${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
@@ -4244,19 +4264,19 @@ test('switches short price ranges and formats price axes by currency precision',
         const candles = minutes.map((_value, index) => ({x: index, o: null, h: null, l: null, c: null}));
         candles[14] = {x: 14, o: 149, h: 149, l: 149, c: 149};
         candles[120] = {x: 120, o: 170, h: 172, l: 169, c: 171};
-        window.ANTIGRAVITY_APP.chart.series[2] = {
-            ...window.ANTIGRAVITY_APP.chart.series[2],
+        window.WORTHWARD_APP.chart.series[2] = {
+            ...window.WORTHWARD_APP.chart.series[2],
             ticker: 'SKHYV',
             raw_dates: minutes,
             dates: minutes,
             prices: minutes.map((_value, index) => index === 14 ? 149 : (index === 120 ? 171 : null)),
             candlestick_prices: candles,
         };
-        window.ANTIGRAVITY_APP.chart.profiles[2] = {
+        window.WORTHWARD_APP.chart.profiles[2] = {
             ticker: 'SKHYV',
             logo_url: '/market-store/logos/000660.KS.svg',
         };
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         const result = {
             price: canvases[2].dataset.referencePrice,
@@ -4264,23 +4284,23 @@ test('switches short price ranges and formats price axes by currency precision',
             startTime: canvases[2].dataset.referencePriceStartTime,
             endIndex: canvases[2].dataset.referencePriceEndIndex,
         };
-        window.ANTIGRAVITY_APP.chart.series[2] = originalSeries;
-        window.ANTIGRAVITY_APP.chart.profiles[2] = originalProfile;
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_APP.chart.series[2] = originalSeries;
+        window.WORTHWARD_APP.chart.profiles[2] = originalProfile;
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return result;
     });
     expect(referenceLine).toEqual({price: '149.00', startIndex: '0', startTime: '2026-07-10 09:30', endIndex: '120'});
 
     const currencyPrecision = await page.evaluate(() => ({
-        krw: window.ANTIGRAVITY_BOOTSTRAP.currencyDisplay.format(2300000, 'KRW'),
-        jpy: window.ANTIGRAVITY_BOOTSTRAP.currencyDisplay.format(1040, 'JPY'),
-        usd: window.ANTIGRAVITY_BOOTSTRAP.currencyDisplay.format(64, 'USD'),
+        krw: window.WORTHWARD_BOOTSTRAP.currencyDisplay.format(2300000, 'KRW'),
+        jpy: window.WORTHWARD_BOOTSTRAP.currencyDisplay.format(1040, 'JPY'),
+        usd: window.WORTHWARD_BOOTSTRAP.currencyDisplay.format(64, 'USD'),
     }));
     expect(currencyPrecision).toEqual({krw: 'KRW 2,300,000', jpy: 'JPY 1,040', usd: 'USD 64.00'});
 
     const tooltipDateLines = await page.evaluate(() => {
         const host = document.createElement('div');
-        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate(
+        host.innerHTML = window.WORTHWARD_BOOTSTRAP.formatPriceSharedTooltipDate(
             '2026-07-10 12:53',
             [],
             {period: '3d'},
@@ -4289,7 +4309,7 @@ test('switches short price ranges and formats price axes by currency precision',
             date: host.querySelector('.chart-tooltip-primary-date')?.textContent || '',
             time: host.querySelector('.chart-tooltip-market-time')?.textContent || '',
         };
-        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate(
+        host.innerHTML = window.WORTHWARD_BOOTSTRAP.formatPriceSharedTooltipDate(
             '2026-07-10 12:53',
             [],
             {period: '6mo'},
@@ -4300,7 +4320,7 @@ test('switches short price ranges and formats price axes by currency precision',
             params.set('range', period);
             params.delete('period');
             window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-            window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+            window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
             const canvas = document.querySelector('[data-price-subplot-canvas]');
             const chart = window.Chart.getChart(canvas);
             chart.options.onHover(
@@ -4317,10 +4337,10 @@ test('switches short price ranges and formats price axes by currency precision',
         const renderedShortRange = renderTooltipForPeriod('3d');
         const renderedLongRange = renderTooltipForPeriod('6mo');
         window.history.replaceState({}, '', originalHref);
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return {
             date: host.querySelector('.chart-tooltip-primary-date')?.textContent || '',
-            expectedDate: window.ANTIGRAVITY_BOOTSTRAP.dateDisplay.formatFullDateParts({
+            expectedDate: window.WORTHWARD_BOOTSTRAP.dateDisplay.formatFullDateParts({
                 year: 2026,
                 monthIndex: 6,
                 day: 11,
@@ -4348,41 +4368,41 @@ test('switches short price ranges and formats price axes by currency precision',
             '2026-07-10 09:30',
         ];
         const host = document.createElement('div');
-        host.innerHTML = window.ANTIGRAVITY_BOOTSTRAP.formatPriceSharedTooltipDate(
+        host.innerHTML = window.WORTHWARD_BOOTSTRAP.formatPriceSharedTooltipDate(
             '2026-07-09 23:06',
             tickers,
         );
-        const originalSeries = window.ANTIGRAVITY_APP.chart.series;
-        const originalProfiles = window.ANTIGRAVITY_APP.chart.profiles;
-        window.ANTIGRAVITY_APP.chart.series = tickers.map((ticker, index) => ({
+        const originalSeries = window.WORTHWARD_APP.chart.series;
+        const originalProfiles = window.WORTHWARD_APP.chart.profiles;
+        window.WORTHWARD_APP.chart.series = tickers.map((ticker, index) => ({
             ticker,
             raw_dates: rawDates,
             dates: rawDates,
             prices: [100 + index, 101 + index, 102 + index],
             color: ['#0055cc', '#7f42af', '#ff2f92'][index],
         }));
-        window.ANTIGRAVITY_APP.chart.profiles = tickers.map((ticker) => ({
+        window.WORTHWARD_APP.chart.profiles = tickers.map((ticker) => ({
             ticker,
             logo_url: null,
         }));
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         const lineStyles = [...document.querySelectorAll('[data-price-subplot-canvas]')]
             .map((canvas) => canvas.dataset.marketSessionLineStyle || '');
         const result = {
-            events: window.ANTIGRAVITY_BOOTSTRAP.buildPriceMarketSessionEvents(rawDates, tickers),
-            koreaUsEvents: window.ANTIGRAVITY_BOOTSTRAP.buildPriceMarketSessionEvents(
+            events: window.WORTHWARD_BOOTSTRAP.buildPriceMarketSessionEvents(rawDates, tickers),
+            koreaUsEvents: window.WORTHWARD_BOOTSTRAP.buildPriceMarketSessionEvents(
                 ['2026-07-09 20:00', '2026-07-10 02:30', '2026-07-10 04:00'],
                 ['000660.KS', 'SKHYV'],
             ),
             lineStyles,
             date: host.querySelector('.chart-tooltip-primary-date')?.textContent || '',
-            expectedDate: window.ANTIGRAVITY_BOOTSTRAP.dateDisplay.formatFullDateParts({
+            expectedDate: window.WORTHWARD_BOOTSTRAP.dateDisplay.formatFullDateParts({
                 year: 2026,
                 monthIndex: 6,
                 day: 10,
             }),
             times: [...host.querySelectorAll('.chart-tooltip-market-time')].map((item) => item.textContent),
-            collisionSafeLabels: window.ANTIGRAVITY_BOOTSTRAP.layoutPriceMarketSessionLabels({
+            collisionSafeLabels: window.WORTHWARD_BOOTSTRAP.layoutPriceMarketSessionLabels({
                 events: [
                     {index: 0, labelLines: ['20:00']},
                     {index: 1, labelLines: ['02:30']},
@@ -4395,9 +4415,9 @@ test('switches short price ranges and formats price axes by currency precision',
                 gap: 10,
             }).map(({x, width}) => ({x, width})),
         };
-        window.ANTIGRAVITY_APP.chart.series = originalSeries;
-        window.ANTIGRAVITY_APP.chart.profiles = originalProfiles;
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_APP.chart.series = originalSeries;
+        window.WORTHWARD_APP.chart.profiles = originalProfiles;
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return result;
     });
     expect(multiMarketPresentation.events.map((event) => ({
@@ -4431,7 +4451,7 @@ test('switches short price ranges and formats price axes by currency precision',
     expect(multiMarketPresentation.collisionSafeLabels[1].x - multiMarketPresentation.collisionSafeLabels[0].x).toBeGreaterThanOrEqual(44);
     expect(multiMarketPresentation.collisionSafeLabels[2].x - multiMarketPresentation.collisionSafeLabels[1].x).toBeGreaterThanOrEqual(44);
 
-    await page.evaluate(() => window.ANTIGRAVITY_BOOTSTRAP.refreshPriceCompareLive());
+    await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.refreshPriceCompareLive());
     const labelsAfterEmptyRefresh = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => window.Chart.getChart(canvas).data.datasets[0].label)
     ));
@@ -4457,7 +4477,7 @@ test('sizes Price comparison y-axes to the widest rendered labels for strict sha
             [0, 1_400],
             [150, 600],
         ];
-        window.ANTIGRAVITY_APP.chart.series = window.ANTIGRAVITY_APP.chart.series.map((item, index) => {
+        window.WORTHWARD_APP.chart.series = window.WORTHWARD_APP.chart.series.map((item, index) => {
             const [minimum, maximum] = ranges[index];
             const sourcePrices = Array.isArray(item.prices) ? item.prices : [];
             return {
@@ -4469,7 +4489,7 @@ test('sizes Price comparison y-axes to the widest rendered labels for strict sha
                 candlestick_prices: [],
             };
         });
-        window.ANTIGRAVITY_BOOTSTRAP.initPriceCompareWorkspace();
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
     });
     await page.waitForFunction(() => (
         document.querySelectorAll('[data-price-subplot-canvas]').length === 4
@@ -4540,7 +4560,7 @@ test('discards an obsolete live-price response after the selected range changes'
     await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('[data-price-subplot-canvas]'))));
 
     shouldHoldLiveResponse = true;
-    const refreshPromise = page.evaluate(() => window.ANTIGRAVITY_BOOTSTRAP.refreshPriceCompareLive());
+    const refreshPromise = page.evaluate(() => window.WORTHWARD_BOOTSTRAP.refreshPriceCompareLive());
     await liveRequestStarted;
     await page.evaluate(() => {
         const params = new URLSearchParams(window.location.search);
@@ -4574,14 +4594,14 @@ test('validates the investment import flow without mutating the local store', as
         },
     });
     await page.addInitScript(() => {
-        window.localStorage.setItem('antigravity:theme-mode', 'light');
+        window.localStorage.setItem('worthward:theme-mode', 'light');
     });
     await page.setViewportSize({width: 825, height: 773});
     await page.goto('/trade/investment');
     await page.evaluate(() => {
         document.documentElement.dataset.themeMode = 'light';
         document.documentElement.setAttribute('data-theme-override', 'light');
-        window.dispatchEvent(new CustomEvent('antigravity:theme-mode-change', {
+        window.dispatchEvent(new CustomEvent('worthward:theme-mode-change', {
             detail: {mode: 'light'},
         }));
     });
@@ -7270,7 +7290,7 @@ test('resizes the investment overview and history responsively in portrait layou
     await page.setViewportSize({width: 825, height: 900});
     await page.goto('/trade/investment');
     await expect.poll(() => page.evaluate(() => (
-        Boolean(window.ANTIGRAVITY_INVESTMENT_DATA)
+        Boolean(window.WORTHWARD_INVESTMENT_DATA)
         && document.querySelector('#workspace_modal_overlay')?.hidden === true
     )), {timeout: 30000}).toBe(true);
 
@@ -8196,7 +8216,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     });
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
-    await expect.poll(() => page.evaluate(() => window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS)).toEqual({
+    await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
         entry: 'v2.133.3',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
@@ -11288,7 +11308,7 @@ test('aligns the trade title with the shared desktop title rail', async ({page})
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'true');
     const unlockResponse = await page.context().request.post('/trade/live-trading/unlock', {
-        form: {pin: process.env.ANTIGRAVITY_LIVE_TRADING_PIN || '123456'},
+        form: {pin: process.env.WORTHWARD_LIVE_TRADING_PIN || '123456'},
     });
     expect(unlockResponse.status()).toBe(200);
     await page.goto('/trade/live-trading');
@@ -11510,7 +11530,7 @@ test('adds desktop workspace gel motion without moving title rails or leaking in
 
     await page.emulateMedia({reducedMotion: 'no-preference'});
     await page.setViewportSize({width: 390, height: 844});
-    await page.evaluate(() => window.sessionStorage.setItem('antigravity:sidebar-open', 'true'));
+    await page.evaluate(() => window.sessionStorage.setItem('worthward:sidebar-open', 'true'));
     await page.reload();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'true');
     const narrowMotionGate = await page.locator('#sidebar_toggle').evaluate((toggle) => {
@@ -11848,7 +11868,7 @@ test('keeps visible segmented items equal while future items fade through the sh
         const lastOption = options.at(-1);
         const lastInput = lastOption?.querySelector('input');
         if (lastInput instanceof HTMLInputElement) lastInput.checked = true;
-        window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(control, {
+        window.WORTHWARD_SEGMENTED_CONTROLS?.sync?.(control, {
             activeIndex: options.length - 1,
             options,
         });
@@ -15706,7 +15726,7 @@ test('honors reduced-motion preference in CSS and the shared motion library', as
     await page.emulateMedia({reducedMotion: 'reduce'});
     await page.goto('/settings/general');
     const motionState = await page.evaluate(() => ({
-        reduced: window.AntigravityMotion?.reducedMotionQuery.matches,
+        reduced: window.WorthwardMotion?.reducedMotionQuery.matches,
         duration: getComputedStyle(document.querySelector('.settings-nav-item')).transitionDuration,
     }));
     expect(motionState.reduced).toBe(true);
@@ -16022,7 +16042,7 @@ test('keeps the Backtest Metrics and Transactions pill synchronized', async ({pa
     expect(centeredPill.rightGap).toBeGreaterThanOrEqual(0);
 
     const transactionPageSize = await page.evaluate(() => (
-        window.ANTIGRAVITY_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
+        window.WORTHWARD_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
@@ -16243,7 +16263,7 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
     ))).toBe(true);
 
     const axisLabels = await page.evaluate(() => {
-        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        const result = window.WORTHWARD_APP?.backtestResult;
         if (!result?.chart) throw new Error('Backtest chart shell is unavailable.');
         const renderLabels = (interval, rawDates) => {
             const close = rawDates.map((_value, index) => 100 + index);
@@ -16260,7 +16280,7 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
                 equity: close.map((value) => 10_000 + value),
                 all_in_equity: close.map((value) => 10_000 + value),
             };
-            window.ANTIGRAVITY_BOOTSTRAP.initBacktestWorkspace();
+            window.WORTHWARD_BOOTSTRAP.initBacktestWorkspace();
             const canvas = document.querySelector('#tradeEquityChart');
             const chart = window.Chart?.getChart?.(canvas);
             const plugin = chart?.config?._config?.plugins?.find((item) => item.id === 'tradeXAxisLabelPlugin');
@@ -16308,7 +16328,7 @@ test('switches an unsupported 1 year Backtest period to the available 1m maximum
     await expect(page.locator('#stop_loss')).toBeChecked();
     await expect(page.locator('label[for="stop_loss"]')).toContainText('Allow algorithmic stop-loss exits');
     await expect.poll(() => page.evaluate(() => (
-        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+        window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', '3d', 'max']);
     await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
     await page.locator('label[for="backtest_interval_1m"]').click();
@@ -16350,7 +16370,7 @@ test('intersects 1m availability across every required Backtest ticker', async (
         'TQQQ',
     ]);
     await expect.poll(() => page.evaluate(() => (
-        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+        window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', 'max']);
     await expect(page.locator('#backtest_interval_1m')).toBeDisabled();
     await expect(page.locator('label[for="backtest_interval_1m"]')).toBeHidden();
@@ -16412,7 +16432,7 @@ test('keeps the latest Backtest interval state when an older presence response a
     });
     await expect.poll(() => presenceSnapshots.some((tickers) => tickers.join('|') === 'NVDA|TQQQ')).toBe(true);
     await expect.poll(() => page.evaluate(() => (
-        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+        window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', 'max']);
     await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
 
@@ -16421,7 +16441,7 @@ test('keeps the latest Backtest interval state when an older presence response a
     await page.waitForTimeout(100);
     await expect(page.locator('#backtest_interval_1m')).toBeEnabled();
     await expect.poll(() => page.evaluate(() => (
-        window.ANTIGRAVITY_APP?.backtestPeriodOptions?.['1m'] || []
+        window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', 'max']);
 });
 
@@ -16483,7 +16503,7 @@ test('uses the global compact date format and split numeric typography in Backte
         await expect(firstRow).toBeVisible();
 
         const renderedState = await page.evaluate(() => {
-            const state = JSON.parse(document.getElementById('antigravity_state')?.textContent || '{}');
+            const state = JSON.parse(document.getElementById('worthward_state')?.textContent || '{}');
             const row = document.querySelector('#backtest_history_table_wrap table[data-table-body] tbody tr');
             const numericCells = [
                 'price',
@@ -16825,7 +16845,7 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     );
     await expect(historyArticle.locator('.dca-transactions-shell')).toBeVisible();
     const transactionPageSize = await page.evaluate(() => (
-        window.ANTIGRAVITY_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
+        window.WORTHWARD_LOCAL_STORE_PAGINATION?.LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE
     ));
     expect(transactionPageSize).toBe(100);
     expect(await historyArticle.locator('tbody tr').count()).toBeLessThanOrEqual(100);
@@ -17690,7 +17710,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     })).toBe(true);
 
     await page.evaluate(() => {
-        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        const result = window.WORTHWARD_APP?.backtestResult;
         if (!result?.chart) throw new Error('Backtest chart shell is unavailable.');
 
         const rawDates = [];
@@ -17752,8 +17772,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             predictive_mean: rawDates.map((_, index) => (index < 3 ? null : 0.0015)),
             predictive_scale: rawDates.map((_, index) => (index < 3 ? null : 0.018)),
         };
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
     });
 
     const historySurface = page.locator('#backtest_history_surface');
@@ -17890,7 +17910,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             || !(chartWidth > 0) || !(chartHeight > 0) || points.length < 4) {
             return null;
         }
-        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
         const predictiveMean = Array.isArray(presentation?.predictive_mean)
             ? presentation.predictive_mean
             : [];
@@ -18069,7 +18089,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         if (current !== stack || !Number.isFinite(contentLeft)) return [];
         const scaleX = rect.width / chartWidth;
         const scaleY = rect.height / chartHeight;
-        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
         const predictiveMean = Array.isArray(presentation?.predictive_mean)
             ? presentation.predictive_mean
             : [];
@@ -18445,7 +18465,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const rect = canvas?.getBoundingClientRect();
         const chartWidth = Number(chart?.width);
         const chartHeight = Number(chart?.height);
-        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
         const predictiveMean = Array.isArray(presentation?.predictive_mean)
             ? presentation.predictive_mean
             : [];
@@ -18761,8 +18781,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const detailAnchor = panel?.querySelector('[data-backtest-probability-detail-anchor]');
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const tooltipCells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || []);
-        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
-        const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID;
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const probabilityGridApi = window.WORTHWARD_BACKTEST_PROBABILITY_GRID;
         const yTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-y-axis] .backtest-probability-detail-y-tick') || []);
         const xTicks = Array.from(panel?.querySelectorAll('[data-backtest-probability-detail-x-tick]') || []);
         const status = panel?.querySelector('[data-backtest-probability-detail-status]');
@@ -18814,7 +18834,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const dynamicCell = tooltipCells.find((cell) => Number(cell.dataset.horizon) > 1);
         const dynamicExpectedProbability = dynamicCell && probabilityGridApi
             ? probabilityGridApi.probabilityBetweenPrices({
-                anchorPrice: Number(window.ANTIGRAVITY_APP?.backtestResult?.chart?.close?.[activeIndex]),
+                anchorPrice: Number(window.WORTHWARD_APP?.backtestResult?.chart?.close?.[activeIndex]),
                 lowerPrice: Number(dynamicCell.dataset.lowerPrice),
                 upperPrice: Number(dynamicCell.dataset.upperPrice),
                 mean: Number(presentation?.predictive_mean?.[activeIndex]),
@@ -18827,12 +18847,12 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             : Number.NaN;
         const firstTick = xTicks[0];
         const firstHorizon = Number(firstTick?.dataset.horizon);
-        const rawDates = window.ANTIGRAVITY_APP?.backtestResult?.chart?.raw_dates || [];
+        const rawDates = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates || [];
         const rawDate = rawDates[activeIndex + firstHorizon];
         const dateMatch = typeof rawDate === 'string'
             ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
             : null;
-        const dateFormatter = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.formatFullDateLines;
+        const dateFormatter = window.WORTHWARD_BOOTSTRAP?.dateDisplay?.formatFullDateLines;
         const expectedDateText = dateMatch && typeof dateFormatter === 'function'
             ? dateFormatter({
                 year: Number(dateMatch[1]),
@@ -18874,8 +18894,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             detailLegendCount: panel?.querySelectorAll('.backtest-probability-detail-legend').length || 0,
             panelHidden: panel instanceof HTMLElement ? panel.hidden : true,
             rows: Number(detailGrid?.dataset.rowCount),
-            requestedRows: Number(window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation?.rows_above)
-                + Number(window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation?.rows_below),
+            requestedRows: Number(window.WORTHWARD_APP?.backtestResult?.strategy_presentation?.rows_above)
+                + Number(window.WORTHWARD_APP?.backtestResult?.strategy_presentation?.rows_below),
             statusText: status?.textContent?.trim() || '',
             forecastDateTitleCount: forecastDateTitle ? 1 : 0,
             xTickCount: xTicks.length,
@@ -19879,7 +19899,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const equityCanvasElement = document.querySelector('#tradeEquityChart');
         const oldPriceChart = window.Chart?.getChart?.(priceCanvasElement);
         const oldEquityChart = window.Chart?.getChart?.(equityCanvasElement);
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
         const newPriceChart = window.Chart?.getChart?.(priceCanvasElement);
         const newEquityChart = window.Chart?.getChart?.(equityCanvasElement);
         const stack = priceCanvasElement?.closest('.trade-chart-stack');
@@ -19904,7 +19924,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     });
 
     await page.evaluate(() => {
-        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        const result = window.WORTHWARD_APP?.backtestResult;
         if (!result?.strategy_presentation) {
             throw new Error('Bayesian presentation is unavailable for custom material verification.');
         }
@@ -19921,8 +19941,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             cell_opacity_exponent: 2.4,
             cell_opacity_tail_ratio: 0.05,
         };
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
     });
     await waitForChartGeometry();
     const customAnchor = await pointAt(0.05);
@@ -20006,14 +20026,14 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(customPresentation.guideBottomInset).toBeGreaterThanOrEqual(0);
 
     await page.evaluate(() => {
-        const result = window.ANTIGRAVITY_APP?.backtestResult;
+        const result = window.WORTHWARD_APP?.backtestResult;
         if (!result?.strategy_presentation) throw new Error('Bayesian presentation is unavailable for threshold verification.');
         result.strategy_presentation = {
             ...result.strategy_presentation,
             cell_display_threshold_pct: 50,
         };
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
-        window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
     });
     await waitForChartGeometry();
     const thresholdAnchor = await pointAt(0.05);
@@ -20200,7 +20220,7 @@ test('keeps visible Bayesian detail hover updates out of shared layout reflow', 
     if (!anchors.length) throw new Error('Visible Bayesian detail hover anchors are unavailable.');
 
     await page.evaluate(() => {
-        const bootstrap = window.ANTIGRAVITY_BOOTSTRAP;
+        const bootstrap = window.WORTHWARD_BOOTSTRAP;
         const originalRefresh = bootstrap?.backtestChartLayoutRefresh;
         if (typeof originalRefresh !== 'function') {
             throw new Error('Backtest shared chart refresh callback is unavailable.');
@@ -20314,7 +20334,7 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
         const detailPanel = document.querySelector('#backtest_probability_detail_panel');
         const detailGrid = detailPanel?.querySelector('[data-backtest-probability-detail-grid]');
         const viewport = detailGrid?.parentElement;
-        const presentation = window.ANTIGRAVITY_APP?.backtestResult?.strategy_presentation;
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
         const bounds = chart?._activeBacktestProbabilityGridBounds;
         const detailRect = detailGrid?.getBoundingClientRect();
         const viewportRect = viewport?.getBoundingClientRect();
@@ -20369,13 +20389,28 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
                 '[data-backtest-probability-detail-grid] .backtest-probability-detail-cell',
             ),
         );
-        const summarize = (sign) => cells
-            .filter((cell) => cell.classList.contains(`is-${sign}`))
-            .reduce((summary, cell) => ({
-                probability: summary.probability + Math.max(0, Number(cell.dataset.probability) || 0),
-                hiddenCellCount: summary.hiddenCellCount
-                    + (cell.dataset.thresholdVisible === 'false' ? 1 : 0),
-            }), {probability: 0, hiddenCellCount: 0});
+        const summarize = (sign) => {
+            const horizons = new Map();
+            cells
+                .filter((cell) => cell.classList.contains(`is-${sign}`))
+                .forEach((cell) => {
+                    const horizon = Number(cell.dataset.horizon);
+                    const entry = horizons.get(horizon) || {probability: 0, hiddenCellCount: 0};
+                    entry.probability += Math.max(0, Number(cell.dataset.probability) || 0);
+                    entry.hiddenCellCount += cell.dataset.thresholdVisible === 'false' ? 1 : 0;
+                    horizons.set(horizon, entry);
+                });
+            const forecastHorizonCount = horizons.size;
+            return {
+                probability: forecastHorizonCount
+                    ? [...horizons.values()].reduce((sum, entry) => sum + entry.probability, 0)
+                        / forecastHorizonCount
+                    : 0,
+                hiddenCellCount: [...horizons.values()]
+                    .reduce((sum, entry) => sum + entry.hiddenCellCount, 0),
+                forecastHorizonCount,
+            };
+        };
         const format = (value) => `${new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -20383,8 +20418,11 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         const up = summarize('up');
         const down = summarize('down');
         return {
-            upText: `Higher price: ${format(up.probability)}`,
-            downText: `Lower price: ${format(down.probability)}`,
+            upProbability: up.probability,
+            upText: format(up.probability),
+            downProbability: down.probability,
+            downText: format(down.probability),
+            forecastHorizonCount: up.forecastHorizonCount,
             hiddenCellCount: up.hiddenCellCount + down.hiddenCellCount,
         };
     });
@@ -20392,6 +20430,11 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         .toHaveText(sideSummary.upText);
     await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
         .toHaveText(sideSummary.downText);
+    expect(sideSummary.upText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
+    expect(sideSummary.downText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
+    expect(sideSummary.forecastHorizonCount).toBeGreaterThan(0);
+    expect(sideSummary.upProbability).toBeLessThanOrEqual(1);
+    expect(sideSummary.downProbability).toBeLessThanOrEqual(1);
     expect(sideSummary.hiddenCellCount).toBeGreaterThan(0);
     const sideSummaryGeometry = await page.evaluate(() => {
         const anchor = document.querySelector('[data-backtest-probability-detail-anchor]')?.getBoundingClientRect();

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.19`
+Documentation version: `v1.69.22`
 
 ## Bayesian Price Field detail view contract
 
@@ -24,9 +24,11 @@ It intentionally has no price-probability legend: the two-dimensional cell
 field is explained by its axes and grid, not by a misleading one-dimensional
 color scale. The detail plot, main column, grid viewport, and complete lattice
 are separately clipped and contained so the full 20 × 20 geometry cannot paint
-outside its owning surface. The detail viewport also places the raw cumulative
-higher-price and lower-price probability mass at the right end of the
-horizontal price guide; both sums include threshold-hidden cells.
+outside its owning surface. The detail viewport places mean higher-price and
+lower-price probability mass per forecast horizon at the right end of the
+horizontal price guide. Each horizon's cell mass includes threshold-hidden
+cells, but independent horizons are averaged rather than added together, so
+both displayed percentages remain bounded to 0–100%.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
 columns, 2px gaps, opacity mapping, and square-cell geometry. A cell is green
@@ -161,7 +163,7 @@ Every canonical human page that extends `base.html` includes one static project 
 three OpenAI Site tools through `document.modelContext.registerTool`.
 
 The v1 tools expose only bounded capability metadata, bounded current-page metadata, and navigation
-to a manifest-owned same-origin route. They never serialize `ANTIGRAVITY_APP`, chart series,
+to a manifest-owned same-origin route. They never serialize `WORTHWARD_APP`, chart series,
 investment records, credentials, CSRF tokens, broker state, or settings values. They do not call a
 Flask mutation endpoint. The Live trading PIN template does not extend `base.html` and remains
 outside the Site tools surface. When WebMCP is unavailable or a document is framed, registration is
@@ -240,6 +242,9 @@ that vertical coordinate and change only the horizontal translation. The dock's
 centerline is the sidebar centerline and its bottom clearance from the sidebar is
 `G`. Content and control widths are `min(100%, 640px)` and `min(100%, 384px)`;
 standard selects and dropdowns use the control width token.
+Portfolio keeps its 640px result maximum on desktop, but at widths up to 767px
+its single-column result stack expands to the full workspace width so it aligns
+with the full-width controls surface.
 
 At desktop widths the sidebar is a grid column. At widths up to `900px` it becomes a
 safe-area-aware overlay, while the dock is centered in the overlay and the toggle and
@@ -260,14 +265,14 @@ text may retain local clipping only when that element is the documented viewport
 ## Shared stock-price axis labels
 
 Every chart whose Y-axis represents a stock price delegates label formatting to
-`ANTIGRAVITY_CHART_AXIS.formatStockPriceAxisValue`. Absolute prices at or above
+`WORTHWARD_CHART_AXIS.formatStockPriceAxisValue`. Absolute prices at or above
 `100` render as grouped integers, such as `1,234` or `567`; lower prices render
 with exactly two decimals, such as `12.50` or `5.50`. Price comparison,
 Backtest and DCA price subplots, Live trading candlesticks, Investment Stock
 details, and their Settings share previews use this contract. Equity, return,
 market-cap, volume, and share-count axes retain their domain-specific formats.
 The Investment filled hover badge is also the shared
-`ANTIGRAVITY_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
+`WORTHWARD_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
 Backtest overlays call that primitive instead of maintaining a second badge
 renderer.
 
@@ -281,7 +286,7 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, and `bayesian-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. On desktop, the complete Backtest controls surface owns vertical scrolling, so generic controls, Strategy, and every private parameter retain one logical reading order; the parameter grid never creates a second nested scrollbar or flips above its trigger. Narrow layouts let the complete controls surface grow in the page flow. The Backtest-wide `Show trade details` preference defaults to enabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `antigravity:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, and `bayesian-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. On desktop, the complete Backtest controls surface owns vertical scrolling, so generic controls, Strategy, and every private parameter retain one logical reading order; the parameter grid never creates a second nested scrollbar or flips above its trigger. Narrow layouts let the complete controls surface grow in the page flow. The Backtest-wide `Show trade details` preference defaults to enabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, supported execution intervals, optional execution-to-model interval overrides, causal signal bridges, and strategy-owned market-data hooks. The strategy registry carries the declared execution intervals into both the initial browser state and the strategy-fields response, so temporary data availability is never mistaken for permanent strategy capability. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. The browser requests presence for the complete ordered required-ticker snapshot, intersects each interval's Period options across that set, and exposes `1m` only when the strategy declares it and every required ticker shares a real one-minute Period. A monotonic request token plus required-count and ordered-snapshot revalidation makes availability updates latest-wins after rapid ticker or strategy edits. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. When model and execution intervals differ, the strategy must declare a bridge; the runtime never treats a daily posterior as a native minute posterior. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary drawdown trigger and buy-and-hold benchmark, rotates all capital to the second ticker after the configured drawdown, and returns to the first ticker only when it makes a new all-time closing high.
 
@@ -672,8 +677,8 @@ sets of values.
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing consumers keep local fallbacks if the shared script is unavailable.
-- `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.ANTIGRAVITY_EXPORT_IMAGE`.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.

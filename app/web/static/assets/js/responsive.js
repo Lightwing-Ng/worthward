@@ -93,7 +93,7 @@
         return window.matchMedia(`(${direction}-width: ${value}px)`);
     };
 
-    window.ANTIGRAVITY_RESPONSIVE = Object.freeze({
+    window.WORTHWARD_RESPONSIVE = Object.freeze({
         breakpoints,
         media,
     });

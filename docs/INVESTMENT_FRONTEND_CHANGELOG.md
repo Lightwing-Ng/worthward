@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.0`
+Documentation version: `v1.51.1`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -667,7 +667,7 @@ architectural boundary summary so code navigation begins at the imports.
   registry and apply to the Settings preview, Investment PNG card, and workspace PNG card
   through the same derived dimensions and CSS variables.
 - Added: Future exporters can register an isolated profile through
-  `window.ANTIGRAVITY_EXPORT_IMAGE` without duplicating the capture contract.
+  `window.WORTHWARD_EXPORT_IMAGE` without duplicating the capture contract.
 
 - Added: The standard manual investment workbook now recognizes China Merchants Bank,
   Bank of China, and Bank of China (Hong Kong) as
@@ -902,7 +902,7 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
 - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
 - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
-- Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
+- Added: Loaded investment helper module versions are exposed on `window.WORTHWARD_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
 - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
 - Fixed: Investment realtime polling and breathing pulse are disabled during New York post-market and on non-trading days.
 - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.

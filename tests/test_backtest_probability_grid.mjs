@@ -1,4 +1,4 @@
-/* Bayesian Backtest probability-grid contracts. Code version: v0.25.0 */
+/* Bayesian Backtest probability-grid contracts. Code version: v0.25.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 require(path.join(root, 'app/web/static/assets/js/backtest/probability-grid.js'));
-const grid = globalThis.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID;
+const grid = globalThis.WORTHWARD_BACKTEST_PROBABILITY_GRID;
 
 const rawDates = ['2026-08-25', '2026-08-26', '2026-08-27'];
 const presentation = {
@@ -40,7 +40,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.25.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.25.1');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
 });
 
@@ -671,11 +671,11 @@ test('summarizes every probability in a detail row, including threshold-hidden c
 
 test('summarizes up and down probability mass across hidden and visible field cells', () => {
     const summary = grid.summarizeProbabilityField([
-        {sign: 'up', probability: 0.12, isVisible: true},
-        {sign: 'up', probability: 0.025, isVisible: false},
-        {sign: 'down', probability: 0.7, isVisible: true},
-        {sign: 'down', probability: 0.003, isVisible: false},
-        {sign: 'other', probability: 0.9, isVisible: true},
+        {sign: 'up', horizon: 1, probability: 0.12, isVisible: true},
+        {sign: 'up', horizon: 1, probability: 0.025, isVisible: false},
+        {sign: 'down', horizon: 1, probability: 0.7, isVisible: true},
+        {sign: 'down', horizon: 1, probability: 0.003, isVisible: false},
+        {sign: 'other', horizon: 1, probability: 0.9, isVisible: true},
     ]);
     assert.ok(Math.abs(summary.upProbability - 0.145) < 1e-12);
     assert.ok(Math.abs(summary.downProbability - 0.703) < 1e-12);
@@ -685,7 +685,22 @@ test('summarizes up and down probability mass across hidden and visible field ce
     assert.equal(summary.downHiddenCellCount, 1);
     assert.equal(summary.cellCount, 4);
     assert.equal(summary.hiddenCellCount, 2);
+    assert.equal(summary.forecastHorizonCount, 1);
     assert.equal(grid.summarizeProbabilityField([], 4), null);
+});
+
+test('averages directional probability mass across independent forecast horizons', () => {
+    const summary = grid.summarizeProbabilityField([
+        {sign: 'up', horizon: 1, probability: 0.7},
+        {sign: 'down', horizon: 1, probability: 0.2},
+        {sign: 'up', horizon: 2, probability: 0.5},
+        {sign: 'down', horizon: 2, probability: 0.4},
+    ]);
+    assert.ok(Math.abs(summary.upProbability - 0.6) < 1e-12);
+    assert.ok(Math.abs(summary.downProbability - 0.3) < 1e-12);
+    assert.ok(summary.upProbability <= 1);
+    assert.ok(summary.downProbability <= 1);
+    assert.equal(summary.forecastHorizonCount, 2);
 });
 
 test('maps every cell to an exact price interval around the horizontal guide', () => {

@@ -66,7 +66,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         code="standard_xlsx",
         label="No specified broker",
         icon_filename="Standard XLSX.svg",
-        description="Import a broker-neutral antigravity standard XLSX workbook.",
+        description="Import a broker-neutral Worthward standard XLSX workbook.",
     ),
     "longbridge_hk": BrokerCatalogEntry(
         code="longbridge_hk",

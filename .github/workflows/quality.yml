@@ -46,7 +46,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run the complete quality gate
-        run: ANTIGRAVITY_PYTHON="$(command -v python)" ./scripts/check.sh
+        run: WORTHWARD_PYTHON="$(command -v python)" ./scripts/check.sh
 
       - name: Upload Python coverage data
         if: always()

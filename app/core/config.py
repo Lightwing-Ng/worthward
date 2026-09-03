@@ -1,29 +1,31 @@
 """
 Shared application configuration.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
-import os
 from pathlib import Path
 
 import pandas as pd
+
+from app.core.branding import read_compatible_environment
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def resolve_store_directory(environment_name: str, fallback: Path) -> Path:
     """Resolve an explicit process-local store override without changing normal launches."""
-    configured = str(os.environ.get(environment_name, "") or "").strip()
+    legacy_name = environment_name.replace("WORTHWARD_", "ANTIGRAVITY_", 1)
+    configured = read_compatible_environment(environment_name, legacy_name)
     return Path(configured).expanduser().resolve() if configured else fallback
 
 
 MARKET_STORE_DIR = resolve_store_directory(
-    "ANTIGRAVITY_MARKET_STORE_DIR",
+    "WORTHWARD_MARKET_STORE_DIR",
     BASE_DIR / "market_store",
 )
 SETTINGS_STORE_DIR = resolve_store_directory(
-    "ANTIGRAVITY_SETTINGS_STORE_DIR",
+    "WORTHWARD_SETTINGS_STORE_DIR",
     BASE_DIR / "settings_store",
 )
 DEFAULT_TICKERS = ("QQQ", "JEPQ")

@@ -1,6 +1,6 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.2.1`
+Documentation version: `v1.2.2`
 
 This project implements the shared Agent Optimization contract at
 `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
@@ -32,7 +32,7 @@ Settings renderers load the same safe v1 inventory through `base.html`.
 | Tool | Result | Data boundary |
 | --- | --- | --- |
 | `get_site_capabilities` | Five static capability groups and seven allowlisted destinations | Does not read market series, investment records, broker state, or settings values |
-| `get_page_context` | Site ID, title, language, route, and matching destination | Reads zero page-content fields and never serializes `ANTIGRAVITY_APP` |
+| `get_page_context` | Site ID, title, language, route, and matching destination | Reads zero page-content fields and never serializes `WORTHWARD_APP` |
 | `navigate_to_site_target` | Same-origin destination and scheduling evidence | Navigates only; it does not submit a form, import, cache action, or order |
 
 The allowlisted destinations are `/workspaces/compare`, `/workspaces/prices`,

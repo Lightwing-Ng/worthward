@@ -7,8 +7,8 @@ import {
 } from './settings/url-state.js?v=settings-url-state-v0.2.0';
 
 (() => {
-    const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
-    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+    const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+    const chartAxis = window.WORTHWARD_CHART_AXIS || {};
     let settingsContext = null;
     let localStorePaginationRequest = null;
     let localStorePaginationRequestGeneration = 0;
@@ -44,7 +44,7 @@ import {
 
     const applyStyleTokenProperty = (shell, tokenName, value) => {
         if (!tokenName) return;
-        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const exportImageConfig = window.WORTHWARD_EXPORT_IMAGE;
         const profileId = shell?.dataset?.exportImageProfile
             || exportImageConfig?.defaultProfileId;
         if (shell?.hasAttribute("data-export-image-shell") && exportImageConfig?.setToken && profileId) {
@@ -63,7 +63,7 @@ import {
     const getState = () => getContext().state || null;
     const getEndpoints = () => getContext().endpoints || {};
     const getLabels = () => getContext().labels || {};
-    const getLanguageState = () => window.ANTIGRAVITY_APP?.language || {};
+    const getLanguageState = () => window.WORTHWARD_APP?.language || {};
     const translateUi = (value) => {
         const languageState = getLanguageState();
         const languageCode = String(languageState.code || "en");
@@ -74,7 +74,7 @@ import {
         return row?.[languageCode] || value;
     };
     const getShortDatePlaceholder = () => {
-        const helper = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.getShortDatePlaceholder;
+        const helper = window.WORTHWARD_BOOTSTRAP?.dateDisplay?.getShortDatePlaceholder;
         return typeof helper === "function" ? helper() : "0000/00/00";
     };
     const setActionPackageLiveState = (packageElement, isLive) => {
@@ -136,9 +136,9 @@ import {
         else window.history.replaceState(historyState, "", nextUrl);
         const state = getState();
         if (state) state.settingsSection = historyState.section;
-        if (window.ANTIGRAVITY_APP) {
-            window.ANTIGRAVITY_APP.settingsTab = historyState.tab;
-            window.ANTIGRAVITY_APP.settingsPage = historyState.page;
+        if (window.WORTHWARD_APP) {
+            window.WORTHWARD_APP.settingsTab = historyState.tab;
+            window.WORTHWARD_APP.settingsPage = historyState.page;
         }
         rememberCurrentViewUrl(nextUrl);
         return nextUrl;
@@ -383,7 +383,7 @@ import {
             return;
         }
         summaryCard.classList.add("workspace-article-card", "workspace-summary-card");
-        const mobileMedia = window.ANTIGRAVITY_RESPONSIVE.media("contentStackMax");
+        const mobileMedia = window.WORTHWARD_RESPONSIVE.media("contentStackMax");
         let frameId = 0;
         let resizeObserver = null;
         const clearMorph = () => {
@@ -507,7 +507,7 @@ import {
             shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
         };
 
-        const unbindResizer = window.ANTIGRAVITY_RESIZER?.bind(handle, {
+        const unbindResizer = window.WORTHWARD_RESIZER?.bind(handle, {
             axis: "inline",
             root: shell,
             getRange: getWidthRange,
@@ -864,7 +864,7 @@ import {
                 switchShell.dataset.segmentedActiveIndex = String(activeIndex);
                 switchShell.style.setProperty("--segmented-option-count", String(optionCount));
                 switchShell.style.setProperty("--segmented-active-index", String(activeIndex));
-                window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(switchShell, {
+                window.WORTHWARD_SEGMENTED_CONTROLS?.sync?.(switchShell, {
                     activeValue: nextValue,
                     activeIndex,
                     options,
@@ -954,7 +954,7 @@ import {
             };
 
             const renderPage = ({resetPage = false, animationState = null} = {}) => {
-                const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+                const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
                 const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
                 if (resetPage) currentPage = 1;
                 currentPage = Math.min(totalPages, Math.max(1, currentPage));
@@ -969,7 +969,7 @@ import {
                     demo.classList.remove("has-floating-pagination");
                     if (!didWaitForPaginationApi) {
                         didWaitForPaginationApi = true;
-                        window.addEventListener("antigravity:local-store-pagination-ready", () => {
+                        window.addEventListener("worthward:local-store-pagination-ready", () => {
                             didWaitForPaginationApi = false;
                             renderPage();
                         }, {once: true});
@@ -1060,11 +1060,11 @@ import {
     const attachStyleTokenPaginationDemos = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
-        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+        const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
         if (!paginationApi) {
             if (shell.dataset.styleTokenPaginationReadyWaiting !== "1") {
                 shell.dataset.styleTokenPaginationReadyWaiting = "1";
-                window.addEventListener("antigravity:local-store-pagination-ready", () => {
+                window.addEventListener("worthward:local-store-pagination-ready", () => {
                     delete shell.dataset.styleTokenPaginationReadyWaiting;
                     attachStyleTokenPaginationDemos();
                 }, {once: true});
@@ -1183,7 +1183,7 @@ import {
             if (pageButton && !pageButton.classList.contains("local-store-page-nav") && !pageButton.classList.contains("local-store-page-placeholder")) {
                 const container = pageButton.closest(".local-store-pagination");
                 if (container instanceof HTMLElement) {
-                    const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+                    const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
                     const buttons = Array.from(container.querySelectorAll(".local-store-page-button:not(.local-store-page-nav):not(.local-store-page-placeholder)"));
                     const index = buttons.indexOf(pageButton);
                     if (index !== -1) {
@@ -1971,7 +1971,7 @@ import {
     const seedExportImageTokenDefaults = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement) || !shell.hasAttribute("data-export-image-shell")) return;
-        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const exportImageConfig = window.WORTHWARD_EXPORT_IMAGE;
         const profileId = shell.dataset.exportImageProfile
             || exportImageConfig?.defaultProfileId;
         if (exportImageConfig?.applyConfigToTargets && profileId) {
@@ -2356,7 +2356,7 @@ import {
     const initLocalStorePaginationPhysics = ({animationState = null} = {}) => {
         const pagination = document.querySelector("[data-local-store-pagination]");
         if (!(pagination instanceof HTMLElement)) return;
-        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+        const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
         if (!paginationApi) {
             pendingLocalStorePaginationAnimation = animationState || pendingLocalStorePaginationAnimation;
             if (localStorePaginationReadyListener) return;
@@ -2367,7 +2367,7 @@ import {
                 initLocalStorePaginationPhysics({animationState: pendingAnimation});
             };
             window.addEventListener(
-                "antigravity:local-store-pagination-ready",
+                "worthward:local-store-pagination-ready",
                 localStorePaginationReadyListener,
                 {once: true},
             );
@@ -2446,7 +2446,7 @@ import {
     };
 
     const captureLocalStorePaginationTransition = (link, targetUrl) => {
-        const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+        const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
         const pagination = link.closest("[data-local-store-pagination]");
         if (!paginationApi || !(pagination instanceof HTMLElement)) return null;
 
@@ -2522,7 +2522,7 @@ import {
 
     const attachColorTokenControls = () => {
         const root = document.querySelector("[data-color-token-layout]");
-        const colorTokens = window.ANTIGRAVITY_COLOR_TOKENS;
+        const colorTokens = window.WORTHWARD_COLOR_TOKENS;
         if (!(root instanceof HTMLElement) || !colorTokens) return;
 
         const controls = () => [...root.querySelectorAll("[data-color-token-control]")];
@@ -2597,7 +2597,7 @@ import {
 
         if (!didBindColorTokenGlobalEvents) {
             didBindColorTokenGlobalEvents = true;
-            window.addEventListener("antigravity:color-token-change", () => {
+            window.addEventListener("worthward:color-token-change", () => {
                 document.querySelectorAll("[data-color-token-layout] [data-color-token-control]").forEach((control) => {
                     if (control instanceof HTMLElement) syncControl(control);
                 });
@@ -2876,9 +2876,9 @@ import {
 
         const renderPagination = (pagination, body, page) => {
             if (!(pagination instanceof HTMLElement) || !(body instanceof HTMLElement)) return;
-            const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+            const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
             if (!paginationApi) {
-                window.addEventListener('antigravity:local-store-pagination-ready', () => {
+                window.addEventListener('worthward:local-store-pagination-ready', () => {
                     renderPagination(pagination, body, page);
                 }, {once: true});
                 return;
@@ -2974,7 +2974,7 @@ import {
         void hydrateLocalStoreRanges();
     };
 
-    window.dispatchEvent(new Event("antigravity:settings-bootstrap-ready"));
+    window.dispatchEvent(new Event("worthward:settings-bootstrap-ready"));
 
     function attachCashEquivalentsAddActionPosition() {
         const actionShell = document.getElementById('cash_equivalents_add_action_shell');

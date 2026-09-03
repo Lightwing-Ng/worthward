@@ -1,12 +1,12 @@
-/* Code version: v0.37.0 */
+/* Code version: v0.37.1 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
-	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
-	const probabilityGridApi = window.ANTIGRAVITY_BACKTEST_PROBABILITY_GRID || {};
+	const chartAxis = window.WORTHWARD_CHART_AXIS || {};
+	const probabilityGridApi = window.WORTHWARD_BACKTEST_PROBABILITY_GRID || {};
 	const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";
-	const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "antigravity:backtest-probability-stage-minimum-change";
-	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "antigravity:backtest-history-view-change";
+	const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "worthward:backtest-probability-stage-minimum-change";
+	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "worthward:backtest-history-view-change";
 	const PROBABILITY_MODEL_CACHE_LIMIT = 24;
 
 	const readThemeToken = (computed, tokenName) => (
@@ -53,8 +53,8 @@
 			media.addListener(handler);
 			cleanups.push(() => media.removeListener(handler));
 		}
-		window.addEventListener("antigravity:theme-mode-change", handler);
-		cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+		window.addEventListener("worthward:theme-mode-change", handler);
+		cleanups.push(() => window.removeEventListener("worthward:theme-mode-change", handler));
 		const cleanup = () => {
 			if (disposed) return;
 			disposed = true;
@@ -117,7 +117,7 @@
 		}
 		if (persist) persistBacktestTradeDetailsPreference(showTradeDetails);
 		initBacktestHistoryTabs();
-		window.dispatchEvent(new CustomEvent("antigravity:backtest-trade-details-change", {
+		window.dispatchEvent(new CustomEvent("worthward:backtest-trade-details-change", {
 			detail: {enabled: showTradeDetails},
 		}));
 		return showTradeDetails;
@@ -172,7 +172,7 @@
 			segmentedControl.dataset.active = active;
 			viewSurface.dataset.activeView = active;
 			viewSurface.dataset.tradeDetailsVisible = String(showTradeDetails);
-			window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(segmentedControl, {activeValue: active});
+			window.WORTHWARD_SEGMENTED_CONTROLS?.sync?.(segmentedControl, {activeValue: active});
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.backtestHistoryViewPanel !== active;
 			});
@@ -379,12 +379,12 @@
 			priceChart.update("none");
 			equityChart.update("none");
 		};
-		const scheduler = window.AntigravityMotion?.scheduler;
+		const scheduler = window.WorthwardMotion?.scheduler;
 		if (scheduler?.animate) {
 			return scheduler.animate({
 				key: 'backtest-refresh-transition',
-				duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
-				ease: window.AntigravityMotion?.easing?.emphasized,
+				duration: window.WorthwardMotion?.durations?.emphasized ?? 420,
+				ease: window.WorthwardMotion?.easing?.emphasized,
 				update: applyProgress,
 				complete: () => applyProgress(1),
 			});
@@ -507,13 +507,24 @@
 		const renderProbabilityDetailSideSummary = (cells) => {
 			const summary = probabilityGridApi.summarizeProbabilityField?.(cells);
 			if (!summary) return false;
+			const upText = formatProbabilityMass(summary.upProbability);
+			const downText = formatProbabilityMass(summary.downProbability);
+			const horizonDescription = `${summary.forecastHorizonCount} forecast horizons`;
 			if (probabilityDetailUpSummary instanceof HTMLElement) {
-				probabilityDetailUpSummary.textContent = `Higher price: ${formatProbabilityMass(summary.upProbability)}`;
-				probabilityDetailUpSummary.title = `Higher-price probability mass across all ${summary.upCellCount} forecast cells, including ${summary.upHiddenCellCount} hidden: ${formatProbabilityMass(summary.upProbability)}`;
+				probabilityDetailUpSummary.textContent = upText;
+				probabilityDetailUpSummary.setAttribute(
+					"aria-label",
+					`Higher-price probability mass averaged across ${horizonDescription}: ${upText}`,
+				);
+				probabilityDetailUpSummary.title = `Average higher-price probability mass per forecast horizon across ${horizonDescription}, including ${summary.upHiddenCellCount} hidden cells: ${upText}`;
 			}
 			if (probabilityDetailDownSummary instanceof HTMLElement) {
-				probabilityDetailDownSummary.textContent = `Lower price: ${formatProbabilityMass(summary.downProbability)}`;
-				probabilityDetailDownSummary.title = `Lower-price probability mass across all ${summary.downCellCount} forecast cells, including ${summary.downHiddenCellCount} hidden: ${formatProbabilityMass(summary.downProbability)}`;
+				probabilityDetailDownSummary.textContent = downText;
+				probabilityDetailDownSummary.setAttribute(
+					"aria-label",
+					`Lower-price probability mass averaged across ${horizonDescription}: ${downText}`,
+				);
+				probabilityDetailDownSummary.title = `Average lower-price probability mass per forecast horizon across ${horizonDescription}, including ${summary.downHiddenCellCount} hidden cells: ${downText}`;
 			}
 			return true;
 		};
@@ -531,7 +542,7 @@
 		const isProbabilityHistoryViewActive = () => (
 			document.getElementById("backtest_history_surface")?.dataset.activeView === "probability"
 		);
-		const state = window.ANTIGRAVITY_APP;
+		const state = window.WORTHWARD_APP;
 		if (!state || state.currentView !== "backtest" || state.selectedStrategyId === "dca" || !window.Chart || !state.backtestResult) {
 			resultsStack?.classList.remove("has-probability-field");
 			clearProbabilityStageMinimum();
@@ -1213,13 +1224,13 @@
 			}
 			setProbabilityScrollPortActive(true);
 			setProbabilityScrollExtent(probabilityScrollVisualPosition);
-			const scheduler = window.AntigravityMotion?.scheduler;
+			const scheduler = window.WorthwardMotion?.scheduler;
 			if (!scheduler?.frame) {
 				const frameId = window.requestAnimationFrame(() => completeProbabilityScroll());
 				probabilityScrollCleanup = () => window.cancelAnimationFrame(frameId);
 				return;
 			}
-		const preset = window.AntigravityMotion?.springPresets?.bouncy || {
+		const preset = window.WorthwardMotion?.springPresets?.bouncy || {
 				mass: 1,
 				stiffness: 180,
 				damping: 18,
@@ -2999,7 +3010,7 @@
 			}
 		};
 		const resolveChartReadyAnimation = (canvas) => {
-			const readyScheduler = window.AntigravityMotion?.scheduler;
+			const readyScheduler = window.WorthwardMotion?.scheduler;
 			if (readyScheduler?.frame) {
 				let readyFrameCount = 0;
 				const cleanupReadyFrame = readyScheduler.frame(`backtest-chart-ready-${canvas.id}`, () => {
@@ -3125,10 +3136,10 @@
 			const nav = document.getElementById("tradeTransactionsPagination");
 			const tableShell = document.getElementById("backtest_history_table_wrap");
 			const tbody = table?.querySelector("tbody");
-			const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+			const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
 			if (!table || !nav || !tbody) return;
 			if (!paginationApi) {
-				window.addEventListener("antigravity:local-store-pagination-ready", initTransactionsPagination, {once: true});
+				window.addEventListener("worthward:local-store-pagination-ready", initTransactionsPagination, {once: true});
 				return;
 			}
 
@@ -3174,7 +3185,7 @@
 				.replaceAll("'", "&#39;");
 			const renderNumericCell = (value) => {
 				const formatted = formatNumber(value);
-				const renderer = window.ANTIGRAVITY_NUMERIC_DISPLAY?.renderNumericDisplayContent;
+				const renderer = window.WORTHWARD_NUMERIC_DISPLAY?.renderNumericDisplayContent;
 				return typeof renderer === "function" ? renderer(formatted) : escapeHtml(formatted);
 			};
 			const formatTradeDate = (value) => {
@@ -3242,7 +3253,7 @@
 				goToPage(targetPage, {animationState});
 				syncTablePageUrl(currentPage);
 			});
-			const requestedPage = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
+			const requestedPage = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
 			goToPage(requestedPage);
 			syncTablePageUrl(currentPage);
 		};
@@ -3385,7 +3396,7 @@
 		bootstrap.backtestChartLayoutRefresh = refreshAfterSharedChartResize;
 		window.addEventListener("resize", scheduleChartLayoutRefresh, {signal: documentController.signal});
 		window.addEventListener(
-			"antigravity:backtest-trade-details-change",
+			"worthward:backtest-trade-details-change",
 			scheduleChartLayoutRefresh,
 			{signal: documentController.signal},
 		);
@@ -3513,12 +3524,12 @@
 	const share = () => bootstrap.workspaceShare || {};
 
 	const buildBacktestShareFilename = () => {
-		const ticker = String(window.ANTIGRAVITY_APP?.backtestResult?.summary?.ticker || "").trim().toLowerCase() || "backtest";
+		const ticker = String(window.WORTHWARD_APP?.backtestResult?.summary?.ticker || "").trim().toLowerCase() || "backtest";
 		return share().buildFilename?.("backtest", ticker) || `backtest-${ticker}.png`;
 	};
 
 	bootstrap.registerWorkspaceShareProvider?.("backtest", {
-		isReady: () => Boolean(window.ANTIGRAVITY_APP?.backtestResult) && share().areTradeChartsReady?.(),
+		isReady: () => Boolean(window.WORTHWARD_APP?.backtestResult) && share().areTradeChartsReady?.(),
 		buildCard: () => share().buildTradeCard?.({
 			shareView: "backtest",
 			title: document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()

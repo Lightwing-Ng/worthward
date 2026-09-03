@@ -91,5 +91,5 @@
         };
     };
 
-    window.ANTIGRAVITY_RESIZER = Object.freeze({bind});
+    window.WORTHWARD_RESIZER = Object.freeze({bind});
 })();

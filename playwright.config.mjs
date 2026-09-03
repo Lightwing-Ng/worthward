@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import {defineConfig, devices} from '@playwright/test';
 
 function requireE2ELock() {
-    const lockFile = process.env.ANTIGRAVITY_E2E_LOCK_FILE;
-    const lockRoot = process.env.ANTIGRAVITY_E2E_LOCK_ROOT;
-    const lockToken = process.env.ANTIGRAVITY_E2E_LOCK_TOKEN;
+    const lockFile = process.env.WORTHWARD_E2E_LOCK_FILE;
+    const lockRoot = process.env.WORTHWARD_E2E_LOCK_ROOT;
+    const lockToken = process.env.WORTHWARD_E2E_LOCK_TOKEN;
     if (!lockFile || !lockRoot || !lockToken) {
         throw new Error(
             'Playwright must run through ./scripts/test_e2e.sh so it can own the isolated runtime.',

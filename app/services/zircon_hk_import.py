@@ -34,6 +34,10 @@ from app.services.investment_record_basics import (
     normalize_import_whitespace,
 )
 
+# Existing transaction reference IDs are persisted in the investment ledger.
+# Keep their legacy prefix stable so a rename never creates duplicate imports.
+LEGACY_TRANSACTION_REFERENCE_PREFIX = "antigravity-"
+
 
 ZIRCON_HK_IMPORTER_VERSION = "0.9.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
@@ -318,7 +322,7 @@ def _validate_xlsx_archive(xlsx_bytes: bytes) -> None:
 def _style_template_workbook(workbook: Workbook) -> None:
     workbook.properties.title = "Manual investment import"
     workbook.properties.subject = "Validated fallback broker transaction import"
-    workbook.properties.creator = "antigravity"
+    workbook.properties.creator = "Worthward"
     workbook.properties.description = (
         "Complete the Transactions sheet with real broker activity, then upload it "
         "through Trade > Investment. Date-only entries default to 23:00 Hong Kong "
@@ -409,7 +413,7 @@ def _configure_transactions_sheet(
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         comment_text = _STANDARD_HEADER_COMMENTS.get(header)
         if comment_text:
-            cell.comment = Comment(comment_text, "antigravity")
+            cell.comment = Comment(comment_text, "Worthward")
     sheet.row_dimensions[1].height = 30
 
     widths = (20, 18, 29, 26, 12, 18, 14, 14, 16, 14, 40, 22)
@@ -687,7 +691,7 @@ def _stable_standard_reference_id(
         default=str,
     ).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()[:40]
-    return f"antigravity-{digest}"
+    return f"{LEGACY_TRANSACTION_REFERENCE_PREFIX}{digest}"
 
 
 def _standard_export_fallback(
@@ -951,7 +955,7 @@ def build_standard_investment_xlsx(
             exported_row = _standard_export_row(
                 transaction,
                 reference_id_override=(
-                    f"{exported_row[11]}::antigravity-{collision_suffix}"
+                    f"{exported_row[11]}::{LEGACY_TRANSACTION_REFERENCE_PREFIX}{collision_suffix}"
                 ),
             )
         existing_types.add(exported_row[3])

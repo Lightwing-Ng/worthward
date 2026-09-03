@@ -207,7 +207,7 @@ test('current Holdings equity uses one cash snapshot plus open market values', (
 test('current broker cash converts foreign balances and applies pending once', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             broker_summaries: {
                 hsbc: {
                     ending_cash_base_currency: '23412.54',
@@ -281,7 +281,7 @@ test('current broker cash converts foreign balances and applies pending once', (
 test('settled HSBC FX conversion does not mark current cash provisional', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             broker_summaries: {
                 hsbc: {
                     ending_cash_base_currency: '23387.94',
@@ -546,7 +546,7 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
 test('missing broker starting boundaries remain absent instead of becoming USD zero', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             broker_summaries: {
                 ibkr: {},
                 hsbc: {starting_cash: null},
@@ -566,7 +566,7 @@ test('missing broker starting boundaries remain absent instead of becoming USD z
 
 test('daily equity replay accepts a settlement boundary snapshot without adding a transaction', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '12000'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '12000'}};
     try {
         const canonicalTransactions = [{
             date: '2026-06-22',
@@ -607,7 +607,7 @@ test('daily equity replay accepts a settlement boundary snapshot without adding 
 
 test('daily equity replay sorts snapshots by ledger date before consuming the cursor', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '0'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '0'}};
     try {
         const points = buildDailyEquityChartPoints([
             {
@@ -637,7 +637,7 @@ test('daily equity replay sorts snapshots by ledger date before consuming the cu
 
 test('daily equity keeps the current account boundary on the final chart point', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '0'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '0'}};
     try {
         const points = buildDailyEquityChartPoints([
             {
@@ -694,7 +694,7 @@ test('daily price normalization rejects bad closes and deduplicates deterministi
 
 test('missing historical holdings fail closed instead of using transaction or last-known prices', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '0'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '0'}};
     try {
         const incompleteLastKnownPoint = buildDailyEquityChartPoints([
             {
@@ -729,7 +729,7 @@ test('missing historical holdings fail closed instead of using transaction or la
 
 test('historical bridge cash is cumulative and current endpoint remains unbridged', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '0'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '0'}};
     try {
         const points = buildDailyEquityChartPoints([
             {
@@ -751,7 +751,7 @@ test('historical bridge cash is cumulative and current endpoint remains unbridge
 
 test('daily curve is invariant to shuffled input when transaction identities are unchanged', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {starting_cash: '1000'}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {starting_cash: '1000'}};
     try {
         const rows = [
             {date: '2025-03-12', datetime: '2025-03-12 09:00:00', source: {row_number: 1}, aggregate_running_cash: 900, aggregate_display_cash: 900, aggregate_holdings: {DIS: 1}},
@@ -794,7 +794,7 @@ test('shared scoped-position aggregation keeps Holdings and chart semantics alig
 test('mixed-broker payloads select the authoritative broker-scoped HSBC position snapshot', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             summary: {position_snapshot_authoritative: false},
             broker_summaries: {
@@ -837,7 +837,7 @@ test('mixed-broker payloads select the authoritative broker-scoped HSBC position
 test('historical summaries reject current authoritative position snapshots', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {
@@ -964,7 +964,7 @@ test('Futu internal-transfer overlays preserve signed broker cash while neutrali
 
 test('daily equity charts omit marked Futu internal transfers from external-flow points', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {}};
     try {
         const points = buildDailyEquityChartPoints([
             {
@@ -993,7 +993,7 @@ test('daily equity charts omit marked Futu internal transfers from external-flow
 test('long-range daily equity charts fill calendar days and carry weekend cash changes', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '0.00',
             ticker_lineage: {},
             money_market_tickers: [],
@@ -1074,7 +1074,7 @@ test('long-range daily equity charts fill calendar days and carry weekend cash c
 test('Schwab authoritative snapshots retain unknown basis and reported close prices without fabricating P&L', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {
@@ -1181,7 +1181,7 @@ test('Schwab authoritative snapshots retain unknown basis and reported close pri
 test('FIFO reconstructed transfer basis restores Holdings P&L over an unknown Schwab snapshot', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {
@@ -1252,7 +1252,7 @@ test('FIFO reconstructed transfer basis restores Holdings P&L over an unknown Sc
 test('HSBC cash snapshots preserve USD, HKD, and CNH balances', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '99.00',
             starting_cash_by_currency: {USD: '10.00', HKD: '46.10', CNH: '12.00', ZERO: '0'},
             ending_cash: '2.00',
@@ -1380,7 +1380,7 @@ test('authoritative negative cash remains signed through dated replay', () => {
 test('cash and position snapshots retain independent as-of dates', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             broker_summaries: {
                 ibkr: {
                     ending_cash_base_currency_as_of: '2026-08-06',
@@ -1401,7 +1401,7 @@ test('cash and position snapshots retain independent as-of dates', () => {
 test('IBKR cash replay prefers the last transaction date over the later report date', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             broker_summaries: {
                 ibkr: {
                     ending_cash_as_of: '2026-08-11',
@@ -1489,7 +1489,7 @@ test('dated position snapshots retain IBKR grants at zero cost', () => {
 test('Holdings and the daily equity endpoint share the projected post-snapshot position', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '0',
             ticker_lineage: {},
             money_market_tickers: [],
@@ -1619,7 +1619,7 @@ test('HSBC cash boundaries clear stale unscoped replay without merging subaccoun
 test('empty multi-currency snapshots fall back to the legacy base-currency scalar', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '99.00',
             starting_cash_by_currency: {},
             ending_cash: '2.00',
@@ -1706,7 +1706,7 @@ test('module exposes a semantic cache-busting version', () => {
 
 test('transaction descriptions reserve at-sign for prices and use multiplication for quantities', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}}};
     try {
         assert.equal(
             formatTransactionDescription({
@@ -1755,7 +1755,7 @@ test('transaction descriptions reserve at-sign for prices and use multiplication
 
 test('linked distribution descriptions show the ticker while retaining broker text', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}}};
     try {
         assert.equal(
             formatTransactionDescription({
@@ -1836,7 +1836,7 @@ test('cash and FX descriptions retain source evidence without legacy-equivalent 
 
 test('transaction descriptions canonicalize clause separators without changing identifiers', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}}};
     try {
         assert.equal(
             formatTransactionDescription({
@@ -1934,7 +1934,7 @@ test('money-market transaction descriptions use canonical ISIN identities withou
     const previousWindow = globalThis.window;
     const sourceDescription = 'GaoTeng WeValue USD Money Mkt A USD Acc 489.3604 Shares';
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             money_market_tickers: [
                 '005276756',
                 'HK0000369196',
@@ -2154,7 +2154,7 @@ test('Longbridge HK cash equivalents expose cash deltas and synthetic valuation 
 
 test('Longbridge HK redeemed cash equivalents appear in Holdings realized P&L', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {
                 'LONGBRIDGE_HK_CASH_EQUIVALENT.PING_AN_MONEY_MARKET_USD.USD': ['HK0000720752'],
             },
@@ -2209,7 +2209,7 @@ test('Longbridge HK redeemed cash equivalents appear in Holdings realized P&L', 
 test('daily equity preserves Tiger Trade fund value without cached prices', () => {
     const ticker = 'HK0000369196.USD';
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '0.00',
             ticker_lineage: {},
             money_market_tickers: [ticker],
@@ -2263,7 +2263,7 @@ test('virtual balance resets zero CNY cash without creating a portfolio loss', (
     const cnyPerUsd = 7.20;
     const resetAmountUsd = resetAmount / cnyPerUsd;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             starting_cash: '0.00',
             ticker_lineage: {},
             money_market_tickers: [],
@@ -2322,7 +2322,7 @@ test('USD money-market currency overrides take precedence over a Hong Kong ticke
     const sourceTicker = 'HK0000584752.HK';
     const ticker = 'HK0000584752';
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: { [sourceTicker]: [ticker] },
             money_market_tickers: [ticker],
             money_market_quote_currencies: { [ticker]: 'USD' },
@@ -2357,7 +2357,7 @@ test('USD money-market currency overrides take precedence over a Hong Kong ticke
 test('cash-equivalent securities keep named cash-flow descriptions without becoming money-market funds', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             money_market_tickers: ['005276756'],
             cash_equivalent_tickers: ['SGOV'],
             known_ticker_company_names: {
@@ -2390,7 +2390,7 @@ test('Hong Kong money-market fund ISINs stay canonical across USD and HKD classe
     const previousWindow = globalThis.window;
     const sourceTicker = 'HK0001039582.USD';
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: { [sourceTicker]: ['HK0001039582'] },
             money_market_tickers: ['005276756', 'HK0001039582', 'HK0000478872'],
             money_market_quote_currencies: { '005276756': 'USD', HK0001039582: 'USD', HK0000478872: 'HKD' },
@@ -2418,7 +2418,7 @@ test('Hong Kong money-market fund ISINs stay canonical across USD and HKD classe
 test('Longbridge HK GaoTeng cash equivalents resolve to their ISIN share classes', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {
                 'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_USD.USD': ['HK0000584737'],
                 'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_HKD.HKD': ['HK0000478872'],
@@ -2502,7 +2502,7 @@ test('convertAmountToBaseCurrency uses Longbridge SG FX timeline rates', () => {
 test('historical FX payload converts CNY and statement rates remain authoritative', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             fx_rate_history_by_currency: {
                 CNY: {
                     dates: ['2024-01-02'],
@@ -2550,7 +2550,7 @@ function makeImportedTrade({ type, date, quantity, price }) {
 }
 
 test('KOL rewards count as realized income and legacy deposits are detected', () => {
-    globalThis.window = { ANTIGRAVITY_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [] } };
+    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [] } };
     const transactions = [
         {
             type: 'kol_reward',
@@ -2596,7 +2596,7 @@ test('KOL rewards count as realized income and legacy deposits are detected', ()
 
 test('buildTickerSummaries keeps flat SPYM when SPLG grant sees SPY proxy history only', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {
                 'SPLG.US': ['SPYM', 'SPYM.US', 'SPLG', 'SPY', 'SPY.US'],
                 SPLG: ['SPYM', 'SPYM.US', 'SPY', 'SPY.US'],
@@ -2665,7 +2665,7 @@ test('buildTickerSummaries keeps flat SPYM when SPLG grant sees SPY proxy histor
 });
 
 test('buildTickerSummaries keeps flat TQQQ when chart closes are split-adjusted', () => {
-    globalThis.window = { ANTIGRAVITY_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [] } };
+    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [] } };
     const transactions = [
         makeImportedTrade({ type: 'buy', date: '2025-04-06', quantity: 1, price: 36 }),
         makeImportedTrade({ type: 'sell', date: '2025-05-12', quantity: 1, price: 66 }),
@@ -2685,7 +2685,7 @@ test('buildTickerSummaries keeps flat TQQQ when chart closes are split-adjusted'
 
 test('split-factor consensus repairs an isolated noisy TQQQ pre-split fill', () => {
     const previousWindow = globalThis.window;
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
     try {
         const makeTrade = ({type, date, quantity, price}) => ({
             broker: 'longbridge_hk',
@@ -2737,7 +2737,7 @@ test('split-factor consensus repairs an isolated noisy TQQQ pre-split fill', () 
 test('split-adjusted TQQQ and NVDA history rescales authoritative imported quantities only when needed', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
         },
@@ -2831,7 +2831,7 @@ test('split-adjusted TQQQ and NVDA history rescales authoritative imported quant
 test('reverse-split daily history preserves the actual SQQQ market value', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
         },
@@ -2884,7 +2884,7 @@ test('reverse-split daily history preserves the actual SQQQ market value', () =>
 test('earliest reverse-split evidence rescales SQQQ trades before local close history', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
         },
@@ -2942,7 +2942,7 @@ test('earliest reverse-split evidence rescales SQQQ trades before local close hi
 });
 
 test('buildTickerSummaries attributes ledger-derived realized P&L to each transaction date', () => {
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
     const transactions = [
         makeImportedTrade({type: 'buy', date: '2026-07-28', quantity: 2, price: 100}),
         makeImportedTrade({type: 'sell', date: '2026-07-29', quantity: 1, price: 112}),
@@ -2965,7 +2965,7 @@ test('buildTickerSummaries attributes ledger-derived realized P&L to each transa
 
 test('buildTickerSummaries uses authoritative broker realized P&L for calibrated tickers', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: { performance_snapshot_authoritative: true },
@@ -2987,7 +2987,7 @@ test('buildTickerSummaries uses authoritative broker realized P&L for calibrated
 
 test('broker performance snapshots retain ledger-evidenced dividend income and withholding', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3021,7 +3021,7 @@ test('broker performance snapshots retain ledger-evidenced dividend income and w
 
 test('final broker performance calibrations do not add ticker cash adjustments twice', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3051,7 +3051,7 @@ test('final broker performance calibrations do not add ticker cash adjustments t
 });
 
 test('aggregate ticker holdings keep in-kind transfer pairs cash-neutral', () => {
-    globalThis.window = {ANTIGRAVITY_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {ticker_lineage: {}, money_market_tickers: []}};
     const qqqiBuy = makeImportedTrade({type: 'buy', date: '2026-07-01', quantity: 315, price: 56.7});
     qqqiBuy.ticker = 'QQQI';
     const transactions = [
@@ -3069,7 +3069,7 @@ test('aggregate ticker holdings keep in-kind transfer pairs cash-neutral', () =>
 
 test('buildTickerSummaries excludes correction cash from broker-reported ticker P&L', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: { performance_snapshot_authoritative: false },
@@ -3097,7 +3097,7 @@ test('buildTickerSummaries excludes correction cash from broker-reported ticker 
 
 test('buildTickerSummaries keeps broker-scoped HK calibration additive with SG activity', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: { performance_snapshot_authoritative: false },
@@ -3128,7 +3128,7 @@ test('buildTickerSummaries keeps broker-scoped HK calibration additive with SG a
 
 test('buildTickerSummaries adds independent Longbridge HK and SG broker snapshots by ticker', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3190,7 +3190,7 @@ test('preserves the complete Longbridge HK and SG USD calibration set', () => {
         }]),
     );
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {
                 'SPLG.US': ['SPYM', 'SPYM.US', 'SPLG', 'SPY', 'SPY.US'],
                 SPLG: ['SPYM', 'SPYM.US', 'SPY', 'SPY.US'],
@@ -3268,7 +3268,7 @@ test('preserves the complete Longbridge HK and SG USD calibration set', () => {
 
 test('authoritative Longbridge HK signs aggregate with independently evidenced accounts', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {
                 'SPLG.US': ['SPYM', 'SPYM.US', 'SPLG', 'SPY', 'SPY.US'],
                 SPLG: ['SPYM', 'SPYM.US', 'SPY', 'SPY.US'],
@@ -3370,7 +3370,7 @@ test('authoritative Longbridge HK signs aggregate with independently evidenced a
 
 test('tax-lot replay uses broker execution chronology instead of same-time cash ordering', () => {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3446,7 +3446,7 @@ function makeGooglTrade({broker, account, type, date, quantity, price, netAmount
 
 function setVerifiedGooglTestWindow() {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3594,7 +3594,7 @@ function makeScopedDramTrade({
 
 function setDramTestWindow() {
     globalThis.window = {
-        ANTIGRAVITY_INVESTMENT_DATA: {
+        WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -3604,7 +3604,7 @@ function setDramTestWindow() {
 }
 
 function setCostBasisMethod(method) {
-    globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method = method;
+    globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = method;
 }
 
 const ibkrDramClosedTrades = [
@@ -3616,7 +3616,7 @@ const ibkrDramClosedTrades = [
 
 test('lowest-cost lot matching is the default and keeps the remaining cost basis exact', () => {
     setDramTestWindow();
-    delete globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method;
+    delete globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method;
     assert.equal(getInvestmentCostBasisMethod(), 'lowest_cost_first');
     const transactions = [
         makeScopedDramTrade({broker: 'hsbc', account: '000-999999-999', type: 'buy', date: '2026-08-01', quantity: 5, price: 100}),
@@ -3633,11 +3633,11 @@ test('lowest-cost lot matching is the default and keeps the remaining cost basis
 
 test('an invalid refreshed payload preserves the valid server-rendered method', () => {
     setDramTestWindow();
-    globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method = 'FIFO reconstructed';
-    globalThis.window.ANTIGRAVITY_APP = {investmentCostBasisMethod: 'lifo'};
+    globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = 'FIFO reconstructed';
+    globalThis.window.WORTHWARD_APP = {investmentCostBasisMethod: 'lifo'};
     assert.equal(getInvestmentCostBasisMethod(), 'lifo');
 
-    globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.investment_cost_basis_method = 'moving_average';
+    globalThis.window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = 'moving_average';
     assert.equal(getInvestmentCostBasisMethod(), 'moving_average');
 });
 
@@ -3812,7 +3812,7 @@ test('same-ticker positions in multiple currencies do not fabricate a combined c
     assert.equal(ibkrRealized.realizedPnlLocal, 10);
     assert.equal(ibkrRealized.realizedPnl, 10);
 
-    globalThis.window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    globalThis.window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         longbridge_hk: {
             account: 'H99999999',
             performance_snapshot_authoritative: true,
@@ -3880,7 +3880,7 @@ test('IBKR DRAM closed trades sum exact broker-provided realized P&L and format 
 
 test('IBKR stale realized snapshot adds later web fills from the position boundary', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         ibkr: {
             broker: 'ibkr',
             account: 'U00000001',
@@ -3942,7 +3942,7 @@ test('IBKR stale realized snapshot adds later web fills from the position bounda
 
 test('IBKR stale realized snapshot replays fills after its own as-of date when positions are newer', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         ibkr: {
             broker: 'ibkr',
             account: 'U00000001',
@@ -3966,7 +3966,7 @@ test('IBKR stale realized snapshot replays fills after its own as-of date when p
             },
         },
     };
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_snapshots = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_snapshots = {
         'ibkr:U00000001': {
             broker: 'ibkr',
             account: 'U00000001',
@@ -4011,7 +4011,7 @@ test('IBKR stale realized snapshot replays fills after its own as-of date when p
 
 test('IBKR stale realized snapshot accepts a rounded same-day position boundary', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         ibkr: {
             broker: 'ibkr',
             account: 'U00000001',
@@ -4076,8 +4076,8 @@ test('HSBC DRAM buys never enter the IBKR realized P&L scope', () => {
 
 test('two brokers with DRAM sells calculate independently before display aggregation', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.summary.performance_snapshot_authoritative = true;
-    window.ANTIGRAVITY_INVESTMENT_DATA.performance_snapshot = {
+    window.WORTHWARD_INVESTMENT_DATA.summary.performance_snapshot_authoritative = true;
+    window.WORTHWARD_INVESTMENT_DATA.performance_snapshot = {
         DRAM: {currency: 'USD', realized_total: '999.99'},
     };
     const transactions = [
@@ -4182,7 +4182,7 @@ test('partial HSBC histories remain excluded from complete DRAM, BOXX, and EUV a
 
 test('validated HSBC position snapshots attest open same-day tax-lot replay', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         hsbc: {
             broker: 'hsbc',
             account: '000-999999-999',
@@ -4239,7 +4239,7 @@ test('validated HSBC position snapshots attest open same-day tax-lot replay', ()
 
 test('validated HSBC snapshots attest a fully covered flat ticker absent from open positions', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         hsbc: {
             broker: 'hsbc',
             account: '000-999999-999',
@@ -4293,7 +4293,7 @@ test('validated HSBC snapshots attest a fully covered flat ticker absent from op
 
 test('new HSBC position snapshots supersede stale tax-lot attestations', () => {
     setDramTestWindow();
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         hsbc: {
             broker: 'hsbc',
             account: '000-999999-999',
@@ -4373,7 +4373,7 @@ test('new HSBC position snapshots supersede stale tax-lot attestations', () => {
 test('explicit HSBC ending shares attest open EUV history and restore realized P&L', () => {
     setDramTestWindow();
     setCostBasisMethod('lowest_cost_first');
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries = {
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
         hsbc: {
             account: '000-999999-999',
             tax_lot_history_verifications: {
@@ -4424,7 +4424,7 @@ test('explicit HSBC ending shares attest open EUV history and restore realized P
     assert.ok(Math.abs(euv.realizedPnlLocal - 202.498694) < 1e-9);
     assert.equal(euv.realizedPnlStatus, 'complete');
 
-    window.ANTIGRAVITY_INVESTMENT_DATA.broker_summaries.hsbc
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries.hsbc
         .tax_lot_history_verifications.EUV.expected_shares = '79';
     const mismatched = buildTickerSummaries(transactions, {EUV: 30}, 0, {})[0];
     const mismatchedHsbc = mismatched.realizedPnlAccounts.find(

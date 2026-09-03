@@ -1,15 +1,19 @@
 /* Code version: v0.50.1 */
 (() => {
-    const state = window.ANTIGRAVITY_APP;
+    const state = window.WORTHWARD_APP;
     if (!state) return;
+    const preferenceStorage = window.WORTHWARD_STORAGE || {
+        local: window.localStorage,
+        session: window.sessionStorage,
+    };
     const normalizeComparisonMetric = (value) => (
         String(value || "").trim().toLowerCase() === "market-cap" ? "market-cap" : "price"
     );
     const isMarketCapComparison = () => (
         state.currentView === "prices" && normalizeComparisonMetric(state.comparisonMetric) === "market-cap"
     );
-    const responsive = window.ANTIGRAVITY_RESPONSIVE;
-    const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    const responsive = window.WORTHWARD_RESPONSIVE;
+    const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
     const fetchAbortDebugConfig = state.debug?.fetchAbort || null;
     const reportFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = "post-fix") => {
         // #region debug-point A:frontend-fetch-abort
@@ -31,7 +35,7 @@
     };
 
     const {defaults, labels, endpoints, constraints, theme} = state;
-    const workspaceUrlState = window.ANTIGRAVITY_WORKSPACE_URL_STATE || null;
+    const workspaceUrlState = window.WORTHWARD_WORKSPACE_URL_STATE || null;
     const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const MONTH_TOKEN_TO_INDEX = MONTH_ABBREVIATIONS.reduce((accumulator, label, index) => {
@@ -39,7 +43,7 @@
         accumulator[MONTH_LABELS[index].toLowerCase()] = index;
         return accumulator;
     }, {});
-    const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
+    const THEME_MODE_STORAGE_KEY = "worthward:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
     const isBacktestView = state.currentView === "backtest";
     const isDcaView = state.currentView === "dca";
@@ -56,7 +60,7 @@
         );
         return Number.isFinite(configured) ? Math.max(1, configured) : minimumRequiredTickers;
     };
-    const getLanguageState = () => window.ANTIGRAVITY_APP?.language || {};
+    const getLanguageState = () => window.WORTHWARD_APP?.language || {};
     const translateUi = (value) => {
         const languageState = getLanguageState();
         const languageCode = String(languageState.code || "en");
@@ -122,12 +126,12 @@
     };
     const WORKSPACE_VIEWS = new Set(["tickers", "prices", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
-    const VIEW_MEMORY_KEY = "antigravity:view-memory";
+    const VIEW_MEMORY_KEY = "worthward:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
-    const SIDEBAR_MEMORY_KEY = "antigravity:sidebar-open";
-    const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
-    const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
-    const BACKTEST_STRATEGY_PARAMS_MEMORY_KEY = "antigravity:backtest-strategy-params:v1";
+    const SIDEBAR_MEMORY_KEY = "worthward:sidebar-open";
+    const TRADE_DETAIL_MEMORY_KEY = "worthward:trade-detail-tab";
+    const STRATEGY_MEMORY_KEY = "worthward:recent-strategies";
+    const BACKTEST_STRATEGY_PARAMS_MEMORY_KEY = "worthward:backtest-strategy-params:v1";
     let hasInitialResult = isBacktestView
         ? Boolean(isDcaStrategy ? state.dcaResult : state.backtestResult)
         : isDcaView
@@ -1275,7 +1279,7 @@
             return;
         }
         const initialCapital = Number(state.backtestResult.summary?.initial_capital || 0);
-        const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+        const chartAxis = window.WORTHWARD_CHART_AXIS || {};
         const closeSeries = Array.isArray(chartState.close) ? [...chartState.close] : [];
         const openSeries = Array.isArray(chartState.open) ? [...chartState.open] : [];
         const allInSeries = Array.isArray(chartState.all_in_equity) && chartState.all_in_equity.length
@@ -1330,7 +1334,7 @@
 
     const readSidebarMemory = () => {
         try {
-            const storedValue = window.sessionStorage.getItem(SIDEBAR_MEMORY_KEY);
+            const storedValue = preferenceStorage.session.getItem(SIDEBAR_MEMORY_KEY);
             if (storedValue === "true") return true;
             if (storedValue === "false") return false;
         } catch (_error) {
@@ -1340,7 +1344,7 @@
 
     const writeSidebarMemory = (value) => {
         try {
-            window.sessionStorage.setItem(SIDEBAR_MEMORY_KEY, String(Boolean(value)));
+            preferenceStorage.session.setItem(SIDEBAR_MEMORY_KEY, String(Boolean(value)));
         } catch (_error) {
         }
     };
@@ -1366,7 +1370,7 @@
 
     const setSidebarGelMotionState = (direction, shell = appShell) => {
         clearSidebarGelMotion(shell);
-        const motion = window.AntigravityMotion;
+        const motion = window.WorthwardMotion;
         const targets = syncSidebarGelTargets(shell);
         if (
             !shell
@@ -1437,7 +1441,7 @@
         }
         const targets = $$(".workspace-summary-card .report-heading, .workspace-mode-title-card .report-heading, .settings-summary-card .report-heading")
             .filter((element) => element.getClientRects().length > 0);
-        const motion = window.AntigravityMotion;
+        const motion = window.WorthwardMotion;
         if (!motion?.flip || !targets.length) {
             commitSidebarState();
             return;
@@ -1541,7 +1545,7 @@
         const panels = $$("[data-trade-detail-panel]");
         const urlState = workspaceUrlState?.parseWorkspaceUrlState?.(window.location.href);
         try {
-            const storedValue = window.sessionStorage.getItem(TRADE_DETAIL_MEMORY_KEY);
+            const storedValue = preferenceStorage.session.getItem(TRADE_DETAIL_MEMORY_KEY);
             const requestedValue = urlState?.tab === "transactions"
                 || (urlState?.tab === "metrics" && window.location.search.includes("tab="))
                 ? urlState.tab
@@ -1554,7 +1558,7 @@
             const active = shell.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
             shell.dataset.active = active;
             try {
-                window.sessionStorage.setItem(TRADE_DETAIL_MEMORY_KEY, active);
+                preferenceStorage.session.setItem(TRADE_DETAIL_MEMORY_KEY, active);
             } catch (_error) {
             }
             panels.forEach((panel) => {
@@ -1792,8 +1796,8 @@
             activeScrollableTableHeaderCleanup();
             activeScrollableTableHeaderCleanup = null;
         }
-        if (window.ANTIGRAVITY_TABLES?.attachAll) {
-            activeScrollableTableHeaderCleanup = window.ANTIGRAVITY_TABLES.attachAll(
+        if (window.WORTHWARD_TABLES?.attachAll) {
+            activeScrollableTableHeaderCleanup = window.WORTHWARD_TABLES.attachAll(
                 document.getElementById("workspace_panel") || document,
             );
             return;
@@ -1993,7 +1997,7 @@
         });
     };
 
-    window.addEventListener("antigravity:settings-bootstrap-ready", initializeSettingsWorkspace);
+    window.addEventListener("worthward:settings-bootstrap-ready", initializeSettingsWorkspace);
 
     const initializeWorkspaceEnhancements = () => {
         initMobilePageBottomPadding();
@@ -2005,12 +2009,12 @@
         attachScrollableDataTableHeaderMeasurements();
         initializeSettingsWorkspace();
         window.requestAnimationFrame(() => {
-            window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initPriceCompareWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initDcaWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initBacktestLayout?.();
+            window.WORTHWARD_BOOTSTRAP?.initChartWorkspace?.();
+            window.WORTHWARD_BOOTSTRAP?.initPriceCompareWorkspace?.();
+            window.WORTHWARD_BOOTSTRAP?.initPortfolioWorkspace?.();
+            window.WORTHWARD_BOOTSTRAP?.initDcaWorkspace?.();
+            window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+            window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
             if (state.currentView === "portfolio") {
                 dispatchPortfolioPreviewUpdate();
             }
@@ -2488,7 +2492,7 @@
     };
 
     const parseStateFromHtmlDocument = (doc) => {
-        const stateNode = doc.getElementById("antigravity_state");
+        const stateNode = doc.getElementById("worthward_state");
         if (!stateNode?.textContent) return null;
         try {
             return JSON.parse(stateNode.textContent);
@@ -2654,7 +2658,7 @@
         delete workspacePanel.dataset.workspacePending;
         const nextState = mergeKnownTickerProfilesIntoState(parseStateFromHtmlDocument(doc));
         if (nextState) {
-            window.ANTIGRAVITY_APP = nextState;
+            window.WORTHWARD_APP = nextState;
             Object.assign(state, nextState);
             if (state.currentView === "prices") {
                 const nextMaxTickers = Number.parseInt(nextState.constraints?.maxTickers, 10);
@@ -2675,7 +2679,7 @@
 
     const readViewMemory = () => {
         try {
-            const raw = window.sessionStorage.getItem(VIEW_MEMORY_KEY);
+            const raw = preferenceStorage.session.getItem(VIEW_MEMORY_KEY);
             if (!raw) return {};
             const parsed = JSON.parse(raw);
             return parsed && typeof parsed === "object" ? parsed : {};
@@ -2686,7 +2690,7 @@
 
     const writeViewMemory = (nextMemory) => {
         try {
-            window.sessionStorage.setItem(VIEW_MEMORY_KEY, JSON.stringify(nextMemory));
+            preferenceStorage.session.setItem(VIEW_MEMORY_KEY, JSON.stringify(nextMemory));
         } catch (_error) {
         }
     };
@@ -3215,7 +3219,7 @@
             field.getAnimations?.().forEach((animation) => {
                 if (animation.id === "ticker-field-order") animation.cancel();
             });
-            const animation = window.AntigravityMotion?.animate?.(
+            const animation = window.WorthwardMotion?.animate?.(
                 field,
                 [
                     {
@@ -3229,8 +3233,8 @@
                 ],
                 {
                     id: "ticker-field-order",
-                    duration: window.AntigravityMotion?.durations?.emphasized ?? 420,
-                    easing: window.AntigravityMotion?.easingTokens?.emphasized,
+                    duration: window.WorthwardMotion?.durations?.emphasized ?? 420,
+                    easing: window.WorthwardMotion?.easingTokens?.emphasized,
                 },
             );
             if (!animation) return;
@@ -3278,7 +3282,7 @@
         const relativeUrl = `${nextUrl.pathname}?${nextUrl.searchParams.toString()}${nextUrl.hash}`;
         window.history.replaceState(window.history.state, "", relativeUrl);
         rememberCurrentViewUrl(relativeUrl);
-        window.dispatchEvent(new CustomEvent("antigravity:ticker-order-change", {
+        window.dispatchEvent(new CustomEvent("worthward:ticker-order-change", {
             detail: {tickers: orderedTickers},
         }));
         return orderedTickers;
@@ -3449,7 +3453,7 @@
 
     const dispatchPortfolioPreviewUpdate = () => {
         if (!isPortfolioView) return;
-        window.dispatchEvent(new CustomEvent("antigravity:portfolio-preview", {
+        window.dispatchEvent(new CustomEvent("worthward:portfolio-preview", {
             detail: {
                 entries: getFilledWeightEntries().map((entry) => ({
                     index: entry.index,
@@ -4162,8 +4166,8 @@
 
     const scheduleDockPosition = () => {
         dockFrame?.();
-        if (window.AntigravityMotion?.scheduler?.readWrite) {
-            dockFrame = window.AntigravityMotion.scheduler.readWrite(
+        if (window.WorthwardMotion?.scheduler?.readWrite) {
+            dockFrame = window.WorthwardMotion.scheduler.readWrite(
                 "sidebar-dock-position",
                 readSidebarDockPosition,
                 positionSidebarDock,
@@ -4307,7 +4311,7 @@
 
     const readThemeModePreference = () => {
         try {
-            const stored = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+            const stored = preferenceStorage.local.getItem(THEME_MODE_STORAGE_KEY);
             return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
         } catch (_error) {
             return "system";
@@ -4316,7 +4320,7 @@
 
     const writeThemeModePreference = (mode) => {
         try {
-            window.localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+            preferenceStorage.local.setItem(THEME_MODE_STORAGE_KEY, mode);
         } catch (_error) {
         }
     };
@@ -4336,7 +4340,7 @@
         } else {
             document.documentElement.setAttribute("data-theme-override", normalizedMode);
         }
-        window.dispatchEvent(new CustomEvent("antigravity:theme-mode-change", {
+        window.dispatchEvent(new CustomEvent("worthward:theme-mode-change", {
             detail: {mode: normalizedMode},
         }));
     };
@@ -4369,7 +4373,7 @@
 
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
         if (document.documentElement.dataset.themeMode === "system") {
-            window.dispatchEvent(new CustomEvent("antigravity:theme-mode-change", {
+            window.dispatchEvent(new CustomEvent("worthward:theme-mode-change", {
                 detail: {mode: "system"},
             }));
         }
@@ -4411,7 +4415,7 @@
             });
         }
         syncGlobalThemeToggle();
-        window.addEventListener("antigravity:theme-mode-change", () => {
+        window.addEventListener("worthward:theme-mode-change", () => {
             syncThemeModeForm(document.documentElement.dataset.themeMode);
             syncGlobalThemeToggle();
         });
@@ -4436,12 +4440,12 @@
                 });
                 const payload = await response.json().catch(() => null);
                 if (payload?.success) {
-                    if (window.ANTIGRAVITY_APP?.language) {
-                        window.ANTIGRAVITY_APP.language.code = payload.language;
-                        window.ANTIGRAVITY_APP.language.htmlLang = payload.htmlLang;
+                    if (window.WORTHWARD_APP?.language) {
+                        window.WORTHWARD_APP.language.code = payload.language;
+                        window.WORTHWARD_APP.language.htmlLang = payload.htmlLang;
                     }
-                    if (payload.dateDisplay && window.ANTIGRAVITY_APP?.dateDisplay) {
-                        window.ANTIGRAVITY_APP.dateDisplay = payload.dateDisplay;
+                    if (payload.dateDisplay && window.WORTHWARD_APP?.dateDisplay) {
+                        window.WORTHWARD_APP.dateDisplay = payload.dateDisplay;
                     }
                     window.location.reload();
                     return;
@@ -5643,7 +5647,7 @@
             syncSegmentedControlLayout(shell, {activeValue: shell.dataset.active || ""});
         });
     };
-    window.ANTIGRAVITY_SEGMENTED_CONTROLS = Object.freeze({
+    window.WORTHWARD_SEGMENTED_CONTROLS = Object.freeze({
         keepOptionVisible: keepSegmentedOptionVisible,
         sync: syncSegmentedControlLayout,
         syncOverflowState: syncSegmentedOverflowState,
@@ -5798,8 +5802,8 @@
     };
 
     const padTwo = (value) => String(value).padStart(2, "0");
-    const readFullDateFormat = () => String(window.ANTIGRAVITY_APP?.dateDisplay?.full || "d_mmm_yyyy");
-    const readShortDateFormat = () => String(window.ANTIGRAVITY_APP?.dateDisplay?.short || "yyyy_mm_dd");
+    const readFullDateFormat = () => String(window.WORTHWARD_APP?.dateDisplay?.full || "d_mmm_yyyy");
+    const readShortDateFormat = () => String(window.WORTHWARD_APP?.dateDisplay?.short || "yyyy_mm_dd");
     const buildFullDateLayout = (dateParts) => {
         if (!dateParts) return {tokens: [], wrapAfterIndex: 1};
         const year = Number(dateParts.year);
@@ -6751,7 +6755,7 @@
                     picker.validationMessage = "";
                     picker.forceDisplaySync = true;
                     syncDatePickerView(picker);
-                    picker.input.dispatchEvent(new CustomEvent("antigravity:date-picker-month-select", {
+                    picker.input.dispatchEvent(new CustomEvent("worthward:date-picker-month-select", {
                         bubbles: true,
                         detail: {value: monthValue},
                     }));
@@ -6862,7 +6866,7 @@
             if (!belongsToRoot) continue;
             picker.popover.remove();
             delete picker.wrapper.dataset.bound;
-            delete picker.wrapper._antigravityDatePicker;
+            delete picker.wrapper._worthwardDatePicker;
             datePickerState.splice(index, 1);
         }
         syncDatePickerPeerHighlight();
@@ -6916,7 +6920,7 @@
                 selectedMonthValue: "",
             };
             wrapper.dataset.bound = "1";
-            wrapper._antigravityDatePicker = picker;
+            wrapper._worthwardDatePicker = picker;
             // Ensure popover is not clipped by sidebar or parents with overflow/transform.
             // NOTE: nav buttons are inside the popover, so bind nav listeners BEFORE moving the popover.
             navButtons.forEach((button) => {
@@ -7043,7 +7047,7 @@
         syncDatePickerPeerHighlight();
     };
 
-    window.ANTIGRAVITY_DATE_PICKERS = {
+    window.WORTHWARD_DATE_PICKERS = {
         closeAll: closeAllDatePickers,
         dispose: disposeDatePickers,
         initialize: initializeDatePickers,
@@ -7819,7 +7823,7 @@
 
     const readBacktestStrategyParamMemory = () => {
         try {
-            const parsed = JSON.parse(localStorage.getItem(BACKTEST_STRATEGY_PARAMS_MEMORY_KEY) || "{}");
+            const parsed = JSON.parse(preferenceStorage.local.getItem(BACKTEST_STRATEGY_PARAMS_MEMORY_KEY) || "{}");
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
             return Object.fromEntries(
                 Object.entries(parsed).flatMap(([strategyId, values]) => {
@@ -7847,7 +7851,7 @@
 
     const writeBacktestStrategyParamMemory = (memory) => {
         try {
-            localStorage.setItem(
+            preferenceStorage.local.setItem(
                 BACKTEST_STRATEGY_PARAMS_MEMORY_KEY,
                 JSON.stringify(memory),
             );
@@ -8651,9 +8655,9 @@
             if (strategySelect) {
                 const strategyId = strategySelect.value;
                 if (strategyId && strategyId !== "buy-and-hold") {
-                    let recent = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
+                    let recent = JSON.parse(preferenceStorage.local.getItem(STRATEGY_MEMORY_KEY) || "[]");
                     recent = [strategyId, ...recent.filter((id) => id !== strategyId)].slice(0, 3);
-                    localStorage.setItem(STRATEGY_MEMORY_KEY, JSON.stringify(recent));
+                    preferenceStorage.local.setItem(STRATEGY_MEMORY_KEY, JSON.stringify(recent));
                     refreshStrategyDropdownUI();
                 }
             }
@@ -8864,7 +8868,7 @@
         if (!select) return;
         let persistedRecentIds = [];
         try {
-            persistedRecentIds = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
+            persistedRecentIds = JSON.parse(preferenceStorage.local.getItem(STRATEGY_MEMORY_KEY) || "[]");
         } catch (_e) {
             return;
         }

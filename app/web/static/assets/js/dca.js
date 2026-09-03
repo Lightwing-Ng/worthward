@@ -1,11 +1,11 @@
 /* Code version: v0.2.0 */
 (() => {
-    const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
-    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+    const chartAxis = window.WORTHWARD_CHART_AXIS || {};
     const resolveShareView = () => (
-        window.ANTIGRAVITY_APP?.currentView === "backtest"
-            && window.ANTIGRAVITY_APP?.selectedStrategyId === "dca"
+        window.WORTHWARD_APP?.currentView === "backtest"
+            && window.WORTHWARD_APP?.selectedStrategyId === "dca"
             ? "backtest"
             : "dca"
     );
@@ -20,7 +20,7 @@
                 accentPositive: "#22c55e",
             })
             : (() => {
-                const theme = window.ANTIGRAVITY_APP?.theme || {};
+                const theme = window.WORTHWARD_APP?.theme || {};
                 const computed = getComputedStyle(document.body);
                 return {
                     text: computed.getPropertyValue("--theme-text").trim() || theme.text || "#111111",
@@ -47,8 +47,8 @@
             media.addListener(handler);
             cleanups.push(() => media.removeListener(handler));
         }
-        window.addEventListener("antigravity:theme-mode-change", handler);
-        cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+        window.addEventListener("worthward:theme-mode-change", handler);
+        cleanups.push(() => window.removeEventListener("worthward:theme-mode-change", handler));
         dcaThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
         return dcaThemeState.mediaCleanup;
     };
@@ -119,7 +119,7 @@
     };
 
     const initDcaWorkspace = () => {
-        const state = window.ANTIGRAVITY_APP;
+        const state = window.WORTHWARD_APP;
         const isUnifiedBacktestDca = state?.currentView === "backtest" && state.selectedStrategyId === "dca";
         if (typeof bootstrap.dcaTradeDetailsCleanup === "function") {
             bootstrap.dcaTradeDetailsCleanup();
@@ -220,7 +220,7 @@
             .replaceAll("'", "&#39;");
         const renderNumericCell = (value, digits = 2) => {
             const formatted = formatMoney(value, digits);
-            const renderer = window.ANTIGRAVITY_NUMERIC_DISPLAY?.renderNumericDisplayContent;
+            const renderer = window.WORTHWARD_NUMERIC_DISPLAY?.renderNumericDisplayContent;
             return typeof renderer === "function" ? renderer(formatted) : escapeHtml(formatted);
         };
         const numericTradeValue = (trade, key, fallback = 0) => {
@@ -557,7 +557,7 @@
             const table = document.getElementById("tradeTransactionsTable");
             const tbody = table?.querySelector("tbody");
             const nav = document.getElementById("tradeTransactionsPagination");
-            const paginationApi = window.ANTIGRAVITY_LOCAL_STORE_PAGINATION;
+            const paginationApi = window.WORTHWARD_LOCAL_STORE_PAGINATION;
             if (!tbody || !nav) return;
             if (!paginationApi) {
                 window.requestAnimationFrame(renderContributionTable);
@@ -623,7 +623,7 @@
                 renderPage(targetPage, {animationState});
 				syncTablePageUrl(currentPage);
             });
-            const requestedPage = window.ANTIGRAVITY_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
+            const requestedPage = window.WORTHWARD_WORKSPACE_URL_STATE?.parseWorkspaceUrlState?.(window.location.href)?.page || 1;
             renderPage(requestedPage);
 			syncTablePageUrl(currentPage);
         };
@@ -662,9 +662,9 @@
                     }
                 });
             };
-            window.addEventListener("antigravity:backtest-trade-details-change", refreshTradeDetailsLayout);
+            window.addEventListener("worthward:backtest-trade-details-change", refreshTradeDetailsLayout);
             bootstrap.dcaTradeDetailsCleanup = () => {
-                window.removeEventListener("antigravity:backtest-trade-details-change", refreshTradeDetailsLayout);
+                window.removeEventListener("worthward:backtest-trade-details-change", refreshTradeDetailsLayout);
                 if (layoutFrameId !== null) window.cancelAnimationFrame(layoutFrameId);
             };
             refreshTradeDetailsLayout();
@@ -688,14 +688,14 @@
     const share = () => bootstrap.workspaceShare || {};
 
     const buildDcaShareFilename = () => {
-        const ticker = String(window.ANTIGRAVITY_APP?.dcaResult?.summary?.ticker || "").trim().toLowerCase() || "dca";
+        const ticker = String(window.WORTHWARD_APP?.dcaResult?.summary?.ticker || "").trim().toLowerCase() || "dca";
         const shareView = resolveShareView();
         return share().buildFilename?.(shareView, ticker) || `${shareView}-${ticker}.png`;
     };
 
     const shareView = resolveShareView();
     bootstrap.registerWorkspaceShareProvider?.(shareView, {
-        isReady: () => Boolean(window.ANTIGRAVITY_APP?.dcaResult) && share().areTradeChartsReady?.(),
+        isReady: () => Boolean(window.WORTHWARD_APP?.dcaResult) && share().areTradeChartsReady?.(),
         buildCard: () => share().buildTradeCard?.({
             shareView,
             title: document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()

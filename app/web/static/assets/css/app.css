@@ -1,11 +1,11 @@
-/* Code version: v0.65.15 */
+/* Code version: v0.65.16 */
 @import url("./foundation/fonts.css?v=0.3.0");
 @import url("./foundation/tokens.css?v=0.26.0");
 @import url("./layout/shell.css?v=3.30.0");
 @import url("./components/forms.css?v=3.40.6");
 @import url("./components/resizer.css?v=1.2.0");
 @import url("./components/tables.css?v=0.1.1");
-@import url("./views/workspace.css?v=1.22.0");
+@import url("./views/workspace.css?v=1.22.1");
 @import url("./views/settings.css?v=0.25.3");
 @import url("./views/trade.css?v=3.55.13");
 @import url("./views/investment.css?v=1.78.3");

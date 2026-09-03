@@ -8,8 +8,8 @@
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-    const state = window.ANTIGRAVITY_APP || {};
-    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+    const state = window.WORTHWARD_APP || {};
+    const chartAxis = window.WORTHWARD_CHART_AXIS || {};
     const endpoints = state.endpoints || {};
     const orderEndpoint = endpoints.liveTradingOrder || "/api/live-trading/orders";
     const positionsEndpoint = endpoints.liveTradingPositions || "/api/live-trading/positions";
@@ -680,7 +680,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(control instanceof HTMLElement)) {
             return;
         }
-        const sharedSync = window.ANTIGRAVITY_BOOTSTRAP?.syncSegmentedControlSelection;
+        const sharedSync = window.WORTHWARD_BOOTSTRAP?.syncSegmentedControlSelection;
         if (typeof sharedSync === "function") {
             sharedSync(control);
             return;
@@ -834,7 +834,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(liveTradingLayoutRow instanceof HTMLElement && tradingGrid instanceof HTMLElement) || topRowSurfaces.length < 2) {
             return;
         }
-        if (!(sidebar instanceof HTMLElement) || window.ANTIGRAVITY_RESPONSIVE.media("contentStackMax").matches) {
+        if (!(sidebar instanceof HTMLElement) || window.WORTHWARD_RESPONSIVE.media("contentStackMax").matches) {
             resetTopRowAlignedHeight();
             scheduleBarsChartResize({ settleDelay: 80 });
             return;
@@ -1601,7 +1601,7 @@ document.addEventListener("DOMContentLoaded", () => {
             `${ticker} · ${formatRangeLabel(payload?.range || getSelectedRange())}${sessionSuffix} · ${rows.length} bars · ${payload?.interval || "1m"} · ${barsTimeZone} · ${sourceLabel}`,
         );
 
-        const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+        const chartAxis = window.WORTHWARD_CHART_AXIS || {};
         const buildTickIndexSet = (count, plotWidth) => (
             typeof chartAxis.buildTickIndexSet === "function"
                 ? chartAxis.buildTickIndexSet(count, plotWidth)
@@ -2055,7 +2055,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    window.addEventListener("antigravity:theme-mode-change", () => {
+    window.addEventListener("worthward:theme-mode-change", () => {
         if (activeChartSignature && intradayCache.has(activeChartSignature)) {
             const [ticker] = activeChartSignature.split("::");
             renderIntradayChart(ticker, intradayCache.get(activeChartSignature));

@@ -1,7 +1,7 @@
 /* Code version: v0.6.2 */
 (() => {
-	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
-	const appState = () => window.ANTIGRAVITY_APP || {};
+	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+	const appState = () => window.WORTHWARD_APP || {};
 	const workspaceModalOverlay = document.getElementById("workspace_modal_overlay");
 	const workspaceModalOverlayTitle = workspaceModalOverlay?.querySelector(".workspace-modal-title");
 	const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector(".workspace-modal-copy");
@@ -142,7 +142,7 @@
 		body.className = "investment-community-share-body";
 		card.appendChild(header);
 		card.appendChild(body);
-		const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+		const exportImageConfig = window.WORTHWARD_EXPORT_IMAGE;
 		const profileId = exportImageConfig?.defaultProfileId || "investment-community-share";
 		if (typeof exportImageConfig?.applyConfigToTargets === "function") {
 			exportImageConfig.applyConfigToTargets([host, card], profileId);
@@ -609,7 +609,7 @@
 			shareListenersBound = true;
 			window.addEventListener("resize", scheduleWorkspaceShareDrawerPosition);
 			window.addEventListener("scroll", scheduleWorkspaceShareDrawerPosition, true);
-			window.addEventListener("antigravity:workspace-share-ready", syncWorkspaceShareDrawerVisibility);
+			window.addEventListener("worthward:workspace-share-ready", syncWorkspaceShareDrawerVisibility);
 		}
 
 		ensureWorkspaceScreenshotLibrary().catch(() => {});
@@ -663,7 +663,7 @@
 	const dispatchWorkspaceShareReady = (viewId = getActiveViewId()) => {
 		const normalizedViewId = String(viewId || "").trim();
 		if (!normalizedViewId) return;
-		window.dispatchEvent(new CustomEvent("antigravity:workspace-share-ready", {
+		window.dispatchEvent(new CustomEvent("worthward:workspace-share-ready", {
 			detail: { view: normalizedViewId },
 		}));
 	};

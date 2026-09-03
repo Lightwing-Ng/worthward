@@ -5,8 +5,8 @@ import test from "node:test";
 
 await import("../app/web/static/assets/js/table-controller.js");
 await import("../app/web/static/assets/js/investment-filter-utils.js");
-const tableController = globalThis.ANTIGRAVITY_TABLES;
-const investmentFilters = globalThis.ANTIGRAVITY_INVESTMENT_FILTERS;
+const tableController = globalThis.WORTHWARD_TABLES;
+const investmentFilters = globalThis.WORTHWARD_INVESTMENT_FILTERS;
 
 const transactions = [
     { id: 1, type: "buy" },

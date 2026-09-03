@@ -1,7 +1,7 @@
 /* Code version: v0.1.0 */
 import {expect, test} from '@playwright/test';
 
-const MEMORY_KEY = 'antigravity:backtest-strategy-params:v1';
+const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
 
 const readRememberedValue = async (page, strategyId, key) => page.evaluate(
     ({key: storageKey, strategyId: storedStrategyId, paramKey}) => {

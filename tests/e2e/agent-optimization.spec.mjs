@@ -41,7 +41,7 @@ test('registers bounded Site tools and performs allowlisted navigation', async (
         tool: 'get_page_context',
         contractVersion: '1.1.0',
         data: {
-            siteId: 'antigravity',
+            siteId: 'worthward',
             route: '/settings/about',
             matchingTarget: {id: 'settings'},
         },

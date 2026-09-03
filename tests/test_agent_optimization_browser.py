@@ -96,7 +96,7 @@ def test_site_tools_register_execute_and_navigate_in_a_disposable_browser(
             }"""
         )
         assert page_context["ok"] is True
-        assert page_context["data"]["siteId"] == "antigravity"
+        assert page_context["data"]["siteId"] == "worthward"
         assert page_context["data"]["route"] == "/settings/about"
         assert page_context["data"]["matchingTarget"]["id"] == "settings"
         assert page_context["verification"]["contentFieldsRead"] == 0

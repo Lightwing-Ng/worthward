@@ -10,13 +10,13 @@ const cacheRuntimePath = path.join(
     projectRoot,
     'app/web/static/agent-optimization.js',
 );
-const antigravityRuntimePath = path.join(
+const worthwardRuntimePath = path.join(
     projectRoot,
     'app/web/static/assets/js/agent-optimization.js',
 );
 const runtimePath = existsSync(cacheRuntimePath)
     ? cacheRuntimePath
-    : antigravityRuntimePath;
+    : worthwardRuntimePath;
 
 await import(pathToFileURL(runtimePath).href);
 

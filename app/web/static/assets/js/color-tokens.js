@@ -1,7 +1,8 @@
 /* Code version: v0.1.0 */
 
 (() => {
-    const storageKey = "antigravity:color-token-overrides";
+    const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
+    const storageKey = "worthward:color-token-overrides";
     const validModes = new Set(["light", "dark"]);
     const appliedTokenNames = new Set();
     let memoryOverrides = {light: {}, dark: {}};
@@ -21,8 +22,8 @@
 
     const readOverrides = () => {
         try {
-            if (!window.localStorage) return memoryOverrides;
-            const parsed = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+            if (!preferenceStorage.local) return memoryOverrides;
+            const parsed = JSON.parse(preferenceStorage.local.getItem(storageKey) || "{}");
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {light: {}, dark: {}};
             return {
                 light: parsed.light && typeof parsed.light === "object" ? parsed.light : {},
@@ -36,8 +37,8 @@
     const writeOverrides = (overrides) => {
         memoryOverrides = overrides;
         try {
-            if (!window.localStorage) return;
-            window.localStorage.setItem(storageKey, JSON.stringify(overrides));
+            if (!preferenceStorage.local) return;
+            preferenceStorage.local.setItem(storageKey, JSON.stringify(overrides));
         } catch (_error) {
         }
     };
@@ -54,7 +55,7 @@
             document.documentElement.style.setProperty(tokenName, String(value).trim());
             appliedTokenNames.add(tokenName);
         });
-        window.dispatchEvent(new CustomEvent("antigravity:color-token-change", {
+        window.dispatchEvent(new CustomEvent("worthward:color-token-change", {
             detail: {mode: selectedMode, overrides: overrides[selectedMode]},
         }));
     };
@@ -86,13 +87,13 @@
     const resetAll = () => {
         memoryOverrides = {light: {}, dark: {}};
         try {
-            window.localStorage.removeItem(storageKey);
+            preferenceStorage.local.removeItem(storageKey);
         } catch (_error) {
         }
         apply();
     };
 
-    window.ANTIGRAVITY_COLOR_TOKENS = {
+    window.WORTHWARD_COLOR_TOKENS = {
         apply,
         getEffectiveMode,
         getOverride,
@@ -102,7 +103,7 @@
         setOverride,
     };
 
-    window.addEventListener("antigravity:theme-mode-change", () => apply());
+    window.addEventListener("worthward:theme-mode-change", () => apply());
     window.addEventListener("storage", (event) => {
         if (event.key === storageKey) apply();
     });

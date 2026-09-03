@@ -172,7 +172,7 @@ def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, 
         try:
             cli_path = resolve_longbridge_cli_path(settings)
             _BROWSER_OAUTH_PROCESS = subprocess.Popen(
-                [cli_path, "auth", "login", "--auth-code", "--client-name", "antigravity"],
+                [cli_path, "auth", "login", "--auth-code", "--client-name", "worthward"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

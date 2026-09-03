@@ -366,5 +366,5 @@
         buildWorkspaceUrl,
         getParameterNames: () => [...CANONICAL_PARAMETER_NAMES],
     });
-    window.ANTIGRAVITY_WORKSPACE_URL_STATE = api;
+    window.WORTHWARD_WORKSPACE_URL_STATE = api;
 })();

@@ -28,7 +28,7 @@
         "/api/market-store/logos/",
     ]);
     const SAFE_IMAGE_URL_PROTOCOLS = new Set(["http:", "https:"]);
-    const SAFE_IMAGE_URL_BASE = "https://antigravity.invalid";
+    const SAFE_IMAGE_URL_BASE = "https://worthward.invalid";
 
     /**
      * Choose stable x-axis tick indexes for a series of `count` points.
@@ -270,11 +270,11 @@
 
     /**
      * Read theme color tokens from the document body.
-     * Optional fallbacks cover pages that still mirror ANTIGRAVITY_APP.theme.
+     * Optional fallbacks cover pages that still mirror WORTHWARD_APP.theme.
      */
     const readThemeTokens = (fallbacks = {}) => {
         const computed = getComputedStyle(document.body);
-        const theme = globalScope.ANTIGRAVITY_APP?.theme || {};
+        const theme = globalScope.WORTHWARD_APP?.theme || {};
         return {
             text: readThemeToken(computed, "--theme-text") || fallbacks.text || theme.text || "",
             muted: readThemeToken(computed, "--theme-muted") || fallbacks.muted || theme.muted || "",
@@ -308,7 +308,7 @@
         CHART_AXIS_UTILS_VERSION: "v1.4.0",
     });
 
-    globalScope.ANTIGRAVITY_CHART_AXIS = api;
+    globalScope.WORTHWARD_CHART_AXIS = api;
     if (typeof module !== "undefined" && module.exports) {
         module.exports = api;
     }

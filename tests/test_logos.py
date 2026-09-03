@@ -106,7 +106,7 @@ class LogoServiceTests(unittest.TestCase):
 
         message = " ".join(captured.output)
         self.assertEqual(results, [])
-        self.assertIn("ANTIGRAVITY_YAHOO_CA_PEM", message)
+        self.assertIn("WORTHWARD_YAHOO_CA_PEM", message)
         self.assertIn("[network].yahoo_ca_pem", message)
         self.assertNotIn("user:password", message)
         self.assertNotIn("private", message)

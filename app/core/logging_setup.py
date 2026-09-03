@@ -12,7 +12,7 @@ from typing import Any
 
 
 _CONFIGURED = False
-_JOB_ID: ContextVar[str] = ContextVar("antigravity_job_id", default="-")
+_JOB_ID: ContextVar[str] = ContextVar("worthward_job_id", default="-")
 
 
 class ConsoleFormatter(logging.Formatter):
