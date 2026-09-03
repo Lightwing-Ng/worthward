@@ -1,4 +1,4 @@
-/* Code version: v1.203.2 */
+/* Code version: v1.203.4 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -7300,10 +7300,12 @@ test('resizes the investment overview and history responsively in portrait layou
     await expect(handle).toBeVisible();
 
     const resizerGeometry = await handle.evaluate((element) => ({
+        fontSize: getComputedStyle(element).fontSize,
         height: element.getBoundingClientRect().height,
         lineHeight: getComputedStyle(element, '::before').height,
     }));
-    expect(resizerGeometry.height).toBe(12);
+    expect(resizerGeometry.fontSize).toBe('12px');
+    expect(resizerGeometry.height).toBe(10);
     expect(resizerGeometry.lineHeight).toBe('1px');
 
     const hiddenOpacity = await handle.evaluate((element) => getComputedStyle(element, '::after').opacity);
@@ -8607,7 +8609,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.3';
+            && url.searchParams.get('v') === '1.78.4';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -18068,7 +18070,32 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         await page.mouse.move(1, 1);
         await waitForPanReset();
     };
-    const readTraversalSamples = () => page.evaluate(() => {
+    const readSelectedDateStatus = (index) => page.evaluate((expectedIndex) => {
+        const rawDates = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates || [];
+        const rawDate = rawDates[expectedIndex];
+        const match = typeof rawDate === 'string'
+            ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
+            : null;
+        const formatter = window.WORTHWARD_BOOTSTRAP?.dateDisplay?.formatFullDateParts;
+        const expectedStatus = match && typeof formatter === 'function'
+            ? `Selected date: ${formatter({
+                year: Number(match[1]),
+                monthIndex: Number(match[2]) - 1,
+                day: Number(match[3]),
+            }, {includeTime: false})}`
+            : null;
+        return {
+            activeIndex: Number(
+                document.querySelector('#backtest_probability_detail_panel')?.dataset.activeIndex,
+            ),
+            boundsIndex: window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index,
+            expectedStatus,
+            status: document.querySelector('[data-backtest-probability-detail-status]')
+                ?.textContent?.trim() || '',
+        };
+    }, index);
+    const readVisibleTraversalSamples = () => page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
         const stack = canvas?.closest('.trade-chart-stack');
         const chart = window.Chart?.getChart?.(canvas);
@@ -18080,53 +18107,45 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         if (!(canvas instanceof HTMLCanvasElement) || !(stack instanceof HTMLElement)
             || !rect || !stackRect || !chartArea
             || !(chartWidth > 0) || !(chartHeight > 0)) return [];
-        let contentLeft = 0;
-        let current = canvas;
-        while (current instanceof HTMLElement && current !== stack) {
-            contentLeft += Number(current.offsetLeft) || 0;
-            current = current.offsetParent;
-        }
-        if (current !== stack || !Number.isFinite(contentLeft)) return [];
         const scaleX = rect.width / chartWidth;
         const scaleY = rect.height / chartHeight;
         const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
-        const predictiveMean = Array.isArray(presentation?.predictive_mean)
-            ? presentation.predictive_mean
-            : [];
-        const predictiveScale = Array.isArray(presentation?.predictive_scale)
-            ? presentation.predictive_scale
-            : [];
-        const returnAutoregression = Array.isArray(presentation?.return_autoregression)
-            ? presentation.return_autoregression
-            : [];
-        const returnLongRunMean = Array.isArray(presentation?.return_long_run_mean)
-            ? presentation.return_long_run_mean
-            : [];
-        const returnInnovationScale = Array.isArray(presentation?.return_innovation_scale)
-            ? presentation.return_innovation_scale
-            : [];
+        const seriesKeys = [
+            'predictive_mean',
+            'predictive_scale',
+            'return_autoregression',
+            'return_long_run_mean',
+            'return_innovation_scale',
+        ];
         const hasFiniteModelValue = (value) => (
             value !== null && value !== undefined && Number.isFinite(Number(value))
         );
+        const plotLeft = rect.left + (chartArea.left * scaleX);
+        const plotRight = rect.left + (chartArea.right * scaleX);
+        const visibleLeft = Math.max(stackRect.left + 2, plotLeft + 2);
+        const visibleRight = Math.min(stackRect.right - 2, plotRight - 2);
         const finitePoints = (chart?.getDatasetMeta?.(0)?.data || [])
             .map((point, index) => ({index, point}))
-            .filter(({index, point}) => Number.isFinite(point?.x) && Number.isFinite(point?.y)
-                && hasFiniteModelValue(predictiveMean[index])
-                && hasFiniteModelValue(predictiveScale[index])
-                && hasFiniteModelValue(returnAutoregression[index])
-                && hasFiniteModelValue(returnLongRunMean[index])
-                && hasFiniteModelValue(returnInnovationScale[index]));
+            .filter(({index, point}) => (
+                Number.isFinite(point?.x)
+                && Number.isFinite(point?.y)
+                && seriesKeys.every((key) => hasFiniteModelValue(presentation?.[key]?.[index]))
+            ))
+            .filter(({point}) => {
+                const visualX = rect.left + (point.x * scaleX);
+                return visualX >= visibleLeft && visualX <= visibleRight;
+            });
         if (finitePoints.length < 2) return [];
-        const sampleIndices = Array.from({length: 11}, (_, sampleIndex) => (
-            Math.round((finitePoints.length - 1) * (sampleIndex / 10))
+        const sampleCount = Math.min(11, finitePoints.length);
+        const sampleIndices = Array.from({length: sampleCount}, (_, sampleIndex) => (
+            Math.round((finitePoints.length - 1) * (sampleIndex / Math.max(1, sampleCount - 1)))
         ));
-        const uniqueIndices = Array.from(new Set(sampleIndices));
         const sweepY = rect.top + (((chartArea.top + chartArea.bottom) / 2) * scaleY);
-        return uniqueIndices.map((finitePointIndex) => {
+        return Array.from(new Set(sampleIndices)).map((finitePointIndex) => {
             const {index, point} = finitePoints[finitePointIndex];
             return {
                 index,
-                x: stackRect.left + contentLeft + (point.x * scaleX),
+                x: rect.left + (point.x * scaleX),
                 y: sweepY,
             };
         });
@@ -18142,41 +18161,45 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     baselineGeometry = await readBaselineGeometry();
     expect(baselineGeometry).not.toBeNull();
 
-    const traversalSamples = await readTraversalSamples();
+    const traversalSamples = await readVisibleTraversalSamples();
     expect(traversalSamples.length).toBeGreaterThanOrEqual(8);
     const observedTraversalIndices = [];
     for (const sample of traversalSamples) {
-        await page.mouse.move(sample.x, sample.y);
+        const anchor = await pointAtIndex(sample.index);
+        if (!anchor) throw new Error(`Bayesian hover traversal anchor ${sample.index} is unavailable.`);
+        await page.mouse.move(anchor.x, anchor.y);
         await expect.poll(() => page.evaluate(() => (
             window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
                 ?._activeBacktestProbabilityGridBounds?.index
         )), {message: `Bayesian hover traversal must reach index ${sample.index}`})
             .toBe(sample.index);
+        const selected = await readSelectedDateStatus(sample.index);
+        expect(selected.boundsIndex).toBe(sample.index);
+        expect(selected.activeIndex).toBe(sample.index);
+        expect(selected.expectedStatus).toBeTruthy();
+        expect(selected.status).toBe(selected.expectedStatus);
         observedTraversalIndices.push(sample.index);
     }
     expect(observedTraversalIndices).toEqual(traversalSamples.map(({index}) => index));
     await movePointerOutsideProbabilitySurface();
 
-    // Seed the Price Field pan, then sweep the same immutable screen-space
-    // content coordinates. The panned canvas must not turn every middle point
-    // into the rightmost point merely because its visual rect has moved.
+    // Seed overflow pan, then hover points where they are visible. The
+    // translated canvas must still select that visible trading day rather
+    // than a lagged date from unscrolled content space.
     const pannedTraversalSeed = await pointAt(0.8);
     if (!pannedTraversalSeed) throw new Error('Bayesian panned traversal seed is unavailable.');
     await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y);
     await waitForPanTarget();
-    const pannedTraversalSamples = await readTraversalSamples();
-    expect(pannedTraversalSamples.length).toBeGreaterThanOrEqual(8);
-    const pannedTraversalIndices = [];
-    for (const sample of pannedTraversalSamples) {
-        await page.mouse.move(sample.x, sample.y);
-        await expect.poll(() => page.evaluate(() => (
-            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
-                ?._activeBacktestProbabilityGridBounds?.index
-        )), {message: `Bayesian panned hover traversal must reach index ${sample.index}`})
-            .toBe(sample.index);
-        pannedTraversalIndices.push(sample.index);
-    }
-    expect(pannedTraversalIndices).toEqual(pannedTraversalSamples.map(({index}) => index));
+    const pannedVisibleSeed = await pointAtIndex(pannedTraversalSeed.index);
+    if (!pannedVisibleSeed) throw new Error('Bayesian panned visible seed is unavailable.');
+    await page.mouse.move(pannedVisibleSeed.x, pannedVisibleSeed.y);
+    await expect.poll(async () => {
+        const selected = await readSelectedDateStatus(pannedVisibleSeed.index);
+        return selected.boundsIndex === pannedVisibleSeed.index
+            && selected.activeIndex === pannedVisibleSeed.index
+            && selected.expectedStatus
+            && selected.status === selected.expectedStatus;
+    }, {message: 'Panned hover must keep Selected date on the visible curve point'}).toBe(true);
     await movePointerOutsideProbabilitySurface();
 
     const leftAnchor = await pointAt(0.05);

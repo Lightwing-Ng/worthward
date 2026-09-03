@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.22`
+Documentation version: `v1.69.23`
 
 ## Bayesian Price Field detail view contract
 
@@ -53,9 +53,11 @@ to hover, not to the contained detail surface.
 
 The overview hover surface maps the pointer onto the visible price curve.
 The pointer's screen-space X places the vertical guide while that X lies on
-the rendered curve. The horizontal guide is the intersection of that
-vertical line with the visible polyline, including linear interpolation
-across interrupted gaps. The Price Field is drawn to the right of the
+the rendered curve, including after overflow pan. The selected Price Field
+origin and `Selected date` status are that visible curve point's trading
+day. The horizontal guide is the intersection of that vertical line with
+the visible polyline, including linear interpolation across interrupted
+gaps. The Price Field is drawn to the right of the
 vertical guide, with green/up cells above the horizontal guide and
 magenta/down cells below it. The vertical guide cannot travel past the
 last finite curve point; a pointer over the overflow field stays clamped

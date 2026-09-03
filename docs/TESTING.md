@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.20`
+Documentation version: `v1.43.21`
 
 ## Bayesian Price Field detail view coverage
 
@@ -25,14 +25,15 @@ layout change. An edge-adjacent hover regression proves that the floating field
 may be boundary-capped while the detail panel still renders the complete
 strategy-owned row lattice and contains it within the detail viewport on
 desktop and narrow layouts.
-The desktop Bayesian hover flow also sweeps the pointer from the first valid
-forecast point to the final point through fixed screen-space samples while the
-field pans, requiring every sampled middle index to arrive in order. A layout
-refresh regression also confirms that sidebar, resizer, and viewport reflows
-clear stale screen-space pointer coordinates before geometry is recalculated. It
-verifies that the translated Canvas cannot skip the middle of the curve, that
-leaving the chart stack clears both guides and the field, and that moving onto
-the native scroll rail preserves the active field.
+The desktop Bayesian hover flow also sweeps the pointer across visible forecast
+points, including after overflow pan, requiring the selected origin and
+`Selected date` status to match the visible curve point under the pointer.
+A layout refresh regression also confirms that sidebar, resizer, and viewport
+reflows clear stale screen-space pointer coordinates before geometry is
+recalculated. It verifies that hovering a translated Canvas still selects the
+visible middle of the curve rather than a lagged unscrolled date, that leaving
+the chart stack clears both guides and the field, and that moving onto the
+native scroll rail preserves the active field.
 Hovering a detail row must expose its exact price interval and the sum of all
 raw row probabilities across the complete forecast horizon through the hovered
 row's native hover label, with threshold-hidden cells included in that sum. The

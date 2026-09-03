@@ -1,4 +1,4 @@
-/* Code version: v0.37.1 */
+/* Code version: v0.37.2 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -2004,6 +2004,47 @@
 		const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
 		const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;
 
+		const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {
+			if (!priceChart?.width || !priceChart?.height) return null;
+			const pointCache = getChartHoverPointCache(priceChart);
+			const finitePoints = pointCache.finitePoints;
+			if (!finitePoints.length) return null;
+			const canvasRect = priceCanvas.getBoundingClientRect();
+			const currentStackRect = stackRect || tradeChartStack.getBoundingClientRect();
+			const scaleX = canvasRect.width / Number(priceChart.width);
+			const scaleY = canvasRect.height / Number(priceChart.height);
+			if (!(scaleX > 0) || !(scaleY > 0)) return null;
+			// Recover unscrolled content origin from the live canvas rect so the
+			// selected date matches the visible curve point, including after pan.
+			const canvasContentLeft = (canvasRect.left - currentStackRect.left)
+				+ probabilityScrollVisualPosition;
+			if (!Number.isFinite(canvasContentLeft)) return null;
+			const firstPoint = finitePoints[0];
+			const lastPoint = finitePoints[finitePoints.length - 1];
+			const firstContentX = canvasContentLeft + (firstPoint.x * scaleX);
+			const lastContentX = canvasContentLeft + (lastPoint.x * scaleX);
+			const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;
+			if (!Number.isFinite(pointerContentX)) return null;
+			const contentX = Math.min(
+				lastContentX,
+				Math.max(firstContentX, pointerContentX),
+			);
+			const clampedChartX = (contentX - canvasContentLeft) / scaleX;
+			const intersection = probabilityGridApi.intersectPolylineAtX?.(
+				finitePoints,
+				clampedChartX,
+			);
+			if (!intersection || !Number.isInteger(intersection.index)) return null;
+			return {
+				canvasRect,
+				contentX,
+				intersection,
+				lastContentX,
+				scaleX,
+				scaleY,
+			};
+		};
+
 		const resolveNearestHoverIndex = (chart, event) => {
 			const chartArea = chart?.chartArea;
 			if (!chartArea || !labels.length) return null;
@@ -2025,35 +2066,16 @@
 			if (!finitePoints.length) return null;
 			let hoverRelativeX = relativeX;
 			if (isProbabilityPriceHover) {
-				const scaleX = canvasRect.width / Number(chart.width);
-				const firstCurveX = finitePoints[0].x;
-				const lastCurveX = finitePoints[finitePoints.length - 1].x;
-				const canvasContentLeft = getPriceCanvasContentLeft();
-				if (!Number.isFinite(scaleX) || !(scaleX > 0)
-					|| !Number.isFinite(canvasContentLeft)
-					|| !Number.isFinite(firstCurveX)
-					|| !Number.isFinite(lastCurveX)) {
+				// Include the current overflow pan so the selected origin is the
+				// visible curve point under the vertical guide, not a lagged
+				// date from unscrolled content space.
+				const resolved = resolveProbabilityPointerIntersection(relativeX, interactionRect);
+				if (!resolved) {
 					resetProbabilityHoverPointer();
 					return null;
 				}
-				// Keep date selection in unscrolled content space so pan cannot
-				// skip middle trading days. Clamp to the last finite point so
-				// the vertical guide cannot walk off the right endpoint.
-				hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;
-				const clampedChartX = Math.min(
-					lastCurveX,
-					Math.max(firstCurveX, hoverRelativeX),
-				);
-				const intersection = probabilityGridApi.intersectPolylineAtX?.(
-					finitePoints,
-					clampedChartX,
-				);
-				if (!intersection || !Number.isInteger(intersection.index)) {
-					resetProbabilityHoverPointer();
-					return null;
-				}
-				probabilityHoverIntersection = intersection;
-				return intersection.index;
+				probabilityHoverIntersection = resolved.intersection;
+				return resolved.intersection.index;
 			}
 			let low = 0;
 			let high = finitePoints.length - 1;
@@ -2596,43 +2618,18 @@
 			};
 		};
 		const getProbabilityHoverGuide = (stackRect) => {
-			if (
-				!priceChart?.width
-				|| !priceChart?.height
-				|| !isProbabilityHoverPointerOverStack(stackRect)
-			) return null;
-			const pointCache = getChartHoverPointCache(priceChart);
-			const finitePoints = pointCache.finitePoints;
-			if (!finitePoints.length) return null;
-			const canvasRect = priceCanvas.getBoundingClientRect();
-			const canvasContentLeft = getPriceCanvasContentLeft();
-			const scaleX = canvasRect.width / Number(priceChart.width);
-			const scaleY = canvasRect.height / Number(priceChart.height);
-			if (!Number.isFinite(canvasContentLeft) || !(scaleX > 0) || !(scaleY > 0)) return null;
-			const firstPoint = finitePoints[0];
-			const lastPoint = finitePoints[finitePoints.length - 1];
-			const firstContentX = canvasContentLeft + (firstPoint.x * scaleX);
-			const lastContentX = canvasContentLeft + (lastPoint.x * scaleX);
-			const pointerContentX = (probabilityHoverPointerX - stackRect.left)
-				+ probabilityScrollVisualPosition;
-			if (!Number.isFinite(pointerContentX)) return null;
-			const contentX = Math.min(
-				lastContentX,
-				Math.max(firstContentX, pointerContentX),
-			);
-			const clampedChartX = (contentX - canvasContentLeft) / scaleX;
-			const intersection = probabilityGridApi.intersectPolylineAtX?.(
-				finitePoints,
-				clampedChartX,
-			) || probabilityHoverIntersection;
-			if (!intersection) return null;
-			probabilityHoverIntersection = intersection;
+			if (!isProbabilityHoverPointerOverStack(stackRect)) return null;
+			const pointerScreenX = probabilityHoverPointerX - stackRect.left;
+			const resolved = resolveProbabilityPointerIntersection(pointerScreenX, stackRect);
+			if (!resolved) return null;
+			probabilityHoverIntersection = resolved.intersection;
 			return {
-				contentX,
-				intersection,
-				lastContentX,
-				pointerScreenX: probabilityHoverPointerX - stackRect.left,
-				visualY: canvasRect.top - stackRect.top + (Number(intersection.y) * scaleY),
+				contentX: resolved.contentX,
+				intersection: resolved.intersection,
+				lastContentX: resolved.lastContentX,
+				pointerScreenX,
+				visualY: resolved.canvasRect.top - stackRect.top
+					+ (Number(resolved.intersection.y) * resolved.scaleY),
 			};
 		};
 		const getProbabilityFieldContentLeft = (stackRect, geometry) => {

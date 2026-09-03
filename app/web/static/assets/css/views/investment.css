@@ -1,4 +1,4 @@
-/* Code version: v1.78.3 */
+/* Code version: v1.78.4 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -23,7 +23,7 @@
 }
 
 .investment-workspace-header {
-    --investment-section-resizer-size: 12px;
+    --investment-section-resizer-size: 10px;
     --investment-section-min-height: 148px;
     --investment-overview-min-height: var(--investment-section-min-height);
     --investment-history-min-height: var(--investment-section-min-height);
@@ -55,6 +55,7 @@
 .investment-section-resizer {
     --surface-resizer-line-size: 1px;
     --surface-resizer-handle-short: 10px;
+    font-size: 12px;
     width: 100%;
     height: var(--investment-section-resizer-size);
     min-height: 0;

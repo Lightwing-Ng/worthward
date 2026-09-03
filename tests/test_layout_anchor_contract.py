@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.24
+Code version: v0.8.26
 """
 
 from pathlib import Path
@@ -155,8 +155,8 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./views/settings.css?v=0.25.3");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.0");' in app_css
     assert '@import url("./components/forms.css?v=3.40.6");' in app_css
-    assert '@import url("./views/investment.css?v=1.78.3");' in app_css
-    assert "v0.65.16" in app_css
+    assert '@import url("./views/investment.css?v=1.78.4");' in app_css
+    assert "v0.65.17" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -237,6 +237,17 @@ def test_backtest_section_resizer_uses_compact_handle_contract() -> None:
     assert "--investment-section-resizer-size: var(--backtest-section-resizer-size);" in trade_css
     resizer_start = trade_css.index(".backtest-section-resizer {")
     resizer_block = trade_css[resizer_start : trade_css.index("\n}", resizer_start)]
+    assert "font-size: 12px;" in resizer_block
+
+
+def test_investment_section_resizer_uses_compact_handle_contract() -> None:
+    investment_css = _read(ASSET_ROOT / "css/views/investment.css")
+
+    assert "--investment-section-resizer-size: 10px;" in investment_css
+    resizer_start = investment_css.index(".investment-section-resizer {")
+    resizer_block = investment_css[
+        resizer_start : investment_css.index("\n}", resizer_start)
+    ]
     assert "font-size: 12px;" in resizer_block
 
 
@@ -384,7 +395,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
-        "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
+        "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",
+        "const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;",
         "Math.min(pointerScreenX, lastContentX) + fieldWidth - visibleWidth",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
@@ -594,7 +606,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.50.1",
         "-backtest-probability-grid-v0.25.1",
-        "-backtest-v0.37.1",
+        "-backtest-v0.37.2",
         "-backtest-layout-v0.3.3",
     ):
         assert fragment in base_template
@@ -686,7 +698,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "Math.max(plotFrame.right, horizontalEnd)",
         "const fieldRight = fieldLeft + Number(probabilityBounds.width || 0);",
         "const snapProbabilityScrollToFit = () => {",
-        "const lastCurveX = finitePoints[finitePoints.length - 1].x;",
+        "const canvasContentLeft = (canvasRect.left - currentStackRect.left)",
         "const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;",
         "const getStaticStackContentLeft = (element) => {",
         "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
@@ -695,8 +707,9 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "resetProbabilityHoverPointer();",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
-        "hoverRelativeX = (relativeX - canvasContentLeft) / scaleX;",
-        "Math.max(firstCurveX, hoverRelativeX),",
+        "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",
+        "const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;",
+        "Math.max(firstContentX, pointerContentX),",
         'hoverSurface.addEventListener("mouseleave", (event) => {',
         "resetProbabilityHoverPointer();",
         "resetProbabilityHoverPointer();",
