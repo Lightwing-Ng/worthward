@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.3.4
+ * Code version: v1.3.5
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.4';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.5';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -53,6 +53,7 @@ export function bindInvestmentSectionResizer({
     reservePrimaryHistoryMinimum = false,
     overviewStageSelector = '.investment-equity-chart-stage',
     getOverviewStageMinimum = () => 0,
+    getAdditionalHistoryMinimumHeight = () => 0,
     overviewMinimumChangeEvent = null,
     ignoreMutationSelector = null,
     observeHistorySurfaceResize = true,
@@ -238,7 +239,17 @@ export function bindInvestmentSectionResizer({
                 : readPixelProperty(tableShell, '--scrollable-data-table-header-height', 28);
             return total + Math.max(0, headerHeight) + visibleRowsHeight + 1;
         }, 0);
-        return Math.max(baselineMinimum, chromeHeight + tableMinimumHeight);
+        const requestedAdditionalMinimum = typeof getAdditionalHistoryMinimumHeight === 'function'
+            ? Number(getAdditionalHistoryMinimumHeight())
+            : 0;
+        const additionalMinimum = Number.isFinite(requestedAdditionalMinimum)
+            ? Math.max(0, requestedAdditionalMinimum)
+            : 0;
+        return Math.max(
+            baselineMinimum,
+            chromeHeight + tableMinimumHeight,
+            additionalMinimum,
+        );
     };
     const getAvailableTrackHeight = () => {
         const styles = windowRef.getComputedStyle(workspaceHeader);

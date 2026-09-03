@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.28
+Code version: v0.8.34
 """
 
 from pathlib import Path
@@ -156,7 +156,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
     assert '@import url("./components/forms.css?v=3.40.7");' in app_css
     assert '@import url("./views/investment.css?v=1.78.5");' in app_css
-    assert "v0.65.19" in app_css
+    assert "v0.65.24" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.14");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.18");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -287,13 +287,29 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         assert fragment in trade_css
     assert (
         ".backtest-probability-detail-plot {\n"
+        "    --backtest-probability-detail-plot-inline-start: 28px;\n"
         "    display: grid;\n"
         "    flex: 1 1 auto;\n"
-        "    grid-template-columns: 52px minmax(0, 1fr);\n"
+        "    grid-template-columns: calc(\n"
+        "        var(--backtest-chart-y-axis-width)\n"
+        "        - var(--backtest-probability-detail-plot-inline-start)\n"
+        "    ) minmax(0, 1fr);\n"
         "    min-height: 0;\n"
         "    min-width: 0;\n"
         "    overflow: hidden;\n"
     ) in trade_css
+    for fragment in (
+        "--backtest-chart-y-axis-width: 72px;",
+        "--backtest-chart-axis-font-family: \"GDS Transport\", \"Helvetica Neue\", Arial, sans-serif;",
+        "--backtest-chart-axis-font-size: 12px;",
+        "--backtest-chart-axis-font-weight: 400;",
+        "--backtest-chart-axis-line-height: 10px;",
+        "font-family: var(--backtest-chart-axis-font-family);",
+        "font-size: var(--backtest-chart-axis-font-size);",
+        "font-weight: var(--backtest-chart-axis-font-weight);",
+        "line-height: var(--backtest-chart-axis-line-height);",
+    ):
+        assert fragment in trade_css
     assert (
         ".backtest-probability-detail-main {\n"
         "    display: flex;\n"
@@ -554,8 +570,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';",
         "const getProbabilityStageMinimum = () => {",
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
+        "getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.3.4",
+        "investment-layout-v1.3.5",
         "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
         "observeHistorySurfaceResize: false,",
     ):
@@ -581,11 +598,15 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     investment_layout = _read(ASSET_ROOT / "js/investment/layout.js")
     for fragment in (
         "getOverviewStageMinimum = () => 0,",
+        "getAdditionalHistoryMinimumHeight = () => 0,",
         "overviewMinimumChangeEvent = null,",
         "onChartsResized = null,",
         "const requestedDynamicStageMinimum = typeof getOverviewStageMinimum === 'function'",
         "const dynamicStageMinimum = Number.isFinite(requestedDynamicStageMinimum)",
         "dynamicStageMinimum,",
+        "const requestedAdditionalMinimum = typeof getAdditionalHistoryMinimumHeight === 'function'",
+        "const additionalMinimum = Number.isFinite(requestedAdditionalMinimum)",
+        "additionalMinimum,",
         "overviewMinimumChangeEvent",
         "onChartsResized",
         "ignoreMutationSelector",
@@ -606,8 +627,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.50.1",
         "-backtest-probability-grid-v0.25.1",
-        "-backtest-v0.37.2",
-        "-backtest-layout-v0.3.3",
+        "-backtest-v0.37.4",
+        "-backtest-layout-v0.3.4",
     ):
         assert fragment in base_template
 
@@ -662,7 +683,14 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'formatFullDateParts(dateParts, { includeTime: false })',
         "latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;",
         "const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {",
+        'const chartAxisFontFamily = chartAxisStyles.getPropertyValue(',
+        'const chartAxisFontSize = readPxToken(tradeChartStack, "--backtest-chart-axis-font-size", 12);',
+        'const chartAxisCanvasFont = `${chartAxisFontWeight} ${chartAxisFontSize}px ${chartAxisFontFamily}`;',
+        "const fixedYAxisWidth = readPxToken(tradeChartStack, \"--backtest-chart-y-axis-width\", 72);",
+        "ctx.font = chartAxisCanvasFont;",
+        "family: chartAxisFontFamily,",
         "const renderedTicks = xTickNodes.filter(Boolean);",
+        "// Date text can change even when the cell geometry does not.",
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
         "const buildProbabilityDetailModel = (index, model) => {",
@@ -735,7 +763,9 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     for fragment in (
         ".backtest-probability-detail-panel",
         ".backtest-probability-detail-status-row",
-            "flex: 0 0 clamp(320px, 52vh, 520px);",
+        "--backtest-probability-detail-min-height: 212px;",
+        "flex: 0 1 clamp(320px, 52vh, 520px);",
+        "min-height: 0;",
         "transform: translateY(-50%);",
         ".backtest-probability-detail-cell",
         ".backtest-probability-detail-cell.is-threshold-hidden",
@@ -984,6 +1014,16 @@ def test_production_templates_publish_the_shared_layout_role_registry() -> None:
     assert 'data-layout-role="content-scrollport"' in _read(TEMPLATE_ROOT / "settings.html")
 
 
+def test_backtest_page_and_performance_result_rails_are_explicitly_separate() -> None:
+    template = _read(TEMPLATE_ROOT / "backtest.html")
+    workspace = _read(ASSET_ROOT / "css/views/workspace.css")
+
+    assert '<article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">' in template
+    assert '<article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">' in template
+    assert ".workspace-mode-main.backtest-workspace-main {" in workspace
+    assert "        height: 100%;\n        transform: none;" in workspace
+
+
 def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:
     app_css = _read(ASSET_ROOT / "css/app.css")
     settings_css = _read(ASSET_ROOT / "css/views/settings.css")
@@ -1016,4 +1056,4 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
     trade_stack_start = trade_css.rindex(".trade-chart-stack {")
     trade_stack = trade_css[trade_stack_start : trade_css.index("\n}", trade_stack_start)]
     assert "overflow: hidden;" in trade_stack
-    assert '@import url("./views/workspace.css?v=1.22.2");' in app_css
+    assert '@import url("./views/workspace.css?v=1.22.3");' in app_css

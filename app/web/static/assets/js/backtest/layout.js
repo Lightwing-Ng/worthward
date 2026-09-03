@@ -1,10 +1,10 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.3.3
+ * Code version: v0.3.4
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.3.4';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.3.5';
 
 const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';
@@ -38,6 +38,47 @@ export function initBacktestLayout() {
         );
         return Number.isFinite(value) ? Math.max(0, value) : 0;
     };
+    const getProbabilityHistoryMinimumHeight = () => {
+        if (!(historySurface instanceof HTMLElement)) return 0;
+        const detailPanel = historySurface.querySelector(
+            ':scope > .investment-view-surface-body > [data-backtest-probability-detail-panel]:not([hidden])',
+        );
+        if (!(detailPanel instanceof HTMLElement) || detailPanel.getClientRects().length === 0) return 0;
+
+        const detailStyles = window.getComputedStyle(detailPanel);
+        if (detailStyles.display === 'none' || detailStyles.visibility === 'hidden') return 0;
+        const detailMinimum = Number.parseFloat(
+            detailStyles.getPropertyValue('--backtest-probability-detail-min-height'),
+        );
+        if (!(detailMinimum > 0)) return 0;
+
+        const surfaceStyles = window.getComputedStyle(historySurface);
+        const detailBody = detailPanel.parentElement;
+        const bodyStyles = detailBody instanceof HTMLElement
+            ? window.getComputedStyle(detailBody)
+            : null;
+        const segmentedFrame = historySurface.querySelector(
+            ':scope > .backtest-history-view-segmented-wrap',
+        );
+        const readBlockPadding = (styles) => styles
+            ? (Number.parseFloat(styles.paddingBlockStart) || 0)
+                + (Number.parseFloat(styles.paddingBlockEnd) || 0)
+            : 0;
+        const readBlockMargin = (styles) => styles
+            ? (Number.parseFloat(styles.marginBlockStart) || 0)
+                + (Number.parseFloat(styles.marginBlockEnd) || 0)
+            : 0;
+        const surfaceGap = Number.parseFloat(surfaceStyles.rowGap) || 0;
+        const segmentedHeight = segmentedFrame instanceof HTMLElement
+            ? segmentedFrame.getBoundingClientRect().height
+            : 0;
+        return readBlockPadding(surfaceStyles)
+            + surfaceGap
+            + segmentedHeight
+            + readBlockPadding(bodyStyles)
+            + detailMinimum
+            + readBlockMargin(detailStyles);
+    };
 
     cleanupBacktestLayout = bindInvestmentSectionResizer({
         workspaceHeader,
@@ -49,6 +90,7 @@ export function initBacktestLayout() {
         overviewStageSelector: '.trade-chart-stack',
         getChartInstances: getBacktestCharts,
         getOverviewStageMinimum: getProbabilityStageMinimum,
+        getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,
         overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,
         ignoreMutationSelector: '[data-backtest-probability-detail-panel]',
         observeHistorySurfaceResize: false,

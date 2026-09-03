@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.21`
+Documentation version: `v1.43.23`
 
 ## Bayesian Price Field detail view coverage
 
@@ -14,6 +14,13 @@ axis, accessible state, and narrow-layout geometry. The detail heading has
 no Display anchor contract line or price-probability legend.
 The detail plot, main column, grid viewport, and complete lattice also remain
 contained within their owning surfaces, including at the narrow breakpoint.
+A dedicated history-rail regression moves the shared section handle to both
+endpoints and checks the plot, square lattice, Y axis, and forecast-date ticks
+against the rendered history surface without document overflow.
+The Y-axis boundary and tick labels align with the main price Canvas plot
+boundary, while the DOM Y ticks and forecast-date ticks reuse the Canvas axis
+font contract (`GDS Transport`, 12px, regular weight, 10px line height) at the
+annotated desktop viewport and the narrow breakpoint.
 The right end of the horizontal detail guide displays separate higher-price
 and lower-price mean probability masses per forecast horizon, and the E2E
 assertion recomputes both values from every detail cell, including
@@ -305,7 +312,7 @@ Current suite inventory remeasured on 28 Aug 2026:
 - `tests/test_strategy_variants.py`: signal-result contracts for the kNN, Lorentzian, and SuperTrend variants, parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.
 - `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
 - `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-on and explicit-off algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.
-- `tests/e2e/critical-flows.spec.mjs`: the Backtest control regression uses the exact 972 by 841 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844. The shared `Show trade details` regression verifies the default-on state, real switch transitions, price-subplot expansion with a retained time axis, hidden equity comparison, disabled Transactions option, URL-only display persistence, and the same contract after entering DCA. A separate interval regression selects `1 year`, restores `1m`, proves the smart fallback to the final available Period option, and verifies that `Allow algorithmic stop-loss exits` is enabled by default. Mocked-presence regressions verify repeated ticker parameters, all-required-ticker `1m` gating, intersected Period lists, and that a delayed older response cannot override the latest ordered ticker snapshot.
+- `tests/e2e/critical-flows.spec.mjs`: the Backtest title/result-rail regression uses the annotated 974 by 1,354 desktop geometry to prove that the page-level `Backtest` title and the result-level `Performance` title occupy separate rows. The Backtest control regression uses the exact 972 by 841 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844. The shared `Show trade details` regression verifies the default-on state, real switch transitions, price-subplot expansion with a retained time axis, hidden equity comparison, disabled Transactions option, URL-only display persistence, and the same contract after entering DCA. A separate interval regression selects `1 year`, restores `1m`, proves the smart fallback to the final available Period option, and verifies that `Allow algorithmic stop-loss exits` is enabled by default. Mocked-presence regressions verify repeated ticker parameters, all-required-ticker `1m` gating, intersected Period lists, and that a delayed older response cannot override the latest ordered ticker snapshot.
 - `tests/e2e/backtest-strategy-params-memory.spec.mjs`: the Backtest strategy-parameter memory regression verifies browser-local persistence across reloads, strategy-scoped values for Grid Trading and DCA, and explicit URL parameters taking precedence without changing the remembered value.
 - `tests/test_backtest_interval_sync_contract.mjs`: deterministic browser-state helper coverage verifies complete required-ticker snapshots, ordered Period intersections, strategy-declared interval capability, and monotonic stale-response rejection before state mutation.
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.

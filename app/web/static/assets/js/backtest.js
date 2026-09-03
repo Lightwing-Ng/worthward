@@ -1,4 +1,4 @@
-/* Code version: v0.37.2 */
+/* Code version: v0.37.4 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -705,13 +705,13 @@
 			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
 			: buildAllInSeries(open, close, initialCapital);
 
-		const fixedYAxisWidth = 72;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) {
 			clearProbabilityStageMinimum();
 			hideProbabilityDetail();
 			return;
 		}
+		const fixedYAxisWidth = readPxToken(tradeChartStack, "--backtest-chart-y-axis-width", 72);
 		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
 		const probabilityScrollPort = strategyPresentation
 			? resultsStack?.querySelector("[data-backtest-probability-scrollport]")
@@ -734,6 +734,16 @@
 			probabilityScrollPort.setAttribute("aria-hidden", "true");
 		}
 		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
+		const chartAxisStyles = getComputedStyle(tradeChartStack);
+		const chartAxisFontFamily = chartAxisStyles.getPropertyValue(
+			"--backtest-chart-axis-font-family",
+		).trim() || '"GDS Transport", "Helvetica Neue", Arial, sans-serif';
+		const chartAxisFontSize = readPxToken(tradeChartStack, "--backtest-chart-axis-font-size", 12);
+		const chartAxisFontWeight = chartAxisStyles.getPropertyValue(
+			"--backtest-chart-axis-font-weight",
+		).trim() || "400";
+		const chartAxisLineHeight = readPxToken(tradeChartStack, "--backtest-chart-axis-line-height", 10);
+		const chartAxisCanvasFont = `${chartAxisFontWeight} ${chartAxisFontSize}px ${chartAxisFontFamily}`;
 		let priceChartYPadding = chartYPaddingPx;
 		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
 		if (existingHoverLine) existingHoverLine.remove();
@@ -1741,15 +1751,16 @@
 				return tick;
 			});
 			const renderedTicks = xTickNodes.filter(Boolean);
-			if (detailLayoutChanged) {
-				for (let tickIndex = 1; tickIndex < renderedTicks.length; tickIndex += 1) {
-					if (renderedTicks[tickIndex].getBoundingClientRect().left
-						< renderedTicks[tickIndex - 1].getBoundingClientRect().right - 0.5) {
-						renderedTicks[tickIndex].remove();
-						probabilityDetailXAxisTickNodes.delete(
-							Number(renderedTicks[tickIndex].dataset.column),
-						);
-					}
+			// Date text can change even when the cell geometry does not. Recheck
+			// collisions on every render so stale edge labels cannot overlap after
+			// a parent resize or a new selected date.
+			for (let tickIndex = 1; tickIndex < renderedTicks.length; tickIndex += 1) {
+				if (renderedTicks[tickIndex].getBoundingClientRect().left
+					< renderedTicks[tickIndex - 1].getBoundingClientRect().right - 0.5) {
+					renderedTicks[tickIndex].remove();
+					probabilityDetailXAxisTickNodes.delete(
+						Number(renderedTicks[tickIndex].dataset.column),
+					);
 				}
 			}
 			renderedTicks.filter((tick) => tick.parentElement === probabilityDetailXAxis).forEach((tick, tickIndex, visibleTicks) => {
@@ -1772,10 +1783,10 @@
 				const viewportWidth = tradeChartStack?.clientWidth || chart.canvas?.clientWidth || window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
 				const baselineY = chartArea.bottom;
-				const lineHeight = 10;
+				const lineHeight = chartAxisLineHeight;
 				ctx.save();
 				ctx.fillStyle = resolvedTheme.muted;
-				ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+				ctx.font = chartAxisCanvasFont;
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
 					const parsedDate = parseRawDate(rawDates[index]);
@@ -1923,8 +1934,13 @@
 		};
 
 		const buildYAxisTicks = (fractionDigits, valueFormatter = null) => ({
-			color: resolvedTheme.muted,
-			display: true,
+				color: resolvedTheme.muted,
+				font: {
+					family: chartAxisFontFamily,
+					size: chartAxisFontSize,
+					weight: chartAxisFontWeight,
+				},
+				display: true,
 			padding: 8,
 			callback(value, index, ticks) {
 				return formatBacktestYAxisTick(value, index, ticks, fractionDigits, valueFormatter);
@@ -2467,6 +2483,7 @@
 				probabilityDetailLayoutObserver?.disconnect?.();
 				probabilityDetailLayoutObserver = null;
 				refreshActiveProbabilityDetail();
+				resultsStack?.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));
 				return;
 			}
 			if (typeof ResizeObserver === "function"
@@ -2478,6 +2495,10 @@
 				probabilityDetailLayoutObserver.observe(probabilityDetailGrid.parentElement);
 			}
 			refreshActiveProbabilityDetail();
+			// The active detail view changes the history rail's minimum demand. Let
+			// the shared section resizer recalculate its range after the panel state
+			// has been committed.
+			resultsStack?.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));
 			scheduleProbabilityDetailRefresh(2);
 		};
 		window.addEventListener(

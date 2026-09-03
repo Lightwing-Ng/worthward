@@ -1,4 +1,4 @@
-/* Tests for shared workspace split-layout calculations. Code version: v1.1.4 */
+/* Tests for shared workspace split-layout calculations. Code version: v1.1.5 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

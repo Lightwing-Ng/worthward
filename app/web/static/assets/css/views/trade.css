@@ -1,4 +1,4 @@
-/* Code version: v3.55.14 */
+/* Code version: v3.55.18 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -186,6 +186,11 @@
 }
 
 .backtest-workspace-main {
+    --backtest-chart-y-axis-width: 72px;
+    --backtest-chart-axis-font-family: "GDS Transport", "Helvetica Neue", Arial, sans-serif;
+    --backtest-chart-axis-font-size: 12px;
+    --backtest-chart-axis-font-weight: 400;
+    --backtest-chart-axis-line-height: 10px;
     gap: 8px;
 }
 
@@ -258,10 +263,11 @@
 }
 
 .backtest-history-view-body > .backtest-probability-detail-panel {
-    flex: 0 0 clamp(320px, 52vh, 520px);
+    --backtest-probability-detail-min-height: 212px;
+    flex: 0 1 clamp(320px, 52vh, 520px);
     display: flex;
     flex-direction: column;
-    min-height: 320px;
+    min-height: 0;
     min-width: 0;
     margin: 0 12px 10px;
     padding: 14px 16px 10px;
@@ -308,9 +314,13 @@
 }
 
 .backtest-probability-detail-plot {
+    --backtest-probability-detail-plot-inline-start: 28px;
     display: grid;
     flex: 1 1 auto;
-    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-columns: calc(
+        var(--backtest-chart-y-axis-width)
+        - var(--backtest-probability-detail-plot-inline-start)
+    ) minmax(0, 1fr);
     min-height: 0;
     min-width: 0;
     overflow: hidden;
@@ -342,8 +352,10 @@
     position: absolute;
     right: 8px;
     color: var(--muted);
-    font-size: 11px;
-    line-height: 1;
+    font-family: var(--backtest-chart-axis-font-family);
+    font-size: var(--backtest-chart-axis-font-size);
+    font-weight: var(--backtest-chart-axis-font-weight);
+    line-height: var(--backtest-chart-axis-line-height);
     white-space: nowrap;
     transform: translateY(-50%);
 }
@@ -446,8 +458,10 @@
     position: absolute;
     top: 2px;
     color: var(--muted);
-    font-size: 11px;
-    line-height: 1.05;
+    font-family: var(--backtest-chart-axis-font-family);
+    font-size: var(--backtest-chart-axis-font-size);
+    font-weight: var(--backtest-chart-axis-font-weight);
+    line-height: var(--backtest-chart-axis-line-height);
     text-align: center;
     white-space: nowrap;
     transform: translateX(-50%);
@@ -468,9 +482,13 @@
 }
 
 @media (max-width: 767px) {
+    .backtest-probability-detail-plot {
+        --backtest-probability-detail-plot-inline-start: 22px;
+    }
+
     .backtest-history-view-body > .backtest-probability-detail-panel {
         flex-basis: 380px;
-        min-height: 380px;
+        min-height: 0;
         margin-inline: 10px;
         padding-inline: 12px;
     }

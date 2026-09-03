@@ -1,4 +1,4 @@
-/* Code version: v1.203.8 */
+/* Code version: v1.203.11 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8227,7 +8227,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
         importFeedback: 'v1.9.0',
-        layout: 'v1.3.4',
+        layout: 'v1.3.5',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
@@ -15863,6 +15863,233 @@ test('keeps the backtest sidebar toggle touch-safe on a larger iPad viewport', a
     } finally {
         await context.close();
     }
+});
+
+test('keeps the Backtest page title and Performance result title on separate rows', async ({page}) => {
+    await page.setViewportSize({width: 974, height: 1_354});
+    await page.goto('/workspaces/backtest?stop_loss=0');
+
+    const titleHeading = page.locator(
+        'section#workspace_panel > section.workspace-mode-shell > article.report-card.workspace-article-card > div.report-heading-row',
+    );
+    const resultHeading = page.locator(
+        '.backtest-workspace-main > .backtest-results-stack > .workspace-summary-card > .report-heading-row',
+    );
+    await expect(titleHeading).toHaveText('Backtest');
+    await expect(resultHeading).toHaveText('Performance');
+
+    const geometry = await page.evaluate(() => {
+        const titleRail = document.querySelector('.workspace-mode-title-card')?.getBoundingClientRect();
+        const title = document.querySelector('.workspace-mode-title-card > .report-heading-row')?.getBoundingClientRect();
+        const resultRail = document.querySelector('.backtest-results-stack > .workspace-summary-card')?.getBoundingClientRect();
+        const result = document.querySelector('.backtest-results-stack > .workspace-summary-card > .report-heading-row')?.getBoundingClientRect();
+        const main = document.querySelector('.backtest-workspace-main')?.getBoundingClientRect();
+        if (!titleRail || !title || !resultRail || !result || !main) return null;
+        return {
+            titleRailBottom: titleRail.bottom,
+            titleBottom: title.bottom,
+            resultRailTop: resultRail.top,
+            resultTop: result.top,
+            mainTop: main.top,
+            headingRowGap: result.top - title.bottom,
+        };
+    });
+
+    expect(geometry).not.toBeNull();
+    expect(geometry.resultRailTop).toBeGreaterThanOrEqual(geometry.titleRailBottom + 8);
+    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.titleBottom + 8);
+    expect(geometry.mainTop).toBeGreaterThanOrEqual(geometry.titleRailBottom + 8);
+    expect(geometry.headingRowGap).toBeGreaterThanOrEqual(8);
+});
+
+test('aligns the Bayesian Price Field axes and date typography with the price chart', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 974, height: 1_354});
+    await page.goto(
+        '/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+        + '&stop_loss=0&show_trade_details=0',
+    );
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(detailPanel).toBeVisible();
+    await expect.poll(() => detailPanel.locator('.backtest-probability-detail-cell').count())
+        .toBeGreaterThan(0);
+
+    const geometry = await page.evaluate(() => {
+        const rectFor = (element) => {
+            if (!(element instanceof Element)) return null;
+            const rect = element.getBoundingClientRect();
+            return {
+                left: rect.left,
+                right: rect.right,
+                top: rect.top,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            };
+        };
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const yScale = chart?.scales?.y;
+        const plot = document.querySelector('[data-backtest-probability-detail-plot]');
+        const yAxis = document.querySelector('[data-backtest-probability-detail-y-axis]');
+        const gridViewport = document.querySelector('[data-backtest-probability-detail-grid-viewport]');
+        const xAxis = document.querySelector('[data-backtest-probability-detail-x-axis]');
+        const yTick = document.querySelector('[data-backtest-probability-detail-y-tick]');
+        const xTick = document.querySelector('[data-backtest-probability-detail-x-tick]');
+        if (!canvas || !chart || !chart.chartArea || !yScale || !plot || !yAxis || !gridViewport || !xAxis || !yTick || !xTick) {
+            return null;
+        }
+        const canvasRect = rectFor(canvas);
+        const chartPlotLeft = canvasRect.left + chart.chartArea.left;
+        const yTickStyle = getComputedStyle(yTick);
+        const xTickStyle = getComputedStyle(xTick);
+        return {
+            chartPlotLeft,
+            plot: rectFor(plot),
+            yAxis: rectFor(yAxis),
+            gridViewport: rectFor(gridViewport),
+            xAxis: rectFor(xAxis),
+            yTick: {
+                rect: rectFor(yTick),
+                fontFamily: yTickStyle.fontFamily,
+                fontSize: yTickStyle.fontSize,
+                fontWeight: yTickStyle.fontWeight,
+                lineHeight: yTickStyle.lineHeight,
+            },
+            xTick: {
+                rect: rectFor(xTick),
+                fontFamily: xTickStyle.fontFamily,
+                fontSize: xTickStyle.fontSize,
+                fontWeight: xTickStyle.fontWeight,
+                lineHeight: xTickStyle.lineHeight,
+            },
+            chartYAxisFont: yScale.options?.ticks?.font || null,
+            chartYAxisPadding: Number(yScale.options?.ticks?.padding),
+            chartYAxisRight: canvasRect.left + yScale.right,
+        };
+    });
+
+    expect(geometry).not.toBeNull();
+    expect(geometry.yAxis.right).toBeCloseTo(geometry.chartPlotLeft, 0);
+    expect(geometry.gridViewport.left).toBeCloseTo(geometry.chartPlotLeft, 0);
+    expect(geometry.xAxis.left).toBeCloseTo(geometry.chartPlotLeft, 0);
+    expect(geometry.yTick.rect.right).toBeCloseTo(
+        geometry.chartYAxisRight - geometry.chartYAxisPadding,
+        0,
+    );
+    for (const font of [geometry.yTick, geometry.xTick]) {
+        expect(font.fontFamily).toContain('GDS Transport');
+        expect(font.fontSize).toBe('12px');
+        expect(font.fontWeight).toBe('400');
+        expect(font.lineHeight).toBe('10px');
+    }
+    expect(geometry.chartYAxisFont.family).toContain('GDS Transport');
+    expect(geometry.chartYAxisFont.size).toBe(12);
+    expect(String(geometry.chartYAxisFont.weight)).toBe('400');
+});
+
+test('keeps the Bayesian Price Field detail plot and date labels inside the history rail', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 1021, height: 841});
+    await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=bayesian-price-field');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+
+    const historySurface = page.locator('#backtest_history_surface');
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(historySurface).toHaveAttribute('data-active-view', 'probability');
+    await expect(detailPanel).toBeVisible();
+
+    const readGeometry = () => page.evaluate(() => {
+        const rectFor = (element) => {
+            if (!(element instanceof Element)) return null;
+            const rect = element.getBoundingClientRect();
+            return {
+                bottom: rect.bottom,
+                height: rect.height,
+                left: rect.left,
+                right: rect.right,
+                top: rect.top,
+                width: rect.width,
+            };
+        };
+        const history = document.querySelector('#backtest_history_surface');
+        const body = document.querySelector('#backtest_history_view_body');
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        const plot = document.querySelector('[data-backtest-probability-detail-plot]');
+        const gridViewport = document.querySelector('[data-backtest-probability-detail-grid-viewport]');
+        const grid = document.querySelector('[data-backtest-probability-detail-grid]');
+        const xAxis = document.querySelector('[data-backtest-probability-detail-x-axis]');
+        const xTicks = Array.from(document.querySelectorAll('[data-backtest-probability-detail-x-tick]'));
+        return {
+            body: rectFor(body),
+            grid: rectFor(grid),
+            gridViewport: rectFor(gridViewport),
+            history: rectFor(history),
+            panel: rectFor(panel),
+            pageBlockOverflow: document.documentElement.scrollHeight
+                - document.documentElement.clientHeight,
+            plot: rectFor(plot),
+            xAxis: rectFor(xAxis),
+            xTicks: xTicks.map(rectFor),
+        };
+    });
+    const assertContained = (geometry) => {
+        expect(geometry).not.toBeNull();
+        expect(geometry.panel).not.toBeNull();
+        expect(geometry.plot).not.toBeNull();
+        expect(geometry.xAxis).not.toBeNull();
+        expect(geometry.xTicks.length).toBeGreaterThan(0);
+        expect(geometry.panel.left).toBeGreaterThanOrEqual(geometry.history.left - 1);
+        expect(geometry.panel.right).toBeLessThanOrEqual(geometry.history.right + 1);
+        expect(geometry.panel.top).toBeGreaterThanOrEqual(geometry.body.top - 1);
+        expect(geometry.panel.bottom).toBeLessThanOrEqual(geometry.body.bottom + 1);
+        expect(geometry.plot.left).toBeGreaterThanOrEqual(geometry.panel.left - 1);
+        expect(geometry.plot.right).toBeLessThanOrEqual(geometry.panel.right + 1);
+        expect(geometry.plot.top).toBeGreaterThanOrEqual(geometry.panel.top - 1);
+        expect(geometry.plot.bottom).toBeLessThanOrEqual(geometry.panel.bottom + 1);
+        expect(geometry.grid.top).toBeGreaterThanOrEqual(geometry.gridViewport.top - 1);
+        expect(geometry.grid.bottom).toBeLessThanOrEqual(geometry.gridViewport.bottom + 1);
+        expect(geometry.xAxis.bottom).toBeLessThanOrEqual(geometry.panel.bottom + 1);
+        expect(geometry.xAxis.bottom).toBeLessThanOrEqual(geometry.body.bottom + 1);
+        for (const tick of geometry.xTicks) {
+            expect(tick.left).toBeGreaterThanOrEqual(geometry.panel.left - 1);
+            expect(tick.right).toBeLessThanOrEqual(geometry.panel.right + 1);
+            expect(tick.left).toBeGreaterThanOrEqual(geometry.history.left - 1);
+            expect(tick.right).toBeLessThanOrEqual(geometry.history.right + 1);
+            expect(tick.bottom).toBeLessThanOrEqual(geometry.xAxis.bottom + 1);
+            expect(tick.bottom).toBeLessThanOrEqual(geometry.panel.bottom + 1);
+        }
+        expect(geometry.pageBlockOverflow).toBeLessThanOrEqual(0);
+    };
+    const expectContained = async () => {
+        await expect.poll(async () => {
+            const geometry = await readGeometry();
+            return Boolean(
+                geometry?.panel
+                && geometry?.plot
+                && geometry?.xAxis
+                && geometry.panel.bottom <= geometry.body.bottom + 1
+                && geometry.xAxis.bottom <= geometry.panel.bottom + 1,
+            );
+        }).toBe(true);
+        assertContained(await readGeometry());
+    };
+
+    await expectContained();
+    const sectionResizer = page.locator('#backtest_section_resizer');
+    await sectionResizer.focus();
+    await sectionResizer.press('End');
+    await expectContained();
+    await sectionResizer.press('Home');
+    await expectContained();
 });
 
 test('resizes the backtest overview and transaction history with the shared section handle', async ({page}) => {
