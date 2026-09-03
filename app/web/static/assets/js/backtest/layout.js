@@ -1,10 +1,10 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.3.4
+ * Code version: v0.4.0
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.3.5';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.4.0';
 
 const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';
@@ -91,6 +91,7 @@ export function initBacktestLayout() {
         getChartInstances: getBacktestCharts,
         getOverviewStageMinimum: getProbabilityStageMinimum,
         getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,
+        preferOverviewMinimum: true,
         overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,
         ignoreMutationSelector: '[data-backtest-probability-detail-panel]',
         observeHistorySurfaceResize: false,

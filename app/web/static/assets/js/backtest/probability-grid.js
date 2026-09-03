@@ -337,7 +337,9 @@
         const gap = requestedGap;
         const cellSize = slotWidth - gap;
         // Count only complete cell slots after reserving the field's vertical
-        // edge padding and its half-gap around the horizontal guide.
+        // edge padding and its half-gap around the horizontal guide. Ten rows
+        // per side therefore require the published plot minimum; shrinking that
+        // minimum in the shared splitter is what drops a 10-row field to 8.
         const rowsThatFit = (distance) => {
             const numerator = Number(distance) - padding + (gap / 2);
             if (!(numerator > 0) || !(cellSize + gap > 0)) return 0;

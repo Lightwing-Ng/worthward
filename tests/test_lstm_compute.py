@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.0.0."""
+"""LSTM compute backend and causality tests. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 
 from strategies.lstm_compute import (
     LstmBackend,
+    _NumpyLSTM,
     detect_lstm_capabilities,
     lagged_close_return,
     probe_neural_engine,
@@ -37,6 +38,19 @@ class LstmComputeTests(unittest.TestCase):
         self.assertEqual(backend.resolved, "cpu")
         self.assertEqual(backend.engine, "numpy")
         probe.assert_not_called()
+
+    def test_numpy_lstm_applies_positive_bias_to_forget_gate(self) -> None:
+        hidden_size = 4
+        model = _NumpyLSTM(
+            input_size=2,
+            hidden_size=hidden_size,
+            rng=np.random.default_rng(1),
+        )
+        np.testing.assert_array_equal(model.b[:hidden_size], np.zeros(hidden_size))
+        np.testing.assert_array_equal(
+            model.b[hidden_size:2 * hidden_size],
+            np.ones(hidden_size),
+        )
 
     def test_gpu_backend_falls_back_when_torch_is_missing(self) -> None:
         with patch("strategies.lstm_compute._load_optional_module", return_value=None):
@@ -170,6 +184,35 @@ class LstmComputeTests(unittest.TestCase):
         self.assertGreater(backend.origins_trained, 0)
         self.assertGreater(int(np.isfinite(means).sum()), 0)
         self.assertTrue(np.all(scales[np.isfinite(scales)] > 0.0))
+
+    def test_unavailable_factor_columns_do_not_zero_the_lag_return_lstm(self) -> None:
+        generator = np.random.default_rng(11)
+        lag_return = generator.normal(0.0, 0.01, size=48)
+        lag_return[0] = np.nan
+        features = np.column_stack(
+            (
+                lag_return,
+                np.full(48, np.nan, dtype=np.float64),
+            )
+        )
+        targets = generator.normal(0.0, 0.01, size=48)
+        targets[-2:] = np.nan
+        backend = LstmBackend(requested="CPU")
+        means, scales = walk_forward_lstm_predictions(
+            features,
+            targets,
+            training_window=24,
+            lookback=4,
+            hidden_size=4,
+            epochs=1,
+            learning_rate=0.05,
+            seed=11,
+            backend=backend,
+        )
+        self.assertGreater(int(np.isfinite(means).sum()), 0)
+        self.assertTrue(np.all(scales[np.isfinite(scales)] > 0.0))
+        self.assertGreater(backend.origins_trained, 0)
+        self.assertGreater(backend.train_ms or 0.0, 0.0)
 
     def test_lagged_close_return_is_causal(self) -> None:
         close = np.asarray([100.0, 110.0, 99.0], dtype=np.float64)

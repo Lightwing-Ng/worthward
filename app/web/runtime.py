@@ -1,7 +1,13 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.92.0
+Code version: v0.92.1
+- Fixed: Investment daily price loading now requests a full historical
+  coverage repair when an existing cache starts after the ledger's earliest
+  valuation date, while preserving fail-closed gaps when no earlier evidence
+  can be obtained.
+- Changed: Investment transaction cache schema v15 invalidates payloads built
+  before the historical coverage repair path was available.
 - Added: LSTM Price Field shares the Bayesian probability-grid UI through the
   shared Price Field contract and strategy-id allowlist.
 - Changed: Bayesian Markdown exports now report the executable-direction hit
@@ -448,7 +454,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v14"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v15"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
@@ -1596,6 +1602,25 @@ def build_web_runtime() -> WebRuntime:
             for date_str in sorted(prices_by_date)
         ]
 
+    def get_investment_earliest_ticker_dates(
+            transactions: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        earliest_dates: dict[str, str] = {}
+        for transaction in transactions:
+            ticker = str(transaction.get("ticker") or "").strip().upper()
+            if not ticker:
+                continue
+            normalized_type = str(transaction.get("type") or "").replace(" ", "_").lower()
+            if normalized_type in {"forex_trade", "forex_trade_component", "fx_translation_pnl"}:
+                continue
+            parsed_date = pd.to_datetime(transaction.get("date"), errors="coerce")
+            if pd.isna(parsed_date):
+                continue
+            ledger_date = parsed_date.date().isoformat()
+            if ticker not in earliest_dates or ledger_date < earliest_dates[ticker]:
+                earliest_dates[ticker] = ledger_date
+        return earliest_dates
+
     def load_investment_price_histories(
             transactions: list[dict[str, Any]],
             *,
@@ -1603,6 +1628,7 @@ def build_web_runtime() -> WebRuntime:
     ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]:
         price_history_by_ticker: dict[str, list[dict[str, Any]]] = {}
         failures: list[dict[str, str]] = []
+        earliest_ticker_dates = get_investment_earliest_ticker_dates(transactions)
         open_ticker_set = {
             normalize_ticker_input(str(ticker))
             for ticker in (open_tickers or [])
@@ -1633,6 +1659,36 @@ def build_web_runtime() -> WebRuntime:
                         "message": f"No closing-price rows are available for {ticker}.",
                     })
                     continue
+                earliest_required_date = earliest_ticker_dates.get(ticker)
+                first_available_date = prices[0]["date"]
+                if earliest_required_date and first_available_date > earliest_required_date:
+                    refresh_ticker = path.stem
+                    try:
+                        refresh_history_store(refresh_ticker, force_full=True)
+                        refreshed_path = resolve_investment_history_store_path(
+                            ticker,
+                            include_proxy=False,
+                        ) or path
+                        refreshed_prices = load_price_history_series(refreshed_path)
+                        if refreshed_prices:
+                            prices = refreshed_prices
+                            first_available_date = prices[0]["date"]
+                    except Exception as exc:  # noqa: BLE001
+                        LOGGER.warning(
+                            "Unable to repair incomplete investment history coverage for %s: %s",
+                            ticker,
+                            exc,
+                        )
+                    if first_available_date > earliest_required_date:
+                        failures.append({
+                            "ticker": ticker,
+                            "reason": "incomplete_coverage",
+                            "message": (
+                                f"Local market history for {ticker} begins on {first_available_date}, "
+                                f"after the earliest ledger date requiring valuation {earliest_required_date}; "
+                                "historical equity remains unavailable before the first usable close."
+                            ),
+                        })
                 price_history_by_ticker[ticker] = prices
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Could not read local market history for %s", ticker)

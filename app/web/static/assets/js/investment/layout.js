@@ -1,16 +1,17 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.3.5
+ * Code version: v1.4.0
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.3.5';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.4.0';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
     baselineMinimum,
     desiredOverviewMinimum,
     desiredHistoryMinimum,
+    preferOverviewMinimum = false,
 }) {
     const safeAvailableHeight = Math.max(0, Number(availableHeight) || 0);
     const safeBaseline = Math.min(
@@ -27,12 +28,27 @@ export function resolveInvestmentTrackRange({
     const minimumScale = desiredExtraHeight > 0
         ? Math.min(1, availableExtraHeight / desiredExtraHeight)
         : 1;
-    const minimum = safeBaseline + ((safeOverviewMinimum - safeBaseline) * minimumScale);
-    const historyMinimum = safeBaseline + ((safeHistoryMinimum - safeBaseline) * minimumScale);
+    const layoutMinimum = safeBaseline + ((safeOverviewMinimum - safeBaseline) * minimumScale);
+    const compressedHistoryMinimum = safeBaseline
+        + ((safeHistoryMinimum - safeBaseline) * minimumScale);
+    if (preferOverviewMinimum) {
+        // Home keeps the published 10-row plot. The live split still uses the
+        // compressed floor so Price Field detail is not collapsed until the
+        // user actually moves the resizer to that minimum.
+        const overviewCap = Math.max(safeBaseline, safeAvailableHeight - safeBaseline);
+        const minimum = Math.min(safeOverviewMinimum, overviewCap);
+        return {
+            minimum,
+            layoutMinimum: Math.min(layoutMinimum, minimum),
+            maximum: Math.max(minimum, safeAvailableHeight - safeBaseline),
+            historyMinimum: safeBaseline,
+        };
+    }
     return {
-        minimum,
-        maximum: Math.max(minimum, safeAvailableHeight - historyMinimum),
-        historyMinimum,
+        minimum: layoutMinimum,
+        layoutMinimum,
+        maximum: Math.max(layoutMinimum, safeAvailableHeight - compressedHistoryMinimum),
+        historyMinimum: compressedHistoryMinimum,
     };
 }
 
@@ -54,6 +70,7 @@ export function bindInvestmentSectionResizer({
     overviewStageSelector = '.investment-equity-chart-stage',
     getOverviewStageMinimum = () => 0,
     getAdditionalHistoryMinimumHeight = () => 0,
+    preferOverviewMinimum = false,
     overviewMinimumChangeEvent = null,
     ignoreMutationSelector = null,
     observeHistorySurfaceResize = true,
@@ -282,12 +299,21 @@ export function bindInvestmentSectionResizer({
             baselineMinimum,
             desiredOverviewMinimum: getOverviewMinimumHeight(baselineMinimum),
             desiredHistoryMinimum: getHistoryMinimumHeight(baselineMinimum),
+            preferOverviewMinimum,
         });
+        const liveMinimum = Number.isFinite(range.layoutMinimum)
+            ? range.layoutMinimum
+            : range.minimum;
         if (!isStackedLayout()) {
-            setInlineStyleIfChanged(workspaceHeader, '--investment-overview-min-height', `${range.minimum}px`);
+            setInlineStyleIfChanged(workspaceHeader, '--investment-overview-min-height', `${liveMinimum}px`);
             setInlineStyleIfChanged(workspaceHeader, '--investment-history-min-height', `${range.historyMinimum}px`);
         }
-        return {minimum: range.minimum, maximum: range.maximum};
+        return {
+            minimum: range.minimum,
+            maximum: range.maximum,
+            layoutMinimum: liveMinimum,
+            historyMinimum: range.historyMinimum,
+        };
     };
     const getValue = () => reportCard.getBoundingClientRect().height;
     const scheduleOverviewChartResize = () => {
@@ -365,7 +391,10 @@ export function bindInvestmentSectionResizer({
             ) || 0.44,
         ));
         if (!Number.isFinite(overviewRatio)) overviewRatio = defaultOverviewShare;
-        const nextHeight = resolveInvestmentOverviewHeight(availableHeight, overviewRatio, range);
+        const nextHeight = resolveInvestmentOverviewHeight(availableHeight, overviewRatio, {
+            minimum: Number.isFinite(range.layoutMinimum) ? range.layoutMinimum : range.minimum,
+            maximum: range.maximum,
+        });
         if (Math.abs(nextHeight - getValue()) < 0.5) {
             syncSectionResizerAria(range);
             return;

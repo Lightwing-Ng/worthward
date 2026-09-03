@@ -1,7 +1,9 @@
 """
 Investment page regression tests.
 
-Code version: v1.8.0
+Code version: v1.8.1
+- Added: Investment transaction payloads repair an existing daily history
+  cache that starts after the earliest ledger valuation date.
 - Added: Investment API cache reads reapply HSBC current-cash boundary
   normalization after a non-USD cash-only refresh.
 - Added: IBKR CNH deposits can be validated against BOCHK CNH withdrawals through the browser binding endpoint.
@@ -90,6 +92,75 @@ def test_investment_transactions_response_exposes_price_histories_and_failures(t
     assert payload["price_history_by_ticker"]["AAPL"][0]["date"] == "2025-09-03"
     assert payload["price_history_by_ticker"]["AAPL"][0]["close"] == 201.25
     assert any(item["ticker"] == "MSFT" for item in payload["price_history_failures"])
+
+
+def test_investment_transactions_repair_history_before_earliest_ledger_date(
+    tmp_path, monkeypatch
+) -> None:
+    investment_store_path = tmp_path / "investment.json"
+    investment_store_path.write_text(
+        """
+        {
+          "transactions": [
+            {
+              "date": "2025-09-02",
+              "ticker": "AAPL",
+              "type": "buy",
+              "quantity": 2,
+              "price": 200,
+              "amount": -400
+            }
+          ]
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "historical" / "AAPL.parquet"
+    _write_price_history(history_path, [("2025-09-03", 202.50)])
+
+    refresh_calls: list[tuple[str, bool]] = []
+
+    def _repair_history(ticker: str, *, force_full: bool = False):
+        refresh_calls.append((ticker, force_full))
+        _write_price_history(
+            history_path,
+            [("2025-09-01", 199.00), ("2025-09-02", 201.25), ("2025-09-03", 202.50)],
+        )
+        return history_path
+
+    monkeypatch.setattr(runtime, "INVESTMENT_STORE_PATH", investment_store_path)
+    monkeypatch.setattr(
+        runtime,
+        "INVESTMENT_TRANSACTIONS_CACHE_PATH",
+        tmp_path / "investment_cache" / "transactions_payload.json",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "history_store_path_for",
+        lambda ticker: tmp_path / "historical" / f"{ticker}.parquet",
+    )
+    monkeypatch.setattr(runtime, "ensure_latest_investment_daily_caches", lambda tickers: [])
+    monkeypatch.setattr(runtime, "refresh_history_store", _repair_history)
+    monkeypatch.setattr(runtime, "fetch_quote_profile", quote_profile_stub)
+    monkeypatch.setattr(runtime, "load_profile_record", lambda ticker: None)
+    monkeypatch.setattr(runtime, "has_logo_asset", lambda ticker: False)
+
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/api/investment/transactions")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert refresh_calls == [("AAPL", True)]
+    assert payload["price_history_by_ticker"]["AAPL"][0] == {
+        "date": "2025-09-01",
+        "close": 199.00,
+    }
+    assert not any(
+        item["ticker"] == "AAPL" and item["reason"] == "incomplete_coverage"
+        for item in payload["price_history_failures"]
+    )
 
 
 def test_investment_transactions_read_repairs_hsbc_current_cash_boundary(

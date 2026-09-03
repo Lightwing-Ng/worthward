@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.0.0."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.2.1."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             definitions["compute_backend"].options,
             ("Auto", "CPU", "GPU", "Neural Engine"),
         )
-        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.0.0")
+        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.0.1")
         self.assertFalse(strategy.backtest_cacheable)
         self.assertEqual(strategy.get_signal_bridge("1m"), "daily-close-to-next-session-open")
 
@@ -134,6 +134,25 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["device"]["engine"], "numpy")
         self.assertFalse(presentation["device"]["neural_engine_confirmed"])
         self.assertIn("lstm_lagged_close_return", presentation["lstm"]["feature_names"])
+
+    def test_unavailable_longbridge_factors_do_not_blank_the_field(self) -> None:
+        result = LSTMPriceFieldStrategy().compute_signals(
+            _market_frame(80),
+            _cpu_params(use_pe_ratio=True, use_options=True, use_volume=True),
+        )
+        presentation = normalize_strategy_presentation(result.presentation)
+        finite_means = [
+            value for value in presentation["predictive_mean"] if value is not None
+        ]
+        self.assertTrue(finite_means)
+        self.assertGreater(presentation["device"]["origins_trained"], 0)
+        self.assertGreater(presentation["device"]["train_ms"], 0.0)
+        self.assertLess(
+            presentation["device"]["origins_failed_closed"],
+            len(result.frame),
+        )
+        self.assertIn("lstm_lagged_close_return", presentation["lstm"]["feature_names"])
+        self.assertNotIn("pe", presentation["lstm"]["feature_names"])
 
     def test_cell_display_threshold_is_presentation_only(self) -> None:
         frame = _market_frame(80)

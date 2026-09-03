@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.0.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.2.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -128,7 +128,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.26.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.38.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.38.6');
     expect(desktop.appScript).toContain('app-v0.51.0');
     expect(desktop.panelTitle).toBe('LSTM Price Field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
@@ -143,6 +143,191 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(narrow.overflowX).toBeLessThanOrEqual(1);
     expect(narrow.script).toBe(desktop.script);
     expect(narrow.version).toBe(desktop.version);
+});
+
+test('server-side LSTM Price Field computes a real probability field and renders it', async ({page}) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({width: 1024, height: 841});
+    await page.goto(lstmUrl);
+    await expect(page.locator('#trade_strategy')).toHaveValue('lstm-price-field');
+    const readLstmPresentation = () => page.evaluate(() => {
+        const payload = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        if (!payload || payload.schema !== 'lstm-price-field/v1') return null;
+        const chart = window.WORTHWARD_APP?.backtestResult?.chart;
+        const gridApi = window.WORTHWARD_BACKTEST_PROBABILITY_GRID;
+        const normalized = gridApi?.normalizePresentation?.(payload, {
+            raw_dates: chart?.raw_dates,
+            length: Array.isArray(chart?.close) ? chart.close.length : null,
+        });
+        const means = Array.isArray(payload.predictive_mean) ? payload.predictive_mean : [];
+        return {
+            schema: payload.schema,
+            renderer: payload.renderer,
+            columns: payload.columns,
+            rowsAbove: payload.rows_above,
+            device: payload.device?.resolved || '',
+            engine: payload.device?.engine || '',
+            neuralConfirmed: Boolean(payload.device?.neural_engine_confirmed),
+            featureNames: Array.isArray(payload.lstm?.feature_names)
+                ? [...payload.lstm.feature_names]
+                : [],
+            originsTrained: Number(payload.device?.origins_trained || 0),
+            originsFailedClosed: Number(payload.device?.origins_failed_closed || 0),
+            trainMs: Number(payload.device?.train_ms || 0),
+            finiteMeans: means.filter((value) => (
+                value !== null && value !== undefined && Number.isFinite(Number(value))
+            )).length,
+            normalized: Boolean(normalized),
+            hasProbabilityField: Boolean(
+                document.querySelector('.trade-chart-stack')?.classList.contains('has-probability-field'),
+            ),
+        };
+    });
+    await expect.poll(readLstmPresentation, {timeout: 90_000}).not.toBeNull();
+    const presentation = await readLstmPresentation();
+    expect(presentation.schema).toBe('lstm-price-field/v1');
+    expect(presentation.renderer).toBe('probability-grid-v1');
+    expect(presentation.columns).toBe(20);
+    expect(presentation.rowsAbove).toBe(10);
+    expect(['cpu', 'mps', 'cuda']).toContain(presentation.device);
+    expect(presentation.neuralConfirmed).toBe(false);
+    expect(presentation.originsTrained).toBeGreaterThan(0);
+    expect(presentation.originsFailedClosed).toBeLessThan(presentation.finiteMeans);
+    expect(presentation.trainMs).toBeGreaterThan(0);
+    expect(presentation.featureNames).toContain('lstm_lagged_close_return');
+    expect(presentation.featureNames).not.toContain('pe');
+    expect(presentation.finiteMeans).toBeGreaterThan(0);
+    expect(presentation.normalized).toBe(true);
+    expect(presentation.hasProbabilityField).toBe(true);
+
+    await page.evaluate(() => {
+        window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+        window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
+    });
+
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    if ((await tuneButton.getAttribute('aria-pressed')) === 'true') {
+        await tuneButton.click();
+        await expect(tuneButton).toHaveAttribute('aria-pressed', 'false');
+    }
+
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('#backtest_history_probability')).toBeChecked();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    const readForecastableAnchor = () => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const rect = canvas?.getBoundingClientRect();
+        const chartArea = chart?.chartArea;
+        const chartWidth = Number(chart?.width);
+        const chartHeight = Number(chart?.height);
+        const payload = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const normalized = window.WORTHWARD_BACKTEST_PROBABILITY_GRID?.normalizePresentation?.(
+            payload,
+            {
+                raw_dates: window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates,
+                length: window.WORTHWARD_APP?.backtestResult?.chart?.close?.length,
+            },
+        );
+        if (!(canvas instanceof HTMLCanvasElement) || !rect || !chartArea
+            || !(chartWidth > 0) || !(chartHeight > 0) || !normalized) {
+            return null;
+        }
+        const centerY = (chartArea.top + chartArea.bottom) / 2;
+        const candidates = points
+            .map((point, index) => {
+                const parsed = chart.getDatasetMeta(0)?.controller?.getParsed?.(index);
+                const x = Number(point?.x);
+                const y = Number.isFinite(Number(point?.y))
+                    ? Number(point.y)
+                    : Number(chart.scales?.y?.getPixelForValue?.(parsed?.y));
+                return {index, x, y};
+            })
+            .filter(({index, x, y}) => (
+                Number.isFinite(x)
+                && Number.isFinite(y)
+                && normalized.predictive_mean?.[index] !== null
+                && normalized.predictive_scale?.[index] !== null
+                && Number.isFinite(Number(normalized.predictive_mean?.[index]))
+                && Number.isFinite(Number(normalized.predictive_scale?.[index]))
+                && Number(normalized.predictive_scale[index]) > 0
+            ));
+        if (!candidates.length) {
+            const finitePoints = points.filter((point) => (
+                Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y))
+            )).length;
+            const finiteNormMeans = Array.isArray(normalized.predictive_mean)
+                ? normalized.predictive_mean.filter((value) => value !== null).length
+                : 0;
+            return {
+                error: 'no-forecastable-anchor',
+                pointCount: points.length,
+                finitePoints,
+                finiteNormMeans,
+                meanLength: normalized.predictive_mean?.length || 0,
+                closeLength: window.WORTHWARD_APP?.backtestResult?.chart?.close?.length || 0,
+                dataKey: window.WORTHWARD_APP?.backtestResult?.strategy_presentation?.data_keys?.[0] || '',
+                rawDate: window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates?.[0] || '',
+            };
+        }
+        const nearest = candidates.reduce((best, candidate) => (
+            Math.abs(candidate.y - centerY) < Math.abs(best.y - centerY)
+                ? candidate
+                : best
+        ));
+        return {
+            index: nearest.index,
+            x: rect.left + (nearest.x * (rect.width / chartWidth)),
+            y: rect.top + (nearest.y * (rect.height / chartHeight)),
+        };
+    });
+    await expect.poll(readForecastableAnchor, {timeout: 15_000}).toEqual(expect.objectContaining({
+        index: expect.any(Number),
+        x: expect.any(Number),
+        y: expect.any(Number),
+    }));
+    const hoverAnchor = await readForecastableAnchor();
+    expect(Number.isInteger(hoverAnchor?.index)).toBe(true);
+    await page.mouse.move(hoverAnchor.x, hoverAnchor.y);
+    await expect.poll(() => page.evaluate(() => {
+        const tooltipCells = document.querySelectorAll(
+            '[data-backtest-chart-tooltip="probability-grid"] .backtest-probability-cell',
+        ).length;
+        const detailCells = document.querySelectorAll(
+            '#backtest_probability_detail_panel .backtest-probability-detail-cell',
+        ).length;
+        return {
+            tooltipCells,
+            detailCells,
+            tooltipVisible: document.querySelector(
+                '[data-backtest-chart-tooltip="probability-grid"]',
+            )?.classList.contains('is-visible') === true,
+            activeIndex: window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index,
+        };
+    }), {timeout: 15_000}).toEqual(expect.objectContaining({
+        tooltipVisible: true,
+        activeIndex: hoverAnchor.index,
+    }));
+    const rendered = await page.evaluate(() => ({
+        tooltipCells: document.querySelectorAll(
+            '[data-backtest-chart-tooltip="probability-grid"] .backtest-probability-cell',
+        ).length,
+        detailCells: document.querySelectorAll(
+            '#backtest_probability_detail_panel .backtest-probability-detail-cell',
+        ).length,
+        panelTitle: document.querySelector('#backtest_probability_detail_title')?.textContent?.trim(),
+        statusText: document.querySelector(
+            '#backtest_probability_detail_panel [data-backtest-probability-detail-status]',
+        )?.textContent?.trim(),
+    }));
+    expect(rendered.tooltipCells).toBeGreaterThan(0);
+    expect(rendered.detailCells).toBeGreaterThan(0);
+    expect(rendered.panelTitle).toBe('LSTM Price Field detail');
+    expect(rendered.statusText).toMatch(
+        /^Selected date: \d{1,2} [A-Z][a-z]{2} \d{4} · LSTM training: [\d,]+ causal origins · backend: (CPU|MPS|CUDA) · [\d,]+ ms$/,
+    );
 });
 
 test('Bayesian Price Field uses the same probability-grid module as LSTM', async ({page}) => {

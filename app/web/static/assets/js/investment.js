@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.133.4
+ * Code version: v2.133.5
  * - Fixed: Overview equity hover now draws the horizontal guide from the
  *   vertical guide's curve intersection across the complete plot area.
  * - Added: Shared split layouts can honor a workspace-declared total overview
@@ -410,7 +410,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.3.5';
+} from './investment/layout.js?v=investment-layout-v1.4.0';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,

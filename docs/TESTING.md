@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.44.0`
+Documentation version: `v1.44.4`
 
 ## Price Field shared-grid coverage
 
@@ -9,10 +9,17 @@ payload, causal walk-forward with no future lookahead, fail-closed short
 windows, and backend readback that reports the resolved CPU engine rather than
 the requested GPU or Neural Engine label. Node tests accept both
 `bayesian-price-field/v1` and `lstm-price-field/v1` through one
-`probability-grid.js` module. The isolated Chromium file
-`tests/e2e/lstm-price-field.spec.mjs` checks the LSTM selector, namespaced
-parameters, shared Price Field DOM, cache-busted `probability-grid-v0.26.0`
-asset, square cells, and 390px overflow on port `8699`.
+`probability-grid.js` module. Backtest split layout prefers the published
+10-row overview plot budget over extra Price Field history height when both
+cannot fit, so the shared resizer minimum still yields 10 rows per side.
+The isolated Chromium file `tests/e2e/lstm-price-field.spec.mjs` checks the
+LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
+`probability-grid-v0.26.0` and `backtest-v0.38.6` assets, square cells, and 390px overflow on port
+`8699`. A second case waits for a real server `lstm-price-field/v1` payload
+(not an injected presentation), requires the renderer to normalize it, hovers a
+forecastable origin, and asserts both the floating field and the detail lattice
+render from that computation. Walk-forward LSTM training keeps the causal lag
+return even when enabled Longbridge factor columns are entirely unavailable.
 
 ## Bayesian Price Field detail view coverage
 
@@ -59,11 +66,13 @@ The desktop Bayesian hover flow also sweeps the pointer across visible forecast
 points, including after overflow pan, requiring the selected origin and
 `Selected date` status to match the visible curve point under the pointer.
 A layout refresh regression also confirms that sidebar, resizer, and viewport
-reflows clear stale screen-space pointer coordinates before geometry is
-recalculated. It verifies that hovering a translated Canvas still selects the
-visible middle of the curve rather than a lagged unscrolled date, that leaving
-the chart stack clears both guides and the field, and that moving onto the
-native scroll rail preserves the active field.
+reflows clear stale screen-space pointer coordinates when the pointer is no
+longer over the chart stack, then recalculate geometry. A pointer that is still
+over the stack is kept so a vertical split change can recompute overflow pan
+without waiting for another mousemove. It verifies that hovering a translated
+Canvas still selects the visible middle of the curve rather than a lagged
+unscrolled date, that leaving the chart stack clears both guides and the field,
+and that moving onto the native scroll rail preserves the active field.
 Hovering a detail row must expose its exact price interval and the sum of all
 raw row probabilities across the complete forecast horizon through the hovered
 row's native hover label, with threshold-hidden cells included in that sum. The

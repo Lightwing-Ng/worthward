@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.9.0
+Code version: v0.9.2
 """
 
 from pathlib import Path
@@ -156,7 +156,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
     assert '@import url("./components/forms.css?v=3.40.7");' in app_css
     assert '@import url("./views/investment.css?v=1.78.5");' in app_css
-    assert "v0.65.26" in app_css
+    assert "v0.65.28" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.20");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.22");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -572,7 +572,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.3.5",
+        "investment-layout-v1.4.0",
+        "preferOverviewMinimum: true,",
         "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
         "observeHistorySurfaceResize: false,",
     ):
@@ -599,6 +600,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "getOverviewStageMinimum = () => 0,",
         "getAdditionalHistoryMinimumHeight = () => 0,",
+        "preferOverviewMinimum = false,",
+        "layoutMinimum: liveMinimum,",
         "overviewMinimumChangeEvent = null,",
         "onChartsResized = null,",
         "const requestedDynamicStageMinimum = typeof getOverviewStageMinimum === 'function'",
@@ -627,8 +630,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.51.0",
         "-backtest-probability-grid-v0.26.0",
-        "-backtest-v0.38.0",
-        "-backtest-layout-v0.3.4",
+        "-backtest-v0.38.6",
+        "-backtest-layout-v0.4.0",
     ):
         assert fragment in base_template
 
@@ -766,6 +769,9 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const updatePointerHoverLine = ({synchronizeScroll = true} = {}) => {",
         "updatePointerHoverLine({synchronizeScroll: false});",
         "resetProbabilityHoverPointer();",
+        "if (!isProbabilityHoverPointerOverStack(tradeChartStack.getBoundingClientRect())) {",
+        "dataset.probabilityLayoutViewportWidth",
+        "const overflowRight = tooltipRect.right - currentStackRect.right;",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
         "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",
@@ -797,7 +803,8 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         ".backtest-probability-detail-panel",
         ".backtest-probability-detail-status-row",
         "--backtest-probability-detail-min-height: 212px;",
-        "flex: 0 1 clamp(320px, 52vh, 520px);",
+        "flex: 1 1 auto;",
+        "max-height: 100%;",
         "min-height: 0;",
         "transform: translateY(-50%);",
         ".backtest-probability-detail-cell",

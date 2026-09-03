@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.0.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
@@ -351,7 +351,7 @@ class _NumpyLSTM:
         self.W = rng.normal(0.0, scale, size=(4 * hidden_size, input_size)).astype(np.float64)
         self.U = rng.normal(0.0, scale, size=(4 * hidden_size, hidden_size)).astype(np.float64)
         self.b = np.zeros(4 * hidden_size, dtype=np.float64)
-        self.b[:hidden_size] = 1.0  # forget-gate bias
+        self.b[hidden_size:2 * hidden_size] = 1.0  # forget-gate bias
         self.W_out = rng.normal(0.0, scale, size=(2, hidden_size)).astype(np.float64)
         self.b_out = np.zeros(2, dtype=np.float64)
 
@@ -584,25 +584,41 @@ def _gather_origin_batch(
     training_start = max(lookback - 1, training_end - int(training_window))
     sequences: list[np.ndarray] = []
     labels: list[float] = []
+    lag_index = 0
     for index in range(training_start, training_end):
         target = float(targets[index])
         if not math.isfinite(target):
             continue
         start = index - lookback + 1
         sequence = features[start:index + 1]
-        if sequence.shape[0] != lookback or not np.all(np.isfinite(sequence)):
+        if sequence.shape[0] != lookback:
+            continue
+        if not np.all(np.isfinite(sequence[:, lag_index])):
             continue
         sequences.append(sequence)
         labels.append(target)
     if len(sequences) < _MIN_TRAINING_SEQUENCES:
         return None
     current = features[origin - lookback + 1:origin + 1]
-    if current.shape[0] != lookback or not np.all(np.isfinite(current)):
+    if current.shape[0] != lookback or not np.all(np.isfinite(current[:, lag_index])):
+        return None
+    train = np.stack(sequences, axis=0)
+    current_values = np.asarray(current, dtype=np.float64)
+    usable = np.all(np.isfinite(train), axis=(0, 1)) & np.all(
+        np.isfinite(current_values),
+        axis=0,
+    )
+    usable[lag_index] = True
+    if not bool(np.any(usable)):
+        return None
+    train = train[:, :, usable]
+    current_values = current_values[:, usable]
+    if not np.all(np.isfinite(train)) or not np.all(np.isfinite(current_values)):
         return None
     return (
-        np.stack(sequences, axis=0),
+        train,
         np.asarray(labels, dtype=np.float64),
-        np.asarray(current, dtype=np.float64),
+        current_values,
     )
 
 

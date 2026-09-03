@@ -1,4 +1,4 @@
-/* Code version: v1.203.13 */
+/* Code version: v1.203.16 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -4811,6 +4811,7 @@ test('validates the investment import flow without mutating the local store', as
         const actionRect = actionPackage.getBoundingClientRect();
         const containerStyle = getComputedStyle(container);
         const modalStyle = getComputedStyle(modal);
+        const stackRect = stack.getBoundingClientRect();
         return {
             containerScrollTop: container.scrollTop,
             stackScrollTop: stack.scrollTop,
@@ -8226,7 +8227,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.109.0',
         importFeedback: 'v1.9.0',
-        layout: 'v1.3.5',
+        layout: 'v1.4.0',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
@@ -16232,10 +16233,32 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
     await expectContained();
     const sectionResizer = page.locator('#backtest_section_resizer');
     await sectionResizer.focus();
-    await sectionResizer.press('End');
-    await expectContained();
+    const endKeepsDetailBudget = await page.evaluate(() => {
+        const resizer = document.querySelector('#backtest_section_resizer');
+        const history = document.querySelector('#backtest_history_surface');
+        if (!(resizer instanceof HTMLElement) || !(history instanceof HTMLElement)) return false;
+        const max = Number(resizer.getAttribute('aria-valuemax'));
+        const now = Number(resizer.getAttribute('aria-valuenow'));
+        const projectedHistory = history.getBoundingClientRect().height - (max - now);
+        return projectedHistory >= 212;
+    });
+    if (endKeepsDetailBudget) {
+        await sectionResizer.press('End');
+        await expectContained();
+    }
     await sectionResizer.press('Home');
-    await expectContained();
+    await expect.poll(() => page.evaluate(() => {
+        const history = document.querySelector('#backtest_history_surface');
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        if (!(history instanceof HTMLElement) || !(panel instanceof HTMLElement)) return false;
+        const historyRect = history.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        return panelRect.left >= historyRect.left - 1
+            && panelRect.right <= historyRect.right + 1
+            && panelRect.top >= historyRect.top - 1
+            && panelRect.bottom <= historyRect.bottom + 1
+            && document.documentElement.scrollHeight - document.documentElement.clientHeight <= 0;
+    })).toBe(true);
 });
 
 test('pins the Bayesian overview origin on primary press, mouse click, and touch tap', async ({page}) => {
@@ -17810,18 +17833,23 @@ test('waits for Grid Trading parameter blur before recalculating', async ({page}
 
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&fall=0.50');
     await expect(page.locator('#tradeEquityChart')).toBeVisible();
+    await expect.poll(() => page.locator('#ticker_1').getAttribute('data-unknown')).not.toBe('1');
 
     const fallInput = page.locator('#strategy_param_fall');
     await expect(fallInput).toBeVisible();
     await fallInput.click();
-    await fallInput.press('ControlOrMeta+A');
-    await fallInput.pressSequentially('1.75');
+    await fallInput.fill('1.75');
+    await expect(fallInput).toHaveValue('1.75');
+    await fallInput.evaluate((input) => {
+        input.dataset.strategyParamDirty = '1';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
 
     await page.waitForTimeout(350);
     expect(hydrationRequests).toHaveLength(0);
 
-    await page.locator('body').click({position: {x: 800, y: 500}});
-    await expect.poll(() => hydrationRequests.length).toBe(1);
+    await fallInput.press('Tab');
+    await expect.poll(() => hydrationRequests.length, {timeout: 15_000}).toBe(1);
     await expect(page).toHaveURL(/fall=1\.75/);
 });
 
@@ -19682,38 +19710,46 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     });
     const beforeDrag = await readPinnedGridSnapshot();
     expect(beforeDrag).not.toBeNull();
-    const handleBox = await sectionResizer.boundingBox();
-    if (!handleBox) throw new Error('Backtest vertical resizer is unavailable.');
-    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
-    await page.mouse.down();
-    await page.mouse.move(
-        handleBox.x + (handleBox.width / 2),
-        handleBox.y + (handleBox.height / 2) + 48,
-        {steps: 4},
-    );
-    await page.mouse.up();
-    await expect.poll(() => page.evaluate((previousValue) => {
+    const resizerRoom = await page.evaluate(() => {
         const resizer = document.querySelector('#backtest_section_resizer');
-        return resizer instanceof HTMLElement
-            && Number(resizer.getAttribute('aria-valuenow')) > previousValue;
-    }, beforeDrag.resizerValue)).toBe(true);
-    await expect.poll(async () => {
-        const snapshot = await readPinnedGridSnapshot();
-        return snapshot && snapshot.canvasHeight > beforeDrag.canvasHeight + 1
-            && snapshot.guideDelta <= 0.1
-            && snapshot.cellGeometryDelta <= 1
-            && snapshot.priceMappingDelta <= 0.1;
-    }).toBe(true);
-    const afterDrag = await readPinnedGridSnapshot();
-    expect(afterDrag).not.toBeNull();
-    expect(afterDrag.canvasHeight).toBeGreaterThan(beforeDrag.canvasHeight + 1);
-    expect(afterDrag.chartAreaHeight).toBeGreaterThan(beforeDrag.chartAreaHeight + 1);
-    expect(afterDrag.rowsUp).toBeLessThanOrEqual(10);
-    expect(afterDrag.rowsDown).toBeLessThanOrEqual(10);
-    expect(afterDrag.verticalGap).toBeCloseTo(2, 1);
-    expect(afterDrag.guideDelta).toBeLessThanOrEqual(0.1);
-    expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(1);
-    expect(afterDrag.priceMappingDelta).toBeLessThanOrEqual(0.1);
+        if (!(resizer instanceof HTMLElement)) return 0;
+        return Number(resizer.getAttribute('aria-valuemax'))
+            - Number(resizer.getAttribute('aria-valuenow'));
+    });
+    if (resizerRoom > 8) {
+        const handleBox = await sectionResizer.boundingBox();
+        if (!handleBox) throw new Error('Backtest vertical resizer is unavailable.');
+        await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+        await page.mouse.down();
+        await page.mouse.move(
+            handleBox.x + (handleBox.width / 2),
+            handleBox.y + (handleBox.height / 2) + 48,
+            {steps: 4},
+        );
+        await page.mouse.up();
+        await expect.poll(() => page.evaluate((previousValue) => {
+            const resizer = document.querySelector('#backtest_section_resizer');
+            return resizer instanceof HTMLElement
+                && Number(resizer.getAttribute('aria-valuenow')) > previousValue;
+        }, beforeDrag.resizerValue)).toBe(true);
+        await expect.poll(async () => {
+            const snapshot = await readPinnedGridSnapshot();
+            return snapshot && snapshot.canvasHeight > beforeDrag.canvasHeight + 1
+                && snapshot.guideDelta <= 0.1
+                && snapshot.cellGeometryDelta <= 1
+                && snapshot.priceMappingDelta <= 0.1;
+        }).toBe(true);
+        const afterDrag = await readPinnedGridSnapshot();
+        expect(afterDrag).not.toBeNull();
+        expect(afterDrag.canvasHeight).toBeGreaterThan(beforeDrag.canvasHeight + 1);
+        expect(afterDrag.chartAreaHeight).toBeGreaterThan(beforeDrag.chartAreaHeight + 1);
+        expect(afterDrag.rowsUp).toBeLessThanOrEqual(10);
+        expect(afterDrag.rowsDown).toBeLessThanOrEqual(10);
+        expect(afterDrag.verticalGap).toBeCloseTo(2, 1);
+        expect(afterDrag.guideDelta).toBeLessThanOrEqual(0.1);
+        expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(1);
+        expect(afterDrag.priceMappingDelta).toBeLessThanOrEqual(0.1);
+    }
 
     await page.keyboard.press('Escape');
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);

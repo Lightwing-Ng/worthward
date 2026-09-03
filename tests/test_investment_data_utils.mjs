@@ -1,4 +1,4 @@
-/* Code version: v1.44.0 */
+/* Code version: v1.44.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -721,6 +721,75 @@ test('missing historical holdings fail closed instead of using transaction or la
         assert.equal(incompletePoint[1]?.aggregate_total_equity, null);
         assert.equal(incompletePoint[1]?.valuation_complete, false);
         assert.deepEqual(incompletePoint[1]?.missing_price_tickers, ['AMD', 'SQQQ']);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
+
+test('Max equity gap diagnostics isolate a pre-coverage close from lineage and money-market resolution', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        WORTHWARD_INVESTMENT_DATA: {
+            starting_cash: '0',
+            ticker_lineage: {'LEGACY.US': ['CANONICAL.US']},
+            money_market_tickers: ['MMF'],
+        },
+    };
+    try {
+        const points = buildDailyEquityChartPoints(
+            [
+                {
+                    date: '2024-01-02',
+                    aggregate_running_cash: 0,
+                    aggregate_display_cash: 0,
+                    aggregate_holdings: {
+                        AMD: 10,
+                        'CANONICAL.US': 2,
+                        MMF: 100,
+                    },
+                    aggregate_money_market_anchors: {MMF: 1.25},
+                },
+                {
+                    date: '2024-01-03',
+                    aggregate_running_cash: 0,
+                    aggregate_display_cash: 0,
+                    aggregate_holdings: {
+                        AMD: 10,
+                        'CANONICAL.US': 2,
+                        MMF: 100,
+                    },
+                    aggregate_money_market_anchors: {MMF: 1.25},
+                },
+            ],
+            normalizePriceHistoryPayload({
+                AMD: [{date: '2024-01-03', close: 100}],
+                'LEGACY.US': [
+                    {date: '2024-01-01', close: 9.5},
+                    {date: '2024-01-03', close: 10},
+                ],
+            }),
+            new Set(['MMF']),
+            {includeCalendarDays: true},
+        );
+
+        const nullDiagnostics = points
+            .filter((point) => point.aggregate_total_equity === null)
+            .map((point) => ({
+                date: point.date,
+                missing_price_tickers: point.missing_price_tickers,
+            }));
+        assert.deepEqual(nullDiagnostics, [
+            {date: '2024-01-02', missing_price_tickers: ['AMD']},
+        ]);
+        assert.equal(
+            points.find((point) => point.date === '2024-01-03')?.aggregate_total_equity,
+            1_145,
+        );
+        assert.equal(
+            points.find((point) => point.date === '2024-01-03')?.missing_price_tickers?.length,
+            0,
+        );
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;

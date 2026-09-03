@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.0.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ _PROBABILITY_COLUMN = "lstm_probability_up"
 _AUTOREGRESSION_COLUMN = "lstm_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "lstm_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "lstm_return_innovation_std"
-_MODEL_VERSION = "lstm-price-field-model/v1.0.0"
+_MODEL_VERSION = "lstm-price-field-model/v1.0.1"
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
@@ -140,7 +140,7 @@ def _build_lstm_feature_matrix(
             factor_values.get(factor, np.full(row_count, np.nan, dtype=np.float64)),
             dtype=np.float64,
         )
-        if len(values) != row_count:
+        if len(values) != row_count or not np.any(np.isfinite(values)):
             continue
         names.append(str(factor))
         columns.append(values)

@@ -1,4 +1,4 @@
-/* Code version: v0.38.0 */
+/* Code version: v0.38.6 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -711,6 +711,9 @@
 			hideProbabilityDetail();
 			return;
 		}
+		const stackedLayoutMedia = typeof window.WORTHWARD_RESPONSIVE?.media === "function"
+			? window.WORTHWARD_RESPONSIVE.media("contentStackMax")
+			: null;
 		const fixedYAxisWidth = readPxToken(tradeChartStack, "--backtest-chart-y-axis-width", 72);
 		tradeChartStack.classList.toggle("has-probability-field", Boolean(strategyPresentation));
 		const probabilityScrollPort = strategyPresentation
@@ -1554,6 +1557,24 @@
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
+			if (strategyPresentation?.schema === "lstm-price-field/v1") {
+				const device = strategyPresentation.device || {};
+				const originsTrained = Number(device.origins_trained);
+				const trainMs = Number(device.train_ms);
+				const resolvedBackend = String(device.resolved || "cpu").toUpperCase();
+				if (originsTrained > 0 && trainMs > 0) {
+					const originLabel = originsTrained.toLocaleString("en-US");
+					const durationLabel = trainMs.toLocaleString("en-US", {
+						maximumFractionDigits: 0,
+					});
+					latestProbabilityDetailBaseStatus += (
+						` · LSTM training: ${originLabel} causal origins · `
+						+ `backend: ${resolvedBackend} · ${durationLabel} ms`
+					);
+				} else {
+					latestProbabilityDetailBaseStatus += " · LSTM training: no completed origins";
+				}
+			}
 			const detailGridViewport = probabilityDetailGrid.parentElement;
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
@@ -1664,7 +1685,7 @@
 				: Number.POSITIVE_INFINITY;
 			const detailRowsAbove = geometry.rowsAbove;
 			const detailRowsBelow = geometry.rowsBelow;
-			const detailCellSize = Math.max(1, Math.min(
+			let detailCellSize = Math.max(1, Math.min(
 				availableWidth / geometry.columnCount,
 				availableHeight / geometry.rowCount,
 				sideCellSize(
@@ -1676,12 +1697,21 @@
 					detailRowsAbove > 0 ? geometry.gap / 2 : 0,
 				),
 			));
-			const detailGridWidth = horizontalPadding
+			let detailGridWidth = horizontalPadding
 				+ (geometry.columnCount * detailCellSize)
 				+ ((geometry.columnCount - 1) * geometry.gap);
-			const detailGridHeight = verticalPadding
+			let detailGridHeight = verticalPadding
 				+ (geometry.rowCount * detailCellSize)
 				+ ((geometry.rowCount - 1) * geometry.gap);
+			if (detailGridHeight > detailGridViewportHeight && detailGridHeight > 0) {
+				detailCellSize *= detailGridViewportHeight / detailGridHeight;
+				detailGridWidth = horizontalPadding
+					+ (geometry.columnCount * detailCellSize)
+					+ ((geometry.columnCount - 1) * geometry.gap);
+				detailGridHeight = verticalPadding
+					+ (geometry.rowCount * detailCellSize)
+					+ ((geometry.rowCount - 1) * geometry.gap);
+			}
 
 			const lowerPrice = Math.min(...cells.map((cell) => cell.lowerPrice));
 			const upperPrice = Math.max(...cells.map((cell) => cell.upperPrice));
@@ -1694,7 +1724,10 @@
 				paddingPx: geometry.padding,
 			});
 			if (!detailGridPosition) return false;
-			const detailGridTop = detailGridPosition.top;
+			const detailGridTop = Math.min(
+				Math.max(0, detailGridPosition.top),
+				Math.max(0, detailGridViewportHeight - detailGridHeight),
+			);
 			const detailLayoutKey = [
 				detailGridViewportWidth,
 				detailGridViewportHeight,
@@ -2211,7 +2244,7 @@
 			return nearestIndex;
 		};
 
-		const hideProbabilityTooltip = () => {
+		const hideProbabilityTooltip = ({immediate = false} = {}) => {
 			resetProbabilityHoverPointer();
 			hideHoverDateLabel();
 			probabilityTooltip?.classList.remove("is-visible");
@@ -2220,7 +2253,8 @@
 				probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
 			}
 			if (priceChart) priceChart._activeBacktestProbabilityGridBounds = null;
-			setProbabilityScrollTarget(0);
+			if (immediate) snapProbabilityScrollToFit();
+			else setProbabilityScrollTarget(0);
 		};
 
 		const buildProbabilityGridModel = (index, pricePoint) => {
@@ -2466,6 +2500,11 @@
 				return false;
 			}
 			const canvasOffsetY = canvasRect.top - stackRect.top;
+			setInlineStyleIfChanged(probabilityTooltip, "width", `${geometry.width}px`);
+			setInlineStyleIfChanged(probabilityTooltip, "height", `${geometry.height}px`);
+			probabilityTooltip.dataset.direction = geometry.direction;
+			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
+			probabilityTooltip.hidden = false;
 			const fieldPosition = syncProbabilityFieldVisualPosition(
 				stackRect,
 				geometry,
@@ -2475,11 +2514,6 @@
 				hideProbabilityTooltip();
 				return false;
 			}
-			setInlineStyleIfChanged(probabilityTooltip, "width", `${geometry.width}px`);
-			setInlineStyleIfChanged(probabilityTooltip, "height", `${geometry.height}px`);
-			probabilityTooltip.dataset.direction = geometry.direction;
-			probabilityTooltip.dataset.pinned = pinState.mode === "pinned" ? "true" : "false";
-			probabilityTooltip.hidden = false;
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
 				"aria-label",
@@ -2656,7 +2690,7 @@
 				tooltip.classList.remove("is-visible");
 				return true;
 			}
-			hideProbabilityTooltip();
+			hideProbabilityTooltip({immediate: sourceCanvas !== priceCanvas});
 			const relativeX = hoverLinePosition.x;
 			const visualRelativeX = relativeX - probabilityScrollVisualPosition;
 			const relativeY = tooltipAnchorPosition.y;
@@ -2732,7 +2766,26 @@
 				&& isProbabilityHoverPointerOverStack(stackRect)
 			) {
 				const guide = getProbabilityHoverGuide(stackRect);
-				if (Number.isFinite(guide?.contentX)) return guide.contentX;
+				if (Number.isFinite(guide?.contentX)) {
+					// Keep the complete field inside the visible chart stack when the
+					// narrow layout cannot fit it to the pointer's right. The breakpoint
+					// mirrors the responsive chart-stage contract; wider charts retain
+					// the exact guide-to-field anchor used by the pan contract.
+					const fieldWidth = Number(geometry?.width);
+					const stackWidth = Number(stackRect?.width);
+					const visualPosition = Number(probabilityScrollVisualPosition) || 0;
+					const isNarrowLayout = Boolean(stackedLayoutMedia?.matches);
+					if (isNarrowLayout && fieldWidth > 0 && stackWidth > 0) {
+						const desiredScreenLeft = guide.contentX - visualPosition;
+						const maximumScreenLeft = Math.max(0, stackWidth - fieldWidth);
+						const boundedScreenLeft = Math.min(
+							maximumScreenLeft,
+							Math.max(0, desiredScreenLeft),
+						);
+						return boundedScreenLeft + visualPosition;
+					}
+					return guide.contentX;
+				}
 			}
 			const canvasContentLeft = getPriceCanvasContentLeft();
 			return Number.isFinite(canvasContentLeft)
@@ -2786,6 +2839,23 @@
 				"transform",
 				`translate3d(${contentLeft}px, ${visualTop}px, 0)`,
 			);
+			if (synchronizeScroll && pointerAnchored && !probabilityTooltip.hidden) {
+				const tooltipRect = probabilityTooltip.getBoundingClientRect();
+				const overflowRight = tooltipRect.right - currentStackRect.right;
+				if (Number.isFinite(overflowRight) && overflowRight > 0.05) {
+					const correctedTarget = (Number(probabilityScrollTarget) || 0) + overflowRight;
+					if (Math.abs(correctedTarget - probabilityScrollTarget) > 0.05) {
+						setProbabilityScrollTarget(correctedTarget);
+						currentStackRect = tradeChartStack.getBoundingClientRect();
+						contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
+						setInlineStyleIfChanged(
+							probabilityTooltip,
+							"transform",
+							`translate3d(${contentLeft}px, ${visualTop}px, 0)`,
+						);
+					}
+				}
+			}
 			return {
 				left: contentLeft,
 				right: contentLeft + Number(geometry.width || 0),
@@ -3458,9 +3528,20 @@
 				: activeSourceChart;
 			if (!chartsAlreadyResized) priceChart.resize();
 			if (showTradeDetails && !chartsAlreadyResized) equityChart.resize();
-			// Layout changes invalidate screen-space pointer coordinates. The next
-			// real pointer event establishes a fresh crosshair in the new geometry.
-			resetProbabilityHoverPointer();
+			const stackRectAfterResize = tradeChartStack.getBoundingClientRect();
+			const pointerStillOverStack = isProbabilityHoverPointerOverStack(stackRectAfterResize);
+			const previousViewportWidth = Number(
+				tradeChartStack.dataset.probabilityLayoutViewportWidth,
+			);
+			const viewportWidthChanged = Number.isFinite(previousViewportWidth)
+				&& Math.abs(previousViewportWidth - window.innerWidth) > 1;
+			tradeChartStack.dataset.probabilityLayoutViewportWidth = String(window.innerWidth);
+			// Keep a live pointer across vertical split changes so Home/End can
+			// recompute overflow pan without another mousemove. A viewport-width
+			// change invalidates client coordinates, so drop that pointer.
+			if (!pointerStillOverStack || viewportWidthChanged) {
+				resetProbabilityHoverPointer();
+			}
 			chartHoverPointCaches.clear();
 			probabilityHoverLayout = null;
 			probabilityModelCache.clear();
@@ -3481,6 +3562,9 @@
 			}
 			if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
 				syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
+				if (pointerStillOverStack && !viewportWidthChanged) {
+					updatePointerHoverLine({synchronizeScroll: true});
+				}
 			} else {
 				priceChart.update("none");
 				if (showTradeDetails) equityChart.update("none");

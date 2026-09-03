@@ -1,4 +1,4 @@
-/* Tests for shared workspace split-layout calculations. Code version: v1.1.5 */
+/* Tests for shared workspace split-layout calculations. Code version: v1.2.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,6 +20,7 @@ test('track range reserves both desired minimums when space permits', () => {
         desiredHistoryMinimum: 220,
     }), {
         minimum: 300,
+        layoutMinimum: 300,
         maximum: 480,
         historyMinimum: 220,
     });
@@ -35,6 +36,26 @@ test('track range proportionally compresses extra minimum height in constrained 
     assert.equal(Math.round(range.minimum + range.historyMinimum), 400);
     assert.ok(range.minimum >= 132);
     assert.ok(range.historyMinimum >= 132);
+});
+
+test('preferOverviewMinimum keeps the overview budget when history also wants extra space', () => {
+    const constrained = {
+        availableHeight: 650,
+        baselineMinimum: 132,
+        desiredOverviewMinimum: 441,
+        desiredHistoryMinimum: 306,
+    };
+    const compressed = resolveInvestmentTrackRange(constrained);
+    assert.equal(Math.round(compressed.minimum), 379);
+    assert.equal(Math.round(compressed.layoutMinimum), 379);
+    const range = resolveInvestmentTrackRange({
+        ...constrained,
+        preferOverviewMinimum: true,
+    });
+    assert.equal(range.minimum, 441);
+    assert.equal(Math.round(range.layoutMinimum), 379);
+    assert.equal(range.historyMinimum, 132);
+    assert.equal(range.maximum, 518);
 });
 
 test('overview height clamps ratios to the measured range', () => {
