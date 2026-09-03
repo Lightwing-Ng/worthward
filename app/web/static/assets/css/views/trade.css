@@ -1,4 +1,4 @@
-/* Code version: v3.55.18 */
+/* Code version: v3.55.20 */
 
 .trade-strategy-param-select-shell {
     grid-column: 2;
@@ -433,7 +433,7 @@
 
 .backtest-probability-detail-side-summary-value {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 17px;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
     text-align: right;
@@ -1103,6 +1103,42 @@
 }
 
 .trade-chart-hover-line.is-visible {
+    opacity: 1;
+}
+
+.trade-chart-hover-date-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: var(--investment-holdings-allocation-badge-radius);
+    background: var(--theme-accent-primary);
+    color: #ffffff;
+    font-family: var(--backtest-chart-axis-font-family);
+    font-size: var(--backtest-chart-axis-font-size);
+    font-weight: var(--backtest-chart-axis-font-weight);
+    line-height: var(--backtest-chart-axis-line-height);
+    text-align: center;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms var(--motion-standard);
+    z-index: calc(var(--layer-chart-overlay-line) + 3);
+}
+
+.trade-chart-hover-date-label[hidden] {
+    display: none;
+}
+
+.trade-chart-hover-date-label.is-visible {
     opacity: 1;
 }
 

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.69.25`
+Documentation version: `v1.69.27`
 
 ## Bayesian Price Field detail view contract
 
@@ -28,7 +28,9 @@ outside its owning surface. The detail viewport places mean higher-price and
 lower-price probability mass per forecast horizon at the right end of the
 horizontal price guide. Each horizon's cell mass includes threshold-hidden
 cells, but independent horizons are averaged rather than added together, so
-both displayed percentages remain bounded to 0–100%.
+both displayed percentages remain bounded to 0–100%. The two right-aligned
+cumulative percentage labels use a dedicated 17px value style so they remain
+legible beside the guide without changing the grid or axis typography.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
 columns, 2px gaps, opacity mapping, and square-cell geometry. A cell is green
@@ -291,6 +293,14 @@ The Investment filled hover badge is also the shared
 Backtest overlays call that primitive instead of maintaining a second badge
 renderer.
 
+The Bayesian Backtest overview reuses the same filled blue Y-axis badge for the
+horizontal hover guide, with its value taken from the exact polyline intersection
+under the vertical guide. The corresponding vertical guide also paints a filled
+blue X-axis date badge at the Canvas axis baseline. Its two lines use the shared
+typical date format, axis font, and axis line height; endpoint alignment rules do
+not apply to this centered hover badge. Both badges are transient and clear with
+the hover overlay.
+
 ## Price comparison cost-distribution snapshots
 
 The Price comparison Canvas owns both the price series and the optional right-side estimated Cost Distribution. The idle profile represents the complete selected OHLCV range. While the shared price crosshair is active, every subplot switches to a cumulative snapshot containing only OHLCV rows at or before the crosshair timestamp. Snapshot distributions retain the complete range's price-bin domain, so the shared Y-axis and bar-price positions never move while the cursor scrubs horizontally.
@@ -356,7 +366,7 @@ The model diagnostics are independent of the viewport-quantized 20-column grid. 
 
 Research-factor time semantics fail closed. The provider accepts real `published_at`, `available_at`, or equivalent disclosure timestamps; it does not use `filing_date`, report period, settlement date, `updated_at`, or a snapshot timestamp as a historical availability date. Until a source exposes a verifiable availability timestamp and a causal aggregation rule, capital flow, broker holding, shareholder concentration, fund-holder weight, short interest, and short volume report `unsupported_history` or `unavailable_point_in_time` and cannot enter the factor matrix. The safe historical research set is limited to P/B, P/S, dividend yield, and market temperature when they meet the timestamp rule. A GPU failure restarts the complete walk-forward calculation with a fresh NumPy float64 CPU backend; it never combines prior GPU rows with later CPU rows, and its presentation exposes the effective device, numeric precision, and fallback reason.
 
-For vertical containment, the price scale uses the unmodified chart range while the grid clips to the existing plot area. At widths up to 767 px, the normalized presentation marks the result stack with `has-probability-field`; the shared result/history splitter measures `.trade-chart-stack`, reserves its 254 px stage minimum, and raises the complete result stack to a 600 px minimum. This preserves independent report, resizer, and history grid rows on a fresh narrow load rather than relying on a desktop split ratio. Pointer movement is coalesced to the next animation frame and tracks the curve; only a point with a finite prediction can be pinned. Blank-space clicks and Escape clear it, while probability and standard summary overlays retain their source chart and recompute after chart, viewport, or sidebar layout changes.
+For vertical containment, the price scale uses the unmodified chart range while the grid clips to the existing plot area. At widths up to 767 px, the normalized presentation marks the result stack with `has-probability-field`; the shared result/history splitter measures `.trade-chart-stack`, reserves its 254 px stage minimum, and raises the complete result stack to a 600 px minimum. This preserves independent report, resizer, and history grid rows on a fresh narrow load rather than relying on a desktop split ratio. Pointer movement is coalesced to the next animation frame and tracks the curve; only a point with a finite prediction can be pinned. A primary pointer press pins the current curve origin immediately, covering trackpad press, mouse click, and touch tap; the synthetic click that follows that press is consumed once so the pinned frame is not rendered twice. Blank-space clicks and Escape clear it. Non-primary pointer presses remain available to the chart context menu, including Download SVG, while probability and standard summary overlays retain their source chart and recompute after chart, viewport, or sidebar layout changes.
 
 All `/workspaces/*` pages use the `Canonical URL State Contract`: semantic query names, repeated values whose order carries meaning, omitted defaults, and one stable serialization order. Relative windows use `range=<period>`; custom windows use `range=custom` with `period` and either `date` or `from` / `to`. Workspace tabs and result pagination use `tab` and `page`. Legacy aliases remain readable and are normalized to the canonical form on page hydration or the next state-changing interaction.
 

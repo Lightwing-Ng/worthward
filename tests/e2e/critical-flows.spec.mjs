@@ -1,4 +1,4 @@
-/* Code version: v1.203.11 */
+/* Code version: v1.203.13 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -4808,7 +4808,6 @@ test('validates the investment import flow without mutating the local store', as
         stack.scrollTop = stack.scrollHeight;
         const containerRect = container.getBoundingClientRect();
         const modalRect = modal.getBoundingClientRect();
-        const stackRect = stack.getBoundingClientRect();
         const actionRect = actionPackage.getBoundingClientRect();
         const containerStyle = getComputedStyle(container);
         const modalStyle = getComputedStyle(modal);
@@ -15993,6 +15992,148 @@ test('aligns the Bayesian Price Field axes and date typography with the price ch
     expect(String(geometry.chartYAxisFont.weight)).toBe('400');
 });
 
+test('renders matching Bayesian hover axis badges at the curve intersection', async ({page}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({width: 1_024, height: 900});
+    await page.goto(
+        '/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+        + '&stop_loss=0&show_trade_details=0',
+    );
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+
+    const readAnchor = () => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const candidates = points
+            .map((point, index) => ({index, point}))
+            .filter(({index, point}) => (
+                Number.isFinite(point?.x)
+                && Number.isFinite(point?.y)
+                && Number.isFinite(Number(presentation?.predictive_mean?.[index]))
+                && Number.isFinite(Number(presentation?.predictive_scale?.[index]))
+            ));
+        if (!(canvas instanceof HTMLCanvasElement) || !chart || !rect || !candidates.length) return null;
+        const {index, point} = candidates[Math.floor(candidates.length / 2)];
+        return {
+            index,
+            x: rect.left + (point.x * (rect.width / Number(chart.width))),
+            y: rect.top + (point.y * (rect.height / Number(chart.height))),
+        };
+    });
+    await expect.poll(readAnchor, {timeout: 10_000}).not.toBeNull();
+    const anchor = await readAnchor();
+    await page.mouse.move(anchor.x, anchor.y);
+    await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
+        .toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate(() => {
+        const chart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+        const label = document.querySelector('[data-backtest-hover-date-label]');
+        const guide = chart?._activeBacktestPriceGuideBounds;
+        return Boolean(
+            label instanceof HTMLElement
+            && !label.hidden
+            && label.classList.contains('is-visible')
+            && guide
+            && Number.isFinite(guide.badgeLeft)
+            && Number.isFinite(guide.badgeRight),
+        );
+    })).toBe(true);
+
+    const badges = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const label = document.querySelector('[data-backtest-hover-date-label]');
+        const verticalLine = document.querySelector('.trade-chart-hover-line');
+        const horizontalLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        if (!(canvas instanceof HTMLCanvasElement)
+            || !chart
+            || !(label instanceof HTMLElement)
+            || !(verticalLine instanceof HTMLElement)
+            || !(horizontalLine instanceof HTMLElement)) return null;
+        const labelRect = label.getBoundingClientRect();
+        const verticalRect = verticalLine.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const guide = chart._activeBacktestPriceGuideBounds;
+        const lines = Array.from(label.querySelectorAll('[data-backtest-hover-date-line]'))
+            .map((line) => line.textContent?.trim() || '');
+        const rawDate = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates?.[guide?.index];
+        const dateMatch = typeof rawDate === 'string'
+            ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
+            : null;
+        const dateFormatter = window.WORTHWARD_BOOTSTRAP?.dateDisplay?.formatFullDateLines;
+        const expectedLines = dateMatch && typeof dateFormatter === 'function'
+            ? dateFormatter({
+                year: Number(dateMatch[1]),
+                monthIndex: Number(dateMatch[2]) - 1,
+                day: Number(dateMatch[3]),
+            }, {allowWrap: true}).filter(Boolean)
+            : [];
+        const style = getComputedStyle(label);
+        const plotBottom = canvasRect.top + (chart.chartArea.bottom * (canvasRect.height / chart.height));
+        return {
+            background: style.backgroundColor,
+            badgeBottom: guide.badgeBottom,
+            badgeLeft: guide.badgeLeft,
+            badgeRight: guide.badgeRight,
+            badgeTop: guide.badgeTop,
+            badgeValue: guide.value,
+            color: style.color,
+            dateCenterX: labelRect.left + (labelRect.width / 2),
+            expectedLines,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            horizontalVisible: horizontalLine.classList.contains('is-visible'),
+            lineCenterX: verticalRect.left + (verticalRect.width / 2),
+            lineHeight: style.lineHeight,
+            lines,
+            topDelta: Math.abs(labelRect.top - plotBottom),
+            verticalVisible: verticalLine.classList.contains('is-visible'),
+        };
+    });
+    expect(badges).not.toBeNull();
+    expect(badges.badgeLeft).toBeLessThan(badges.badgeRight);
+    expect(badges.badgeTop).toBeLessThanOrEqual(badges.badgeBottom);
+    expect(Number.isFinite(badges.badgeValue)).toBe(true);
+    expect(badges.lines).toEqual(badges.expectedLines);
+    expect(badges.lines).toEqual([
+        expect.stringMatching(/^\d{1,2} [A-Z][a-z]{2}$/),
+        expect.stringMatching(/^\d{4}$/),
+    ]);
+    expect(badges.background).toBe('rgb(0, 85, 204)');
+    expect(badges.color).toBe('rgb(255, 255, 255)');
+    expect(badges.fontFamily).toContain('GDS Transport');
+    expect(badges.fontSize).toBe('12px');
+    expect(badges.lineHeight).toBe('10px');
+    expect(badges.dateCenterX).toBeCloseTo(badges.lineCenterX, 1);
+    expect(badges.topDelta).toBeLessThanOrEqual(1.5);
+    expect(badges.horizontalVisible).toBe(true);
+    expect(badges.verticalVisible).toBe(true);
+
+    await page.mouse.move(1, 1);
+    await expect.poll(() => page.evaluate(() => {
+        const chart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+        const label = document.querySelector('[data-backtest-hover-date-label]');
+        const verticalLine = document.querySelector('.trade-chart-hover-line');
+        const horizontalLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        return {
+            dateVisible: label?.classList.contains('is-visible') || false,
+            guideCleared: chart?._activeBacktestPriceGuideBounds == null,
+            horizontalVisible: horizontalLine?.classList.contains('is-visible') || false,
+            verticalVisible: verticalLine?.classList.contains('is-visible') || false,
+        };
+    })).toEqual({
+        dateVisible: false,
+        guideCleared: true,
+        horizontalVisible: false,
+        verticalVisible: false,
+    });
+});
+
 test('keeps the Bayesian Price Field detail plot and date labels inside the history rail', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 841});
@@ -16028,6 +16169,9 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
         const grid = document.querySelector('[data-backtest-probability-detail-grid]');
         const xAxis = document.querySelector('[data-backtest-probability-detail-x-axis]');
         const xTicks = Array.from(document.querySelectorAll('[data-backtest-probability-detail-x-tick]'));
+        const summaryValues = Array.from(document.querySelectorAll(
+            '[data-backtest-probability-detail-up-summary],[data-backtest-probability-detail-down-summary]',
+        ));
         return {
             body: rectFor(body),
             grid: rectFor(grid),
@@ -16037,6 +16181,7 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
             pageBlockOverflow: document.documentElement.scrollHeight
                 - document.documentElement.clientHeight,
             plot: rectFor(plot),
+            summaryFontSizes: summaryValues.map((element) => getComputedStyle(element).fontSize),
             xAxis: rectFor(xAxis),
             xTicks: xTicks.map(rectFor),
         };
@@ -16055,6 +16200,7 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
         expect(geometry.plot.right).toBeLessThanOrEqual(geometry.panel.right + 1);
         expect(geometry.plot.top).toBeGreaterThanOrEqual(geometry.panel.top - 1);
         expect(geometry.plot.bottom).toBeLessThanOrEqual(geometry.panel.bottom + 1);
+        expect(geometry.summaryFontSizes).toEqual(['17px', '17px']);
         expect(geometry.grid.top).toBeGreaterThanOrEqual(geometry.gridViewport.top - 1);
         expect(geometry.grid.bottom).toBeLessThanOrEqual(geometry.gridViewport.bottom + 1);
         expect(geometry.xAxis.bottom).toBeLessThanOrEqual(geometry.panel.bottom + 1);
@@ -16090,6 +16236,109 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
     await expectContained();
     await sectionResizer.press('Home');
     await expectContained();
+});
+
+test('pins the Bayesian overview origin on primary press, mouse click, and touch tap', async ({page}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({width: 1_024, height: 900});
+    await page.goto(
+        '/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+        + '&stop_loss=0&show_trade_details=0',
+    );
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+
+    const priceCanvas = page.locator('#tradePriceChart');
+    const probabilityTooltip = page.locator('[data-backtest-chart-tooltip="probability-grid"]');
+    const readAnchor = (targetPage) => targetPage.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const candidates = points
+            .map((point, index) => ({index, point}))
+            .filter(({index, point}) => (
+                Number.isFinite(point?.x)
+                && Number.isFinite(point?.y)
+                && Number.isFinite(Number(presentation?.predictive_mean?.[index]))
+                && Number.isFinite(Number(presentation?.predictive_scale?.[index]))
+            ));
+        if (!(canvas instanceof HTMLCanvasElement) || !chart || !rect || !candidates.length) return null;
+        const {index, point} = candidates[Math.floor(candidates.length / 2)];
+        return {
+            index,
+            x: rect.left + (point.x * (rect.width / Number(chart.width))),
+            y: rect.top + (point.y * (rect.height / Number(chart.height))),
+        };
+    });
+    await expect.poll(() => readAnchor(page), {timeout: 10_000}).not.toBeNull();
+    const anchor = await readAnchor(page);
+    const pinnedIndex = async (label) => {
+        await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
+        await expect.poll(() => page.evaluate(() => (
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index
+        )), {message: label}).toBe(anchor.index);
+    };
+    const clearPin = async () => {
+        await page.keyboard.press('Escape');
+        await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'false');
+        await expect(probabilityTooltip).not.toHaveClass(/is-visible/);
+    };
+
+    await page.mouse.move(anchor.x, anchor.y);
+    await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await page.mouse.down();
+    await pinnedIndex('A primary pointer press must pin before release');
+    await page.mouse.up();
+    await page.mouse.move(anchor.x + 30, anchor.y + 20);
+    await pinnedIndex('Hover movement must not replace a pinned origin');
+    await clearPin();
+
+    await page.mouse.click(anchor.x, anchor.y, {button: 'left'});
+    await pinnedIndex('A normal mouse click must pin the origin');
+    await page.mouse.click(anchor.x, anchor.y, {button: 'right'});
+    const contextMenu = page.locator('#chart_context_menu');
+    await expect(contextMenu).toBeVisible();
+    await expect(contextMenu.locator('[data-chart-context-action="download-svg"]'))
+        .toHaveText('Download SVG');
+    await pinnedIndex('A right-click must preserve the pinned origin');
+    await clearPin();
+
+    const touchContext = await page.context().browser().newContext({
+        hasTouch: true,
+        viewport: {width: 1_024, height: 900},
+    });
+    const touchPage = await touchContext.newPage();
+    try {
+        const touchUrl = new URL('/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+            + '&stop_loss=0&show_trade_details=0', page.url()).href;
+        await touchPage.goto(touchUrl);
+        await expect.poll(() => touchPage.evaluate(() => Boolean(
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+        ))).toBe(true);
+        await expect.poll(() => readAnchor(touchPage), {timeout: 10_000}).toBeTruthy();
+        const touchAnchor = await readAnchor(touchPage);
+        const touchTooltip = touchPage.locator('[data-backtest-chart-tooltip="probability-grid"]');
+        await touchPage.touchscreen.tap(touchAnchor.x, touchAnchor.y);
+        await expect(touchTooltip).toHaveAttribute('data-pinned', 'true');
+        await expect.poll(() => touchPage.evaluate(() => (
+            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
+                ?._activeBacktestProbabilityGridBounds?.index
+        )), {message: 'A touch tap must pin the origin'}).toBe(touchAnchor.index);
+    } finally {
+        await touchContext.close();
+    }
+
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(detailPanel).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Number(
+        document.querySelector('#backtest_probability_detail_panel')?.dataset.activeIndex,
+    ))).toBe(anchor.index);
+    await priceCanvas.scrollIntoViewIfNeeded();
 });
 
 test('resizes the backtest overview and transaction history with the shared section handle', async ({page}) => {
@@ -18698,16 +18947,19 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const probabilityField = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const hoverLine = document.querySelector('.trade-chart-hover-line');
         const horizontalHoverLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        const hoverDateLabel = document.querySelector('[data-backtest-hover-date-label]');
         return {
             activeIndex: Number.isInteger(chart?._activeBacktestProbabilityGridBounds?.index)
                 ? chart._activeBacktestProbabilityGridBounds.index
                 : null,
+            dateVisible: hoverDateLabel?.classList.contains('is-visible') || false,
             fieldVisible: probabilityField?.classList.contains('is-visible') || false,
             horizontalVisible: horizontalHoverLine?.classList.contains('is-visible') || false,
             verticalVisible: hoverLine?.classList.contains('is-visible') || false,
         };
     })).toEqual({
         activeIndex: null,
+        dateVisible: false,
         fieldVisible: false,
         horizontalVisible: false,
         verticalVisible: false,
@@ -18807,6 +19059,27 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const verticalLineX = hoverLineRect
             ? hoverLineRect.left + (hoverLineRect.width / 2)
             : Number.NaN;
+        const hoverDateLabel = document.querySelector('[data-backtest-hover-date-label]');
+        const hoverDateLabelRect = hoverDateLabel?.getBoundingClientRect();
+        const hoverDateLabelStyle = hoverDateLabel instanceof HTMLElement
+            ? getComputedStyle(hoverDateLabel)
+            : null;
+        const hoverDateLines = Array.from(
+            hoverDateLabel?.querySelectorAll('[data-backtest-hover-date-line]') || [],
+        ).map((line) => line.textContent?.trim() || '');
+        const rawDate = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates?.[bounds.index];
+        const dateMatch = typeof rawDate === 'string'
+            ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
+            : null;
+        const dateFormatter = window.WORTHWARD_BOOTSTRAP?.dateDisplay?.formatFullDateLines;
+        const expectedHoverDateLines = dateMatch && typeof dateFormatter === 'function'
+            ? dateFormatter({
+                year: Number(dateMatch[1]),
+                monthIndex: Number(dateMatch[2]) - 1,
+                day: Number(dateMatch[3]),
+            }, {allowWrap: true}).filter(Boolean)
+            : [];
+        const plotBottom = canvasRect.top + (chart.chartArea.bottom * (canvasRect.height / chart.height));
         const first = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '0');
         const nextColumn = cells.find((cell) => cell.dataset.row === '0' && cell.dataset.column === '1');
         const nextRow = cells.find((cell) => cell.dataset.row === '1' && cell.dataset.column === '0');
@@ -18865,6 +19138,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             backgroundImage: tooltipStyle.backgroundImage,
             badgeLeft: guide.badgeLeft,
             badgeRight: guide.badgeRight,
+            badgeBottom: guide.badgeBottom,
+            badgeTop: guide.badgeTop,
             badgeValue: guide.value,
             borderWidths: [
                 tooltipStyle.borderTopWidth,
@@ -18902,6 +19177,32 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
                 && panelChildren.length === 2
                 && panelChildren[0].contains(canvas)
                 && panelChildren[1].contains(equityCanvas),
+            dateLabelBackground: hoverDateLabelStyle?.backgroundColor,
+            dateLabelCenterX: hoverDateLabelRect
+                ? hoverDateLabelRect.left + (hoverDateLabelRect.width / 2)
+                : Number.NaN,
+            dateLabelColor: hoverDateLabelStyle?.color,
+            dateLabelFontFamily: hoverDateLabelStyle?.fontFamily,
+            dateLabelFontSize: hoverDateLabelStyle?.fontSize,
+            dateLabelLineHeight: hoverDateLabelStyle?.lineHeight,
+            dateLabelRect: hoverDateLabelRect
+                ? {
+                    bottom: hoverDateLabelRect.bottom,
+                    height: hoverDateLabelRect.height,
+                    left: hoverDateLabelRect.left,
+                    right: hoverDateLabelRect.right,
+                    top: hoverDateLabelRect.top,
+                    width: hoverDateLabelRect.width,
+                }
+                : null,
+            dateLabelText: hoverDateLines,
+            dateLabelTopDelta: hoverDateLabelRect
+                ? Math.abs(hoverDateLabelRect.top - plotBottom)
+                : Number.NaN,
+            dateLabelVisible: hoverDateLabel instanceof HTMLElement
+                && !hoverDateLabel.hidden
+                && hoverDateLabel.classList.contains('is-visible'),
+            expectedHoverDateLines,
             firstCellLeftInset: firstRect ? firstRect.left - tooltipRect.left : null,
             firstCellTopInset: firstRect ? firstRect.top - tooltipRect.top : null,
             guideBottomInset: tooltipRect.bottom - (canvasRect.top + guide.y),
@@ -18962,6 +19263,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             stepPixelsDelta: Math.abs(bounds.stepPixels - medianStep),
             tooltipWidth: tooltipRect.width,
             verticalGap: firstRect && nextRowRect ? nextRowRect.top - firstRect.bottom : null,
+            verticalLineX,
             webkitBackdropFilter: tooltipStyle.webkitBackdropFilter || 'none',
         };
     });
@@ -19029,9 +19331,22 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.opacityInlineDelta).toBeLessThanOrEqual(1e-6);
     expect(contract.winnerOpacityDelta).toBeLessThanOrEqual(1e-6);
     expect(contract.rawProbabilityPreserved).toBe(true);
-    expect(contract.badgeLeft).toBeUndefined();
-    expect(contract.badgeRight).toBeUndefined();
-    expect(contract.badgeValue).toBeUndefined();
+    expect(contract.badgeLeft).toBeLessThan(contract.badgeRight);
+    expect(contract.badgeTop).toBeLessThanOrEqual(contract.badgeBottom);
+    expect(Number.isFinite(contract.badgeValue)).toBe(true);
+    expect(contract.dateLabelVisible).toBe(true);
+    expect(contract.dateLabelCenterX).toBeCloseTo(contract.verticalLineX, 1);
+    expect(contract.dateLabelTopDelta).toBeLessThanOrEqual(1.5);
+    expect(contract.dateLabelText).toEqual(contract.expectedHoverDateLines);
+    expect(contract.dateLabelText).toEqual([
+        expect.stringMatching(/^\d{1,2} [A-Z][a-z]{2}$/),
+        expect.stringMatching(/^\d{4}$/),
+    ]);
+    expect(contract.dateLabelBackground).toBe('rgb(0, 85, 204)');
+    expect(contract.dateLabelColor).toBe('rgb(255, 255, 255)');
+    expect(contract.dateLabelFontFamily).toContain('GDS Transport');
+    expect(contract.dateLabelFontSize).toBe('12px');
+    expect(contract.dateLabelLineHeight).toBe('10px');
     expect(contract.domXPathStable).toBe(true);
 
     const detailContract = await page.evaluate(() => {

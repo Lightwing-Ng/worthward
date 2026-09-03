@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.18.3
+Code version: v0.18.4
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
 
@@ -273,6 +273,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "QCOM": "QUALCOMM Incorporated",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
     "SGOV": "iShares 0-3 Month Treasury Bond ETF",
+    "SMH": "VanEck Semiconductor ETF",
     "SQQQ": "ProShares UltraPro Short QQQ",
     "SKHY": "SK hynix Inc.",
     "SKHYV": "SK hynix Inc.",

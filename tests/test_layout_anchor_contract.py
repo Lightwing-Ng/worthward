@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.8.34
+Code version: v0.8.37
 """
 
 from pathlib import Path
@@ -156,7 +156,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
     assert '@import url("./components/forms.css?v=3.40.7");' in app_css
     assert '@import url("./views/investment.css?v=1.78.5");' in app_css
-    assert "v0.65.24" in app_css
+    assert "v0.65.26" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.18");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.20");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -627,7 +627,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         "-app-v0.50.1",
         "-backtest-probability-grid-v0.25.1",
-        "-backtest-v0.37.4",
+        "-backtest-v0.37.6",
         "-backtest-layout-v0.3.4",
     ):
         assert fragment in base_template
@@ -690,6 +690,16 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "ctx.font = chartAxisCanvasFont;",
         "family: chartAxisFontFamily,",
         "const renderedTicks = xTickNodes.filter(Boolean);",
+        "const hoverDateLabel = document.createElement(\"div\");",
+        "const updateHoverDateLabel = (x, top, index) => {",
+        "updateHoverDateLabel(x, plotFrame.bottom, activeIndex);",
+        "priceChart?.draw?.();",
+        "chartAxis.drawYAxisValueBadge(chart, {",
+        "const pinProbabilityAtPointer = (event) => {",
+        'event.button === 0',
+        'event.pointerType === "touch"',
+        'canvas.addEventListener("pointerdown", (event) => {',
+        "if (suppressNextProbabilityClick && event.detail > 0)",
         "// Date text can change even when the cell geometry does not.",
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
@@ -773,9 +783,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         ".backtest-probability-detail-x-tick.is-first",
         ".backtest-probability-detail-x-tick.is-last",
         ".backtest-probability-detail-side-summary",
+        ".backtest-probability-detail-side-summary-value {\n    color: var(--muted);\n    font-size: 17px;",
         ".backtest-probability-detail-side-summary-value.is-up",
         ".backtest-probability-detail-side-summary-value.is-down",
         "z-index: calc(var(--layer-chart-overlay-line) + 2);",
+        ".trade-chart-hover-date-label",
+        "background: var(--theme-accent-primary);",
+        "font-size: var(--backtest-chart-axis-font-size);",
     ):
         assert fragment in trade_css
 

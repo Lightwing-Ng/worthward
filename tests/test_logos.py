@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.8.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -57,6 +57,29 @@ class LogoServiceTests(unittest.TestCase):
             recommended=0,
             raise_errors=False,
             session=shared_session,
+            timeout=6,
+        )
+
+    def test_known_smh_is_selectable_without_remote_symbol_search(self) -> None:
+        with (
+            patch("app.services.logos.top_used_tickers", return_value=[]),
+            patch("app.services.logos.build_local_search_items", return_value=[]),
+            patch("app.services.logos.has_remote_market_access", return_value=False),
+            patch("app.services.logos.has_profile_record", return_value=False),
+            patch("app.services.logos.has_logo_asset", return_value=False),
+            patch("app.services.logos.history_store_path_for") as history_path_mock,
+        ):
+            history_path_mock.return_value.exists.return_value = False
+            results = search_tickers("SMH", limit=5)
+
+        self.assertEqual(
+            results,
+            [{
+                "symbol": "SMH",
+                "name": "VanEck Semiconductor ETF",
+                "logo_url": "",
+                "source": "local",
+            }],
         )
 
     def test_yfinance_ticker_profile_reuses_shared_verified_session(self) -> None:

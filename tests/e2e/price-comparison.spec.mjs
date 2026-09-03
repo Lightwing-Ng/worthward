@@ -1,5 +1,28 @@
-/* Code version: v0.1.2 */
+/* Code version: v0.1.3 */
 import {expect, test} from '@playwright/test';
+
+test('accepts SMH as a selectable ETF ticker', async ({page}) => {
+    await page.route('**/api/symbol-search?q=SMH*', async (route) => {
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify([{
+                symbol: 'SMH',
+                name: 'VanEck Semiconductor ETF',
+                logo_url: '',
+                source: 'local',
+            }]),
+        });
+    });
+    await page.goto('/workspaces/prices?ticker=QQQ&ticker=JEPQ&period=1y');
+
+    const input = page.locator('#ticker_2');
+    await input.fill('SMH');
+
+    const suggestion = page.locator('#ticker_2_suggestions .suggestion-item[data-symbol="SMH"]');
+    await expect(suggestion).toBeVisible();
+    await expect(input).toHaveValue('SMH');
+    await expect(input).not.toHaveClass(/is-invalid/);
+});
 
 test('separates wide market-cap magnitudes without transforming their absolute values', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=6mo');

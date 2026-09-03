@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -55,6 +55,7 @@ from app.infrastructure.storage import (
 
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
+YFINANCE_SEARCH_TIMEOUT_SECONDS = 6
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
 SUPPORTED_MARKET_SUFFIXES = {
     "AS", "AX", "BA", "BE", "BK", "BO", "BR", "CA", "CN", "CO", "DE", "DU", "F", "HA",
@@ -131,6 +132,7 @@ def _search_yfinance_quotes(query: str) -> list[dict[str, object]]:
         recommended=0,
         raise_errors=False,
         session=get_yfinance_session(),
+        timeout=YFINANCE_SEARCH_TIMEOUT_SECONDS,
     ))
     quotes = getattr(search, "quotes", [])
     return quotes if isinstance(quotes, list) else []

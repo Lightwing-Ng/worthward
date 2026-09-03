@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.43.23`
+Documentation version: `v1.43.25`
 
 ## Bayesian Price Field detail view coverage
 
@@ -21,6 +21,17 @@ The Y-axis boundary and tick labels align with the main price Canvas plot
 boundary, while the DOM Y ticks and forecast-date ticks reuse the Canvas axis
 font contract (`GDS Transport`, 12px, regular weight, 10px line height) at the
 annotated desktop viewport and the narrow breakpoint.
+The overview hover contract also requires the shared filled blue Y-axis value
+badge to follow the exact polyline intersection and the centered filled blue
+date badge to align with the vertical guide at the typical X-axis baseline. The
+date badge must preserve the two-line `D Mmm` and `yyyy` format and the shared
+axis font metrics, and both badges must clear with the hover overlay.
+The overview regression also verifies that a primary pointer press pins the
+visible origin before release, the ordinary mouse click remains supported, and
+an iPad-style touch tap pins the same frame. It verifies that movement cannot
+change a pinned origin, that Escape clears it, that the Price Field detail keeps
+the pinned index, and that the chart context menu remains available for SVG
+download.
 The right end of the horizontal detail guide displays separate higher-price
 and lower-price mean probability masses per forecast horizon, and the E2E
 assertion recomputes both values from every detail cell, including
@@ -95,8 +106,8 @@ off-curve pointer move additionally verifies that the horizontal guide remains
 on the curve, green rows remain above that guide, and magenta rows remain below
 it. The chart stack remains the
 stationary interaction surface after the translated canvas leaves the pointer
-location, and Bayesian overview tracking does not render the rounded Y-axis
-value badge. Moving past the chart stack still clears the floating field plus
+location, and Bayesian overview tracking renders the shared filled Y-axis value
+badge and centered X-axis date badge. Moving past the chart stack still clears the floating field plus
 both guides. Pinning after a translated
 tracking hover also snaps the shared chart back to its fit coordinate system
 and hides the temporary native horizontal rail.
