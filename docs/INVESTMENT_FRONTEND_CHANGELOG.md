@@ -1,12 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.1`
+Documentation version: `v1.51.2`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Overview equity hover now draws the horizontal guide from the
+  vertical guide's curve intersection across the complete plot area, keeping
+  both crosshair guides on the same hovered equity point.
 
 - Fixed: Mixed-broker Overview replay now calculates HSBC settlement
   boundaries from the pre-current-snapshot broker ledger. A later current cash

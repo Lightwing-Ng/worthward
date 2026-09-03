@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.133.3
+ * Code version: v2.133.4
+ * - Fixed: Overview equity hover now draws the horizontal guide from the
+ *   vertical guide's curve intersection across the complete plot area.
  * - Added: Shared split layouts can honor a workspace-declared total overview
  *   content minimum before nested chart chrome has a measurable first frame.
  * - Changed: Stock-details and Overview y-axis badges load the shared chart-axis
@@ -18340,9 +18342,15 @@ document.addEventListener('DOMContentLoaded', () => {
             id: "investmentHoverGuidePlugin",
             afterDatasetsDraw(chartInstance) {
                 const {ctx, chartArea, scales, tooltip} = chartInstance;
-                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
+                if (!chartArea || !tooltip || tooltip.opacity === 0) {
+                    chartInstance._activeInvestmentEquityHorizontalGuideBounds = null;
+                    return;
+                }
                 const x = tooltip.caretX;
-                if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
+                if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) {
+                    chartInstance._activeInvestmentEquityHorizontalGuideBounds = null;
+                    return;
+                }
                 ctx.save();
                 ctx.strokeStyle = resolvedTheme.mutedSoft;
                 ctx.lineWidth = 1;
@@ -18363,9 +18371,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     || y < chartArea.top
                     || y > chartArea.bottom
                 ) {
+                    chartInstance._activeInvestmentEquityHorizontalGuideBounds = null;
                     chartInstance._activeInvestmentEquityGuideBounds = null;
                     return;
                 }
+                chartInstance._activeInvestmentEquityHorizontalGuideBounds = {
+                    left: chartArea.left,
+                    right: chartArea.right,
+                    y,
+                };
+                ctx.save();
+                ctx.strokeStyle = resolvedTheme.mutedSoft;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.left, y);
+                ctx.lineTo(chartArea.right, y);
+                ctx.stroke();
+                ctx.restore();
                 const formattedEquity = investmentShareMaskEnabled
                     ? '***'
                     : formatHoldingsMoney(pointEquity);

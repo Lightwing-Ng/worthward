@@ -1,4 +1,4 @@
-/* Code version: v1.203.4 */
+/* Code version: v1.203.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -13021,8 +13021,9 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
             );
             chart.update('none');
             const bounds = chart._activeInvestmentEquityGuideBounds;
+            const horizontalGuide = chart._activeInvestmentEquityHorizontalGuideBounds;
             const equity = Number(dataset[index]);
-            if (!bounds || !Number.isFinite(equity)) return null;
+            if (!bounds || !horizontalGuide || !Number.isFinite(equity)) return null;
             return {
                 allocationBadgeRadius: getComputedStyle(canvas)
                     .getPropertyValue('--investment-holdings-allocation-badge-radius').trim(),
@@ -13035,6 +13036,11 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                 }).format(equity),
+                horizontalGuideSpansPlot: horizontalGuide.left === chart.chartArea.left
+                    && horizontalGuide.right === chart.chartArea.right,
+                horizontalGuideYDelta: Math.abs(
+                    horizontalGuide.y - chart.scales.y.getPixelForValue(equity),
+                ),
                 yDelta: Math.abs(bounds.y - chart.scales.y.getPixelForValue(equity)),
                 yWithinPlot: bounds.y >= chart.chartArea.top && bounds.y <= chart.chartArea.bottom,
             };
@@ -13046,6 +13052,8 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
             equityDelta: 0,
             formattedEquity: badge?.expectedFormattedEquity,
             expectedFormattedEquity: badge?.expectedFormattedEquity,
+            horizontalGuideSpansPlot: true,
+            horizontalGuideYDelta: 0,
             yDelta: 0,
             yWithinPlot: true,
         });
