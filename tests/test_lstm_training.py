@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.4.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.5.0."""
 
 from __future__ import annotations
 
@@ -25,6 +25,152 @@ def _run_paths(manager: lstm_training.LstmTrainingManager, tmp_path: Path, seed:
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _completed_case(manager, tmp_path, seed=42, started="2026-09-04T00:00:00Z"):
+    paths, spec = _run_paths(manager, tmp_path, seed)
+    params = ga_runner.validate_selected_params({"use_broker_holding": True, "lstm_seed": 17})
+    spec.update({"selected_params": params, "configuration": {
+        "initial_capital": 25000, "reinvest_dividends": True, "stop_loss": False,
+    }})
+    _write_json(paths.request, spec)
+    _write_json(paths.snapshot, {"ticker": "NVDA", "start": "2025-09-04", "end": "2026-09-04", "interval": "1d"})
+    _write_json(paths.status, {"status": "completed", "started_at": started})
+    _write_json(paths.result, {"status": "completed", "best": {
+        "params": params, "holdout": {"direction_scored_points": 20, "direction_hit_rate_pct": 65.0},
+    }})
+    return paths
+
+
+def test_history_exposes_complete_exact_configuration_and_measured_score(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    _completed_case(manager, tmp_path)
+    run = manager.list_runs()[0]
+    config = run["configuration"]
+    assert run["accuracy_pct"] == 65.0
+    assert run["identifier"] == "260904(01)"
+    assert config["ticker"] == "NVDA"
+    assert config["range"] == "exact"
+    assert (config["from"], config["to"], config["interval"]) == ("2025-09-04", "2026-09-04", "1d")
+    assert config["initial_capital"] == 25000
+    assert config["reinvest_dividends"] is True
+    assert config["stop_loss"] is False
+    assert config["params"]["lstm_seed"] == 17
+    assert config["params"]["use_broker_holding"] is True
+    assert len(config["params"]) == 33
+
+
+def test_delete_is_recoverable_and_does_not_renumber_survivors(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    first = _completed_case(manager, tmp_path)
+    second = _completed_case(manager, tmp_path, 43, "2026-09-04T01:00:00Z")
+    original = first.result.read_bytes()
+    outcome = manager.delete(first.state.name)
+    assert outcome["recoverable"] is True
+    assert not first.state.exists()
+    assert (manager._workspace_root() / ".deleted" / first.state.name / "result.json").read_bytes() == original
+    assert [(run["id"], run["identifier"]) for run in manager.list_runs()] == [(second.state.name, "260904(02)")]
+
+
+def test_delete_rejects_active_locked_and_symlink_runs(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    paths = _completed_case(manager, tmp_path)
+    _write_json(paths.status, {"status": "running", "pid": 321})
+    monkeypatch.setattr(manager, "_process_matches", lambda *_args: True)
+    with pytest.raises(lstm_training.LstmTrainingConflict, match="Stop training"):
+        manager.delete(paths.state.name)
+    _write_json(paths.status, {"status": "completed"})
+    with ga_runner._run_lock(paths.lock), pytest.raises(RuntimeError, match="run lock"):
+        manager.delete(paths.state.name)
+    target = tmp_path / "protected"
+    target.mkdir()
+    link = manager._workspace_root() / ("lstm-ga-" + "f" * 24)
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(ValueError):
+        manager.delete(link.name)
+    assert target.exists() and paths.result.exists()
+    assert len(manager.list_runs()) == 1
+
+
+def test_legacy_aggregate_and_missing_snapshot_never_invent_configuration(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    paths = _completed_case(manager, tmp_path)
+    saved = json.loads(paths.result.read_text())
+    del saved["best"]["params"]["lstm_seed"]
+    _write_json(paths.result, saved)
+    run = manager.list_runs()[0]
+    assert run["configuration"] is None
+    assert "single-seed" in run["configuration_error"]
+    assert run["accuracy_pct"] == 65.0
+
+
+def test_history_restores_actual_data_dates_without_erasing_requested_period(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    paths = _completed_case(manager, tmp_path)
+    snapshot = json.loads(paths.snapshot.read_text())
+    snapshot["visible_rows"] = [{"Date": "2026-04-02T00:00:00"}, {"Date": "2026-09-03T00:00:00"}]
+    _write_json(paths.snapshot, snapshot)
+    run = manager.list_runs()[0]
+    assert run["configuration"]["from"] == "2026-04-02"
+    assert run["configuration"]["to"] == "2026-09-03"
+    assert run["configuration"]["period"] == "1y"
+    assert run["requested_range"] == {"from": "2025-09-04", "to": "2026-09-04"}
+
+
+def test_delete_endpoint_requires_csrf_and_delegates_one_id(client, monkeypatch):
+    assert client.post("/api/lstm-training/delete", json={"run_id": "a"}).status_code == 403
+    token = "c" * 32
+    with client.session_transaction() as session:
+        session[INVESTMENT_CSRF_SESSION_KEY] = token
+    called = []
+    def archive(_manager, run_id):
+        called.append(run_id)
+        return {"id": run_id, "recoverable": True}
+    monkeypatch.setattr(lstm_training.LstmTrainingManager, "delete", archive)
+    response = client.post("/api/lstm-training/delete", json={"run_id": "lstm-ga-" + "a" * 24}, headers={
+        "Origin": "http://localhost", "Sec-Fetch-Site": "same-origin", "X-CSRF-Token": token,
+    })
+    assert response.status_code == 200
+    assert called == ["lstm-ga-" + "a" * 24]
+    assert response.json["recoverable"] is True
+
+
+def test_training_configuration_validates_exact_dates_and_settings():
+    config = ga_runner.validate_training_configuration({"range": "exact", "from": "2025-09-04", "to": "2026-09-04", "initial_capital": 23000})
+    assert config["from"] == "2025-09-04"
+    assert config["initial_capital"] == 23000
+    for value in ({"initial_capital": "nan"}, {"range": "exact", "from": "2026-09-04", "to": "2025-09-04"}, {"stop_loss": "maybe"}):
+        with pytest.raises(ValueError):
+            ga_runner.validate_training_configuration(value)
+
+
+def test_windows_process_identity_uses_cim_and_exact_seed(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    calls = []
+    command_line = "python lstm_ga_tune.py --ga-seed 420 --ticker NVDA"
+    def process(command, **_kwargs):
+        calls.append(command)
+        return SimpleNamespace(stdout=command_line)
+    monkeypatch.setattr(lstm_training, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(lstm_training.subprocess, "run", process)
+    assert not manager._process_matches(321, {"ga_seed": 42})
+    assert manager._process_matches(321, {"ga_seed": 420})
+    assert calls[0][:3] == ["powershell", "-NoProfile", "-NonInteractive"]
+    assert "ProcessId = 321" in calls[0][-1]
+
+
+def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    captured = []
+    monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
+    monkeypatch.setattr(lstm_training.subprocess, "Popen", lambda command, **_kwargs: captured.append(command) or SimpleNamespace(pid=123))
+    config = {"range": "exact", "from": "2026-03-04", "to": "2026-07-14", "initial_capital": 25000, "stop_loss": False}
+    run = manager.start("DRAM", "6mo", {}, interval="1d", configuration=config)
+    sent = json.loads(captured[0][captured[0].index("--configuration") + 1])
+    assert sent == ga_runner.validate_training_configuration(config)
+    paths = manager._paths_for_run_id(run["id"])
+    assert json.loads(paths.request.read_text())["minimum_training_seconds"] == 60
+    assert json.loads(paths.request.read_text())["configuration"] == sent
 
 
 def test_list_runs_reads_terminal_history_without_touching_market_stores(tmp_path: Path) -> None:
@@ -236,7 +382,8 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
     assert ga_runner.build_run_paths(args, other).state != paths.state
 
 
-def test_snapshot_uses_requested_market_window_and_selected_parameters(tmp_path, monkeypatch):
+@pytest.mark.parametrize("exact", [False, True])
+def test_snapshot_uses_requested_market_window_and_selected_parameters(tmp_path, monkeypatch, exact):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     args = manager._build_runner_args("DRAM", "6mo", 42)
     args.selected_params = {"use_option_total_volume": True, "lstm_epochs": 3, "lstm_seed": 17}
@@ -245,6 +392,8 @@ def test_snapshot_uses_requested_market_window_and_selected_parameters(tmp_path,
     paths.state.mkdir(parents=True)
     frame = ohlc_frame_for_dates("DRAM", pd.bdate_range("2026-01-01", periods=120).strftime("%Y-%m-%d").tolist())
     start, end = frame.Date.iloc[10].date(), frame.Date.iloc[-1].date()
+    if exact:
+        args.configuration = {"range": "exact", "from": start.isoformat(), "to": end.isoformat()}
     bundle = {
         "symbol": "DRAM.US", "fingerprint": "provider-evidence",
         "source_commands": ["provider evidence from isolated test double"],
@@ -256,6 +405,7 @@ def test_snapshot_uses_requested_market_window_and_selected_parameters(tmp_path,
     }
     observed = []
     def date_bounds(period):
+        assert not exact, "Exact training must not substitute a rolling relative period"
         assert period == "6mo"
         return start, end
     def load(strategy, tickers, **kwargs):

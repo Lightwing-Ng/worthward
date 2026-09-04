@@ -1,7 +1,7 @@
 """
 Backtest route registration.
 
-Code version: v0.5.1
+Code version: v0.6.0
 
 The former Grid Trading URL remains a compatibility redirect; the canonical UI is
 the strategy selector and inline parameter panel in Generic Backtest.
@@ -22,3 +22,4 @@ def register_backtest_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/api/lstm-training")(runtime.lstm_training_list_api)
     app.post("/api/lstm-training/start")(runtime.lstm_training_start_api)
     app.post("/api/lstm-training/stop")(runtime.lstm_training_stop_api)
+    app.post("/api/lstm-training/delete")(runtime.lstm_training_delete_api)

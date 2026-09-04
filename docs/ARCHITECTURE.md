@@ -1,11 +1,11 @@
 # Architecture guide
 
-Documentation version: `v1.72.0`
+Documentation version: `v1.73.0`
 
 ## Exact-configuration LSTM training
 
-The web action snapshots the current ticker, relative period, interval, and all
-private factor/parameter controls. The manager validates them before creating a
+The web action snapshots the current ticker, relative or exact range, interval,
+capital, return/exit settings, and all private factor/parameter controls. The manager validates them before creating a
 job and passes them to the runner CLI; request identity, launch metadata, and the
 market snapshot retain the interval. This trainer supports only `1d`: missing or
 unsupported frequencies fail before launch, never silently switching `1m` to
@@ -15,12 +15,39 @@ metadata and actual OHLCV observations. Missing provider data fails closed.
 Unavailable historical factor observations are never fabricated; the shared
 model's factor-availability rules still apply.
 
-Historical run details are closed on first render and reload, including active
-jobs; user-expanded details survive polling. Active progress is outside the
-details disclosure. Terminal jobs have no progress bar. Completed summaries show
-the ticker and a right-aligned `yymmdd(##)` identifier, using the UTC start day and
-chronological sequence within that ticker/day, with run ID as a deterministic
-tie-breaker. Missing legacy dates remain explicitly unavailable.
+Durable selected-configuration training allocates at least 60 seconds of completed
+optimizer work across eligible causal origins. At each origin, the same weights
+and Adam state continue beyond the requested epoch floor until that origin's
+budget is met. GPU synchronization is included; loading, progress callbacks, and
+artificial waiting are excluded. Auto/GPU uses a confirmed PyTorch MPS or CUDA
+backend and fails closed on accelerator failure. Explicit CPU remains supported.
+The quick interactive Backtest backend policy is unchanged. Results report actual
+optimizer steps, compute seconds, engine, and precision. Longer training does not
+guarantee better holdout accuracy. SIGTERM/SIGINT cancellation and monotonic
+deadlines work on Windows; POSIX also retains its alarm watchdog.
+
+Training history is a plain heading followed by button rows, never nested native
+disclosures. One row may show monospace details. Clicking a complete single-seed
+case restores ticker, original period, exact scored data dates, interval, capital,
+return/exit controls, and all private parameters. The requested window remains
+separate metadata when listing dates or unavailable sessions shortened the data.
+The green check represents configuration equality, not reuse of frozen neural
+weights. Session-scoped selection survives reload and polling; any manual edit
+detaches it. The selected case's URL retains explicit values rather than eliding
+defaults. Old multi-seed aggregates without a complete single-seed configuration
+remain inspectable but are not guessed into selectable cases.
+
+Active progress sits below the intrinsic-width start/stop button, outside history;
+the outer training heading shows the shared SVG spinner. Its bar uses the positive
+green token only. Terminal jobs have no bar. Rows show ticker, a measured holdout
+accuracy badge using the Holdings allocation badge style, and right-aligned
+monospace `yymmdd(##)` (UTC start day, chronological sequence per ticker/day).
+Archives participate in numbering so deletion never renames surviving rows.
+The CSRF-protected delete route moves one inactive, unlocked compute directory
+to its workspace's `.deleted/` directory; market/settings stores are untouched.
+Protocol version 2 prevents the updated UI from starting jobs through stale
+pre-contract services. Activation of cached Python routes requires a user-owned
+service restart, never an agent-triggered restart.
 
 ## Price Field detail view contract
 

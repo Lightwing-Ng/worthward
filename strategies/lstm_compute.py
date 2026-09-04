@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.1.2
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -231,6 +231,10 @@ class LstmBackend:
     origins_trained: int = 0
     origins_failed_closed: int = 0
     feature_names: tuple[str, ...] = ()
+    minimum_training_seconds: float = 0.0
+    training_compute_seconds: float = 0.0
+    optimizer_steps: int = 0
+    require_accelerator: bool = False
 
     def fall_back_to_cpu(self, reason: str) -> None:
         self.resolved = "cpu"
@@ -239,6 +243,22 @@ class LstmBackend:
         self.numeric_precision = "float64"
         self.fallback_reason = reason
         self.runtime_fallback = True
+
+
+@dataclass
+class TrainingWork:
+    """Count completed optimizer work, excluding loading and progress callbacks."""
+
+    minimum_seconds: float
+    tick: Callable[[], None] | None = None
+    compute_seconds: float = 0.0
+    optimizer_steps: int = 0
+
+    def record(self, started: float) -> None:
+        self.compute_seconds += time.perf_counter() - started
+        self.optimizer_steps += 1
+        if self.tick is not None:
+            self.tick()
 
 
 def resolve_lstm_backend(requested: str) -> LstmBackend:
@@ -446,11 +466,15 @@ class _NumpyLSTM:
             *,
             epochs: int,
             learning_rate: float,
+            work: TrainingWork | None = None,
     ) -> None:
         params = self.parameters()
         moments = [np.zeros_like(param) for param in params]
         velocities = [np.zeros_like(param) for param in params]
-        for epoch in range(1, int(epochs) + 1):
+        epoch = 0
+        while epoch < int(epochs) or (work is not None and work.compute_seconds < work.minimum_seconds):
+            epoch += 1
+            started = time.perf_counter()
             hidden, caches = self.forward(sequences)
             raw = hidden @ self.W_out.T + self.b_out
             mean = raw[:, 0]
@@ -480,6 +504,8 @@ class _NumpyLSTM:
                 moment_hat = moments[index] / (1.0 - _ADAM_BETA1 ** epoch)
                 velocity_hat = velocities[index] / (1.0 - _ADAM_BETA2 ** epoch)
                 params[index] -= learning_rate * moment_hat / (np.sqrt(velocity_hat) + _ADAM_EPS)
+            if work is not None:
+                work.record(started)
 
 
 def _initialize_torch_lstm_biases(
@@ -507,6 +533,7 @@ def _torch_train_and_predict(
         epochs: int,
         learning_rate: float,
         seed: int,
+        work: TrainingWork | None = None,
 ) -> tuple[float, float]:
     torch_module = backend.torch_module
     if torch_module is None:
@@ -531,7 +558,12 @@ def _torch_train_and_predict(
     target_tensor = torch_module.as_tensor(train_targets, dtype=dtype, device=device)
     model.train()
     head.train()
-    for _ in range(int(epochs)):
+    epoch = 0
+    if work is not None:
+        getattr(torch_module, backend.resolved).synchronize()
+    while epoch < int(epochs) or (work is not None and work.compute_seconds < work.minimum_seconds):
+        epoch += 1
+        started = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
         encoded, _ = model(sequence_tensor)
         raw = head(encoded[:, -1, :])
@@ -546,6 +578,9 @@ def _torch_train_and_predict(
             _GRADIENT_CLIP,
         )
         optimizer.step()
+        if work is not None:
+            getattr(torch_module, backend.resolved).synchronize()
+            work.record(started)
     model.eval()
     head.eval()
     with torch_module.no_grad():
@@ -648,6 +683,7 @@ def _numpy_origin_prediction(
         epochs: int,
         learning_rate: float,
         seed: int,
+        work: TrainingWork | None = None,
 ) -> tuple[float, float]:
     standardized = _standardize_training(train_sequences, current_sequence)
     if standardized is None:
@@ -659,7 +695,7 @@ def _numpy_origin_prediction(
     if not math.isfinite(residual_scale) or residual_scale <= 0.0:
         residual_scale = 0.02
     model.b_out[1] = math.log(residual_scale)
-    model.train(train, train_targets, epochs=epochs, learning_rate=learning_rate)
+    model.train(train, train_targets, epochs=epochs, learning_rate=learning_rate, work=work)
     mean, scale = model.predict(current[None, :, :])
     predicted_mean = float(mean[0])
     predicted_scale = float(scale[0])
@@ -695,6 +731,17 @@ def walk_forward_lstm_predictions(
     infer_ms = 0.0
     trained = 0
     failed = 0
+    minimum = backend.minimum_training_seconds
+    eligible_count = 0
+    if minimum > 0:
+        eligible_count = sum(
+            _gather_origin_batch(feature_values, target_values, origin, training_window, lookback) is not None
+            for origin in range(row_count)
+        )
+        if not eligible_count:
+            raise ValueError("No causal training windows are available for this selection.")
+    backend.training_compute_seconds = 0.0
+    backend.optimizer_steps = 0
     for origin in range(row_count):
         if progress is not None:
             progress(origin, row_count)
@@ -710,6 +757,11 @@ def walk_forward_lstm_predictions(
             continue
         train_sequences, train_targets, current_sequence = batch
         origin_seed = int(seed) + int(origin)
+        work = TrainingWork(
+            minimum / eligible_count,
+            (lambda: progress(origin, row_count)) if progress is not None else None,
+        ) if minimum > 0 else None
+        work_options = {"work": work} if work is not None else {}
         started = time.perf_counter()
         try:
             if backend.engine == "torch":
@@ -722,6 +774,7 @@ def walk_forward_lstm_predictions(
                     epochs,
                     learning_rate,
                     origin_seed,
+                    **work_options,
                 )
             else:
                 mean, scale = _numpy_origin_prediction(
@@ -732,8 +785,11 @@ def walk_forward_lstm_predictions(
                     epochs=epochs,
                     learning_rate=learning_rate,
                     seed=origin_seed,
+                    **work_options,
                 )
         except (RuntimeError, TypeError, ValueError) as exc:
+            if minimum > 0 or backend.require_accelerator:
+                raise RuntimeError(f"Training failed on {backend.resolved}: {exc}") from exc
             if backend.engine == "torch":
                 backend.fall_back_to_cpu(
                     f"{type(exc).__name__}: {str(exc) or 'Torch LSTM failure'}"
@@ -758,11 +814,16 @@ def walk_forward_lstm_predictions(
         means[origin] = mean
         scales[origin] = scale
         trained += 1
+        if work is not None:
+            backend.training_compute_seconds += work.compute_seconds
+            backend.optimizer_steps += work.optimizer_steps
         del train_sequences, train_targets, current_sequence, batch
     backend.train_ms = round(train_ms, 3)
     backend.infer_ms = round(infer_ms, 3)
     backend.origins_trained = trained
     backend.origins_failed_closed = failed
+    if minimum > 0 and backend.training_compute_seconds < minimum:
+        raise RuntimeError("The minimum optimizer-work budget was not completed.")
     return means, scales
 
 
@@ -786,6 +847,9 @@ def backend_presentation(backend: LstmBackend) -> dict[str, Any]:
         "neural_engine_confirmed": bool(neural.get("confirmed")),
         "neural_engine_reason": neural.get("reason"),
         "train_ms": backend.train_ms,
+        "minimum_training_seconds": backend.minimum_training_seconds,
+        "training_compute_seconds": round(backend.training_compute_seconds, 6),
+        "optimizer_steps": backend.optimizer_steps,
         "infer_ms": backend.infer_ms,
         "origins_trained": backend.origins_trained,
         "origins_failed_closed": backend.origins_failed_closed,

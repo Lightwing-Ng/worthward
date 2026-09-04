@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.238.0`
+Documentation version: `v1.239.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -12,8 +12,19 @@ references, transaction descriptions, or copied statement content.
   selection or missing interval is rejected before launch, not silently replaced
   with daily data. The separate daily-model/one-minute Backtest execution bridge
   does not add intraday training support.
-- Legacy run metadata without an interval remains explicitly unrecorded; no
-  historical file or training configuration is rewritten to fill that gap.
+- Missing intervals may be read from the saved request or snapshot; the original
+  daily-only runner versions can be identified as 1d without rewriting files.
+  Legacy multi-seed aggregates without a saved single seed cannot be applied as
+  a complete case. Their measured aggregate scores and files remain inspectable.
+- Applying a case freezes its actual data dates, not a rolling period ending
+  today. A requested one-year period can contain fewer observations for a recent
+  listing; both the requested bounds and actual data window remain visible.
+- Protocol version 2 is required for updated training controls. A cached older
+  Python service must be restarted by its owner; refreshing static assets alone
+  cannot activate the new configuration/delete endpoints.
+- Deletion archives inactive compute output under `.deleted/<run-id>` beside the
+  active run directories. It is recoverable, not a permanent purge. Running or
+  locked jobs and symlink targets cannot be deleted.
 - Longbridge factors without verified historical availability remain unavailable,
   not synthetic features. Selecting a factor does not create missing observations.
 
@@ -99,9 +110,14 @@ references, transaction descriptions, or copied statement content.
 
 ## LSTM Price Field compute backends
 
-- LSTM `Auto` uses NumPy CPU because origin-local tiny LSTM training is faster
+- Interactive LSTM `Auto` uses NumPy CPU because origin-local tiny LSTM training is faster
   on unified-memory CPU than GPU kernel launch. An explicit `GPU` request uses
   Apple MPS or CUDA only after a real tensor readback.
+- Durable training uses a minimum 60-second optimizer-work budget and resolves
+  Auto to confirmed MPS/CUDA. Accelerator failures are visible failures, not silent
+  CPU successes. Explicit CPU remains available. The configured epoch count is a
+  floor during durable training. MPS was exercised on this Mac; Windows CUDA
+  selection and portable process/lock paths have no live Windows hardware proof.
 - Neural Engine is never claimed from a static import or an unconfirmed Core ML
   compile. `Auto` does not select it. An explicit `Neural Engine` request falls
   back to CPU when compute-unit execution is not confirmed.

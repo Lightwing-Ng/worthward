@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.7.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.8.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -148,7 +148,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.28.0');
     expect(desktop.backtestScript).toContain('backtest-v0.38.28');
-    expect(desktop.appScript).toContain('app-v0.51.3');
+    expect(desktop.appScript).toContain('app-v0.52.0');
     expect(desktop.panelTitle).toBe('LSTM Price Field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -169,7 +169,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({success: true, runs: []}),
+        body: JSON.stringify({success: true, protocol_version: 2, runs: []}),
     }));
     await page.goto(lstmUrl);
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
@@ -276,7 +276,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     };
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: historyFails ? 503 : 200, contentType: 'application/json',
-        body: JSON.stringify(historyFails ? {success: false, error: 'History unavailable'} : {success: true, runs}),
+        body: JSON.stringify(historyFails ? {success: false, error: 'History unavailable'} : {success: true, protocol_version: 2, runs}),
     }));
     await page.route('**/api/lstm-training/start', async (route) => {
         startRequests += 1;
@@ -299,11 +299,21 @@ test('LSTM training toggles one button and displays real progress and artifact m
     expect(startRequests).toBe(1);
     await expect(menu.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
     await expect(menu.locator('.lstm-training-history-details')).toBeHidden();
-    await menu.locator('.lstm-training-history-item > summary').click();
-    await expect(menu.locator('.lstm-training-files')).toContainText('request.json');
-    await expect(menu.locator('.lstm-training-files')).toContainText('1,234 B');
+    await expect(menu.locator('.lstm-training-history-item')).toHaveCount(0);
+    await expect(menu.locator('[data-lstm-training-progress] [role="progressbar"]')).toHaveCount(1);
+    await expect(page.locator('.lstm-training-spinner')).toBeVisible();
     expect(await button.locator('.icon').evaluate((node) => getComputedStyle(node).maskImage)).toContain('/static/images/stop.fill.svg');
-    expect(await menu.locator('.lstm-training-progress-fill').evaluate((node) => getComputedStyle(node).backgroundImage)).toContain('linear-gradient(to right');
+    await expect(menu.locator('.lstm-training-progress-fill')).toHaveCSS('background-image', 'none');
+    expect(await menu.locator('.lstm-training-progress-fill').evaluate((node) => {
+        const style = getComputedStyle(node);
+        const token = style.getPropertyValue('--theme-accent-positive').trim();
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.fillStyle = token;
+        const expected = context.fillStyle;
+        context.fillStyle = style.backgroundColor;
+        return context.fillStyle === expected;
+    })).toBe(true);
 
     await button.click();
     await expect(button).toHaveText('Stopping training…');
@@ -330,18 +340,108 @@ test('LSTM training toggles one button and displays real progress and artifact m
         {...run, status: 'completed', active: false},
     ];
     await expect(menu.locator('.lstm-training-history-item')).toHaveCount(2, {timeout: 10_000});
-    await expect(menu.locator('.lstm-training-history-item[open]')).toHaveCount(0);
+    await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(0);
     await expect(menu.getByRole('progressbar')).toHaveCount(0);
-    await expect(menu.locator('.lstm-training-history-item > summary')).toHaveText(['DRAM260904(02)', 'DRAM260904(01)']);
+    await expect(menu.locator('.lstm-training-history-select')).toHaveText(['DRAM260904(02)', 'DRAM260904(01)']);
     await expect(menu.locator('.lstm-training-history-identifier').first()).toHaveCSS('text-align', 'right');
-    await menu.locator('.lstm-training-history-item > summary').first().click();
+    await menu.locator('.lstm-training-history-select').first().click();
     await expect(menu.locator('.lstm-training-files').first()).toBeVisible();
     await page.reload();
-    await expect(menu.locator('.lstm-training-history-item[open]')).toHaveCount(0);
+    await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(0);
     await expect(menu.getByRole('progressbar')).toHaveCount(0);
     historyFails = true;
     await expect(menu.getByRole('status')).toHaveText('History unavailable', {timeout: 10_000});
     await expect(menu.getByRole('status')).toBeVisible();
+});
+
+test('LSTM history selects a complete case, detaches edits, and archives one result', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 1021, height: 863});
+    let runs = [];
+    const deleted = [];
+    await page.route('**/api/lstm-training', (route) => route.fulfill({
+        contentType: 'application/json', body: JSON.stringify({success: true, protocol_version: 2, runs}),
+    }));
+    await page.route('**/api/lstm-training/delete', async (route) => {
+        const id = route.request().postDataJSON().run_id;
+        expect(route.request().headers()['x-csrf-token']).toBeTruthy();
+        deleted.push(id);
+        runs = runs.filter((run) => run.id !== id);
+        await route.fulfill({contentType: 'application/json', body: JSON.stringify({success: true, id, recoverable: true})});
+    });
+    await page.goto(lstmUrl);
+    const params = await page.locator('[data-strategy-param-input][name]').evaluateAll((inputs) => Object.fromEntries(inputs.map((input) => {
+        const kind = input.closest('[data-strategy-param-kind]').dataset.strategyParamKind;
+        return [input.name, kind === 'boolean' ? ['true', '1'].includes(input.value)
+            : ['number', 'integer'].includes(kind) ? Number(input.value) : input.value];
+    })));
+    const configuration = {
+        ticker: 'NVDA', period: '6mo', range: 'exact', from: '2026-03-04', to: '2026-07-14',
+        interval: '1d', strategy: 'lstm-price-field', initial_capital: 25000,
+        price_only: false, reinvest_dividends: true, stop_loss: false, show_trade_details: false,
+        params: {...params, lstm_seed: 19, use_option_total_volume: true},
+    };
+    runs = [{
+        id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'NVDA', status: 'completed', active: false,
+        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', accuracy_pct: 65,
+        configuration, files: [{name: 'request.json', size_bytes: 1234}],
+    }, {
+        id: 'lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb', ticker: 'DRAM', status: 'completed', active: false,
+        started_at: '2026-09-04T01:00:00Z', identifier: '260904(02)', accuracy_pct: 61.25,
+        configuration: {...configuration, ticker: 'DRAM', params: {...configuration.params, lstm_seed: 23}},
+    }];
+    const menu = page.locator('[data-lstm-training-menu]');
+    const rows = menu.locator('.lstm-training-history-select');
+    await expect(rows).toHaveCount(2, {timeout: 10_000});
+    await expect(menu.locator('details, summary')).toHaveCount(0);
+    await expect(menu.locator('.lstm-training-history-heading')).toHaveCSS('text-align', 'left');
+    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveText('65.00%');
+    expect(await menu.locator('.lstm-training-history-identifier').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('monospace');
+    const buttonWidth = await menu.locator('.lstm-training-action').evaluate((node) => node.getBoundingClientRect().width);
+    expect(buttonWidth).toBeLessThan(await menu.evaluate((node) => node.getBoundingClientRect().width) - 50);
+
+    await rows.first().click();
+    await expect(page).toHaveURL(/ticker=NVDA/);
+    await expect(page.locator('[data-ticker-input]')).toHaveValue('NVDA');
+    await expect(page.locator('[name="range"][value="exact"]')).toBeChecked();
+    await expect(page.locator('[name="from"]')).toHaveValue('2026-03-04');
+    await expect(page.locator('[name="to"]')).toHaveValue('2026-07-14');
+    await expect(page.locator('[name="period"]')).toHaveValue('6mo');
+    await expect(page.locator('#trade_initial_capital')).toHaveValue('25,000.00');
+    await expect(page.locator('#include_dividends')).toBeChecked();
+    await expect(page.locator('#stop_loss')).not.toBeChecked();
+    await expect(page.locator('#strategy_param_lstm_seed')).toHaveValue('19');
+    await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(menu.locator('.lstm-training-selected-icon').first()).toBeVisible();
+    await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
+    expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('monospace');
+    await page.reload();
+    expect(await page.locator('[data-strategy-param-input][name]').evaluateAll((inputs) => Object.fromEntries(inputs.map((input) => {
+        const kind = input.closest('[data-strategy-param-kind]').dataset.strategyParamKind;
+        return [input.name, kind === 'boolean' ? ['true', '1'].includes(input.value)
+            : ['number', 'integer'].includes(kind) ? Number(input.value) : input.value];
+    })))).toEqual(configuration.params);
+    await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
+
+    await page.locator('#trade_initial_capital').fill('35000');
+    await expect(menu.locator('[aria-pressed="true"]')).toHaveCount(0);
+    await rows.nth(1).click();
+    await expect(page).toHaveURL(/ticker=DRAM/);
+    await expect(page.locator('#strategy_param_lstm_seed')).toHaveValue('23');
+    await expect(rows.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
+    await expect(menu.locator('.lstm-training-history-details').first()).toBeHidden();
+
+    await page.setViewportSize({width: 390, height: 844});
+    if (await page.locator('#sidebar_toggle').getAttribute('aria-expanded') === 'true') await page.locator('#sidebar_toggle').click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await menu.locator('[data-lstm-training-delete]').nth(1).click();
+    await expect(rows).toHaveCount(1);
+    expect(deleted).toEqual(['lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb']);
+    await expect(menu.locator('[aria-pressed="true"]')).toHaveCount(0);
+    await expect(menu.locator('.lstm-training-history-identifier')).toHaveText('260904(01)');
+    await page.goto('/workspaces/backtest?strategy=lstm-price-field&dividends=1&show_trade_details=0&compute_backend=CPU&lstm_epochs=1');
+    await expect(page.locator('#include_dividends')).toBeChecked();
 });
 
 test('server-side LSTM Price Field computes a real probability field and renders it', async ({page}) => {

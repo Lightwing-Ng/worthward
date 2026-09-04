@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.2.0
+Code version: v1.3.0
 - Changed: Model-neutral causal Price Field preparation now comes from the
   shared pipeline instead of the Bayesian strategy module.
 """
@@ -211,6 +211,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
     def __init__(self) -> None:
         self._warmup_bundle: object | None = None
         self.training_progress: Callable[[int, int], None] | None = None
+        self.training_min_seconds = 0.0
 
     def get_default_tickers(self) -> tuple[str, ...]:
         return ("NVDA",)
@@ -407,7 +408,15 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 dtype=np.float64
             )
         )
-        backend = resolve_lstm_backend(str(normalized_params["compute_backend"]))
+        requested_backend = str(normalized_params["compute_backend"])
+        durable_gpu = self.training_min_seconds > 0 and requested_backend != "CPU"
+        backend = resolve_lstm_backend("GPU" if durable_gpu else requested_backend)
+        backend.requested = requested_backend
+        backend.minimum_training_seconds = self.training_min_seconds
+        backend.require_accelerator = durable_gpu
+        if durable_gpu and backend.engine != "torch":
+            raise RuntimeError("Training requires a working PyTorch MPS or CUDA GPU. "
+                               "Install a supported PyTorch build or explicitly select CPU.")
         backend.feature_names = feature_names
         predictive_mean, predictive_std = walk_forward_lstm_predictions(
             feature_matrix,

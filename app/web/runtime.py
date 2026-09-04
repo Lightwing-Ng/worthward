@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.94.0
+Code version: v0.95.0
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -673,6 +673,7 @@ class WebRuntime:
     lstm_training_list_api: Any
     lstm_training_start_api: Any
     lstm_training_stop_api: Any
+    lstm_training_delete_api: Any
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
@@ -3991,7 +3992,8 @@ def build_web_runtime() -> WebRuntime:
                                 ][:view_max_tickers]
             include_dividends = False
         elif current_view in BACKTEST_VIEWS and not requested_tickers:
-            include_dividends = False if price_only else bool(defaults.get("backtest_include_dividends", False))
+            if not any(key in request.args for key in ("return", "dividends", "include_dividends")):
+                include_dividends = False if price_only else bool(defaults.get("backtest_include_dividends", False))
         elif current_view == "dca" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
                 defaults.get("dca_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
@@ -5582,6 +5584,7 @@ def build_web_runtime() -> WebRuntime:
                 "lstmTraining": "/api/lstm-training",
                 "lstmTrainingStart": "/api/lstm-training/start",
                 "lstmTrainingStop": "/api/lstm-training/stop",
+                "lstmTrainingDelete": "/api/lstm-training/delete",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
@@ -7207,7 +7210,7 @@ def build_web_runtime() -> WebRuntime:
 
     def lstm_training_list_api():
         try:
-            response = jsonify({"success": True, "runs": lstm_training_manager.list_runs()})
+            response = jsonify({"success": True, "protocol_version": 2, "runs": lstm_training_manager.list_runs()})
             return apply_no_store_headers(response)
         except Exception:  # noqa: BLE001
             LOGGER.exception("Unable to load LSTM training history")
@@ -7235,6 +7238,7 @@ def build_web_runtime() -> WebRuntime:
                 period=str(payload.get("period", "")),
                 params=payload.get("params"),
                 interval=str(payload.get("interval", "")),
+                **({"configuration": payload["configuration"]} if "configuration" in payload else {}),
             )
             response = jsonify({"success": True, "run": run})
             response.status_code = 202
@@ -7283,6 +7287,25 @@ def build_web_runtime() -> WebRuntime:
             })
             response.status_code = 500
             return apply_no_store_headers(response)
+
+    def lstm_training_delete_api():
+        security_error = validate_local_browser_write_request(request, action_label="LSTM training changes")
+        if security_error:
+            response = jsonify({"success": False, "error": security_error})
+            response.status_code = 403
+            return apply_no_store_headers(response)
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = lstm_training_manager.delete(str(payload.get("run_id", "")))
+            response = jsonify({"success": True, **result})
+        except (ValueError, RuntimeError) as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 409 if isinstance(exc, RuntimeError) else 400
+        except OSError:
+            LOGGER.exception("Unable to archive LSTM training")
+            response = jsonify({"success": False, "error": "The training run could not be archived."})
+            response.status_code = 500
+        return apply_no_store_headers(response)
 
     def settings_network_status_api():
         if request.args.get("refresh", "").strip() == "1":
@@ -9080,6 +9103,7 @@ def build_web_runtime() -> WebRuntime:
         lstm_training_list_api=lstm_training_list_api,
         lstm_training_start_api=lstm_training_start_api,
         lstm_training_stop_api=lstm_training_stop_api,
+        lstm_training_delete_api=lstm_training_delete_api,
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,

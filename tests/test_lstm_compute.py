@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.3.0."""
+"""LSTM compute backend and causality tests. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 
 from strategies.lstm_compute import (
     LstmBackend,
+    TrainingWork,
     _NumpyLSTM,
     _initialize_torch_lstm_biases,
     _load_optional_module,
@@ -23,6 +24,36 @@ from strategies.lstm_compute import (
 
 
 class LstmComputeTests(unittest.TestCase):
+    def test_minimum_work_continues_optimizer_updates_without_reinitializing(self):
+        sequences = np.ones((16, 4, 1), dtype=np.float64) * 0.01
+        targets = np.linspace(-0.02, 0.02, 16)
+        model = _NumpyLSTM(1, 4, np.random.default_rng(17))
+        before = model.W_out.copy()
+        ticks = []
+        work = TrainingWork(3.0, lambda: ticks.append(True))
+        # A deterministic clock verifies the loop, not real hardware performance.
+        with patch("strategies.lstm_compute.time.perf_counter", side_effect=[0, 1, 1, 2, 2, 3]):
+            model.train(sequences, targets, epochs=1, learning_rate=0.01, work=work)
+        self.assertEqual(work.optimizer_steps, 3)
+        self.assertEqual(work.compute_seconds, 3.0)
+        self.assertEqual(len(ticks), 3)
+        self.assertFalse(np.array_equal(before, model.W_out))
+
+    def test_work_budget_does_not_skip_requested_epochs(self):
+        work = TrainingWork(0.0)
+        model = _NumpyLSTM(1, 4, np.random.default_rng(17))
+        model.train(np.ones((16, 4, 1)), np.zeros(16), epochs=4, learning_rate=0.01, work=work)
+        self.assertEqual(work.optimizer_steps, 4)
+
+    def test_durable_gpu_errors_do_not_claim_a_cpu_training_success(self):
+        backend = LstmBackend("GPU", resolved="mps", engine="torch", minimum_training_seconds=60, require_accelerator=True)
+        with patch("strategies.lstm_compute._torch_train_and_predict", side_effect=RuntimeError("device lost")):
+            with self.assertRaisesRegex(RuntimeError, "Training failed on mps"):
+                walk_forward_lstm_predictions(np.ones((50, 1)), np.linspace(-0.01, 0.01, 50), training_window=25,
+                                              lookback=4, hidden_size=4, epochs=1, learning_rate=0.01,
+                                              seed=17, backend=backend)
+        self.assertEqual(backend.resolved, "mps")
+
     def test_missing_optional_modules_fail_closed_without_crashing(self) -> None:
         with patch("strategies.lstm_compute._load_optional_module", return_value=None):
             capabilities = detect_lstm_capabilities()

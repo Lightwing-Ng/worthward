@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.4.0
+Code version: v0.6.0
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -20,7 +20,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import date, datetime, timedelta, timezone
-import fcntl
 import hashlib
 import json
 import math
@@ -31,6 +30,11 @@ import sys
 import time
 from typing import Any, Callable, Iterator, Mapping, Sequence
 from zoneinfo import ZoneInfo
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 import numpy as np
 import pandas as pd
@@ -78,6 +82,7 @@ MAX_LEADERBOARD_ENTRIES = 256
 ROBUST_CANDIDATE_COUNT = 32
 ROBUST_SEEDS = (42, 43, 44)
 DEFAULT_DURATION_SECONDS = 43_200
+MINIMUM_TRAINING_SECONDS = 60.0
 DEFAULT_POPULATION_SIZE = 64
 DEFAULT_GA_SEED = 20260903
 MAX_WORKERS = 8
@@ -104,6 +109,8 @@ class EvaluationContext:
     holdout_start: int
     snapshot_fingerprint: str
     interval: str = "1d"
+    minimum_training_seconds: float = 0.0
+    backtest_settings: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -198,10 +205,16 @@ def _write_log(path: Path, message: str) -> None:
 def _run_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+", encoding="utf-8")
+    acquired = False
     try:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except OSError as exc:
             raise RuntimeError(f"Another process already owns the run lock: {path}") from exc
         handle.seek(0)
         handle.truncate()
@@ -210,7 +223,11 @@ def _run_lock(path: Path) -> Iterator[None]:
         yield
     finally:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if acquired and os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            elif acquired:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
 
@@ -232,7 +249,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         selected = json.loads(selected)
     return {
         "schema": 1,
-        "runner_version": "v0.4.0",
+        "runner_version": "v0.5.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
@@ -244,7 +261,38 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "ga_seed": int(args.ga_seed),
         "offline": bool(args.offline),
         "selected_params": validate_selected_params(selected) if selected is not None else None,
+        "configuration": validate_training_configuration(getattr(args, "configuration", None)),
+        "minimum_training_seconds": MINIMUM_TRAINING_SECONDS if selected is not None else 0.0,
     }
+
+
+def validate_training_configuration(raw: object) -> dict[str, Any]:
+    """Keep the saved form and the evaluator on one explicit settings contract."""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid training configuration.")
+    mode = raw.get("range", "period")
+    if mode not in {"period", "exact"}:
+        raise ValueError("Invalid training range mode.")
+    config: dict[str, Any] = {"range": mode}
+    if mode == "exact":
+        start, end = date.fromisoformat(str(raw.get("from", ""))), date.fromisoformat(str(raw.get("to", "")))
+        if start > end:
+            raise ValueError("Training start date must not follow its end date.")
+        config.update({"from": start.isoformat(), "to": end.isoformat()})
+    capital = float(raw.get("initial_capital", 10000))
+    if not math.isfinite(capital) or capital <= 0:
+        raise ValueError("Training initial capital must be positive and finite.")
+    config["initial_capital"] = capital
+    for key, default in (("price_only", False), ("reinvest_dividends", False), ("stop_loss", True), ("show_trade_details", False)):
+        value = raw.get(key, default)
+        if str(value).lower() not in {"true", "false", "0", "1"}:
+            raise ValueError(f"Invalid training setting: {key}.")
+        config[key] = str(value).lower() in {"true", "1"}
+    return config
 
 
 def validate_training_interval(raw: object) -> str:
@@ -428,7 +476,11 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         return context, raw
 
     strategy = LSTMPriceFieldStrategy()
-    start, end = _date_bounds(args.period)
+    configuration = _request_spec(args)["configuration"]
+    if configuration["range"] == "exact":
+        start, end = date.fromisoformat(configuration["from"]), date.fromisoformat(configuration["to"])
+    else:
+        start, end = _date_bounds(args.period)
     loader_params = _base_params(strategy)
     loader_params.update({
         "training_window": 504,
@@ -760,9 +812,17 @@ def _evaluate_signal_result(
     strategy = LSTMPriceFieldStrategy()
     strategy._warmup_bundle = context.bundle_payload
     strategy.training_progress = progress
+    strategy.training_min_seconds = context.minimum_training_seconds
+    settings = context.backtest_settings or validate_training_configuration(None)
     params = dict(candidate["params"])
     try:
         signal_result = strategy.compute_signals(context.visible_frame, params)
+        device = signal_result.presentation.get("device", {})
+        if context.minimum_training_seconds > 0 and (
+            not device.get("optimizer_steps")
+            or float(device.get("training_compute_seconds") or 0) < context.minimum_training_seconds
+        ):
+            raise RuntimeError("The requested optimizer-work budget was not completed.")
         frame = signal_result.frame
         opens = frame["Open"].to_numpy(dtype=np.float64)
         means = frame["lstm_predictive_mean"].to_numpy(dtype=np.float64)
@@ -783,12 +843,12 @@ def _evaluate_signal_result(
         )
         backtest = run_single_ticker_backtest(
             signal_result,
-            10_000.0,
+            settings["initial_capital"],
             execution_mode="next_open",
             interval=context.interval,
-            reinvest_cash_dividends=False,
-            include_cash_dividends=True,
-            stop_loss_enabled=True,
+            reinvest_cash_dividends=settings["reinvest_dividends"],
+            include_cash_dividends=not settings["price_only"],
+            stop_loss_enabled=settings["stop_loss"],
         )
         summary = backtest.get("summary") if isinstance(backtest, dict) else {}
         summary = summary if isinstance(summary, dict) else {}
@@ -1225,6 +1285,8 @@ def _run_selected_configuration(
     """Train the exact submitted configuration without GA or seed mutation."""
     started = _now_utc().isoformat()
     clock = time.monotonic()
+    context.minimum_training_seconds = max(MINIMUM_TRAINING_SECONDS, float(spec.get("minimum_training_seconds", 0)))
+    context.backtest_settings = validate_training_configuration(spec.get("configuration"))
     candidate = _candidate_record(
         spec["selected_params"], 0, "selected-configuration", context.snapshot_fingerprint,
     )
@@ -1250,6 +1312,8 @@ def _run_selected_configuration(
 
     def report_progress(completed: int, total: int) -> None:
         nonlocal progress_state, last_progress_write
+        if time.monotonic() - clock >= float(spec["duration_seconds"]):
+            raise TrainingTimeLimit
         # Origins include skipped dates; this measures work, not model quality.
         progress_state = {"completed": completed, "total": total, "unit": "origins"}
         now = time.monotonic()
@@ -1263,13 +1327,15 @@ def _run_selected_configuration(
         pass
 
     def interrupt(signum: int, _frame: object) -> None:
-        if signum == signal.SIGALRM:
+        if signum == getattr(signal, "SIGALRM", None):
             raise TrainingTimeLimit
         raise KeyboardInterrupt
 
-    signals = (signal.SIGTERM, signal.SIGINT, signal.SIGALRM)
+    has_alarm = hasattr(signal, "setitimer")
+    signals = (signal.SIGTERM, signal.SIGINT, signal.SIGALRM) if has_alarm else (signal.SIGTERM, signal.SIGINT)
     previous_handlers = {number: signal.signal(number, interrupt) for number in signals}
-    signal.setitimer(signal.ITIMER_REAL, float(spec["duration_seconds"]))
+    if has_alarm:
+        signal.setitimer(signal.ITIMER_REAL, float(spec["duration_seconds"]))
     try:
         result = _evaluate_signal_result(candidate, context, progress=report_progress)
     except TrainingTimeLimit:
@@ -1279,7 +1345,8 @@ def _run_selected_configuration(
         write_status("interrupted", [])
         raise
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        if has_alarm:
+            signal.setitimer(signal.ITIMER_REAL, 0)
         for number, handler in previous_handlers.items():
             signal.signal(number, handler)
     _append_jsonl(paths.evaluations, result)
@@ -1304,6 +1371,9 @@ def _run_selected_configuration(
 def _run(args: argparse.Namespace) -> int:
     spec = _request_spec(args)
     paths = _build_run_paths(args, spec)
+    prepared = getattr(args, "prepared_request", None)
+    if prepared and Path(prepared).resolve() != paths.request.resolve():
+        raise RuntimeError("The prepared request does not match this runner. Restart the application before training.")
     if paths.request.exists():
         existing = _read_json(paths.request)
         if existing != spec:
@@ -1313,13 +1383,20 @@ def _run(args: argparse.Namespace) -> int:
         if paths.result.exists():
             print(json.dumps(_read_json(paths.result), indent=2, sort_keys=True))
             return 0
-        if not args.resume:
+        if not args.resume and not prepared:
             raise RuntimeError(
                 f"A prior GA run exists at {paths.state}; use --resume explicitly to continue it."
             )
     paths.state.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(paths.request, spec)
     with _run_lock(paths.lock):
+        if prepared:
+            # A launch reservation is not a checkpoint. Claim it exactly once,
+            # under the same lock used by the worker and recoverable deletion.
+            if any(path.exists() for path in (paths.snapshot, paths.status, paths.result, paths.checkpoint)):
+                raise RuntimeError("This prepared training request has already started; use an explicit resume.")
+            with (paths.state / "worker.json").open("x", encoding="utf-8") as handle:
+                json.dump({"pid": os.getpid(), "started_at": _now_utc().isoformat()}, handle)
         context, snapshot = _build_snapshot(args, paths)
         if spec["selected_params"] is not None:
             return _run_selected_configuration(spec, paths, context)
@@ -1646,8 +1723,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ga-seed", type=int, default=DEFAULT_GA_SEED)
     parser.add_argument("--state-root", default="")
     parser.add_argument("--selected-params", default=None, help="Train one exact strategy configuration supplied as JSON instead of running GA.")
+    parser.add_argument("--configuration", default=None, help="Saved date range and Backtest settings as JSON.")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
+    parser.add_argument("--prepared-request", default=None, help=argparse.SUPPRESS)
     return parser
 
 

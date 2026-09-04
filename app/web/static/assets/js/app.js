@@ -1,4 +1,4 @@
-/* Code version: v0.51.3 */
+/* Code version: v0.52.0 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -7102,7 +7102,7 @@
         };
         const portfolioEntries = getFilledWeightEntries();
         const activeTab = $("[data-trade-detail-shell] input[name='trade_detail_tab']:checked")?.value || "metrics";
-        return workspaceUrlState.buildWorkspaceUrl(window.location.href, {
+        const cleanUrl = workspaceUrlState.buildWorkspaceUrl(window.location.href, {
             ...rangeState,
             tickers: getFilledTickers(),
             comparisonMetric: state.currentView === "prices" ? getComparisonMetric() : "price",
@@ -7156,6 +7156,7 @@
         }, {
             defaultPeriod: defaults.period || "1y",
         });
+        return window.WORTHWARD_LSTM_TRAINING?.preserveSelectionUrl?.(cleanUrl) || cleanUrl;
     };
 
     const buildPeriodOptionDefs = (periodValues) => (

@@ -1,6 +1,49 @@
 # Testing guide
 
-Documentation version: `v1.46.0`
+Documentation version: `v1.47.0`
+
+## Selectable LSTM cases and sustained training
+
+On 4 Sep 2026, the focused LSTM Python suite passed 80 tests. Isolated Chromium
+passed three tests covering both existing control
+flows and the new case-selection flow: full ticker/date/interval/private and
+generic settings, persistence on reload, detachment after edits, single-open
+details, recoverable delete requests, shared badge styling, intrinsic action
+width, and a 390px viewport. Browser responses in those interaction tests are
+test-only doubles and never create production history records.
+
+A separate real-data validation read the existing DRAM snapshot (107 daily rows)
+and wrote only to `/tmp/worthward-lstm-gpu-AI55JZ`. PyTorch MPS trained 82 causal
+origins with 6,460 optimizer updates and 60.768531 seconds of synchronized optimizer
+work (62.329795 seconds including per-origin setup/inference). There was no CPU
+fallback or artificial delay. The measured holdout hit rate was 50.00%, not a
+promise of improvement over the older configuration's 65.00%. CUDA was unavailable
+on this Mac and was not presented as hardware-verified.
+
+Live 8688 retained user-owned PID 76984. DOM verification found zero nested
+disclosures in training history, a 125.90px action in a 250px menu, and monospace
+codes. The UI explicitly gates updated actions on protocol version 2 because
+that process still caches older Python routes. No user service was restarted and
+no production run was deleted or added.
+
+Final commands and outcomes:
+
+- `./scripts/test.sh tests/test_lstm_training.py tests/test_lstm_compute.py tests/test_lstm_ga_tune.py tests/test_strategy_lstm_price_field.py`: exit 0, 80 passed in 3.69 seconds.
+- `npm run test:js`: exit 0, 318 passed, 0 failed, 0 skipped.
+- `./scripts/test_e2e.sh tests/e2e/lstm-price-field.spec.mjs --grep 'private training actions|training toggles one|history selects a complete'`: exit 0, 3 passed in 40.3 seconds on isolated port 8699, including 390px interactions. No E2E lock contention occurred; the wrapper stopped its server.
+- `./scripts/check.sh`: exit 1 at the Python stage, 1,092 passed, 6 skipped, 180 passed subtests, 3 failed in 327.68 seconds; coverage 73.40%. Two failures were stale version literals introduced by this asset bump, now replaced by source-derived checks. The remaining Bayesian geometry source assertion already fails against starting HEAD `d1d04c37`.
+- Final replay of layout, repository, and the four LSTM suites: exit 1, 116 passed and that same one pre-existing failure in 3.67 seconds. The full gate did not reach its JavaScript/browser stages; the separate commands above passed. No claim of a green full suite is made.
+- Final targeted Ruff, JavaScript syntax, and `git diff --check`: exit 0.
+- Post-review regression: the complete-case Chromium flow passed again in 16.9 seconds after selection-state hardening; all 80 focused Python tests were replayed, and documentation/repository contracts passed 11 tests. These focused checks cover the small changes made after the full gate.
+
+The work started clean on `main` at `d1d04c37`; changes remain uncommitted and are
+limited to training/backend integration, the affected UI assets/cache keys,
+regressions, and documentation. The independent Bayesian model was preserved.
+Final housekeeping found the same seven ignored numbered copies: five coverage
+files and two protected investment-cache files. All differ from their primary
+file by SHA-256 and byte comparison, so all were retained. No source or user data
+was deleted. Temporary real-data compute evidence and verification logs remain
+under `/tmp/worthward-lstm-gpu-AI55JZ`; production history is unchanged.
 
 ## Price Field shared-grid coverage
 
@@ -28,7 +71,7 @@ initial state. All three sections stay in the
 `Strategy parameters` collapse opened by the round `Tune strategy parameters`
 button, stay out of the strategy selector and global sidebar, use the
 `bolt.fill.svg` and `stop.fill.svg` masks, and keep historical runs inside an
-accessible native collapse. `tests/test_lstm_training.py`
+accessible button list with single-open details. `tests/test_lstm_training.py`
 covers isolated state discovery, detached launch arguments, seed-checked
 termination, and CSRF rejection at the web boundary.
 Web training snapshots both the current parameter and factor controls into a validated
@@ -46,13 +89,13 @@ stop, stopping, interruption, and history-error states without launching a job.
 History displays allowlisted existing artifact names and byte sizes. Progress is
 the runner's completed-origin count divided by its total, not elapsed time divided
 by the job budget and not a model-quality score. Unknown progress is indeterminate
-only for active runs. Its fill uses the standard primary blue and positive green
-tokens. Terminal progress remains in metadata but has no rendered progress bar.
+only for active runs. Its fill uses the positive green token, with no gradient.
+Terminal progress remains in metadata but has no rendered progress bar.
 Tests cover real strategy callbacks, terminal progress, unknown counters, and
 excluding symlinks and unrecognized artifact names in temporary stores.
 
-The current history regression requires details closed until clicked, closed again
-after reload, preserved expansion across polling, ticker/date sequence summaries
+The current history regression requires details closed until clicked, restoration
+of the selected case after reload, preserved expansion across polling, ticker/date sequence summaries
 without a Completed badge, and right alignment at desktop and 390px widths.
 Request tests cover ticker, period, interval, and all selected private controls;
 unsupported or missing intervals fail before any process or state directory is
@@ -62,7 +105,7 @@ Grid tests compare `[10%, 20%]` and `[2%, 19%]` contrast endpoints, equality at 
 threshold, tied maxima, zero fields, and no visible cells; raw masses and geometry
 remain unchanged. These tests do not launch a production training job.
 
-Current verification on 4 Sep 2026: focused LSTM Python passed 53 tests,
+Earlier verification on 4 Sep 2026: focused LSTM Python passed 53 tests,
 probability-grid Node passed 39 tests, the complete JavaScript unit suite passed
 318 tests, and the two isolated Chromium control/lifecycle flows passed. Ruff,
 JavaScript syntax, and whitespace checks passed. The full quality gate stopped

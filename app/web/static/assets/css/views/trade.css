@@ -1,4 +1,4 @@
-/* Code version: v3.58.0 */
+/* Code version: v3.59.0 */
 
 /* Keep every native details disclosure on the shared project triangle asset. */
 details > summary {
@@ -59,7 +59,7 @@ details[open] > summary::before {
 	min-width: 0;
 }
 .lstm-training-actions,
-.lstm-training-history-collapse summary {
+.lstm-training-history-heading {
 	display: flex;
 	align-items: center;
 	min-width: 0;
@@ -88,7 +88,7 @@ details[open] > summary::before {
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	width: 100%;
+	width: auto;
 	max-width: 100%;
 	min-width: 0;
 	min-height: 0;
@@ -151,15 +151,16 @@ details[open] > summary::before {
 	margin-top: 12px;
 	min-width: 0;
 }
-.lstm-training-history-collapse summary {
-	justify-content: space-between;
+.lstm-training-history-heading {
+	justify-content: flex-start;
 	gap: 8px;
 	padding: 5px 0;
 	color: var(--text);
-	cursor: pointer;
-	list-style-position: inside;
+	margin: 0;
+	text-align: left;
 }
 .lstm-training-count {
+	margin-left: auto;
 	color: var(--muted);
 	font-size: var(--font-table-body);
 }
@@ -170,6 +171,7 @@ details[open] > summary::before {
 	min-width: 0;
 }
 .lstm-training-history-entry {
+	position: relative;
 	min-width: 0;
 	padding: 6px 8px;
 	border-radius: var(--radius-soft);
@@ -181,16 +183,88 @@ details[open] > summary::before {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 	color: var(--muted);
+	font-size: var(--font-size-2);
 }
-.lstm-training-history-item summary {
+.lstm-training-history-select {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 8px;
+	gap: 4px;
 	min-width: 0;
+	width: 100%;
+	min-height: 28px;
+	margin: 0;
+	padding: 0 20px 0 0;
+	border: none;
+	border-radius: var(--radius-soft);
+	background: transparent;
+	box-shadow: none;
 	color: var(--text);
 	font-size: var(--font-table-body);
+	font-weight: var(--font-weight-regular);
 	cursor: pointer;
+	text-align: left;
+}
+.lstm-training-history-select:focus-visible {
+	outline: 2px solid var(--accent-text);
+	outline-offset: 2px;
+}
+.lstm-training-selected-icon {
+	width: 12px;
+	height: 12px;
+	flex: 0 0 12px;
+	background: var(--theme-accent-positive);
+	mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+	-webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+	visibility: hidden;
+}
+.lstm-training-history-select[aria-pressed="true"] .lstm-training-selected-icon {
+	visibility: visible;
+}
+.lstm-training-delete.ticker-remove {
+	position: absolute;
+	top: 5px;
+	right: 2px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	min-width: 20px;
+	min-height: 20px;
+	margin: 0;
+	padding: 0;
+	opacity: 1;
+	background: var(--glass-chip-background-strong);
+	border: var(--glass-chip-border);
+	box-shadow: var(--glass-chip-shadow);
+}
+.lstm-training-delete .icon-remove-muted {
+	background-color: var(--muted);
+}
+.lstm-training-delete:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+.lstm-training-accuracy {
+	flex: 0 0 auto;
+	font-size: var(--font-size-2);
+	font-weight: var(--font-weight-semibold);
+}
+.lstm-training-spinner {
+	margin-inline-start: 8px;
+	vertical-align: -2px;
+}
+.lstm-training-spinner[hidden],
+.lstm-training-history-details[hidden] {
+	display: none;
+}
+[data-lstm-training-progress]:not(:empty) {
+	margin-top: 12px;
+}
+.lstm-training-history-details,
+.lstm-training-history-identifier {
+	font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 .lstm-training-history-run {
 	min-width: 0;
@@ -231,7 +305,7 @@ details[open] > summary::before {
 .lstm-training-progress-fill {
 	display: block;
 	height: 100%;
-	background: linear-gradient(to right, var(--theme-accent-primary), var(--theme-accent-positive));
+	background: var(--theme-accent-positive);
 	border-radius: inherit;
 }
 .lstm-training-progress-track.is-indeterminate .lstm-training-progress-fill {

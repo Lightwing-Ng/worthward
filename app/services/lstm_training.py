@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.4.0
+Code version: v0.6.0
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -52,19 +52,35 @@ class LstmTrainingManager:
         runs = [
             self._read_run(state_dir)
             for state_dir in workspace_root.iterdir()
-            if state_dir.is_dir() and RUN_ID_PATTERN.fullmatch(state_dir.name)
+            if state_dir.is_dir() and not state_dir.is_symlink() and RUN_ID_PATTERN.fullmatch(state_dir.name)
         ]
+        # Include recoverable archives when numbering, so deleting a run never renames its siblings.
+        archived = workspace_root / ".deleted"
+        numbering = list(runs)
+        if archived.is_dir() and not archived.is_symlink():
+            numbering.extend(self._read_run(path) for path in archived.iterdir()
+                             if path.is_dir() and not path.is_symlink() and RUN_ID_PATTERN.fullmatch(path.name))
+        counters: dict[tuple[str, str], int] = {}
+        for run in sorted(numbering, key=lambda item: (str(item["started_at"]), item["id"])):
+            try:
+                day = datetime.fromisoformat(run["started_at"]).astimezone(timezone.utc).strftime("%y%m%d")
+            except (ValueError, TypeError):
+                continue
+            key = (run["ticker"], day)
+            counters[key] = counters.get(key, 0) + 1
+            run["identifier"] = f"{day}({counters[key]:02d})"
         return sorted(
             runs,
             key=lambda item: str(item.get("started_at") or item.get("created_at") or ""),
             reverse=True,
         )
 
-    def start(self, ticker: str, period: str, params: object = None, *, interval: str = "") -> dict[str, Any]:
+    def start(self, ticker: str, period: str, params: object = None, *, interval: str = "", configuration: object = None) -> dict[str, Any]:
         normalized_ticker = self._normalize_ticker(ticker)
         normalized_period = self._normalize_period(period)
         normalized_interval = ga_runner.validate_training_interval(interval)
         selected_params = ga_runner.validate_selected_params(params)
+        settings = ga_runner.validate_training_configuration(configuration)
         if any(
             run.get("ticker") == normalized_ticker and run.get("status") in ACTIVE_STATUSES
             for run in self.list_runs()
@@ -73,10 +89,11 @@ class LstmTrainingManager:
                 f"LSTM training is already running for {normalized_ticker}."
             )
 
-        seed = self._unique_seed(normalized_ticker, normalized_period)
+        seed = self._unique_seed(normalized_ticker, normalized_period, selected_params, normalized_interval, settings)
         args = self._build_runner_args(normalized_ticker, normalized_period, seed)
         args.selected_params = selected_params
         args.interval = normalized_interval
+        args.configuration = settings
         spec = ga_runner.build_request_spec(args)
         paths = ga_runner.build_run_paths(args, spec)
         paths.state.mkdir(parents=True, exist_ok=False)
@@ -101,7 +118,12 @@ class LstmTrainingManager:
             str(paths.root),
             "--selected-params",
             json.dumps(selected_params, sort_keys=True, allow_nan=False),
+            "--configuration",
+            json.dumps(settings, sort_keys=True, allow_nan=False),
+            "--prepared-request",
+            str(paths.request),
         ]
+        self._write_json(paths.request, spec)
         log_handle = paths.log.open("a", encoding="utf-8")
         try:
             process = subprocess.Popen(
@@ -130,6 +152,7 @@ class LstmTrainingManager:
             "interval": normalized_interval,
             "ga_seed": seed,
             "selected_params": selected_params,
+            "configuration": settings,
         })
         return {
             **self._read_run(paths.state),
@@ -157,6 +180,30 @@ class LstmTrainingManager:
             raise RuntimeError("The LSTM training process could not be terminated.") from exc
         return {**run, "status": "stopping", "active": True}
 
+    def delete(self, run_id: str) -> dict[str, Any]:
+        """Recoverably archive one inactive compute run; never touch market stores."""
+        paths = self._paths_for_run_id(run_id)
+        if self._read_run(paths.state)["active"]:
+            raise LstmTrainingConflict("Stop training before deleting this run.")
+        if paths.lock.is_symlink():
+            raise ValueError("Invalid training lock path.")
+        archive = self._workspace_root() / ".deleted"
+        if archive.is_symlink():
+            raise ValueError("Invalid training archive path.")
+        archive.mkdir(exist_ok=True)
+        destination = archive / paths.state.name
+        if destination.exists():
+            raise LstmTrainingConflict("A recoverable archive already exists for this run.")
+        with ga_runner._run_lock(paths.lock):
+            if self._read_run(paths.state)["active"]:
+                raise LstmTrainingConflict("Stop training before deleting this run.")
+            # A held POSIX lock travels with the directory. Windows holds open files in place.
+            if os.name != "nt":
+                paths.state.rename(destination)
+        if os.name == "nt":
+            paths.state.rename(destination)
+        return {"id": paths.state.name, "deleted": True, "recoverable": True}
+
     def _state_root(self) -> Path:
         if self._state_root_override is not None:
             return self._state_root_override
@@ -173,7 +220,7 @@ class LstmTrainingManager:
         if not RUN_ID_PATTERN.fullmatch(str(run_id).strip()):
             raise ValueError("Invalid LSTM training run identifier.")
         state = self._workspace_root() / str(run_id).strip()
-        if not state.is_dir():
+        if state.is_symlink() or not state.is_dir() or state.resolve().parent != self._workspace_root().resolve():
             raise ValueError("The requested LSTM training run was not found.")
         return ga_runner.RunPaths(
             root=self._state_root(),
@@ -204,10 +251,13 @@ class LstmTrainingManager:
             resume=False,
         )
 
-    def _unique_seed(self, ticker: str, period: str) -> int:
+    def _unique_seed(self, ticker: str, period: str, params=None, interval="1d", configuration=None) -> int:
         for _ in range(8):
             seed = secrets.randbelow(1_000_000_000)
             args = self._build_runner_args(ticker, period, seed)
+            args.selected_params = params
+            args.interval = interval
+            args.configuration = configuration
             spec = ga_runner.build_request_spec(args)
             if not ga_runner.build_run_paths(args, spec).state.exists():
                 return seed
@@ -219,6 +269,8 @@ class LstmTrainingManager:
         launch = self._read_json(state / "launch.json")
         identity = request or launch
         result = self._read_json(state / "result.json")
+        if not request and isinstance(result.get("request"), dict):
+            request = result["request"]
         ticker = str(status.get("ticker") or request.get("ticker") or launch.get("ticker") or "")
         period = str(status.get("period") or request.get("period") or launch.get("period") or "")
         stored_status = str(status.get("status") or "").strip()
@@ -231,16 +283,43 @@ class LstmTrainingManager:
             effective_status = "starting"
         else:
             effective_status = "unknown"
+        launch_error = None
+        if effective_status in {"unknown", "stale"} and launch:
+            launch_error = self._launch_error(state)
+            if launch_error:
+                effective_status = "failed_closed"
         best = result.get("best") if isinstance(result.get("best"), Mapping) else status.get("best")
         if not isinstance(best, Mapping):
             best = None
+        snapshot = self._read_json(state / "snapshot.json") if result else {}
+        interval = request.get("interval") or launch.get("interval") or snapshot.get("interval")
+        if not interval and request.get("runner_version") in {"v0.1.0", "v0.2.0"}:
+            interval = "1d"  # These saved runner versions only supported daily data.
+        configuration, configuration_error = self._saved_configuration(request, launch, snapshot, best, effective_status, interval)
+        accuracy = None
+        accuracy_label = "Holdout direction accuracy"
+        if best:
+            holdout = best.get("holdout")
+            if isinstance(holdout, Mapping) and holdout.get("direction_scored_points", 0) > 0:
+                accuracy = holdout.get("direction_hit_rate_pct")
+            elif best.get("holdout_median_hit_rate_pct") is not None:
+                accuracy = best["holdout_median_hit_rate_pct"]
+                accuracy_label = "Median holdout direction accuracy across seeds"
+        if type(accuracy) not in (int, float) or not math.isfinite(accuracy) or not 0 <= accuracy <= 100:
+            accuracy = None
         started_at = str(status.get("started_at") or launch.get("started_at") or "")
         updated_at = str(status.get("updated_at") or launch.get("started_at") or "")
         return {
             "id": state.name,
             "ticker": ticker,
             "period": period,
-            "interval": request.get("interval", launch.get("interval")),
+            "interval": interval,
+            "configuration": configuration,
+            "configuration_error": configuration_error,
+            "requested_range": {"from": snapshot.get("start"), "to": snapshot.get("end")},
+            "accuracy_pct": accuracy,
+            "accuracy_label": accuracy_label,
+            "device": best.get("device") if best else None,
             "status": effective_status,
             "phase": str(status.get("phase") or effective_status),
             "active": effective_status in ACTIVE_STATUSES,
@@ -257,8 +336,49 @@ class LstmTrainingManager:
             "result_available": (state / "result.json").is_file(),
             "progress": self._progress_summary(status, effective_status),
             "files": self._training_files(state),
-            "error": str(status.get("error") or "") or None,
+            "error": str(status.get("error") or launch_error or "") or None,
         }
+
+    @staticmethod
+    def _launch_error(state: Path) -> str:
+        """Expose bounded worker startup errors without changing saved evidence."""
+        log = state / "run.log"
+        if log.is_file() and not log.is_symlink():
+            with log.open("rb") as handle:
+                handle.seek(max(0, log.stat().st_size - 4096))
+                for line in reversed(handle.read().decode("utf-8", errors="replace").splitlines()):
+                    if line.startswith("lstm_ga_tune failed:"):
+                        return line[:1000]
+        return "Training worker exited before recording a result. Open run.log for details."
+
+    @staticmethod
+    def _saved_configuration(request, launch, snapshot, best, status, interval):
+        if status != "completed" or not best:
+            return None, "No completed configuration is available for this run."
+        params = best.get("params")
+        definitions = ga_runner.LSTMPriceFieldStrategy().get_parameter_definitions()
+        if not isinstance(params, dict) or not {item.key for item in definitions}.issubset(params):
+            return None, "This legacy aggregate has no complete single-seed configuration."
+        try:
+            selected = ga_runner.validate_selected_params(params)
+            settings = ga_runner.validate_training_configuration(request.get("configuration", launch.get("configuration")))
+            # Freeze the actual scored data window, including listing/holiday boundaries.
+            # The original requested period and bounds remain available separately.
+            rows = snapshot.get("visible_rows") or []
+            dates = sorted(date for row in rows if isinstance(row, dict)
+                           if (date := str(row.get("Date", ""))[:10]))
+            exact = ga_runner.validate_training_configuration({
+                **settings, "range": "exact",
+                "from": dates[0] if dates else snapshot.get("start"),
+                "to": dates[-1] if dates else snapshot.get("end"),
+            })
+            ticker = LstmTrainingManager._normalize_ticker(request.get("ticker") or snapshot.get("ticker"))
+            period = LstmTrainingManager._normalize_period(request.get("period") or snapshot.get("period"))
+            frequency = ga_runner.validate_training_interval(interval)
+        except (TypeError, ValueError):
+            return None, "The saved configuration is incomplete or no longer supported."
+        return {**exact, "ticker": ticker, "period": period, "interval": frequency,
+                "strategy": "lstm-price-field", "params": selected}, None
 
     @staticmethod
     def _progress_summary(status: Mapping[str, Any], effective_status: str) -> dict[str, Any]:
@@ -300,8 +420,12 @@ class LstmTrainingManager:
         if not seed:
             return False
         try:
+            command_args = ["ps", "-p", str(pid), "-o", "command="]
+            if os.name == "nt":
+                command_args = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                                f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {int(pid)}').CommandLine"]
             result = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "command="],
+                command_args,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -310,7 +434,9 @@ class LstmTrainingManager:
         except (OSError, subprocess.SubprocessError):
             return False
         command = result.stdout or ""
-        return "lstm_ga_tune.py" in command and f"--ga-seed {seed}" in command
+        return "lstm_ga_tune.py" in command and bool(re.search(
+            rf"(?:^|\s)--ga-seed(?:=|\s+){re.escape(seed)}(?:\s|$)", command,
+        ))
 
     @staticmethod
     def _run_pid(values: Mapping[str, Any]) -> int | None:
@@ -365,6 +491,8 @@ class LstmTrainingManager:
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
+        if path.is_symlink():
+            return {}
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, json.JSONDecodeError):
