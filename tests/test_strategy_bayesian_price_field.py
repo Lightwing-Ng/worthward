@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.26.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.26.1."""
 
 from __future__ import annotations
 
@@ -284,6 +284,14 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             )
         self.assertEqual(baseline.presentation["cell_display_threshold_pct"], 0.0)
         self.assertEqual(focused.presentation["cell_display_threshold_pct"], 50.0)
+        self.assertEqual(
+            baseline.presentation["diagnostics"],
+            focused.presentation["diagnostics"],
+        )
+        self.assertEqual(
+            baseline.presentation["fingerprint"],
+            focused.presentation["fingerprint"],
+        )
 
     def test_probability_diagnostics_are_bounded_and_score_executable_returns(self) -> None:
         frame = _market_frame(90)
@@ -887,6 +895,12 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             {**params, "cell_display_threshold": 50.0},
             "bundle-a",
         )
+        unchanged_lstm_parameter = _frame_fingerprint(
+            frame,
+            factors,
+            {**params, "lstm_lookback": 4, "lstm_seed": 7},
+            "bundle-a",
+        )
         changed_ohlcv_frame = frame.copy()
         changed_ohlcv_frame.loc[10, "High"] += 0.01
         changed_ohlcv_factors = _build_factor_columns(
@@ -924,6 +938,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             5,
         )
         self.assertEqual(unchanged_display_threshold, baseline)
+        self.assertEqual(unchanged_lstm_parameter, baseline)
 
     def test_presentation_contains_only_finite_probability_values(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
@@ -1539,7 +1554,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         strategy = BayesianPriceFieldStrategy()
         with (
             patch(
-                "strategies.algorithms.strategy_bayesian_price_field.is_remote_market_access_disabled",
+                "strategies.price_field_pipeline.is_remote_market_access_disabled",
                 return_value=True,
             ),
             patch(

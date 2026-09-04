@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.5.0`
+Documentation version: `v3.5.1`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -18,8 +18,8 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
 - Retain each Backtest strategy's tuning values in browser-local memory and restore them when returning to that strategy; explicit URL parameters remain authoritative
 - Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
-- Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars
-- Use LSTM Price Field for the same executable next-open target and the same shared probability-grid renderer, with namespaced LSTM hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
+- Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from the shared causal Price Field pipeline and Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars
+- Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
 - Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations

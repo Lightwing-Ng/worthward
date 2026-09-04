@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.44.4`
+Documentation version: `v1.44.5`
 
 ## Price Field shared-grid coverage
 
@@ -20,6 +20,12 @@ LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
 forecastable origin, and asserts both the floating field and the detail lattice
 render from that computation. Walk-forward LSTM training keeps the causal lag
 return even when enabled Longbridge factor columns are entirely unavailable.
+Architecture-boundary tests assert that LSTM imports the model-neutral
+`strategies.price_field_pipeline`, never the Bayesian strategy module, and
+never instantiates `BayesianPriceFieldStrategy` as a service. They also cover
+the lag-return-only ablation, shared factor/window parameter semantics,
+presentation-only threshold invariance for diagnostics and fingerprints, and
+the exclusion of Bayesian-only parameters from LSTM fingerprints.
 NumPy and Torch LSTM paths also share the explicit
 `input/forget/candidate/output` bias initialization contract (`0/1/0/0`).
 
@@ -342,7 +348,8 @@ Current suite inventory remeasured on 28 Aug 2026:
 - `tests/test_bayesian_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date.
   The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(10, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders the complete strategy-owned row counts and scales them without clipping; the field fixes 20 columns, actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer, square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The isolated flow seeds a horizontal pan and then traverses immutable pre-pan content coordinates, proving every intermediate curve index remains reachable instead of collapsing to the rightmost point. A left-side hover must keep the last trading day away from the pointer, place the vertical guide on the cursor, place the horizontal guide on the curve intersection, and draw the Price Field to the right of that guide. The shared resizer callback is verified after Chart.js resize, including a real pointer drag while the field is pinned and while the native probability rail is active; the rail keeps its own browser hit area and the resizer remains keyboard-accessible. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells, gaps, or fractional bars.
 - `tests/test_parallel.py`: bounded worker sizing, deterministic ordered results, spawn-process execution, contiguous batch argument handling, and safe thread fallback for unpicklable CPU tasks.
-- `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; bounded direction hit rate and proper Brier probability score; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
+- `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; bounded direction hit rate and proper Brier probability score; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint including exclusion of LSTM-only parameters; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
+- `tests/test_price_field_contract.py`: identity checks prove that Bayesian and LSTM use the same model-neutral factor, target, state, diagnostic, and threshold helpers while retaining separate model modules; the shared payload builder and JavaScript schema allowlist remain aligned.
 - `tests/test_strategy_variants.py`: signal-result contracts for the kNN, Lorentzian, and SuperTrend variants, parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.
 - `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
 - `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-on and explicit-off algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.
@@ -410,10 +417,10 @@ runners without reading or copying production Parquet stores. Normal manual
 launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
 
-When remote access is disabled, Bayesian Price Field loads its daily OHLCV model
-input from that existing local store and marks Longbridge-only factors
-unavailable. This keeps the Backtest renderer deterministic without enabling
-network access or inventing market data in CI.
+When remote access is disabled, both Price Field strategies load their daily
+OHLCV model input from that existing local store and mark Longbridge-only
+factors unavailable. This keeps the Backtest renderer deterministic without
+enabling network access or inventing market data in CI.
 
 Only one browser suite may own port `8699` at a time. Always start it through
 `./scripts/test_e2e.sh` or through `./scripts/check.sh`; a direct

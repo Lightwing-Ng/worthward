@@ -1,8 +1,9 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.2.2."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.2.3."""
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,12 @@ import pandas as pd
 from strategies.algorithms.strategy_lstm_price_field import (
     _MODEL_VERSION,
     LSTMPriceFieldStrategy,
+)
+from strategies.algorithms.strategy_bayesian_price_field import (
+    BayesianPriceFieldStrategy,
+)
+from strategies.price_field_pipeline import (
+    PRICE_FIELD_FACTOR_DEFINITIONS,
 )
 from strategies.base import normalize_strategy_presentation
 from strategies.loader import instantiate_strategy, list_enabled_strategies
@@ -62,6 +69,92 @@ def _cpu_params(**overrides: object) -> dict[str, object]:
 
 
 class LSTMPriceFieldStrategyTests(unittest.TestCase):
+    def test_strategy_depends_on_shared_pipeline_not_bayesian_strategy(self) -> None:
+        source = Path(
+            __file__
+        ).resolve().parents[1] / "strategies/algorithms/strategy_lstm_price_field.py"
+        text = source.read_text(encoding="utf-8")
+
+        self.assertNotIn("strategy_bayesian_price_field", text)
+        self.assertNotIn("BayesianPriceFieldStrategy(", text)
+        self.assertIn("load_price_field_market_bundle", text)
+        self.assertIn("build_price_field_factor_status", text)
+
+    def test_shared_factor_and_window_parameter_semantics_match(self) -> None:
+        lstm_definitions = {
+            definition.key: definition
+            for definition in LSTMPriceFieldStrategy().get_parameter_definitions()
+        }
+        bayesian_definitions = {
+            definition.key: definition
+            for definition in BayesianPriceFieldStrategy().get_parameter_definitions()
+        }
+
+        for definition in PRICE_FIELD_FACTOR_DEFINITIONS:
+            lstm = lstm_definitions[definition.parameter_key]
+            bayesian = bayesian_definitions[definition.parameter_key]
+            self.assertEqual(lstm.kind, bayesian.kind)
+            self.assertEqual(lstm.minimum, bayesian.minimum)
+            self.assertEqual(lstm.maximum, bayesian.maximum)
+            self.assertEqual(lstm.step, bayesian.step)
+            self.assertEqual(lstm.unit_hint, bayesian.unit_hint)
+
+        for key in ("training_window", "chip_window"):
+            lstm = lstm_definitions[key]
+            bayesian = bayesian_definitions[key]
+            self.assertEqual(lstm.kind, "integer")
+            self.assertEqual(lstm.minimum, bayesian.minimum)
+            self.assertEqual(lstm.maximum, bayesian.maximum)
+            self.assertEqual(lstm.step, bayesian.step)
+            self.assertEqual(lstm.unit_hint, bayesian.unit_hint)
+
+    def test_lag_return_alone_still_produces_a_price_field(self) -> None:
+        disabled_factors = {
+            definition.parameter_key: False
+            for definition in PRICE_FIELD_FACTOR_DEFINITIONS
+        }
+        result = LSTMPriceFieldStrategy().compute_signals(
+            _market_frame(80),
+            _cpu_params(**disabled_factors),
+        )
+        presentation = normalize_strategy_presentation(result.presentation)
+
+        self.assertEqual(
+            presentation["lstm"]["feature_names"],
+            ["lstm_lagged_close_return"],
+        )
+        self.assertGreater(
+            presentation["device"]["origins_trained"],
+            0,
+        )
+        self.assertGreater(
+            sum(
+                value is not None
+                for value in presentation["predictive_mean"]
+            ),
+            0,
+        )
+
+    def test_bayesian_only_parameters_do_not_change_lstm_fingerprint(self) -> None:
+        frame = _market_frame(80)
+        baseline = LSTMPriceFieldStrategy().compute_signals(
+            frame,
+            _cpu_params(prior_strength=0.01),
+        )
+        changed = LSTMPriceFieldStrategy().compute_signals(
+            frame,
+            _cpu_params(prior_strength=100.0),
+        )
+
+        self.assertEqual(
+            baseline.presentation["fingerprint"],
+            changed.presentation["fingerprint"],
+        )
+        np.testing.assert_array_equal(
+            baseline.frame["buy_signal"].to_numpy(),
+            changed.frame["buy_signal"].to_numpy(),
+        )
+
     def test_registry_discovers_the_strategy(self) -> None:
         catalog = next(
             item
@@ -177,6 +270,14 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             )
         self.assertEqual(baseline.presentation["cell_display_threshold_pct"], 0.0)
         self.assertEqual(focused.presentation["cell_display_threshold_pct"], 50.0)
+        self.assertEqual(
+            baseline.presentation["diagnostics"],
+            focused.presentation["diagnostics"],
+        )
+        self.assertEqual(
+            baseline.presentation["fingerprint"],
+            focused.presentation["fingerprint"],
+        )
 
     def test_walk_forward_has_no_future_lookahead(self) -> None:
         original = _market_frame(90)

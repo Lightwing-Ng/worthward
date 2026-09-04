@@ -5,7 +5,9 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.1.2
+Code version: v1.1.3
+- Changed: Model-neutral causal Price Field preparation now comes from the
+  shared pipeline instead of the Bayesian strategy module.
 """
 
 from __future__ import annotations
@@ -32,6 +34,23 @@ from strategies.price_field_contract import (
     PROBABILITY_GRID_RENDERER,
     build_probability_grid_presentation,
 )
+from strategies.price_field_pipeline import (
+    PRICE_FIELD_FACTOR_DEFINITIONS,
+    PRICE_FIELD_FACTOR_PARAMETER_KEYS,
+    build_price_field_factor_columns as _build_factor_columns,
+    build_price_field_factor_status,
+    bundle_to_price_field_ohlcv as _bundle_ohlcv_frame,
+    estimate_price_field_return_state as _estimate_return_state,
+    executable_price_field_return_targets as _executable_return_targets,
+    json_number_list as _json_number_list,
+    load_price_field_market_bundle,
+    merge_price_field_bundle_observations as _merge_bundle_observations,
+    normal_probability_above_zero as _normal_probability_above_zero,
+    normalize_price_field_ohlcv as _normalize_ohlcv_frame,
+    price_field_probabilistic_diagnostics as _probabilistic_diagnostics,
+    probability_threshold_signals as _probability_threshold_signals,
+    record_price_field_value as _record_value,
+)
 
 from ..base import (
     BaseStrategy,
@@ -40,22 +59,6 @@ from ..base import (
     StrategySupportMatrix,
 )
 from ..interval_bridge import DAILY_CLOSE_TO_NEXT_SESSION_OPEN
-from .strategy_bayesian_price_field import (
-    _BAYESIAN_FACTOR_DEFINITIONS,
-    BayesianPriceFieldStrategy,
-    _build_factor_columns,
-    _bundle_ohlcv_frame,
-    _estimate_return_state,
-    _executable_return_targets,
-    _json_number_list,
-    _merge_bundle_observations,
-    _normal_probability_above_zero,
-    _normalize_ohlcv_frame,
-    _probabilistic_diagnostics,
-    _probability_threshold_signals,
-    _record_value,
-)
-
 _PREDICTION_MEAN_COLUMN = "lstm_predictive_mean"
 _PREDICTION_STD_COLUMN = "lstm_predictive_std"
 _PROBABILITY_COLUMN = "lstm_probability_up"
@@ -67,10 +70,24 @@ _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
 _PRESENTATION_ONLY_PARAMETER_KEYS = frozenset({"cell_display_threshold"})
+_LSTM_FINGERPRINT_PARAMETER_KEYS = (
+    PRICE_FIELD_FACTOR_PARAMETER_KEYS
+    | {
+        "training_window",
+        "chip_window",
+        "lstm_lookback",
+        "lstm_hidden_size",
+        "lstm_epochs",
+        "lstm_learning_rate",
+        "lstm_seed",
+        "entry_probability",
+        "compute_backend",
+    }
+)
 
 
 def _rewrite_strategy_error(exc: Exception) -> ValueError:
-    return ValueError(str(exc).replace("Bayesian Price Field", "LSTM Price Field"))
+    return ValueError(str(exc).replace("Price Field", "LSTM Price Field"))
 
 
 def _lstm_frame_fingerprint(
@@ -117,7 +134,7 @@ def _lstm_frame_fingerprint(
             "params": {
                 key: value
                 for key, value in params.items()
-                if key not in _PRESENTATION_ONLY_PARAMETER_KEYS
+                if key in _LSTM_FINGERPRINT_PARAMETER_KEYS
             },
         },
         sort_keys=True,
@@ -207,7 +224,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                     default=definition.default,
                     help_text=definition.help_text,
                 )
-                for definition in _BAYESIAN_FACTOR_DEFINITIONS
+                for definition in PRICE_FIELD_FACTOR_DEFINITIONS
             ),
             StrategyParameterDefinition(
                 key="cell_display_threshold",
@@ -338,9 +355,8 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             end: Any,
             params: dict[str, Any] | None = None,
     ) -> list[pd.DataFrame] | None:
-        helper = BayesianPriceFieldStrategy()
         try:
-            frames = helper.load_market_datasets(
+            bundle = load_price_field_market_bundle(
                 tickers,
                 interval=interval,
                 start=start,
@@ -349,8 +365,8 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             )
         except ValueError as exc:
             raise _rewrite_strategy_error(exc) from exc
-        self._warmup_bundle = helper._warmup_bundle
-        return frames
+        self._warmup_bundle = bundle
+        return [_bundle_ohlcv_frame(bundle)]
 
     def compute_signals(
             self,
@@ -374,7 +390,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
         )
         enabled_factors = [
             definition.key
-            for definition in _BAYESIAN_FACTOR_DEFINITIONS
+            for definition in PRICE_FIELD_FACTOR_DEFINITIONS
             if bool(normalized_params[definition.parameter_key])
         ]
         feature_matrix, feature_names = _build_lstm_feature_matrix(
@@ -458,11 +474,10 @@ class LSTMPriceFieldStrategy(BaseStrategy):
         output["buy_signal"] = pd.Series(buy_signals, index=output.index, dtype="bool")
         output["sell_signal"] = pd.Series(sell_signals, index=output.index, dtype="bool")
 
-        helper = BayesianPriceFieldStrategy()
-        helper._warmup_bundle = self._warmup_bundle
         latest_origin = max(0, len(output) - 1)
         factor_selection = _latest_lstm_factor_selection(feature_names, latest_origin)
-        factors = helper._factor_status(
+        factors = build_price_field_factor_status(
+            self._warmup_bundle,
             full_frame,
             factor_values,
             normalized_params,

@@ -1,10 +1,13 @@
-"""Shared Price Field contract tests. Code version: v1.0.0."""
+"""Shared Price Field contract tests. Code version: v1.0.3."""
 
 from __future__ import annotations
 
 from pathlib import Path
 import unittest
 
+import strategies.algorithms.strategy_bayesian_price_field as bayesian_module
+import strategies.algorithms.strategy_lstm_price_field as lstm_module
+import strategies.price_field_pipeline as pipeline_module
 from strategies.price_field_contract import (
     BAYESIAN_PRICE_FIELD_SCHEMA,
     LSTM_PRICE_FIELD_SCHEMA,
@@ -22,6 +25,47 @@ from strategies.price_field_contract import (
 
 
 class PriceFieldContractTests(unittest.TestCase):
+    def test_model_neutral_pipeline_is_the_runtime_owner(self) -> None:
+        for name in (
+            "_build_factor_columns",
+            "_bundle_ohlcv_frame",
+            "_estimate_return_state",
+            "_executable_return_targets",
+            "_merge_bundle_observations",
+            "_normalize_ohlcv_frame",
+            "_probabilistic_diagnostics",
+            "_probability_threshold_signals",
+            "build_price_field_factor_status",
+        ):
+            self.assertIs(
+                getattr(bayesian_module, name),
+                getattr(lstm_module, name),
+            )
+        self.assertIs(
+            bayesian_module._build_factor_columns,
+            pipeline_module.build_price_field_factor_columns,
+        )
+        self.assertIs(
+            bayesian_module._BAYESIAN_FACTOR_DEFINITIONS,
+            pipeline_module.PRICE_FIELD_FACTOR_DEFINITIONS,
+        )
+        self.assertIs(
+            lstm_module.PRICE_FIELD_FACTOR_DEFINITIONS,
+            pipeline_module.PRICE_FIELD_FACTOR_DEFINITIONS,
+        )
+        self.assertIs(
+            lstm_module.load_price_field_market_bundle,
+            pipeline_module.load_price_field_market_bundle,
+        )
+
+    def test_lstm_does_not_import_the_bayesian_strategy_module(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "strategies/algorithms/strategy_lstm_price_field.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("strategy_bayesian_price_field", source)
+        self.assertNotIn("BayesianPriceFieldStrategy(", source)
+
     def test_strategy_ids_and_schemas_are_paired(self) -> None:
         self.assertEqual(
             PRICE_FIELD_STRATEGY_IDS,
@@ -71,6 +115,37 @@ class PriceFieldContractTests(unittest.TestCase):
         self.assertEqual(payload["schema"], LSTM_PRICE_FIELD_SCHEMA)
         self.assertEqual(payload["renderer"], PROBABILITY_GRID_RENDERER)
         self.assertEqual(payload["columns"], 20)
+
+        bayesian_payload = build_probability_grid_presentation(
+            schema=BAYESIAN_PRICE_FIELD_SCHEMA,
+            model_version="bayesian-price-field-model/v1.0.0",
+            cell_display_threshold_pct=5.0,
+            distribution_kind="dynamic-normal-log-return",
+            predictive_mean=[0.1],
+            predictive_scale=[0.2],
+            probability_up=[0.6],
+            return_autoregression=[0.0],
+            return_long_run_mean=[0.0],
+            return_innovation_scale=[0.2],
+            data_keys=["2026-01-02T00:00:00"],
+            diagnostics={"causal": True},
+            factors=[],
+            factor_selection={"selected": []},
+            device={"resolved": "cpu"},
+            source={"market_data": "longbridge-cli"},
+            fingerprint="abc",
+        )
+        model_owned_keys = {"schema", "model_version", "distribution_kind"}
+        shared_lstm = {
+            key: value for key, value in payload.items() if key not in model_owned_keys
+        }
+        shared_bayesian = {
+            key: value
+            for key, value in bayesian_payload.items()
+            if key not in model_owned_keys
+        }
+        self.assertEqual(shared_lstm, shared_bayesian)
+
         with self.assertRaisesRegex(ValueError, "Unsupported probability-grid schema"):
             build_probability_grid_presentation(
                 schema="other/v1",

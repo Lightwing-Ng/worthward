@@ -5,7 +5,9 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.1.0
+Code version: v0.1.1
+- Changed: LSTM tuning now consumes the model-neutral Price Field pipeline
+  directly instead of importing Bayesian strategy helpers.
 """
 
 from __future__ import annotations
@@ -38,12 +40,12 @@ from app.core.config import PERIOD_OFFSETS  # noqa: E402
 from app.services.bayesian_market_factors import (  # noqa: E402
     build_local_bayesian_factor_bundle,
 )  # noqa: E402
-from strategies.algorithms.strategy_bayesian_price_field import (  # noqa: E402
-    _BAYESIAN_FACTOR_DEFINITIONS,
-    _build_factor_columns,
-    _bundle_ohlcv_frame,
-    _executable_return_targets,
-    _merge_bundle_observations,
+from strategies.price_field_pipeline import (  # noqa: E402
+    PRICE_FIELD_FACTOR_DEFINITIONS as _PRICE_FIELD_FACTOR_DEFINITIONS,
+    build_price_field_factor_columns as _build_factor_columns,
+    bundle_to_price_field_ohlcv as _bundle_ohlcv_frame,
+    executable_price_field_return_targets as _executable_return_targets,
+    merge_price_field_bundle_observations as _merge_bundle_observations,
 )  # noqa: E402
 from strategies.algorithms.strategy_lstm_price_field import (  # noqa: E402
     LSTMPriceFieldStrategy,
@@ -79,11 +81,11 @@ MAX_WORKERS = 8
 
 _FACTOR_PARAMETER_KEYS = {
     definition.key: definition.parameter_key
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS
 }
 _FACTOR_DEFINITIONS_BY_KEY = {
     definition.key: definition
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS
 }
 _WORKER_CONTEXT: "EvaluationContext | None" = None
 _STOP_REQUESTED = False
@@ -336,7 +338,7 @@ def _effective_factor_keys(full_frame: pd.DataFrame, bundle_payload: Mapping[str
         "error",
     }
     active: list[str] = []
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS:
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS:
         values = factor_values.get(definition.key)
         finite_count = int(np.count_nonzero(np.isfinite(values))) if values is not None else 0
         status = str(statuses.get(definition.provider_key, "")).lower()
@@ -492,7 +494,7 @@ def _canonical_params(
     normalized = {str(key): value for key, value in base_params.items()}
     normalized.update({str(key): value for key, value in params.items()})
     active = set(active_factor_keys)
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS:
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS:
         parameter_key = definition.parameter_key
         normalized[parameter_key] = bool(normalized.get(parameter_key, False)) and (
             definition.key in active
@@ -540,7 +542,7 @@ def _random_params(
 ) -> dict[str, Any]:
     params = dict(base_params)
     active = set(active_factor_keys)
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS:
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS:
         if definition.key in active:
             params[definition.parameter_key] = bool(rng.random() < 0.5)
         else:
@@ -565,7 +567,7 @@ def _mutate_params(
         mutation_rate: float,
 ) -> dict[str, Any]:
     params = dict(parent)
-    for definition in _BAYESIAN_FACTOR_DEFINITIONS:
+    for definition in _PRICE_FIELD_FACTOR_DEFINITIONS:
         if definition.key in active_factor_keys and rng.random() < mutation_rate:
             params[definition.parameter_key] = not bool(params.get(definition.parameter_key, False))
     for key in ("training_window", "chip_window", "lstm_lookback", "lstm_hidden_size", "lstm_epochs"):

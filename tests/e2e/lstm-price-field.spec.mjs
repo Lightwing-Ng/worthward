@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.2.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.2.1 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -10,6 +10,25 @@ const bayesianUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
     + '&show_trade_details=0&compute_backend=CPU&training_window=40'
 );
+const auditUrls = [
+    {
+        id: 'lstm-price-field',
+        url: '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
+            + '&stop_loss=0&show_trade_details=0&cell_display_threshold=2.50',
+        schema: 'lstm-price-field/v1',
+    },
+    {
+        id: 'bayesian-price-field',
+        url: '/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+            + '&stop_loss=0&show_trade_details=0'
+            + '&use_option_call_volume=1&use_pe_ratio=0'
+            + '&use_option_put_call_open_interest_ratio=1'
+            + '&use_option_put_call_volume_ratio=1'
+            + '&cell_display_threshold=2.50&training_window=30'
+            + '&chip_window=41&prior_strength=1.51',
+        schema: 'bayesian-price-field/v1',
+    },
+];
 
 const injectPriceFieldPresentation = async (page, schema) => page.evaluate((presentationSchema) => {
     const result = window.WORTHWARD_APP?.backtestResult;
@@ -342,4 +361,30 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Bayesian Price Field detail');
+});
+
+test('the two supplied DRAM audit URLs render model-specific fields on the shared contract', async ({page}) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({width: 1024, height: 841});
+
+    for (const audit of auditUrls) {
+        await page.goto(audit.url);
+        await expect(page.locator('#trade_strategy')).toHaveValue(audit.id);
+        await expect(page.locator('#backtest_history_probability')).toHaveCount(1);
+        await expect.poll(() => page.evaluate(() => {
+            const result = window.WORTHWARD_APP?.backtestResult;
+            const presentation = result?.strategy_presentation;
+            return {
+                schema: presentation?.schema || '',
+                renderer: presentation?.renderer || '',
+                columns: Number(presentation?.columns || 0),
+                showTradeDetails: document.querySelector('#show_trade_details')?.checked === true,
+            };
+        }), {timeout: 120_000}).toEqual({
+            schema: audit.schema,
+            renderer: 'probability-grid-v1',
+            columns: 20,
+            showTradeDetails: false,
+        });
+    }
 });
