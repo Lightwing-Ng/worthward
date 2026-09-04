@@ -1,4 +1,4 @@
-/* Code version: v1.203.19 */
+/* Code version: v1.203.20 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -15866,7 +15866,7 @@ test('keeps the backtest sidebar toggle touch-safe on a larger iPad viewport', a
     }
 });
 
-test('keeps the Backtest page title and Performance result title on separate rows', async ({page}) => {
+test('aligns the Backtest page and Performance result titles on the shared desktop centerline', async ({page}) => {
     await page.setViewportSize({width: 974, height: 1_354});
     await page.goto('/workspaces/backtest?stop_loss=0');
 
@@ -15880,27 +15880,23 @@ test('keeps the Backtest page title and Performance result title on separate row
     await expect(resultHeading).toHaveText('Performance');
 
     const geometry = await page.evaluate(() => {
-        const titleRail = document.querySelector('.workspace-mode-title-card')?.getBoundingClientRect();
         const title = document.querySelector('.workspace-mode-title-card > .report-heading-row')?.getBoundingClientRect();
-        const resultRail = document.querySelector('.backtest-results-stack > .workspace-summary-card')?.getBoundingClientRect();
         const result = document.querySelector('.backtest-results-stack > .workspace-summary-card > .report-heading-row')?.getBoundingClientRect();
-        const main = document.querySelector('.backtest-workspace-main')?.getBoundingClientRect();
-        if (!titleRail || !title || !resultRail || !result || !main) return null;
+        const toggle = document.querySelector('#sidebar_toggle')?.getBoundingClientRect();
+        const theme = document.querySelector('[data-layout-role="global-theme-anchor"]')?.getBoundingClientRect();
+        if (!title || !result || !toggle || !theme) return null;
+        const center = (rect) => rect.y + rect.height / 2;
         return {
-            titleRailBottom: titleRail.bottom,
-            titleBottom: title.bottom,
-            resultRailTop: resultRail.top,
-            resultTop: result.top,
-            mainTop: main.top,
-            headingRowGap: result.top - title.bottom,
+            resultDelta: Math.abs(center(result) - center(title)),
+            toggleDelta: Math.abs(center(toggle) - center(title)),
+            themeDelta: Math.abs(center(theme) - center(title)),
         };
     });
 
     expect(geometry).not.toBeNull();
-    expect(geometry.resultRailTop).toBeGreaterThanOrEqual(geometry.titleRailBottom + 8);
-    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.titleBottom + 8);
-    expect(geometry.mainTop).toBeGreaterThanOrEqual(geometry.titleRailBottom + 8);
-    expect(geometry.headingRowGap).toBeGreaterThanOrEqual(8);
+    expect(geometry.resultDelta).toBeLessThanOrEqual(1);
+    expect(geometry.toggleDelta).toBeLessThanOrEqual(1);
+    expect(geometry.themeDelta).toBeLessThanOrEqual(1);
 });
 
 test('aligns the Bayesian Price Field axes and date typography with the price chart', async ({page}) => {

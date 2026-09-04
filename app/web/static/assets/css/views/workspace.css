@@ -1,4 +1,4 @@
-/* Code version: v1.22.3 */
+/* Code version: v1.22.4 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -2671,11 +2671,6 @@ body.is-price-subplot-reordering {
     .workspace-mode-shell > .workspace-mode-layout > .workspace-mode-main {
         height: calc(100% + var(--workspace-mode-result-heading-lift));
         transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));
-    }
-
-    .workspace-mode-shell > .workspace-mode-layout > .workspace-mode-main.backtest-workspace-main {
-        height: 100%;
-        transform: none;
     }
 }
 

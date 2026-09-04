@@ -1,4 +1,4 @@
-"""Registry-driven parameter search with validation-only ranking. Code version: v1.0.0."""
+"""Registry-driven parameter search with validation-only ranking. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -90,6 +90,8 @@ def search_space(
             options = (
                 (False, True) if definition.kind == "boolean" else definition.options
             )
+            if bounds is not None and not isinstance(bounds[key], (list, tuple)):
+                raise ValueError(f"Invalid choices for {key}; supply an array.")
             selected = tuple(bounds[key]) if bounds is not None else tuple(options)
             if (
                 not selected
@@ -116,9 +118,21 @@ def search_space(
                 else max(1, abs(default)) * 4
             )
             if bounds is not None:
-                low, high = bounds[key]
+                domain = bounds[key]
+                if (
+                    not isinstance(domain, (list, tuple))
+                    or len(domain) != 2
+                    or any(
+                        isinstance(value, bool) or not isinstance(value, (int, float))
+                        for value in domain
+                    )
+                ):
+                    raise ValueError(
+                        f"Invalid numeric bounds for {key}; supply two numbers."
+                    )
+                low, high = domain
             low, high = float(low), float(high)
-            if not math.isfinite(low + high) or low > high:
+            if not all(math.isfinite(value) for value in (low, high)) or low > high:
                 raise ValueError(f"Invalid bounds for {key}.")
             if definition.minimum is not None and low < definition.minimum:
                 raise ValueError(f"Lower bound is outside {key}'s declared domain.")

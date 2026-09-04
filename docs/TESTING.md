@@ -1,6 +1,50 @@
 # Testing guide
 
-Documentation version: `v1.48.0`
+Documentation version: `v1.49.0`
+
+## Audit challenge: research-window correctness
+
+On 4 Sep 2026, follow-up verification found three P2 defects missed by the
+earlier static audit. The adapter loaded pre-range history but discarded it
+before model calculation; any finite prediction in warmup could qualify a scored
+window with no predictions; numeric search domains accepted strings and booleans
+through coercion. Adapter/search v1.1.0 correct these contracts. The minute bridge
+also retains model provenance and checks prediction eligibility before discarding
+the daily presentation. Warmup signals never execute outside the scored window.
+
+Observed commands and evidence:
+
+- `./scripts/test.sh tests/test_strategy_tuning.py -k 'malformed_json or prior_history or only_in_warmup'`: before the fix, all eight new regressions failed in 1.03 seconds. A direct isolated reproduction loaded 160 model rows but passed only 52 and 64 rows to the two folds, both starting at the requested date rather than the available warmup date. `{"fast_span":"12"}` incorrectly became bounds 1 to 2.
+- `./scripts/test.sh tests/test_strategy_tuning.py`: after the first fix, exit 0, 51 passed in 7.44 seconds.
+- `./scripts/test.sh tests/test_strategy_tuning.py tests/test_strategy_interval_bridge.py`: final focused verification, exit 0, 59 passed in 10.02 seconds, including an actual Bayesian daily-model/minute-execution path on isolated shared-factory data.
+- Two real local-OHLC MACD runs using `scripts/strategy_tune.py`, `--from 2025-09-04 --to 2026-09-04`, eight trials, and bounds `{"fast_span":[4,20],"slow_span":[24,50],"signal_span":[3,15]}` completed with exit 0, one using `--method genetic` and one `--method random-forest`. Both input fingerprints matched and both kept the final holdout out of ranking. Outputs are under `/tmp/worthward-audit-challenge-G97fZL/genetic` and `/tmp/worthward-audit-challenge-G97fZL/forest`. Existing production prices and prior research outputs were not rewritten.
+- An initial browser reproduction returned exit 73 because another task owned E2E lock PID 74176. Its server and runtime were preserved.
+- Read-only accessibility inspection of user-owned 8688 PID 41290 found an older existing Backtest DOM without the common collapse. A separate fresh load of the same URL rendered `Backtest parameters` and loaded the existing history. No training/delete action or service restart was performed. This is live render evidence, not an end-to-end training claim or a complete visual gate.
+- `./scripts/check.sh`: exit 1, completed at 23:55 Asia/Shanghai on 4 Sep 2026. Static checks passed; 1,153 Python tests passed, six skipped, and 180 subtests passed in 407.01 seconds at 73.6% coverage. All 319 JavaScript tests passed. Chromium finished with 294 passed and six failed in 11.7 minutes. The five historical failures below were reproduced (the zero-threshold minimum opacity was 0.0649232 in this run). A sixth failure was the narrow history-delete test: changing the viewport does not emulate touch, and the test attempted to click a hover-only action after focus moved to the sidebar toggle.
+- `./scripts/test_e2e.sh tests/e2e/lstm-price-field.spec.mjs tests/e2e/shared-backtest-controls.spec.mjs`: after adding the missing row hover and explicit opacity/pointer-events assertions to the deletion flow, exit 0, 11 passed in 1.1 minutes, completed at 00:00 Asia/Shanghai on 5 Sep 2026. All existing configuration, detachment, CSRF, and recoverable-delete assertions remain. No force-click, production CSS change, or production deletion was used.
+
+The adapter/search sources stayed unchanged throughout the complete gate. Only
+the history E2E precondition and documentation changed afterward; the full gate
+was not repeated after that test-only correction. The five other browser failures
+remain unresolved, so this is not a green complete gate. Evidence logs are under
+`/tmp/worthward-audit-challenge-G97fZL`. Both E2E runs stopped their owned 8699
+server; user-owned 8688 remained on PID 41290.
+
+Final repository/documentation checks passed with
+`./scripts/test.sh tests/test_repository_contracts.py` (exit 0, 11 passed in
+0.15 seconds), `node --check tests/e2e/lstm-price-field.spec.mjs`, and
+`git diff --check`. Starting/final HEAD was `856f7a87`; no commit was created.
+Task edits are limited to the research adapter, search-domain validation, their
+unit tests, the history E2E hover precondition, and Architecture/Testing/Known
+Issues. Pre-existing CSS/template/title-alignment changes and the concurrent
+critical-flow title test were preserved. No production training/delete action
+was performed. Final housekeeping retained 11 differing numbered files: five
+coverage histories, two protected investment-cache files, and four browser
+screenshots. None were removed or overwritten as cleanup.
+
+This challenge does not convert absence of P0/P1 findings into release approval.
+The historical full-gate results below remain dated evidence, not a substitute
+for a fresh complete run. Concurrent Backtest title-rail changes were preserved.
 
 ## Shared controls, startup handshake, and registry tuning
 

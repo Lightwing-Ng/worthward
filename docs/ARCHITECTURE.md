@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.74.0`
+Documentation version: `v1.75.0`
 
 ## Shared Backtest controls and research
 
@@ -28,6 +28,9 @@ explicit fixed values are validated rather than silently clamped. Genetic search
 uses elite crossover and mutation. The random-forest method fits a bootstrap
 CART ensemble to measured validation scores and chooses proposals by predicted
 mean and ensemble spread; it does not invent strategy scores or forecast prices.
+Numeric search bounds must be a two-number array, excluding JSON booleans and
+numeric strings. Malformed domains fail explicitly rather than being coerced
+into a different search range.
 
 `app/services/strategy_tuning.py` loads real read-only local OHLC or the
 strategy-declared provider once, reserves candidate warmup/factors, and reuses
@@ -40,6 +43,14 @@ never ranks candidates. Price-frame fingerprints, provider/model provenance,
 fixed configuration, and every evaluation are recorded outside production stores.
 `scripts/strategy_tune.py` persists holdout errors alongside the successful
 validation evidence and returns a failing exit code rather than claiming success.
+
+Research adapter v1.1.0 retains loaded pre-range history when constructing each
+model prefix; the prefix ends at that fold's final trading date. Warmup rows
+initialize indicators/models but never contribute trades or equity to the scored
+window. For mixed-frequency execution, pre-range intents are removed before the
+daily-to-minute bridge. Prediction eligibility is checked on the scored dates
+before bridging, and model provenance survives the bridge. Predictions that exist
+only in warmup cannot make an otherwise unavailable validation/holdout eligible.
 
 ## Exact-configuration LSTM training
 

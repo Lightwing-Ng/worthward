@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.9.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.9.1 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -435,7 +435,12 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await page.setViewportSize({width: 390, height: 844});
     if (await page.locator('#sidebar_toggle').getAttribute('aria-expanded') === 'true') await page.locator('#sidebar_toggle').click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await menu.locator('[data-lstm-training-delete]').nth(1).click();
+    // A narrow desktop viewport still uses a mouse: reveal the hover-only action first.
+    await rows.nth(1).hover();
+    const remove = menu.locator('[data-lstm-training-delete]').nth(1);
+    await expect(remove).toHaveCSS('opacity', '1');
+    await expect(remove).toHaveCSS('pointer-events', 'auto');
+    await remove.click();
     await expect(rows).toHaveCount(1);
     expect(deleted).toEqual(['lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb']);
     await expect(menu.locator('[aria-pressed="true"]')).toHaveCount(0);

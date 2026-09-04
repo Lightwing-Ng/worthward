@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.1
+Code version: v0.10.2
 """
 
 from pathlib import Path
@@ -1109,14 +1109,15 @@ def test_production_templates_publish_the_shared_layout_role_registry() -> None:
     assert 'data-layout-role="content-scrollport"' in _read(TEMPLATE_ROOT / "settings.html")
 
 
-def test_backtest_page_and_performance_result_rails_are_explicitly_separate() -> None:
+def test_backtest_result_rail_reuses_shared_desktop_title_alignment() -> None:
     template = _read(TEMPLATE_ROOT / "backtest.html")
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
 
     assert '<article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">' in template
     assert '<article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">' in template
-    assert ".workspace-mode-main.backtest-workspace-main {" in workspace
-    assert "        height: 100%;\n        transform: none;" in workspace
+    assert ".workspace-mode-main.backtest-workspace-main {" not in workspace
+    assert "height: calc(100% + var(--workspace-mode-result-heading-lift));" in workspace
+    assert "transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));" in workspace
 
 
 def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:
@@ -1151,4 +1152,5 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
     trade_stack_start = trade_css.rindex(".trade-chart-stack {")
     trade_stack = trade_css[trade_stack_start : trade_css.index("\n}", trade_stack_start)]
     assert "overflow: hidden;" in trade_stack
-    assert '@import url("./views/workspace.css?v=1.22.3");' in app_css
+    workspace_version = _css_code_version(ASSET_ROOT / "css/views/workspace.css").removeprefix("v")
+    assert f'@import url("./views/workspace.css?v={workspace_version}");' in app_css

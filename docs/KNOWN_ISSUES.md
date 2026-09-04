@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.240.0`
+Documentation version: `v1.241.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -35,6 +35,12 @@ references, transaction descriptions, or copied statement content.
 
 ## Registry-wide CLI research
 
+- Research adapter/search v1.1.0 fixes three audit findings: discarded loaded
+  pre-range warmup, eligibility inferred from predictions outside the scored
+  window, and coercion of malformed numeric search bounds. Prior tuning outputs
+  remain historical artifacts; they are not rewritten or automatically rerun.
+  Use a new output directory to evaluate a configuration under the corrected
+  scoring contract. The adapter preserves model evidence across the minute bridge.
 - The CLI requires at least 40 distinct real trading dates and complete OHLC.
   It never creates missing market history. Default-source strategies read existing
   local files; Price Field strategies retain their declared Longbridge provider.
@@ -54,15 +60,34 @@ references, transaction descriptions, or copied statement content.
 - macOS MPS has actual-device verification. Windows CUDA is supported by the
   existing backend dispatcher but has no physical Windows verification in this change.
 
+## Backtest title-rail alignment
+
+Fixed on 4 Sep 2026 in workspace.css v1.22.4: Backtest no longer disables the
+shared desktop result-column lift. At widths of at least 768px, Performance
+shares the page-title, sidebar-toggle, and theme-control centerline. Below 768px,
+the existing stacked flow remains unchanged. No shared anchor token or chart
+padding was changed. The regression checks five widths from 390px to 1,276px,
+including chart visibility, splitter placement, and horizontal overflow.
+
+Validation: the 27 focused layout contracts and both default-strategy and
+five-width LSTM title browser regressions pass. The complete gate passes its
+Python and JavaScript stages, then reports 294 Chromium passes and six failures.
+Five match the browser-gate follow-up below; the additional dpr2 sidebar-motion
+case records a 283.3ms maximum frame gap against a 120ms limit. These failures
+were not repaired or independently baseline-reproduced in this title-only change.
+
 ## Browser-gate follow-up
 
-The 4 Sep 2026 complete gate passes Python/JavaScript and 294 Chromium cases but
-retains five browser failures. They cover Backtest share-heading clearance,
-Bayesian axis geometry, older 6px versus current 2px padding expectations, a
-legacy zero-opacity expectation, and an Investment entry-version map mismatch.
-See `TESTING.md` for exact cases and observed values. The current task preserves
-the parallel Price Field layout changes and does not claim these are resolved
-or reproduce them against a separate clean baseline.
+The latest 4 Sep 2026 complete gate passes Python/JavaScript and 294 Chromium
+cases but fails six browser cases. Five repeat the recorded Backtest share-heading
+clearance, Bayesian axis geometry, 6px versus 2px padding, zero-opacity, and
+Investment entry-version map mismatches. The sixth exposed a missing hover
+precondition in the narrow desktop history-delete test. That test now reveals the
+action before clicking and asserts its opacity and pointer-events; all 11 LSTM
+and shared-control browser cases passed on 5 Sep 2026. The five other failures
+remain unresolved. The complete gate was not rerun after this test-only correction.
+See `TESTING.md` for exact commands and evidence; no clean-baseline attribution
+is claimed and concurrent layout work remains preserved.
 
 ## Investment imports
 

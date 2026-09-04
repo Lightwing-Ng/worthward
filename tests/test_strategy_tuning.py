@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.0.0."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.1.0."""
 
 from dataclasses import replace
 import json
@@ -152,6 +152,115 @@ def test_non_model_controls_and_overlapping_domains_cannot_be_searched():
         search_space(strategy, {"lstm_epochs": [2, 20]}, {"lstm_epochs": 6})
     with pytest.raises(ValueError, match="Invalid choices"):
         search_space(strategy, {"use_volume": [0, 1]})
+
+
+@pytest.mark.parametrize("domain", ["12", [True, 10], ["2", "16"], None, 12, [1, 2, 3]])
+def test_numeric_search_domains_reject_malformed_json(domain):
+    with pytest.raises(ValueError, match="numeric bounds"):
+        search_space(instantiate_strategy("macd"), {"fast_span": domain})
+
+
+def test_research_retains_prior_history_without_exposing_future_rows():
+    frame = ohlc_frame_for_dates(
+        "NVDA", pd.bdate_range("2025-01-02", periods=160).strftime("%Y-%m-%d").tolist()
+    )
+    session = ResearchSession(
+        ResearchRequest(
+            "macd", ("NVDA",), str(frame.Date.iloc[80].date()), "2026-01-02"
+        ),
+        history_loader=lambda *_args: frame,
+    )
+    compute = session.strategy.compute_signals
+    windows = []
+
+    def inspect_history(data, params):
+        windows.append((data.Date.min(), data.Date.max()))
+        return compute(data, params)
+
+    session.strategy.compute_signals = inspect_history
+    metrics = session.validate(session.strategy.get_startup_params())
+    assert windows == [
+        (frame.Date.iloc[0], last) for _first, last in session.validation_windows
+    ]
+    assert [fold["from"] for fold in metrics["validation"]] == [
+        str(pd.Timestamp(first).date()) for first, _last in session.validation_windows
+    ]
+
+
+def test_predictions_only_in_warmup_cannot_make_a_scored_window_eligible():
+    frame = ohlc_frame_for_dates(
+        "NVDA", pd.bdate_range("2025-01-02", periods=100).strftime("%Y-%m-%d").tolist()
+    )
+    session = ResearchSession(
+        ResearchRequest("macd", ("NVDA",), "2025-01-02", "2026-01-02"),
+        history_loader=lambda *_args: frame,
+    )
+    compute = session.strategy.compute_signals
+    first = session.validation_windows[0][0]
+
+    def only_warmup_predictions(data, params):
+        result = compute(data, params)
+        result.presentation = {
+            "predictive_mean": [1.0 if date < first else None for date in data.Date]
+        }
+        return result
+
+    session.strategy.compute_signals = only_warmup_predictions
+    with pytest.raises(ValueError, match="scored window"):
+        session.validate(session.strategy.get_startup_params())
+
+
+def test_mixed_frequency_research_keeps_warmup_and_prediction_evidence(monkeypatch):
+    strategy = instantiate_strategy("bayesian-price-field")
+    frame = ohlc_frame_for_dates(
+        "NVDA", pd.bdate_range("2025-01-02", periods=120).strftime("%Y-%m-%d").tolist()
+    )
+    frame.attrs["market_data_source"] = strategy.strategy_market_data_source
+    intraday = ohlc_frame_for_dates(
+        "NVDA",
+        [
+            f"{date:%Y-%m-%d} {time}"
+            for date in frame.Date.iloc[60:]
+            for time in ("09:30", "15:59")
+        ],
+    )
+    monkeypatch.setattr(
+        type(strategy), "load_market_datasets", lambda *_args, **_kwargs: [frame]
+    )
+    params = {
+        **strategy.get_startup_params(),
+        **{
+            item.key: False
+            for item in strategy.get_parameter_definitions()
+            if item.group == "factors"
+        },
+        "training_window": 30,
+        "compute_backend": "CPU",
+    }
+    session = ResearchSession(
+        ResearchRequest(
+            "bayesian-price-field",
+            ("NVDA",),
+            str(frame.Date.iloc[60].date()),
+            "2026-01-02",
+            interval="1m",
+            params=params,
+        ),
+        history_loader=lambda *_args: intraday,
+    )
+    compute = session.strategy.compute_signals
+    windows = []
+
+    def inspect_history(data, selected):
+        windows.append((data.Date.min(), data.Date.max()))
+        return compute(data, selected)
+
+    session.strategy.compute_signals = inspect_history
+    metrics = session.validate(params)
+    assert windows == [
+        (frame.Date.iloc[0], last) for _first, last in session.validation_windows
+    ]
+    assert all(fold["model_evidence"]["device"] for fold in metrics["validation"])
 
 
 def test_holdout_price_changes_do_not_change_validation_scores():

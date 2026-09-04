@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.0.0."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -210,6 +210,37 @@ class ResearchSession:
                 stop_loss_enabled=request.stop_loss_enabled,
             )
         else:
+            # Keep real pre-range warmup, but never expose observations after this fold.
+            model_dates = market_trading_dates_for_history(
+                self.model_frame, request.tickers[0]
+            )
+            model = self.model_frame.loc[model_dates <= last].copy()
+            signals = self.strategy.compute_signals(model, params)
+            signal_dates = market_trading_dates_for_history(
+                signals.frame, request.tickers[0]
+            )
+            if signals.presentation:
+                predictions = signals.presentation.get("predictive_mean")
+                if predictions is not None:
+                    if not isinstance(predictions, list) or len(predictions) != len(
+                        signals.frame
+                    ):
+                        raise ValueError(
+                            "Model predictions must align with signal dates."
+                        )
+                    eligible = np.isfinite(np.asarray(predictions, dtype=float))
+                    if not (
+                        eligible & signal_dates.between(first, last).to_numpy()
+                    ).any():
+                        raise ValueError(
+                            "The model produced no finite causal predictions in the scored window; "
+                            "this candidate cannot be ranked."
+                        )
+                model_evidence = {
+                    key: signals.presentation[key]
+                    for key in ("fingerprint", "source", "factors", "device")
+                    if key in signals.presentation
+                }
             if self.model_interval != request.interval:
                 if (
                     self.strategy.get_signal_bridge(request.interval)
@@ -218,33 +249,21 @@ class ResearchSession:
                     raise ValueError(
                         "No supported causal execution bridge is declared."
                     )
-                model_dates = market_trading_dates_for_history(
-                    self.model_frame, request.tickers[0]
+                # Warmup intents initialize the model, not positions in the execution window.
+                signals = replace(
+                    signals,
+                    frame=signals.frame.loc[
+                        signal_dates.between(self.dates[0], last)
+                    ].copy(),
+                    presentation={},
                 )
-                model = self.model_frame.loc[model_dates.between(self.dates[0], last)]
-                signals = self.strategy.compute_signals(model.copy(), params)
                 signals = bridge_daily_signals_to_intraday(signals, prefix, dates)
-            else:
-                signals = self.strategy.compute_signals(prefix, params)
-            if signals.presentation:
-                predictions = signals.presentation.get("predictive_mean")
-                if isinstance(predictions, list) and not any(
-                    value is not None and math.isfinite(value) for value in predictions
-                ):
-                    raise ValueError(
-                        "The model produced no finite causal predictions; this candidate cannot be ranked."
-                    )
-                model_evidence = {
-                    key: signals.presentation[key]
-                    for key in ("fingerprint", "source", "factors", "device")
-                    if key in signals.presentation
-                }
             scored_dates = market_trading_dates_for_history(
                 signals.frame, request.tickers[0]
             )
             signals = replace(
                 signals,
-                frame=signals.frame.loc[scored_dates >= first].copy(),
+                frame=signals.frame.loc[scored_dates.between(first, last)].copy(),
                 presentation={},
             )
             signals.metadata = {**signals.metadata, "tickers": list(request.tickers)}
