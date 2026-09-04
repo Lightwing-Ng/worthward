@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.109.0
+ * Code version: v1.109.1
+ * - Fixed: An IBKR current-position snapshot marked as partial history can
+ *   still supplement a dated realized-P&L snapshot when the omitted ticker's
+ *   position quantity is fully reconstructed from the scoped transaction
+ *   history; ambiguous or incoherent histories remain unavailable.
  * - Fixed: Schwab date-only same-day trades now keep the persisted execution
  *   sequence during browser replay instead of falling back to cash ordering.
  * - Changed: Linked Schwab dividend and withholding rows now display their
@@ -2716,6 +2720,85 @@ export function createInvestmentDataUtils({
             quantity,
             totalCost: costPrice === null ? null : quantity * costPrice,
             boundaryDateTime,
+            boundarySource: 'authoritative_position_snapshot',
+        };
+    }
+
+    function getBrokerPositionSnapshotBoundaryDateTime(brokerPositionSnapshot) {
+        const rawSnapshot = brokerPositionSnapshot?.positionSnapshotRaw;
+        const exactBoundaries = Object.values(rawSnapshot || {})
+            .map((snapshot) => String(snapshot?.as_of ?? snapshot?.asOf ?? '').trim().replace('T', ' '))
+            .map((value) => value.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/))
+            .filter(Boolean)
+            .map((match) => `${match[1]} ${match[2]}`)
+            .sort();
+        if (exactBoundaries.length) return exactBoundaries[exactBoundaries.length - 1];
+        const fallbackDate = normalizeLedgerDate(brokerPositionSnapshot?.positionSnapshotAsOf);
+        return fallbackDate ? `${fallbackDate} 23:59:59` : '';
+    }
+
+    function derivePartialBrokerPositionBoundaryFromHistory(
+        brokerPositionSnapshot,
+        scope,
+        scopeState,
+        transactions,
+    ) {
+        const validation = brokerPositionSnapshot?.holdingsValidation;
+        if (
+            !brokerPositionSnapshot
+            || !scope
+            || scope.broker !== 'ibkr'
+            || !scopeState
+            || scopeState.realizedPnlStatus !== 'complete'
+            || scopeState.hasPartialTaxLotHistory !== true
+            || validation?.matched !== true
+            || validation?.history_complete !== false
+            || validation?.comparison_scope !== 'user_confirmed_current_position_snapshot'
+            || brokerPositionSnapshot.positionSnapshot?.[scope.ticker]
+            || brokerPositionSnapshot.positionSnapshotRaw?.[scope.ticker]
+            || !Array.isArray(transactions)
+        ) {
+            return null;
+        }
+
+        const boundaryDateTime = getBrokerPositionSnapshotBoundaryDateTime(
+            brokerPositionSnapshot,
+        );
+        if (!boundaryDateTime) return null;
+        const supportedTypes = new Set([
+            'buy',
+            'sell',
+            'grant',
+            'dividend_reinvestment',
+            'transfer_in',
+            'transfer_out',
+        ]);
+        let quantity = 0;
+        transactions.forEach((txn) => {
+            const txnScope = getTransactionLotScope(txn);
+            if (
+                txnScope.broker !== scope.broker
+                || txnScope.accountToken !== scope.accountToken
+                || txnScope.ticker !== scope.ticker
+                || txnScope.currency !== scope.currency
+                || !supportedTypes.has(getNormalizedTransactionType(txn))
+            ) return;
+            const txnDateTime = getInvestmentTransactionDateTime(txn);
+            const txnQuantity = getInvestmentReplayTransactionQuantity(txn);
+            if (!txnDateTime || txnDateTime > boundaryDateTime || txnQuantity === null) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (['buy', 'grant', 'dividend_reinvestment', 'transfer_in'].includes(normalizedType)) {
+                quantity += txnQuantity;
+            } else {
+                quantity -= txnQuantity;
+            }
+        });
+        if (!Number.isFinite(quantity) || quantity < -1e-7) return null;
+        return {
+            quantity: Math.abs(quantity) < 1e-7 ? 0 : quantity,
+            totalCost: null,
+            boundaryDateTime,
+            boundarySource: 'partial_current_position_snapshot_history_replay',
         };
     }
 
@@ -2940,6 +3023,11 @@ export function createInvestmentDataUtils({
         const positionBoundary = getAuthoritativeBrokerPositionBoundary(
             brokerPositionSnapshot,
             scope?.ticker,
+        ) || derivePartialBrokerPositionBoundaryFromHistory(
+            brokerPositionSnapshot,
+            scope,
+            scopeState,
+            transactions,
         );
         if (!positionBoundary) return null;
         const performanceAsOf = normalizeLedgerDate(
@@ -5704,4 +5792,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.109.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.109.1';

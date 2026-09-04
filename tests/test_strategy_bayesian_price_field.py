@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.26.1."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.26.2."""
 
 from __future__ import annotations
 
@@ -767,7 +767,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         })
         strategy = BayesianPriceFieldStrategy()
         with patch(
-            "app.services.bayesian_market_factors.fetch_bayesian_factor_bundle",
+            "app.services.price_field_market_factors.fetch_price_field_factor_bundle",
             return_value=bundle,
         ) as fetch_bundle:
             strategy.load_market_datasets(
@@ -939,6 +939,49 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(unchanged_display_threshold, baseline)
         self.assertEqual(unchanged_lstm_parameter, baseline)
+
+    def test_lstm_only_parameters_do_not_change_bayesian_compute_signals(self) -> None:
+        frame = _market_frame(80)
+        baseline = BayesianPriceFieldStrategy().compute_signals(
+            frame,
+            _cpu_params(
+                lstm_lookback=4,
+                lstm_hidden_size=4,
+                lstm_epochs=1,
+                lstm_learning_rate=0.05,
+                lstm_seed=42,
+            ),
+        )
+        changed = BayesianPriceFieldStrategy().compute_signals(
+            frame,
+            _cpu_params(
+                lstm_lookback=16,
+                lstm_hidden_size=32,
+                lstm_epochs=20,
+                lstm_learning_rate=0.5,
+                lstm_seed=999,
+            ),
+        )
+
+        self.assertEqual(
+            baseline.presentation["fingerprint"],
+            changed.presentation["fingerprint"],
+        )
+        self.assertEqual(
+            baseline.presentation["diagnostics"],
+            changed.presentation["diagnostics"],
+        )
+        for column in (
+            "bayesian_predictive_mean",
+            "bayesian_predictive_std",
+            "bayesian_probability_up",
+            "buy_signal",
+            "sell_signal",
+        ):
+            np.testing.assert_array_equal(
+                baseline.frame[column].to_numpy(),
+                changed.frame[column].to_numpy(),
+            )
 
     def test_presentation_contains_only_finite_probability_values(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
@@ -1515,7 +1558,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         strategy = BayesianPriceFieldStrategy()
         requested_start = pd.Timestamp("2025-01-02")
         with patch(
-            "app.services.bayesian_market_factors.fetch_bayesian_factor_bundle",
+            "app.services.price_field_market_factors.fetch_price_field_factor_bundle",
             return_value=bundle,
         ) as fetch_bundle:
             datasets = strategy.load_market_datasets(
@@ -1558,11 +1601,11 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 return_value=True,
             ),
             patch(
-                "app.services.bayesian_market_factors.build_local_bayesian_factor_bundle",
+                "app.services.price_field_market_factors.build_local_price_field_factor_bundle",
                 return_value=bundle,
             ) as local_bundle,
             patch(
-                "app.services.bayesian_market_factors.fetch_bayesian_factor_bundle",
+                "app.services.price_field_market_factors.fetch_price_field_factor_bundle",
             ) as provider_bundle,
         ):
             datasets = strategy.load_market_datasets(

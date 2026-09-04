@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.70.6`
+Documentation version: `v1.70.7`
 
 ## Price Field detail view contract
 
@@ -22,6 +22,12 @@ presentation. Bayesian retains posterior inference, causal factor selection,
 and Bayesian backend scheduling; LSTM retains sequence construction, training,
 and its backend policy. Neither strategy is an infrastructure container for
 the other.
+
+The underlying read-only Longbridge provider is canonically named
+`app/services/price_field_market_factors.py` and exposes model-neutral bundle
+and cache APIs. `app/services/bayesian_market_factors.py` is only a live
+backward-compatible import alias for older callers; the shared pipeline does
+not import it.
 
 The Backtest history surface exposes a third `Price Field` option between
 `Metrics` and `Transactions` when the active Bayesian or LSTM strategy emits a

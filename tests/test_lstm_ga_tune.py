@@ -1,4 +1,4 @@
-"""Tests for the durable LSTM GA runner. Code version: v1.0.0."""
+"""Tests for the durable LSTM GA runner. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import unittest
 
 import numpy as np
 
-from app.services.bayesian_market_factors import (
-    BayesianFactorBundle,
+from app.services.price_field_market_factors import (
+    PriceFieldMarketFactorBundle,
     OhlcvBar,
     OptionVolumeObservation,
     PeObservation,
@@ -19,7 +19,7 @@ from scripts import lstm_ga_tune as ga
 class LstmGaTuneTests(unittest.TestCase):
     def test_bundle_payload_round_trips_dataclass_records(self) -> None:
         observed_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
-        bundle = BayesianFactorBundle(
+        bundle = PriceFieldMarketFactorBundle(
             symbol="NVDA.US",
             start=date(2026, 1, 2),
             end=date(2026, 1, 2),

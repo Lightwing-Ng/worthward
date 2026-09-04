@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.0.3."""
+"""Shared Price Field contract tests. Code version: v1.0.4."""
 
 from __future__ import annotations
 
@@ -65,6 +65,19 @@ class PriceFieldContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("strategy_bayesian_price_field", source)
         self.assertNotIn("BayesianPriceFieldStrategy(", source)
+
+    def test_market_factor_provider_uses_a_model_neutral_canonical_module(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pipeline_source = (
+            root / "strategies/price_field_pipeline.py"
+        ).read_text(encoding="utf-8")
+        legacy_source = (
+            root / "app/services/bayesian_market_factors.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("app.services.price_field_market_factors", pipeline_source)
+        self.assertNotIn("app.services.bayesian_market_factors", pipeline_source)
+        self.assertIn("price_field_market_factors", legacy_source)
 
     def test_strategy_ids_and_schemas_are_paired(self) -> None:
         self.assertEqual(

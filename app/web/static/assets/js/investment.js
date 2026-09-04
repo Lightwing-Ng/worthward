@@ -355,7 +355,7 @@ import {
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.109.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.109.1';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,

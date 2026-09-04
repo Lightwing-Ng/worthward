@@ -1,4 +1,4 @@
-/* Code version: v1.203.16 */
+/* Code version: v1.203.17 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -5145,6 +5145,7 @@ test('keeps the IBKR file inputs compact', async ({page}) => {
     await page.locator('label[for="ibkr_import_mode_gainskeeper"]').click();
     await expect(page.locator('#gainskeeper_files')).toBeVisible();
     await expect(page.locator('#gainskeeper_files')).toHaveCSS('height', '30px');
+    await expect(page.locator('#gainskeeper_files')).toHaveCSS('line-height', '28px');
 });
 
 test('validates the optional IBKR Your Holdings paste without manual calibration fields', async ({page}) => {

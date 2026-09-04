@@ -1,12 +1,13 @@
-"""Focused tests for the read-only Bayesian Longbridge factor provider.
+"""Focused tests for the read-only Price Field Longbridge factor provider.
 
-Code version: v1.7.0
+Code version: v1.8.0
 """
 
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+import importlib
 from threading import Event, Lock
 import unittest
 from unittest.mock import patch
@@ -14,7 +15,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.core.broker_settings import BrokerSettings
-from app.services import bayesian_market_factors as factors
+from app.services import price_field_market_factors as factors
 
 
 UTC = timezone.utc
@@ -33,13 +34,30 @@ def _bar(timestamp: str, close: str = "10.0") -> dict[str, str]:
     }
 
 
-class BayesianMarketFactorProviderTests(unittest.TestCase):
+class PriceFieldMarketFactorProviderTests(unittest.TestCase):
     def setUp(self) -> None:
-        factors.clear_bayesian_factor_cache()
+        factors.clear_price_field_factor_cache()
         factors._LAST_CLI_CALL_MONOTONIC = 0.0
         self.settings = BrokerSettings(
             selected_broker="longbridge",
             longbridge_auth_mode="cli_oauth",
+        )
+
+    def test_historical_bayesian_module_is_a_live_compatibility_alias(self) -> None:
+        legacy = importlib.import_module("app.services.bayesian_market_factors")
+
+        self.assertIs(legacy, factors)
+        self.assertIs(
+            legacy.PriceFieldMarketFactorBundle,
+            factors.PriceFieldMarketFactorBundle,
+        )
+        self.assertIs(
+            legacy.BayesianFactorBundle,
+            factors.PriceFieldMarketFactorBundle,
+        )
+        self.assertIs(
+            legacy.fetch_bayesian_factor_bundle,
+            factors.fetch_price_field_factor_bundle,
         )
 
     def _provider_patches(self):
@@ -59,7 +77,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             "Turnover": [10_000.0, 22_000.0],
         })
         with patch("app.services.market_data.fetch_history", return_value=frame) as fetch:
-            bundle = factors.build_local_bayesian_factor_bundle(
+            bundle = factors.build_local_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-27",
                 "2026-08-28",
@@ -126,7 +144,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "aapl",
                 "2024-01-01",
                 "2025-01-02",
@@ -174,7 +192,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2024-01-01",
                 "2024-01-03",
@@ -215,7 +233,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             patch.object(factors, "_utc_now", return_value=snapshot_now),
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-01",
                 "2026-08-28",
@@ -260,7 +278,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             patch.object(factors, "_utc_now", return_value=snapshot_now),
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-01",
                 "2026-08-27",
@@ -287,7 +305,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -318,7 +336,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
             patch.object(factors.time, "sleep") as sleep_mock,
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -351,7 +369,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             patch.object(factors.time, "sleep"),
         ):
             with self.assertRaisesRegex(RuntimeError, "429002"):
-                factors.fetch_bayesian_factor_bundle(
+                factors.fetch_price_field_factor_bundle(
                     "AAPL.US",
                     "2026-08-28",
                     "2026-08-29",
@@ -407,7 +425,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2024-01-02",
                 "2024-01-03",
@@ -482,7 +500,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                         side_effect=fake_cli,
                     ),
                 ):
-                    bundle = factors.fetch_bayesian_factor_bundle(
+                    bundle = factors.fetch_price_field_factor_bundle(
                         symbol,
                         "2026-08-28",
                         "2026-08-28",
@@ -528,7 +546,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 return_value=[_bar("2026-08-28T20:00:00Z")],
             ) as cli_mock,
         ):
-            first = factors.fetch_bayesian_factor_bundle(
+            first = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -536,7 +554,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 include_pe=False,
                 include_options=False,
             )
-            second = factors.fetch_bayesian_factor_bundle(
+            second = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -578,7 +596,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-27",
                 "2026-08-29",
@@ -714,7 +732,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             now_patch,
             patch.object(factors, "run_longbridge_cli_json", side_effect=fake_cli),
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "NVDA.US",
                 "2026-08-27",
                 "2026-08-29",
@@ -757,7 +775,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             ) as fetch_mock,
             patch.object(factors.time, "monotonic", side_effect=[100.0, 100.0, 102.0, 102.0]),
         ):
-            long_ttl_bundle = factors.fetch_bayesian_factor_bundle(
+            long_ttl_bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -766,7 +784,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 include_options=False,
                 ttl_seconds=60.0,
             )
-            short_ttl_bundle = factors.fetch_bayesian_factor_bundle(
+            short_ttl_bundle = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -788,7 +806,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 side_effect=self._ohlcv_fetch_result,
             ),
         ):
-            first = factors.fetch_bayesian_factor_bundle(
+            first = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -796,7 +814,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 include_pe=False,
                 include_options=False,
             )
-            second = factors.fetch_bayesian_factor_bundle(
+            second = factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -820,7 +838,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             ),
             patch.object(factors.time, "monotonic", return_value=100.0) as monotonic,
         ):
-            factors.fetch_bayesian_factor_bundle(
+            factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -830,7 +848,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 ttl_seconds=1.0,
             )
             monotonic.return_value = 102.0
-            factors.fetch_bayesian_factor_bundle(
+            factors.fetch_price_field_factor_bundle(
                 "MSFT.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -853,7 +871,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             ) as fetch_mock,
         ):
             for index in range(factors.BUNDLE_CACHE_MAX_ENTRIES):
-                factors.fetch_bayesian_factor_bundle(
+                factors.fetch_price_field_factor_bundle(
                     f"S{index:03d}.US",
                     "2026-08-28",
                     "2026-08-29",
@@ -861,7 +879,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                     include_pe=False,
                     include_options=False,
                 )
-            factors.fetch_bayesian_factor_bundle(
+            factors.fetch_price_field_factor_bundle(
                 "S000.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -869,7 +887,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 include_pe=False,
                 include_options=False,
             )
-            factors.fetch_bayesian_factor_bundle(
+            factors.fetch_price_field_factor_bundle(
                 "S999.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -906,8 +924,8 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
             self.assertTrue(release_fetch.wait(timeout=2.0))
             return self._ohlcv_fetch_result(self.settings, "AAPL.US", None, None)
 
-        def fetch_bundle() -> factors.BayesianFactorBundle:
-            return factors.fetch_bayesian_factor_bundle(
+        def fetch_bundle() -> factors.PriceFieldMarketFactorBundle:
+            return factors.fetch_price_field_factor_bundle(
                 "AAPL.US",
                 "2026-08-28",
                 "2026-08-29",
@@ -945,7 +963,7 @@ class BayesianMarketFactorProviderTests(unittest.TestCase):
                 return_value=[_bar("2026-08-28T08:00:00Z")],
             ) as cli_mock,
         ):
-            bundle = factors.fetch_bayesian_factor_bundle(
+            bundle = factors.fetch_price_field_factor_bundle(
                 "700.HK",
                 "2026-08-28",
                 "2026-08-29",

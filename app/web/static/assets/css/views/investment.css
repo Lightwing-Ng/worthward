@@ -1,4 +1,4 @@
-/* Code version: v1.78.5 */
+/* Code version: v1.78.6 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -4731,12 +4731,14 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     height: var(--sidebar-form-control-min-height);
     min-height: var(--sidebar-form-control-min-height);
     padding-block: 0;
+    line-height: calc(var(--sidebar-form-control-min-height) - 2px);
 }
 
 #investment_import_ibkr_fields [data-ibkr-import-mode-panel="gainskeeper"] .investment-import-file-input {
     height: var(--sidebar-form-control-min-height);
     min-height: var(--sidebar-form-control-min-height);
     padding-block: 0;
+    line-height: calc(var(--sidebar-form-control-min-height) - 2px);
 }
 
 .investment-import-file-input::file-selector-button {

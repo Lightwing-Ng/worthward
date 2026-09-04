@@ -4078,6 +4078,68 @@ test('IBKR stale realized snapshot replays fills after its own as-of date when p
     assert.ok(Math.abs(dram.realizedPnlByDateLocal['2026-08-12'] - expectedIncrementalPnl) < 1e-9);
 });
 
+test('IBKR partial current snapshots replay a missing ticker from scoped history', () => {
+    setDramTestWindow();
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
+        ibkr: {
+            broker: 'ibkr',
+            account: 'U00000001',
+            position_snapshot_authoritative: true,
+            position_snapshot_as_of: '2026-08-20',
+            position_snapshot: {
+                QQQI: {
+                    quantity: '1',
+                    cost_basis_status: 'unknown',
+                    as_of: '2026-08-20 12:00:00',
+                },
+            },
+            holdings_validation: {
+                matched: true,
+                history_complete: false,
+                status: 'snapshot_authoritative_partial_history',
+                comparison_scope: 'user_confirmed_current_position_snapshot',
+            },
+            performance_snapshot_authoritative: true,
+            performance_snapshot_as_of: '2026-08-05',
+            performance_snapshot: {
+                DRAM: {
+                    currency: 'USD',
+                    realized_total: '20',
+                },
+            },
+        },
+    };
+    const transactions = [
+        makeScopedDramTrade({
+            broker: 'ibkr', account: 'U00000001', type: 'buy', date: '2026-08-01',
+            quantity: 10, price: 50,
+        }),
+        makeScopedDramTrade({
+            broker: 'ibkr', account: 'U00000001', type: 'sell', date: '2026-08-05',
+            quantity: 2, price: 60, brokerRealizedPnl: 20,
+        }),
+        makeScopedDramTrade({
+            broker: 'ibkr', account: 'U00000001', type: 'sell', date: '2026-08-15',
+            quantity: 3, price: 70, fileKind: 'ibkr_web_trade_notification',
+        }),
+        makeScopedDramTrade({
+            broker: 'ibkr', account: 'U00000001', type: 'buy', date: '2026-08-16',
+            quantity: 2, price: 55,
+        }),
+    ];
+
+    const dram = buildTickerSummaries(transactions, {DRAM: 70}, 0, {})
+        .find((summary) => summary.ticker === 'DRAM');
+    const ibkr = dram.realizedPnlAccounts.find((result) => result.broker === 'ibkr');
+
+    assert.equal(ibkr.status, 'complete');
+    assert.equal(ibkr.source, 'broker_performance_snapshot_plus_boundary_replay');
+    assert.equal(ibkr.reconstructedPositionShares, 7);
+    assert.equal(ibkr.realizedPnlLocal, 80);
+    assert.equal(dram.realizedPnlLocal, 80);
+    assert.equal(dram.realizedPnlByDateLocal['2026-08-15'], 60);
+});
+
 test('IBKR stale realized snapshot accepts a rounded same-day position boundary', () => {
     setDramTestWindow();
     window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {

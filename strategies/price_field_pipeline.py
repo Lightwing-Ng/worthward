@@ -1085,9 +1085,9 @@ def load_price_field_market_bundle(
     warmup_days = math.ceil(warmup_bars * 7 / 5) + 14
     warmup_start = _normalized_timestamp(start) - timedelta(days=warmup_days)
 
-    from app.services.bayesian_market_factors import (
-        build_local_bayesian_factor_bundle,
-        fetch_bayesian_factor_bundle,
+    from app.services.price_field_market_factors import (
+        build_local_price_field_factor_bundle,
+        fetch_price_field_factor_bundle,
     )
 
     research_factors = tuple(
@@ -1104,12 +1104,12 @@ def load_price_field_market_bundle(
 
     provider_symbol = _longbridge_symbol(str(tickers[0]))
     if is_remote_market_access_disabled():
-        return build_local_bayesian_factor_bundle(
+        return build_local_price_field_factor_bundle(
             provider_symbol,
             warmup_start,
             end,
         )
-    return fetch_bayesian_factor_bundle(
+    return fetch_price_field_factor_bundle(
         provider_symbol,
         warmup_start,
         end,

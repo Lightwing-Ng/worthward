@@ -5,8 +5,9 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.1.1
-- Changed: LSTM tuning now consumes the model-neutral Price Field pipeline
+Code version: v0.1.2
+- Changed: LSTM tuning now consumes the canonical model-neutral Price Field
+  market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
 """
 
@@ -37,8 +38,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.config import PERIOD_OFFSETS  # noqa: E402
-from app.services.bayesian_market_factors import (  # noqa: E402
-    build_local_bayesian_factor_bundle,
+from app.services.price_field_market_factors import (  # noqa: E402
+    build_local_price_field_factor_bundle,
 )  # noqa: E402
 from strategies.price_field_pipeline import (  # noqa: E402
     PRICE_FIELD_FACTOR_DEFINITIONS as _PRICE_FIELD_FACTOR_DEFINITIONS,
@@ -370,7 +371,7 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         "chip_window": 252,
     })
     if args.offline:
-        bundle = build_local_bayesian_factor_bundle(
+        bundle = build_local_price_field_factor_bundle(
             f"{str(args.ticker).strip().upper()}.US",
             start,
             end,
