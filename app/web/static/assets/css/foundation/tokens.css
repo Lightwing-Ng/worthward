@@ -1,4 +1,4 @@
-/* Code version: v0.26.2 */
+/* Code version: v0.27.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -22,6 +22,11 @@
 	--responsive-breakpoint-sidebar-toggle-tight-max: 500px;
 	--responsive-breakpoint-live-pin-tight-max: 420px;
 	--sidebar-form-gap: 2px;
+	--collapse-section-gap: 8px;
+	--collapse-summary-padding: 10px;
+	--collapse-body-padding: 0 10px 10px;
+	--collapse-font-size: var(--font-size-5);
+	--collapse-font-weight: var(--font-weight-medium);
 	--sidebar-form-field-min-height: 50px;
 	--sidebar-form-field-label-gap: 6px;
 	--sidebar-form-field-gap: 8px;

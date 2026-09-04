@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ def _build_strategy_catalog() -> list[dict[str, Any]]:
                 supported_intervals=strategy.get_supported_intervals(),
             )
         )
+        catalog[-1]["presentation_renderer"] = strategy.strategy_presentation_renderer
     return sorted(catalog, key=lambda item: (item.get("ui", {}).get("display_order", 9999), item.get("name", "")))
 
 

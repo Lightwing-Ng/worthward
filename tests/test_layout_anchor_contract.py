@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.9.21
+Code version: v0.10.1
 """
 
 from pathlib import Path
@@ -153,7 +153,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
         assert fragment in settings_css
 
     assert '@import url("./views/settings.css?v=0.25.4");' in app_css
-    assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
+    assert f'@import url("./foundation/tokens.css?v={_css_code_version(ASSET_ROOT / "css/foundation/tokens.css").removeprefix("v")}");' in app_css
     assert '@import url("./components/forms.css?v=3.40.8");' in app_css
     assert '@import url("./views/investment.css?v=1.78.6");' in app_css
 
@@ -198,11 +198,55 @@ def test_backtest_history_labels_use_intrinsic_centering() -> None:
     assert "height: 100%;" not in label_rule
 
 
+def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    result_card_start = trade_css.index(".backtest-trade-performance-card {")
+    result_card_rule = trade_css[
+        result_card_start : trade_css.index("\n}", result_card_start)
+    ]
+    for fragment in (
+        "--workspace-article-pad-block-start: 2px;",
+        "--workspace-article-pad-block-end: 2px;",
+    ):
+        assert fragment in result_card_rule
+
+    view_surface_start = trade_css.index(
+        ".backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement=\"summary-panel\"])",
+    )
+    view_surface_rule = trade_css[
+        view_surface_start : trade_css.index("\n}", view_surface_start)
+    ]
+    assert "padding-block-start: 0;" in view_surface_rule
+
+    detail_panel_start = trade_css.index(
+        ".backtest-history-view-body > .backtest-probability-detail-panel {",
+    )
+    detail_panel_rule = trade_css[
+        detail_panel_start : trade_css.index("\n}", detail_panel_start)
+    ]
+    assert "margin: 2px 0 0;" in detail_panel_rule
+    assert "padding: 2px;" in detail_panel_rule
+
+    assert (
+        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 2px;"
+        in trade_css
+    )
+    assert (
+        ".backtest-history-view-body > .backtest-probability-detail-panel {\n"
+        "        flex-basis: 380px;\n"
+        "        min-height: 0;\n"
+        "        margin-inline: 10px;\n"
+        "        padding-inline: 12px;"
+        in trade_css
+    )
+
+
 def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
     forms_css = _read(ASSET_ROOT / "css/components/forms.css")
     backtest_template = _read(TEMPLATE_ROOT / "_backtest_form.html")
     dca_template = _read(TEMPLATE_ROOT / "_dca_form.html")
-    strategy_template = _read(TEMPLATE_ROOT / "_trade_strategy_params_panel.html")
+    strategy_template = _read(TEMPLATE_ROOT / "_trade_strategy_param_grid.html")
 
     plain_rule_start = forms_css.index(".switch-row.switch-row--plain,")
     plain_rule = forms_css[plain_rule_start : forms_css.index("\n}", plain_rule_start)]
@@ -457,7 +501,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "min-height: var(--backtest-probability-narrow-results-min-height);",
         ".backtest-results-stack.has-probability-field .trade-chart-stack {",
         "min-height: var(--backtest-probability-narrow-chart-stage-min-height);",
-        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 0;",
+        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 2px;",
         "@media (min-width: 1008px) {",
         ".workspace-mode-layout:has(.backtest-results-stack.has-probability-field) {",
         "clamp(264px, calc(100% - 398px), var(--sidebar-width))",
@@ -637,8 +681,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.28.0",
-        "-backtest-v0.38.28",
+        "-backtest-probability-grid-v0.29.0",
+        "-backtest-v0.39.0",
         "-backtest-layout-v0.4.0",
     ):
         assert fragment in base_template
@@ -662,7 +706,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     assert "backtest-probability-grid" not in lstm_strategy
     assert "backtest-probability-grid" not in bayesian_strategy
     assert "build_probability_grid_presentation" in lstm_strategy
-    assert "probability_grid_geometry_fields" in bayesian_strategy
+    assert "build_probability_grid_presentation" in bayesian_strategy
     assert "PROBABILITY_GRID_RENDERER" in lstm_strategy or "probability-grid-v1" in lstm_strategy
 
     for fragment in (
@@ -692,7 +736,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     assert '>Forecast date<' not in backtest_template
     assert 'backtest-probability-detail-x-axis-title' not in pending_app
     assert 'Forecast date' not in pending_app
-    assert 'aria-label="Average probability mass per forecast horizon by price direction"' in probability_field_partial
+    assert 'aria-label="Normalized directional shares of represented probability mass"' in probability_field_partial
     assert (
         '.backtest-history-view-body > '
         '[data-backtest-history-view-panel]:not([hidden]):not(.backtest-probability-detail-panel)'
@@ -740,14 +784,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const buildProbabilityDetailModel = (index, model) => {",
         "const renderProbabilityDetailRowHover = (row) => {",
         "const renderProbabilityDetailSideSummary = (cells) => {",
-        "const upText = formatProbabilityMass(summary.upProbability);",
-        "const downText = formatProbabilityMass(summary.downProbability);",
+        "const upUnits = Math.round(summary.upProbability * 10000);",
+        "const upText = formatProbabilityMass(upUnits / 10000);",
+        "const downText = formatProbabilityMass((10000 - upUnits) / 10000);",
         "probabilityDetailUpSummary.textContent = upText;",
         "probabilityDetailDownSummary.textContent = downText;",
-        "formatProbabilityMass(summary.upProbability)",
-        "formatProbabilityMass(summary.downProbability)",
-        "Average higher-price probability mass per forecast horizon across ${horizonDescription}",
-        "Average lower-price probability mass per forecast horizon across ${horizonDescription}",
+        "Higher-price share, normalized within each complete grid horizon then averaged across ${horizonDescription}",
+        "Lower-price share, normalized within each complete grid horizon then averaged across ${horizonDescription}",
         "Cumulative probability across all ${summary.cellCount} forecast cells",
         "including ${summary.hiddenCellCount} hidden",
         "probabilityDetailGrid.dataset.hoverSummary = hoverSummary;",
@@ -774,12 +817,12 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;",
         "const getStaticStackContentLeft = (element) => {",
         "const getPriceCanvasContentLeft = () => getStaticStackContentLeft(priceCanvas);",
-        "const updatePointerHoverLine = ({synchronizeScroll = true} = {}) => {",
-        "updatePointerHoverLine({synchronizeScroll: false});",
+        "const updatePointerHoverLine = () => {",
+        "syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds);",
         "resetProbabilityHoverPointer();",
         "if (!isProbabilityHoverPointerOverStack(tradeChartStack.getBoundingClientRect())) {",
         "dataset.probabilityLayoutViewportWidth",
-        "const overflowRight = tooltipRect.right - currentStackRect.right;",
+        "const fieldLeft = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds);",
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
         "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",

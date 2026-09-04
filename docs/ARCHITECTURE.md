@@ -1,8 +1,57 @@
 # Architecture guide
 
-Documentation version: `v1.73.0`
+Documentation version: `v1.74.0`
+
+## Shared Backtest controls and research
+
+`templates/_collapse.html` and `components/collapse.css` own the shared
+`ui-collapse` primitive. The `Collapse` Style tokens sample edits the same
+foundation tokens used by all Backtest groups and the Settings strategy-card
+branch. Capital and the four return/exit/detail controls live in `Backtest
+parameters`. Strategy definitions declare parameter/factor groups and optional
+private action slots through `BaseStrategy.get_parameter_sections()`; the web
+form builder and one field-grid partial render them without strategy-specific
+DOM regrouping. LSTM declares its training slot; Bayesian declares only model
+parameters and shared factors. Changing a standard collapse token updates every
+consumer; product branches do not copy the base component.
+
+The strategy catalog declares `presentation_renderer`. Price Field detection
+uses that capability, not a hard-coded strategy-ID list. A model-neutral
+`renderer_schema=probability-grid/v1` accompanies each model's own versioned
+schema; the browser validates the common schema, renderer, and aligned dates.
+Old Bayesian/LSTM payloads remain read-compatible. New models can opt into the
+same grid without copying geometry, templates, colors, or hover behavior.
+
+`strategies/tuning.py` derives search domains from the same parameter definitions.
+Display thresholds, compute backends, and the LSTM seed are not optimized;
+explicit fixed values are validated rather than silently clamped. Genetic search
+uses elite crossover and mutation. The random-forest method fits a bootstrap
+CART ensemble to measured validation scores and chooses proposals by predicted
+mean and ensemble spread; it does not invent strategy scores or forecast prices.
+
+`app/services/strategy_tuning.py` loads real read-only local OHLC or the
+strategy-declared provider once, reserves candidate warmup/factors, and reuses
+the canonical single/multi-ticker, grid, rotation, DCA, and interval-bridge engines.
+It requires 40 distinct trading dates, uses the first half for warmup, scores
+50–65% and 65–80% as chronological expanding validation folds, then evaluates
+only the chosen configuration on the last 20%. The objective is mean validation
+return percentage minus half the maximum drawdown percentage. Final holdout data
+never ranks candidates. Price-frame fingerprints, provider/model provenance,
+fixed configuration, and every evaluation are recorded outside production stores.
+`scripts/strategy_tune.py` persists holdout errors alongside the successful
+validation evidence and returns a failing exit code rather than claiming success.
 
 ## Exact-configuration LSTM training
+
+The web manager reserves a request before launching the worker. It passes the
+exact reservation path with `--prepared-request`; the runner verifies the request
+identity and claims it once under its run lock. A reservation alone is not a
+previous run needing `--resume`. Existing worker/snapshot/status/checkpoint
+artifacts cannot be silently resumed. A stale parent/worker fingerprint fails
+with an explicit restart instruction. The manager exposes a bounded startup-log
+error for an exited worker without rewriting historical files. This fixes the
+former web launch failure caused by mistaking the manager's own request for
+prior training work.
 
 The web action snapshots the current ticker, relative or exact range, interval,
 capital, return/exit settings, and all private factor/parameter controls. The manager validates them before creating a

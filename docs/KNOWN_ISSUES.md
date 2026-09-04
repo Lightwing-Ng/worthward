@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.239.0`
+Documentation version: `v1.240.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -8,6 +8,11 @@ references, transaction descriptions, or copied statement content.
 
 ## LSTM training
 
+- The prepared-request launch handshake is fixed in manager/runner v0.6.0.
+  An already failed history item remains historical evidence; it is not relabeled
+  successful or automatically retried. Restart a cached older service through the
+  normal user-owned launcher before starting a new run. An exited worker's actual
+  startup error is available in its details rather than only `Unavailable`.
 - Durable exact-configuration training currently accepts only `1d`. A `1m`
   selection or missing interval is rejected before launch, not silently replaced
   with daily data. The separate daily-model/one-minute Backtest execution bridge
@@ -27,6 +32,37 @@ references, transaction descriptions, or copied statement content.
   locked jobs and symlink targets cannot be deleted.
 - Longbridge factors without verified historical availability remain unavailable,
   not synthetic features. Selecting a factor does not create missing observations.
+
+## Registry-wide CLI research
+
+- The CLI requires at least 40 distinct real trading dates and complete OHLC.
+  It never creates missing market history. Default-source strategies read existing
+  local files; Price Field strategies retain their declared Longbridge provider.
+  Unsupported execution intervals or missing causal bridges fail explicitly.
+- Numeric domains without a declared maximum use a finite exploratory bound
+  derived from the default, not a claim that this is an economically optimal
+  search region. Nullable automatic price limits require explicit bounds.
+  Use `--bounds` for a deliberate research range and `--params` for fixed values;
+  display-only thresholds and hardware choices cannot enter parameter rankings.
+- The random forest is a parameter-search surrogate, not a stock-price predictor.
+  More trials or longer training can overfit validation; the untouched holdout is
+  reported separately and is never used to choose a winner. There is no profitability
+  guarantee. Buy and hold is a one-evaluation baseline, not a fabricated search.
+- The time budget is cooperative between evaluations. An expensive in-flight
+  strategy completes before the process exits. The output directory must be new
+  and outside market/settings stores; every evaluation and holdout error is retained.
+- macOS MPS has actual-device verification. Windows CUDA is supported by the
+  existing backend dispatcher but has no physical Windows verification in this change.
+
+## Browser-gate follow-up
+
+The 4 Sep 2026 complete gate passes Python/JavaScript and 294 Chromium cases but
+retains five browser failures. They cover Backtest share-heading clearance,
+Bayesian axis geometry, older 6px versus current 2px padding expectations, a
+legacy zero-opacity expectation, and an Investment entry-version map mismatch.
+See `TESTING.md` for exact cases and observed values. The current task preserves
+the parallel Price Field layout changes and does not claim these are resolved
+or reproduce them against a separate clean baseline.
 
 ## Investment imports
 

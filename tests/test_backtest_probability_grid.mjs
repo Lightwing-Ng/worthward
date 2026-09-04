@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.28.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.29.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,8 +39,16 @@ const presentation = {
     return_innovation_scale: [0.018, null, 0.025],
 };
 
+test('new models reuse the versioned renderer contract without a model allowlist', () => {
+    const value = {...presentation, schema: 'research-model/v2', renderer_schema: grid.RENDERER_SCHEMA};
+    assert.equal(grid.normalizePresentation(value, rawDates).schema, 'research-model/v2');
+    assert.equal(grid.normalizePresentation({...value, renderer_schema: 'probability-grid/v2'}, rawDates), null);
+    assert.equal(grid.normalizePresentation({...value, renderer: 'unknown'}, rawDates), null);
+    assert.equal(grid.normalizePresentation({...value, data_keys: rawDates.slice(1)}, rawDates), null);
+});
+
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.28.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.29.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',

@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -69,6 +69,8 @@ class StrategyParameterDefinition:
     help_text: str = ""
     unit_hint: str = ""
     placeholder: str = ""
+    group: Literal["parameters", "factors"] = "parameters"
+    optimizable: bool = True
 
     def display_default(self) -> str:
         if self.default is None:
@@ -151,6 +153,17 @@ class BaseStrategy:
     strategy_interval_notices: dict[str, str] = {}
     strategy_market_data_source: str = "default"
     backtest_cacheable: bool = True
+    strategy_parameter_title: str = "Strategy parameters"
+    strategy_presentation_renderer: str = ""
+    strategy_parameter_actions: tuple[dict[str, str], ...] = ()
+
+    def get_parameter_sections(self) -> tuple[dict[str, str], ...]:
+        """Declare groups independently of browser markup and optimizers."""
+        return (
+            {"key": "parameters", "title": self.strategy_parameter_title, "kind": "fields"},
+            *self.strategy_parameter_actions,
+            {"key": "factors", "title": "Training factors", "kind": "fields"},
+        )
 
     @classmethod
     def get_metadata(cls) -> StrategyMetadata:

@@ -1,54 +1,5 @@
-/* Code version: v3.59.0 */
+/* Code version: v3.60.1 */
 
-/* Keep every native details disclosure on the shared project triangle asset. */
-details > summary {
-	list-style: none;
-}
-details > summary::marker,
-details > summary::-webkit-details-marker {
-	display: none;
-	content: "";
-}
-details > summary::before {
-	content: "";
-	display: inline-block;
-	width: 11px;
-	height: 11px;
-	margin-inline-end: 8px;
-	vertical-align: -1px;
-	background-color: currentColor;
-	mask: url("/static/images/triangle.fill.svg") center/contain no-repeat;
-	-webkit-mask: url("/static/images/triangle.fill.svg") center/contain no-repeat;
-	transform: rotate(90deg);
-	transform-origin: center;
-}
-details[open] > summary::before {
-	transform: rotate(180deg);
-}
-
-.lstm-private-collapse {
-	min-width: 0;
-	border: none;
-	background: transparent;
-}
-.lstm-private-collapse + .lstm-private-collapse {
-	margin-top: 8px;
-}
-.lstm-private-collapse > summary {
-	padding: 10px;
-	font-size: var(--font-size-5);
-	font-weight: var(--font-weight-medium);
-	cursor: pointer;
-}
-.lstm-private-collapse > summary:focus-visible {
-	outline: 2px solid var(--accent-text);
-	outline-offset: 2px;
-	border-radius: var(--radius-soft);
-}
-.lstm-private-collapse-body {
-	min-width: 0;
-	padding: 0 10px 10px;
-}
 .lstm-training-menu {
 	margin: 0;
 	padding: 0;
@@ -80,6 +31,7 @@ details[open] > summary::before {
 }
 .lstm-training-actions {
 	flex-wrap: wrap;
+	justify-content: flex-end;
 	gap: 8px;
 }
 /* Match the sibling secondary-button specimen without restyling other actions. */
@@ -234,17 +186,36 @@ details[open] > summary::before {
 	min-height: 20px;
 	margin: 0;
 	padding: 0;
-	opacity: 1;
-	background: var(--glass-chip-background-strong);
+	opacity: 0;
+	pointer-events: none;
+	background: var(--theme-error-translucent);
 	border: var(--glass-chip-border);
 	box-shadow: var(--glass-chip-shadow);
 }
 .lstm-training-delete .icon-remove-muted {
-	background-color: var(--muted);
+	background-color: var(--theme-error);
 }
-.lstm-training-delete:disabled {
+.lstm-training-history-entry:hover .lstm-training-delete,
+.lstm-training-history-entry:focus-within .lstm-training-delete {
+	opacity: 1;
+	pointer-events: auto;
+}
+.lstm-training-delete.ticker-remove:hover,
+.lstm-training-delete.ticker-remove:focus-visible {
+	background: var(--theme-error);
+}
+.lstm-training-delete:is(:hover, :focus-visible) .icon-remove-muted {
+	background-color: var(--accent-contrast);
+}
+.lstm-training-history-entry:is(:hover, :focus-within) .lstm-training-delete:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
+}
+@media (hover: none), (pointer: coarse) {
+	.lstm-training-delete.ticker-remove {
+		opacity: 1;
+		pointer-events: auto;
+	}
 }
 .lstm-training-accuracy {
 	flex: 0 0 auto;
@@ -436,15 +407,11 @@ details[open] > summary::before {
 }
 
 .backtest-trade-performance-card {
-    --workspace-article-pad-block-start: 6px;
+    --workspace-article-pad-block-start: 2px;
     --workspace-article-pad-inline: 0px;
-    --workspace-article-pad-block-end: 6px;
+    --workspace-article-pad-block-end: 2px;
     --backtest-result-surface-pad-inline: 12px;
     --backtest-share-action-inset-block-start: 6px;
-    --backtest-share-action-clearance: calc(
-        var(--settings-round-icon-button-size)
-        + var(--layout-global-action-gap)
-    );
 }
 
 .backtest-trade-performance-card > .investment-share-actions[data-share-placement="summary-panel"] {
@@ -462,7 +429,7 @@ details[open] > summary::before {
 
 .backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"])
     > .backtest-view-surface {
-    padding-block-start: var(--backtest-share-action-clearance);
+    padding-block-start: 0;
 }
 
 .backtest-section-resizer {
@@ -612,8 +579,8 @@ details[open] > summary::before {
     flex-direction: column;
     min-height: 0;
     min-width: 0;
-    margin: 0 12px 10px;
-    padding: 14px 16px 10px;
+    margin: 2px 0 0;
+    padding: 2px;
     box-sizing: border-box;
     overflow: hidden;
     border-radius: var(--radius-panel);
@@ -1390,7 +1357,7 @@ details[open] > summary::before {
 }
 
 .trade-chart-stack.has-probability-field {
-    padding-bottom: 0;
+    padding-bottom: 2px;
 }
 
 .trade-chart-stack.is-trade-details-hidden {

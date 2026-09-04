@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.5.5`
+Documentation version: `v3.6.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -106,6 +106,34 @@ non-browser API clients.
 
 ## Architecture at a glance
 
+### Backtest research CLI
+
+`scripts/strategy_tune.py` v1.0.0 discovers the same enabled strategy registry as
+the dropdown (15 strategies on 4 Sep 2026). It supports genetic search and a
+random-forest regression surrogate, reuses each strategy's production execution
+engine, ranks two chronological validation windows, and evaluates the winner on
+an untouched final holdout. Buy and hold has no tunable parameters and is evaluated
+once as a baseline. Research results are not recommendations or promised returns.
+
+```bash
+python3 scripts/strategy_tune.py --catalog
+python3 scripts/strategy_tune.py --strategy macd --ticker NVDA \
+  --from 2025-09-04 --to 2026-09-04 --method genetic --trials 16 \
+  --bounds '{"fast_span":[4,20],"slow_span":[24,50],"signal_span":[3,15]}' \
+  --output /tmp/worthward-macd-research
+```
+
+Use a new output directory for every run. Change `--method` to `random-forest`
+for surrogate search; repeat `--ticker` in the strategy's required order for
+rotation strategies. `--params` fixes JSON values; `--bounds` explicitly chooses
+the searched dimensions. The default 600-second budget stops scheduling new
+evaluations, allowing an in-flight evaluation to finish. Local price stores are
+read-only; strategies with a declared Longbridge source use that canonical
+provider. Missing real data fails explicitly. See the architecture and operating
+constraints for chronology, provenance, and interval requirements.
+
+### Runtime structure
+
 The runtime entry chain is:
 
 ```text
@@ -126,7 +154,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
-  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Every strategy with private parameters exposes them through the shared `Tune strategy parameters` control, which starts pressed and its panel open immediately below Strategy. The complete desktop controls surface scrolls vertically as one logical sequence; narrow layouts grow in normal page flow. The default-on `Allow algorithmic stop-loss exits` switch permits a strategy sell or cover signal to close below its entry price and is not a separate fixed-price stop. This gate compares execution price with entry price only; dividends and total return do not change the decision. Select `Bayesian Price Field` or `LSTM Price Field` for the daily Longbridge CLI probability model; both default to the `NVDA` research ticker and share one probability-grid renderer. LSTM-only controls are namespaced and do not enter Bayesian cache keys. When LSTM is selected, the private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the Start training and Stop training actions and an accessible native collapsible history panel for all durable local tuning runs; the strategy selector remains dedicated to strategy choices. The actions are CSRF-protected and the runner state is isolated from market and investment stores. Historical legacy renderer note (not the current contract): the old implementation added a price-anchored crosshair, a stable-width 36-column probability field, six rows per side, and the legacy radii and 4 px cell floor described in the archived release prose below. The current implementation is defined by the authoritative contract in the next paragraph.
+  Run any discovered strategy with configurable capital, interval, dividends, and strategy-owned parameters. Every strategy with private parameters exposes them through the shared `Tune strategy parameters` control, which starts pressed and its panel open immediately below Strategy. The complete desktop controls surface scrolls vertically as one logical sequence; narrow layouts grow in normal page flow. The default-on `Allow algorithmic stop-loss exits` switch permits a strategy sell or cover signal to close below its entry price and is not a separate fixed-price stop. This gate compares execution price with entry price only; dividends and total return do not change the decision. Select `Bayesian Price Field` or `LSTM Price Field` for the daily Longbridge CLI probability model; both default to the `NVDA` research ticker and share one probability-grid renderer. LSTM-only controls are namespaced and do not enter Bayesian cache keys. The round `Tune strategy parameters` control opens strategy-declared collapses for model parameters, shared market factors, and optional private actions. LSTM supplies a training action slot with one right-aligned Start/Stop button and a plain history heading; individual history rows have mutually exclusive details, not nested arrow collapses. Capital and return/exit/detail switches belong to the separate `Backtest parameters` collapse. All of these groups reuse the `Collapse` component in Style tokens; the strategy selector remains dedicated to strategy choices. The actions are CSRF-protected and the runner state is isolated from market and investment stores. Historical legacy renderer note (not the current contract): the old implementation added a price-anchored crosshair, a stable-width 36-column probability field, six rows per side, and the legacy radii and 4 px cell floor described in the archived release prose below. The current implementation is defined by the authoritative contract in the next paragraph.
 
   Historical legacy material note (not the current contract): the old probability field used a strategy-private 50%-transparent background, six rows per side, a fixed 36-column horizon, and the legacy opacity and geometry values preserved in the archived release prose below. The current renderer, including its transparent material, row bounds, integer-bar lattice, and responsive panning behavior, is defined by the authoritative contract above and in `docs/ARCHITECTURE.md`.
   The current Bayesian probability-grid contract supersedes the legacy six-row and private-material wording above: each hover side is independently bounded by `min(10, floor(50% of the current plot height in complete slots), floor(the relevant chart-boundary distance in complete slots))`. The half-plot cap prevents an edge-adjacent guide from consuming the whole hover field, while the boundary cap preserves strict clipping. The `Price Field` detail panel uses a separate complete-row geometry, so it renders the strategy-owned rows above and below the selected guide even when the floating hover field is edge-capped; its grid is then scaled to fit the detail viewport. The renderer derives the required plot height from the actual quantized horizontal cell size, then publishes that private requirement to the generic Backtest resizer callback. At the resizer minimum, the nearest forecastable curve point within 10% of the plot midpoint retains the intended 10 rows above and below; a truly constrained hover viewport may reduce rows through the same fit calculation, never by distorting squares, the 2 px logical gap, or integer-bar slots. The probability field remains clipped within the existing plot area and does not change the curve Canvas drawing range.

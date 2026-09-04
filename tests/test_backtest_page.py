@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.10.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -194,7 +194,7 @@ class BacktestPageTests(unittest.TestCase):
             html.index('data-backtest-history-view-panel="probability"'),
             html.index('data-backtest-history-view-panel="transactions"'),
         )
-        self.assertIn(">Bayesian Price Field detail<", html)
+        self.assertIn(">Price field detail<", html)
         self.assertIn('id="backtest_probability_detail_panel"', html)
 
     def test_lstm_history_reuses_the_same_price_field_surface(self) -> None:
@@ -220,7 +220,7 @@ class BacktestPageTests(unittest.TestCase):
         )
         self.assertIn('data-option-count="3"', html)
         self.assertIn('data-backtest-history-view-panel="probability"', html)
-        self.assertIn(">LSTM Price Field detail<", html)
+        self.assertIn(">Price field detail<", html)
         self.assertIn('id="backtest_probability_detail_panel"', html)
         self.assertIn("lstm-price-field", html)
         self.assertIn("LSTM Price Field", html)

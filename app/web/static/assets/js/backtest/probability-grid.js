@@ -4,7 +4,7 @@
  * Bayesian and LSTM Price Field strategies emit this renderer payload.
  * Layout, hover, pin, resize, thresholding, and styling live only here.
  *
- * Code version: v0.28.0
+ * Code version: v0.29.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -21,6 +21,7 @@
         "lstm-price-field",
     ]);
     const RENDERER_ID = "probability-grid-v1";
+    const RENDERER_SCHEMA = "probability-grid/v1";
     const DEFAULT_ROWS_ABOVE = 10;
     const DEFAULT_ROWS_BELOW = 10;
     const MAX_ROWS_PER_SIDE = 10;
@@ -107,7 +108,9 @@
     const normalizePresentation = (value, expectedRawDatesOrOptions = null, expectedLength = null) => {
         if (!value || typeof value !== "object") return null;
         const schema = String(value.schema || "");
-        if (!PRESENTATION_SCHEMAS.includes(schema)) return null;
+        if (value.renderer_schema !== undefined
+            ? value.renderer_schema !== RENDERER_SCHEMA
+            : !PRESENTATION_SCHEMAS.includes(schema)) return null;
         if (String(value.renderer || "") !== RENDERER_ID) return null;
         const presentation = {...value};
         // These fields belonged to the retired frosted-field material. Drop
@@ -996,7 +999,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.28.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.29.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,
@@ -1004,6 +1007,7 @@
         PRESENTATION_SCHEMAS,
         PRICE_FIELD_STRATEGY_IDS,
         RENDERER_ID,
+        RENDERER_SCHEMA,
         isPriceFieldStrategy,
         buildProbabilityCells,
         computeInstantOpacityProfile,

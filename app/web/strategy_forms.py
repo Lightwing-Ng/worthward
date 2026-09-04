@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -176,6 +176,7 @@ def build_strategy_form_field(
 
     return {
         "key": definition.key,
+        "group": definition.group,
         "label": definition.label,
         "kind": definition.kind,
         "field_type": field_type,
@@ -226,6 +227,22 @@ def build_strategy_form_fields(
         )
         for definition in strategy.get_parameter_definitions()
     ]
+
+
+def build_strategy_form_sections(
+    strategy_id: str,
+    fields: list[dict[str, object]],
+    *,
+    strategy_factory: StrategyFactory,
+) -> list[dict[str, object]]:
+    """Group fields once and expose only strategy-declared action slots."""
+    strategy = strategy_factory(strategy_id)
+    sections = []
+    for section in strategy.get_parameter_sections():
+        members = [field for field in fields if field.get("group", "parameters") == section["key"]]
+        if members or section["kind"] == "action":
+            sections.append({**section, "fields": members})
+    return sections
 
 
 def build_strategy_settings_rows(

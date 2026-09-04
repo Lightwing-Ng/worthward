@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.3.2
+Code version: v1.3.3
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ APP_CSS_IMPORT_ORDER = (
     "foundation/tokens.css",
     "layout/shell.css",
     "components/forms.css",
+    "components/collapse.css",
     "components/resizer.css",
     "components/tables.css",
     "views/workspace.css",

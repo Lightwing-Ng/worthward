@@ -6,7 +6,7 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.26.3
+Code version: v1.27.0
 - Changed: Model-neutral causal Price Field preparation now lives in the
   shared pipeline; Bayesian retains posterior inference, factor selection,
   and backend scheduling.
@@ -1059,6 +1059,8 @@ class BayesianPriceFieldStrategy(BaseStrategy):
     }
     strategy_market_data_source = "longbridge-cli"
     backtest_cacheable = False
+    strategy_parameter_title = "Bayesian parameters"
+    strategy_presentation_renderer = "probability-grid-v1"
 
     def __init__(self) -> None:
         self._warmup_bundle: object | None = None
@@ -1073,6 +1075,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     key=definition.parameter_key,
                     label=definition.label,
                     kind="boolean",
+                    group="factors",
                     default=definition.default,
                     help_text=definition.help_text,
                 )
@@ -1080,6 +1083,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="cell_display_threshold",
+                optimizable=False,
                 label="Cell Display Threshold (%)",
                 kind="number",
                 default=_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT,
@@ -1143,6 +1147,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="compute_backend",
+                optimizable=False,
                 label="Compute Backend",
                 kind="choice",
                 default="Auto",

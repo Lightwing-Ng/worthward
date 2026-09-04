@@ -1,0 +1,7 @@
+{# Code version: v1.0.0 #}
+{% macro render_collapse(title, key, name="", open=false, class_name="") -%}
+<details class="ui-collapse {{ class_name }}" data-collapse="{{ key }}"{% if name %} name="{{ name }}"{% endif %}{% if open %} open{% endif %}>
+    <summary>{{ title }}</summary>
+    <div class="ui-collapse-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}

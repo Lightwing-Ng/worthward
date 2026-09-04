@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.1.0`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -11,14 +11,15 @@ cascade contract and must match the source exactly.
 2. `foundation/tokens.css`
 3. `layout/shell.css`
 4. `components/forms.css`
-5. `components/resizer.css`
-6. `components/tables.css`
-7. `views/workspace.css`
-8. `views/settings.css`
-9. `views/trade.css`
-10. `views/investment.css`
-11. `utilities/responsive.css`
-12. `foundation/motion.css`
+5. `components/collapse.css`
+6. `components/resizer.css`
+7. `components/tables.css`
+8. `views/workspace.css`
+9. `views/settings.css`
+10. `views/trade.css`
+11. `views/investment.css`
+12. `utilities/responsive.css`
+13. `foundation/motion.css`
 
 ## Cache versions
 
@@ -34,6 +35,13 @@ markers in older modules. Preserve an existing module's convention unless a
 dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
+
+The shared `ui-collapse` primitive owns native disclosure markers and token-driven
+header/body spacing. Render it through `templates/_collapse.html`; use the
+`Collapse` row in Style tokens to edit its standard values. Backtest common
+controls, strategy parameters, training factors, and private action slots all
+reuse it. Settings strategy cards retain their dense card-specific branch while
+inheriting the same primitive. Do not restore model-specific accordion CSS.
 
 - Put design tokens, globals, and cross-cutting primitives in `foundation/`.
 - Put app shell and structural layout rules in `layout/`.

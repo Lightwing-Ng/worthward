@@ -1,4 +1,5 @@
-{# Code version: v0.13.2 #}
+{# Code version: v0.14.0 #}
+{% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
 
@@ -536,7 +537,7 @@
     {% elif settings_section == "strategies" %}
     <p class="settings-summary">{{ translate_ui('Review the built-in trading strategies and their reusable backtest parameters in this workspace.') }}</p>
     {% for row in strategy_settings_rows %}
-    <details class="settings-strategy-card"{% if loop.first %} open{% endif %}>
+    <details class="ui-collapse settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
                     <div class="settings-service-main settings-strategy-main">
                         <p class="settings-service-name">{{ row.name }}</p>
@@ -1160,7 +1161,11 @@
             {% for row in style_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
-                    {% if row.sample_kind == "range-mode" %}
+                    {% if row.sample_kind == "collapse" %}
+                        {% call render_collapse(row.sample_title, "style-token-collapse") %}
+                        <p>Shared parameters and strategy actions</p>
+                        {% endcall %}
+                    {% elif row.sample_kind == "range-mode" %}
                     <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
                         <label class="range-mode-option" for="style_token_range_overview">
                             <input id="style_token_range_overview" name="style_token_range_mode" type="radio" value="overview" checked>

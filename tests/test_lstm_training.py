@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.5.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.0."""
 
 from __future__ import annotations
 
@@ -142,6 +142,43 @@ def test_training_configuration_validates_exact_dates_and_settings():
     for value in ({"initial_capital": "nan"}, {"range": "exact", "from": "2026-09-04", "to": "2025-09-04"}, {"stop_loss": "maybe"}):
         with pytest.raises(ValueError):
             ga_runner.validate_training_configuration(value)
+
+
+def test_web_launch_reservation_is_claimed_once_without_implicit_resume(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    commands = []
+    monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
+    monkeypatch.setattr(lstm_training.subprocess, "Popen", lambda command, **_kwargs: commands.append(command) or SimpleNamespace(pid=123))
+    run = manager.start("NVDA", "1y", {}, interval="1d")
+    command = commands[0]
+    args = ga_runner._build_parser().parse_args(command[2:])
+    assert "--resume" not in command
+    assert Path(args.prepared_request).parent.name == run["id"]
+    reached = []
+    monkeypatch.setattr(ga_runner, "_build_snapshot", lambda *_args: (None, {}))
+    monkeypatch.setattr(ga_runner, "_run_selected_configuration", lambda spec, paths, context: reached.append(paths.state.name) or 0)
+    assert ga_runner._run(args) == 0
+    assert reached == [run["id"]]
+    with pytest.raises(FileExistsError):
+        ga_runner._run(args)
+    args.prepared_request = None
+    with pytest.raises(RuntimeError, match="use --resume"):
+        ga_runner._run(args)
+
+
+def test_startup_failure_is_reported_without_rewriting_saved_history(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    paths, spec = _run_paths(manager, tmp_path)
+    _write_json(paths.request, spec)
+    _write_json(paths.state / "launch.json", {"pid": 123})
+    paths.log.write_text("lstm_ga_tune failed: RuntimeError: worker startup failure\n")
+    monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
+    original = paths.log.read_bytes()
+    run = manager._read_run(paths.state)
+    assert run["status"] == "failed_closed"
+    assert "worker startup failure" in run["error"]
+    assert paths.log.read_bytes() == original
+    assert not paths.status.exists()
 
 
 def test_windows_process_identity_uses_cim_and_exact_seed(tmp_path, monkeypatch):

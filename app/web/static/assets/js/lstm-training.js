@@ -1,4 +1,4 @@
-/* Code version: v0.7.0 */
+/* Code version: v0.8.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -26,56 +26,9 @@
 
     const endpoint = (name, fallback) => String(state.endpoints?.[name] || fallback);
 
-    const privateMenuHost = () => {
-        const panel = document.getElementById("trade_strategy_params_panel");
-        if (!(panel instanceof HTMLElement)) return null;
-        let host = panel.querySelector("[data-lstm-training-private-menu]");
-        if (!(host instanceof HTMLElement)) {
-            host = document.createElement("div");
-            host.className = "lstm-training-private-menu-slot";
-            host.dataset.lstmTrainingPrivateMenu = "true";
-            host.hidden = true;
-            panel.prepend(host);
-        }
-        if (!isLstmStrategySelected()) {
-            panel.querySelectorAll(":scope > [data-lstm-private-section]").forEach((section) => {
-                const body = section.querySelector(".lstm-private-collapse-body");
-                if (body) section.before(...body.childNodes);
-                section.remove();
-            });
-            return host;
-        }
-        const wrapSection = (content, key, title, initiallyOpen) => {
-            if (!(content instanceof HTMLElement) || content.closest("[data-lstm-private-section]")) return;
-            const section = document.createElement("details");
-            section.className = "lstm-private-collapse";
-            section.dataset.lstmPrivateSection = key;
-            section.setAttribute("name", "lstm-private-sections");
-            section.open = initiallyOpen;
-            const summary = document.createElement("summary");
-            summary.textContent = title;
-            const body = document.createElement("div");
-            body.className = "lstm-private-collapse-body";
-            content.before(section);
-            body.appendChild(content);
-            section.append(summary, body);
-        };
-        if (!host.closest("[data-lstm-private-section]")) {
-            const factors = panel.querySelector("[data-trade-strategy-params-grid]");
-            if (factors instanceof HTMLElement) {
-                const parameters = factors.cloneNode(false);
-                factors.querySelectorAll(":scope > [data-strategy-param-key]").forEach((field) => {
-                    if (field.dataset.strategyParamKind !== "boolean") parameters.appendChild(field);
-                });
-                panel.prepend(parameters);
-                wrapSection(parameters, "parameters", "LSTM parameters", false);
-            }
-            wrapSection(host, "training", "LSTM training", true);
-            wrapSection(factors, "factors", "Training factors", false);
-        }
-        return host;
-    };
-
+    const privateMenuHost = () => document.querySelector(
+        '#trade_strategy_params_panel [data-strategy-action-slot="lstm-training"]',
+    );
     const currentTicker = () => String(
         document.querySelector("[data-ticker-input]")?.value || "",
     ).trim().toUpperCase();
@@ -349,7 +302,7 @@
         const ticker = currentTicker();
         const activeRun = cachedRuns.find((run) => run.active && run.ticker === ticker) || cachedRuns.find((run) => run.active) || null;
         if (selection && !configurationMatches(selection.configuration)) saveSelection(null);
-        const heading = menu.closest("[data-lstm-private-section]")?.querySelector(":scope > summary");
+        const heading = menu.closest('[data-collapse="training"]')?.querySelector(":scope > summary");
         if (heading) {
             let spinner = heading.querySelector(".lstm-training-spinner");
             if (!spinner) {

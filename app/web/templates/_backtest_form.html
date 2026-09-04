@@ -1,4 +1,5 @@
-{# Code version: v0.8.2 #}
+{# Code version: v0.9.0 #}
+{% from "_collapse.html" import render_collapse %}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -66,6 +67,7 @@
         ) }}
     </div>
     {% endif %}
+    {% call render_collapse("Backtest parameters", "backtest", open=true) %}
     {% if selected_strategy_id != 'dca' %}
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>
@@ -93,6 +95,7 @@
         <input type="hidden" name="show_trade_details" value="0">
         {{ render_switch("show_trade_details", labels.backtest_show_trade_details, "show_trade_details", checked=show_trade_details, row_class="switch-row switch-row--plain") }}
     </div>
+    {% endcall %}
     <div class="field trade-strategy-field backtest-shared-select-field{% if strategy_form_fields %} is-open{% endif %}" data-trade-strategy-field data-shared-select-field data-shared-select-kind="strategy">
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row backtest-shared-select-row">

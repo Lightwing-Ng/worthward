@@ -1,4 +1,4 @@
-/* Code version: v0.38.28 */
+/* Code version: v0.39.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1579,7 +1579,8 @@
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
-			if (strategyPresentation?.schema === "lstm-price-field/v1") {
+			if (strategyPresentation?.training_label) {
+				const trainingLabel = String(strategyPresentation.training_label);
 				const device = strategyPresentation.device || {};
 				const originsTrained = Number(device.origins_trained);
 				const trainMs = Number(device.train_ms);
@@ -1590,11 +1591,11 @@
 						maximumFractionDigits: 0,
 					});
 					latestProbabilityDetailBaseStatus += (
-						` · LSTM training: ${originLabel} causal origins · `
+						` · ${trainingLabel}: ${originLabel} causal origins · `
 						+ `backend: ${resolvedBackend} · ${durationLabel} ms`
 					);
 				} else {
-					latestProbabilityDetailBaseStatus += " · LSTM training: no completed origins";
+					latestProbabilityDetailBaseStatus += ` · ${trainingLabel}: no completed origins`;
 				}
 			}
 			const detailGridViewport = probabilityDetailGrid.parentElement;

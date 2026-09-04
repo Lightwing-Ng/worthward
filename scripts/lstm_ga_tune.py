@@ -249,7 +249,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         selected = json.loads(selected)
     return {
         "schema": 1,
-        "runner_version": "v0.5.0",
+        "runner_version": "v0.6.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),

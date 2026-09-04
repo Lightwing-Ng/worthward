@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.3.0
+Code version: v1.4.0
 - Changed: Model-neutral causal Price Field preparation now comes from the
   shared pipeline instead of the Bayesian strategy module.
 """
@@ -207,6 +207,11 @@ class LSTMPriceFieldStrategy(BaseStrategy):
     }
     strategy_market_data_source = "longbridge-cli"
     backtest_cacheable = False
+    strategy_parameter_title = "LSTM parameters"
+    strategy_presentation_renderer = "probability-grid-v1"
+    strategy_parameter_actions = (
+        {"key": "training", "title": "LSTM training", "kind": "action", "slot": "lstm-training"},
+    )
 
     def __init__(self) -> None:
         self._warmup_bundle: object | None = None
@@ -226,6 +231,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                         for index, word in enumerate(definition.label.split())
                     ).replace("Put/Call", "Put/call"),
                     kind="boolean",
+                    group="factors",
                     default=definition.default,
                     help_text=definition.help_text,
                 )
@@ -233,6 +239,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="cell_display_threshold",
+                optimizable=False,
                 label="Cell display threshold (%)",
                 kind="number",
                 default=_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT,
@@ -315,6 +322,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_seed",
+                optimizable=False,
                 label="LSTM seed",
                 kind="integer",
                 default=42,
@@ -336,6 +344,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="compute_backend",
+                optimizable=False,
                 label="Compute backend",
                 kind="choice",
                 default="Auto",
@@ -540,6 +549,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             },
             fingerprint=fingerprint,
             extra={
+                "training_label": "LSTM training",
                 "lstm": {
                     "lookback": int(normalized_params["lstm_lookback"]),
                     "hidden_size": int(normalized_params["lstm_hidden_size"]),

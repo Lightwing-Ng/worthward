@@ -5,15 +5,17 @@ Bayesian Price Field and LSTM Price Field both emit this geometry and
 renderer payload. The browser owns layout, hover, pin, resize, thresholding,
 and styling in one module.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
+import re
 
 
 PROBABILITY_GRID_RENDERER = "probability-grid-v1"
+PROBABILITY_GRID_SCHEMA = "probability-grid/v1"
 BAYESIAN_PRICE_FIELD_SCHEMA = "bayesian-price-field/v1"
 LSTM_PRICE_FIELD_SCHEMA = "lstm-price-field/v1"
 PRICE_FIELD_SCHEMAS = frozenset(
@@ -50,13 +52,18 @@ STEP_UNIT = "trading-day"
 
 def is_price_field_strategy(strategy_id: object) -> bool:
     """Return True when the Backtest strategy owns the shared Price Field UI."""
-    return str(strategy_id or "") in PRICE_FIELD_STRATEGY_IDS
+    from .loader import get_strategy_definition
+    try:
+        return get_strategy_definition(str(strategy_id or "")).get("presentation_renderer") == PROBABILITY_GRID_RENDERER
+    except ValueError:
+        return False
 
 
 def probability_grid_geometry_fields() -> dict[str, Any]:
     """Return the product-owned lattice fields shared by every Price Field model."""
     return {
         "renderer": PROBABILITY_GRID_RENDERER,
+        "renderer_schema": PROBABILITY_GRID_SCHEMA,
         "rows_above": PROBABILITY_FIELD_ROWS_ABOVE,
         "rows_below": PROBABILITY_FIELD_ROWS_BELOW,
         "columns": PROBABILITY_FIELD_COLUMNS,
@@ -111,7 +118,7 @@ def build_probability_grid_presentation(
         extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one JSON-safe probability-grid payload for the shared renderer."""
-    if schema not in PRICE_FIELD_SCHEMAS:
+    if not re.fullmatch(r"[a-z][a-z0-9-]*/v[1-9][0-9]*", schema):
         raise ValueError(f"Unsupported probability-grid schema: {schema}.")
     presentation: dict[str, Any] = {
         "schema": schema,

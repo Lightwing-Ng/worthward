@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.95.0
+Code version: v0.96.0
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -217,7 +217,6 @@ from app.core.email_settings import (
 )
 from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
 from strategies.price_field_contract import (
-    PRICE_FIELD_STRATEGY_IDS,
     is_price_field_strategy,
 )
 from strategies.interval_bridge import (
@@ -418,6 +417,7 @@ from app.web.market_history import (
 )
 from app.web.strategy_forms import (
     build_strategy_form_fields as build_strategy_form_fields_for_strategy,
+    build_strategy_form_sections,
     build_strategy_option_groups as build_strategy_option_groups_for_recent,
     build_strategy_settings_rows as build_strategy_settings_rows_for_factory,
 )
@@ -5561,11 +5561,12 @@ def build_web_runtime() -> WebRuntime:
             strategy_option_groups=strategy_option_groups,
             selected_strategy_id=selected_strategy_id,
             show_probability_field=is_price_field_strategy(selected_strategy_id),
-            price_field_strategy_ids=sorted(PRICE_FIELD_STRATEGY_IDS),
+            price_field_strategy_ids=sorted(str(item["id"]) for item in strategy_options if item.get("presentation_renderer") == "probability-grid-v1"),
             strategy_required_tickers=strategy_required_tickers,
             strategy_supports=strategy_supports,
             strategy_default_tickers=strategy_default_tickers,
             strategy_form_fields=strategy_form_fields,
+            strategy_form_sections=build_strategy_form_sections(selected_strategy_id, strategy_form_fields, strategy_factory=instantiate_strategy) if selected_strategy_id else [],
             selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
             backtest_result=backtest_result,
@@ -7197,6 +7198,7 @@ def build_web_runtime() -> WebRuntime:
         html = render_template(
             "_trade_strategy_params_panel.html",
             strategy_form_fields=strategy_form_fields,
+            strategy_form_sections=build_strategy_form_sections(strategy_id, strategy_form_fields, strategy_factory=instantiate_strategy),
         )
         return jsonify(
             {

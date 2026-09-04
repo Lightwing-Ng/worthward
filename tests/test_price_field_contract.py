@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.0.6."""
+"""Shared Price Field contract tests. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -161,7 +161,7 @@ class PriceFieldContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Unsupported probability-grid schema"):
             build_probability_grid_presentation(
-                schema="other/v1",
+                schema="invalid-schema",
                 model_version="x",
                 cell_display_threshold_pct=5.0,
                 distribution_kind="x",
@@ -190,11 +190,11 @@ class PriceFieldContractTests(unittest.TestCase):
         for strategy_id in PRICE_FIELD_STRATEGY_IDS:
             self.assertIn(f'"{strategy_id}"', source)
         self.assertIn("probability-grid-v1", source)
-        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.28.0\"", source)
+        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.29.0\"", source)
 
     def test_native_disclosures_use_the_shared_triangle_asset(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        trade_css = (root / "app/web/static/assets/css/views/trade.css").read_text(
+        trade_css = (root / "app/web/static/assets/css/components/collapse.css").read_text(
             encoding="utf-8",
         )
         triangle_asset = root / "app/web/static/images/triangle.fill.svg"

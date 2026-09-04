@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.14.1
+Code version: v1.15.0
 """
 
 from __future__ import annotations
@@ -151,6 +151,20 @@ def build_style_token_rows(
         return str(getattr(definition, "value", definition))
 
     rows = [
+        {
+            "id": "collapse",
+            "name": "Collapse",
+            "sample_kind": "collapse",
+            "sample_title": "LSTM parameters",
+            "tokens": [
+                px_token("--collapse-section-gap", 8),
+                px_token("--collapse-summary-padding", 10),
+                raw_token("--collapse-body-padding", "0 10px 10px"),
+                raw_token("--collapse-font-size", "var(--font-size-5)"),
+                raw_token("--collapse-font-weight", "var(--font-weight-medium)"),
+            ],
+            "related_styles": [],
+        },
         {
             "id": style_token_id("Segmented control"),
             "name": "Segmented control",

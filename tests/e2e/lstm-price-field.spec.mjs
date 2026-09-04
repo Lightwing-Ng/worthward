@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.8.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.9.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -143,13 +143,13 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.28.0');
+    expect(desktop.version).toBe('v0.29.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.28.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.38.28');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.29.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.39.0');
     expect(desktop.appScript).toContain('app-v0.52.0');
-    expect(desktop.panelTitle).toBe('LSTM Price Field detail');
+    expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
     expect(desktop.cellCount).toBeGreaterThan(0);
@@ -192,7 +192,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(page.locator('#app_sidebar [data-lstm-training-menu]')).toHaveCount(0);
 
     const menuRelation = await privateMenu.evaluate((node) => ({
-        directPrivateHost: node.parentElement?.matches('[data-lstm-training-private-menu]') || false,
+        directPrivateHost: node.parentElement?.matches('[data-strategy-action-slot="lstm-training"]') || false,
         insideStrategyParams: Boolean(node.closest('#trade_strategy_params_panel')),
     }));
     expect(menuRelation).toEqual({directPrivateHost: true, insideStrategyParams: true});
@@ -205,15 +205,15 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(paramsPanel.locator(':scope > details > summary')).toHaveText([
         'LSTM parameters', 'LSTM training', 'Training factors',
     ]);
-    const parametersSection = paramsPanel.locator('[data-lstm-private-section="parameters"]');
+    const parametersSection = paramsPanel.locator('[data-collapse="parameters"]');
     await expect(parametersSection.locator('[data-strategy-param-key]')).toHaveCount(10);
     await expect(parametersSection.locator('[data-strategy-param-key]').first()).toHaveAttribute('data-strategy-param-key', 'cell_display_threshold');
     await expect(parametersSection.locator('[data-strategy-param-key]').last()).toHaveAttribute('data-strategy-param-key', 'compute_backend');
 
-    const trainingSection = paramsPanel.locator('[data-lstm-private-section="training"]');
+    const trainingSection = paramsPanel.locator('[data-collapse="training"]');
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-size', '15px');
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-weight', '500');
-    const factorsSection = paramsPanel.locator('[data-lstm-private-section="factors"]');
+    const factorsSection = paramsPanel.locator('[data-collapse="factors"]');
     await expect(factorsSection.locator('[data-strategy-param-key]')).toHaveCount(23);
     await expect(trainingSection).toHaveCSS('border-top-width', '0px');
     const fieldValues = () => paramsPanel.locator('[data-strategy-param-input][name]').evaluateAll(
@@ -247,7 +247,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
 
     await page.reload();
     await expect(privateMenu).toBeVisible();
-    await expect(paramsPanel.locator('[data-lstm-private-section]')).toHaveCount(3);
+    await expect(paramsPanel.locator('[data-collapse]')).toHaveCount(3);
 
     await tuneButton.click();
     await expect(paramsPanel).toBeHidden();
@@ -633,7 +633,7 @@ test('server-side LSTM Price Field computes a real probability field and renders
     }));
     expect(rendered.tooltipCells).toBeGreaterThan(0);
     expect(rendered.detailCells).toBeGreaterThan(0);
-    expect(rendered.panelTitle).toBe('LSTM Price Field detail');
+    expect(rendered.panelTitle).toBe('Price field detail');
     expect(rendered.statusText).toMatch(
         /^Selected date: \d{1,2} [A-Z][a-z]{2} \d{4} · LSTM training: [\d,]+ causal origins · backend: (CPU|MPS|CUDA) · [\d,]+ ms$/,
     );
@@ -646,11 +646,11 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.28.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.28.0');
+    expect(contract.version).toBe('v0.29.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.29.0');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
-    expect(contract.panelTitle).toBe('Bayesian Price Field detail');
+    expect(contract.panelTitle).toBe('Price field detail');
 });
 
 test('the two supplied DRAM audit URLs render model-specific fields on the shared contract', async ({page}) => {

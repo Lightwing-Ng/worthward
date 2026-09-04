@@ -1,4 +1,4 @@
-"""Factories for test market data and results. Code version: v1.2.0."""
+"""Factories for test market data and results. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -24,6 +24,9 @@ class FakeStrategy:
 
     def get_parameter_definitions(self) -> list[object]:
         return []
+
+    def get_parameter_sections(self) -> tuple[dict[str, str], ...]:
+        return ()
 
     def normalize_params(self, values: dict[str, object]) -> dict[str, object]:
         return values

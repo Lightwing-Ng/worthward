@@ -1,6 +1,65 @@
 # Testing guide
 
-Documentation version: `v1.47.0`
+Documentation version: `v1.48.0`
+
+## Shared controls, startup handshake, and registry tuning
+
+On 4 Sep 2026, the web launch regression was reproduced from a failed worker's
+log: the manager-created request was mistaken for a prior run requiring resume.
+The prepared-request protocol now has a process-level real-data check in addition
+to unit tests. An actual `LstmTrainingManager` launch into an isolated temporary
+compute root completed NVDA/1y/1d with the selected private configuration on
+confirmed MPS: 6,840 optimizer steps, 297 trained origins, and 62.570382 seconds
+of synchronized training compute. The run completed in about 67.44 seconds with
+no artificial wait or CPU fallback. Its holdout hit rate was 51.0204%; this is
+evidence of real work, not a promise of improved accuracy. No production history
+item was created or deleted by the verification.
+
+The new `tests/test_strategy_tuning.py` covers all 15 dropdown strategies through
+the production execution engines using isolated shared-factory market data. It
+also covers seeded genetic/forest search, fixed-value validation, read-only price
+files, synthetic-data rejection, holdout isolation, and durable holdout errors.
+Two separate real NVDA CLI runs, one per search method, each completed eight
+trials using existing local OHLC with identical input fingerprints. Both wrote
+only new directories under `/tmp/worthward-backtest-shared-3S3rxa`; their final
+holdout results were reported separately and never used for ranking.
+
+Commands and observed outcomes:
+
+- `./scripts/test.sh tests/test_strategy_tuning.py tests/test_layout_anchor_contract.py tests/test_repository_contracts.py`: exit 0, 81 passed in 4.48 seconds. This reconciles the imported-collapse manifest and stale probability-share/hover source assertions with the already tested normalized renderer contract.
+- `./scripts/test_e2e.sh tests/e2e/shared-backtest-controls.spec.mjs tests/e2e/lstm-price-field.spec.mjs`: seven LSTM/grid tests passed; four new cases initially failed by sampling a still-running CSS color transition. Their assertions now wait for the final destructive-token color.
+- `./scripts/test_e2e.sh tests/e2e/shared-backtest-controls.spec.mjs`: final retry exit 0, four passed in 31.2 seconds. Light/dark at 1,024px and 390px verify collapsed inputs, intrinsic right-aligned actions, hover-only deletion, error colors, absence of nested disclosures, the real Style tokens specimen, and propagation of a shared token to both kinds of collapse.
+- E2E ownership conflicts returned 73 for existing owners 45503 and 51369; neither process was stopped or reused. Retries acquired the supported wrapper's own lock and passed.
+- `./scripts/check.sh`: final exit 1. Python static checks and JavaScript syntax passed; 1,144 Python tests passed, six skipped, and 180 subtests passed in 277.49 seconds at 73.62% coverage. All 319 JavaScript tests passed. Chromium completed with 294 passed and five failed in 9.3 minutes. This is not a green complete gate; see the failures below. All seven LSTM/grid tests and four new shared-control tests passed within this complete browser run.
+- `python3 scripts/strategy_tune.py --strategy macd --ticker NVDA --from 2025-09-04 --to 2026-09-04 --method genetic --trials 8 --bounds '{"fast_span":[4,20],"slow_span":[24,50],"signal_span":[3,15]}' --output /tmp/worthward-backtest-shared-3S3rxa/genetic-final`: exit 0, eight successful real-data evaluations. Replacing the method with `random-forest` and the output suffix with `random-forest-final` also exited 0 with eight successful evaluations.
+
+Live 8688 was restarted externally during this shared-checkout task, ending at
+user-owned PID 41290. Its DOM serves app-css-v0.69.1, the four common/model/action/
+factor groups, the shared `Price field detail` title, and the borderless Collapse
+specimen in Style tokens. The agent did not restart the service or operate a
+production training/delete action. Concurrent Price Field layout edits and commit
+`07fa4ad6` were preserved. Seven pre-existing differing numbered copies (five
+coverage files and two protected investment-cache files) were retained; nothing
+was removed. Source changes remain in the shared working tree; the agent made no
+commit. CSS architecture, README, Architecture, Known Issues, and the external
+shared-UI ledger document the new owners and sibling synchronization boundary.
+
+Remaining complete-gate failures (no accounting or concurrent layout changes
+were overwritten to hide them):
+
+- `tests/e2e/backtest-share-layout.spec.mjs:46`: the share button stays inside its card and away from the theme control, but no longer clears the chart heading after the separate share-rail spacing change.
+- `tests/e2e/critical-flows.spec.mjs:8198`: the declared Investment entry version is v2.135.0 while the runtime's embedded module-version map reports v2.133.3.
+- `tests/e2e/critical-flows.spec.mjs:15906`: the Bayesian axis/layout assertion differs by 26px (718px versus 744px).
+- `tests/e2e/critical-flows.spec.mjs:17648`: the older expected 6px result-card block padding conflicts with the parallel layout task's recorded 2px contract.
+- `tests/e2e/critical-flows.spec.mjs:18201`: the older field-opacity assertion expects an invisible cell at zero threshold, but the current threshold-relative mapping reports minimum opacity 0.0662361 for the strictly positive represented probabilities.
+
+The source review separates these observed mismatches from the new passing
+collapse/startup/search behavior; it does not claim an untouched-baseline browser
+reproduction. The complete log is retained in the local evidence directory
+`/tmp/worthward-backtest-shared-3S3rxa/check-final.log`. No runtime source changed
+after this final gate began; subsequent documentation updates passed
+`./scripts/test.sh tests/test_repository_contracts.py` (exit 0, 11 passed in
+0.10 seconds). The E2E wrapper stopped its owned 8699 server.
 
 ## Selectable LSTM cases and sustained training
 
