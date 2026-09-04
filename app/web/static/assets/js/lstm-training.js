@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.6.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -75,6 +75,26 @@
 
     const currentPeriod = () => String(document.getElementById("period")?.value || "1y").trim().toLowerCase();
 
+    const currentInterval = () => String(document.querySelector('[name="interval"]:checked')?.value
+        || document.querySelector('[name="interval"]')?.value || "").trim().toLowerCase();
+
+    // UTC start dates keep identifiers stable across browser time zones.
+    const historyIdentifiers = (runs) => {
+        const counters = new Map();
+        const identifiers = new Map();
+        [...runs].sort((left, right) => (Date.parse(left.started_at) || 0) - (Date.parse(right.started_at) || 0)
+            || String(left.id).localeCompare(String(right.id))).forEach((run) => {
+            const date = new Date(String(run.started_at || ""));
+            if (Number.isNaN(date.getTime())) return;
+            const day = date.toISOString().slice(2, 10).replaceAll("-", "");
+            const key = `${run.ticker}:${day}`;
+            const sequence = (counters.get(key) || 0) + 1;
+            counters.set(key, sequence);
+            identifiers.set(run.id, `${day}(${String(sequence).padStart(2, "0")})`);
+        });
+        return identifiers;
+    };
+
     const currentParameters = () => Object.fromEntries(Array.from(
         document.querySelectorAll("#trade_strategy_params_panel [data-strategy-param-input][name]"),
         (input) => [input.name, input.type === "checkbox" ? input.checked : input.value],
@@ -83,14 +103,15 @@
     const formatDate = (rawValue) => {
         const date = new Date(String(rawValue || ""));
         if (Number.isNaN(date.getTime())) return "Date unavailable";
-        return new Intl.DateTimeFormat("en-GB", {
+        const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
             day: "numeric",
             month: "short",
             year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
-            hour12: false,
-        }).format(date);
+            hourCycle: "h23",
+        }).formatToParts(date).map((part) => [part.type, part.value]));
+        return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute}`;
     };
 
     const formatNumber = (value, digits = 0) => {
@@ -162,18 +183,19 @@
         return container;
     };
 
-    const buildHistoryItem = (run) => {
+    const buildHistoryItem = (run, identifier) => {
         const item = document.createElement("details");
         item.className = "lstm-training-history-item";
         item.dataset.lstmTrainingRunId = String(run.id || "");
         const summary = document.createElement("summary");
-        appendText(summary, "lstm-training-history-run", `${run.ticker || "Unknown ticker"} · ${run.period || "period unavailable"}`);
-        appendText(summary, `lstm-training-status is-${String(run.status || "unknown").replaceAll("_", "-")}`, statusLabel(run.status));
+        appendText(summary, "lstm-training-history-run", run.ticker || "Unknown ticker");
+        appendText(summary, "lstm-training-history-identifier", identifier || "Date unavailable");
         item.appendChild(summary);
 
         const details = document.createElement("div");
         details.className = "lstm-training-history-details";
-        details.appendChild(buildProgress(run));
+        appendText(details, "lstm-training-history-meta", `${run.period || "Period unavailable"} · ${run.interval || "Interval not recorded"}`);
+        if (run.status !== "completed") appendText(details, "lstm-training-status", statusLabel(run.status));
         appendText(details, "lstm-training-history-meta", `Started ${formatDate(run.started_at)}`);
         if (run.completed_at) appendText(details, "lstm-training-history-meta", `Completed ${formatDate(run.completed_at)}`);
         const progress = [];
@@ -248,16 +270,21 @@
                 .map((item) => item.dataset.lstmTrainingRunId)
                 .filter(Boolean),
         );
-        const knownIds = new Set(Array.from(historyItems.querySelectorAll("details"), (item) => item.dataset.lstmTrainingRunId));
         historyItems.replaceChildren();
         if (!cachedRuns.length) {
             appendText(historyItems, "lstm-training-history-empty", "No historical LSTM training runs.");
             return;
         }
-        cachedRuns.forEach((run, index) => {
-            const item = buildHistoryItem(run);
-            if (openIds.has(String(run.id || "")) || (!knownIds.has(String(run.id || "")) && (run.active || index === 0))) item.open = true;
-            historyItems.appendChild(item);
+        const identifiers = historyIdentifiers(cachedRuns);
+        cachedRuns.forEach((run) => {
+            const item = buildHistoryItem(run, identifiers.get(run.id));
+            item.open = openIds.has(String(run.id || ""));
+            const entry = document.createElement("div");
+            entry.className = "lstm-training-history-entry";
+            entry.appendChild(item);
+            if (run.active) entry.appendChild(buildProgress(run));
+            else if (run.status !== "completed") appendText(entry, "lstm-training-status", statusLabel(run.status));
+            historyItems.appendChild(entry);
             if (focusedRunId === String(run.id || "")) item.querySelector(":scope > summary").focus({preventScroll: true});
         });
     };
@@ -299,12 +326,17 @@
 
     const postTrainingAction = async (menu, action, runId = "") => {
         if (pendingAction) return;
+        if (action === "start" && currentInterval() !== "1d") {
+            actionError = "LSTM training currently requires Interval 1d. Select 1d to train; 1m is not supported.";
+            updateMenu(menu);
+            return;
+        }
         pendingAction = action;
         actionError = "";
         updateMenu(menu);
         const csrfToken = String(state.security?.investmentCsrfToken || "");
         const payload = action === "start"
-            ? {ticker: currentTicker(), period: currentPeriod(), params: currentParameters()}
+            ? {ticker: currentTicker(), period: currentPeriod(), interval: currentInterval(), params: currentParameters()}
             : {run_id: runId};
         const url = endpoint(
             action === "start" ? "lstmTrainingStart" : "lstmTrainingStop",

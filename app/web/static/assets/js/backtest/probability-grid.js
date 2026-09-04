@@ -4,7 +4,7 @@
  * Bayesian and LSTM Price Field strategies emit this renderer payload.
  * Layout, hover, pin, resize, thresholding, and styling live only here.
  *
- * Code version: v0.27.0
+ * Code version: v0.28.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -665,6 +665,7 @@
         {
             exponent = DEFAULT_CELL_OPACITY_EXPONENT,
             tailRatio = DEFAULT_CELL_OPACITY_TAIL_RATIO,
+            displayFloor = null,
         } = {},
     ) => {
         if (!Array.isArray(probabilities) || !probabilities.length) return [];
@@ -673,7 +674,7 @@
             return Number.isFinite(numeric) ? clamp(numeric, 0, 1) : 0;
         });
         const maximumProbability = Math.max(...sanitized);
-        if (!(maximumProbability > 0)) {
+        if (!(maximumProbability > 0) || (displayFloor !== null && Number(displayFloor) > maximumProbability)) {
             return sanitized.map((probability) => Object.freeze({
                 displayIntensity: 0,
                 opacity: 0,
@@ -692,10 +693,9 @@
             GEOMETRY_LIMITS.opacityTailRatio,
         );
         const minimumProbabilityRatio = minimumProbability / maximumProbability;
-        const baselineRatio = Math.max(
-            minimumProbabilityRatio,
-            normalizedTailRatio,
-        );
+        const baselineRatio = displayFloor !== null && Number.isFinite(Number(displayFloor))
+            ? clamp(Number(displayFloor), 0, 1) / maximumProbability
+            : Math.max(minimumProbabilityRatio, normalizedTailRatio);
         const visibleRatioRange = 1 - baselineRatio;
         if (!(visibleRatioRange > 0)) {
             return sanitized.map((probability) => {
@@ -802,14 +802,14 @@
                 });
             }
         }
-        const opacityProfile = computeInstantOpacityProfile(
-            cells.map((cell) => cell.probability),
-            {exponent: opacityExponent, tailRatio: opacityTailRatio},
-        );
         const displayThresholdPct = boundedNumber(
             cellDisplayThresholdPct,
             DEFAULT_CELL_DISPLAY_THRESHOLD_PCT,
             GEOMETRY_LIMITS.cellDisplayThresholdPct,
+        );
+        const opacityProfile = computeInstantOpacityProfile(
+            cells.map((cell) => cell.probability),
+            {exponent: opacityExponent, tailRatio: opacityTailRatio, displayFloor: displayThresholdPct / 100},
         );
         return cells.map((cell, index) => ({
             ...cell,
@@ -996,7 +996,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.27.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.28.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

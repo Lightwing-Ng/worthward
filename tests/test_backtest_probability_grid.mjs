@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.27.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.28.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,7 +40,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.27.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.28.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -610,6 +610,7 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
         valueForPixel: (pixel) => 109 - (pixel * 0.1),
         opacityExponent: 1.6,
         opacityTailRatio: 0.02,
+        cellDisplayThresholdPct: 1,
     });
     assert.equal(cells.length, 20 * 20);
     assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
@@ -641,6 +642,19 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
         .every((cell) => cell.opacity === 1));
 });
 
+test('threshold-relative contrast keeps the same endpoints and nonlinear palette', () => {
+    const first = grid.computeInstantOpacityProfile([0.1, 0.15, 0.2], {displayFloor: 0.1});
+    const second = grid.computeInstantOpacityProfile([0.02, 0.105, 0.19], {displayFloor: 0.02});
+    for (let index = 0; index < first.length; index += 1) {
+        assert.ok(Math.abs(first[index].opacity - second[index].opacity) < 1e-12);
+    }
+    assert.equal(first[0].opacity, 0);
+    assert.equal(first[2].opacity, 1);
+    assert.deepEqual(grid.computeInstantOpacityProfile([0.1, 0.1], {displayFloor: 0.1}).map((cell) => cell.opacity), [1, 1]);
+    assert.deepEqual(grid.computeInstantOpacityProfile([0, NaN], {displayFloor: 0}).map((cell) => cell.opacity), [0, 0]);
+    assert.deepEqual(grid.computeInstantOpacityProfile([0.1, 0.2], {displayFloor: 0.5}).map((cell) => cell.opacity), [0, 0]);
+});
+
 test('marks cells below the absolute display threshold without changing their geometry', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
@@ -663,6 +677,8 @@ test('marks cells below the absolute display threshold without changing their ge
     const hiddenCells = build(5);
     assert.ok(allCells.every((cell) => cell.isVisible === true));
     assert.equal(exactThresholdCells[0].isVisible, true);
+    assert.equal(exactThresholdCells[0].opacity, 0);
+    assert.equal(Math.max(...exactThresholdCells.map((cell) => cell.opacity)), 1);
     assert.ok(exactThresholdCells.some((cell) => cell.isVisible === false));
     assert.ok(hiddenCells.some((cell) => cell.isVisible === false));
     assert.ok(hiddenCells.every((cell, index) => (
@@ -670,6 +686,7 @@ test('marks cells below the absolute display threshold without changing their ge
         && cell.y === allCells[index].y
         && cell.lowerPrice === allCells[index].lowerPrice
         && cell.upperPrice === allCells[index].upperPrice
+        && cell.probability === allCells[index].probability
     )));
 });
 

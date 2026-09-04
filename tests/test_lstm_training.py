@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.3.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.4.0."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from app.services import lstm_training
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
 from scripts import lstm_ga_tune as ga_runner
+from tests.factories.market import ohlc_frame_for_dates
 
 
 def _run_paths(manager: lstm_training.LstmTrainingManager, tmp_path: Path, seed: int = 42):
@@ -72,14 +74,18 @@ def test_start_uses_isolated_runner_process_and_returns_starting_run(tmp_path: P
     monkeypatch.setattr(manager, "_process_matches", lambda *_args: True)
 
     selected = {"use_broker_holding": True, "lstm_epochs": 3, "lstm_seed": 17}
-    run = manager.start("nvda", "1y", selected)
+    run = manager.start("dram", "6mo", selected, interval="1d")
 
     assert run["status"] == "starting"
     assert run["active"] is True
-    assert run["ticker"] == "NVDA"
+    assert run["ticker"] == "DRAM"
+    assert run["period"] == "6mo"
+    assert run["interval"] == "1d"
     assert commands[0][0] == lstm_training.sys.executable
     assert "--ticker" in commands[0]
-    assert commands[0][commands[0].index("--ticker") + 1] == "NVDA"
+    assert commands[0][commands[0].index("--ticker") + 1] == "DRAM"
+    assert commands[0][commands[0].index("--period") + 1] == "6mo"
+    assert commands[0][commands[0].index("--interval") + 1] == "1d"
     assert "--state-root" in commands[0]
     submitted = json.loads(commands[0][commands[0].index("--selected-params") + 1])
     assert submitted == ga_runner.validate_selected_params(selected)
@@ -138,8 +144,8 @@ def test_start_endpoint_delegates_validated_request_to_manager(client, monkeypat
     expected_run = {"id": "lstm-ga-" + ("a" * 24), "ticker": "NVDA", "period": "1y", "status": "starting", "active": True}
     captured: dict[str, str] = {}
 
-    def fake_start(_manager, ticker: str, period: str, params):
-        captured.update({"ticker": ticker, "period": period, "params": params})
+    def fake_start(_manager, ticker: str, period: str, params, interval):
+        captured.update({"ticker": ticker, "period": period, "params": params, "interval": interval})
         return expected_run
 
     monkeypatch.setattr(lstm_training.LstmTrainingManager, "start", fake_start)
@@ -149,7 +155,7 @@ def test_start_endpoint_delegates_validated_request_to_manager(client, monkeypat
 
     response = client.post(
         "/api/lstm-training/start",
-        json={"ticker": "NVDA", "period": "1y", "params": {"lstm_epochs": 3}},
+        json={"ticker": "NVDA", "period": "1y", "interval": "1d", "params": {"lstm_epochs": 3}},
         headers={
             "Origin": "http://localhost",
             "Sec-Fetch-Site": "same-origin",
@@ -159,7 +165,25 @@ def test_start_endpoint_delegates_validated_request_to_manager(client, monkeypat
 
     assert response.status_code == 202
     assert response.json == {"success": True, "run": expected_run}
-    assert captured == {"ticker": "NVDA", "period": "1y", "params": {"lstm_epochs": 3}}
+    assert captured == {"ticker": "NVDA", "period": "1y", "interval": "1d", "params": {"lstm_epochs": 3}}
+
+
+@pytest.mark.parametrize("interval", [None, "1m"])
+def test_start_endpoint_rejects_unsupported_interval_before_launch(client, monkeypatch, interval):
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Invalid interval must not reach process launch")
+    monkeypatch.setattr(lstm_training.subprocess, "Popen", forbidden)
+    token = "b" * 32
+    with client.session_transaction() as browser_session:
+        browser_session[INVESTMENT_CSRF_SESSION_KEY] = token
+    payload = {"ticker": "DRAM", "period": "6mo", "params": {"lstm_epochs": 3}}
+    if interval is not None:
+        payload["interval"] = interval
+    response = client.post("/api/lstm-training/start", json=payload, headers={
+        "Origin": "http://localhost", "Sec-Fetch-Site": "same-origin", "X-CSRF-Token": token,
+    })
+    assert response.status_code == 400
+    assert "requires Interval 1d" in response.json["error"]
 
 
 @pytest.mark.parametrize("params", [None, [], {"unknown": 1}, {"lstm_epochs": "nan"}, {"lstm_epochs": 1.5}, {"compute_backend": "bogus"}, {"use_broker_holding": "maybe"}])
@@ -168,7 +192,17 @@ def test_invalid_selection_never_launches(params, tmp_path, monkeypatch):
         pytest.fail("Invalid selection must not launch a process")
     monkeypatch.setattr(lstm_training.subprocess, "Popen", forbidden)
     with pytest.raises(ValueError):
-        lstm_training.LstmTrainingManager(tmp_path).start("NVDA", "1y", params)
+        lstm_training.LstmTrainingManager(tmp_path).start("NVDA", "1y", params, interval="1d")
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("interval", ["", "1m", "5m", None])
+def test_unsupported_interval_never_launches_or_creates_state(interval, tmp_path, monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Unsupported intervals must not launch a process")
+    monkeypatch.setattr(lstm_training.subprocess, "Popen", forbidden)
+    with pytest.raises(ValueError, match="requires Interval 1d"):
+        lstm_training.LstmTrainingManager(tmp_path).start("DRAM", "6mo", {}, interval=interval)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -200,6 +234,55 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
     assert json.loads(paths.result.read_text())["progress"]["completed"] == 100
     other = dict(spec, selected_params=dict(observed[0], lstm_epochs=4))
     assert ga_runner.build_run_paths(args, other).state != paths.state
+
+
+def test_snapshot_uses_requested_market_window_and_selected_parameters(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    args = manager._build_runner_args("DRAM", "6mo", 42)
+    args.selected_params = {"use_option_total_volume": True, "lstm_epochs": 3, "lstm_seed": 17}
+    spec = ga_runner.build_request_spec(args)
+    paths = ga_runner.build_run_paths(args, spec)
+    paths.state.mkdir(parents=True)
+    frame = ohlc_frame_for_dates("DRAM", pd.bdate_range("2026-01-01", periods=120).strftime("%Y-%m-%d").tolist())
+    start, end = frame.Date.iloc[10].date(), frame.Date.iloc[-1].date()
+    bundle = {
+        "symbol": "DRAM.US", "fingerprint": "provider-evidence",
+        "source_commands": ["provider evidence from isolated test double"],
+        "factor_status": {"ohlcv": "available"},
+        "ohlcv": [{
+            "observed_at": row.Date.isoformat(), "open": row.Open, "high": row.High,
+            "low": row.Low, "close": row.Close, "volume": 1000, "source": "isolated-test-provider",
+        } for row in frame.itertuples()],
+    }
+    observed = []
+    def date_bounds(period):
+        assert period == "6mo"
+        return start, end
+    def load(strategy, tickers, **kwargs):
+        observed.append((tickers, kwargs))
+        strategy._warmup_bundle = bundle
+        return [frame]
+    monkeypatch.setattr(ga_runner, "_date_bounds", date_bounds)
+    monkeypatch.setattr(ga_runner.LSTMPriceFieldStrategy, "load_market_datasets", load)
+    context, snapshot = ga_runner._build_snapshot(args, paths)
+    assert observed == [(('DRAM',), {"interval": "1d", "start": start, "end": end, "params": spec["selected_params"]})]
+    assert context.interval == snapshot["interval"] == "1d"
+    assert snapshot["ticker"] == "DRAM"
+    assert snapshot["period"] == "6mo"
+    assert snapshot["bundle"]["ohlcv"] == bundle["ohlcv"]
+    assert context.visible_frame.Close.tolist() == frame.Close.iloc[10:].tolist()
+    assert snapshot["bundle"]["source_commands"] == bundle["source_commands"]
+
+
+def test_missing_provider_data_never_falls_back_to_demo_rows(tmp_path, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    args = manager._build_runner_args("DRAM", "6mo", 42)
+    args.selected_params = {}
+    paths = ga_runner.build_run_paths(args, ga_runner.build_request_spec(args))
+    monkeypatch.setattr(ga_runner.LSTMPriceFieldStrategy, "load_market_datasets", lambda *_args, **_kwargs: [])
+    with pytest.raises(ValueError, match="did not return a factor bundle"):
+        ga_runner._build_snapshot(args, paths)
+    assert not paths.snapshot.exists()
 
 
 @pytest.mark.parametrize("outcome", ["failed_closed", "interrupted", "time_budget_reached"])

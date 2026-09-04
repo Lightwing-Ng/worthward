@@ -1,4 +1,30 @@
-/* Code version: v3.57.0 */
+/* Code version: v3.58.0 */
+
+/* Keep every native details disclosure on the shared project triangle asset. */
+details > summary {
+	list-style: none;
+}
+details > summary::marker,
+details > summary::-webkit-details-marker {
+	display: none;
+	content: "";
+}
+details > summary::before {
+	content: "";
+	display: inline-block;
+	width: 11px;
+	height: 11px;
+	margin-inline-end: 8px;
+	vertical-align: -1px;
+	background-color: currentColor;
+	mask: url("/static/images/triangle.fill.svg") center/contain no-repeat;
+	-webkit-mask: url("/static/images/triangle.fill.svg") center/contain no-repeat;
+	transform: rotate(90deg);
+	transform-origin: center;
+}
+details[open] > summary::before {
+	transform: rotate(180deg);
+}
 
 .lstm-private-collapse {
 	min-width: 0;
@@ -143,11 +169,18 @@
 	margin-top: 6px;
 	min-width: 0;
 }
-.lstm-training-history-item {
+.lstm-training-history-entry {
 	min-width: 0;
 	padding: 6px 8px;
 	border-radius: var(--radius-soft);
 	background: var(--control-liquid-background);
+}
+.lstm-training-history-identifier {
+	flex: 0 0 auto;
+	margin-left: auto;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
 }
 .lstm-training-history-item summary {
 	display: flex;

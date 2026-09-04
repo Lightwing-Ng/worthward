@@ -1,6 +1,6 @@
 import {test, expect} from '@playwright/test';
 
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 
 test('keeps the Bayesian probability field unique at the final curve endpoint', async ({page}) => {
     test.setTimeout(60_000);
@@ -98,15 +98,21 @@ test('keeps the Bayesian probability field unique at the final curve endpoint', 
         if (!(tooltipRect instanceof DOMRect)
             || !(stackRect instanceof DOMRect)
             || !(lineRect instanceof DOMRect)) return null;
-        const lineX = document.querySelector('.trade-chart-hover-line')?.getBoundingClientRect();
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const point = chart?.getDatasetMeta?.(0)?.data?.at(-1);
+        const canvasRect = canvas?.getBoundingClientRect();
+        const pan = Number(stack.dataset.probabilityPanVisualPosition || 0);
+        const lastContentX = canvasRect.left - stackRect.left + pan
+            + (point.x * canvasRect.width / chart.width);
         const lineY = lineRect.top + (lineRect.height / 2);
         const inset = Math.min(18, Math.max(6, tooltipRect.height / 4));
         return {
-            leftX: Math.max(
-                (lineX?.right || tooltipRect.left) + 8,
-                tooltipRect.left + 10,
-            ),
-            rightX: Math.min(stackRect.right - 4, tooltipRect.right - 2),
+            // Sweep the endpoint plateau inside the viewport. The final point
+            // follows the cursor; trailing field columns may remain clipped.
+            leftX: stackRect.left
+                + ((lastContentX + stackRect.width - tooltipRect.width) / 2) + 2,
+            rightX: Math.min(stackRect.right - 4, stackRect.left + lastContentX - 1),
             upperY: Math.max(stackRect.top + 4, lineY - inset),
             lowerY: Math.min(stackRect.bottom - 4, lineY + inset),
         };
@@ -118,6 +124,8 @@ test('keeps the Bayesian probability field unique at the final curve endpoint', 
         for (const y of [fieldProbe.upperY, fieldProbe.lowerY]) {
             await page.mouse.move(x, y);
             await expect.poll(readSnapshot).toEqual(initial);
+            const lineX = await page.locator('.trade-chart-hover-line').boundingBox();
+            expect(Math.abs(lineX.x + lineX.width / 2 - x)).toBeLessThan(1);
         }
     }
 });

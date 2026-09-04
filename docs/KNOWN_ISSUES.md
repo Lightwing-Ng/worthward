@@ -1,10 +1,21 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.237.0`
+Documentation version: `v1.238.0`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
 references, transaction descriptions, or copied statement content.
+
+## LSTM training
+
+- Durable exact-configuration training currently accepts only `1d`. A `1m`
+  selection or missing interval is rejected before launch, not silently replaced
+  with daily data. The separate daily-model/one-minute Backtest execution bridge
+  does not add intraday training support.
+- Legacy run metadata without an interval remains explicitly unrecorded; no
+  historical file or training configuration is rewritten to fill that gap.
+- Longbridge factors without verified historical availability remain unavailable,
+  not synthetic features. Selecting a factor does not create missing observations.
 
 ## Investment imports
 

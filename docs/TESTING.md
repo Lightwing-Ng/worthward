@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.45.4`
+Documentation version: `v1.46.0`
 
 ## Price Field shared-grid coverage
 
@@ -14,7 +14,7 @@ the requested GPU or Neural Engine label. Node tests accept both
 cannot fit, so the shared resizer minimum still yields 10 rows per side.
 The isolated Chromium file `tests/e2e/lstm-price-field.spec.mjs` checks the
 LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
-`probability-grid-v0.27.0` and `backtest-v0.38.27` assets, square cells, and 390px overflow on port
+version-aligned probability-grid and backtest assets, square cells, and 390px overflow on port
 `8699`. A second case waits for a real server `lstm-price-field/v1` payload
 (not an injected presentation), requires the renderer to normalize it, hovers a
 forecastable origin, and asserts both the floating field and the detail lattice
@@ -46,12 +46,44 @@ stop, stopping, interruption, and history-error states without launching a job.
 History displays allowlisted existing artifact names and byte sizes. Progress is
 the runner's completed-origin count divided by its total, not elapsed time divided
 by the job budget and not a model-quality score. Unknown progress is indeterminate
-only for active runs; completed runs are 100%. Its fill uses the standard primary
-blue and positive green tokens. Interrupted/failed runs retain partial progress.
+only for active runs. Its fill uses the standard primary blue and positive green
+tokens. Terminal progress remains in metadata but has no rendered progress bar.
 Tests cover real strategy callbacks, terminal progress, unknown counters, and
 excluding symlinks and unrecognized artifact names in temporary stores.
 
-Verification on 4 Sep 2026: the focused LSTM Python suite passed 45 tests, the two
+The current history regression requires details closed until clicked, closed again
+after reload, preserved expansion across polling, ticker/date sequence summaries
+without a Completed badge, and right alignment at desktop and 390px widths.
+Request tests cover ticker, period, interval, and all selected private controls;
+unsupported or missing intervals fail before any process or state directory is
+created. Isolated provider doubles prove the snapshot retains source observations,
+date slicing, and selected configuration, and no data fallback creates demo rows.
+Grid tests compare `[10%, 20%]` and `[2%, 19%]` contrast endpoints, equality at the
+threshold, tied maxima, zero fields, and no visible cells; raw masses and geometry
+remain unchanged. These tests do not launch a production training job.
+
+Current verification on 4 Sep 2026: focused LSTM Python passed 53 tests,
+probability-grid Node passed 39 tests, the complete JavaScript unit suite passed
+318 tests, and the two isolated Chromium control/lifecycle flows passed. Ruff,
+JavaScript syntax, and whitespace checks passed. The full quality gate stopped
+at Python with 3 failures, 1,079 passes, 6 skips, and 180 passed subtests (73.37%
+coverage). After updating affected version/contrast assertions and concurrent
+pointer work, replaying repository/layout/Price Field contracts passed 43 tests
+with one pre-existing source assertion still failing:
+`test_bayesian_history_detail_preserves_hover_and_complete_geometry` expects
+`probability_grid_geometry_fields` directly in the Bayesian strategy. This task
+does not change that model. The full browser suite was not reached by the gate.
+Live 8688 showed collapsed `NVDA 260903(01)`, right-aligned identification, opt-in
+actual artifact details, and no terminal progress bar. At 2% and 10% thresholds,
+all 400 detail cells matched the new opacity formula within 2.3e-16, with the
+same fully opaque maximum. The original 2% selection was restored. The user-owned
+PID 76984 still served cached route code and old asset query versions; its
+backend interval validation needs a normal service restart. No real training
+job, user-service restart, or production-store fixture write was performed.
+Seven pre-existing numbered files were retained, including protected investment
+cache copies. Concurrent pointer/layout work was preserved.
+
+Earlier verification on 4 Sep 2026: the focused LSTM Python suite passed 45 tests, the two
 private-control Chromium flows passed, and JavaScript unit checks passed. A full
 `./scripts/check.sh` run reported 5 failures and 1,070 passes while parallel work
 was changing grid code; after fixing the local cache-version assertion and launch
@@ -110,9 +142,12 @@ verifies complementary hundredth-percent rounding totaling 100.00%. Node tests
 cover unequal horizon coverage, empty distributions, and one-sided mass.
 `tests/e2e/lstm-guide-alignment.spec.mjs` samples every frame during vertical-only
 movement at five right-half positions and a reversible one-pixel sweep at
-1018 × 1433. The selected date, lattice, and intersection must be coherent in
+1018 × 1294. The selected date, lattice, and intersection must be coherent in
 every sampled frame, not merely after a polling assertion eventually passes.
-Automatic pan must not feed back into the gesture's absolute coordinate mapping.
+Both the vertical guide and the visible curve intersection must remain within
+one pixel of cursor X during pan. Pan is solved absolutely, with no previous-pan
+feedback; a one-pixel pointer move contributes at most one additional pixel of
+pan. The endpoint plateau preserves the final model while following the cursor.
 The detail contract also requires that green cells stay wholly above the live
 price guide and red cells wholly below it, including the first render after a
 layout change. An edge-adjacent hover regression proves that the floating field

@@ -1,4 +1,4 @@
-/* Code version: v1.203.18 */
+/* Code version: v1.203.19 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -16298,7 +16298,7 @@ test('pins the Bayesian overview origin on primary press, mouse click, and touch
         };
     });
     await expect.poll(() => readAnchor(page), {timeout: 10_000}).not.toBeNull();
-    const anchor = await readAnchor(page);
+    let anchor = await readAnchor(page);
     const pinnedIndex = async (label) => {
         await expect(probabilityTooltip).toHaveAttribute('data-pinned', 'true');
         await expect.poll(() => page.evaluate(() => (
@@ -16314,6 +16314,21 @@ test('pins the Bayesian overview origin on primary press, mouse click, and touch
 
     await page.mouse.move(anchor.x, anchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    anchor = await page.evaluate(({x}) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart.getChart(canvas);
+        const rect = canvas.getBoundingClientRect();
+        const chartX = (Math.trunc(x) - rect.left) * chart.width / rect.width;
+        const {point, index} = chart.getDatasetMeta(0).data
+            .map((point, index) => ({point, index}))
+            .filter(({point}) => Number.isFinite(point.x) && Number.isFinite(point.y))
+            .reduce((best, candidate) => Math.abs(candidate.point.x - chartX)
+                < Math.abs(best.point.x - chartX) ? candidate : best);
+        return {x, index, y: rect.top + point.y * rect.height / chart.height};
+    }, anchor);
+    // Press on the visible curve after pan, not on its former screen position.
+    await page.mouse.move(anchor.x, anchor.y);
     await page.mouse.down();
     await pinnedIndex('A primary pointer press must pin before release');
     await page.mouse.up();
@@ -16321,6 +16336,7 @@ test('pins the Bayesian overview origin on primary press, mouse click, and touch
     await pinnedIndex('Hover movement must not replace a pinned origin');
     await clearPin();
 
+    anchor = await readAnchor(page);
     await page.mouse.click(anchor.x, anchor.y, {button: 'left'});
     await pinnedIndex('A normal mouse click must pin the origin');
     await page.mouse.click(anchor.x, anchor.y, {button: 'right'});
@@ -18504,6 +18520,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             insideVisibleCrop: true,
         });
         await page.mouse.move(anchor.x, anchor.y);
+        await page.evaluate(() => new Promise(requestAnimationFrame));
+        await waitForPanTarget();
+        anchor.index = await readVisibleIndexAtPointer(anchor.x);
         await expect.poll(() => page.evaluate(() => (
             window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
                 ?._activeBacktestProbabilityGridBounds?.index
@@ -18680,38 +18699,82 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     const traversalSamples = await readVisibleTraversalSamples();
     expect(traversalSamples.length).toBeGreaterThanOrEqual(8);
+    const readVisibleIndexAtPointer = (pointerX) => page.evaluate((x) => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas.getBoundingClientRect();
+        // Native mousemove exposes integer clientX even for fractional CDP input.
+        const chartX = (Math.trunc(x) - rect.left) * chart.width / rect.width;
+        return chart.getDatasetMeta(0).data
+            .map((point, index) => ({point, index}))
+            .filter(({point}) => Number.isFinite(point.x) && Number.isFinite(point.y))
+            .reduce((best, candidate) => (
+                Math.abs(candidate.point.x - chartX) < Math.abs(best.point.x - chartX)
+                    ? candidate : best
+            )).index;
+    }, pointerX);
+    const hoverExactIndex = async (index) => {
+        const point = await pointAtIndex(index);
+        await page.mouse.move(point.x, point.y);
+        await page.evaluate(() => new Promise(requestAnimationFrame));
+        const pointer = await page.evaluate((targetIndex) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart.getChart(canvas);
+            const rect = canvas.getBoundingClientRect();
+            const stack = canvas.closest('.trade-chart-stack');
+            const stackRect = stack.getBoundingClientRect();
+            const point = chart.getDatasetMeta(0).data[targetIndex];
+            const pan = Number(stack.dataset.probabilityPanVisualPosition || 0);
+            const fieldWidth = chart._activeBacktestProbabilityGridBounds.width;
+            const contentX = rect.left - stackRect.left + pan + point.x * rect.width / chart.width;
+            return {index: targetIndex,
+                x: Math.round(stackRect.left + Math.min(
+                    contentX, (contentX + stackRect.width - fieldWidth) / 2,
+                )),
+                y: rect.top + point.y * rect.height / chart.height};
+        }, index);
+        await page.mouse.move(pointer.x, pointer.y);
+        await page.evaluate(() => new Promise(requestAnimationFrame));
+        return pointer;
+    };
     const observedTraversalIndices = [];
     for (const sample of traversalSamples) {
-        // Gesture input stays in its captured coordinate frame as auto-pan
-        // moves the curve. Every original trading-day coordinate stays reachable.
+        // Independently intersect the settled visible curve, not its pre-pan position.
         await page.mouse.move(sample.x, sample.y);
-        await expect.poll(() => page.evaluate(() => (
-            window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
-                ?._activeBacktestProbabilityGridBounds?.index
-        )), {message: `Bayesian hover traversal must reach index ${sample.index}`})
-            .toBe(sample.index);
-        const selected = await readSelectedDateStatus(sample.index);
-        expect(selected.boundsIndex).toBe(sample.index);
-        expect(selected.activeIndex).toBe(sample.index);
+        await page.evaluate(() => new Promise(requestAnimationFrame));
+        await waitForPanTarget();
+        const visibleIndex = await readVisibleIndexAtPointer(sample.x);
+        const selected = await readSelectedDateStatus(visibleIndex);
+        expect(selected.boundsIndex).toBe(visibleIndex);
+        expect(selected.activeIndex).toBe(visibleIndex);
         expect(selected.expectedStatus).toBeTruthy();
         expect(selected.status).toBe(selected.expectedStatus);
-        observedTraversalIndices.push(sample.index);
+        observedTraversalIndices.push(visibleIndex);
     }
-    expect(observedTraversalIndices).toEqual(traversalSamples.map(({index}) => index));
+    expect(observedTraversalIndices).toEqual([...observedTraversalIndices].sort((a, b) => a - b));
+    const endpointIndex = await page.evaluate(() => (
+        window.Chart.getChart(document.querySelector('#tradePriceChart'))
+            .getDatasetMeta(0).data.length - 1
+    ));
+    observedTraversalIndices.forEach((index, position) => {
+        if (position > 0 && index === observedTraversalIndices[position - 1]) {
+            expect(index).toBe(endpointIndex);
+        }
+    });
     await movePointerOutsideProbabilitySurface();
 
     // Auto-pan must not reinterpret a stationary pointer as a new origin.
     const pannedTraversalSeed = await pointAt(0.8);
     if (!pannedTraversalSeed) throw new Error('Bayesian panned traversal seed is unavailable.');
     await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     await waitForPanTarget();
-    const pannedVisibleSeed = await pointAtIndex(pannedTraversalSeed.index);
-    if (!pannedVisibleSeed) throw new Error('Bayesian panned visible seed is unavailable.');
+    const pannedVisibleIndex = await readVisibleIndexAtPointer(pannedTraversalSeed.x);
     await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y + 5);
     await expect.poll(async () => {
-        const selected = await readSelectedDateStatus(pannedVisibleSeed.index);
-        return selected.boundsIndex === pannedVisibleSeed.index
-            && selected.activeIndex === pannedVisibleSeed.index
+        const selected = await readSelectedDateStatus(pannedVisibleIndex);
+        return selected.boundsIndex === pannedVisibleIndex
+            && selected.activeIndex === pannedVisibleIndex
             && selected.expectedStatus
             && selected.status === selected.expectedStatus;
     }, {message: 'Auto-pan must preserve the origin during vertical-only pointer movement'}).toBe(true);
@@ -18783,7 +18846,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(leftHoverAlignment.fieldAtVerticalLine).toBeLessThanOrEqual(1.5);
 
     // Select the independent right-side anchor from the stationary baseline;
-    // tracking must then use pointer deltas while the field pans.
+    // tracking must keep the guide beneath screen-space pointer X during pan.
     await movePointerOutsideProbabilitySurface();
     const edgeAnchor = await moveToVisiblePriceCurve(0.8, 'rightward tracking');
     await waitForPanTarget();
@@ -18863,10 +18926,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         .toBeLessThanOrEqual(1.5);
     trackingSamples.forEach((sample) => {
         if (sample.alignment.linePastLast <= -2) {
-            // Auto-pan moves the selected curve point and guide together;
-            // it does not reinterpret the shifted canvas as new pointer input.
-            expect(Math.abs(sample.alignment.pointerToLine - sample.snapshot.visualPosition))
-                .toBeLessThanOrEqual(1.5);
+            expect(sample.alignment.pointerToLine).toBeLessThanOrEqual(1.5);
+            expect(sample.alignment.pointerToCurve).toBeLessThanOrEqual(1.5);
         }
     });
     expect(Math.min(...trackingSamples.map((sample) => sample.alignment.horizontalGuidePastVertical)))
@@ -19045,7 +19106,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         // Start each probe from a clean pointer baseline. During tracking,
         // chart translation must not be mistaken for pointer movement.
         await movePointerOutsideProbabilitySurface();
-        const currentProbe = await pointAtIndex(probe.index);
+        const currentProbe = await hoverExactIndex(probe.index);
         if (!currentProbe) throw new Error(`Bayesian probe ${probe.index} is unavailable.`);
         await page.mouse.move(currentProbe.x, currentProbe.y);
         await expect.poll(() => page.evaluate(() => (
@@ -19563,7 +19624,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
 
     const minimumAnchor = await pointNearestPriceChartCenter();
     if (!minimumAnchor) throw new Error('Bayesian center probability anchor is unavailable.');
-    await page.mouse.move(minimumAnchor.x, minimumAnchor.y);
+    await hoverExactIndex(minimumAnchor.index);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
@@ -19840,11 +19901,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         const lastVisualX = lastCurvePoint && Number(chart.width) > 0
             ? priceRect.left + (lastCurvePoint.x * (priceRect.width / chart.width))
             : Number.NaN;
-        const expectedTarget = Math.max(
-            0,
-            Math.min(pointerX - stackRect.left, curveRightContentLeft)
-                + tooltipRect.width
-                - stackRect.width,
+        const screenPointerX = Math.trunc(pointerX) - stackRect.left;
+        const expectedTarget = Math.min(
+            Math.max(0, screenPointerX + tooltipRect.width - stackRect.width),
+            Math.max(0, curveRightContentLeft - screenPointerX),
         );
         return {
             activeIndex: bounds?.index,
@@ -20432,6 +20492,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             resultsHeight: resultsRect.height,
             rightInset: stackRect.right - tooltipRect.right,
             stackBottomInset: cardRect.bottom - stackRect.bottom,
+            fieldToGuideDelta: Math.abs(tooltipRect.left - (
+                document.querySelector('.trade-chart-hover-line').getBoundingClientRect().left + 0.5
+            )),
             stackHeight: stackRect.height,
             stackTopInset: stackRect.top - cardRect.top,
             rowsDown: new Set(cells.filter((cell) => cell.classList.contains('is-down'))
@@ -20481,8 +20544,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         .toBeGreaterThanOrEqual(-0.75);
     expect(narrowLayout.leftInset, 'probability field left inset')
         .toBeGreaterThanOrEqual(0);
-    expect(narrowLayout.rightInset, 'probability field right inset')
-        .toBeGreaterThanOrEqual(-0.75);
+    expect(narrowLayout.fieldToGuideDelta, 'narrow field must retain its guide-owned origin')
+        .toBeLessThanOrEqual(1);
     expect(narrowLayout.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(narrowLayout.rowsUp).toBeGreaterThan(0);
     expect(narrowLayout.rowsDown).toBeGreaterThan(0);

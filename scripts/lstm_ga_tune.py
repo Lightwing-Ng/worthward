@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.3.0
+Code version: v0.4.0
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -103,6 +103,7 @@ class EvaluationContext:
     validation_folds: tuple[tuple[str, int, int], ...]
     holdout_start: int
     snapshot_fingerprint: str
+    interval: str = "1d"
 
 
 @dataclass(frozen=True)
@@ -231,11 +232,12 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         selected = json.loads(selected)
     return {
         "schema": 1,
-        "runner_version": "v0.2.0",
+        "runner_version": "v0.4.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
         "period": str(args.period).strip().lower(),
+        "interval": validate_training_interval(getattr(args, "interval", "1d")),
         "duration_seconds": int(args.duration_seconds),
         "population_size": int(args.population_size),
         "max_workers": int(args.max_workers),
@@ -243,6 +245,14 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "offline": bool(args.offline),
         "selected_params": validate_selected_params(selected) if selected is not None else None,
     }
+
+
+def validate_training_interval(raw: object) -> str:
+    """Reject unsupported training frequencies rather than substituting daily data."""
+    interval = str(raw or "").strip().lower()
+    if interval != "1d":
+        raise ValueError("LSTM training currently requires Interval 1d. Select 1d to train; 1m is not supported.")
+    return interval
 
 
 def validate_selected_params(raw: object) -> dict[str, Any]:
@@ -405,6 +415,7 @@ def _effective_factor_keys(full_frame: pd.DataFrame, bundle_payload: Mapping[str
 
 
 def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[EvaluationContext, dict[str, Any]]:
+    interval = _request_spec(args)["interval"]
     if paths.snapshot.exists():
         raw = _read_json(paths.snapshot)
         visible_frame = pd.DataFrame(raw.get("visible_rows") or [])
@@ -436,7 +447,7 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
     else:
         datasets = strategy.load_market_datasets(
             (str(args.ticker).strip().upper(),),
-            interval="1d",
+            interval=interval,
             start=start,
             end=end,
             params=loader_params,
@@ -461,12 +472,14 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         bundle_payload,
         active_factor_keys,
         fingerprint,
+        interval=interval,
     )
     snapshot = {
         "schema": 1,
         "created_at": _now_utc().isoformat(),
         "ticker": str(args.ticker).strip().upper(),
         "period": str(args.period).strip().lower(),
+        "interval": interval,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "snapshot_fingerprint": fingerprint,
@@ -489,7 +502,10 @@ def _context_from_snapshot(
     fingerprint = str(raw.get("snapshot_fingerprint") or "")
     if not fingerprint:
         fingerprint = _snapshot_fingerprint(bundle_payload, visible_frame)
-    return _build_context(visible_frame, bundle_payload, active_factor_keys, fingerprint)
+    return _build_context(
+        visible_frame, bundle_payload, active_factor_keys, fingerprint,
+        interval=validate_training_interval(raw.get("interval", "1d")),
+    )
 
 
 def _build_context(
@@ -497,6 +513,7 @@ def _build_context(
         bundle_payload: dict[str, Any],
         active_factor_keys: Sequence[str],
         fingerprint: str,
+        interval: str = "1d",
 ) -> EvaluationContext:
     row_count = len(visible_frame)
     if row_count < 80:
@@ -539,6 +556,7 @@ def _build_context(
         validation_folds=folds,
         holdout_start=holdout_start,
         snapshot_fingerprint=fingerprint,
+        interval=validate_training_interval(interval),
     )
 
 
@@ -767,7 +785,7 @@ def _evaluate_signal_result(
             signal_result,
             10_000.0,
             execution_mode="next_open",
-            interval="1d",
+            interval=context.interval,
             reinvest_cash_dividends=False,
             include_cash_dividends=True,
             stop_loss_enabled=True,
@@ -1621,6 +1639,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a durable local GA search for LSTM Price Field.")
     parser.add_argument("--ticker", default="NVDA")
     parser.add_argument("--period", default="1y", choices=tuple(PERIOD_OFFSETS))
+    parser.add_argument("--interval", default="1d", choices=("1d",))
     parser.add_argument("--duration-seconds", type=int, default=DEFAULT_DURATION_SECONDS)
     parser.add_argument("--population-size", type=int, default=DEFAULT_POPULATION_SIZE)
     parser.add_argument("--max-workers", type=int, default=min(MAX_WORKERS, max(1, (os.cpu_count() or 2) - 2)))

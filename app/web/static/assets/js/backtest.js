@@ -1,4 +1,4 @@
-/* Code version: v0.38.27 */
+/* Code version: v0.38.28 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1094,16 +1094,12 @@
 		let probabilityHoverPointerY = null;
 		let probabilityHoverPointerActive = false;
 		let probabilityHoverIntersection = null;
-		let probabilityHoverScrollOrigin = null;
-		let probabilityHoverEndpointLatched = false;
 		let probabilityFieldPositionUpdater = null;
 		const resetProbabilityHoverPointer = () => {
 			probabilityHoverPointerX = null;
 			probabilityHoverPointerY = null;
 			probabilityHoverPointerActive = false;
 			probabilityHoverIntersection = null;
-			probabilityHoverScrollOrigin = null;
-			probabilityHoverEndpointLatched = false;
 		};
 		const setInlineStyleIfChanged = (element, propertyName, value) => {
 			if (!(element instanceof HTMLElement)) return;
@@ -2169,11 +2165,8 @@
 			const lastPoint = finitePoints[finitePoints.length - 1];
 			const firstContentX = canvasContentLeft + (firstPoint.x * scaleX);
 			const lastContentX = canvasContentLeft + (lastPoint.x * scaleX);
-			// Auto-pan is an output of tracking, never an additional pointer input.
-			// Keep an absolute gesture origin so stationary and one-pixel moves
-			// cannot recursively advance dates as the chart moves underneath them.
-			const pointerContentX = Number(stackRelativeX)
-				+ (probabilityHoverScrollOrigin ?? probabilityScrollVisualPosition);
+			// Intersect the visible, already-panned curve directly below the cursor.
+			const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;
 			if (!Number.isFinite(pointerContentX)) return null;
 			const contentX = Math.min(
 				lastContentX,
@@ -2205,9 +2198,6 @@
 				: canvasRect;
 			const relativeX = event.clientX - interactionRect.left;
 			if (isProbabilityPriceHover) {
-				if (probabilityHoverScrollOrigin === null) {
-					probabilityHoverScrollOrigin = probabilityScrollVisualPosition;
-				}
 				probabilityHoverPointerX = Number(event.clientX);
 				probabilityHoverPointerY = Number(event.clientY);
 				probabilityHoverPointerActive = true;
@@ -2226,33 +2216,6 @@
 				if (!resolved) {
 					resetProbabilityHoverPointer();
 					return null;
-				}
-				const activeBounds = priceChart?._activeBacktestProbabilityGridBounds;
-				const activeFieldRect = probabilityTooltip?.getBoundingClientRect();
-				const endpointIndex = finitePoints.at(-1)?.index;
-				const pointerWithinActiveFieldX = (
-					probabilityTooltip?.classList.contains("is-visible")
-					&& Number.isInteger(activeIndex)
-					&& Number(activeBounds?.index) === activeIndex
-					&& activeIndex === endpointIndex
-					&& activeFieldRect
-					&& event.clientX >= activeFieldRect.left
-					&& event.clientX <= activeFieldRect.right
-				);
-				probabilityHoverEndpointLatched = (
-					Number.isInteger(activeIndex)
-					&& activeIndex === endpointIndex
-					&& (resolved.intersection.index === endpointIndex || pointerWithinActiveFieldX)
-				);
-				if (pointerWithinActiveFieldX && resolved.intersection.index !== activeIndex) {
-					// The final finite point is the unique endpoint origin. Probing its
-					// already-rendered field must not reinterpret the pointer as a prior
-					// curve segment after the field has been panned into view.
-					const endpointPoint = getDatasetPoint(priceChart, activeIndex, 0);
-					probabilityHoverIntersection = endpointPoint
-						? {index: activeIndex, x: endpointPoint.x, y: endpointPoint.y}
-						: resolved.intersection;
-					return activeIndex;
 				}
 				probabilityHoverIntersection = resolved.intersection;
 				return resolved.intersection.index;
@@ -2403,42 +2366,7 @@
 		};
 		const buildProbabilityHoverModel = (index, model, pricePoint) => {
 			if (!model?.geometry || !pricePoint || !priceChart?.scales?.y) return model;
-			const finitePoints = getChartHoverPointCache(priceChart).finitePoints;
-			const selectedPoint = finitePoints.find((point) => point.index === activeIndex);
-			const endpointIndex = finitePoints.at(-1)?.index;
-			const activeFieldRect = probabilityTooltip?.getBoundingClientRect();
-			const pointerWithinActiveEndpointField = (
-				pinState.mode !== "pinned"
-				&& probabilityTooltip?.classList.contains("is-visible")
-				&& Number.isInteger(activeIndex)
-				&& activeIndex === endpointIndex
-				&& selectedPoint
-				&& probabilityHoverPointerActive
-				&& (
-					probabilityHoverEndpointLatched
-					|| (
-						activeFieldRect
-						&& probabilityHoverPointerX >= activeFieldRect.left
-						&& probabilityHoverPointerX <= activeFieldRect.right
-						&& probabilityHoverPointerY >= activeFieldRect.top
-						&& probabilityHoverPointerY <= activeFieldRect.bottom
-					)
-				)
-			);
-			const intersection = pointerWithinActiveEndpointField
-				? selectedPoint
-				: pinState.mode !== "pinned"
-					? probabilityHoverIntersection
-					: null;
-			if (pointerWithinActiveEndpointField) {
-				// Latch the final finite point before any scroll-settle render can
-				// reuse a historical segment's transient pointer intersection.
-				probabilityHoverIntersection = {
-					index: selectedPoint.index,
-					x: selectedPoint.x,
-					y: selectedPoint.y,
-				};
-			}
+			const intersection = pinState.mode !== "pinned" ? probabilityHoverIntersection : null;
 			const anchorY = Number.isFinite(intersection?.y)
 				? Number(intersection.y)
 				: Number(pricePoint.y);
@@ -2637,7 +2565,6 @@
 			const fieldPosition = syncProbabilityFieldVisualPosition(
 				stackRect,
 				geometry,
-				{ synchronizeScroll: true },
 			);
 			if (!fieldPosition) {
 				hideProbabilityTooltip();
@@ -2899,23 +2826,7 @@
 			) {
 				const guide = getProbabilityHoverGuide(stackRect);
 				if (Number.isFinite(guide?.contentX)) {
-					// Keep the complete field inside the visible chart stack when the
-					// narrow layout cannot fit it to the pointer's right. The breakpoint
-					// mirrors the responsive chart-stage contract; wider charts retain
-					// the exact guide-to-field anchor used by the pan contract.
-					const fieldWidth = Number(geometry?.width);
-					const stackWidth = Number(stackRect?.width);
-					const visualPosition = Number(probabilityScrollVisualPosition) || 0;
-					const isNarrowLayout = Boolean(stackedLayoutMedia?.matches);
-					if (isNarrowLayout && fieldWidth > 0 && stackWidth > 0) {
-						const desiredScreenLeft = guide.contentX - visualPosition;
-						const maximumScreenLeft = Math.max(0, stackWidth - fieldWidth);
-						const boundedScreenLeft = Math.min(
-							maximumScreenLeft,
-							Math.max(0, desiredScreenLeft),
-						);
-						return boundedScreenLeft + visualPosition;
-					}
+					// The guide owns the origin even when trailing columns are clipped.
 					return guide.contentX;
 				}
 			}
@@ -2937,46 +2848,16 @@
 		const syncProbabilityFieldVisualPosition = (
 			stackRect,
 			geometry,
-			{ synchronizeScroll = false } = {},
 		) => {
 			if (!(probabilityTooltip instanceof HTMLElement) || !geometry) return null;
-			// The caller's stack rectangle can predate a responsive/layout pass. Use
-			// the live rectangle for both overflow math and the final transform so a
-			// stale width cannot start a needless pan while a field still fits.
-			let currentStackRect = tradeChartStack.getBoundingClientRect();
-			let contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
+			// The caller's rectangle can predate a responsive/layout pass.
+			const currentStackRect = tradeChartStack.getBoundingClientRect();
+			const contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
 			const pointerAnchored = (
 				strategyPresentation
 				&& pinState.mode !== "pinned"
 				&& isProbabilityHoverPointerOverStack(currentStackRect)
 			);
-			if (synchronizeScroll && pointerAnchored && !probabilityHoverEndpointLatched) {
-				// Pan only the field's right-edge overflow, and never past the
-				// last finite curve point. The vertical guide cannot travel
-				// into the overflow field beyond that endpoint.
-				const guide = getProbabilityHoverGuide(currentStackRect);
-				const originContentX = Number(guide?.contentX);
-				const lastContentX = Number(guide?.lastContentX);
-				const fieldWidth = Number(geometry?.width || 0);
-				const visibleWidth = Number(currentStackRect.width) || 0;
-				const nextTarget = Math.max(
-					0,
-					Math.min(originContentX, lastContentX) + fieldWidth - visibleWidth,
-				);
-				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
-					// Positioning owns this frame; the scroll setter must not render
-					// the previous lattice recursively before this one is committed.
-					const wasUpdating = isUpdatingProbabilityFieldPosition;
-					isUpdatingProbabilityFieldPosition = true;
-					try {
-						setProbabilityScrollTarget(nextTarget, {immediate: nextTarget <= 0.01});
-					} finally {
-						isUpdatingProbabilityFieldPosition = wasUpdating;
-					}
-					currentStackRect = tradeChartStack.getBoundingClientRect();
-					contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
-				}
-			}
 			const canvasRect = priceCanvas.getBoundingClientRect();
 			const intersectionGuide = pointerAnchored
 				? getProbabilityHoverGuide(currentStackRect)
@@ -3026,7 +2907,7 @@
 			priceChart?.draw?.();
 			return true;
 		};
-		const updatePointerHoverLine = ({synchronizeScroll = true} = {}) => {
+		const updatePointerHoverLine = () => {
 			if (
 				!strategyPresentation
 				|| !activePriceOverlay
@@ -3038,9 +2919,7 @@
 			const currentPricePoint = getDatasetPoint(priceChart, activeIndex, 0);
 			let probabilityBounds = priceChart._activeBacktestProbabilityGridBounds;
 			if (!currentPricePoint || !probabilityBounds) return;
-			syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds, {
-				synchronizeScroll,
-			});
+			syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds);
 			currentStackRect = tradeChartStack.getBoundingClientRect();
 			let plotFrame = getPricePlotFrame(currentStackRect);
 			let guide = getProbabilityHoverGuide(currentStackRect);
@@ -3088,9 +2967,7 @@
 			if (!curveHoverLinePosition) return;
 			const probabilityBounds = priceChart._activeBacktestProbabilityGridBounds;
 			if (probabilityBounds) {
-				syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds, {
-					synchronizeScroll: true,
-				});
+				syncProbabilityFieldVisualPosition(currentStackRect, probabilityBounds);
 			}
 			const fieldRight = getProbabilityFieldContentLeft(currentStackRect, probabilityBounds)
 				+ Number(probabilityBounds?.width || 0);
@@ -3110,7 +2987,7 @@
 				// Scroll and visual translation move the overlay after the pointer
 				// event. Recompute both lines in that same frame so they cannot
 				// drift apart while the field follows the pointer.
-				updatePointerHoverLine({synchronizeScroll: false});
+				commitProbabilityPointerFrame({synchronizeScroll: false});
 				return;
 			}
 			// Once the pointer is on the native rail, the chart is no longer a
@@ -3118,20 +2995,52 @@
 			// selected curve point while the rail moves.
 			updateCurveHoverLine();
 		};
+		const commitProbabilityPointerFrame = ({synchronizeScroll = true} = {}) => {
+			if (pinState.mode === "pinned" || !priceChart?.ctx) return;
+			const stackRect = tradeChartStack.getBoundingClientRect();
+			if (!isProbabilityHoverPointerOverStack(stackRect)) return;
+			cancelScheduledHoverSync();
+			const pointerX = probabilityHoverPointerX - stackRect.left;
+			const initial = resolveProbabilityPointerIntersection(pointerX, stackRect);
+			if (!initial) return;
+			if (synchronizeScroll) {
+				const point = getDatasetPoint(priceChart, initial.intersection.index, 0);
+				const model = buildProbabilityGridModel(initial.intersection.index, point);
+				const fieldWidth = Number(model?.geometry?.width) || 0;
+				// Solve pan from screen X and static dimensions, not from the prior
+				// pan or field rectangle. The endpoint must not move left of the
+				// cursor. Rendering then consumes this single settled coordinate frame.
+				const nextTarget = Math.min(
+					Math.max(0, pointerX + fieldWidth - stackRect.width),
+					Math.max(0, initial.lastContentX - pointerX),
+				);
+				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.01) {
+					const wasUpdating = isUpdatingProbabilityFieldPosition;
+					isUpdatingProbabilityFieldPosition = true;
+					try {
+						setProbabilityScrollTarget(nextTarget, {immediate: true});
+					} finally {
+						isUpdatingProbabilityFieldPosition = wasUpdating;
+					}
+				}
+			}
+			const settled = resolveProbabilityPointerIntersection(pointerX, stackRect);
+			if (!settled) return;
+			probabilityHoverIntersection = settled.intersection;
+			const index = settled.intersection.index;
+			pinState = probabilityGridApi.reducePinState?.(pinState, {type: "track", index})
+				|| {mode: "tracking", activeIndex: index};
+			if (index !== activeIndex || activeSourceCanvas !== priceCanvas) {
+				syncHoverState(index, priceCanvas, priceChart);
+			} else {
+				updatePointerHoverLine();
+			}
+		};
 		const schedulePointerHoverLineUpdate = () => {
 			if (pointerHoverFrameId !== null) return;
 			pointerHoverFrameId = requestControllerAnimationFrame(() => {
 				pointerHoverFrameId = null;
-				// Commit the pending origin before painting any part of the frame.
-				const pending = pendingHoverUpdate;
-				if (pending && pinState.mode !== "pinned") {
-					cancelScheduledHoverSync();
-					pinState = probabilityGridApi.reducePinState?.(
-						pinState, {type: "track", index: pending.index},
-					) || {mode: "tracking", activeIndex: pending.index};
-					syncHoverState(pending.index, pending.sourceCanvas, pending.sourceChart);
-				}
-				updatePointerHoverLine();
+				commitProbabilityPointerFrame();
 			});
 		};
 
@@ -3247,9 +3156,14 @@
 					&& event.target instanceof Node
 					&& equityCanvas?.closest(".trade-chart-panel")?.contains(event.target)
 				) return;
-				const nearestIndex = resolveNearestHoverIndex(chart, event);
-				if (canvas === priceCanvas && strategyPresentation) schedulePointerHoverLineUpdate();
-				scheduleHoverSync(nearestIndex, canvas, chart);
+				if (canvas === priceCanvas && strategyPresentation) {
+					probabilityHoverPointerX = Number(event.clientX);
+					probabilityHoverPointerY = Number(event.clientY);
+					probabilityHoverPointerActive = true;
+					schedulePointerHoverLineUpdate();
+					return;
+				}
+				scheduleHoverSync(resolveNearestHoverIndex(chart, event), canvas, chart);
 			}, { signal });
 
 			if (canvas !== priceCanvas || !strategyPresentation) {
@@ -3730,13 +3644,11 @@
 					const resizedIntersection = resolveProbabilityPointerIntersection(
 						probabilityHoverPointerX - stackRectAfterResize.left, stackRectAfterResize,
 					)?.intersection;
-					probabilityHoverIntersection = probabilityHoverEndpointLatched
-						? getDatasetPoint(priceChart, refreshIndex, 0)
-						: resizedIntersection;
+					probabilityHoverIntersection = resizedIntersection;
 				}
 				syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
 				if (pointerStillOverStack && !viewportWidthChanged) {
-					updatePointerHoverLine({synchronizeScroll: true});
+					commitProbabilityPointerFrame();
 				}
 			} else {
 				priceChart.update("none");

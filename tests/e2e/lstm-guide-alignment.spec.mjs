@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -123,7 +123,7 @@ const readSnapshot = (page) => page.evaluate(() => {
 });
 
 test('keeps every right-half hover frame coherent during vertical movement', async ({page}) => {
-    await page.setViewportSize({width: 1018, height: 1433});
+    await page.setViewportSize({width: 1018, height: 1294});
     await page.goto(lstmUrl);
     await expect.poll(() => readPresentation(page), {timeout: 90_000}).not.toBeNull();
     await injectPriceFieldPresentation(page);
@@ -139,7 +139,7 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
         const rect = stack.getBoundingClientRect();
         const y = rect.top + rect.height / 2;
         for (const ratio of [0.55, 0.65, 0.75, 0.85, 0.95]) {
-            const x = rect.left + rect.width * ratio;
+            const x = Math.round(rect.left + rect.width * ratio);
             for (let step = 0; step < 10; step += 1) {
                 stack.dispatchEvent(new MouseEvent('mousemove', {
                     bubbles: true, clientX: x, clientY: y + (step % 2 ? 25 : -25),
@@ -147,7 +147,20 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
                 await nextFrame();
                 const bounds = chart._activeBacktestProbabilityGridBounds;
                 const field = tooltip.getBoundingClientRect();
+                const line = stack.querySelector('.trade-chart-hover-line').getBoundingClientRect();
+                const horizontal = stack.querySelector('.trade-chart-hover-horizontal-line').getBoundingClientRect();
+                const canvasRect = canvas.getBoundingClientRect();
+                const screenCurveX = canvasRect.left + bounds.intersectionX * canvasRect.width / chart.width;
+                const chartX = (x - canvasRect.left) * chart.width / canvasRect.width;
+                const points = chart.getDatasetMeta(0).data.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+                const left = points.findLast(p => p.x <= chartX) || points[0];
+                const right = points.find(p => p.x >= chartX) || points.at(-1);
+                const fraction = left.x === right.x ? 0 : (chartX - left.x) / (right.x - left.x);
+                const curveY = canvasRect.top
+                    + (left.y + (right.y - left.y) * fraction) * canvasRect.height / chart.height;
                 samples.push({ratio, step, index: bounds?.index,
+                    pointerX: x, lineX: line.left + line.width / 2, screenCurveX,
+                    curveY, horizontalY: horizontal.top + horizontal.height / 2,
                     anchorY: bounds?.anchorY, intersectionY: bounds?.intersectionY,
                     left: field.left, top: field.top,
                     pan: Number(stack.dataset.probabilityPanVisualPosition || 0),
@@ -159,6 +172,9 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
     });
     for (const frame of frames) {
         expect(frame.visible, JSON.stringify(frame)).toBe(true);
+        expect(Math.abs(frame.lineX - frame.pointerX), JSON.stringify(frame)).toBeLessThan(1);
+        expect(Math.abs(frame.screenCurveX - frame.pointerX), JSON.stringify(frame)).toBeLessThan(1);
+        expect(Math.abs(frame.horizontalY - frame.curveY), JSON.stringify(frame)).toBeLessThan(1);
         expect(Math.abs(frame.anchorY - frame.intersectionY), JSON.stringify(frame)).toBeLessThan(0.01);
         const first = frames.find((sample) => sample.ratio === frame.ratio);
         expect(frame.index, JSON.stringify({first, frame})).toBe(first.index);
@@ -176,7 +192,7 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
             for (let step = 0; step <= 40; step += 1) {
                 const offset = direction === 1 ? step : 40 - step;
                 stack.dispatchEvent(new MouseEvent('mousemove', {
-                    bubbles: true, clientX: rect.left + rect.width * 0.65 + offset,
+                    bubbles: true, clientX: Math.round(rect.left + rect.width * 0.65) + offset,
                     clientY: rect.top + rect.height / 2,
                 }));
                 await new Promise(requestAnimationFrame);
@@ -191,7 +207,8 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
         expect(Math.abs(frame.y - frame.anchorY)).toBeLessThan(0.01);
         if (index > 0) {
             expect(Math.abs(frame.index - sweep[index - 1].index)).toBeLessThanOrEqual(1);
-            expect(Math.abs(frame.x - sweep[index - 1].x)).toBeLessThanOrEqual(1.01);
+            // One screen pixel plus at most one pixel of bounded auto-pan.
+            expect(Math.abs(frame.x - sweep[index - 1].x)).toBeLessThanOrEqual(2.01);
         }
         if (frame.direction === -1) {
             const outbound = sweep.find((sample) => sample.direction === 1 && sample.offset === frame.offset);
@@ -220,14 +237,24 @@ test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({
         const rect = canvas?.getBoundingClientRect();
         const dates = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates || [];
         const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const stack = canvas?.closest('.trade-chart-stack');
+        const stackRect = stack?.getBoundingClientRect();
+        const pan = Number(stack?.dataset.probabilityPanVisualPosition || 0);
+        const fieldWidth = Number(chart?._activeBacktestProbabilityGridBounds?.width || 0);
         return ['2026-07-28', '2026-07-29'].map((date) => {
             const index = dates.indexOf(date);
             const point = points[index];
+            const contentX = point && rect && stackRect
+                ? rect.left - stackRect.left + pan + (point.x * rect.width / chart.width)
+                : Number.NaN;
             return index >= 0 && point && rect && chart?.width > 0 && chart?.height > 0
                 ? {
                     date,
                     index,
-                    x: rect.left + (point.x * (rect.width / chart.width)),
+                    // Invert the settled pan mapping for this exact target date.
+                    x: stackRect.left + Math.min(
+                        contentX, (contentX + stackRect.width - fieldWidth) / 2,
+                    ),
                     y: rect.top + (point.y * (rect.height / chart.height)),
                 }
                 : null;
@@ -249,6 +276,9 @@ test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({
         const target = (await readTargetPoints()).find((point) => point?.date === date);
         expect(target).toBeTruthy();
         await page.mouse.move(target.x, target.y);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+        const settledTarget = (await readTargetPoints()).find((point) => point?.date === date);
+        await page.mouse.move(settledTarget.x, settledTarget.y);
         await expect.poll(() => readSnapshot(page)).toMatchObject({
             activeIndex: target.index,
             date: target.date,

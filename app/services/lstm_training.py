@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.3.0
+Code version: v0.4.0
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -60,9 +60,10 @@ class LstmTrainingManager:
             reverse=True,
         )
 
-    def start(self, ticker: str, period: str, params: object = None) -> dict[str, Any]:
+    def start(self, ticker: str, period: str, params: object = None, *, interval: str = "") -> dict[str, Any]:
         normalized_ticker = self._normalize_ticker(ticker)
         normalized_period = self._normalize_period(period)
+        normalized_interval = ga_runner.validate_training_interval(interval)
         selected_params = ga_runner.validate_selected_params(params)
         if any(
             run.get("ticker") == normalized_ticker and run.get("status") in ACTIVE_STATUSES
@@ -75,6 +76,7 @@ class LstmTrainingManager:
         seed = self._unique_seed(normalized_ticker, normalized_period)
         args = self._build_runner_args(normalized_ticker, normalized_period, seed)
         args.selected_params = selected_params
+        args.interval = normalized_interval
         spec = ga_runner.build_request_spec(args)
         paths = ga_runner.build_run_paths(args, spec)
         paths.state.mkdir(parents=True, exist_ok=False)
@@ -85,6 +87,8 @@ class LstmTrainingManager:
             normalized_ticker,
             "--period",
             normalized_period,
+            "--interval",
+            normalized_interval,
             "--duration-seconds",
             str(DEFAULT_DURATION_SECONDS),
             "--population-size",
@@ -123,6 +127,7 @@ class LstmTrainingManager:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "ticker": normalized_ticker,
             "period": normalized_period,
+            "interval": normalized_interval,
             "ga_seed": seed,
             "selected_params": selected_params,
         })
@@ -189,6 +194,7 @@ class LstmTrainingManager:
         return argparse.Namespace(
             ticker=ticker,
             period=period,
+            interval="1d",
             duration_seconds=DEFAULT_DURATION_SECONDS,
             population_size=DEFAULT_POPULATION_SIZE,
             max_workers=min(MAX_WORKERS, max(1, (os.cpu_count() or 2) - 2)),
@@ -234,6 +240,7 @@ class LstmTrainingManager:
             "id": state.name,
             "ticker": ticker,
             "period": period,
+            "interval": request.get("interval", launch.get("interval")),
             "status": effective_status,
             "phase": str(status.get("phase") or effective_status),
             "active": effective_status in ACTIVE_STATUSES,

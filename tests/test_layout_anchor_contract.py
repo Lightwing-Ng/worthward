@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.9.19
+Code version: v0.9.20
 """
 
 from pathlib import Path
@@ -156,7 +156,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
     assert '@import url("./components/forms.css?v=3.40.8");' in app_css
     assert '@import url("./views/investment.css?v=1.78.6");' in app_css
-    assert "v0.66.0" in app_css
+    assert "v0.67.0" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.57.0");' in app_css
+    assert '@import url("./views/trade.css?v=3.58.0");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -418,15 +418,15 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const isProbabilityPriceHover = chart.canvas === priceCanvas && strategyPresentation;",
         "const canvasContentLeft = getPriceCanvasContentLeft();",
         "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",
-        "const pointerContentX = Number(stackRelativeX)",
-        "+ (probabilityHoverScrollOrigin ?? probabilityScrollVisualPosition);",
-        "Math.min(originContentX, lastContentX) + fieldWidth - visibleWidth",
+        "const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;",
+        "const commitProbabilityPointerFrame = ({synchronizeScroll = true} = {}) => {",
+        "Math.max(0, pointerX + fieldWidth - stackRect.width)",
+        "Math.max(0, initial.lastContentX - pointerX)",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
         "x: contentLeft + point.x,",
         "const canvasOffsetX = getPriceCanvasContentLeft();",
-            "Math.min(originContentX, lastContentX) + fieldWidth - visibleWidth",
-            'tradeChartStack.dataset.probabilityPanTarget = "0";',
+        'tradeChartStack.dataset.probabilityPanTarget = "0";',
         "columnCount: strategyPresentation.columns,",
         "rowsAbove: strategyPresentation.rows_above,",
         "rowsBelow: strategyPresentation.rows_below,",
@@ -533,7 +533,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const horizon = (visualColumn + 1) * daysPerColumn;",
         "const opacityProfile = computeInstantOpacityProfile(",
         "const minimumProbabilityRatio = minimumProbability / maximumProbability;",
-        "const baselineRatio = Math.max(",
+        "const baselineRatio = displayFloor !== null",
+        "displayFloor: displayThresholdPct / 100",
         "const probabilityRatio = probability / maximumProbability;",
         'direction: "right",',
     ):
@@ -636,8 +637,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         "-app-v0.51.3",
-        "-backtest-probability-grid-v0.27.0",
-        "-backtest-v0.38.27",
+        "-backtest-probability-grid-v0.28.0",
+        "-backtest-v0.38.28",
         "-backtest-layout-v0.4.0",
     ):
         assert fragment in base_template

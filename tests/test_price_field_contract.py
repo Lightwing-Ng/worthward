@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.0.5."""
+"""Shared Price Field contract tests. Code version: v1.0.6."""
 
 from __future__ import annotations
 
@@ -190,7 +190,20 @@ class PriceFieldContractTests(unittest.TestCase):
         for strategy_id in PRICE_FIELD_STRATEGY_IDS:
             self.assertIn(f'"{strategy_id}"', source)
         self.assertIn("probability-grid-v1", source)
-        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.27.0\"", source)
+        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.28.0\"", source)
+
+    def test_native_disclosures_use_the_shared_triangle_asset(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        trade_css = (root / "app/web/static/assets/css/views/trade.css").read_text(
+            encoding="utf-8",
+        )
+        triangle_asset = root / "app/web/static/images/triangle.fill.svg"
+        self.assertTrue(triangle_asset.is_file())
+        self.assertIn("details > summary::before", trade_css)
+        self.assertIn('mask: url("/static/images/triangle.fill.svg")', trade_css)
+        self.assertIn('-webkit-mask: url("/static/images/triangle.fill.svg")', trade_css)
+        self.assertIn("details[open] > summary::before", trade_css)
+        self.assertNotIn("details > summary::-webkit-details-marker {\n\tdisplay: list-item", trade_css)
 
 
 if __name__ == "__main__":
