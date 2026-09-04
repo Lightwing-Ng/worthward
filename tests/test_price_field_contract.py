@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.0.4."""
+"""Shared Price Field contract tests. Code version: v1.0.5."""
 
 from __future__ import annotations
 
@@ -190,7 +190,7 @@ class PriceFieldContractTests(unittest.TestCase):
         for strategy_id in PRICE_FIELD_STRATEGY_IDS:
             self.assertIn(f'"{strategy_id}"', source)
         self.assertIn("probability-grid-v1", source)
-        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.26.0\"", source)
+        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.27.0\"", source)
 
 
 if __name__ == "__main__":

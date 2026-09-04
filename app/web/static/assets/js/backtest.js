@@ -1,4 +1,4 @@
-/* Code version: v0.38.26 */
+/* Code version: v0.38.27 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -506,25 +506,35 @@
 		}).format(Math.max(0, Number(value) || 0) * 100)}%`;
 		const renderProbabilityDetailSideSummary = (cells) => {
 			const summary = probabilityGridApi.summarizeProbabilityField?.(cells);
-			if (!summary) return false;
-			const upText = formatProbabilityMass(summary.upProbability);
-			const downText = formatProbabilityMass(summary.downProbability);
+			if (!summary) {
+				[probabilityDetailUpSummary, probabilityDetailDownSummary].forEach((element) => {
+					if (!(element instanceof HTMLElement)) return;
+					element.textContent = "—";
+					element.title = "Directional share unavailable: no represented probability mass";
+					element.setAttribute("aria-label", element.title);
+				});
+				return false;
+			}
+			// Round once in hundredths of a percent; the other label is the exact complement.
+			const upUnits = Math.round(summary.upProbability * 10000);
+			const upText = formatProbabilityMass(upUnits / 10000);
+			const downText = formatProbabilityMass((10000 - upUnits) / 10000);
 			const horizonDescription = `${summary.forecastHorizonCount} forecast horizons`;
 			if (probabilityDetailUpSummary instanceof HTMLElement) {
 				probabilityDetailUpSummary.textContent = upText;
 				probabilityDetailUpSummary.setAttribute(
 					"aria-label",
-					`Higher-price probability mass averaged across ${horizonDescription}: ${upText}`,
+					`Higher-price share of represented probability mass: ${upText}`,
 				);
-				probabilityDetailUpSummary.title = `Average higher-price probability mass per forecast horizon across ${horizonDescription}, including ${summary.upHiddenCellCount} hidden cells: ${upText}`;
+				probabilityDetailUpSummary.title = `Higher-price share, normalized within each complete grid horizon then averaged across ${horizonDescription}, including ${summary.upHiddenCellCount} hidden cells; excludes mass outside the lattice: ${upText}`;
 			}
 			if (probabilityDetailDownSummary instanceof HTMLElement) {
 				probabilityDetailDownSummary.textContent = downText;
 				probabilityDetailDownSummary.setAttribute(
 					"aria-label",
-					`Lower-price probability mass averaged across ${horizonDescription}: ${downText}`,
+					`Lower-price share of represented probability mass: ${downText}`,
 				);
-				probabilityDetailDownSummary.title = `Average lower-price probability mass per forecast horizon across ${horizonDescription}, including ${summary.downHiddenCellCount} hidden cells: ${downText}`;
+				probabilityDetailDownSummary.title = `Lower-price share, normalized within each complete grid horizon then averaged across ${horizonDescription}, including ${summary.downHiddenCellCount} hidden cells; excludes mass outside the lattice: ${downText}`;
 			}
 			return true;
 		};
@@ -1083,16 +1093,16 @@
 		let probabilityHoverPointerX = null;
 		let probabilityHoverPointerY = null;
 		let probabilityHoverPointerActive = false;
-		let probabilityHoverPointerTravel = Number.POSITIVE_INFINITY;
 		let probabilityHoverIntersection = null;
+		let probabilityHoverScrollOrigin = null;
 		let probabilityHoverEndpointLatched = false;
 		let probabilityFieldPositionUpdater = null;
 		const resetProbabilityHoverPointer = () => {
 			probabilityHoverPointerX = null;
 			probabilityHoverPointerY = null;
 			probabilityHoverPointerActive = false;
-			probabilityHoverPointerTravel = Number.POSITIVE_INFINITY;
 			probabilityHoverIntersection = null;
+			probabilityHoverScrollOrigin = null;
 			probabilityHoverEndpointLatched = false;
 		};
 		const setInlineStyleIfChanged = (element, propertyName, value) => {
@@ -2139,7 +2149,6 @@
 		const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
 		const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
 		const PROBABILITY_HOVER_EDGE_HANDOFF_PX = 2;
-		const PROBABILITY_HOVER_MICRO_MOVE_DISTANCE_PX = 1.5;
 
 		const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {
 			if (!priceChart?.width || !priceChart?.height) return null;
@@ -2160,7 +2169,11 @@
 			const lastPoint = finitePoints[finitePoints.length - 1];
 			const firstContentX = canvasContentLeft + (firstPoint.x * scaleX);
 			const lastContentX = canvasContentLeft + (lastPoint.x * scaleX);
-			const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;
+			// Auto-pan is an output of tracking, never an additional pointer input.
+			// Keep an absolute gesture origin so stationary and one-pixel moves
+			// cannot recursively advance dates as the chart moves underneath them.
+			const pointerContentX = Number(stackRelativeX)
+				+ (probabilityHoverScrollOrigin ?? probabilityScrollVisualPosition);
 			if (!Number.isFinite(pointerContentX)) return null;
 			const contentX = Math.min(
 				lastContentX,
@@ -2191,11 +2204,10 @@
 				? tradeChartStack.getBoundingClientRect()
 				: canvasRect;
 			const relativeX = event.clientX - interactionRect.left;
-			const previousPointerX = probabilityHoverPointerX;
 			if (isProbabilityPriceHover) {
-				probabilityHoverPointerTravel = Number.isFinite(previousPointerX)
-					? Math.abs(event.clientX - previousPointerX)
-					: Number.POSITIVE_INFINITY;
+				if (probabilityHoverScrollOrigin === null) {
+					probabilityHoverScrollOrigin = probabilityScrollVisualPosition;
+				}
 				probabilityHoverPointerX = Number(event.clientX);
 				probabilityHoverPointerY = Number(event.clientY);
 				probabilityHoverPointerActive = true;
@@ -2504,7 +2516,7 @@
 			};
 		};
 
-		const renderProbabilityTooltip = (index, stackRect, pricePoint, settlePass = 0) => {
+		const renderProbabilityTooltip = (index, stackRect, pricePoint) => {
 			if (!probabilityTooltip || !priceChart?.chartArea || !priceChart?.scales?.y || !pricePoint) {
 				hideProbabilityTooltip();
 				return false;
@@ -2630,20 +2642,6 @@
 			if (!fieldPosition) {
 				hideProbabilityTooltip();
 				return false;
-			}
-			const settledStackRect = tradeChartStack.getBoundingClientRect();
-			const settledGuide = pinState.mode !== "pinned"
-				? getProbabilityHoverGuide(settledStackRect)
-				: null;
-			if (
-				settlePass < 2
-				&& Number.isFinite(settledGuide?.intersection?.y)
-				&& Math.abs(settledGuide.intersection.y - Number(geometry.anchorY)) > 0.01
-			) {
-				// Native probability scrolling can change the content-space X used by
-				// the pointer guide. Rebuild once from that settled intersection so
-				// the painted cells and the horizontal line share the same Y anchor.
-				return renderProbabilityTooltip(index, settledStackRect, pricePoint, settlePass + 1);
 			}
 			const upProbability = probabilityGridApi.normalCdf?.(mean / scale) ?? 0.5;
 			probabilityTooltip.setAttribute(
@@ -2880,40 +2878,10 @@
 			const pointerScreenX = probabilityHoverPointerX - stackRect.left;
 			const resolved = resolveProbabilityPointerIntersection(pointerScreenX, stackRect);
 			if (!resolved) return null;
-			let stableIntersection = resolved.intersection;
-			let stableContentX = resolved.contentX;
-			const finitePoints = getChartHoverPointCache(priceChart).finitePoints;
-			const selectedPoint = finitePoints.find((point) => point.index === activeIndex);
-			const activeBounds = priceChart?._activeBacktestProbabilityGridBounds;
-			const tooltipRect = probabilityTooltip?.getBoundingClientRect();
-			const pointerWithinFieldX = tooltipRect
-				&& probabilityTooltip?.classList.contains("is-visible")
-				&& Number(activeBounds?.index) === activeIndex
-				&& Number.isFinite(probabilityHoverPointerX)
-				&& probabilityHoverPointerX >= tooltipRect.left
-				&& probabilityHoverPointerX <= tooltipRect.right;
-			if (
-				Number.isInteger(activeIndex)
-				&& selectedPoint
-				&& (pointerWithinFieldX || probabilityHoverEndpointLatched)
-			) {
-				// The selected curve point is the field's unique origin. Once the
-				// pointer is inside its horizontal footprint, do not reinterpret the
-				// pointer coordinate as an interpolated curve position while native
-				// scrolling and visual translation settle. The footprint includes the
-				// I/IV quadrants beside the guide, not only the painted cells.
-				stableIntersection = {
-					index: selectedPoint.index,
-					x: selectedPoint.x,
-					y: selectedPoint.y,
-				};
-				stableContentX = (
-					(resolved.canvasRect.left - stackRect.left)
-					+ probabilityScrollVisualPosition
-					+ (selectedPoint.x * resolved.scaleX)
-				);
-			}
-			probabilityHoverIntersection = stableIntersection;
+			// Reading a guide must not select a new date or mutate the frame.
+			const stableIntersection = probabilityHoverIntersection || resolved.intersection;
+			const stableContentX = (resolved.canvasRect.left - stackRect.left)
+				+ probabilityScrollVisualPosition + stableIntersection.x * resolved.scaleX;
 			return {
 				contentX: stableContentX,
 				intersection: stableIntersection,
@@ -2987,16 +2955,24 @@
 				// last finite curve point. The vertical guide cannot travel
 				// into the overflow field beyond that endpoint.
 				const guide = getProbabilityHoverGuide(currentStackRect);
-				const pointerScreenX = Number(guide?.pointerScreenX);
+				const originContentX = Number(guide?.contentX);
 				const lastContentX = Number(guide?.lastContentX);
 				const fieldWidth = Number(geometry?.width || 0);
 				const visibleWidth = Number(currentStackRect.width) || 0;
 				const nextTarget = Math.max(
 					0,
-					Math.min(pointerScreenX, lastContentX) + fieldWidth - visibleWidth,
+					Math.min(originContentX, lastContentX) + fieldWidth - visibleWidth,
 				);
 				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.05) {
-					setProbabilityScrollTarget(nextTarget, {immediate: nextTarget <= 0.01});
+					// Positioning owns this frame; the scroll setter must not render
+					// the previous lattice recursively before this one is committed.
+					const wasUpdating = isUpdatingProbabilityFieldPosition;
+					isUpdatingProbabilityFieldPosition = true;
+					try {
+						setProbabilityScrollTarget(nextTarget, {immediate: nextTarget <= 0.01});
+					} finally {
+						isUpdatingProbabilityFieldPosition = wasUpdating;
+					}
 					currentStackRect = tradeChartStack.getBoundingClientRect();
 					contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
 				}
@@ -3021,28 +2997,6 @@
 				"transform",
 				`translate3d(${contentLeft}px, ${visualTop}px, 0)`,
 			);
-			if (synchronizeScroll && pointerAnchored && !probabilityTooltip.hidden) {
-				const tooltipRect = probabilityTooltip.getBoundingClientRect();
-				const overflowRight = tooltipRect.right - currentStackRect.right;
-				const isProbabilityMicroMove = (
-					Number.isFinite(probabilityHoverPointerTravel)
-					&& probabilityHoverPointerTravel <= PROBABILITY_HOVER_MICRO_MOVE_DISTANCE_PX
-					&& probabilityScrollTarget > 0.01
-				);
-				if (!isProbabilityMicroMove && Number.isFinite(overflowRight) && overflowRight > 0.05) {
-					const correctedTarget = (Number(probabilityScrollTarget) || 0) + overflowRight;
-					if (Math.abs(correctedTarget - probabilityScrollTarget) > 0.05) {
-						setProbabilityScrollTarget(correctedTarget);
-						currentStackRect = tradeChartStack.getBoundingClientRect();
-						contentLeft = getProbabilityFieldContentLeft(currentStackRect, geometry);
-						setInlineStyleIfChanged(
-							probabilityTooltip,
-							"transform",
-							`translate3d(${contentLeft}px, ${visualTop}px, 0)`,
-						);
-					}
-				}
-			}
 			return {
 				left: contentLeft,
 				right: contentLeft + Number(geometry.width || 0),
@@ -3168,6 +3122,15 @@
 			if (pointerHoverFrameId !== null) return;
 			pointerHoverFrameId = requestControllerAnimationFrame(() => {
 				pointerHoverFrameId = null;
+				// Commit the pending origin before painting any part of the frame.
+				const pending = pendingHoverUpdate;
+				if (pending && pinState.mode !== "pinned") {
+					cancelScheduledHoverSync();
+					pinState = probabilityGridApi.reducePinState?.(
+						pinState, {type: "track", index: pending.index},
+					) || {mode: "tracking", activeIndex: pending.index};
+					syncHoverState(pending.index, pending.sourceCanvas, pending.sourceChart);
+				}
 				updatePointerHoverLine();
 			});
 		};
@@ -3763,6 +3726,14 @@
 				);
 			}
 			if (Number.isInteger(refreshIndex) && refreshSourceCanvas && refreshSourceChart?.ctx) {
+				if (pointerStillOverStack && !viewportWidthChanged && pinState.mode !== "pinned") {
+					const resizedIntersection = resolveProbabilityPointerIntersection(
+						probabilityHoverPointerX - stackRectAfterResize.left, stackRectAfterResize,
+					)?.intersection;
+					probabilityHoverIntersection = probabilityHoverEndpointLatched
+						? getDatasetPoint(priceChart, refreshIndex, 0)
+						: resizedIntersection;
+				}
 				syncHoverState(refreshIndex, refreshSourceCanvas, refreshSourceChart);
 				if (pointerStillOverStack && !viewportWidthChanged) {
 					updatePointerHoverLine({synchronizeScroll: true});

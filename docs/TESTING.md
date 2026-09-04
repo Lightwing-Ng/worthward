@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.45.0`
+Documentation version: `v1.45.4`
 
 ## Price Field shared-grid coverage
 
@@ -14,19 +14,56 @@ the requested GPU or Neural Engine label. Node tests accept both
 cannot fit, so the shared resizer minimum still yields 10 rows per side.
 The isolated Chromium file `tests/e2e/lstm-price-field.spec.mjs` checks the
 LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
-`probability-grid-v0.26.0` and `backtest-v0.38.26` assets, square cells, and 390px overflow on port
+`probability-grid-v0.27.0` and `backtest-v0.38.27` assets, square cells, and 390px overflow on port
 `8699`. A second case waits for a real server `lstm-price-field/v1` payload
 (not an injected presentation), requires the renderer to normalize it, hovers a
 forecastable origin, and asserts both the floating field and the detail lattice
 render from that computation. Walk-forward LSTM training keeps the causal lag
 return even when enabled Longbridge factor columns are entirely unavailable.
-The same file verifies that the private LSTM training actions appear in the
+The same file verifies three ordered, sentence-case LSTM accordion groups:
+`LSTM parameters` (Cell display threshold through Compute backend), `LSTM training`,
+and `Training factors` (the boolean factors). Opening a section closes the others
+without changing form values; keyboard activation and page reload retain a usable
+initial state. All three sections stay in the
 `Strategy parameters` collapse opened by the round `Tune strategy parameters`
 button, stay out of the strategy selector and global sidebar, use the
 `bolt.fill.svg` and `stop.fill.svg` masks, and keep historical runs inside an
 accessible native collapse. `tests/test_lstm_training.py`
 covers isolated state discovery, detached launch arguments, seed-checked
 termination, and CSRF rejection at the web boundary.
+Web training snapshots both the current parameter and factor controls into a validated
+`selected_params` request. The runner loads and evaluates that exact configuration
+without GA mutation or seed replacement; the CLI without `--selected-params` retains
+its existing GA search. Configuration is recorded in the durable request and history,
+and the request hash separates different selections. Missing or invalid configurations
+fail before process launch. Tests intercept browser start requests and mock evaluation
+in temporary compute stores, so verification does not launch a real training job.
+All three LSTM summaries use the existing 15px and medium-weight tokens at desktop
+and narrow widths, without card borders. One start/stop action uses the sibling
+secondary-button glass-chip tokens, 13px semibold text, and blue text; idle helper
+copy is hidden while actual errors remain visible. Browser tests intercept start,
+stop, stopping, interruption, and history-error states without launching a job.
+History displays allowlisted existing artifact names and byte sizes. Progress is
+the runner's completed-origin count divided by its total, not elapsed time divided
+by the job budget and not a model-quality score. Unknown progress is indeterminate
+only for active runs; completed runs are 100%. Its fill uses the standard primary
+blue and positive green tokens. Interrupted/failed runs retain partial progress.
+Tests cover real strategy callbacks, terminal progress, unknown counters, and
+excluding symlinks and unrecognized artifact names in temporary stores.
+
+Verification on 4 Sep 2026: the focused LSTM Python suite passed 45 tests, the two
+private-control Chromium flows passed, and JavaScript unit checks passed. A full
+`./scripts/check.sh` run reported 5 failures and 1,070 passes while parallel work
+was changing grid code; after fixing the local cache-version assertion and launch
+mock, replaying the affected files passed 56 tests with three remaining unrelated
+grid-contract failures: dynamic-grid pointer source, Bayesian geometry source,
+and the JavaScript renderer version allowlist. Live 8688 subsequently served the
+new controls, sentence-case labels, nine actual artifact filenames, and 100% for
+the completed historical run after an external restart. No real job was launched.
+The final numbered-copy scan retained seven existing ignored files: five coverage
+files differ from their primary, and two differing investment-cache files are
+protected state. No files were deleted; unrelated working-tree edits were preserved.
+
 Architecture-boundary tests assert that LSTM imports the model-neutral
 `strategies.price_field_pipeline`, never the Bayesian strategy module, and
 never instantiates `BayesianPriceFieldStrategy` as a service. They also cover
@@ -66,11 +103,16 @@ an iPad-style touch tap pins the same frame. It verifies that movement cannot
 change a pinned origin, that Escape clears it, that the Price Field detail keeps
 the pinned index, and that the chart context menu remains available for SVG
 download.
-The right end of the horizontal detail guide displays separate higher-price
-and lower-price mean probability masses per forecast horizon, and the E2E
-assertion recomputes both values from every detail cell, including
-threshold-hidden cells. Independent horizons are averaged rather than added,
-so the numeric labels remain bounded to 0–100% and contain no direction text.
+The right end of the horizontal detail guide displays normalized directional
+shares of represented mass. E2E independently normalizes every horizon using
+all detail cells (including threshold-hidden cells), averages the shares, and
+verifies complementary hundredth-percent rounding totaling 100.00%. Node tests
+cover unequal horizon coverage, empty distributions, and one-sided mass.
+`tests/e2e/lstm-guide-alignment.spec.mjs` samples every frame during vertical-only
+movement at five right-half positions and a reversible one-pixel sweep at
+1018 × 1433. The selected date, lattice, and intersection must be coherent in
+every sampled frame, not merely after a polling assertion eventually passes.
+Automatic pan must not feed back into the gesture's absolute coordinate mapping.
 The detail contract also requires that green cells stay wholly above the live
 price guide and red cells wholly below it, including the first render after a
 layout change. An edge-adjacent hover regression proves that the floating field

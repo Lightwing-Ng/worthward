@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.92.1
+Code version: v0.93.0
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -7233,6 +7233,7 @@ def build_web_runtime() -> WebRuntime:
             run = lstm_training_manager.start(
                 ticker=str(payload.get("ticker", "")),
                 period=str(payload.get("period", "")),
+                params=payload.get("params"),
             )
             response = jsonify({"success": True, "run": run})
             response.status_code = 202

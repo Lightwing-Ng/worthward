@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.1.0
+Code version: v0.3.0
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -12,6 +12,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -59,9 +60,10 @@ class LstmTrainingManager:
             reverse=True,
         )
 
-    def start(self, ticker: str, period: str) -> dict[str, Any]:
+    def start(self, ticker: str, period: str, params: object = None) -> dict[str, Any]:
         normalized_ticker = self._normalize_ticker(ticker)
         normalized_period = self._normalize_period(period)
+        selected_params = ga_runner.validate_selected_params(params)
         if any(
             run.get("ticker") == normalized_ticker and run.get("status") in ACTIVE_STATUSES
             for run in self.list_runs()
@@ -72,6 +74,7 @@ class LstmTrainingManager:
 
         seed = self._unique_seed(normalized_ticker, normalized_period)
         args = self._build_runner_args(normalized_ticker, normalized_period, seed)
+        args.selected_params = selected_params
         spec = ga_runner.build_request_spec(args)
         paths = ga_runner.build_run_paths(args, spec)
         paths.state.mkdir(parents=True, exist_ok=False)
@@ -92,6 +95,8 @@ class LstmTrainingManager:
             str(seed),
             "--state-root",
             str(paths.root),
+            "--selected-params",
+            json.dumps(selected_params, sort_keys=True, allow_nan=False),
         ]
         log_handle = paths.log.open("a", encoding="utf-8")
         try:
@@ -119,6 +124,7 @@ class LstmTrainingManager:
             "ticker": normalized_ticker,
             "period": normalized_period,
             "ga_seed": seed,
+            "selected_params": selected_params,
         })
         return {
             **self._read_run(paths.state),
@@ -131,7 +137,7 @@ class LstmTrainingManager:
         run = self._read_run(paths.state)
         if run.get("status") not in ACTIVE_STATUSES:
             return run
-        request = self._read_json(paths.request)
+        request = self._read_json(paths.request) or self._read_json(paths.state / "launch.json")
         pid = self._run_pid(run)
         if not pid or not self._process_matches(pid, request):
             return {**run, "status": "stale", "active": False}
@@ -205,16 +211,17 @@ class LstmTrainingManager:
         request = self._read_json(state / "request.json")
         status = self._read_json(state / "status.json")
         launch = self._read_json(state / "launch.json")
+        identity = request or launch
         result = self._read_json(state / "result.json")
         ticker = str(status.get("ticker") or request.get("ticker") or launch.get("ticker") or "")
         period = str(status.get("period") or request.get("period") or launch.get("period") or "")
         stored_status = str(status.get("status") or "").strip()
         pid = self._run_pid({**launch, **status})
         if stored_status in ACTIVE_STATUSES:
-            effective_status = stored_status if self._process_matches(pid, request) else "stale"
+            effective_status = stored_status if self._process_matches(pid, identity) else "stale"
         elif stored_status:
             effective_status = stored_status
-        elif pid and self._process_matches(pid, request):
+        elif pid and self._process_matches(pid, identity):
             effective_status = "starting"
         else:
             effective_status = "unknown"
@@ -239,9 +246,45 @@ class LstmTrainingManager:
             "generation": status.get("generation"),
             "evaluated": status.get("evaluated") or result.get("evaluated"),
             "best": self._best_summary(best),
+            "selected_params": request.get("selected_params", launch.get("selected_params")),
             "result_available": (state / "result.json").is_file(),
+            "progress": self._progress_summary(status, effective_status),
+            "files": self._training_files(state),
             "error": str(status.get("error") or "") or None,
         }
+
+    @staticmethod
+    def _progress_summary(status: Mapping[str, Any], effective_status: str) -> dict[str, Any]:
+        progress = status.get("progress")
+        summary: dict[str, Any] = {"percent": None}
+        if isinstance(progress, Mapping):
+            completed, total = progress.get("completed"), progress.get("total")
+            if (
+                type(completed) is int and type(total) is int
+                and 0 <= completed <= total and total > 0
+            ):
+                percent = round(completed / total * 100, 1)
+                if math.isfinite(percent):
+                    summary = {"completed": completed, "total": total, "unit": "origins", "percent": percent}
+        if effective_status == "completed":
+            summary["percent"] = 100.0
+        return summary
+
+    @staticmethod
+    def _training_files(state: Path) -> list[dict[str, Any]]:
+        """Expose existing artifact names and sizes, never arbitrary paths or contents."""
+        files = []
+        for name in (
+            "request.json", "snapshot.json", "checkpoint.json", "baseline.json",
+            "evaluations.jsonl", "leaderboard.json", "result.json", "status.json", "run.log",
+        ):
+            path = state / name
+            try:
+                if not path.is_symlink() and path.is_file():
+                    files.append({"name": name, "size_bytes": path.stat().st_size})
+            except OSError:
+                continue
+        return files
 
     def _process_matches(self, pid: int | None, request: Mapping[str, Any]) -> bool:
         if not pid or pid <= 0:

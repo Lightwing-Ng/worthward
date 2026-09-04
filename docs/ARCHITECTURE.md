@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.71.0`
+Documentation version: `v1.71.1`
 
 ## Price Field detail view contract
 
@@ -49,12 +49,17 @@ It intentionally has no price-probability legend: the two-dimensional cell
 field is explained by its axes and grid, not by a misleading one-dimensional
 color scale. The detail plot, main column, grid viewport, and complete lattice
 are separately clipped and contained so the full 20 × 20 geometry cannot paint
-outside its owning surface. The detail viewport places mean higher-price and
-lower-price probability mass per forecast horizon at the right end of the
-horizontal price guide. Each horizon's cell mass includes threshold-hidden
-cells, but independent horizons are averaged rather than added together, so
-both displayed percentages remain bounded to 0–100%. The two right-aligned
-cumulative percentage labels use a dedicated 17px value style so they remain
+outside its owning surface. The detail viewport places normalized higher-price
+and lower-price shares at the right end of the horizontal price guide. For each
+forecast horizon, divide each direction's complete lattice mass by the total
+represented mass, including threshold-hidden cells, then average those shares
+equally across nonempty horizons. These are conditional shares within the
+represented lattice, not full-distribution directional probabilities; accessible
+labels explain the excluded tails and gaps. Empty distributions show unavailable,
+not an invented split. Round the higher share to a hundredth of a percent and
+derive the lower label as its exact complement, totaling 100.00%. Individual cell
+probabilities, thresholding, and model outputs remain unchanged. The right-aligned
+percentage labels use a dedicated 17px value style so they remain
 legible beside the guide without changing the grid or axis typography.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
@@ -96,10 +101,13 @@ measured through the Backtest layout tokens so the alignment remains exact when
 the sidebar collapses.
 
 The overview hover surface maps the pointer onto the visible price curve.
-The pointer's screen-space X places the vertical guide while that X lies on
-the rendered curve, including after overflow pan. The selected Price Field
-origin and `Selected date` status are that visible curve point's trading
-day. The horizontal guide is the intersection of that vertical line with
+Tracking captures the scroll origin once on entry and maps absolute pointer X
+through that stable origin. Automatic overflow pan is an output, not additional
+pointer input: stationary, vertical-only, and one-pixel moves cannot advance dates
+through scroll feedback. The date, lattice, and guides commit in one animation
+frame. Without overflow the vertical guide follows the cursor; when overflow
+requires pan, the selected curve point and field move together into view instead
+of reselecting the point moved underneath the cursor. The horizontal guide is the intersection of that vertical line with
 the visible polyline, including linear interpolation across interrupted
 gaps. The Price Field is drawn to the right of the
 vertical guide, with green/up cells above the horizontal guide and

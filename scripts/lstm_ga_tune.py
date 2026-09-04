@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.1.3
+Code version: v0.3.0
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -29,7 +29,7 @@ from pathlib import Path
 import signal
 import sys
 import time
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -226,9 +226,12 @@ def _runner_fingerprint() -> str:
 
 
 def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
+    selected = getattr(args, "selected_params", None)
+    if isinstance(selected, str):
+        selected = json.loads(selected)
     return {
         "schema": 1,
-        "runner_version": "v0.1.0",
+        "runner_version": "v0.2.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
@@ -238,7 +241,45 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "max_workers": int(args.max_workers),
         "ga_seed": int(args.ga_seed),
         "offline": bool(args.offline),
+        "selected_params": validate_selected_params(selected) if selected is not None else None,
     }
+
+
+def validate_selected_params(raw: object) -> dict[str, Any]:
+    """Validate the strategy-owned UI configuration before launching any work."""
+    if not isinstance(raw, dict):
+        raise ValueError("Select Factors & Parameters before starting training.")
+    strategy = LSTMPriceFieldStrategy()
+    definitions = {item.key: item for item in strategy.get_parameter_definitions()}
+    if set(raw) - definitions.keys():
+        raise ValueError("Unknown LSTM training parameter.")
+    for key, value in raw.items():
+        definition = definitions[key]
+        if definition.kind == "boolean":
+            if not isinstance(value, (str, bool, int)) or str(value).lower() not in {
+                "true", "false", "0", "1", "on", "off", "yes", "no",
+            }:
+                raise ValueError(f"Invalid value for {key}.")
+        elif definition.kind in {"integer", "number"}:
+            try:
+                number = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid value for {key}.") from exc
+            if (
+                isinstance(value, bool)
+                or not math.isfinite(number)
+                or (definition.kind == "integer" and not number.is_integer())
+                or (definition.minimum is not None and number < definition.minimum)
+                or (definition.maximum is not None and number > definition.maximum)
+            ):
+                raise ValueError(f"Invalid value for {key}.")
+        elif definition.kind == "choice" and value not in definition.options:
+            raise ValueError(f"Invalid value for {key}.")
+    values = dict(raw)
+    for key, value in values.items():
+        if definitions[key].kind == "integer":
+            values[key] = int(float(value))
+    return strategy.normalize_params(values)
 
 
 def _request_hash(spec: Mapping[str, Any]) -> str:
@@ -382,6 +423,9 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         "training_window": 504,
         "chip_window": 252,
     })
+    selected_params = _request_spec(args)["selected_params"]
+    if selected_params is not None:
+        loader_params = selected_params
     if args.offline:
         bundle = build_local_price_field_factor_bundle(
             f"{str(args.ticker).strip().upper()}.US",
@@ -692,10 +736,12 @@ def _finite_metric(value: Any, default: float = -math.inf) -> float:
 def _evaluate_signal_result(
         candidate: Mapping[str, Any],
         context: EvaluationContext,
+        progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     strategy = LSTMPriceFieldStrategy()
     strategy._warmup_bundle = context.bundle_payload
+    strategy.training_progress = progress
     params = dict(candidate["params"])
     try:
         signal_result = strategy.compute_signals(context.visible_frame, params)
@@ -1153,6 +1199,90 @@ def _handle_stop(_signum: int, _frame: object) -> None:
     _STOP_REQUESTED = True
 
 
+def _run_selected_configuration(
+        spec: Mapping[str, Any],
+        paths: RunPaths,
+        context: EvaluationContext,
+) -> int:
+    """Train the exact submitted configuration without GA or seed mutation."""
+    started = _now_utc().isoformat()
+    clock = time.monotonic()
+    candidate = _candidate_record(
+        spec["selected_params"], 0, "selected-configuration", context.snapshot_fingerprint,
+    )
+    progress_state: dict[str, Any] | None = None
+    last_progress_write = 0.0
+
+    def write_status(status: str, results: list[dict[str, Any]], error: str | None = None) -> None:
+        payload = _status_payload(
+            spec,
+            paths,
+            status=status,
+            started_at=started,
+            elapsed_seconds=time.monotonic() - clock,
+            generation=0,
+            evaluated=len(results),
+            phase=status,
+            leaderboard=results,
+            context=context,
+            error=error,
+        )
+        payload["progress"] = progress_state
+        _atomic_write_json(paths.status, payload)
+
+    def report_progress(completed: int, total: int) -> None:
+        nonlocal progress_state, last_progress_write
+        # Origins include skipped dates; this measures work, not model quality.
+        progress_state = {"completed": completed, "total": total, "unit": "origins"}
+        now = time.monotonic()
+        if completed == 0 or now - last_progress_write >= 1.0:
+            write_status("running", [])
+            last_progress_write = now
+
+    write_status("running", [])
+
+    class TrainingTimeLimit(BaseException):
+        pass
+
+    def interrupt(signum: int, _frame: object) -> None:
+        if signum == signal.SIGALRM:
+            raise TrainingTimeLimit
+        raise KeyboardInterrupt
+
+    signals = (signal.SIGTERM, signal.SIGINT, signal.SIGALRM)
+    previous_handlers = {number: signal.signal(number, interrupt) for number in signals}
+    signal.setitimer(signal.ITIMER_REAL, float(spec["duration_seconds"]))
+    try:
+        result = _evaluate_signal_result(candidate, context, progress=report_progress)
+    except TrainingTimeLimit:
+        write_status("time_budget_reached", [])
+        return 1
+    except BaseException:
+        write_status("interrupted", [])
+        raise
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        for number, handler in previous_handlers.items():
+            signal.signal(number, handler)
+    _append_jsonl(paths.evaluations, result)
+    status = "completed" if result.get("status") == "ok" else "failed_closed"
+    if status == "completed" and progress_state is not None:
+        progress_state["completed"] = progress_state["total"]
+    final = {
+        "schema": 1,
+        "status": status,
+        "completed_at": _now_utc().isoformat(),
+        "request": dict(spec),
+        "best": result,
+        "evaluated": 1,
+        "generation": 0,
+        "progress": progress_state,
+    }
+    _atomic_write_json(paths.result, final)
+    write_status(status, [result], result.get("error"))
+    return 0 if status == "completed" else 1
+
+
 def _run(args: argparse.Namespace) -> int:
     spec = _request_spec(args)
     paths = _build_run_paths(args, spec)
@@ -1173,6 +1303,8 @@ def _run(args: argparse.Namespace) -> int:
     _atomic_write_json(paths.request, spec)
     with _run_lock(paths.lock):
         context, snapshot = _build_snapshot(args, paths)
+        if spec["selected_params"] is not None:
+            return _run_selected_configuration(spec, paths, context)
         strategy = LSTMPriceFieldStrategy()
         base_params = _canonical_params(
             _base_params(strategy),
@@ -1494,6 +1626,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-workers", type=int, default=min(MAX_WORKERS, max(1, (os.cpu_count() or 2) - 2)))
     parser.add_argument("--ga-seed", type=int, default=DEFAULT_GA_SEED)
     parser.add_argument("--state-root", default="")
+    parser.add_argument("--selected-params", default=None, help="Train one exact strategy configuration supplied as JSON instead of running GA.")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
     return parser

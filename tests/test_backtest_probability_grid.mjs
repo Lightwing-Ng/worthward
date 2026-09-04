@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.26.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.27.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,7 +40,7 @@ const presentation = {
 };
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.26.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.27.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -698,8 +698,8 @@ test('summarizes up and down probability mass across hidden and visible field ce
         {sign: 'down', horizon: 1, probability: 0.003, isVisible: false},
         {sign: 'other', horizon: 1, probability: 0.9, isVisible: true},
     ]);
-    assert.ok(Math.abs(summary.upProbability - 0.145) < 1e-12);
-    assert.ok(Math.abs(summary.downProbability - 0.703) < 1e-12);
+    assert.ok(Math.abs(summary.upProbability - 0.145 / 0.848) < 1e-12);
+    assert.ok(Math.abs(summary.downProbability - 0.703 / 0.848) < 1e-12);
     assert.equal(summary.upCellCount, 2);
     assert.equal(summary.downCellCount, 2);
     assert.equal(summary.upHiddenCellCount, 1);
@@ -717,11 +717,31 @@ test('averages directional probability mass across independent forecast horizons
         {sign: 'up', horizon: 2, probability: 0.5},
         {sign: 'down', horizon: 2, probability: 0.4},
     ]);
-    assert.ok(Math.abs(summary.upProbability - 0.6) < 1e-12);
-    assert.ok(Math.abs(summary.downProbability - 0.3) < 1e-12);
+    assert.ok(Math.abs(summary.upProbability - 2 / 3) < 1e-12);
+    assert.ok(Math.abs(summary.downProbability - 1 / 3) < 1e-12);
     assert.ok(summary.upProbability <= 1);
     assert.ok(summary.downProbability <= 1);
     assert.equal(summary.forecastHorizonCount, 2);
+});
+
+test('normalizes horizons independently and excludes empty distributions without inventing a split', () => {
+    const cells = [
+        {sign: 'up', horizon: 1, probability: 0.08, isVisible: false},
+        {sign: 'down', horizon: 1, probability: 0.02},
+        {sign: 'up', horizon: 2, probability: 0.1},
+        {sign: 'down', horizon: 2, probability: 0.4},
+        {sign: 'up', horizon: 3, probability: 0},
+        {sign: 'down', horizon: 3, probability: Number.NaN},
+    ];
+    const summary = grid.summarizeProbabilityField(cells);
+    assert.equal(summary.upProbability, 0.5);
+    assert.equal(summary.downProbability, 0.5);
+    assert.equal(summary.forecastHorizonCount, 2);
+    assert.equal(summary.upProbability + summary.downProbability, 1);
+    assert.deepEqual(grid.summarizeProbabilityField(cells.map((cell) => ({...cell, probability: 0}))), null);
+    assert.equal(grid.summarizeProbabilityField(cells.map((cell) => ({...cell, isVisible: true}))).upProbability, 0.5);
+    assert.equal(grid.summarizeProbabilityField([{sign: 'up', probability: 0.00001}]).upProbability, 1);
+    assert.equal(grid.summarizeProbabilityField([{sign: 'down', probability: 0.00001}]).downProbability, 1);
 });
 
 test('maps every cell to an exact price interval around the horizontal guide', () => {

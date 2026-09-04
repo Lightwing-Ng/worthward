@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -120,6 +120,85 @@ const readSnapshot = (page) => page.evaluate(() => {
         } : null,
         stack: stackRect ? {left: stackRect.left, right: stackRect.right} : null,
     };
+});
+
+test('keeps every right-half hover frame coherent during vertical movement', async ({page}) => {
+    await page.setViewportSize({width: 1018, height: 1433});
+    await page.goto(lstmUrl);
+    await expect.poll(() => readPresentation(page), {timeout: 90_000}).not.toBeNull();
+    await injectPriceFieldPresentation(page);
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    const frames = await page.evaluate(async () => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart.getChart(canvas);
+        const stack = canvas.closest('.trade-chart-stack');
+        const tooltip = stack.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const samples = [];
+        const nextFrame = () => new Promise(requestAnimationFrame);
+        const rect = stack.getBoundingClientRect();
+        const y = rect.top + rect.height / 2;
+        for (const ratio of [0.55, 0.65, 0.75, 0.85, 0.95]) {
+            const x = rect.left + rect.width * ratio;
+            for (let step = 0; step < 10; step += 1) {
+                stack.dispatchEvent(new MouseEvent('mousemove', {
+                    bubbles: true, clientX: x, clientY: y + (step % 2 ? 25 : -25),
+                }));
+                await nextFrame();
+                const bounds = chart._activeBacktestProbabilityGridBounds;
+                const field = tooltip.getBoundingClientRect();
+                samples.push({ratio, step, index: bounds?.index,
+                    anchorY: bounds?.anchorY, intersectionY: bounds?.intersectionY,
+                    left: field.left, top: field.top,
+                    pan: Number(stack.dataset.probabilityPanVisualPosition || 0),
+                    visible: tooltip.classList.contains('is-visible'),
+                });
+            }
+        }
+        return samples;
+    });
+    for (const frame of frames) {
+        expect(frame.visible, JSON.stringify(frame)).toBe(true);
+        expect(Math.abs(frame.anchorY - frame.intersectionY), JSON.stringify(frame)).toBeLessThan(0.01);
+        const first = frames.find((sample) => sample.ratio === frame.ratio);
+        expect(frame.index, JSON.stringify({first, frame})).toBe(first.index);
+        expect(Math.abs(frame.left - first.left), JSON.stringify({first, frame})).toBeLessThan(0.1);
+        expect(Math.abs(frame.top - first.top), JSON.stringify({first, frame})).toBeLessThan(0.1);
+        expect(Math.abs(frame.pan - first.pan), JSON.stringify({first, frame})).toBeLessThan(0.1);
+    }
+    const sweep = await page.evaluate(async () => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart.getChart(canvas);
+        const stack = canvas.closest('.trade-chart-stack');
+        const rect = stack.getBoundingClientRect();
+        const result = [];
+        for (const direction of [1, -1]) {
+            for (let step = 0; step <= 40; step += 1) {
+                const offset = direction === 1 ? step : 40 - step;
+                stack.dispatchEvent(new MouseEvent('mousemove', {
+                    bubbles: true, clientX: rect.left + rect.width * 0.65 + offset,
+                    clientY: rect.top + rect.height / 2,
+                }));
+                await new Promise(requestAnimationFrame);
+                const bounds = chart._activeBacktestProbabilityGridBounds;
+                result.push({offset, direction, index: bounds.index, x: bounds.intersectionX,
+                    y: bounds.intersectionY, anchorY: bounds.anchorY});
+            }
+        }
+        return result;
+    });
+    for (const [index, frame] of sweep.entries()) {
+        expect(Math.abs(frame.y - frame.anchorY)).toBeLessThan(0.01);
+        if (index > 0) {
+            expect(Math.abs(frame.index - sweep[index - 1].index)).toBeLessThanOrEqual(1);
+            expect(Math.abs(frame.x - sweep[index - 1].x)).toBeLessThanOrEqual(1.01);
+        }
+        if (frame.direction === -1) {
+            const outbound = sweep.find((sample) => sample.direction === 1 && sample.offset === frame.offset);
+            expect(frame.index).toBe(outbound.index);
+            expect(frame.y).toBeCloseTo(outbound.y, 6);
+        }
+    }
 });
 
 test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({page}) => {

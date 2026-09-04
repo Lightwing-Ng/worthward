@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.2.3."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -69,6 +69,16 @@ def _cpu_params(**overrides: object) -> dict[str, object]:
 
 
 class LSTMPriceFieldStrategyTests(unittest.TestCase):
+    def test_training_progress_reports_actual_origins_without_changing_results(self) -> None:
+        strategy = LSTMPriceFieldStrategy()
+        observed = []
+        strategy.training_progress = lambda done, total: observed.append((done, total))
+        frame = _market_frame(80)
+        result = strategy.compute_signals(frame, _cpu_params())
+        self.assertEqual(observed, [(origin, 80) for origin in range(80)])
+        baseline = LSTMPriceFieldStrategy().compute_signals(frame, _cpu_params())
+        pd.testing.assert_frame_equal(result.frame, baseline.frame)
+
     def test_strategy_depends_on_shared_pipeline_not_bayesian_strategy(self) -> None:
         source = Path(
             __file__

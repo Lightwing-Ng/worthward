@@ -9908,6 +9908,11 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
     ]
     transaction_dates = _payload_transaction_dates(payload)
     snapshot_as_of = max(period_ends or snapshot_as_of_values or transaction_dates or [""])
+    generator = payload.get("generator") if isinstance(payload.get("generator"), dict) else {}
+    position_source = _summary_text(summary, "position_snapshot_source") or _normalize_text(
+        generator.get("name")
+    )
+    performance_source = _summary_text(summary, "performance_snapshot_source") or position_source
     position_snapshot_as_of = _normalize_text(
         payload.get("position_snapshot_as_of")
         or summary.get("position_snapshot_as_of")
@@ -9916,13 +9921,14 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
     performance_snapshot_as_of = _normalize_text(
         payload.get("performance_snapshot_as_of")
         or summary.get("performance_snapshot_as_of")
-        or (snapshot_as_of if performance_snapshot else "")
+        or (
+            snapshot_as_of
+            if performance_snapshot
+            and performance_source
+            != LONGBRIDGE_USER_CONFIRMED_PERFORMANCE_CALIBRATION_SOURCE
+            else ""
+        )
     )
-    generator = payload.get("generator") if isinstance(payload.get("generator"), dict) else {}
-    position_source = _summary_text(summary, "position_snapshot_source") or _normalize_text(
-        generator.get("name")
-    )
-    performance_source = _summary_text(summary, "performance_snapshot_source") or position_source
     snapshot_updated_at = ""
     hsbc_snapshot = summary.get("hsbc_snapshot")
     if isinstance(hsbc_snapshot, dict):

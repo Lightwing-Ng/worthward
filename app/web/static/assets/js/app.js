@@ -1,4 +1,4 @@
-/* Code version: v0.51.2 */
+/* Code version: v0.51.3 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -8443,6 +8443,7 @@
             panel.querySelectorAll("[data-shared-select-field]").forEach((field) => initializeSharedSelectField(field));
             syncBacktestStrategyTickerContract(payload);
             initStrategyParamControls(panel);
+            window.WORTHWARD_LSTM_TRAINING?.renderMenu?.();
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);

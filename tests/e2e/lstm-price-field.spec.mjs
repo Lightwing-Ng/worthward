@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.3.6 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.6.1 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -143,12 +143,12 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.26.0');
+    expect(desktop.version).toBe('v0.27.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.26.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.38.26');
-    expect(desktop.appScript).toContain('app-v0.51.2');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.27.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.38.27');
+    expect(desktop.appScript).toContain('app-v0.51.3');
     expect(desktop.panelTitle).toBe('LSTM Price Field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -180,7 +180,12 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(privateMenu).toHaveCount(1);
     await expect(privateMenu).toBeVisible();
     await expect(privateMenu.locator('[data-lstm-training-action="start"]')).toBeEnabled();
-    await expect(privateMenu.locator('[data-lstm-training-action="stop"]')).toBeDisabled();
+    await expect(privateMenu.locator('[data-lstm-training-action]')).toHaveCount(1);
+    await expect(privateMenu.locator('[data-lstm-training-action="stop"]')).toHaveCount(0);
+    await expect(privateMenu.locator('[data-lstm-training-status]')).toBeHidden();
+    await expect(privateMenu.locator('.lstm-training-action')).toHaveCSS('font-size', '13px');
+    await expect(privateMenu.locator('.lstm-training-action')).toHaveCSS('color', 'rgb(0, 85, 204)');
+    await expect(privateMenu.locator('.lstm-training-action')).toHaveCSS('height', '31px');
     await expect(privateMenu.locator('[data-lstm-training-history]')).toHaveCount(1);
     await expect(privateMenu.locator('.lstm-training-history-collapse')).toHaveCount(1);
     await expect(page.locator('#trade_strategy_dropdown [data-lstm-training-menu]')).toHaveCount(0);
@@ -195,10 +200,51 @@ test('LSTM private training actions stay in the private strategy parameters coll
         nodes.map((node) => getComputedStyle(node).maskImage || getComputedStyle(node).webkitMaskImage)
     ));
     expect(iconMasks[0]).toContain('/static/images/bolt.fill.svg');
-    expect(iconMasks[1]).toContain('/static/images/stop.fill.svg');
-
-    await privateMenu.locator('.lstm-training-history-collapse > summary').click();
     await expect(privateMenu.locator('.lstm-training-history-empty')).toHaveText('No historical LSTM training runs.');
+
+    await expect(paramsPanel.locator(':scope > details > summary')).toHaveText([
+        'LSTM parameters', 'LSTM training', 'Training factors',
+    ]);
+    const parametersSection = paramsPanel.locator('[data-lstm-private-section="parameters"]');
+    await expect(parametersSection.locator('[data-strategy-param-key]')).toHaveCount(10);
+    await expect(parametersSection.locator('[data-strategy-param-key]').first()).toHaveAttribute('data-strategy-param-key', 'cell_display_threshold');
+    await expect(parametersSection.locator('[data-strategy-param-key]').last()).toHaveAttribute('data-strategy-param-key', 'compute_backend');
+
+    const trainingSection = paramsPanel.locator('[data-lstm-private-section="training"]');
+    await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-size', '15px');
+    await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-weight', '500');
+    const factorsSection = paramsPanel.locator('[data-lstm-private-section="factors"]');
+    await expect(factorsSection.locator('[data-strategy-param-key]')).toHaveCount(23);
+    await expect(trainingSection).toHaveCSS('border-top-width', '0px');
+    const fieldValues = () => paramsPanel.locator('[data-strategy-param-input][name]').evaluateAll(
+        (nodes) => nodes.map((node) => [node.name, node.value]),
+    );
+    const originalValues = await fieldValues();
+    await factorsSection.locator(':scope > summary').click();
+    await expect(privateMenu).toBeHidden();
+    await expect(factorsSection.locator('[data-strategy-param-key="use_broker_holding"]')).toBeVisible();
+    await trainingSection.locator(':scope > summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(privateMenu).toBeVisible();
+    await expect(factorsSection.locator('[data-trade-strategy-params-grid]')).toBeHidden();
+    expect(await fieldValues()).toEqual(originalValues);
+
+    let trainingRequest;
+    await page.route('**/api/lstm-training/start', async (route) => {
+        trainingRequest = route.request().postDataJSON();
+        await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify({success: true, run: {}})});
+    });
+    await factorsSection.locator(':scope > summary').click();
+    await factorsSection.locator('[data-strategy-param-key="use_broker_holding"] [data-strategy-param-switch]').click();
+    const selectedValues = Object.fromEntries(await fieldValues());
+    await trainingSection.locator(':scope > summary').click();
+    await privateMenu.locator('[data-lstm-training-action="start"]').click();
+    await expect.poll(() => trainingRequest?.params).toEqual(selectedValues);
+    expect(trainingRequest.params.use_broker_holding).not.toBe(Object.fromEntries(originalValues).use_broker_holding);
+
+    await page.reload();
+    await expect(privateMenu).toBeVisible();
+    await expect(paramsPanel.locator('[data-lstm-private-section]')).toHaveCount(3);
 
     await tuneButton.click();
     await expect(paramsPanel).toBeHidden();
@@ -208,8 +254,70 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(privateMenu).toBeVisible();
 
     await page.setViewportSize({width: 390, height: 844});
+    await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-size', '15px');
+    await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-weight', '500');
     await expect(privateMenu).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+test('LSTM training toggles one button and displays real progress and artifact metadata', async ({page}) => {
+    let runs = [];
+    let historyFails = false;
+    let startRequests = 0;
+    const run = {
+        id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'DRAM', period: '1y',
+        status: 'running', active: true, started_at: '2026-09-04T00:00:00Z',
+        progress: {completed: 25, total: 100, percent: 25},
+        files: [{name: 'request.json', size_bytes: 1234}, {name: 'status.json', size_bytes: 256}],
+    };
+    await page.route('**/api/lstm-training', (route) => route.fulfill({
+        status: historyFails ? 503 : 200, contentType: 'application/json',
+        body: JSON.stringify(historyFails ? {success: false, error: 'History unavailable'} : {success: true, runs}),
+    }));
+    await page.route('**/api/lstm-training/start', async (route) => {
+        startRequests += 1;
+        runs = [{...run}];
+        await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify({success: true, run: runs[0]})});
+    });
+    await page.route('**/api/lstm-training/stop', async (route) => {
+        expect(route.request().postDataJSON()).toEqual({run_id: run.id});
+        runs = [{...run, status: 'stopping'}];
+        await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify({success: true, run: runs[0]})});
+    });
+    await page.goto(lstmUrl);
+    const menu = page.locator('[data-lstm-training-menu]');
+    const button = menu.locator('[data-lstm-training-action]');
+    await expect(button).toHaveText('Start training');
+    await button.click();
+    await expect(button).toHaveText('Stop training');
+    await expect(button).toBeEnabled();
+    await expect(button).toHaveCount(1);
+    expect(startRequests).toBe(1);
+    await expect(menu.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+    await expect(menu.locator('.lstm-training-files')).toContainText('request.json');
+    await expect(menu.locator('.lstm-training-files')).toContainText('1,234 B');
+    expect(await button.locator('.icon').evaluate((node) => getComputedStyle(node).maskImage)).toContain('/static/images/stop.fill.svg');
+    expect(await menu.locator('.lstm-training-progress-fill').evaluate((node) => getComputedStyle(node).backgroundImage)).toContain('linear-gradient(to right');
+
+    await button.click();
+    await expect(button).toHaveText('Stopping training…');
+    await expect(button).toBeDisabled();
+    runs = [{...run, status: 'interrupted', active: false}];
+    await expect(button).toHaveText('Start training', {timeout: 10_000});
+    await expect(menu.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+    await page.reload();
+    await expect(button).toHaveText('Start training');
+    await expect(menu.locator('.lstm-training-files')).toBeVisible();
+    await page.setViewportSize({width: 390, height: 844});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+    runs = [{...run, status: 'starting', progress: {percent: null}}];
+    await expect(button).toHaveText('Stop training', {timeout: 10_000});
+    await expect(menu.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+    await expect(menu.locator('.lstm-training-progress-track')).toHaveClass(/is-indeterminate/);
+    historyFails = true;
+    await expect(menu.getByRole('status')).toHaveText('History unavailable', {timeout: 10_000});
+    await expect(menu.getByRole('status')).toBeVisible();
 });
 
 test('server-side LSTM Price Field computes a real probability field and renders it', async ({page}) => {
@@ -404,8 +512,8 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.26.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.26.0');
+    expect(contract.version).toBe('v0.27.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.27.0');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Bayesian Price Field detail');

@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.1.3
+Code version: v1.2.0
 - Changed: Model-neutral causal Price Field preparation now comes from the
   shared pipeline instead of the Bayesian strategy module.
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -210,6 +210,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
 
     def __init__(self) -> None:
         self._warmup_bundle: object | None = None
+        self.training_progress: Callable[[int, int], None] | None = None
 
     def get_default_tickers(self) -> tuple[str, ...]:
         return ("NVDA",)
@@ -219,7 +220,10 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             *(
                 StrategyParameterDefinition(
                     key=definition.parameter_key,
-                    label=definition.label,
+                    label=" ".join(
+                        word if index == 0 or word in {"OI", "P/E", "P/B", "P/S"} else word.lower()
+                        for index, word in enumerate(definition.label.split())
+                    ).replace("Put/Call", "Put/call"),
                     kind="boolean",
                     default=definition.default,
                     help_text=definition.help_text,
@@ -228,7 +232,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="cell_display_threshold",
-                label="Cell Display Threshold (%)",
+                label="Cell display threshold (%)",
                 kind="number",
                 default=_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT,
                 minimum=_CELL_DISPLAY_THRESHOLD_MIN_PCT,
@@ -243,7 +247,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="training_window",
-                label="Training Window",
+                label="Training window",
                 kind="integer",
                 default=60,
                 minimum=30,
@@ -258,7 +262,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="chip_window",
-                label="Volume-at-price Window",
+                label="Volume-at-price window",
                 kind="integer",
                 default=30,
                 minimum=5,
@@ -269,7 +273,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_lookback",
-                label="LSTM Lookback",
+                label="LSTM lookback",
                 kind="integer",
                 default=8,
                 minimum=4,
@@ -280,7 +284,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_hidden_size",
-                label="LSTM Hidden Size",
+                label="LSTM hidden size",
                 kind="integer",
                 default=8,
                 minimum=4,
@@ -290,7 +294,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_epochs",
-                label="LSTM Epochs",
+                label="LSTM epochs",
                 kind="integer",
                 default=6,
                 minimum=1,
@@ -300,7 +304,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_learning_rate",
-                label="LSTM Learning Rate",
+                label="LSTM learning rate",
                 kind="number",
                 default=0.05,
                 minimum=0.001,
@@ -310,7 +314,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="lstm_seed",
-                label="LSTM Seed",
+                label="LSTM seed",
                 kind="integer",
                 default=42,
                 minimum=0,
@@ -320,7 +324,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="entry_probability",
-                label="Entry Probability",
+                label="Entry probability",
                 kind="number",
                 default=60.0,
                 minimum=51.0,
@@ -331,7 +335,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="compute_backend",
-                label="Compute Backend",
+                label="Compute backend",
                 kind="choice",
                 default="Auto",
                 options=("Auto", "CPU", "GPU", "Neural Engine"),
@@ -415,6 +419,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             learning_rate=float(normalized_params["lstm_learning_rate"]),
             seed=int(normalized_params["lstm_seed"]),
             backend=backend,
+            progress=self.training_progress,
         )
         autoregression = np.full(len(full_frame), np.nan, dtype=np.float64)
         long_run_mean = np.full(len(full_frame), np.nan, dtype=np.float64)

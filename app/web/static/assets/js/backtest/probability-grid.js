@@ -4,7 +4,7 @@
  * Bayesian and LSTM Price Field strategies emit this renderer payload.
  * Layout, hover, pin, resize, thresholding, and styling live only here.
  *
- * Code version: v0.26.0
+ * Code version: v0.27.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -855,9 +855,9 @@
         });
     };
 
-    // The detail view reports mean probability mass by price direction for
-    // each forecast horizon. Threshold-hidden cells remain part of each
-    // horizon's mass, but independent horizons are not added together.
+    // Normalize each horizon's complete lattice before averaging directions.
+    // These are conditional shares of represented mass, not full-distribution
+    // tail probabilities. Threshold visibility never changes the denominator.
     const summarizeProbabilityField = (cells) => {
         if (!Array.isArray(cells) || !cells.length) return null;
         let upCellCount = 0;
@@ -887,17 +887,19 @@
             horizonMass.set(horizonKey, mass);
         });
         if (!upCellCount && !downCellCount) return null;
-        const forecastHorizonCount = horizonMass.size;
+        const validHorizons = [...horizonMass.values()].filter((mass) => mass.up + mass.down > 0);
+        const forecastHorizonCount = validHorizons.length;
         if (!forecastHorizonCount) return null;
-        const meanMass = (direction) => clamp(
-            [...horizonMass.values()].reduce((sum, mass) => sum + mass[direction], 0)
+        const upProbability = clamp(
+            validHorizons.reduce((sum, mass) => sum + mass.up / (mass.up + mass.down), 0)
                 / forecastHorizonCount,
             0,
             1,
         );
         return Object.freeze({
-            upProbability: meanMass("up"),
-            downProbability: meanMass("down"),
+            upProbability,
+            downProbability: 1 - upProbability,
+            basis: "per-horizon-represented-mass",
             upCellCount,
             downCellCount,
             upHiddenCellCount,
@@ -994,7 +996,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.26.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.27.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

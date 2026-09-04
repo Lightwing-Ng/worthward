@@ -1,4 +1,4 @@
-/* Code version: v1.203.17 */
+/* Code version: v1.203.18 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8224,15 +8224,15 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.133.3',
+        entry: 'v2.135.0',
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.109.0',
+        dataUtils: 'v1.110.0',
         importFeedback: 'v1.9.0',
         layout: 'v1.4.0',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
-        stockDetails: 'v0.27.0',
+        stockDetails: 'v0.28.0',
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.2',
         urlState: 'v1.2.0',
@@ -8240,7 +8240,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.27.0';
+            && url.searchParams.get('v') === 'investment-stock-details-v0.28.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
@@ -8614,7 +8614,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.5';
+            && url.searchParams.get('v') === '1.78.6';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -18682,9 +18682,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(traversalSamples.length).toBeGreaterThanOrEqual(8);
     const observedTraversalIndices = [];
     for (const sample of traversalSamples) {
-        const anchor = await pointAtIndex(sample.index);
-        if (!anchor) throw new Error(`Bayesian hover traversal anchor ${sample.index} is unavailable.`);
-        await page.mouse.move(anchor.x, anchor.y);
+        // Gesture input stays in its captured coordinate frame as auto-pan
+        // moves the curve. Every original trading-day coordinate stays reachable.
+        await page.mouse.move(sample.x, sample.y);
         await expect.poll(() => page.evaluate(() => (
             window.Chart?.getChart?.(document.querySelector('#tradePriceChart'))
                 ?._activeBacktestProbabilityGridBounds?.index
@@ -18700,23 +18700,21 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(observedTraversalIndices).toEqual(traversalSamples.map(({index}) => index));
     await movePointerOutsideProbabilitySurface();
 
-    // Seed overflow pan, then hover points where they are visible. The
-    // translated canvas must still select that visible trading day rather
-    // than a lagged date from unscrolled content space.
+    // Auto-pan must not reinterpret a stationary pointer as a new origin.
     const pannedTraversalSeed = await pointAt(0.8);
     if (!pannedTraversalSeed) throw new Error('Bayesian panned traversal seed is unavailable.');
     await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y);
     await waitForPanTarget();
     const pannedVisibleSeed = await pointAtIndex(pannedTraversalSeed.index);
     if (!pannedVisibleSeed) throw new Error('Bayesian panned visible seed is unavailable.');
-    await page.mouse.move(pannedVisibleSeed.x, pannedVisibleSeed.y);
+    await page.mouse.move(pannedTraversalSeed.x, pannedTraversalSeed.y + 5);
     await expect.poll(async () => {
         const selected = await readSelectedDateStatus(pannedVisibleSeed.index);
         return selected.boundsIndex === pannedVisibleSeed.index
             && selected.activeIndex === pannedVisibleSeed.index
             && selected.expectedStatus
             && selected.status === selected.expectedStatus;
-    }, {message: 'Panned hover must keep Selected date on the visible curve point'}).toBe(true);
+    }, {message: 'Auto-pan must preserve the origin during vertical-only pointer movement'}).toBe(true);
     await movePointerOutsideProbabilitySurface();
 
     const leftAnchor = await pointAt(0.05);
@@ -18865,7 +18863,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         .toBeLessThanOrEqual(1.5);
     trackingSamples.forEach((sample) => {
         if (sample.alignment.linePastLast <= -2) {
-            expect(sample.alignment.pointerToLine).toBeLessThanOrEqual(1.5);
+            // Auto-pan moves the selected curve point and guide together;
+            // it does not reinterpret the shifted canvas as new pointer input.
+            expect(Math.abs(sample.alignment.pointerToLine - sample.snapshot.visualPosition))
+                .toBeLessThanOrEqual(1.5);
         }
     });
     expect(Math.min(...trackingSamples.map((sample) => sample.alignment.horizontalGuidePastVertical)))
@@ -21006,18 +21007,22 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         const summarize = (sign) => {
             const horizons = new Map();
             cells
-                .filter((cell) => cell.classList.contains(`is-${sign}`))
                 .forEach((cell) => {
                     const horizon = Number(cell.dataset.horizon);
-                    const entry = horizons.get(horizon) || {probability: 0, hiddenCellCount: 0};
-                    entry.probability += Math.max(0, Number(cell.dataset.probability) || 0);
-                    entry.hiddenCellCount += cell.dataset.thresholdVisible === 'false' ? 1 : 0;
+                    const entry = horizons.get(horizon) || {probability: 0, total: 0, hiddenCellCount: 0};
+                    const mass = Math.max(0, Number(cell.dataset.probability) || 0);
+                    entry.total += mass;
+                    if (cell.classList.contains(`is-${sign}`)) {
+                        entry.probability += mass;
+                        entry.hiddenCellCount += cell.dataset.thresholdVisible === 'false' ? 1 : 0;
+                    }
                     horizons.set(horizon, entry);
                 });
-            const forecastHorizonCount = horizons.size;
+            const valid = [...horizons.values()].filter((entry) => entry.total > 0);
+            const forecastHorizonCount = valid.length;
             return {
                 probability: forecastHorizonCount
-                    ? [...horizons.values()].reduce((sum, entry) => sum + entry.probability, 0)
+                    ? valid.reduce((sum, entry) => sum + entry.probability / entry.total, 0)
                         / forecastHorizonCount
                     : 0,
                 hiddenCellCount: [...horizons.values()]
@@ -21033,9 +21038,9 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         const down = summarize('down');
         return {
             upProbability: up.probability,
-            upText: format(up.probability),
+            upText: format(Math.round(up.probability * 10000) / 10000),
             downProbability: down.probability,
-            downText: format(down.probability),
+            downText: format((10000 - Math.round(up.probability * 10000)) / 10000),
             forecastHorizonCount: up.forecastHorizonCount,
             hiddenCellCount: up.hiddenCellCount + down.hiddenCellCount,
         };
@@ -21049,6 +21054,7 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
     expect(sideSummary.forecastHorizonCount).toBeGreaterThan(0);
     expect(sideSummary.upProbability).toBeLessThanOrEqual(1);
     expect(sideSummary.downProbability).toBeLessThanOrEqual(1);
+    expect(Number.parseFloat(sideSummary.upText) + Number.parseFloat(sideSummary.downText)).toBeCloseTo(100, 10);
     expect(sideSummary.hiddenCellCount).toBeGreaterThan(0);
     const sideSummaryGeometry = await page.evaluate(() => {
         const anchor = document.querySelector('[data-backtest-probability-detail-anchor]')?.getBoundingClientRect();

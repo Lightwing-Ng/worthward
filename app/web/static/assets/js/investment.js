@@ -1,9 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.134.0
+ * Code version: v2.135.0
  * - Changed: Holdings, Stock details, and historical timelines now consume
- *   the canonical broker/account/ticker realized-P&L reconciliation result.
+ *   the canonical broker/account/ticker realized-P&L reconciliation result;
+ *   historical points sum its dated entries through the hovered date.
  * - Fixed: Overview equity hover now draws the horizontal guide from the
  *   vertical guide's curve intersection across the complete plot area.
  * - Added: Shared split layouts can honor a workspace-declared total overview
@@ -17858,6 +17859,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const realizedPnl = getInvestmentHistoricalRealizedPnl(
             pointTransactions,
             tickerSummaries,
+            pointDate,
         );
         const unrealizedPnl = tickerSummaries.reduce(
             (sum, summary) => sum + (Number(summary?.unrealizedPnl) || 0),
@@ -19141,15 +19143,74 @@ document.addEventListener('DOMContentLoaded', () => {
         return '';
     }
 
-    function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
+    function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries, throughDate = '') {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
+        const canonicalSummariesByTicker = new Map(
+            (Array.isArray(investmentTickerSummariesCache) ? investmentTickerSummariesCache : [])
+                .map((summary) => [
+                    getInvestmentCanonicalTicker(summary?.ticker),
+                    summary,
+                ])
+                .filter(([ticker]) => Boolean(ticker)),
+        );
+        const canonicalReconciliations = safeTickerSummaries.map((summary) => {
+            const ticker = getInvestmentCanonicalTicker(summary?.ticker);
+            const canonicalSummary = canonicalSummariesByTicker.get(ticker);
+            const reconciliation = canonicalSummary?.realizedPnlReconciliation;
+            return {
+                ticker,
+                summary: canonicalSummary,
+                reconciliation,
+            };
+        });
+        const canUseCanonicalTimeline = (
+            canonicalReconciliations.length > 0
+            && canonicalReconciliations.every((entry) => (
+                entry.ticker
+                && entry.summary
+                && entry.reconciliation
+                && typeof entry.reconciliation === 'object'
+            ))
+        );
+        const normalizedThroughDate = normalizeLedgerDate(throughDate);
+        let canonicalHoldingsRealizedPnl = 0;
+        if (canUseCanonicalTimeline) {
+            for (const entry of canonicalReconciliations) {
+                if (
+                    entry.summary?.pnlUnavailable === true
+                    || entry.reconciliation.coverageStatus !== 'complete'
+                    || entry.reconciliation.arithmeticCheck?.valid !== true
+                    || !normalizedThroughDate
+                ) {
+                    return null;
+                }
+                Object.entries(entry.reconciliation.realizedPnlByDate || {}).forEach(
+                    ([ledgerDate, value]) => {
+                        const normalizedDate = normalizeLedgerDate(ledgerDate);
+                        const numericValue = Number(value);
+                        if (
+                            normalizedDate
+                            && normalizedDate <= normalizedThroughDate
+                            && Number.isFinite(numericValue)
+                        ) {
+                            canonicalHoldingsRealizedPnl += numericValue;
+                        }
+                    },
+                );
+            }
+        }
         const pnlUnavailableTickers = new Set(
             safeTickerSummaries
                 .filter((summary) => summary?.pnlUnavailable === true)
                 .map((summary) => getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
+        canonicalReconciliations.forEach((entry) => {
+            if (entry.summary?.pnlUnavailable === true && entry.ticker) {
+                pnlUnavailableTickers.add(entry.ticker);
+            }
+        });
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
         let brokerRewardRealizedPnl = 0;
@@ -19197,12 +19258,14 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         });
 
-        const holdingsRealizedPnl = safeTickerSummaries.reduce(
-            (sum, summary) => sum + (
-                Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
-            ),
-            0,
-        );
+        const holdingsRealizedPnl = canUseCanonicalTimeline
+            ? canonicalHoldingsRealizedPnl
+            : safeTickerSummaries.reduce(
+                (sum, summary) => sum + (
+                    Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
+                ),
+                0,
+            );
         return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl;
     }
 
