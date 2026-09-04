@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.1.1
+Code version: v1.1.2
 """
 
 from __future__ import annotations
@@ -482,6 +482,22 @@ class _NumpyLSTM:
                 params[index] -= learning_rate * moment_hat / (np.sqrt(velocity_hat) + _ADAM_EPS)
 
 
+def _initialize_torch_lstm_biases(
+        torch_module: Any,
+        model: Any,
+        hidden_size: int,
+) -> None:
+    """Match NumPy's input/forget/candidate/output bias initialization."""
+    input_bias = getattr(model, "bias_ih_l0", None)
+    recurrent_bias = getattr(model, "bias_hh_l0", None)
+    if input_bias is None or recurrent_bias is None:
+        raise RuntimeError("Torch LSTM does not expose its first-layer biases.")
+    with torch_module.no_grad():
+        input_bias.zero_()
+        recurrent_bias.zero_()
+        input_bias[hidden_size:2 * hidden_size].fill_(1.0)
+
+
 def _torch_train_and_predict(
         backend: LstmBackend,
         train_sequences: np.ndarray,
@@ -504,6 +520,7 @@ def _torch_train_and_predict(
         hidden_size=int(hidden_size),
         batch_first=True,
     ).to(device=device, dtype=dtype)
+    _initialize_torch_lstm_biases(torch_module, model, int(hidden_size))
     head = nn.Linear(int(hidden_size), 2).to(device=device, dtype=dtype)
     optimizer = torch_module.optim.Adam(
         list(model.parameters()) + list(head.parameters()),

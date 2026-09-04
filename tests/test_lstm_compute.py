@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.2.0."""
+"""LSTM compute backend and causality tests. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ import numpy as np
 from strategies.lstm_compute import (
     LstmBackend,
     _NumpyLSTM,
+    _initialize_torch_lstm_biases,
+    _load_optional_module,
     detect_lstm_capabilities,
     lagged_close_return,
     probe_neural_engine,
@@ -50,6 +52,33 @@ class LstmComputeTests(unittest.TestCase):
         np.testing.assert_array_equal(
             model.b[hidden_size:2 * hidden_size],
             np.ones(hidden_size),
+        )
+
+    def test_torch_lstm_matches_gate_bias_initialization_when_available(self) -> None:
+        torch_module = _load_optional_module("torch")
+        if torch_module is None:
+            self.skipTest("Torch is not installed on this host.")
+        hidden_size = 4
+        model = torch_module.nn.LSTM(
+            input_size=2,
+            hidden_size=hidden_size,
+            batch_first=True,
+        )
+        _initialize_torch_lstm_biases(torch_module, model, hidden_size)
+        input_bias = model.bias_ih_l0.detach().cpu().numpy()
+        recurrent_bias = model.bias_hh_l0.detach().cpu().numpy()
+        np.testing.assert_array_equal(input_bias[:hidden_size], np.zeros(hidden_size))
+        np.testing.assert_array_equal(
+            input_bias[hidden_size:2 * hidden_size],
+            np.ones(hidden_size),
+        )
+        np.testing.assert_array_equal(
+            input_bias[2 * hidden_size:],
+            np.zeros(2 * hidden_size),
+        )
+        np.testing.assert_array_equal(
+            recurrent_bias,
+            np.zeros(4 * hidden_size),
         )
 
     def test_gpu_backend_falls_back_when_torch_is_missing(self) -> None:

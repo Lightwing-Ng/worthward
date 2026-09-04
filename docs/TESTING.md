@@ -20,6 +20,8 @@ LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
 forecastable origin, and asserts both the floating field and the detail lattice
 render from that computation. Walk-forward LSTM training keeps the causal lag
 return even when enabled Longbridge factor columns are entirely unavailable.
+NumPy and Torch LSTM paths also share the explicit
+`input/forget/candidate/output` bias initialization contract (`0/1/0/0`).
 
 ## Bayesian Price Field detail view coverage
 

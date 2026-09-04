@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.70.4`
+Documentation version: `v1.70.5`
 
 ## Price Field detail view contract
 
