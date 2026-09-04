@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.133.5
+ * Code version: v2.134.0
+ * - Changed: Holdings, Stock details, and historical timelines now consume
+ *   the canonical broker/account/ticker realized-P&L reconciliation result.
  * - Fixed: Overview equity hover now draws the horizontal guide from the
  *   vertical guide's curve intersection across the complete plot area.
  * - Added: Shared split layouts can honor a workspace-declared total overview
@@ -355,7 +357,7 @@ import {
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.109.1';
+} from './investment/data-utils.js?v=investment-data-utils-v1.110.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -386,7 +388,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.27.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.28.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -2670,6 +2672,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 || isInvestmentAggregateSecurityTransferPnlUnavailable(summary?.ticker)
             );
             if (!pnlUnavailable) return summary;
+            const reconciliation = summary?.realizedPnlReconciliation;
+            const unavailableReconciliation = reconciliation && typeof reconciliation === 'object'
+                ? {
+                    ...reconciliation,
+                    coverageStatus: 'unavailable',
+                    replay: reconciliation.replay && typeof reconciliation.replay === 'object'
+                        ? {...reconciliation.replay, status: 'unavailable'}
+                        : {status: 'unavailable', required: false},
+                    realizedPnl: null,
+                    realizedPnlLocal: null,
+                    realizedPnlByDate: {},
+                    realizedPnlByDateLocal: {},
+                    arithmeticCheck: {
+                        ...(reconciliation.arithmeticCheck || {}),
+                        valid: false,
+                    },
+                }
+                : reconciliation;
             return {
                 ...summary,
                 pnlUnavailable: true,
@@ -2681,10 +2701,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 realizedPnl: null,
                 realizedPnlLocal: null,
                 realizedPnlByDate: {},
+                realizedPnlReconciliation: unavailableReconciliation,
                 unrealizedPnl: null,
                 unrealizedPnlLocal: null,
             };
         });
+    }
+
+    function getInvestmentCanonicalSummaryRealizedPnl(summary, fallback = null) {
+        const reconciliation = summary?.realizedPnlReconciliation;
+        if (
+            reconciliation
+            && Object.prototype.hasOwnProperty.call(reconciliation, 'realizedPnl')
+        ) {
+            return reconciliation.realizedPnl;
+        }
+        return fallback === null ? summary?.realizedPnl : fallback;
+    }
+
+    function getInvestmentCanonicalSummaryRealizedPnlLocal(summary, fallback = null) {
+        const reconciliation = summary?.realizedPnlReconciliation;
+        if (
+            reconciliation
+            && Object.prototype.hasOwnProperty.call(reconciliation, 'realizedPnlLocal')
+        ) {
+            return reconciliation.realizedPnlLocal;
+        }
+        return fallback === null ? summary?.realizedPnlLocal : fallback;
     }
 
     function hasInvestmentPnlUnavailable(tickerSummaries = []) {
@@ -13517,7 +13560,12 @@ document.addEventListener('DOMContentLoaded', () => {
             holdingsSummaryMetrics?.pnlUnavailable === true
             || isInvestmentAggregatePnlUnavailable(summarySummaries)
         );
-        const holdingsRealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const holdingsRealizedPnl = summarySummaries.reduce(
+            (sum, summary) => sum + (
+                Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
+            ),
+            0,
+        );
         const fallbackTotalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
         const totalRealizedPnl = normalizedSummaryScope === 'all'
             && Number.isFinite(Number(holdingsSummaryMetrics?.totalRealizedPnl))
@@ -13572,9 +13620,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
             const positionDisplay = formatHoldingsPosition(summary.shares);
             const pnlUnavailable = summary?.pnlUnavailable === true;
+            const realizedPnl = getInvestmentCanonicalSummaryRealizedPnl(summary);
+            const realizedPnlLocal = getInvestmentCanonicalSummaryRealizedPnlLocal(summary);
             const realizedClass = pnlUnavailable
                 ? ''
-                : getInvestmentHoldingsRealizedToneClass(summary.realizedPnl);
+                : getInvestmentHoldingsRealizedToneClass(realizedPnl);
             const unrealizedClass = pnlUnavailable || summary.unrealizedPnl === null
                 ? ''
                 : (summary.unrealizedPnl >= 0
@@ -13644,8 +13694,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
                         <span class="investment-holdings-pnl-stack">
                             ${pnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderHoldingsDualCurrencyValue(
-                                summary.realizedPnl,
-                                summary.realizedPnlLocal,
+                                realizedPnl,
+                                realizedPnlLocal,
                                 summary.quoteCurrency,
                                 { valueClass: realizedClass },
                             )}
@@ -14448,7 +14498,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return { realized: 0, unrealized: 0 };
         }
         const sessionDate = getInvestmentHoldingSessionDate(summary.ticker);
-        const realized = Number(summary.realizedPnlByDate?.[sessionDate]) || 0;
+        const reconciliation = summary?.realizedPnlReconciliation;
+        const realizedPnlByDate = (
+            reconciliation
+            && Object.prototype.hasOwnProperty.call(reconciliation, 'realizedPnlByDate')
+        ) ? reconciliation.realizedPnlByDate : summary.realizedPnlByDate;
+        const realized = Number(realizedPnlByDate?.[sessionDate]) || 0;
         const lastPrice = Number(summary.lastPrice);
         const shares = Number(summary.shares);
         const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
@@ -19143,7 +19198,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const holdingsRealizedPnl = safeTickerSummaries.reduce(
-            (sum, summary) => sum + (Number(summary?.realizedPnl) || 0),
+            (sum, summary) => sum + (
+                Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
+            ),
             0,
         );
         return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl;
@@ -19285,7 +19342,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const holdingsRealizedPnl = safeTickerSummaries.reduce(
-            (sum, summary) => sum + (Number(summary?.realizedPnl) || 0),
+            (sum, summary) => sum + (
+                Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
+            ),
             0,
         );
         const totalRealizedPnl = (

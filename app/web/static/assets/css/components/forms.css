@@ -1,4 +1,4 @@
-/* Code version: v0.19.7 */
+/* Code version: v0.19.8 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1221,6 +1221,9 @@ input[type="number"],
 	color: var(--text);
 	display: flex;
 	align-items: center;
+}
+.trade-strategy-param[data-strategy-param-key="use_broker_holding"] > label {
+	font-weight: var(--font-weight-medium);
 }
 .trade-strategy-param-label-trigger {
 	position: relative;

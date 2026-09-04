@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.109.1
+ * Code version: v1.110.0
+ * - Added: Broker-scoped realized-P&L reconciliation now carries coverage,
+ *   independent as-of dates, replay state, and the snapshot-plus-increment
+ *   invariant consumed by every Investment surface.
  * - Fixed: An IBKR current-position snapshot marked as partial history can
  *   still supplement a dated realized-P&L snapshot when the omitted ticker's
  *   position quantity is fully reconstructed from the scoped transaction
@@ -2626,6 +2629,116 @@ export function createInvestmentDataUtils({
         return normalizedSnapshot;
     }
 
+    function normalizeBrokerRealizedPnlReconciliation(rawReconciliation, ticker = '') {
+        if (!rawReconciliation || typeof rawReconciliation !== 'object') return null;
+        const rawAsOf = rawReconciliation.as_of && typeof rawReconciliation.as_of === 'object'
+            ? rawReconciliation.as_of
+            : {};
+        const rawReplay = rawReconciliation.replay && typeof rawReconciliation.replay === 'object'
+            ? rawReconciliation.replay
+            : {};
+        const normalizedTicker = getInvestmentCanonicalTicker(
+            rawReconciliation.ticker || ticker,
+        );
+        const baseline = Number(rawReconciliation.baseline?.realized_pnl);
+        const postTransactionCount = Number(
+            rawReplay.post_performance_transaction_count
+            ?? rawReconciliation.post_performance_transaction_count,
+        );
+        const postSellCount = Number(
+            rawReplay.post_performance_sell_count
+            ?? rawReconciliation.post_performance_sell_count,
+        );
+        return {
+            schemaVersion: String(rawReconciliation.schema_version || 'v1').trim() || 'v1',
+            broker: String(rawReconciliation.broker || '').trim().toLowerCase(),
+            account: String(rawReconciliation.account || '').trim(),
+            ticker: normalizedTicker,
+            coverageStatus: String(
+                rawReconciliation.coverage_status || rawReconciliation.coverage || 'unknown',
+            ).trim().toLowerCase() || 'unknown',
+            asOf: {
+                performanceSnapshot: normalizeLedgerDate(
+                    rawAsOf.performance_snapshot
+                    ?? rawReconciliation.performance_snapshot_as_of,
+                ),
+                positionSnapshot: normalizeLedgerDate(
+                    rawAsOf.position_snapshot
+                    ?? rawReconciliation.position_snapshot_as_of,
+                ),
+                transactionHistory: normalizeLedgerDate(
+                    rawAsOf.transaction_history
+                    ?? rawReconciliation.transaction_history_through,
+                ),
+            },
+            replay: {
+                status: String(
+                    rawReplay.status || rawReconciliation.replay_status || 'unknown',
+                ).trim().toLowerCase() || 'unknown',
+                required: rawReplay.required === true
+                    || rawReconciliation.replay_required === true,
+                reason: String(
+                    rawReplay.reason || rawReconciliation.replay_reason || '',
+                ).trim(),
+                postPerformanceTransactionCount: Number.isFinite(postTransactionCount)
+                    ? postTransactionCount
+                    : 0,
+                postPerformanceSellCount: Number.isFinite(postSellCount) ? postSellCount : 0,
+                source: String(rawReconciliation.replay_source || '').trim(),
+            },
+            baselineRealizedPnlLocal: Number.isFinite(baseline) ? baseline : null,
+            baselineCurrency: String(rawReconciliation.baseline?.currency || '').trim().toUpperCase(),
+            historyComplete: typeof rawReconciliation.history_complete === 'boolean'
+                ? rawReconciliation.history_complete
+                : null,
+            historyMatched: rawReconciliation.history_matched === true,
+            source: String(rawReconciliation.source || '').trim(),
+            backend: rawReconciliation,
+        };
+    }
+
+    function getBrokerRealizedPnlReconciliationMap(broker, accountId, fallback = null) {
+        if (fallback && typeof fallback === 'object') return fallback;
+        const rawByAccount = window.WORTHWARD_INVESTMENT_DATA?.realized_pnl_reconciliation;
+        if (!rawByAccount || typeof rawByAccount !== 'object') return {};
+        const normalizedBroker = String(broker || '').trim().toLowerCase();
+        const normalizedAccount = String(accountId || '').trim();
+        const accountToken = normalizeInvestmentLotScopeAccount(normalizedBroker, normalizedAccount);
+        const directCandidates = [
+            rawByAccount[`${normalizedBroker}:${normalizedAccount}`],
+            rawByAccount[`${normalizedBroker}:${accountToken}`],
+        ];
+        const direct = directCandidates.find((candidate) => candidate && typeof candidate === 'object');
+        if (direct?.tickers && typeof direct.tickers === 'object') return direct.tickers;
+        if (direct && typeof direct === 'object') return direct;
+        return {};
+    }
+
+    function getBrokerRealizedPnlReconciliationSeed(
+        brokerPositionSnapshot,
+        brokerPerformanceSnapshot,
+        ticker,
+    ) {
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+        if (!normalizedTicker) return null;
+        const candidates = [
+            brokerPositionSnapshot?.realizedPnlReconciliation?.[normalizedTicker],
+            brokerPositionSnapshot?.realizedPnlReconciliation?.[ticker],
+            brokerPerformanceSnapshot?.realizedPnlReconciliation?.[normalizedTicker],
+            brokerPerformanceSnapshot?.realizedPnlReconciliation?.[ticker],
+            getBrokerRealizedPnlReconciliationMap(
+                brokerPositionSnapshot?.broker,
+                brokerPositionSnapshot?.accountId,
+            )?.[normalizedTicker],
+            getBrokerRealizedPnlReconciliationMap(
+                brokerPerformanceSnapshot?.broker,
+                brokerPerformanceSnapshot?.accountId,
+            )?.[normalizedTicker],
+        ];
+        const rawCandidate = candidates.find((candidate) => candidate && typeof candidate === 'object');
+        return normalizeBrokerRealizedPnlReconciliation(rawCandidate, normalizedTicker);
+    }
+
     function getAuthoritativePositionSnapshot() {
         if (window.WORTHWARD_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
             return null;
@@ -2659,6 +2772,11 @@ export function createInvestmentDataUtils({
                 holdingsValidation: summary.holdings_validation && typeof summary.holdings_validation === 'object'
                     ? summary.holdings_validation
                     : null,
+                realizedPnlReconciliation: getBrokerRealizedPnlReconciliationMap(
+                    normalizedBroker,
+                    summary.account_id ?? summary.account ?? '',
+                    summary.realized_pnl_reconciliation,
+                ),
             });
         });
         return snapshots;
@@ -2845,6 +2963,44 @@ export function createInvestmentDataUtils({
         return allocationCosts.reduce((total, value) => total + value, 0);
     }
 
+    function getInvestmentBrokerPerformanceReplayCoverage(scope, performanceAsOf, transactions) {
+        const normalizedPerformanceAsOf = normalizeLedgerDate(performanceAsOf);
+        const supportedTypes = new Set([
+            'buy',
+            'sell',
+            'grant',
+            'dividend_reinvestment',
+            'transfer_in',
+            'transfer_out',
+        ]);
+        const scopedTransactions = (Array.isArray(transactions) ? transactions : [])
+            .filter((txn) => {
+                const txnScope = getTransactionLotScope(txn);
+                return (
+                    txnScope.broker === scope?.broker
+                    && txnScope.accountToken === scope?.accountToken
+                    && txnScope.ticker === scope?.ticker
+                    && txnScope.currency === scope?.currency
+                    && supportedTypes.has(getNormalizedTransactionType(txn))
+                );
+            });
+        const transactionDates = scopedTransactions
+            .map((txn) => normalizeLedgerDate(txn?.date))
+            .filter(Boolean);
+        const laterTransactions = normalizedPerformanceAsOf
+            ? scopedTransactions.filter((txn) => (
+                getInvestmentTransactionDateTime(txn) > `${normalizedPerformanceAsOf} 23:59:59`
+            ))
+            : [];
+        return {
+            historyThrough: transactionDates.sort().pop() || '',
+            postPerformanceTransactionCount: laterTransactions.length,
+            postPerformanceSellCount: laterTransactions.filter((txn) => (
+                getNormalizedTransactionType(txn) === 'sell'
+            )).length,
+        };
+    }
+
     function buildAuthoritativeBrokerFifoReplay(
         positionBoundary,
         performanceBoundary,
@@ -2882,6 +3038,9 @@ export function createInvestmentDataUtils({
         let realizedPnl = 0;
         const realizedPnlByDate = {};
         let hasLaterTransaction = false;
+        let postPerformanceTransactionCount = 0;
+        let postPerformanceSellCount = 0;
+        let historyThrough = '';
         let boundaryShares = null;
         let boundaryTotalCost = null;
         const sameDayBoundaryCandidates = [];
@@ -2950,10 +3109,16 @@ export function createInvestmentDataUtils({
         for (const txn of scopedTransactions) {
             const txnDateTime = getInvestmentTransactionDateTime(txn);
             if (!txnDateTime) continue;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (ledgerDate && ledgerDate > historyThrough) historyThrough = ledgerDate;
             const isAfterPositionBoundary = txnDateTime > positionBoundary.boundaryDateTime;
             const isAfterPerformanceBoundary = txnDateTime > (
                 performanceBoundary?.boundaryDateTime ?? positionBoundary.boundaryDateTime
             );
+            if (isAfterPerformanceBoundary) {
+                postPerformanceTransactionCount += 1;
+                if (getNormalizedTransactionType(txn) === 'sell') postPerformanceSellCount += 1;
+            }
             if (isAfterPositionBoundary && boundaryShares === null) {
                 boundaryShares = shares;
                 boundaryTotalCost = lots.reduce(
@@ -3004,12 +3169,198 @@ export function createInvestmentDataUtils({
             realizedPnlByDate,
             source: 'authoritative_position_snapshot_fifo_transaction_history_replay',
             costBasisMethod: 'FIFO reconstructed',
+            positionBoundarySource: positionBoundary.boundarySource || '',
+            positionBoundaryDateTime: positionBoundary.boundaryDateTime,
+            performanceBoundaryDateTime: performanceBoundary?.boundaryDateTime || '',
+            postPerformanceTransactionCount,
+            postPerformanceSellCount,
+            historyThrough,
             boundaryQuantity: boundaryShares,
             boundaryTotalCost,
             boundarySnapshotTotalCost: positionBoundary.totalCost,
             endingShares: shares,
             endingTotalCost,
             endingLots: lots,
+        };
+    }
+
+    function addInvestmentRealizedPnlByDate(target, ledgerDate, value) {
+        const normalizedDate = normalizeLedgerDate(ledgerDate);
+        const numericValue = Number(value);
+        if (!normalizedDate || !Number.isFinite(numericValue)) return;
+        target[normalizedDate] = (Number(target[normalizedDate]) || 0) + numericValue;
+    }
+
+    function sumInvestmentRealizedPnlByDate(values) {
+        return Object.values(values || {}).reduce(
+            (total, value) => total + (Number(value) || 0),
+            0,
+        );
+    }
+
+    function buildInvestmentRealizedPnlReconciliation({
+        scope,
+        seed,
+        performanceEntry,
+        performanceAsOf,
+        positionSnapshotAsOf,
+        scopeState,
+        supplemental,
+        replayCoverage,
+        nonPerformanceRealizedPnlLocal,
+        status,
+        source,
+        sourceCurrency,
+    }) {
+        const hasPerformance = Boolean(
+            performanceEntry && Number.isFinite(Number(performanceEntry.realizedTotal)),
+        );
+        const normalizedPerformanceAsOf = normalizeLedgerDate(
+            performanceAsOf || seed?.asOf?.performanceSnapshot,
+        );
+        const normalizedPositionAsOf = normalizeLedgerDate(
+            positionSnapshotAsOf || seed?.asOf?.positionSnapshot,
+        );
+        const historyThrough = normalizeLedgerDate(
+            replayCoverage?.historyThrough || seed?.asOf?.transactionHistory,
+        );
+        const supplementalComplete = supplemental?.status === 'complete';
+        const seedReplayRequired = seed?.replay?.required === true;
+        const postPerformanceTransactionCount = Number(
+            replayCoverage?.postPerformanceTransactionCount
+            ?? supplemental?.postPerformanceTransactionCount
+            ?? seed?.replay?.postPerformanceTransactionCount,
+        );
+        const postPerformanceSellCount = Number(
+            replayCoverage?.postPerformanceSellCount
+            ?? supplemental?.postPerformanceSellCount
+            ?? seed?.replay?.postPerformanceSellCount,
+        );
+        const replayRequired = Boolean(
+            hasPerformance
+            && normalizedPerformanceAsOf
+            && (
+                (Number.isFinite(postPerformanceTransactionCount)
+                    && postPerformanceTransactionCount > 0)
+                || seedReplayRequired
+            ),
+        );
+        const baselineRealizedPnlLocal = hasPerformance
+            ? Number(performanceEntry.realizedTotal)
+                + (performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal)
+            : 0;
+        const incrementalRealizedPnlLocal = hasPerformance
+            ? (supplementalComplete ? Number(supplemental.realizedPnl) || 0 : 0)
+            : Number(scopeState?.realizedPnl) || 0;
+        const proposedRealizedPnlLocal = hasPerformance
+            ? baselineRealizedPnlLocal + incrementalRealizedPnlLocal
+            : Number(scopeState?.realizedPnl) || 0;
+        const dailyRealizedPnlLocal = {};
+        if (status === 'complete') {
+            if (hasPerformance) {
+                if (normalizedPerformanceAsOf) {
+                    addInvestmentRealizedPnlByDate(
+                        dailyRealizedPnlLocal,
+                        normalizedPerformanceAsOf,
+                        baselineRealizedPnlLocal,
+                    );
+                }
+                if (supplementalComplete) {
+                    Object.entries(supplemental.realizedPnlByDate || {}).forEach(
+                        ([ledgerDate, value]) => addInvestmentRealizedPnlByDate(
+                            dailyRealizedPnlLocal,
+                            ledgerDate,
+                            value,
+                        ),
+                    );
+                }
+            } else {
+                Object.entries(scopeState?.realizedPnlByDate || {}).forEach(
+                    ([ledgerDate, value]) => addInvestmentRealizedPnlByDate(
+                        dailyRealizedPnlLocal,
+                        ledgerDate,
+                        value,
+                    ),
+                );
+            }
+        }
+        const arithmeticDifference = proposedRealizedPnlLocal - (
+            baselineRealizedPnlLocal + incrementalRealizedPnlLocal
+        );
+        const timelineDifference = hasPerformance && !normalizedPerformanceAsOf
+            ? 0
+            : sumInvestmentRealizedPnlByDate(dailyRealizedPnlLocal) - proposedRealizedPnlLocal;
+        const arithmeticValid = (
+            Number.isFinite(proposedRealizedPnlLocal)
+            && Math.abs(arithmeticDifference) <= 1e-7
+        );
+        const timelineValid = Math.abs(timelineDifference) <= 1e-6;
+        const valid = status === 'complete' && arithmeticValid && timelineValid && !(
+            replayRequired && !supplementalComplete
+        );
+        const coverageStatus = valid ? 'complete' : 'unavailable';
+        const replayStatus = valid
+            ? (hasPerformance ? (replayRequired ? 'complete' : 'not_required') : 'complete')
+            : 'unavailable';
+        const replayReason = valid
+            ? (replayRequired
+                ? 'supplemental_replay_complete'
+                : (seed?.replay?.reason || 'no_transactions_after_performance_snapshot'))
+            : (
+                supplemental?.reason
+                || seed?.replay?.reason
+                || 'realized_pnl_reconciliation_invariant_failed'
+            );
+        return {
+            schemaVersion: 'v1',
+            broker: scope?.broker || '',
+            account: scope?.accountId || scope?.accountToken || '',
+            ticker: scope?.ticker || '',
+            currency: sourceCurrency || scope?.currency || '',
+            coverageStatus,
+            asOf: {
+                performanceSnapshot: normalizedPerformanceAsOf,
+                positionSnapshot: normalizedPositionAsOf,
+                transactionHistory: historyThrough,
+            },
+            replay: {
+                status: replayStatus,
+                required: replayRequired,
+                reason: replayReason,
+                source: supplemental?.source || seed?.source || source || '',
+                positionBoundarySource: supplemental?.positionBoundarySource || '',
+                postPerformanceTransactionCount: Number.isFinite(postPerformanceTransactionCount)
+                    ? postPerformanceTransactionCount
+                    : 0,
+                postPerformanceSellCount: Number.isFinite(postPerformanceSellCount)
+                    ? postPerformanceSellCount
+                    : 0,
+            },
+            baselineRealizedPnlLocal: Number.isFinite(baselineRealizedPnlLocal)
+                ? Number(baselineRealizedPnlLocal.toFixed(12))
+                : null,
+            incrementalRealizedPnlLocal: Number.isFinite(incrementalRealizedPnlLocal)
+                ? Number(incrementalRealizedPnlLocal.toFixed(12))
+                : null,
+            realizedPnlLocal: valid
+                ? Number(proposedRealizedPnlLocal.toFixed(12))
+                : null,
+            realizedPnlByDateLocal: valid
+                ? Object.fromEntries(Object.entries(dailyRealizedPnlLocal).map(([date, value]) => [
+                    date,
+                    Number(Number(value).toFixed(12)),
+                ]))
+                : {},
+            timelineCoverage: hasPerformance && !normalizedPerformanceAsOf
+                ? 'latest_only'
+                : 'complete',
+            arithmeticCheck: {
+                valid: arithmeticValid && timelineValid && !(
+                    replayRequired && !supplementalComplete
+                ),
+                tolerance: 1e-7,
+            },
+            source,
         };
     }
 
@@ -3066,7 +3417,6 @@ export function createInvestmentDataUtils({
             realizedPnl,
             realizedPnlByDate,
             source: 'authoritative_position_snapshot_scoped_transaction_history_replay',
-            costBasisMethod: getInvestmentCostBasisMethod(),
         };
     }
 
@@ -3245,6 +3595,11 @@ export function createInvestmentDataUtils({
                     performanceSnapshot: normalizeAuthoritativePerformanceSnapshot(
                         snapshot.performance_snapshot,
                     ),
+                    realizedPnlReconciliation: getBrokerRealizedPnlReconciliationMap(
+                        normalizedBroker,
+                        accountId,
+                        snapshot.realized_pnl_reconciliation,
+                    ),
                 });
             });
         }
@@ -3267,6 +3622,11 @@ export function createInvestmentDataUtils({
                 performanceSnapshotAsOf: normalizeLedgerDate(summary.performance_snapshot_as_of),
                 performanceSnapshot: normalizeAuthoritativePerformanceSnapshot(
                     summary.performance_snapshot,
+                ),
+                realizedPnlReconciliation: getBrokerRealizedPnlReconciliationMap(
+                    normalizedBroker,
+                    accountId,
+                    summary.realized_pnl_reconciliation,
                 ),
             });
         });
@@ -5267,6 +5627,22 @@ export function createInvestmentDataUtils({
                 );
             }
             const supplementalRealizedPnl = supplementalBrokerRealizedPnlCache.get(supplementalCacheKey) ?? null;
+            const performanceAsOf = normalizeLedgerDate(
+                authoritativeSnapshot?.performanceSnapshotAsOf,
+            );
+            const supplementalForPerformance = (
+                performanceEntry && performanceAsOf
+            ) ? supplementalRealizedPnl : null;
+            const replayCoverage = getInvestmentBrokerPerformanceReplayCoverage(
+                scope,
+                performanceAsOf,
+                orderedTransactions,
+            );
+            const reconciliationSeed = getBrokerRealizedPnlReconciliationSeed(
+                authoritativePositionSnapshot,
+                authoritativeSnapshot,
+                scope.ticker,
+            );
             const taxLotHistoryVerification = verifiedTaxLotHistoryScopes.get([
                 scope.broker,
                 scope.accountToken,
@@ -5278,35 +5654,35 @@ export function createInvestmentDataUtils({
                 taxLotHistoryVerification,
             );
             const nonPerformanceRealizedPnlLocal = Number(scopeState.nonPerformanceRealizedPnl) || 0;
-            let realizedPnlLocal = Number(scopeState.realizedPnl) || 0;
             let status = 'complete';
             let source = scopeState.brokerRealizedSellCount > 0
                 ? 'broker_closed_trades'
                 : 'account_tax_lot_reconstruction';
             let sourceCurrency = scope.currency;
-            let realizedPnlByDateLocal = {...scopeState.realizedPnlByDate};
 
             if (performanceEntry && Number.isFinite(performanceEntry.realizedTotal)) {
-                realizedPnlLocal = performanceEntry.realizedTotal + (
-                    performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal
-                ) + (
-                    supplementalRealizedPnl?.status === 'complete'
-                        ? Number(supplementalRealizedPnl.realizedPnl) || 0
-                        : 0
-                );
-                if (supplementalRealizedPnl?.status === 'complete') {
-                    realizedPnlByDateLocal = {
-                        ...supplementalRealizedPnl.realizedPnlByDate,
-                    };
-                }
                 sourceCurrency = performanceEntry.currency;
-                source = supplementalRealizedPnl?.status === 'complete'
-                    && Math.abs(Number(supplementalRealizedPnl.realizedPnl) || 0) > 1e-9
-                    ? 'broker_performance_snapshot_plus_boundary_replay'
-                    : 'broker_performance_snapshot';
+                const replayRequired = Boolean(
+                    performanceAsOf
+                    && (
+                        replayCoverage.postPerformanceTransactionCount > 0
+                        || reconciliationSeed?.replay?.required === true
+                    )
+                );
+                if (
+                    replayRequired
+                    && supplementalForPerformance?.status !== 'complete'
+                ) {
+                    status = 'unavailable';
+                    source = 'unavailable';
+                } else {
+                    source = supplementalForPerformance?.status === 'complete'
+                        && Math.abs(Number(supplementalForPerformance.realizedPnl) || 0) > 1e-9
+                        ? 'broker_performance_snapshot_plus_boundary_replay'
+                        : 'broker_performance_snapshot';
+                }
             } else if (scopeState.realizedPnlStatus === 'incomplete') {
                 status = 'incomplete';
-                realizedPnlLocal = null;
                 source = 'unavailable';
             } else if (
                 scopeState.sellCount > scopeState.brokerRealizedSellCount
@@ -5314,10 +5690,28 @@ export function createInvestmentDataUtils({
                 && !verifiedTaxLotHistory
             ) {
                 status = 'unverified';
-                realizedPnlLocal = null;
                 source = 'unavailable';
             }
 
+            const reconciliation = buildInvestmentRealizedPnlReconciliation({
+                scope,
+                seed: reconciliationSeed,
+                performanceEntry,
+                performanceAsOf,
+                positionSnapshotAsOf: authoritativePositionSnapshot?.positionSnapshotAsOf,
+                scopeState,
+                supplemental: supplementalForPerformance,
+                replayCoverage,
+                nonPerformanceRealizedPnlLocal,
+                status,
+                source,
+                sourceCurrency,
+            });
+            if (reconciliation.coverageStatus !== 'complete') {
+                if (status === 'complete') status = 'unavailable';
+                source = 'unavailable';
+            }
+            const realizedPnlLocal = reconciliation.realizedPnlLocal;
             const realizedPnl = realizedPnlLocal === null
                 ? null
                 : convertAmountToBaseCurrencyAtLatestRate(
@@ -5343,10 +5737,10 @@ export function createInvestmentDataUtils({
                     : null,
                 status,
                 source,
-                realizedPnlByDateLocal: (
-                    status === 'complete'
-                    && source !== 'broker_performance_snapshot'
-                ) ? realizedPnlByDateLocal : {},
+                reconciliation,
+                realizedPnlByDateLocal: status === 'complete'
+                    ? {...reconciliation.realizedPnlByDateLocal}
+                    : {},
                 sellCount: scopeState.sellCount,
                 brokerRealizedSellCount: scopeState.brokerRealizedSellCount,
                 taxLotHistoryVerification: verifiedTaxLotHistory
@@ -5388,24 +5782,47 @@ export function createInvestmentDataUtils({
                 : null;
             const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
             const realizedPnlAccounts = realizedAccountResultsByTicker.get(summary.ticker) || [];
+            const completeRealizedPnlAccounts = realizedPnlAccounts.filter((result) => (
+                result?.status === 'complete'
+                && result?.reconciliation?.coverageStatus === 'complete'
+                && result.realizedPnl !== null
+            ));
+            const hasOnlyUnavailableRealizedAccounts = (
+                realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
+            );
             const hasAuthoritativeBrokerRealizedPnl = realizedPnlAccounts.some((result) => (
                 String(result.source || '').startsWith('broker_performance_snapshot')
+                && result.status === 'complete'
+                && result.reconciliation?.coverageStatus === 'complete'
                 && result.realizedPnl !== null
             ));
             const hasMixedPositionCurrencies = !snapshotEntry && summary.hasMixedPositionCurrencies === true;
             const preserveMixedCurrencyRealizedBreakdown = hasMixedPositionCurrencies;
             const costBasisUnavailable = hasMixedPositionCurrencies;
+            const realizedCoverageUnavailable = (
+                hasOnlyUnavailableRealizedAccounts
+                && realizedPnlAccounts.some((result) => (
+                    result.status === 'unavailable'
+                    && (
+                        result.reconciliation?.coverageStatus === 'unavailable'
+                        || result.reconciliation?.replay?.status === 'unavailable'
+                    )
+                ))
+            );
             const pnlUnavailable = (
-                hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
+                realizedCoverageUnavailable
+                || (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl)
             )
                 || (Boolean(snapshotEntry) && costBasisStatus !== 'known');
             const pnlUnavailableReason = !pnlUnavailable
                 ? null
-                : (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
-                    ? 'multiple_position_currencies'
-                    : (costBasisStatus === 'partial'
-                        ? 'authoritative_position_snapshot_cost_basis_partial'
-                        : 'authoritative_position_snapshot_cost_basis_unknown'));
+                : (realizedCoverageUnavailable
+                    ? 'realized_pnl_reconciliation_unavailable'
+                    : (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
+                        ? 'multiple_position_currencies'
+                        : (costBasisStatus === 'partial'
+                            ? 'authoritative_position_snapshot_cost_basis_partial'
+                            : 'authoritative_position_snapshot_cost_basis_unknown')));
             const costBasisUnavailableReason = costBasisUnavailable
                 ? 'multiple_position_currencies'
                 : null;
@@ -5476,10 +5893,6 @@ export function createInvestmentDataUtils({
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
             const resolvedValuationDate = normalizeLedgerDate(valuationDate) || lastLedgerDate;
-            const completeRealizedPnlAccounts = realizedPnlAccounts.filter((result) => result.realizedPnl !== null);
-            const hasOnlyUnavailableRealizedAccounts = (
-                realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
-            );
             let realizedPnlLocal = hasOnlyUnavailableRealizedAccounts
                 ? null
                 : completeRealizedPnlAccounts.reduce(
@@ -5495,30 +5908,34 @@ export function createInvestmentDataUtils({
                 );
             if (realizedPnlLocal !== null) realizedPnlLocal = Number(realizedPnlLocal.toFixed(12));
             if (realizedPnl !== null) realizedPnl = Number(realizedPnl.toFixed(12));
+            const legacyAccount = realizedPnlAccounts.length === 1
+                ? realizedPnlAccounts[0]
+                : null;
+            const legacyExpectedRealizedPnlLocal = performanceEntry
+                ? performanceEntry.realizedTotal + (
+                    performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal
+                )
+                : null;
             const usedLegacyTickerPerformanceSnapshot = (
-                realizedPnlAccounts.length <= 1
+                legacyAccount
                 && performanceEntry
                 && Number.isFinite(performanceEntry.realizedTotal)
+                && legacyAccount.status === 'complete'
+                && legacyAccount.reconciliation?.coverageStatus === 'complete'
+                && legacyAccount.reconciliation?.replay?.status === 'not_required'
+                && Number.isFinite(legacyExpectedRealizedPnlLocal)
+                && Number.isFinite(Number(legacyAccount.realizedPnlLocal))
+                && Math.abs(
+                    Number(legacyAccount.realizedPnlLocal) - legacyExpectedRealizedPnlLocal,
+                ) <= 1e-7
+                && Number.isFinite(Number(legacyAccount.realizedPnl))
             );
             if (usedLegacyTickerPerformanceSnapshot) {
-                const additionalNonPerformanceRealizedPnlLocal = performanceEntry.includesNonperformance
-                    ? 0
-                    : nonPerformanceRealizedPnlLocal;
-                realizedPnlLocal = performanceEntry.realizedTotal + additionalNonPerformanceRealizedPnlLocal;
-                realizedPnl = (
-                    convertAmountToBaseCurrencyAtLatestRate(
-                        performanceEntry.realizedTotal,
-                        performanceEntry.currency,
-                        fxTimeline,
-                        baseCurrency,
-                    )
-                    + convertAmountToBaseCurrencyAtLatestRate(
-                        additionalNonPerformanceRealizedPnlLocal,
-                        quoteCurrency,
-                        fxTimeline,
-                        baseCurrency,
-                    )
-                );
+                // Keep the legacy compatibility path only when it agrees with
+                // the complete account-level reconciliation. The account result
+                // remains the canonical value and source of truth.
+                realizedPnlLocal = Number(legacyAccount.realizedPnlLocal);
+                realizedPnl = Number(legacyAccount.realizedPnl);
             }
             const marketValueLocal = hasMixedPositionCurrencies
                 ? null
@@ -5550,14 +5967,19 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
-            const scopedRealizedPnlByDateLocal = usedLegacyTickerPerformanceSnapshot
-                ? {}
-                : completeRealizedPnlAccounts.reduce((dailyTotals, result) => {
-                    Object.entries(result.realizedPnlByDateLocal || {}).forEach(([ledgerDate, value]) => {
-                        dailyTotals[ledgerDate] = (Number(dailyTotals[ledgerDate]) || 0) + (Number(value) || 0);
-                    });
+            const scopedRealizedPnlByDateLocal = completeRealizedPnlAccounts.reduce(
+                (dailyTotals, result) => {
+                    Object.entries(result.reconciliation?.realizedPnlByDateLocal || {}).forEach(
+                        ([ledgerDate, value]) => {
+                            dailyTotals[ledgerDate] = (
+                                Number(dailyTotals[ledgerDate]) || 0
+                            ) + (Number(value) || 0);
+                        },
+                    );
                     return dailyTotals;
-                }, {});
+                },
+                {},
+            );
             const realizedPnlByDateLocal = pnlUnavailable
                 ? {}
                 : Object.fromEntries(
@@ -5584,6 +6006,97 @@ export function createInvestmentDataUtils({
             const safeRealizedPnlLocal = pnlUnavailable ? null : realizedPnlLocal;
             const safeUnrealizedPnl = pnlUnavailable ? null : unrealizedPnl;
             const safeUnrealizedPnlLocal = pnlUnavailable ? null : unrealizedPnlLocal;
+            const accountReconciliations = realizedPnlAccounts
+                .map((accountResult) => accountResult?.reconciliation)
+                .filter((reconciliation) => reconciliation && typeof reconciliation === 'object');
+            const completeAccountReconciliations = completeRealizedPnlAccounts
+                .map((accountResult) => accountResult.reconciliation)
+                .filter((reconciliation) => reconciliation && typeof reconciliation === 'object');
+            const summaryCoverageStatus = realizedPnlAccounts.length === 0
+                ? (performanceEntry ? 'unavailable' : 'complete')
+                : completeRealizedPnlAccounts.length === realizedPnlAccounts.length
+                    ? 'complete'
+                    : (completeRealizedPnlAccounts.length ? 'partial' : 'unavailable');
+            const latestReconciliationDate = (field) => accountReconciliations
+                .map((reconciliation) => normalizeLedgerDate(reconciliation?.asOf?.[field]))
+                .filter(Boolean)
+                .sort()
+                .pop() || '';
+            const summaryBaselineRealizedPnlLocal = completeAccountReconciliations.reduce(
+                (total, reconciliation) => total + (
+                    Number(reconciliation.baselineRealizedPnlLocal) || 0
+                ),
+                0,
+            );
+            const summaryIncrementalRealizedPnlLocal = completeAccountReconciliations.reduce(
+                (total, reconciliation) => total + (
+                    Number(reconciliation.incrementalRealizedPnlLocal) || 0
+                ),
+                0,
+            );
+            const summaryReplayRequired = accountReconciliations.some(
+                (reconciliation) => reconciliation.replay?.required === true,
+            );
+            const summaryReplayUnavailable = accountReconciliations.some((reconciliation) => (
+                reconciliation.coverageStatus === 'unavailable'
+                || reconciliation.replay?.status === 'unavailable'
+            ));
+            const summaryReplayStatus = summaryReplayUnavailable
+                ? 'unavailable'
+                : (summaryCoverageStatus === 'partial'
+                    ? 'partial'
+                    : (summaryReplayRequired ? 'complete' : 'not_required'));
+            const summaryArithmeticDifference = realizedPnlLocal === null
+                ? null
+                : realizedPnlLocal - (
+                    summaryBaselineRealizedPnlLocal + summaryIncrementalRealizedPnlLocal
+                );
+            const summaryTimelineDifference = realizedPnlLocal === null
+                ? null
+                : sumInvestmentRealizedPnlByDate(scopedRealizedPnlByDateLocal) - realizedPnlLocal;
+            const summaryReconciliation = {
+                schemaVersion: 'v1',
+                broker: '',
+                account: '',
+                ticker: summary.ticker,
+                currency: quoteCurrency,
+                coverageStatus: summaryCoverageStatus,
+                asOf: {
+                    performanceSnapshot: latestReconciliationDate('performanceSnapshot'),
+                    positionSnapshot: latestReconciliationDate('positionSnapshot'),
+                    transactionHistory: latestReconciliationDate('transactionHistory'),
+                },
+                replay: {
+                    status: summaryReplayStatus,
+                    required: summaryReplayRequired,
+                    reason: summaryReplayUnavailable
+                        ? accountReconciliations.find((reconciliation) => (
+                            reconciliation.coverageStatus === 'unavailable'
+                            || reconciliation.replay?.status === 'unavailable'
+                        ))?.replay?.reason || 'realized_pnl_reconciliation_unavailable'
+                        : (summaryReplayRequired
+                            ? 'supplemental_replay_complete'
+                            : 'no_transactions_after_performance_snapshot'),
+                    accounts: accountReconciliations,
+                },
+                baselineRealizedPnlLocal: Number(summaryBaselineRealizedPnlLocal.toFixed(12)),
+                incrementalRealizedPnlLocal: Number(summaryIncrementalRealizedPnlLocal.toFixed(12)),
+                realizedPnlLocal: realizedPnl === null
+                    ? null
+                    : Number(realizedPnlLocal.toFixed(12)),
+                realizedPnl: realizedPnl === null ? null : Number(realizedPnl.toFixed(12)),
+                realizedPnlByDateLocal: {...scopedRealizedPnlByDateLocal},
+                realizedPnlByDate: {...realizedPnlByDate},
+                accounts: accountReconciliations,
+                arithmeticCheck: {
+                    valid: summaryCoverageStatus === 'complete'
+                        && Number.isFinite(summaryArithmeticDifference)
+                        && Math.abs(summaryArithmeticDifference) <= 1e-7
+                        && Number.isFinite(summaryTimelineDifference)
+                        && Math.abs(summaryTimelineDifference) <= 1e-6,
+                    tolerance: 1e-7,
+                },
+            };
             // Mixed-currency rows cannot expose one combined P&L, but each
             // account result has already been converted from its own currency
             // into the workspace base currency and remains useful evidence.
@@ -5623,9 +6136,12 @@ export function createInvestmentDataUtils({
                 realizedPnl: safeRealizedPnl,
                 realizedPnlLocal: safeRealizedPnlLocal,
                 realizedPnlAccounts: safeRealizedPnlAccounts,
-                realizedPnlStatus: pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
+                realizedPnlReconciliation: summaryReconciliation,
+                realizedPnlStatus: summaryCoverageStatus === 'unavailable'
+                    || (pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown)
                     ? 'unavailable'
-                    : (realizedPnlAccounts.some((result) => result.status !== 'complete')
+                    : (summaryCoverageStatus === 'partial'
+                        || realizedPnlAccounts.some((result) => result.status !== 'complete')
                         ? 'partial'
                         : 'complete'),
                 realizedPnlBreakdownAvailable: preserveMixedCurrencyRealizedBreakdown
@@ -5792,4 +6308,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.109.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.110.0';

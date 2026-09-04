@@ -1,7 +1,7 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.38.0
+Code version: v0.39.0
 - Added: HSBC non-USD cash-only merges retain the existing authoritative USD
   current-cash boundary for current total-equity calculations.
 - Added: IBKR Your Holdings clipboard captures produce validated cash and
@@ -81,6 +81,9 @@ Code version: v0.38.0
 - Added: newer IBKR GainsKeeper position marks preserve cost basis from the existing IBKR open-positions CSV.
 - Added: IBKR Realized Summary native-currency cash rows replace their base-currency Transaction History equivalents while unmatched rows remain available for manual transfer binding.
 - Added: IBKR base-currency-equivalent funding rows can be manually bound to CNH bank withdrawals.
+- Added: The sanitized live Investment API payload fixture asserts scoped
+  realized-P&L coverage, independent snapshot boundaries, replay state, and
+  the snapshot-plus-boundary reconciliation contract.
 - Fixed: Schwab transfer receipts remain visible and paired with IBKR source
   legs while evidence-backed Journal cleanup rows stay suppressed.
 """
@@ -9377,6 +9380,102 @@ Fees: 0.0"""
             payload["broker_summaries"]["ibkr"]["ending_cash_replay_as_of"],
             "2026-08-10",
         )
+
+    def test_live_api_payload_fixture_exposes_realized_pnl_reconciliation_contract(self) -> None:
+        fixture_path = Path(__file__).parent / "fixtures" / (
+            "investment_api_payload_reconciliation.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        expected = fixture["expected"]
+        normalized = normalize_investment_payload_tickers(deepcopy(fixture))
+
+        ibkr_snapshot = normalized["broker_snapshots"]["ibkr:U00000001"]
+        ibkr_reconciliation = normalized["realized_pnl_reconciliation"][
+            "ibkr:U00000001"
+        ]["tickers"]["DRAM"]
+        self.assertEqual(
+            ibkr_snapshot["position_snapshot_as_of"],
+            expected["position_snapshot_as_of"],
+        )
+        self.assertEqual(
+            ibkr_snapshot["performance_snapshot_as_of"],
+            expected["performance_snapshot_as_of"],
+        )
+        self.assertEqual(ibkr_reconciliation["coverage_status"], "partial")
+        self.assertEqual(
+            ibkr_reconciliation["as_of"],
+            {
+                "performance_snapshot": expected["performance_snapshot_as_of"],
+                "position_snapshot": expected["position_snapshot_as_of"],
+                "transaction_history": expected["transaction_history_through"],
+            },
+        )
+        self.assertEqual(
+            ibkr_reconciliation["replay"],
+            {
+                "status": "required_partial_boundary_reconstructable",
+                "required": True,
+                "reason": "partial_position_snapshot_requires_history_boundary",
+                "post_performance_transaction_count": expected[
+                    "ibkr_post_performance_transaction_count"
+                ],
+                "post_performance_sell_count": expected[
+                    "ibkr_post_performance_sell_count"
+                ],
+            },
+        )
+        self.assertEqual(
+            ibkr_reconciliation["baseline"]["realized_pnl"],
+            expected["ibkr_snapshot_baseline_realized_pnl"],
+        )
+        self.assertEqual(
+            normalized["broker_summaries"]["ibkr"]
+            ["realized_pnl_reconciliation"]["DRAM"],
+            ibkr_reconciliation,
+        )
+        reconciliation_scopes = normalized["realized_pnl_reconciliation"]
+        self.assertEqual(
+            set(reconciliation_scopes),
+            {
+                "ibkr:U00000001",
+                "hsbc:000-000000-000",
+                "schwab:Individual ...000",
+            },
+        )
+        for scope_key, scope in reconciliation_scopes.items():
+            self.assertEqual(scope["broker"], scope_key.split(":", 1)[0])
+            self.assertTrue(scope["account"])
+            self.assertTrue(scope["tickers"])
+            for ticker, reconciliation in scope["tickers"].items():
+                self.assertEqual(reconciliation["broker"], scope["broker"])
+                self.assertEqual(reconciliation["account"], scope["account"])
+                self.assertEqual(reconciliation["ticker"], ticker)
+                self.assertIn("coverage_status", reconciliation)
+                self.assertIn("as_of", reconciliation)
+                self.assertIn("replay", reconciliation)
+                self.assertIn("status", reconciliation["replay"])
+
+    def test_live_api_payload_fixture_marks_missing_replay_boundary_unavailable(self) -> None:
+        fixture_path = Path(__file__).parent / "fixtures" / (
+            "investment_api_payload_reconciliation.json"
+        )
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        payload["broker_summaries"] = {}
+        ibkr_snapshot = payload["broker_snapshots"]["ibkr:U00000001"]
+        ibkr_snapshot["position_snapshot"] = {}
+        ibkr_snapshot["position_snapshot_authoritative"] = False
+        ibkr_snapshot["holdings_validation"] = {
+            "matched": False,
+            "history_complete": False,
+        }
+
+        normalized = normalize_investment_payload_tickers(payload)
+        reconciliation = normalized["realized_pnl_reconciliation"][
+            "ibkr:U00000001"
+        ]["tickers"]["DRAM"]
+        self.assertEqual(reconciliation["coverage_status"], "unavailable")
+        self.assertEqual(reconciliation["replay"]["status"], "required_boundary_unavailable")
+        self.assertTrue(reconciliation["replay"]["required"])
 
     def test_merge_preserves_per_broker_ending_cash_when_mixed(self) -> None:
         ibkr_transactions_csv = "\n".join([

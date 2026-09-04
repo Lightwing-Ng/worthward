@@ -1,6 +1,7 @@
-/* Code version: v1.44.1 */
+/* Code version: v1.45.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     INVESTMENT_REPLAY_ORDER_SYMBOL,
@@ -56,6 +57,12 @@ test('aggregate-only transfer filtering excludes only confirmed receipt keys wit
 });
 
 const SPLIT_FACTORS = [1, 1.5, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 128, 160, 200, 256];
+const LIVE_INVESTMENT_API_FIXTURE = JSON.parse(
+    fs.readFileSync(
+        new URL('./fixtures/investment_api_payload_reconciliation.json', import.meta.url),
+        'utf8',
+    ),
+);
 
 test('HSBC smart statement selector accepts full monthly PDFs and compatible pairs', () => {
     const composite = {name: 'composite.pdf', type: 'application/pdf'};
@@ -3037,16 +3044,33 @@ test('buildTickerSummaries uses authoritative broker realized P&L for calibrated
         WORTHWARD_INVESTMENT_DATA: {
             ticker_lineage: {},
             money_market_tickers: [],
-            summary: { performance_snapshot_authoritative: true },
-            performance_snapshot: {
-                TQQQ: { currency: 'USD', realized_total: '7.89' },
-                SQQQ: { currency: 'USD', realized_total: '-2.22' },
+            summary: { performance_snapshot_authoritative: false },
+            broker_summaries: {
+                ibkr: {
+                    broker: 'ibkr',
+                    account: 'U00000001',
+                    performance_snapshot_authoritative: true,
+                    performance_snapshot: {
+                        TQQQ: { currency: 'USD', realized_total: '7.89' },
+                        SQQQ: { currency: 'USD', realized_total: '-2.22' },
+                    },
+                },
             },
         },
     };
     const transactions = [
-        makeImportedTrade({ type: 'buy', date: '2025-04-06', quantity: 1, price: 36 }),
-        makeImportedTrade({ type: 'sell', date: '2025-05-12', quantity: 1, price: 66 }),
+        {
+            ...makeImportedTrade({ type: 'buy', date: '2025-04-06', quantity: 1, price: 36 }),
+            broker: 'ibkr',
+            account: 'U00000001',
+            currency: 'USD',
+        },
+        {
+            ...makeImportedTrade({ type: 'sell', date: '2025-05-12', quantity: 1, price: 66 }),
+            broker: 'ibkr',
+            account: 'U00000001',
+            currency: 'USD',
+        },
     ];
     const summaries = buildTickerSummaries(transactions, {}, 0, {});
     const tqqq = summaries.find((summary) => summary.ticker === 'TQQQ');
@@ -3965,6 +3989,7 @@ test('IBKR stale realized snapshot adds later web fills from the position bounda
                 },
             },
             performance_snapshot_authoritative: true,
+            performance_snapshot_as_of: '2026-08-11',
             performance_snapshot: {
                 DRAM: {
                     currency: 'USD',
@@ -3999,7 +4024,7 @@ test('IBKR stale realized snapshot adds later web fills from the position bounda
     const dram = buildTickerSummaries([...fifoLots, webSale, unrelatedTickerTrade], {}, 0, {})
         .find((summary) => summary.ticker === 'DRAM');
     const ibkr = dram.realizedPnlAccounts.find((result) => result.broker === 'ibkr');
-    const expectedIncrementalPnl = 556.15 - (10 * 53.033628725);
+    const expectedIncrementalPnl = 556.15 - (10 * 49);
     const expectedTotalPnl = 408.952041 + expectedIncrementalPnl;
 
     assert.ok(Math.abs(ibkr.realizedPnlLocal - expectedTotalPnl) < 1e-9);
@@ -4595,4 +4620,161 @@ test('missing DRAM opening lots without broker realized P&L are unavailable', ()
     assert.equal(dram.realizedPnl, null);
     assert.equal(dram.realizedPnlAccounts[0].status, 'incomplete');
     assert.equal(dram.realizedPnlAccounts[0].source, 'unavailable');
+});
+
+test('live API payload enforces snapshot baseline plus boundary increment', () => {
+    const previousWindow = globalThis.window;
+    const fixture = structuredClone(LIVE_INVESTMENT_API_FIXTURE);
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: fixture};
+    try {
+        const expected = fixture.expected;
+        const dram = buildTickerSummaries(
+            fixture.transactions,
+            {DRAM: 57.27},
+            0,
+            {},
+        ).find((summary) => summary.ticker === expected.ticker);
+        assert.ok(dram);
+
+        const ibkr = dram.realizedPnlAccounts.find((account) => account.broker === 'ibkr');
+        assert.ok(ibkr);
+        assert.equal(ibkr.status, 'complete');
+        assert.equal(ibkr.reconciliation.coverageStatus, 'complete');
+        assert.equal(
+            ibkr.reconciliation.asOf.performanceSnapshot,
+            expected.performance_snapshot_as_of,
+        );
+        assert.equal(
+            ibkr.reconciliation.asOf.positionSnapshot,
+            expected.position_snapshot_as_of,
+        );
+        assert.equal(
+            ibkr.reconciliation.asOf.transactionHistory,
+            expected.transaction_history_through,
+        );
+        assert.equal(
+            ibkr.reconciliation.replay.postPerformanceTransactionCount,
+            expected.ibkr_post_performance_transaction_count,
+        );
+        assert.equal(
+            ibkr.reconciliation.replay.postPerformanceSellCount,
+            expected.ibkr_post_performance_sell_count,
+        );
+        assert.equal(
+            ibkr.reconciliation.baselineRealizedPnlLocal,
+            Number(expected.ibkr_snapshot_baseline_realized_pnl),
+        );
+        assert.ok(Math.abs(
+            ibkr.reconciliation.realizedPnlLocal
+            - Number(expected.ibkr_reconciled_realized_pnl),
+        ) <= 1e-7);
+        assert.ok(Math.abs(
+            ibkr.reconciliation.baselineRealizedPnlLocal
+            + ibkr.reconciliation.incrementalRealizedPnlLocal
+            - ibkr.reconciliation.realizedPnlLocal,
+        ) <= 1e-7);
+        assert.ok(Math.abs(
+            Object.values(ibkr.reconciliation.realizedPnlByDateLocal)
+                .reduce((sum, value) => sum + value, 0)
+            - ibkr.reconciliation.realizedPnlLocal,
+        ) <= 1e-6);
+        assert.equal(ibkr.reconciliation.arithmeticCheck.valid, true);
+        assert.ok(Math.abs(
+            dram.realizedPnl - Number(expected.total_reconciled_realized_pnl),
+        ) <= 1e-7);
+        assert.equal(dram.realizedPnlReconciliation.arithmeticCheck.valid, true);
+        assert.ok(Math.abs(
+            dram.realizedPnlReconciliation.realizedPnlLocal
+            - Number(expected.total_reconciled_realized_pnl),
+        ) <= 1e-7);
+    } finally {
+        if (previousWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = previousWindow;
+        }
+    }
+});
+
+test('missing supplemental replay boundary cannot become complete', () => {
+    const previousWindow = globalThis.window;
+    const fixture = structuredClone(LIVE_INVESTMENT_API_FIXTURE);
+    const ibkrSummary = fixture.broker_summaries.ibkr;
+    ibkrSummary.position_snapshot = {};
+    ibkrSummary.position_snapshot_authoritative = false;
+    ibkrSummary.holdings_validation = {matched: false, history_complete: false};
+    fixture.broker_summaries = {ibkr: ibkrSummary};
+    fixture.transactions = fixture.transactions.filter((transaction) => transaction.broker === 'ibkr');
+    fixture.summary = {
+        position_snapshot_authoritative: false,
+        performance_snapshot_authoritative: false,
+    };
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: fixture};
+    try {
+        const dram = buildTickerSummaries(
+            fixture.transactions,
+            {DRAM: 57.27},
+            0,
+            {},
+        ).find((summary) => summary.ticker === 'DRAM');
+        const account = dram.realizedPnlAccounts[0];
+        assert.equal(account.status, 'unavailable');
+        assert.equal(account.reconciliation.coverageStatus, 'unavailable');
+        assert.equal(account.reconciliation.replay.status, 'unavailable');
+        assert.equal(dram.realizedPnl, null);
+        assert.equal(dram.realizedPnlStatus, 'unavailable');
+        assert.equal(dram.realizedPnlReconciliation.coverageStatus, 'unavailable');
+    } finally {
+        if (previousWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = previousWindow;
+        }
+    }
+});
+
+test('legacy ticker performance fallback cannot override required account replay', () => {
+    const previousWindow = globalThis.window;
+    const fixture = structuredClone(LIVE_INVESTMENT_API_FIXTURE);
+    const ibkrSummary = fixture.broker_summaries.ibkr;
+    fixture.broker_summaries = {ibkr: ibkrSummary};
+    fixture.broker_snapshots = {'ibkr:U00000001': ibkrSummary};
+    fixture.transactions = fixture.transactions.filter((transaction) => transaction.broker === 'ibkr');
+    fixture.summary = {
+        performance_snapshot_authoritative: true,
+        position_snapshot_authoritative: false,
+    };
+    fixture.performance_snapshot = {
+        DRAM: {
+            currency: 'USD',
+            realized_total: fixture.expected.ibkr_snapshot_baseline_realized_pnl,
+        },
+    };
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: fixture};
+    try {
+        const dram = buildTickerSummaries(
+            fixture.transactions,
+            {DRAM: 57.27},
+            0,
+            {},
+        ).find((summary) => summary.ticker === 'DRAM');
+        assert.ok(Math.abs(
+            dram.realizedPnl - Number(fixture.expected.ibkr_reconciled_realized_pnl),
+        ) <= 1e-7);
+        assert.notEqual(
+            dram.realizedPnl,
+            Number(fixture.expected.ibkr_snapshot_baseline_realized_pnl),
+        );
+        assert.equal(dram.realizedPnlReconciliation.replay.status, 'complete');
+        assert.ok(Object.prototype.hasOwnProperty.call(
+            dram.realizedPnlByDate,
+            fixture.expected.performance_snapshot_as_of,
+        ));
+    } finally {
+        if (previousWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = previousWindow;
+        }
+    }
 });

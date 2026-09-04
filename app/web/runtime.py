@@ -162,7 +162,10 @@ from app.core.live_trading_security import (
     authorize_live_trading_api_request,
     validate_live_trading_pin,
 )
-from app.web.request_security import validate_investment_browser_write_request
+from app.web.request_security import (
+    validate_investment_browser_write_request,
+    validate_local_browser_write_request,
+)
 from app.infrastructure.broker_market_data import (
     NEW_YORK_TIMEZONE,
     classify_daily_store_status,
@@ -255,6 +258,7 @@ from app.services.date_constraints import (
     nyse_recent_trading_days,
 )
 from app.services.dca import simulate_recurring_investment
+from app.services.lstm_training import LstmTrainingConflict, LstmTrainingManager
 from app.services.market_cap import (
     build_market_cap_series_payload,
     extract_stock_split_events,
@@ -666,6 +670,9 @@ class WebRuntime:
     compare_live_api: Any
     compare_chips_api: Any
     trade_strategy_fields_api: Any
+    lstm_training_list_api: Any
+    lstm_training_start_api: Any
+    lstm_training_stop_api: Any
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
@@ -748,6 +755,7 @@ def build_web_runtime() -> WebRuntime:
         if isinstance(investment_settings.get("money_market_funds"), dict)
         else {}
     )
+    lstm_training_manager = LstmTrainingManager()
 
     def quote_profile_to_json(profile: QuoteProfile) -> dict[str, str | None]:
         return {
@@ -5571,6 +5579,9 @@ def build_web_runtime() -> WebRuntime:
                 "compareLive": "/api/compare/live",
                 "compareChips": "/api/compare/chips",
                 "strategyFields": "/api/trade-strategy-fields",
+                "lstmTraining": "/api/lstm-training",
+                "lstmTrainingStart": "/api/lstm-training/start",
+                "lstmTrainingStop": "/api/lstm-training/stop",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
@@ -7193,6 +7204,83 @@ def build_web_runtime() -> WebRuntime:
                 "supports": supports,
             }
         )
+
+    def lstm_training_list_api():
+        try:
+            response = jsonify({"success": True, "runs": lstm_training_manager.list_runs()})
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load LSTM training history")
+            response = jsonify({
+                "success": False,
+                "runs": [],
+                "error": "LSTM training history is temporarily unavailable.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
+    def lstm_training_start_api():
+        security_error = validate_local_browser_write_request(
+            request,
+            action_label="LSTM training changes",
+        )
+        if security_error:
+            response = jsonify({"success": False, "error": security_error})
+            response.status_code = 403
+            return apply_no_store_headers(response)
+        payload = request.get_json(silent=True) or {}
+        try:
+            run = lstm_training_manager.start(
+                ticker=str(payload.get("ticker", "")),
+                period=str(payload.get("period", "")),
+            )
+            response = jsonify({"success": True, "run": run})
+            response.status_code = 202
+            return apply_no_store_headers(response)
+        except LstmTrainingConflict as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 409
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to start LSTM training")
+            response = jsonify({
+                "success": False,
+                "error": "LSTM training could not be started. Try again later.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
+    def lstm_training_stop_api():
+        security_error = validate_local_browser_write_request(
+            request,
+            action_label="LSTM training changes",
+        )
+        if security_error:
+            response = jsonify({"success": False, "error": security_error})
+            response.status_code = 403
+            return apply_no_store_headers(response)
+        payload = request.get_json(silent=True) or {}
+        try:
+            run_id = str(payload.get("run_id") or payload.get("job_id") or "")
+            run = lstm_training_manager.stop(run_id)
+            response = jsonify({"success": True, "run": run})
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to stop LSTM training")
+            response = jsonify({
+                "success": False,
+                "error": "LSTM training could not be stopped. Try again later.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def settings_network_status_api():
         if request.args.get("refresh", "").strip() == "1":
@@ -8987,6 +9075,9 @@ def build_web_runtime() -> WebRuntime:
         compare_live_api=compare_live_api,
         compare_chips_api=compare_chips_api,
         trade_strategy_fields_api=trade_strategy_fields_api,
+        lstm_training_list_api=lstm_training_list_api,
+        lstm_training_start_api=lstm_training_start_api,
+        lstm_training_stop_api=lstm_training_stop_api,
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,

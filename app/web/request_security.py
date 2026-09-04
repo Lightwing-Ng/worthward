@@ -1,7 +1,7 @@
 """
 Browser write-request security helpers.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -65,20 +65,22 @@ def _is_local_application_hostname(hostname: str) -> bool:
     return address.is_loopback or address.is_private or address.is_link_local
 
 
-def validate_investment_browser_write_request(
+def validate_local_browser_write_request(
     browser_request: Request,
+    *,
+    action_label: str = "Local changes",
 ) -> str | None:
-    """Return a rejection message unless origin and session CSRF proof are valid."""
+    """Return a rejection unless origin and session CSRF proof are valid."""
     origin = _canonical_origin(browser_request.headers.get("Origin", ""))
     expected_origin = _canonical_origin(browser_request.host_url)
     if origin is None or expected_origin is None:
-        return "Investment changes require a valid same-origin browser request."
+        return f"{action_label} require a valid same-origin browser request."
     if origin != expected_origin or not _is_local_application_hostname(origin[1]):
-        return "Investment changes reject cross-origin or non-local browser requests."
+        return f"{action_label} reject cross-origin or non-local browser requests."
 
     fetch_site = str(browser_request.headers.get("Sec-Fetch-Site") or "").strip().lower()
     if fetch_site and fetch_site != "same-origin":
-        return "Investment changes reject cross-site browser requests."
+        return f"{action_label} reject cross-site browser requests."
 
     expected_token = str(session.get(INVESTMENT_CSRF_SESSION_KEY) or "")
     supplied_token = str(browser_request.headers.get(INVESTMENT_CSRF_HEADER) or "")
@@ -87,5 +89,15 @@ def validate_investment_browser_write_request(
         or not _CSRF_TOKEN_PATTERN.fullmatch(supplied_token)
         or not hmac.compare_digest(expected_token, supplied_token)
     ):
-        return "Investment changes require a valid session security token."
+        return f"{action_label} require a valid session security token."
     return None
+
+
+def validate_investment_browser_write_request(
+    browser_request: Request,
+) -> str | None:
+    """Return a rejection message unless origin and session CSRF proof are valid."""
+    return validate_local_browser_write_request(
+        browser_request,
+        action_label="Investment changes",
+    )

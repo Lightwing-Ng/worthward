@@ -5,10 +5,12 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.1.2
+Code version: v0.1.3
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
+- Added: The web training manager can reuse the runner's canonical request and
+  state-path builders without depending on private implementation names.
 """
 
 from __future__ import annotations
@@ -267,6 +269,16 @@ def _build_run_paths(args: argparse.Namespace, spec: Mapping[str, Any]) -> RunPa
         log=state / "run.log",
         lock=state / "run.lock",
     )
+
+
+def build_request_spec(args: argparse.Namespace) -> dict[str, Any]:
+    """Build the durable request identity used by the CLI and web launcher."""
+    return _request_spec(args)
+
+
+def build_run_paths(args: argparse.Namespace, spec: Mapping[str, Any]) -> RunPaths:
+    """Build the durable state paths used by the CLI and web launcher."""
+    return _build_run_paths(args, spec)
 
 
 def _date_bounds(period: str) -> tuple[date, date]:

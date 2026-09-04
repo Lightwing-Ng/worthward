@@ -1,7 +1,10 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.104.0
+Code version: v0.105.0
+- Added: Broker snapshot payloads now expose per-account and per-ticker
+  realized-P&L coverage, independent as-of dates, and replay requirements so
+  consumers cannot treat a partial performance boundary as complete.
 - Fixed: HSBC non-USD cash-only refreshes now retain the authoritative current
   USD cash boundary from the existing ledger, so the merged multi-currency
   snapshot remains eligible for current total-equity calculations.
@@ -8141,7 +8144,7 @@ def _build_broker_summary_from_payload(payload: dict[str, Any]) -> dict[str, Any
     if broker in {"", "multiple"}:
         return None
 
-    account = _normalize_text(payload.get("account"))
+    account = _normalize_text(payload.get("account_id") or payload.get("account"))
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     ending_cash = (
         _normalize_text(payload.get("ending_cash"))
@@ -9197,6 +9200,9 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
         if tax_lot_verifications:
             summary["tax_lot_history_verifications"] = tax_lot_verifications
 
+    closed_trade_details = _extract_ibkr_closed_trade_details_from_transactions(
+        transactions
+    )
     broker_snapshots = _normalize_broker_snapshots(payload)
     for snapshot in broker_snapshots.values():
         if not isinstance(snapshot, dict):
@@ -9215,18 +9221,48 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
         snapshot_account = _normalize_text(snapshot.get("account"))
         if summary_account and snapshot_account and summary_account != snapshot_account:
             continue
+        summary_performance_snapshot = _normalize_snapshot_keys(
+            summary.get("performance_snapshot")
+        )
+        preserves_closed_trade_performance = bool(
+            broker == "ibkr"
+            and closed_trade_details
+            and any(
+                isinstance(entry, dict)
+                and _normalize_text(entry.get("realized_total_source"))
+                == "ibkr_closed_trades"
+                for entry in summary_performance_snapshot.values()
+            )
+        )
+        performance_fields = {
+            "performance_snapshot",
+            "performance_snapshot_authoritative",
+            "performance_snapshot_source",
+            "performance_snapshot_as_of",
+            "performance_snapshot_evidence_id",
+            "realized_pnl_reconciliation",
+        }
         for field_name in (
             "position_snapshot",
             "position_snapshot_authoritative",
             "position_snapshot_source",
             "position_snapshot_as_of",
             "position_snapshot_evidence_id",
+            "performance_snapshot",
+            "performance_snapshot_authoritative",
+            "performance_snapshot_source",
+            "performance_snapshot_as_of",
+            "performance_snapshot_evidence_id",
             "holdings_validation",
+            "realized_pnl_reconciliation",
         ):
+            if preserves_closed_trade_performance and field_name in performance_fields:
+                continue
             if field_name in snapshot:
                 summary[field_name] = snapshot[field_name]
         if (
             broker == "ibkr"
+            and not preserves_closed_trade_performance
             and snapshot.get("performance_snapshot_authoritative") is True
             and _normalize_text(snapshot.get("performance_snapshot_source"))
             == "ibkr_csv_realized_summary"
@@ -9848,12 +9884,17 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
     broker = _normalize_broker_code(payload.get("broker"))
     if broker in {"", "multiple"}:
         return []
-    account = _normalize_text(payload.get("account"))
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    account = _normalize_text(
+        payload.get("account_id")
+        or payload.get("account")
+        or summary.get("account_id")
+        or summary.get("account")
+    )
     position_snapshot = _normalize_snapshot_keys(payload.get("position_snapshot"))
     performance_snapshot = _normalize_snapshot_keys(payload.get("performance_snapshot"))
     if not position_snapshot and not performance_snapshot:
         return []
-    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     source_artifacts = _normalize_source_artifacts(payload.get("source_artifacts"))
     period_ends = [
         _normalize_text(artifact.get("statement_period_end"))
@@ -9867,6 +9908,16 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
     ]
     transaction_dates = _payload_transaction_dates(payload)
     snapshot_as_of = max(period_ends or snapshot_as_of_values or transaction_dates or [""])
+    position_snapshot_as_of = _normalize_text(
+        payload.get("position_snapshot_as_of")
+        or summary.get("position_snapshot_as_of")
+        or (snapshot_as_of if position_snapshot else "")
+    )
+    performance_snapshot_as_of = _normalize_text(
+        payload.get("performance_snapshot_as_of")
+        or summary.get("performance_snapshot_as_of")
+        or (snapshot_as_of if performance_snapshot else "")
+    )
     generator = payload.get("generator") if isinstance(payload.get("generator"), dict) else {}
     position_source = _summary_text(summary, "position_snapshot_source") or _normalize_text(
         generator.get("name")
@@ -9892,6 +9943,8 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
             "broker": broker,
             "account": account,
             "snapshot_as_of": snapshot_as_of,
+            "position_snapshot_as_of": position_snapshot_as_of,
+            "performance_snapshot_as_of": performance_snapshot_as_of,
             "position_snapshot": position_snapshot,
             "performance_snapshot": performance_snapshot,
             "position_snapshot_authoritative": bool(
@@ -9925,6 +9978,7 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
             "broker": broker,
             "account": account,
             "snapshot_as_of": snapshot_as_of,
+            "position_snapshot_as_of": position_snapshot_as_of,
             "position_snapshot": position_snapshot,
             "performance_snapshot": {},
             "position_snapshot_authoritative": bool(
@@ -9954,6 +10008,7 @@ def _broker_snapshot_evidence_from_payload(payload: dict[str, Any]) -> list[dict
             "broker": broker,
             "account": account,
             "snapshot_as_of": "",
+            "performance_snapshot_as_of": performance_snapshot_as_of,
             "position_snapshot": {},
             "performance_snapshot": performance_snapshot,
             "position_snapshot_authoritative": False,
@@ -9995,8 +10050,16 @@ def _normalize_broker_snapshot_evidence(raw_evidence: Any) -> dict[str, Any] | N
     }) if isinstance(raw_evidence.get("source_artifact_sha256"), list) else []
     candidate: dict[str, Any] = {
         "broker": broker,
-        "account": _normalize_text(raw_evidence.get("account")),
+        "account": _normalize_text(
+            raw_evidence.get("account_id") or raw_evidence.get("account")
+        ),
         "snapshot_as_of": _normalize_text(raw_evidence.get("snapshot_as_of")),
+        "position_snapshot_as_of": _normalize_text(
+            raw_evidence.get("position_snapshot_as_of")
+        ),
+        "performance_snapshot_as_of": _normalize_text(
+            raw_evidence.get("performance_snapshot_as_of")
+        ),
         "position_snapshot": position_snapshot,
         "performance_snapshot": performance_snapshot,
         "position_snapshot_authoritative": bool(
@@ -10011,6 +10074,10 @@ def _normalize_broker_snapshot_evidence(raw_evidence: Any) -> dict[str, Any] | N
         "holdings_validation": raw_evidence.get("holdings_validation")
         if isinstance(raw_evidence.get("holdings_validation"), dict) else {},
     }
+    if isinstance(raw_evidence.get("realized_pnl_reconciliation"), dict):
+        candidate["realized_pnl_reconciliation"] = deepcopy(
+            raw_evidence["realized_pnl_reconciliation"]
+        )
     snapshot_updated_at = _normalize_text(raw_evidence.get("snapshot_updated_at"))
     if snapshot_updated_at:
         candidate["snapshot_updated_at"] = snapshot_updated_at
@@ -10331,7 +10398,14 @@ def _broker_snapshot_evidence_sort_key(
         snapshot = evidence.get("performance_snapshot")
         authoritative = bool(evidence.get("performance_snapshot_authoritative"))
         source = _normalize_text(evidence.get("performance_snapshot_source"))
-    snapshot_as_of = _normalize_text(evidence.get("snapshot_as_of"))
+    snapshot_as_of = _normalize_text(
+        evidence.get(
+            "position_snapshot_as_of"
+            if snapshot_kind == "position"
+            else "performance_snapshot_as_of"
+        )
+        or evidence.get("snapshot_as_of")
+    )
     snapshot_day = (
         snapshot_as_of[:10]
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}.*", snapshot_as_of)
@@ -10400,7 +10474,10 @@ def _source_artifact_date_window(
     windows = [window for window in windows if window[0] and window[1]]
     if windows:
         return min(window[0] for window in windows), max(window[1] for window in windows)
-    snapshot_as_of = _normalize_text(evidence.get("snapshot_as_of"))[:10]
+    snapshot_as_of = _normalize_text(
+        evidence.get("performance_snapshot_as_of")
+        or evidence.get("snapshot_as_of")
+    )[:10]
     return snapshot_as_of, snapshot_as_of
 
 
@@ -10572,6 +10649,194 @@ def _aggregate_ibkr_csv_performance_snapshot(
     return cumulative_snapshot, latest_candidate["window_end"]
 
 
+_REALIZED_PNL_REPLAY_TRANSACTION_TYPES = frozenset({
+    "buy",
+    "sell",
+    "grant",
+    "dividend_reinvestment",
+    "transfer_in",
+    "transfer_out",
+})
+
+
+def _normalize_reconciliation_date(value: Any) -> str:
+    raw_value = _normalize_text(value).replace("T", " ")
+    match = re.match(r"^(20\d{2}-\d{2}-\d{2})", raw_value)
+    if not match:
+        return ""
+    try:
+        date.fromisoformat(match.group(1))
+    except ValueError:
+        return ""
+    return match.group(1)
+
+
+def _reconciliation_transaction_scope(
+    transaction: dict[str, Any],
+    *,
+    broker: str,
+    account: str,
+) -> tuple[str, str, str, str]:
+    source = transaction.get("source") if isinstance(transaction.get("source"), dict) else {}
+    raw_broker = _normalize_text(transaction.get("broker") or source.get("broker"))
+    transaction_broker = _normalize_broker_code(raw_broker) if raw_broker else broker
+    transaction_account = _normalize_text(
+        transaction.get("account_id")
+        or transaction.get("account")
+        or source.get("account_id")
+        or source.get("account")
+        or source.get("account_number")
+    )
+    ticker = normalize_ticker(_normalize_text(transaction.get("ticker")))
+    currency = _normalize_text(transaction.get("currency") or source.get("currency")).upper()
+    return transaction_broker, transaction_account, ticker, currency
+
+
+def _build_broker_realized_pnl_reconciliation(
+    broker: str,
+    account: str,
+    *,
+    position_snapshot: dict[str, Any],
+    position_snapshot_as_of: str,
+    performance_snapshot: dict[str, Any],
+    performance_snapshot_as_of: str,
+    performance_snapshot_source: str,
+    position_snapshot_source: str,
+    holdings_validation: dict[str, Any],
+    transactions: list[dict[str, Any]],
+    evidence_records: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Emit source coverage without claiming that browser replay succeeded."""
+    if not broker:
+        return {}
+    normalized_position_snapshot = _normalize_snapshot_keys(position_snapshot)
+    normalized_performance_snapshot = _normalize_snapshot_keys(performance_snapshot)
+    validation = holdings_validation if isinstance(holdings_validation, dict) else {}
+    history_complete = validation.get("history_complete")
+    if not isinstance(history_complete, bool):
+        history_complete = None
+    history_matched = validation.get("matched") is True
+    performance_as_of = _normalize_reconciliation_date(performance_snapshot_as_of)
+    position_as_of = _normalize_reconciliation_date(position_snapshot_as_of)
+    ticker_transactions: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for transaction in transactions:
+        if not isinstance(transaction, dict):
+            continue
+        transaction_broker, transaction_account, ticker, _currency = (
+            _reconciliation_transaction_scope(
+                transaction,
+                broker=broker,
+                account=account,
+            )
+        )
+        if (
+            transaction_broker != broker
+            or not _accounts_are_compatible(broker, account, transaction_account)
+            or not ticker
+            or _normalize_text(transaction.get("type")).lower()
+            not in _REALIZED_PNL_REPLAY_TRANSACTION_TYPES
+        ):
+            continue
+        ticker_transactions[ticker].append(transaction)
+
+    tickers = set(normalized_position_snapshot) | set(normalized_performance_snapshot)
+    tickers.update(ticker_transactions)
+    reconciliations: dict[str, dict[str, Any]] = {}
+    for ticker in sorted(tickers):
+        position_entry = normalized_position_snapshot.get(ticker)
+        performance_entry = normalized_performance_snapshot.get(ticker)
+        scoped_transactions = ticker_transactions.get(ticker, [])
+        transaction_dates = [
+            _normalize_reconciliation_date(transaction.get("date"))
+            for transaction in scoped_transactions
+        ]
+        transaction_dates = [value for value in transaction_dates if value]
+        history_through = max(transaction_dates, default="")
+        later_transactions = (
+            [date_value for date_value in transaction_dates if date_value > performance_as_of]
+            if performance_as_of
+            else []
+        )
+        later_sell_count = sum(
+            1
+            for transaction in scoped_transactions
+            if performance_as_of
+            and _normalize_reconciliation_date(transaction.get("date")) > performance_as_of
+            and _normalize_text(transaction.get("type")).lower() == "sell"
+        )
+        performance_has_ticker = isinstance(performance_entry, dict)
+        position_has_ticker = isinstance(position_entry, dict)
+        replay_required = bool(performance_has_ticker and later_transactions)
+        if not replay_required:
+            replay_status = "not_required"
+            replay_reason = "no_transactions_after_performance_snapshot"
+        elif position_has_ticker:
+            replay_status = "required_boundary_available"
+            replay_reason = "performance_snapshot_precedes_transaction_history"
+        elif history_complete is False and history_matched:
+            replay_status = "required_partial_boundary_reconstructable"
+            replay_reason = "partial_position_snapshot_requires_history_boundary"
+        else:
+            replay_status = "required_boundary_unavailable"
+            replay_reason = "position_boundary_unavailable"
+
+        if not performance_has_ticker:
+            coverage_status = "complete" if history_complete is not False else "partial"
+        elif not replay_required:
+            coverage_status = "complete"
+        elif replay_status == "required_boundary_unavailable":
+            coverage_status = "unavailable"
+        else:
+            # The browser must still execute and validate the supplemental
+            # replay before this source coverage can become complete.
+            coverage_status = "partial"
+
+        baseline_realized_total = ""
+        baseline_currency = ""
+        if isinstance(performance_entry, dict):
+            baseline_realized_total = _normalize_text(performance_entry.get("realized_total"))
+            baseline_currency = _normalize_text(performance_entry.get("currency")).upper()
+        if not baseline_currency and isinstance(position_entry, dict):
+            baseline_currency = _normalize_text(position_entry.get("currency")).upper()
+
+        position_entry_as_of = (
+            _normalize_reconciliation_date(position_entry.get("as_of"))
+            if isinstance(position_entry, dict)
+            else ""
+        )
+        source = _normalize_text(performance_snapshot_source or position_snapshot_source)
+        if not source:
+            source = "broker_transaction_history"
+        reconciliations[ticker] = {
+            "schema_version": "v1",
+            "broker": broker,
+            "account": account,
+            "ticker": ticker,
+            "coverage_status": coverage_status,
+            "as_of": {
+                "performance_snapshot": performance_as_of,
+                "position_snapshot": position_entry_as_of or position_as_of,
+                "transaction_history": history_through,
+            },
+            "replay": {
+                "status": replay_status,
+                "required": replay_required,
+                "reason": replay_reason,
+                "post_performance_transaction_count": len(later_transactions),
+                "post_performance_sell_count": later_sell_count,
+            },
+            "baseline": {
+                "realized_pnl": baseline_realized_total,
+                "currency": baseline_currency,
+            },
+            "history_complete": history_complete,
+            "history_matched": history_matched,
+            "source": source,
+            "evidence_count": len(evidence_records),
+        }
+    return reconciliations
+
+
 def _build_broker_snapshot_entry(
     broker: str,
     account: str,
@@ -10610,11 +10875,15 @@ def _build_broker_snapshot_entry(
                 source_artifacts=source_artifacts,
                 account=account,
             )
+        position_snapshot_as_of = (
+            _normalize_text(selected.get("position_snapshot_as_of"))
+            or _normalize_text(selected.get("snapshot_as_of"))
+        )
         entry.update({
             "position_snapshot": selected_position_snapshot,
             "position_snapshot_authoritative": selected["position_snapshot_authoritative"],
             "position_snapshot_source": selected["position_snapshot_source"],
-            "position_snapshot_as_of": selected["snapshot_as_of"],
+            "position_snapshot_as_of": position_snapshot_as_of,
             "position_snapshot_evidence_id": selected["evidence_id"],
             "holdings_validation": selected.get("holdings_validation", {}),
         })
@@ -10628,7 +10897,10 @@ def _build_broker_snapshot_entry(
             key=lambda item: _broker_snapshot_evidence_sort_key(item, snapshot_kind="performance"),
         )
         performance_snapshot = selected["performance_snapshot"]
-        performance_snapshot_as_of = selected["snapshot_as_of"]
+        performance_snapshot_as_of = (
+            _normalize_text(selected.get("performance_snapshot_as_of"))
+            or _normalize_text(selected.get("snapshot_as_of"))
+        )
         if broker == "ibkr":
             cumulative_result = _aggregate_ibkr_csv_performance_snapshot(
                 evidence,
@@ -10643,6 +10915,21 @@ def _build_broker_snapshot_entry(
             "performance_snapshot_as_of": performance_snapshot_as_of,
             "performance_snapshot_evidence_id": selected["evidence_id"],
         })
+    reconciliation = _build_broker_realized_pnl_reconciliation(
+        broker,
+        account,
+        position_snapshot=entry.get("position_snapshot", {}),
+        position_snapshot_as_of=entry.get("position_snapshot_as_of", ""),
+        performance_snapshot=entry.get("performance_snapshot", {}),
+        performance_snapshot_as_of=entry.get("performance_snapshot_as_of", ""),
+        performance_snapshot_source=entry.get("performance_snapshot_source", ""),
+        position_snapshot_source=entry.get("position_snapshot_source", ""),
+        holdings_validation=entry.get("holdings_validation", {}),
+        transactions=transactions,
+        evidence_records=evidence,
+    )
+    if reconciliation:
+        entry["realized_pnl_reconciliation"] = reconciliation
     return entry
 
 
@@ -10891,6 +11178,16 @@ def normalize_investment_payload_tickers(payload: dict[str, Any]) -> dict[str, A
         )
     )
     payload["broker_snapshots"] = _normalize_broker_snapshots(payload)
+    payload["realized_pnl_reconciliation"] = {
+        snapshot_key: {
+            "broker": snapshot.get("broker", ""),
+            "account": snapshot.get("account", ""),
+            "tickers": deepcopy(snapshot.get("realized_pnl_reconciliation", {})),
+        }
+        for snapshot_key, snapshot in payload["broker_snapshots"].items()
+        if isinstance(snapshot, dict)
+        and isinstance(snapshot.get("realized_pnl_reconciliation"), dict)
+    }
     payload["broker_summaries"] = _normalize_broker_summaries(payload)
     for broker_code, broker_summary in payload["broker_summaries"].items():
         if broker_code == "hsbc":

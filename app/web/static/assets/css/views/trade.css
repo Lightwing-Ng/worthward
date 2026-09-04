@@ -1,4 +1,164 @@
-/* Code version: v3.55.22 */
+/* Code version: v3.55.24 */
+
+.lstm-training-menu {
+	margin: 0 0 12px;
+	padding: 12px;
+	border: 1px solid var(--theme-glass-border);
+	border-radius: var(--radius-panel);
+	background: var(--frosted-glass-background);
+	min-width: 0;
+}
+.lstm-training-private-menu-slot {
+	min-width: 0;
+}
+.lstm-training-menu-heading,
+.lstm-training-actions,
+.lstm-training-history-collapse summary {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+.lstm-training-menu-heading {
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+.lstm-training-menu-title,
+.lstm-training-history-title {
+	font-size: var(--font-form-label);
+	font-weight: var(--font-weight-bold);
+}
+.lstm-training-menu-copy,
+.lstm-training-live-status,
+.lstm-training-history-meta,
+.lstm-training-history-empty,
+.lstm-training-history-error {
+	color: var(--muted);
+	font-size: var(--font-table-body);
+	line-height: 1.35;
+}
+.lstm-training-menu-copy {
+	max-width: 42%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lstm-training-actions {
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.lstm-training-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-width: 0;
+	min-height: 30px;
+	padding: 5px 9px;
+	border: 1px solid var(--theme-glass-border);
+	border-radius: var(--radius-pill);
+	background: var(--control-liquid-background);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--font-table-body);
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.lstm-training-action:hover,
+.lstm-training-action:focus-visible {
+	background: var(--control-liquid-background-hover);
+	outline: none;
+}
+.lstm-training-action:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.lstm-training-action-icon {
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	background: currentColor;
+	mask-position: center;
+	mask-repeat: no-repeat;
+	mask-size: contain;
+	-webkit-mask-position: center;
+	-webkit-mask-repeat: no-repeat;
+	-webkit-mask-size: contain;
+}
+.lstm-training-start-icon {
+	mask-image: url("/static/images/bolt.fill.svg");
+	-webkit-mask-image: url("/static/images/bolt.fill.svg");
+}
+.lstm-training-stop-icon {
+	mask-image: url("/static/images/stop.fill.svg");
+	-webkit-mask-image: url("/static/images/stop.fill.svg");
+}
+.lstm-training-live-status {
+	display: block;
+	margin-top: 8px;
+	min-height: 1.35em;
+}
+.lstm-training-history-collapse {
+	margin-top: 12px;
+	min-width: 0;
+}
+.lstm-training-history-collapse summary {
+	justify-content: space-between;
+	gap: 8px;
+	padding: 5px 0;
+	color: var(--text);
+	cursor: pointer;
+	list-style-position: inside;
+}
+.lstm-training-count {
+	color: var(--muted);
+	font-size: var(--font-table-body);
+}
+.lstm-training-history-items {
+	display: grid;
+	gap: 6px;
+	margin-top: 6px;
+	min-width: 0;
+}
+.lstm-training-history-item {
+	min-width: 0;
+	padding: 6px 8px;
+	border-radius: var(--radius-soft);
+	background: var(--control-liquid-background);
+}
+.lstm-training-history-item summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+	color: var(--text);
+	font-size: var(--font-table-body);
+	cursor: pointer;
+}
+.lstm-training-history-run {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lstm-training-status {
+	flex: 0 0 auto;
+	color: var(--muted);
+	font-size: var(--font-table-body);
+}
+.lstm-training-status.is-running,
+.lstm-training-status.is-starting {
+	color: var(--accent-text);
+}
+.lstm-training-history-details {
+	display: grid;
+	gap: 2px;
+	padding: 7px 0 2px 18px;
+}
+.lstm-training-history-error {
+	color: var(--theme-danger-strong, var(--accent-text));
+}
 
 .trade-strategy-param-select-shell {
     grid-column: 2;

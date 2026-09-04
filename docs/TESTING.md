@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.44.6`
+Documentation version: `v1.45.0`
 
 ## Price Field shared-grid coverage
 
@@ -14,12 +14,19 @@ the requested GPU or Neural Engine label. Node tests accept both
 cannot fit, so the shared resizer minimum still yields 10 rows per side.
 The isolated Chromium file `tests/e2e/lstm-price-field.spec.mjs` checks the
 LSTM selector, namespaced parameters, shared Price Field DOM, cache-busted
-`probability-grid-v0.26.0` and `backtest-v0.38.6` assets, square cells, and 390px overflow on port
+`probability-grid-v0.26.0` and `backtest-v0.38.26` assets, square cells, and 390px overflow on port
 `8699`. A second case waits for a real server `lstm-price-field/v1` payload
 (not an injected presentation), requires the renderer to normalize it, hovers a
 forecastable origin, and asserts both the floating field and the detail lattice
 render from that computation. Walk-forward LSTM training keeps the causal lag
 return even when enabled Longbridge factor columns are entirely unavailable.
+The same file verifies that the private LSTM training actions appear in the
+`Strategy parameters` collapse opened by the round `Tune strategy parameters`
+button, stay out of the strategy selector and global sidebar, use the
+`bolt.fill.svg` and `stop.fill.svg` masks, and keep historical runs inside an
+accessible native collapse. `tests/test_lstm_training.py`
+covers isolated state discovery, detached launch arguments, seed-checked
+termination, and CSRF rejection at the web boundary.
 Architecture-boundary tests assert that LSTM imports the model-neutral
 `strategies.price_field_pipeline`, never the Bayesian strategy module, and
 never instantiates `BayesianPriceFieldStrategy` as a service. They also cover
@@ -73,6 +80,9 @@ desktop and narrow layouts.
 The desktop Bayesian hover flow also sweeps the pointer across visible forecast
 points, including after overflow pan, requiring the selected origin and
 `Selected date` status to match the visible curve point under the pointer.
+A final-endpoint regression sweeps both sides of the horizontal guide through
+the field's visible width and requires the last curve point's intersection and
+complete probability lattice to remain unique while the pointer moves.
 A layout refresh regression also confirms that sidebar, resizer, and viewport
 reflows clear stale screen-space pointer coordinates when the pointer is no
 longer over the chart stack, then recalculate geometry. A pointer that is still
@@ -293,7 +303,11 @@ Current suite inventory remeasured on 28 Aug 2026:
   calculations, including synthetic multi-account round trips, fail-closed
   handling for incomplete histories, validated open-position snapshots,
   same-day execution chronology, cost-method alternatives, zero-cost grant
-  retention, cross-account cost aggregation, and P&L conservation.
+  retention, cross-account cost aggregation, and P&L conservation. The
+  sanitized live API fixture also verifies broker/account/ticker coverage,
+  independent snapshot as-of dates, replay completion, the snapshot-baseline
+  plus boundary-increment invariant, and rejection of missing supplemental
+  boundaries and legacy ticker fallbacks.
 - `tests/test_longbridge_import.py` and `tests/test_longbridge_sg_import.py`:
   account-scoped synthetic performance calibrations and exact paired-file
   source-artifact bundle identities. No broker account data is required.

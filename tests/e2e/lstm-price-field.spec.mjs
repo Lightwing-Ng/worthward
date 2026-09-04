@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.2.1 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.3.6 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -147,8 +147,8 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.26.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.38.6');
-    expect(desktop.appScript).toContain('app-v0.51.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.38.26');
+    expect(desktop.appScript).toContain('app-v0.51.2');
     expect(desktop.panelTitle).toBe('LSTM Price Field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -162,6 +162,54 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(narrow.overflowX).toBeLessThanOrEqual(1);
     expect(narrow.script).toBe(desktop.script);
     expect(narrow.version).toBe(desktop.version);
+});
+
+test('LSTM private training actions stay in the private strategy parameters collapse', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 841});
+    await page.route('**/api/lstm-training', (route) => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({success: true, runs: []}),
+    }));
+    await page.goto(lstmUrl);
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+    const paramsPanel = page.locator('#trade_strategy_params_panel');
+    await expect(paramsPanel).toBeVisible();
+    const privateMenu = paramsPanel.locator('[data-lstm-training-menu]');
+    await expect(privateMenu).toHaveCount(1);
+    await expect(privateMenu).toBeVisible();
+    await expect(privateMenu.locator('[data-lstm-training-action="start"]')).toBeEnabled();
+    await expect(privateMenu.locator('[data-lstm-training-action="stop"]')).toBeDisabled();
+    await expect(privateMenu.locator('[data-lstm-training-history]')).toHaveCount(1);
+    await expect(privateMenu.locator('.lstm-training-history-collapse')).toHaveCount(1);
+    await expect(page.locator('#trade_strategy_dropdown [data-lstm-training-menu]')).toHaveCount(0);
+    await expect(page.locator('#app_sidebar [data-lstm-training-menu]')).toHaveCount(0);
+
+    const menuRelation = await privateMenu.evaluate((node) => ({
+        directPrivateHost: node.parentElement?.matches('[data-lstm-training-private-menu]') || false,
+        insideStrategyParams: Boolean(node.closest('#trade_strategy_params_panel')),
+    }));
+    expect(menuRelation).toEqual({directPrivateHost: true, insideStrategyParams: true});
+    const iconMasks = await privateMenu.locator('.lstm-training-action-icon').evaluateAll((nodes) => (
+        nodes.map((node) => getComputedStyle(node).maskImage || getComputedStyle(node).webkitMaskImage)
+    ));
+    expect(iconMasks[0]).toContain('/static/images/bolt.fill.svg');
+    expect(iconMasks[1]).toContain('/static/images/stop.fill.svg');
+
+    await privateMenu.locator('.lstm-training-history-collapse > summary').click();
+    await expect(privateMenu.locator('.lstm-training-history-empty')).toHaveText('No historical LSTM training runs.');
+
+    await tuneButton.click();
+    await expect(paramsPanel).toBeHidden();
+    await expect(privateMenu).toBeHidden();
+    await tuneButton.click();
+    await expect(paramsPanel).toBeVisible();
+    await expect(privateMenu).toBeVisible();
+
+    await page.setViewportSize({width: 390, height: 844});
+    await expect(privateMenu).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
 test('server-side LSTM Price Field computes a real probability field and renders it', async ({page}) => {

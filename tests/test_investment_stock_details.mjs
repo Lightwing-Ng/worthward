@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.13.2 */
+/* Tests for Investment Stock details boundaries. Code version: v1.14.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -310,8 +310,20 @@ test('pure-trade realized breakdown follows authoritative broker-scoped totals',
         {broker: 'hsbc', type: 'sell', rowRealizedPnl: 506.37},
         {broker: 'ibkr', type: 'sell', rowRealizedPnl: 892.43},
     ], [
-        {broker: 'hsbc', currency: 'USD', realizedPnl: 506.37, status: 'complete'},
-        {broker: 'ibkr', currency: 'USD', realizedPnl: 818.4783843687473, status: 'complete'},
+        {
+            broker: 'hsbc',
+            currency: 'USD',
+            realizedPnl: 506.37,
+            status: 'complete',
+            reconciliation: {coverageStatus: 'complete', arithmeticCheck: {valid: true}},
+        },
+        {
+            broker: 'ibkr',
+            currency: 'USD',
+            realizedPnl: 818.4783843687473,
+            status: 'complete',
+            reconciliation: {coverageStatus: 'complete', arithmeticCheck: {valid: true}},
+        },
     ]);
 
     assert.ok(Math.abs(breakdown.realizedPnl - 1324.8483843687473) < 1e-9);
@@ -322,6 +334,26 @@ test('pure-trade realized breakdown follows authoritative broker-scoped totals',
             ['ibkr', 818.4783843687473],
         ],
     );
+});
+
+test('incomplete reconciliation cannot override stock-details transaction rows', () => {
+    const getBreakdown = createRealizedBreakdownBuilder();
+    const breakdown = getBreakdown([
+        {broker: 'ibkr', type: 'sell', rowRealizedPnl: 892.43},
+    ], [
+        {
+            broker: 'ibkr',
+            currency: 'USD',
+            realizedPnl: 818.4783843687473,
+            status: 'complete',
+            reconciliation: {coverageStatus: 'unavailable', arithmeticCheck: {valid: false}},
+        },
+    ]);
+
+    assert.equal(breakdown.realizedPnl, 892.43);
+    assert.deepEqual(breakdown.brokerBreakdown.map((entry) => [entry.brokerCode, entry.realizedPnl]), [
+        ['ibkr', 892.43],
+    ]);
 });
 
 test('average-price labels stay presentation-neutral across cost methods', () => {

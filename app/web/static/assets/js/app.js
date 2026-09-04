@@ -1,4 +1,4 @@
-/* Code version: v0.51.0 */
+/* Code version: v0.51.2 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -8220,6 +8220,10 @@
         const groups = Array.from(select.querySelectorAll("optgroup"));
         let optionIndex = 0;
         dropdown.innerHTML = "";
+        const lstmTraining = window.WORTHWARD_LSTM_TRAINING;
+        if (typeof lstmTraining?.renderMenu === "function") {
+            lstmTraining.renderMenu();
+        }
         groups.forEach((group) => {
             const groupElement = document.createElement("section");
             groupElement.className = "trade-strategy-dropdown-group";

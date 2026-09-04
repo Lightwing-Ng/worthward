@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.27.0
+ * Code version: v0.28.0
+ * - Changed: Stock details now reads the canonical reconciliation timeline
+ *   and requires its completeness invariant before using broker totals.
  * - Refactored: Investment y-axis badges now delegate to the shared chart-axis
  *   primitive while preserving the existing exported compatibility wrapper.
  * - Changed: Stock-details price-axis labels now reuse the shared grouped
@@ -110,11 +112,11 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.109.1';
+} from './data-utils.js?v=investment-data-utils-v1.110.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.27.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.28.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -1379,6 +1381,8 @@ export function createInvestmentStockDetailsUtils({
             ? authoritativeRealizedAccounts
                 .filter((account) => (
                     account?.status === 'complete'
+                    && account?.reconciliation?.coverageStatus === 'complete'
+                    && account?.reconciliation?.arithmeticCheck?.valid === true
                     && String(account.currency || '').trim().toUpperCase() === normalizedBaseCurrency
                     && Number.isFinite(Number(account.realizedPnl))
                 ))
@@ -1586,11 +1590,21 @@ export function createInvestmentStockDetailsUtils({
             Array.isArray(processedTransactions) ? processedTransactions : []
         )].sort((left, right) => compareInvestmentTransactions(left, right));
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
+        const canonicalReconciliation = pnlSummary.realizedPnlReconciliation;
+        const realizedPnlByDate = (
+            canonicalReconciliation
+            && Object.prototype.hasOwnProperty.call(canonicalReconciliation, 'realizedPnlByDate')
+        ) ? canonicalReconciliation.realizedPnlByDate : pnlSummary.realizedPnlByDate;
         const realizedPnlTimeline = buildInvestmentStockDetailsRealizedPnlTimeline(
-            pnlSummary.realizedPnlByDate,
+            realizedPnlByDate,
             normalizeLedgerDate,
         );
-        const fallbackRealizedPnl = Number(pnlSummary.realizedPnl);
+        const fallbackRealizedPnl = Number(
+            canonicalReconciliation
+            && Object.prototype.hasOwnProperty.call(canonicalReconciliation, 'realizedPnl')
+                ? canonicalReconciliation.realizedPnl
+                : pnlSummary.realizedPnl,
+        );
         const resolveHistoricalRealizedPnl = (ledgerDate, isLatestPoint = false) => {
             if (pnlSummary.pnlUnavailable === true) return null;
             if (realizedPnlTimeline.length) {

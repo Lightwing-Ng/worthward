@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.9.3
+Code version: v0.9.15
 """
 
 from pathlib import Path
@@ -154,9 +154,9 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
 
     assert '@import url("./views/settings.css?v=0.25.4");' in app_css
     assert '@import url("./foundation/tokens.css?v=0.26.2");' in app_css
-    assert '@import url("./components/forms.css?v=3.40.7");' in app_css
+    assert '@import url("./components/forms.css?v=3.40.8");' in app_css
     assert '@import url("./views/investment.css?v=1.78.6");' in app_css
-    assert "v0.65.29" in app_css
+    assert "v0.65.32" in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -178,7 +178,7 @@ def test_bayesian_compute_backend_value_is_centered_in_its_own_column() -> None:
     assert "justify-content: center;" in trade_css
     assert "--compute-backend-trigger-label-offset" in trade_css
     assert "transform: translateX(var(--compute-backend-trigger-label-offset));" in trade_css
-    assert '@import url("./views/trade.css?v=3.55.22");' in app_css
+    assert '@import url("./views/trade.css?v=3.55.24");' in app_css
 
 
 def test_backtest_history_labels_use_intrinsic_centering() -> None:
@@ -218,6 +218,12 @@ def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None
     assert dca_template.count('row_class="switch-row switch-row--plain"') == 2
     assert 'row_class="switch-row switch-row--plain trade-strategy-boolean-row"' in strategy_template
     assert ".trade-strategy-boolean-row .switch-label > span:not(.field-tooltip)" not in forms_css
+
+    broker_label_start = forms_css.index(
+        '.trade-strategy-param[data-strategy-param-key="use_broker_holding"] > label {'
+    )
+    broker_label_rule = forms_css[broker_label_start : forms_css.index("\n}", broker_label_start)]
+    assert "font-weight: var(--font-weight-medium);" in broker_label_rule
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -628,9 +634,9 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
-        "-app-v0.51.0",
+        "-app-v0.51.2",
         "-backtest-probability-grid-v0.26.0",
-        "-backtest-v0.38.6",
+        "-backtest-v0.38.26",
         "-backtest-layout-v0.4.0",
     ):
         assert fragment in base_template

@@ -1,4 +1,4 @@
-{# Code version: v0.8.1 #}
+{# Code version: v0.8.2 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -145,6 +145,7 @@
             ></div>
         </div>
         <div id="trade_strategy_params_panel" class="trade-strategy-params-popover" data-trade-strategy-panel role="region" aria-label="Strategy parameters"{% if not strategy_form_fields %} hidden{% endif %}>
+            <div class="lstm-training-private-menu-slot" data-lstm-training-private-menu hidden></div>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>
