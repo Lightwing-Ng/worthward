@@ -1,4 +1,4 @@
-/* Code version: v3.60.1 */
+/* Code version: v3.60.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -410,7 +410,7 @@
     --workspace-article-pad-block-start: 2px;
     --workspace-article-pad-inline: 0px;
     --workspace-article-pad-block-end: 2px;
-    --backtest-result-surface-pad-inline: 12px;
+    --backtest-result-surface-pad-inline: 6px;
     --backtest-share-action-inset-block-start: 6px;
 }
 
@@ -1357,7 +1357,7 @@
 }
 
 .trade-chart-stack.has-probability-field {
-    padding-bottom: 2px;
+    padding-bottom: 4px;
 }
 
 .trade-chart-stack.is-trade-details-hidden {

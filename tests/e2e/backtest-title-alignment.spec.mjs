@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {test, expect} from '@playwright/test';
 
 test('Backtest result title shares the desktop centerline and preserves compact flow', async ({page}) => {
@@ -17,6 +17,8 @@ test('Backtest result title shares the desktop centerline and preserves compact 
             const result = rect('.backtest-results-stack [data-layout-role="result-heading"]');
             const main = document.querySelector('.backtest-workspace-main');
             const stack = rect('.trade-chart-stack');
+            const stackStyle = getComputedStyle(document.querySelector('.trade-chart-stack'));
+            const surfaceStyle = getComputedStyle(document.querySelector('#backtest_overview_panel > .backtest-surface'));
             const resizer = rect('#backtest_section_resizer');
             return {
                 aligned: innerWidth < 768 || [
@@ -27,6 +29,8 @@ test('Backtest result title shares the desktop centerline and preserves compact 
                 compactFlow: innerWidth >= 768 || (getComputedStyle(main).transform === 'none' && result.y > top),
                 chartVisible: stack.height > 0 && stack.width > 0,
                 splitterBelowChart: resizer.y >= stack.bottom - 1,
+                probabilityStackBottomPadding: stackStyle.paddingBottom,
+                overviewInlinePadding: [surfaceStyle.paddingLeft, surfaceStyle.paddingRight],
                 noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth,
             };
         })).toEqual({
@@ -34,6 +38,8 @@ test('Backtest result title shares the desktop centerline and preserves compact 
             compactFlow: true,
             chartVisible: true,
             splitterBelowChart: true,
+            probabilityStackBottomPadding: '4px',
+            overviewInlinePadding: ['6px', '6px'],
             noHorizontalOverflow: true,
         });
     }

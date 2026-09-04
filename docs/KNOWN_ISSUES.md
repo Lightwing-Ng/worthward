@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.241.0`
+Documentation version: `v1.241.2`
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
@@ -65,16 +65,24 @@ references, transaction descriptions, or copied statement content.
 Fixed on 4 Sep 2026 in workspace.css v1.22.4: Backtest no longer disables the
 shared desktop result-column lift. At widths of at least 768px, Performance
 shares the page-title, sidebar-toggle, and theme-control centerline. Below 768px,
-the existing stacked flow remains unchanged. No shared anchor token or chart
-padding was changed. The regression checks five widths from 390px to 1,276px,
-including chart visibility, splitter placement, and horizontal overflow.
+the existing stacked flow remains unchanged. The title-rail fix did not change
+shared anchor tokens or chart padding. The regression checks five widths from
+390px to 1,276px, including chart visibility, splitter placement, and horizontal
+overflow.
+
+On 5 Sep 2026, the next annotated Backtest spacing pass updated trade.css v3.60.2:
+the Price Field chart stack uses a 4px bottom inset, and the Overview surface uses
+6px inline padding through its local result-surface token. The narrow probability
+detail panel keeps its dedicated 10px inline margin and 12px inline padding.
 
 Validation: the 27 focused layout contracts and both default-strategy and
 five-width LSTM title browser regressions pass. The complete gate passes its
-Python and JavaScript stages, then reports 294 Chromium passes and six failures.
-Five match the browser-gate follow-up below; the additional dpr2 sidebar-motion
-case records a 283.3ms maximum frame gap against a 120ms limit. These failures
-were not repaired or independently baseline-reproduced in this title-only change.
+Python and JavaScript stages, then reports 293 Chromium passes and seven failures.
+The failures are unrelated share-heading clearance, a market-cap ticker blur
+navigation timeout, stale Investment entry-module version, desktop gel-motion
+scale, Bayesian axis geometry, the older 6px Backtest result-card expectation,
+and the legacy zero-opacity expectation. These failures were not repaired or
+independently baseline-reproduced in this spacing-only change.
 
 ## Browser-gate follow-up
 

@@ -1,4 +1,4 @@
-"""Tests for the durable LSTM GA runner. Code version: v1.0.1."""
+"""Tests for the durable LSTM GA runner. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -113,9 +113,52 @@ class LstmGaTuneTests(unittest.TestCase):
         )
 
         self.assertFalse(params["use_options"])
+        self.assertEqual(params["cell_display_threshold"], 5.0)
         self.assertEqual(params["entry_probability"], 60.0)
         self.assertEqual(params["compute_backend"], "CPU")
         self.assertEqual(params["lstm_learning_rate"], 0.123)
+
+    def test_canonical_params_preserve_explicit_gpu_baseline(self) -> None:
+        strategy = ga.LSTMPriceFieldStrategy()
+        base = ga._base_params(strategy, {"compute_backend": "GPU"})
+        bounds = {
+            "training_window": (30, 100),
+            "chip_window": (5, 100),
+            "lstm_lookback": (4, 16),
+            "lstm_hidden_size": (4, 32),
+            "lstm_epochs": (1, 20),
+            "lstm_learning_rate": (0.001, 0.5),
+        }
+
+        params = ga._canonical_params(
+            {},
+            base,
+            ("volume",),
+            bounds,
+        )
+
+        self.assertEqual(params["compute_backend"], "GPU")
+
+    def test_canonical_params_preserve_presentation_threshold_baseline(self) -> None:
+        strategy = ga.LSTMPriceFieldStrategy()
+        base = ga._base_params(strategy, {"cell_display_threshold": 2.0})
+        bounds = {
+            "training_window": (30, 100),
+            "chip_window": (5, 100),
+            "lstm_lookback": (4, 16),
+            "lstm_hidden_size": (4, 32),
+            "lstm_epochs": (1, 20),
+            "lstm_learning_rate": (0.001, 0.5),
+        }
+
+        params = ga._canonical_params(
+            {},
+            base,
+            ("volume",),
+            bounds,
+        )
+
+        self.assertEqual(params["cell_display_threshold"], 2.0)
 
     def test_fitness_requires_all_validation_folds_and_holdout_coverage(self) -> None:
         result = {

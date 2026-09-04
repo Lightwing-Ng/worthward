@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.6.0
+Code version: v0.7.0
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -42,6 +42,13 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Keep the import-time contract available to the web training service. The
+# application package imports that service while this CLI is being imported,
+# so these public launcher constants must exist before app submodules load.
+DEFAULT_DURATION_SECONDS = 43_200
+DEFAULT_POPULATION_SIZE = 64
+MAX_WORKERS = 8
 
 from app.core.config import PERIOD_OFFSETS  # noqa: E402
 from app.services.price_field_market_factors import (  # noqa: E402
@@ -81,11 +88,8 @@ VALIDATION_FOLD_COUNT = 3
 MAX_LEADERBOARD_ENTRIES = 256
 ROBUST_CANDIDATE_COUNT = 32
 ROBUST_SEEDS = (42, 43, 44)
-DEFAULT_DURATION_SECONDS = 43_200
 MINIMUM_TRAINING_SECONDS = 60.0
-DEFAULT_POPULATION_SIZE = 64
 DEFAULT_GA_SEED = 20260903
-MAX_WORKERS = 8
 
 _FACTOR_PARAMETER_KEYS = {
     definition.key: definition.parameter_key
@@ -247,9 +251,12 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
     selected = getattr(args, "selected_params", None)
     if isinstance(selected, str):
         selected = json.loads(selected)
+    base = getattr(args, "base_params", None)
+    if isinstance(base, str):
+        base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.6.0",
+        "runner_version": "v0.7.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
@@ -261,6 +268,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "ga_seed": int(args.ga_seed),
         "offline": bool(args.offline),
         "selected_params": validate_selected_params(selected) if selected is not None else None,
+        "base_params": validate_selected_params(base) if base is not None else None,
         "configuration": validate_training_configuration(getattr(args, "configuration", None)),
         "minimum_training_seconds": MINIMUM_TRAINING_SECONDS if selected is not None else 0.0,
     }
@@ -389,7 +397,10 @@ def _date_bounds(period: str) -> tuple[date, date]:
     return start.date(), end.date()
 
 
-def _base_params(strategy: LSTMPriceFieldStrategy) -> dict[str, Any]:
+def _base_params(
+    strategy: LSTMPriceFieldStrategy,
+    overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     params = strategy.get_default_params()
     params.update({
         "cell_display_threshold": 5.0,
@@ -397,6 +408,8 @@ def _base_params(strategy: LSTMPriceFieldStrategy) -> dict[str, Any]:
         "compute_backend": "CPU",
         "lstm_seed": 42,
     })
+    if overrides:
+        params.update(dict(overrides))
     return params
 
 
@@ -481,12 +494,13 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         start, end = date.fromisoformat(configuration["from"]), date.fromisoformat(configuration["to"])
     else:
         start, end = _date_bounds(args.period)
-    loader_params = _base_params(strategy)
+    spec = _request_spec(args)
+    loader_params = _base_params(strategy, spec["base_params"])
     loader_params.update({
-        "training_window": 504,
-        "chip_window": 252,
+        "training_window": max(504, int(loader_params["training_window"])),
+        "chip_window": max(252, int(loader_params["chip_window"])),
     })
-    selected_params = _request_spec(args)["selected_params"]
+    selected_params = spec["selected_params"]
     if selected_params is not None:
         loader_params = selected_params
     if args.offline:
@@ -635,9 +649,13 @@ def _canonical_params(
     learning_rate = max(float(low), min(float(high), learning_rate))
     normalized["lstm_learning_rate"] = round(learning_rate, 3)
     normalized["lstm_seed"] = max(0, int(round(float(normalized.get("lstm_seed", 42)))))
-    normalized["cell_display_threshold"] = 5.0
+    normalized["cell_display_threshold"] = float(
+        base_params.get("cell_display_threshold", 5.0)
+    )
     normalized["entry_probability"] = 60.0
-    normalized["compute_backend"] = "CPU"
+    normalized["compute_backend"] = str(
+        base_params.get("compute_backend", "CPU")
+    )
     return normalized
 
 
@@ -818,6 +836,13 @@ def _evaluate_signal_result(
     try:
         signal_result = strategy.compute_signals(context.visible_frame, params)
         device = signal_result.presentation.get("device", {})
+        if str(params.get("compute_backend", "CPU")) == "GPU":
+            resolved = str(device.get("resolved", "")).lower()
+            engine = str(device.get("engine", "")).lower()
+            if resolved not in {"mps", "cuda"} or engine != "torch":
+                raise RuntimeError(
+                    "GPU backend did not resolve to a confirmed MPS or CUDA device."
+                )
         if context.minimum_training_seconds > 0 and (
             not device.get("optimizer_steps")
             or float(device.get("training_compute_seconds") or 0) < context.minimum_training_seconds
@@ -1402,8 +1427,8 @@ def _run(args: argparse.Namespace) -> int:
             return _run_selected_configuration(spec, paths, context)
         strategy = LSTMPriceFieldStrategy()
         base_params = _canonical_params(
-            _base_params(strategy),
-            _base_params(strategy),
+            _base_params(strategy, spec["base_params"]),
+            _base_params(strategy, spec["base_params"]),
             context.active_factor_keys,
             context.bounds,
         )
@@ -1723,6 +1748,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ga-seed", type=int, default=DEFAULT_GA_SEED)
     parser.add_argument("--state-root", default="")
     parser.add_argument("--selected-params", default=None, help="Train one exact strategy configuration supplied as JSON instead of running GA.")
+    parser.add_argument("--base-params", default=None, help="Use the supplied strategy configuration as the GA baseline while still searching optimizable parameters.")
     parser.add_argument("--configuration", default=None, help="Saved date range and Backtest settings as JSON.")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
