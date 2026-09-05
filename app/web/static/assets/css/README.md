@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.1.1`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -37,7 +37,9 @@ dedicated migration updates its manifest entry and tests together.
 ## Editing guide
 
 The shared `ui-collapse` primitive owns native disclosure markers and token-driven
-header/body spacing. Render it through `templates/_collapse.html`; use the
+header/body spacing. Native disclosures use the agenticContext browser-picker
+chevron: 12px by 8px, current text color, down when closed and rotated 180
+degrees when open, with the same 180ms standard easing. Render it through `templates/_collapse.html`; use the
 `Collapse` row in Style tokens to edit its standard values. Backtest common
 controls, strategy parameters, training factors, and private action slots all
 reuse it. Settings strategy cards retain their dense card-specific branch while

@@ -1,4 +1,4 @@
-/* Code version: v0.29.0 */
+/* Code version: v0.29.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -23,10 +23,11 @@
 	--responsive-breakpoint-live-pin-tight-max: 420px;
 	--sidebar-form-gap: 2px;
 	--collapse-section-gap: 8px;
-	--collapse-icon-size: 20px;
+	--collapse-icon-size: 12px;
+	--collapse-icon-height: 8px;
 	--collapse-icon-gap: 8px;
-	--collapse-icon-closed: url("/static/images/arrowtriangle.down.circle.svg");
-	--collapse-icon-open: url("/static/images/arrowtriangle.down.circle.fill.svg");
+	--collapse-icon-closed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z' fill='currentColor'/%3E%3C/svg%3E");
+	--collapse-icon-open: var(--collapse-icon-closed);
 	--collapse-summary-padding: 10px 0;
 	--collapse-body-padding: 0 10px 10px;
 	--collapse-font-size: var(--font-size-5);

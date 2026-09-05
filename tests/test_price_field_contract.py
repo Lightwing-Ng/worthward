@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.2.0."""
+"""Shared Price Field contract tests. Code version: v1.2.1."""
 
 from __future__ import annotations
 
@@ -192,13 +192,12 @@ class PriceFieldContractTests(unittest.TestCase):
         self.assertIn("probability-grid-v1", source)
         self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.29.0\"", source)
 
-    def test_native_disclosures_use_shared_trailing_circle_assets(self) -> None:
+    def test_native_disclosures_use_shared_trailing_chevron(self) -> None:
         root = Path(__file__).resolve().parents[1]
         css = (root / "app/web/static/assets/css/components/collapse.css").read_text()
         tokens = (root / "app/web/static/assets/css/foundation/tokens.css").read_text()
-        for asset in ("arrowtriangle.down.circle.svg", "arrowtriangle.down.circle.fill.svg"):
-            self.assertTrue((root / "app/web/static/images" / asset).is_file())
-            self.assertIn(asset, tokens)
+        self.assertIn("M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z", tokens)
+        self.assertNotIn("arrowtriangle.down.circle", tokens)
         self.assertIn("details > summary::after", css)
         self.assertIn("details[open] > summary::after", css)
         self.assertNotIn("summary::before", css)

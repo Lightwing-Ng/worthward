@@ -1,18 +1,30 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.5`
+Documentation version: `v1.243.6`
 
-External Price Field audit challenge, 6 Sep 2026: the reported Bayesian
-loss-exit finding is an intentional execution policy, not a model lookahead
-failure. `stop_loss=false` is the safer default and deliberately keeps a
+External Price Field audit follow-up, 6 Sep 2026: the reported Bayesian
+loss-exit behavior follows the configured execution policy. This does not
+resolve its effect on strategy evaluation or establish that it reduces risk.
+`stop_loss=false` deliberately keeps a
 strategy sell or cover intent open when its price would realize a loss; use the
 explicit `stop_loss=1` URL parameter when evaluating signal-faithful exits.
-The local Price Field fallback now fails closed unless observed finite OHLC is
-present. Model fingerprints also record the resolved compute device, engine,
-numeric precision, and whole-run fallback state. PyTorch is now installed by the
-supported setup flow, while Bayesian acceleration remains scoped to the
+The local Price Field fallback rejects the requested bundle if any retained
+trading date has nonfinite OHLC. It must not delete that date and bridge the
+next-open target across the resulting gap. Invalid OHLC outside the requested
+interval does not prevent loading valid observations inside it.
+Model fingerprints also record the resolved compute device, engine,
+numeric precision, and whole-run fallback state. PyTorch 2.14.0 is declared in
+the setup requirements; clean installation of that pin remains unverified.
+The inspected Python 3.13 environment used PyTorch 2.7.1 with MPS available.
+Bayesian acceleration remains scoped to the
 confirmed MPS or CUDA posterior backend; full SoC, Neural Engine, and browser
 WebGPU utilization are not claimed or verified.
+
+The previous full browser gate reported 320 passes and three failures:
+Holdings/history alignment, DCA internal overflow, and Bayesian edge hover.
+The edge-hover failure also reproduced alone. A pre-change reproduction was
+not obtained for all three failures, so they cannot all be classified as
+pre-existing from that evidence.
 
 LSTM GA v0.9.0 adds opt-in `--objective probability` and a SHA-256-pinned
 `--snapshot-file` input. It ranks chronological validation Brier scores with

@@ -1,6 +1,6 @@
 """Focused tests for the read-only Price Field Longbridge factor provider.
 
-Code version: v1.9.0
+Code version: v1.10.0
 """
 
 from __future__ import annotations
@@ -109,24 +109,40 @@ class PriceFieldMarketFactorProviderTests(unittest.TestCase):
                     "2026-08-27",
                 )
 
-    def test_local_bundle_drops_nonfinite_ohlc_rows_without_close_proxy(self) -> None:
+    def test_local_bundle_rejects_invalid_interior_bar_without_bridging_dates(self) -> None:
         frame = pd.DataFrame({
-            "Date": pd.to_datetime(["2026-08-27", "2026-08-28"]),
-            "Open": [float("nan"), 10.0],
-            "High": [11.0, 12.0],
-            "Low": [8.0, 9.0],
-            "Close": [10.0, 11.0],
+            "Date": pd.date_range("2026-08-24", periods=4),
+            "Open": [100.0, 101.0, 104.0, 110.0],
+            "High": [102.0, 103.0, 105.0, 112.0],
+            "Low": [99.0, 100.0, 102.0, 109.0],
+            "Close": [101.0, 102.0, 104.0, 111.0],
+        })
+        for column in ("Open", "High", "Low", "Close"):
+            for invalid in (float("nan"), float("inf"), -float("inf"), pd.NA):
+                with self.subTest(column=column, invalid=invalid):
+                    damaged = frame.astype({column: "Float64"})
+                    damaged.loc[2, column] = invalid
+                    original = damaged.copy(deep=True)
+                    with patch("app.services.market_data.fetch_history", return_value=damaged):
+                        with self.assertRaisesRegex(ValueError, "refusing to remove trading dates"):
+                            factors.build_local_price_field_factor_bundle(
+                                "AAPL.US", "2026-08-24", "2026-08-27",
+                            )
+                    pd.testing.assert_frame_equal(damaged, original)
+
+    def test_local_bundle_ignores_invalid_ohlc_outside_requested_interval(self) -> None:
+        frame = pd.DataFrame({
+            "Date": pd.date_range("2026-08-24", periods=3),
+            "Open": [float("nan"), 101.0, 104.0],
+            "High": [102.0, 103.0, 105.0],
+            "Low": [99.0, 100.0, 102.0],
+            "Close": [101.0, 102.0, 104.0],
         })
         with patch("app.services.market_data.fetch_history", return_value=frame):
             bundle = factors.build_local_price_field_factor_bundle(
-                "AAPL.US",
-                "2026-08-27",
-                "2026-08-28",
+                "AAPL.US", "2026-08-25", "2026-08-26",
             )
-
-        self.assertEqual(len(bundle.ohlcv), 1)
-        self.assertEqual(bundle.ohlcv[0].observed_at.date().isoformat(), "2026-08-28")
-        self.assertEqual(bundle.ohlcv[0].open, 10.0)
+        self.assertEqual([bar.open for bar in bundle.ohlcv], [101.0, 104.0])
 
     @staticmethod
     def _ohlcv_fetch_result(

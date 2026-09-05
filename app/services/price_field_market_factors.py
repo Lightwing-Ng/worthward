@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Price Field models.
 
-Code version: v1.9.0
+Code version: v1.10.0
 - Changed: The canonical provider module is model-neutral and serves both
   Bayesian Price Field and LSTM Price Field.
 - Changed: Public bundle, loader, and cache names use Price Field terminology;
@@ -31,6 +31,8 @@ Code version: v1.9.0
 - Fixed: Local Price Field bundles now require finite observed OHLC values;
   missing or invalid executable prices and volume-profile bounds fail closed
   instead of using Close as a synthetic proxy.
+- Fixed: Invalid OHLC within the requested interval rejects the bundle instead
+  of removing trading dates and changing the next-open target horizon.
 """
 
 from __future__ import annotations
@@ -277,11 +279,8 @@ def build_local_price_field_factor_bundle(
                 normalized_frame[column],
                 errors="coerce",
             )
-    normalized_ohlc = normalized_frame[["Open", "High", "Low", "Close"]]
-    finite_ohlc = normalized_ohlc.map(math.isfinite).all(axis=1)
     normalized_frame = normalized_frame.loc[
         normalized_frame["Date"].notna()
-        & finite_ohlc
         & (normalized_frame["Date"].dt.date >= normalized_start)
         & (normalized_frame["Date"].dt.date <= normalized_end)
     ].sort_values("Date").drop_duplicates("Date", keep="last").copy()
@@ -289,6 +288,17 @@ def build_local_price_field_factor_bundle(
         raise ValueError(
             f"Local daily market data for {ticker} does not cover "
             f"{normalized_start.isoformat()} through {normalized_end.isoformat()}."
+        )
+
+    normalized_ohlc = normalized_frame[["Open", "High", "Low", "Close"]]
+    finite_ohlc = normalized_ohlc.map(
+        lambda value: pd.notna(value) and math.isfinite(value)
+    ).all(axis=1)
+    if not finite_ohlc.all():
+        raise ValueError(
+            f"Local daily market data for {ticker} contains invalid OHLC "
+            "within the requested interval; refusing to remove trading dates "
+            "or substitute prices for the next-open target."
         )
 
     source = "local-market-store"

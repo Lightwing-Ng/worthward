@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -15,7 +15,7 @@ for (const colorScheme of ['light', 'dark']) {
                 const after = getComputedStyle(el, '::after');
                 return {
                     color: after.backgroundColor,
-                    accent: getComputedStyle(el).getPropertyValue("--accent").trim(),
+                    textColor: getComputedStyle(el).color,
                     textLeft: range.getBoundingClientRect().left,
                     labelLeft: document.querySelector('label[for="trade_strategy"]').getBoundingClientRect().left,
                     before: getComputedStyle(el, '::before').content,
@@ -23,27 +23,28 @@ for (const colorScheme of ['light', 'dark']) {
                     transform: after.transform,
                     column: after.gridColumnStart,
                     width: after.width,
+                    height: after.height,
                     overflow: document.documentElement.scrollWidth - innerWidth,
                 };
             });
             let state = await read();
             expect(Math.abs(state.textLeft - state.labelLeft)).toBeLessThan(1);
             expect(state.before).toBe('none');
-            const blue = await summary.evaluate(el => { const probe = document.createElement('span'); probe.style.color = 'var(--accent)'; el.append(probe); const value = getComputedStyle(probe).color; probe.remove(); return value; });
-            expect(state.color).toBe(blue);
+            expect(state.color).toBe(state.textColor);
             expect(state.column).toBe('2');
-            expect(state.width).toBe('20px');
-            expect(state.mask).toContain('arrowtriangle.down.circle.fill.svg');
-            expect(state.transform).toBe('matrix(1, 0, 0, 1, 0, 0)');
+            expect(state.width).toBe('12px');
+            expect(state.height).toBe('8px');
+            expect(state.mask).toContain('M1.41');
+            expect(state.transform).toBe('matrix(-1, 0, 0, -1, 0, 0)');
             expect(state.overflow).toBeLessThanOrEqual(1);
             await summary.focus();
             await summary.press('Enter');
             await expect(page.locator('[data-collapse="backtest"]')).not.toHaveAttribute('open');
             await page.waitForTimeout(650);
             state = await read();
-            expect(state.color).toBe(blue);
-            expect(state.mask).toContain('arrowtriangle.down.circle.svg');
-            expect(state.transform).toBe('matrix(0, -1, 1, 0, 0, 0)');
+            expect(state.color).toBe(state.textColor);
+            expect(state.mask).toContain('M1.41');
+            expect(state.transform).toBe('matrix(1, 0, 0, 1, 0, 0)');
             expect(Math.abs(state.textLeft - state.labelLeft)).toBeLessThan(1);
             await summary.press('Space');
             await expect(page.locator('[data-collapse="backtest"]')).toHaveAttribute('open');
