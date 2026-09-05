@@ -1,4 +1,4 @@
-/* Code version: v3.60.2 */
+/* Code version: v3.61.1 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -138,7 +138,8 @@
 	font-size: var(--font-size-2);
 }
 .lstm-training-history-select {
-	display: flex;
+	display: grid;
+	grid-template-columns: 12px 5em max-content minmax(0, 1fr);
 	align-items: center;
 	justify-content: space-between;
 	gap: 4px;
@@ -148,7 +149,7 @@
 	margin: 0;
 	padding: 0 20px 0 0;
 	border: none;
-	border-radius: var(--radius-soft);
+	border-radius: var(--radius-pill);
 	background: transparent;
 	box-shadow: none;
 	color: var(--text);
@@ -217,10 +218,23 @@
 		pointer-events: auto;
 	}
 }
-.lstm-training-accuracy {
+.lstm-training-history-select .lstm-training-accuracy {
+	grid-column: 3;
+	inline-size: calc(7ch + 2 * var(--investment-holdings-allocation-badge-padding-inline));
+	min-inline-size: 0;
+	box-sizing: border-box;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
 	flex: 0 0 auto;
 	font-size: var(--font-size-2);
 	font-weight: var(--font-weight-semibold);
+}
+.lstm-training-history-select .lstm-training-history-identifier {
+	grid-column: 4;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .lstm-training-spinner {
 	margin-inline-start: 8px;
@@ -1360,6 +1374,40 @@
     padding-bottom: 4px;
 }
 
+.backtest-fixed-price-axis {
+    position: absolute;
+    left: 0;
+    pointer-events: none;
+    z-index: calc(var(--layer-chart-overlay-line) + 3);
+}
+
+.backtest-probability-hint,
+.backtest-probability-empty-state {
+    position: absolute;
+    pointer-events: none;
+    color: var(--theme-muted);
+    background: var(--theme-background);
+    font-size: 12px;
+    padding: 3px 6px;
+    z-index: calc(var(--layer-chart-overlay-line) + 4);
+}
+
+.trade-chart-stack.has-probability-overflow {
+    cursor: grab;
+    touch-action: pan-y;
+}
+
+.backtest-probability-empty-state {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+}
+
+.trade-chart-stack.is-probability-dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+
 .trade-chart-stack.is-trade-details-hidden {
     grid-template-rows: minmax(0, 1fr);
 }
@@ -1443,7 +1491,7 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 120ms var(--motion-standard);
-    z-index: calc(var(--layer-chart-overlay-line) + 3);
+    z-index: calc(var(--layer-chart-overlay-line) + 4);
 }
 
 .trade-chart-hover-date-label[hidden] {

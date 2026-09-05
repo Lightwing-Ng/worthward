@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.1."""
 
 from __future__ import annotations
 
@@ -206,7 +206,7 @@ def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkey
     sent = json.loads(captured[0][captured[0].index("--configuration") + 1])
     assert sent == ga_runner.validate_training_configuration(config)
     paths = manager._paths_for_run_id(run["id"])
-    assert json.loads(paths.request.read_text())["minimum_training_seconds"] == 60
+    assert json.loads(paths.request.read_text())["minimum_training_seconds"] == 180
     assert json.loads(paths.request.read_text())["configuration"] == sent
 
 

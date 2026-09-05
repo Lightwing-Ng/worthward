@@ -1,4 +1,4 @@
-/* Code version: v0.39.0 */
+/* Code version: v0.40.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -780,6 +780,18 @@
 		`;
 		hoverDateLabel.hidden = true;
 		tradeChartStack.appendChild(hoverDateLabel);
+		// A separate paint surface keeps price ticks and their value badge fixed
+		// while only the plot moves through the horizontal viewport.
+		const fixedPriceAxis = strategyPresentation ? document.createElement("canvas") : null;
+		const probabilityHint = strategyPresentation ? document.createElement("div") : null;
+		if (fixedPriceAxis) {
+			fixedPriceAxis.className = "backtest-fixed-price-axis";
+			fixedPriceAxis.setAttribute("aria-hidden", "true");
+			tradeChartStack.appendChild(fixedPriceAxis);
+			probabilityHint.className = "backtest-probability-hint";
+			probabilityHint.hidden = true;
+			tradeChartStack.appendChild(probabilityHint);
+		}
 
 		tradeChartStack.querySelectorAll("[data-backtest-chart-tooltip]").forEach((node) => node.remove());
 		const tooltip = document.createElement("div");
@@ -1094,8 +1106,11 @@
 		let probabilityHoverPointerY = null;
 		let probabilityHoverPointerActive = false;
 		let probabilityHoverIntersection = null;
+		let probabilityPanGesture = null;
+		let probabilityManualPanOffset = 0;
 		let probabilityFieldPositionUpdater = null;
 		const resetProbabilityHoverPointer = () => {
+			probabilityManualPanOffset = 0;
 			probabilityHoverPointerX = null;
 			probabilityHoverPointerY = null;
 			probabilityHoverPointerActive = false;
@@ -1190,6 +1205,8 @@
 			// spacer extent. Avoid reading scrollLeft after writing it: that read
 			// synchronously flushes layout on every spring frame.
 			const actualNativeScrollLeft = nativeScrollLeft;
+			if (fixedPriceAxis) fixedPriceAxis.style.translate = `${actualNativeScrollLeft}px 0px`;
+			if (probabilityHint) probabilityHint.style.translate = `${actualNativeScrollLeft}px 0px`;
 			probabilityScrollVisualPosition = next;
 			tradeChartStack.dataset.probabilityPanVisualPosition = String(
 				probabilityScrollVisualPosition,
@@ -1428,12 +1445,17 @@
 			const secondaryLine = hoverDateLabel.querySelector(
 				'[data-backtest-hover-date-line="secondary"]',
 			);
-			if (primaryLine) primaryLine.textContent = firstLine || "";
+			if (primaryLine && primaryLine.textContent !== (firstLine || "")) primaryLine.textContent = firstLine || "";
 			if (secondaryLine) {
-				secondaryLine.textContent = secondLine || "";
+				if (secondaryLine.textContent !== (secondLine || "")) secondaryLine.textContent = secondLine || "";
 				secondaryLine.hidden = !secondLine;
 			}
-			hoverDateLabel.style.left = `${x}px`;
+			hoverDateLabel.hidden = false;
+			const halfWidth = (hoverDateLabel.offsetWidth || 42) / 2;
+			const visualX = Math.max(halfWidth, Math.min(
+				tradeChartStack.clientWidth - halfWidth, x - probabilityScrollVisualPosition,
+			));
+			hoverDateLabel.style.left = `${visualX + probabilityScrollVisualPosition}px`;
 			hoverDateLabel.style.top = `${top}px`;
 			hoverDateLabel.hidden = false;
 			hoverDateLabel.classList.add("is-visible");
@@ -1599,6 +1621,18 @@
 				}
 			}
 			const detailGridViewport = probabilityDetailGrid.parentElement;
+			if (detailGridViewport) {
+				let emptyState = detailGridViewport.querySelector(".backtest-probability-empty-state");
+				if (!emptyState) {
+					emptyState = document.createElement("div");
+					emptyState.className = "backtest-probability-empty-state";
+					detailGridViewport.appendChild(emptyState);
+				}
+				const empty = cells.every((cell) => cell.isVisible === false);
+				const copy = empty ? `All cells below ${Number(detailModel.cellDisplayThresholdPct).toFixed(2)}% · max ${(Math.max(...cells.map((cell) => cell.probability)) * 100).toFixed(2)}%` : "";
+				if (emptyState.textContent !== copy) emptyState.textContent = copy;
+				emptyState.hidden = !empty;
+			}
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
 				? Math.max(0, Number(detailGridViewportRect.width))
@@ -1895,6 +1929,13 @@
 					if (tickIndex === 0) ctx.textAlign = "left";
 					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
 					else ctx.textAlign = "center";
+					if (strategyPresentation && activePriceOverlay && !hoverDateLabel.hidden) {
+						const width = Math.max(ctx.measureText(firstLine).width, ctx.measureText(secondLine).width);
+						const left = x - (ctx.textAlign === "right" ? width : ctx.textAlign === "center" ? width / 2 : 0);
+						const badgeX = Number.parseFloat(hoverDateLabel.style.left) - getStaticStackContentLeft(chart.canvas);
+						const halfBadge = hoverDateLabel.offsetWidth / 2;
+						if (left < badgeX + halfBadge && left + width > badgeX - halfBadge) return;
+					}
 					ctx.fillText(firstLine, x, baselineY);
 					ctx.fillText(secondLine, x, baselineY + lineHeight);
 				});
@@ -2042,6 +2083,7 @@
 				ctx.restore();
 			},
 			afterDatasetsDraw(chart) {
+				if (strategyPresentation) return;
 				const bounds = chart._activeBacktestPriceGuideBounds;
 				if (!bounds || typeof chartAxis.drawYAxisValueBadge !== "function") return;
 				const formattedPrice = new Intl.NumberFormat("en-US", {
@@ -2057,6 +2099,42 @@
 					boundsProperty: "_activeBacktestPriceGuideBounds",
 					boundsAliases: {formattedPrice, price: bounds.price},
 				});
+			},
+			afterDraw(chart) {
+				if (!fixedPriceAxis || chart.canvas !== priceCanvas || !chart.chartArea) return;
+				const ratio = chart.currentDevicePixelRatio || 1;
+				const width = Math.ceil(chart.chartArea.left + 48);
+				const height = chart.height;
+				if (fixedPriceAxis.width !== Math.ceil(width * ratio)) fixedPriceAxis.width = Math.ceil(width * ratio);
+				if (fixedPriceAxis.height !== Math.ceil(height * ratio)) fixedPriceAxis.height = Math.ceil(height * ratio);
+				setInlineStyleIfChanged(fixedPriceAxis, "width", `${width}px`);
+				setInlineStyleIfChanged(fixedPriceAxis, "height", `${height}px`);
+				setInlineStyleIfChanged(fixedPriceAxis, "top", `${priceCanvas.offsetTop}px`);
+				const ctx = fixedPriceAxis.getContext("2d");
+				ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+				ctx.clearRect(0, 0, width, height);
+				// Composite the actual translucent surface over its ancestors. Using
+				// only the body color creates a visibly different strip in dark mode.
+				ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--theme-background").trim() || "#ffffff";
+				ctx.fillRect(0, 0, chart.chartArea.left, height);
+				const backgrounds = [];
+				for (let node = priceCanvas.parentElement; node; node = node.parentElement) {
+					backgrounds.push(getComputedStyle(node).backgroundColor);
+				}
+				backgrounds.reverse().forEach((color) => {
+					ctx.fillStyle = color;
+					ctx.fillRect(0, 0, chart.chartArea.left, height);
+				});
+				ctx.drawImage(chart.canvas, 0, 0, chart.chartArea.left * ratio, height * ratio,
+					0, 0, chart.chartArea.left, height);
+				const bounds = chart._activeBacktestPriceGuideBounds;
+				if (bounds) {
+					const badge = chartAxis.drawYAxisValueBadge?.({...chart, ctx}, {
+						y: bounds.y, value: bounds.price, formattedValue: formatMoney(bounds.price),
+						formatTickLabel: formatStockPriceAxisValue, fillColor: resolvedTheme.accentPrimary,
+					});
+					if (badge) Object.assign(bounds, badge, {formattedPrice: formatMoney(bounds.price)});
+				}
 			},
 		};
 
@@ -2269,6 +2347,8 @@
 		};
 
 		const hideProbabilityTooltip = ({immediate = false} = {}) => {
+			if (probabilityHint) probabilityHint.hidden = true;
+			tradeChartStack.classList.remove("has-probability-overflow");
 			resetProbabilityHoverPointer();
 			hideHoverDateLabel();
 			probabilityTooltip?.classList.remove("is-visible");
@@ -2897,11 +2977,25 @@
 			}
 			hoverLine.style.setProperty("--trade-chart-hover-line-x", `${x}px`);
 			hoverLine.classList.add("is-visible");
-			hoverCrosshairLine.style.left = `${plotFrame.left}px`;
-			hoverCrosshairLine.style.width = `${Math.max(0, resolvedHorizontalEnd - plotFrame.left)}px`;
+			const fixedPlotLeft = plotFrame.left + probabilityScrollVisualPosition;
+			hoverCrosshairLine.style.left = `${fixedPlotLeft}px`;
+			hoverCrosshairLine.style.width = `${Math.max(0, resolvedHorizontalEnd - fixedPlotLeft)}px`;
 			hoverCrosshairLine.style.top = `${y}px`;
 			hoverCrosshairLine.classList.add("is-visible");
 			updateHoverDateLabel(x, plotFrame.bottom, activeIndex);
+			if (probabilityHint) {
+				const bounds = priceChart?._activeBacktestProbabilityGridBounds;
+				const empty = bounds && bounds.maxOpacity === 0;
+				const overflow = horizontalEnd - probabilityScrollVisualPosition > tradeChartStack.clientWidth + 1;
+				const copy = empty
+					? `All cells below ${Number(strategyPresentation.cell_display_threshold_pct).toFixed(2)}% · max ${(bounds.maxProbability * 100).toFixed(2)}%`
+					: overflow ? "Drag left to explore future cells" : "";
+				if (probabilityHint.textContent !== copy) probabilityHint.textContent = copy;
+				probabilityHint.style.left = `${plotFrame.left + 8}px`;
+				probabilityHint.style.top = `${plotFrame.top + 8}px`;
+				probabilityHint.hidden = !copy;
+				tradeChartStack.classList.toggle("has-probability-overflow", overflow);
+			}
 			// The Y-axis badge is painted by the Chart.js overlay plugin. Redraw
 			// after the pointer guide has settled so its value follows the exact
 			// curve intersection rather than the nearest source point.
@@ -2948,6 +3042,7 @@
 				Number.isFinite(fieldRight) ? fieldRight : null,
 			)) {
 				probabilityBounds.displayLeft = fieldLeft;
+				probabilityBounds.targetScrollLeft = probabilityScrollTarget;
 				probabilityBounds.pointerAnchored = true;
 				if (guide?.intersection) {
 					probabilityBounds.intersectionX = guide.intersection.x;
@@ -3004,7 +3099,7 @@
 			const pointerX = probabilityHoverPointerX - stackRect.left;
 			const initial = resolveProbabilityPointerIntersection(pointerX, stackRect);
 			if (!initial) return;
-			if (synchronizeScroll) {
+			if (synchronizeScroll && !probabilityPanGesture?.dragging) {
 				const point = getDatasetPoint(priceChart, initial.intersection.index, 0);
 				const model = buildProbabilityGridModel(initial.intersection.index, point);
 				const fieldWidth = Number(model?.geometry?.width) || 0;
@@ -3012,7 +3107,7 @@
 				// pan or field rectangle. The endpoint must not move left of the
 				// cursor. Rendering then consumes this single settled coordinate frame.
 				const nextTarget = Math.min(
-					Math.max(0, pointerX + fieldWidth - stackRect.width),
+					Math.max(0, pointerX + fieldWidth - stackRect.width + probabilityManualPanOffset),
 					Math.max(0, initial.lastContentX - pointerX),
 				);
 				if (Math.abs(nextTarget - probabilityScrollTarget) > 0.01) {
@@ -3178,6 +3273,7 @@
 			if (canvas === priceCanvas && strategyPresentation) {
 				hoverSurface.addEventListener("mouseleave", (event) => {
 					if (!chart || !chart.ctx) return;
+					if (probabilityPanGesture) return;
 					if (pinState.mode === "pinned") return;
 					if (isProbabilityAuxiliarySurface(event.relatedTarget)) return;
 					resetProbabilityHoverPointer();
@@ -3239,10 +3335,93 @@
 					return false;
 				};
 				let suppressNextProbabilityClick = false;
-				canvas.addEventListener("pointerdown", (event) => {
+				hoverSurface.addEventListener("pointerdown", (event) => {
 					if (!isPrimaryPointer(event)) return;
+					if (pinState.mode !== "pinned") {
+						probabilityHoverPointerX = event.clientX;
+						probabilityHoverPointerY = event.clientY;
+						probabilityHoverPointerActive = true;
+						// A press targets the curve currently on screen, including a
+						// touch tap with no preceding hover. Do not move it on press.
+						commitProbabilityPointerFrame({synchronizeScroll: false});
+					}
+					if (pinState.mode !== "pinned" && activePriceOverlay
+						&& tradeChartStack.classList.contains("has-probability-overflow")) {
+						probabilityPanGesture = {
+							pointerId: event.pointerId, startX: event.clientX,
+							startPan: probabilityScrollVisualPosition, dragging: false,
+						};
+						const point = getDatasetPoint(chart, activeIndex, 0);
+						const curvePress = probabilityGridApi.isPointNearCurve?.(
+							event.clientY - canvas.getBoundingClientRect().top, point?.y, 14,
+						);
+						if (curvePress) {
+							// Keep primary-press pin feedback, but defer its viewport snap
+							// until release so a subsequent drag starts without a jump.
+							probabilityPanGesture.provisionalPin = true;
+							pinState = {mode: "pinned", activeIndex};
+							probabilityTooltip.dataset.pinned = "true";
+						}
+						// Keep the compatibility click owned by the price canvas. A
+						// stack-targeted click is otherwise interpreted as an outside click.
+						canvas.setPointerCapture(event.pointerId);
+						return;
+					}
 					suppressNextProbabilityClick = pinProbabilityAtPointer(event) === true;
 				}, { signal });
+				hoverSurface.addEventListener("pointermove", (event) => {
+					const gesture = probabilityPanGesture;
+					if (!gesture || gesture.pointerId !== event.pointerId) return;
+					const delta = gesture.startX - event.clientX;
+					if (!gesture.dragging && Math.abs(delta) < 4) return;
+					gesture.dragging = true;
+					if (gesture.provisionalPin) {
+						pinState = {mode: "tracking", activeIndex};
+						probabilityTooltip.dataset.pinned = "false";
+						gesture.provisionalPin = false;
+					}
+					event.preventDefault();
+					tradeChartStack.classList.add("is-probability-dragging");
+					probabilityHoverPointerX = event.clientX;
+					probabilityHoverPointerY = event.clientY;
+					probabilityHoverPointerActive = true;
+					const rect = tradeChartStack.getBoundingClientRect();
+					const pointerX = event.clientX - rect.left;
+					const resolved = resolveProbabilityPointerIntersection(pointerX, rect);
+					if (!resolved) return;
+					const nextPan = Math.min(Math.max(0, gesture.startPan + delta),
+						Math.max(0, resolved.lastContentX - pointerX));
+					const wasUpdating = isUpdatingProbabilityFieldPosition;
+					isUpdatingProbabilityFieldPosition = true;
+					try { setProbabilityScrollTarget(nextPan, {immediate: true}); }
+					finally { isUpdatingProbabilityFieldPosition = wasUpdating; }
+					commitProbabilityPointerFrame({synchronizeScroll: false});
+				}, {signal});
+				const finishProbabilityDrag = (event) => {
+					const gesture = probabilityPanGesture;
+					if (!gesture || gesture.pointerId !== event.pointerId) return;
+					probabilityPanGesture = null;
+					tradeChartStack.classList.remove("is-probability-dragging");
+					if (gesture.provisionalPin) pinState = {mode: "tracking", activeIndex};
+					if (gesture.dragging) {
+						const rect = tradeChartStack.getBoundingClientRect();
+						const width = Number(priceChart._activeBacktestProbabilityGridBounds?.width) || 0;
+						probabilityManualPanOffset = probabilityScrollVisualPosition
+							- (probabilityHoverPointerX - rect.left + width - rect.width);
+						suppressNextProbabilityClick = true;
+					} else if (event.type === "pointerup") {
+						suppressNextProbabilityClick = pinProbabilityAtPointer(event) === true;
+					}
+					if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+					if (event.type === "pointercancel"
+						|| !isProbabilityHoverPointerOverStack(tradeChartStack.getBoundingClientRect())) {
+						resetProbabilityHoverPointer();
+						syncHoverState(null, canvas, chart);
+					}
+				};
+				hoverSurface.addEventListener("pointerup", finishProbabilityDrag, {signal});
+				hoverSurface.addEventListener("pointercancel", finishProbabilityDrag, {signal});
+				hoverSurface.addEventListener("lostpointercapture", finishProbabilityDrag, {signal});
 				canvas.addEventListener("click", (event) => {
 					if (suppressNextProbabilityClick && event.detail > 0) {
 						suppressNextProbabilityClick = false;
@@ -3534,6 +3713,7 @@
 				)
 			);
 			const clearProbabilityFieldOnLeave = (relatedTarget) => {
+				if (probabilityPanGesture) return;
 				const remainsOnProbabilitySurface = isProbabilityHoverSurface(relatedTarget);
 				probabilityHoverPointerActive = remainsOnProbabilitySurface
 					&& tradeChartStack.contains(relatedTarget);
@@ -3752,6 +3932,10 @@
 				hoverLine.remove();
 				hoverCrosshairLine.remove();
 				hoverDateLabel.remove();
+				fixedPriceAxis?.remove();
+				probabilityHint?.remove();
+				probabilityDetailPanel?.querySelector(".backtest-probability-empty-state")?.remove();
+				tradeChartStack.classList.remove("has-probability-overflow", "is-probability-dragging");
 				tooltip.remove();
 				probabilityTooltip?.remove();
 				probabilityScrollSpacer?.remove();

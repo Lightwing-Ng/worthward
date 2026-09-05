@@ -1,12 +1,26 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.241.2`
+Documentation version: `v1.242.1`
+
+Manual LSTM training now requires at least 180 seconds of optimizer work,
+distributed across eligible causal origins. Loading and evaluation add wall time.
+Additional optimization does not guarantee improved holdout accuracy. History
+rows reserve five ems for ticker symbols and right-align percentage badges.
 
 This document is intentionally privacy-safe. It contains no broker account
 identifiers, account-holder names, balances, position quantities, order
 references, transaction descriptions, or copied statement content.
 
 ## LSTM training
+
+- Completed history records restore saved settings, not frozen neural weights
+  or predictions. Older result artifacts contain aggregate scores and input
+  snapshots only. Applying them recomputes the interactive forecast and does
+  not imply that the displayed probabilities reuse durable training output.
+- Price Field backtest.js v0.40.0 supports dragging an overflowing future field
+  left while preserving cursor alignment and a stationary price axis. All-hidden
+  lattices display their threshold and maximum cell probability; lowering a
+  display threshold is a user choice, not an automatic model change.
 
 - The prepared-request launch handshake is fixed in manager/runner v0.6.0.
   An already failed history item remains historical evidence; it is not relabeled
@@ -70,19 +84,33 @@ shared anchor tokens or chart padding. The regression checks five widths from
 390px to 1,276px, including chart visibility, splitter placement, and horizontal
 overflow.
 
-On 5 Sep 2026, the next annotated Backtest spacing pass updated trade.css v3.60.2:
+On 5 Sep 2026, the next annotated Backtest spacing pass updated trade.css v3.61.1:
 the Price Field chart stack uses a 4px bottom inset, and the Overview surface uses
 6px inline padding through its local result-surface token. The narrow probability
 detail panel keeps its dedicated 10px inline margin and 12px inline padding.
 
-Validation: the 27 focused layout contracts and both default-strategy and
-five-width LSTM title browser regressions pass. The complete gate passes its
+The shared-control sample pass also updated forms.css v0.19.9: date-picker values
+use a 30px minimum height; strategy parameter rows use a 35px content baseline
+with no inter-row top padding, producing 36px bordered rows; and LSTM history
+selection buttons use the shared pill radius. These are shared rules rather than
+field-specific overrides, so date fields, numeric/select parameters, factor
+switches, and history entries keep the same compact geometry.
+
+Validation: the 28 focused layout contracts, the shared-control geometry
+regression, and both default-strategy and five-width LSTM title browser
+regressions pass. The complete gate passes its
 Python and JavaScript stages, then reports 293 Chromium passes and seven failures.
 The failures are unrelated share-heading clearance, a market-cap ticker blur
 navigation timeout, stale Investment entry-module version, desktop gel-motion
 scale, Bayesian axis geometry, the older 6px Backtest result-card expectation,
 and the legacy zero-opacity expectation. These failures were not repaired or
 independently baseline-reproduced in this spacing-only change.
+
+The subsequent full-gate attempt for this shared-control pass reached 1,155
+passed, 6 skipped, 180 subtests, and 73.63% coverage before stopping on the
+pre-existing `investment.css` E2E resource-version mismatch: the stylesheet
+reports v1.78.8 while a concurrent `critical-flows.spec.mjs` assertion still
+uses 1.78.7. The focused JavaScript suite separately passed all 319 tests.
 
 ## Browser-gate follow-up
 

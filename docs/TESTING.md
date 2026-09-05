@@ -1,6 +1,43 @@
 # Testing guide
 
-Documentation version: `v1.49.0`
+Documentation version: `v1.50.0`
+
+## Price Field future dragging and saved-case selection
+
+On 5 Sep 2026, `backtest.js` v0.40.0 and `lstm-training.js` v0.9.0 added
+future-column dragging, a fixed price axis, visible blue coordinate badges,
+threshold-empty feedback, and stable saved-configuration navigation. Saved
+records still restore settings rather than frozen neural weights or predictions.
+
+- `./scripts/test.sh tests/test_lstm_training.py tests/test_price_field_contract.py tests/test_layout_anchor_contract.py tests/test_repository_contracts.py`:
+  exit 0, 93 passed in 1.79 seconds on that completed run's source state.
+  A later `./scripts/test.sh tests/test_repository_contracts.py` repeat exited 1
+  with ten passes and one failure after concurrent Investment CSS advanced to
+  v1.78.8 while its E2E assertion still expected 1.78.7. Those concurrent files
+  were not rewritten by this Price Field task.
+- `npm run test:js`: exit 0, 319 passed. Final changed bundles and the LSTM
+  browser specification also passed `node --check`; `git diff --check` passed.
+- `./scripts/test_e2e.sh tests/e2e/lstm-price-field.spec.mjs tests/e2e/lstm-guide-alignment.spec.mjs tests/e2e/bayesian-endpoint-stability.spec.mjs tests/e2e/critical-flows.spec.mjs --grep 'future drag|threshold-empty|history selects|pins the Bayesian overview origin|right-half hover frame|28 and 29 Jul|final curve endpoint|server-side LSTM Price Field'`:
+  exit 0, nine passed in 1.8 minutes. Coverage includes 1,276px light and
+  1,018px dark dragging, curve presses, touch pinning, vertical-only movement,
+  threshold-empty endpoints, fresh-session selection, and identical-parameter
+  record switches across polling. Test data remains isolated from production.
+- Live 8688 checks verified endpoint reachability, cursor/guide alignment,
+  fixed axes, and all 20 future columns. The NVDA empty endpoint's maximum cell
+  probability was below its selected display threshold; the model and threshold
+  were not changed. This task did not restart 8688 or mutate training history.
+- The earlier complete `./scripts/check.sh` exited 1: 1,155 Python passed,
+  six skipped, 180 subtests, 73.63% coverage; JavaScript passed; Chromium had
+  296 passes and seven failures. Those failures covered Backtest share-heading
+  clearance, Holdings fixed-table alignment, Investment entry-version mismatch,
+  Bayesian axis geometry, primary/click/touch pinning, 6px versus 2px spacing,
+  and legacy zero-opacity behavior. Pinning was subsequently fixed and passed
+  focused validation. The other six were not resolved or independently
+  clean-baseline-attributed by this task. Concurrent work may change their
+  current status. The full gate was not rerun after the final pointer-capture,
+  saved-ID, and test refinements; only the focused results cover that state.
+- E2E lock conflicts returned 73 and were retried through the supported wrapper
+  after release. No competing runtime was stopped or reused.
 
 ## Audit challenge: research-window correctness
 

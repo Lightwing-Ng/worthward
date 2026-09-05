@@ -1,4 +1,4 @@
-/* Code version: v0.8.0 */
+/* Code version: v0.9.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -12,6 +12,9 @@
     let historyError = "";
     let protocolVersion = 0;
     const selectionKey = "worthward.lstm.selected-configuration.v1";
+    let requestedSelectionId = new URL(window.location.href).searchParams.get("lstm_training_run") || "";
+    let applyingRunId = "";
+    let selectionValidationFrame = null;
     let selection = null;
     try { selection = JSON.parse(window.sessionStorage.getItem(selectionKey) || "null"); } catch { /* Storage is optional. */ }
     if (!selection || typeof selection.id !== "string" || !selection.configuration
@@ -74,6 +77,13 @@
 
     const saveSelection = (value) => {
         selection = value;
+        if (value) requestedSelectionId = value.id;
+        else if (requestedSelectionId) {
+            requestedSelectionId = "";
+            const url = new URL(window.location.href);
+            url.searchParams.delete("lstm_training_run");
+            window.history.replaceState(window.history.state, "", url);
+        }
         try {
             if (value) window.sessionStorage.setItem(selectionKey, JSON.stringify(value));
             else window.sessionStorage.removeItem(selectionKey);
@@ -99,11 +109,17 @@
         Object.entries({...config, ...config.params}).forEach(([key, value]) => {
             if (key !== "params") url.searchParams.set(aliases[key] || key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
         });
+        if (selection?.id) url.searchParams.set("lstm_training_run", selection.id);
         return url;
     };
 
     const preserveSelectionUrl = (source) => {
-        if (!selection || !configurationMatches(selection.configuration)) return source;
+        if (!selection || !configurationMatches(selection.configuration)) {
+            if (!requestedSelectionId) return source;
+            const pendingUrl = new URL(source, window.location.href);
+            pendingUrl.searchParams.set("lstm_training_run", requestedSelectionId);
+            return `${pendingUrl.pathname}${pendingUrl.search}${pendingUrl.hash}`;
+        }
         const url = configurationUrl(selection.configuration, source);
         return `${url.pathname}${url.search}${url.hash}`;
     };
@@ -116,6 +132,8 @@
             window.history.replaceState(window.history.state, "", configurationUrl(config));
             return false;
         }
+        applyingRunId = run.id;
+        updateMenu(activeMenu);
         window.location.assign(configurationUrl(config).href);
         return true;
     };
@@ -124,9 +142,20 @@
     const detachSelection = (event) => {
         if (!selection || !event.target.closest("[data-backtest-parameter-form]")
             || !event.target.matches("input, select, textarea")) return;
-        if (!event.isTrusted && configurationMatches(selection.configuration)) return;
-        saveSelection(null);
-        if (activeMenu) updateMenu(activeMenu);
+        if (applyingRunId) return;
+        const detach = () => {
+            saveSelection(null);
+            if (activeMenu) updateMenu(activeMenu);
+        };
+        if (event.isTrusted) { detach(); return; }
+        // Form hydration emits intermediate synthetic changes. Judge the final
+        // configuration, not a partially restored ticker/parameter combination.
+        if (document.readyState !== "complete") return;
+        if (selectionValidationFrame !== null) cancelAnimationFrame(selectionValidationFrame);
+        selectionValidationFrame = requestAnimationFrame(() => {
+            selectionValidationFrame = null;
+            if (selection && !configurationMatches(selection.configuration)) detach();
+        });
     };
     document.addEventListener("input", detachSelection, true);
     document.addEventListener("change", detachSelection, true);
@@ -221,6 +250,8 @@
         const summary = document.createElement("button");
         summary.type = "button";
         summary.className = "lstm-training-history-select";
+        summary.title = run.configuration ? "Apply saved settings; forecasts are recomputed"
+            : run.configuration_error || "View training details";
         summary.setAttribute("aria-expanded", String(expandedRunId === run.id));
         summary.setAttribute("aria-pressed", String(selection?.id === run.id));
         summary.setAttribute("aria-controls", `lstm-run-details-${run.id}`);
@@ -301,7 +332,7 @@
         if (!(menu instanceof HTMLElement)) return;
         const ticker = currentTicker();
         const activeRun = cachedRuns.find((run) => run.active && run.ticker === ticker) || cachedRuns.find((run) => run.active) || null;
-        if (selection && !configurationMatches(selection.configuration)) saveSelection(null);
+        if (!applyingRunId && lastFetchedAt && selection && !configurationMatches(selection.configuration)) saveSelection(null);
         const heading = menu.closest('[data-collapse="training"]')?.querySelector(":scope > summary");
         if (heading) {
             let spinner = heading.querySelector(".lstm-training-spinner");
@@ -332,7 +363,8 @@
 
         const status = menu.querySelector("[data-lstm-training-status]");
         if (status instanceof HTMLElement) {
-            status.textContent = actionError || historyError || (lastFetchedAt && protocolVersion < 2 ? "Restart the local service to enable updated training controls." : "");
+            status.textContent = actionError || historyError || (applyingRunId ? "Loading saved configuration…"
+                : lastFetchedAt && protocolVersion < 2 ? "Restart the local service to enable updated training controls." : "");
             status.hidden = !status.textContent;
         }
 
@@ -341,7 +373,7 @@
         if (count instanceof HTMLElement) count.textContent = formatNumber(historyRuns.length);
         const historyItems = menu.querySelector("[data-lstm-training-history-items]");
         if (!(historyItems instanceof HTMLElement)) return;
-        const snapshot = JSON.stringify([historyRuns, expandedRunId, selection?.id, pendingAction, protocolVersion]);
+        const snapshot = JSON.stringify([historyRuns, expandedRunId, selection?.id, pendingAction, applyingRunId, protocolVersion]);
         if (historySnapshots.get(historyItems) === snapshot) return;
         historySnapshots.set(historyItems, snapshot);
         const focusedRunId = document.activeElement?.closest("[data-lstm-training-run-id]")?.dataset.lstmTrainingRunId;
@@ -382,6 +414,13 @@
                 }
                 cachedRuns = Array.isArray(payload.runs) ? payload.runs : [];
                 protocolVersion = Number(payload.protocol_version || 0);
+                if (requestedSelectionId && !applyingRunId) {
+                    const requested = cachedRuns.find((run) => run.id === requestedSelectionId);
+                    if (requested?.configuration && configurationMatches(requested.configuration)) {
+                        saveSelection({id: requested.id, configuration: requested.configuration});
+                        expandedRunId ||= requested.id;
+                    } else saveSelection(null);
+                }
                 if (selection && !cachedRuns.some((run) => run.id === selection.id && run.configuration)) saveSelection(null);
                 stoppingRunIds.forEach((id) => {
                     if (!cachedRuns.some((run) => run.id === id && run.active)) stoppingRunIds.delete(id);

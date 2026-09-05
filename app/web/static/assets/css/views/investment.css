@@ -1,4 +1,4 @@
-/* Code version: v1.78.6 */
+/* Code version: v1.78.8 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1187,6 +1187,12 @@
     position: relative;
 }
 
+.investment-workspace-header > .investment-report-card:not(.live-trading-card):not(.backtest-trade-performance-card) {
+    --workspace-article-pad-inline: 4px;
+    --workspace-article-pad-block-end: 4px;
+    gap: 4px;
+}
+
 .investment-view-segmented-wrap > .investment-share-actions {
     position: fixed;
     top: var(--investment-share-actions-top, var(--sidebar-toggle-center-offset));
@@ -2324,6 +2330,10 @@
     z-index: 0;
     flex: 1 1 0;
     min-height: var(--investment-equity-stage-min-height);
+}
+
+.investment-equity-chart-stage > .trade-chart-hover-line {
+    bottom: auto;
 }
 
 .investment-equity-live-marker {

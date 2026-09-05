@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.9.1 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.10.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -118,6 +118,125 @@ const readGridContract = async (page) => page.evaluate(() => {
     };
 });
 
+for (const width of [1276, 1018]) {
+    test(`Price Field future drag preserves the cursor, fixed axis, and badges at ${width}px`, async ({page}) => {
+        await page.setViewportSize({width, height: 1079});
+        await page.emulateMedia({colorScheme: width === 1018 ? 'dark' : 'light'});
+        await page.goto(lstmUrl);
+        await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
+        const read = () => page.evaluate(() => {
+            const stack = document.querySelector('.trade-chart-stack');
+            const chart = Chart.getChart('tradePriceChart');
+            const canvas = chart.canvas.getBoundingClientRect();
+            const rect = stack.getBoundingClientRect();
+            const line = stack.querySelector('.trade-chart-hover-line').getBoundingClientRect();
+            const axis = stack.querySelector('.backtest-fixed-price-axis');
+            const date = stack.querySelector('.trade-chart-hover-date-label');
+            const field = stack.querySelector('.backtest-probability-tooltip');
+            const bounds = chart._activeBacktestProbabilityGridBounds;
+            const price = chart._activeBacktestPriceGuideBounds;
+            const ratio = chart.currentDevicePixelRatio;
+            const nativeDatePixels = chart.ctx.getImageData(
+                Math.round((chart.chartArea.right - 42) * ratio), Math.round((chart.chartArea.bottom + 1) * ratio),
+                Math.round(40 * ratio), Math.round(18 * ratio),
+            ).data;
+            const badgePixel = price?.badgeLeft === undefined ? [] : [...axis.getContext('2d').getImageData(
+                Math.round((price.badgeLeft + 2) * ratio), Math.round((price.badgeTop + 2) * ratio), 1, 1,
+            ).data];
+            return {
+                stack: rect.toJSON(), axisX: axis.getBoundingClientRect().x,
+                endpointX: canvas.left + chart.getDatasetMeta(0).data.at(-1).x,
+                endpointY: canvas.top + chart.getDatasetMeta(0).data.at(-1).y,
+                guideX: line.x + line.width / 2, guideY: price?.y,
+                gridY: bounds?.anchorY, index: bounds?.index, fieldWidth: bounds?.width,
+                fieldRight: field.getBoundingClientRect().right, date: date.getBoundingClientRect().toJSON(),
+                visible: field.classList.contains('is-visible') && !date.hidden,
+                pinned: field.dataset.pinned, badgePixel,
+                axisPixel: [...axis.getContext('2d').getImageData(2, 2, 1, 1).data],
+                nativeDateInk: nativeDatePixels.filter((value, index) => index % 4 === 3 && value > 0).length,
+                overflow: stack.classList.contains('has-probability-overflow'),
+                pan: Number(stack.dataset.probabilityPanVisualPosition || 0),
+            };
+        });
+        const initial = await read();
+        const startX = Math.floor(initial.endpointX - 2);
+        const y = Math.round(width === 1018 ? initial.endpointY : initial.stack.top + initial.stack.height * 0.45);
+        await page.mouse.move(startX, y);
+        await expect.poll(async () => (await read()).overflow).toBe(true);
+        const before = await read();
+        expect(before.index).toBe(63);
+        expect(before.axisPixel[3]).toBe(255);
+        if (width === 1018) expect(before.axisPixel[0]).toBeLessThan(128);
+        else expect(before.axisPixel[0]).toBeGreaterThan(200);
+        const finishX = Math.floor(before.stack.right - before.fieldWidth - 24);
+        await page.mouse.down();
+        if (width === 1018) {
+            const pressed = await read();
+            expect(pressed.pinned).toBe('true');
+            expect(pressed.pan).toBeCloseTo(before.pan, 2);
+        }
+        for (let step = 1; step <= 16; step += 1) {
+            const x = Math.round(startX + (finishX - startX) * step / 16);
+            await page.mouse.move(x, y);
+            await page.evaluate(() => new Promise(requestAnimationFrame));
+            const frame = await read();
+            expect(Math.abs(frame.guideX - x)).toBeLessThanOrEqual(0.6);
+            expect(frame.axisX).toBeCloseTo(initial.axisX, 1);
+            expect(frame.index).toBe(before.index);
+            expect(frame.gridY).toBeCloseTo(frame.guideY, 2);
+            expect(frame.visible).toBe(true);
+            expect(frame.badgePixel[3]).toBe(255);
+            expect(frame.badgePixel[2]).toBeGreaterThan(frame.badgePixel[0]);
+            expect(frame.nativeDateInk).toBe(0);
+            expect(frame.date.left).toBeGreaterThanOrEqual(frame.stack.left);
+            expect(frame.date.right).toBeLessThanOrEqual(frame.stack.right + 0.5);
+        }
+        await page.mouse.up();
+        const after = await read();
+        expect(after.pinned).not.toBe('true');
+        expect(after.fieldRight).toBeLessThanOrEqual(after.stack.right);
+        for (const offset of [-35, 30, -15, 0]) {
+            // The synthetic endpoint is close to the top of the plot. Keep
+            // vertical-only probes inside it; leaving is tested separately.
+            const probeY = Math.min(after.stack.bottom - 2, Math.max(after.stack.top + 2, y + offset));
+            await page.mouse.move(finishX, probeY);
+            await page.evaluate(() => new Promise(requestAnimationFrame));
+            const frame = await read();
+            expect(frame.pan).toBeCloseTo(after.pan, 2);
+            expect(frame.guideX).toBeCloseTo(finishX, 1);
+            expect(frame.index).toBe(after.index);
+        }
+        await page.mouse.move(startX, y);
+        await expect.poll(async () => Math.abs((await read()).guideX - startX)).toBeLessThan(0.6);
+        await page.mouse.move(initial.stack.left - 10, y);
+        await expect(page.locator('.backtest-probability-tooltip')).toBeHidden();
+    });
+}
+
+test('Price Field explains threshold-empty forecasts without losing the last date', async ({page}) => {
+    await page.setViewportSize({width: 1276, height: 1079});
+    await page.goto(lstmUrl);
+    await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
+    await page.evaluate(() => {
+        const p = window.WORTHWARD_APP.backtestResult.strategy_presentation;
+        p.predictive_scale.fill(2);
+        p.return_innovation_scale.fill(2);
+        p.cell_display_threshold_pct = 2;
+        window.WORTHWARD_BOOTSTRAP.initBacktestWorkspace();
+    });
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const point = await page.evaluate(() => {
+        const c = Chart.getChart('tradePriceChart');
+        const r = c.canvas.getBoundingClientRect();
+        return {x: Math.floor(r.left + c.chartArea.right - 2), y: r.top + c.height / 2};
+    });
+    await page.mouse.move(point.x, point.y);
+    await expect(page.locator('.backtest-probability-hint')).toContainText('All cells below 2.00%');
+    await expect(page.locator('.backtest-probability-empty-state')).toContainText('All cells below 2.00%');
+    expect(await page.evaluate(() => Chart.getChart('tradePriceChart')._activeBacktestProbabilityGridBounds.index)).toBe(63);
+    await expect(page.locator('.trade-chart-hover-date-label')).toBeVisible();
+});
+
 test('LSTM Price Field reuses the shared probability grid and stays square at 390px', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1024, height: 841});
@@ -147,7 +266,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.29.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.39.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.40.0');
     expect(desktop.appScript).toContain('app-v0.52.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
@@ -423,8 +542,28 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     })))).toEqual(configuration.params);
     await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
 
+    // A bookmarked case must survive a new session, not only an in-memory check.
+    await expect(page).toHaveURL(/lstm_training_run=lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa/);
+    await page.evaluate(() => sessionStorage.removeItem('worthward.lstm.selected-configuration.v1'));
+    await page.reload();
+    await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/lstm_training_run=lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa/);
+
+    // Two runs can have identical settings. Polling must retain the clicked run,
+    // not reselect the case that originally supplied the URL.
+    runs.push({...runs[0], id: 'lstm-ga-cccccccccccccccccccccccc', identifier: '260904(03)'});
+    await expect(rows).toHaveCount(3, {timeout: 10_000});
+    await rows.nth(2).click();
+    await expect(page).toHaveURL(/lstm_training_run=lstm-ga-cccccccccccccccccccccccc/);
+    await page.waitForResponse((response) => response.url().endsWith('/api/lstm-training'));
+    await expect(rows.nth(2)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/lstm_training_run=lstm-ga-cccccccccccccccccccccccc/);
+    await rows.first().click();
+    runs.pop();
+    await expect(rows).toHaveCount(2, {timeout: 10_000});
     await page.locator('#trade_initial_capital').fill('35000');
     await expect(menu.locator('[aria-pressed="true"]')).toHaveCount(0);
+    await expect(page).not.toHaveURL(/lstm_training_run=/);
     await rows.nth(1).click();
     await expect(page).toHaveURL(/ticker=DRAM/);
     await expect(page.locator('#strategy_param_lstm_seed')).toHaveValue('23');

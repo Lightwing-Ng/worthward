@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.75.0`
+Documentation version: `v1.76.0`
 
 ## Shared Backtest controls and research
 
@@ -75,7 +75,7 @@ metadata and actual OHLCV observations. Missing provider data fails closed.
 Unavailable historical factor observations are never fabricated; the shared
 model's factor-availability rules still apply.
 
-Durable selected-configuration training allocates at least 60 seconds of completed
+Durable selected-configuration training allocates at least 180 seconds of completed
 optimizer work across eligible causal origins. At each origin, the same weights
 and Adam state continue beyond the requested epoch floor until that origin's
 budget is met. GPU synchronization is included; loading, progress callbacks, and
@@ -93,8 +93,12 @@ return/exit controls, and all private parameters. The requested window remains
 separate metadata when listing dates or unavailable sessions shortened the data.
 The green check represents configuration equality, not reuse of frozen neural
 weights. Session-scoped selection survives reload and polling; any manual edit
-detaches it. The selected case's URL retains explicit values rather than eliding
-defaults. Old multi-seed aggregates without a complete single-seed configuration
+detaches it. The selected case's URL retains explicit values and a
+`lstm_training_run` identifier rather than eliding defaults. A fresh session
+resolves that identifier only against an available, matching saved configuration.
+Intermediate form-hydration events do not discard the selection; a user edit
+removes both the selection and its URL identifier. Navigation immediately shows
+the selected row and a loading status. Old multi-seed aggregates without a complete single-seed configuration
 remain inspectable but are not guessed into selectable cases.
 
 Active progress sits below the intrinsic-width start/stop button, outside history;
@@ -223,15 +227,31 @@ to that endpoint instead of walking off the series. Overflow pan is
 limited by the same endpoint: the chart may shift left only until the
 vertical guide sits on the last trading day. Continued rightward tracking keeps
 that endpoint under the cursor. The field origin never shifts away from the
-guide merely to fit the viewport: trailing columns may be clipped, while the
-detail panel retains the complete field. Leaving the chart stack
+guide merely to fit the viewport. When trailing columns are clipped, pressing
+and dragging left pans the plot and forecast together. During the drag, the
+cursor still owns the guide and its curve intersection. A four-pixel horizontal
+gesture threshold distinguishes dragging from pinning. A curve press keeps its
+immediate pin feedback but defers the viewport snap until release, allowing the
+same press to become a drag without a jump. Pointer capture stays on the price
+canvas so its compatibility click cannot be mistaken for an outside click.
+Releasing a drag retains
+the viewport, not a pinned date; stationary and vertical-only movement leave it
+unchanged. The price-axis paint surface stays fixed, and blue price/date badges
+remain visible at the settled intersection. Date badges are inset at the viewport
+edges to avoid clipping. The detail panel retains the complete field. Leaving the chart stack
 clears both guides and the floating field, except when the pointer enters
 the native scroll rail to preserve manual field scrolling.
-Bayesian overview tracking does not draw the rounded Y-axis value badge or a Chart.js hover point;
+No Chart.js hover point is drawn for Price Field tracking;
 a pinned field snaps back to the non-scrolling chart coordinate system and
 returns both guides to its selected data point. Moving into
 another chart subplot or leaving the stack still follows the existing
 shared-tooltip ownership rules.
+
+Threshold filtering never changes the raw cell probabilities. A finite forecast
+whose cells all fall below the selected display threshold keeps its date and
+guides and explicitly reports the threshold and largest cell mass in both views.
+An empty-looking filtered lattice is not treated as missing training or an
+unreachable chart endpoint.
 
 ## Holdings P&L display contract
 

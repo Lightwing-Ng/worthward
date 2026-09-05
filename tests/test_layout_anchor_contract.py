@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.3
+Code version: v0.10.5
 """
 
 from pathlib import Path
@@ -154,8 +154,8 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
 
     assert '@import url("./views/settings.css?v=0.25.4");' in app_css
     assert f'@import url("./foundation/tokens.css?v={_css_code_version(ASSET_ROOT / "css/foundation/tokens.css").removeprefix("v")}");' in app_css
-    assert '@import url("./components/forms.css?v=3.40.8");' in app_css
-    assert '@import url("./views/investment.css?v=1.78.6");' in app_css
+    assert '@import url("./components/forms.css?v=3.40.9");' in app_css
+    assert '@import url("./views/investment.css?v=1.78.8");' in app_css
 
 
 def test_app_stylesheet_consumers_share_the_current_cache_buster() -> None:
@@ -242,6 +242,29 @@ def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
     )
 
     assert "--backtest-result-surface-pad-inline: 6px;" in result_card_rule
+
+
+def test_backtest_shared_controls_use_the_sampled_geometry_contract() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+
+    controls_start = forms_css.index(".trade-controls,\n")
+    controls_block = forms_css[controls_start : forms_css.index("input[type=\"number\"]", controls_start)]
+    assert "--strategy-param-field-height: 35px;" in controls_block
+
+    parameter_start = forms_css.index(".trade-strategy-param + .trade-strategy-param {")
+    parameter_rule = forms_css[parameter_start : forms_css.index("\n}", parameter_start)]
+    assert "padding-top: 0;" in parameter_rule
+    assert "min-height: calc(var(--strategy-param-field-height) + 1px);" in parameter_rule
+    assert "box-sizing: border-box;" in parameter_rule
+
+    date_start = forms_css.index(".date-picker-trigger-value {")
+    date_rule = forms_css[date_start : forms_css.index("\n}", date_start)]
+    assert "min-height: 30px;" in date_rule
+
+    history_start = trade_css.index(".lstm-training-history-select {")
+    history_rule = trade_css[history_start : trade_css.index("\n}", history_start)]
+    assert "border-radius: var(--radius-pill);" in history_rule
 
 
 def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None:
@@ -466,7 +489,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const resolveProbabilityPointerIntersection = (stackRelativeX, stackRect) => {",
         "const pointerContentX = Number(stackRelativeX) + probabilityScrollVisualPosition;",
         "const commitProbabilityPointerFrame = ({synchronizeScroll = true} = {}) => {",
-        "Math.max(0, pointerX + fieldWidth - stackRect.width)",
+        "Math.max(0, pointerX + fieldWidth - stackRect.width + probabilityManualPanOffset)",
         "Math.max(0, initial.lastContentX - pointerX)",
         "probabilityScrollCleanup?.();",
         "setProbabilityScrollPosition(probabilityScrollTarget);",
@@ -684,7 +707,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
         "-backtest-probability-grid-v0.29.0",
-        "-backtest-v0.39.0",
+        f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
         "-backtest-layout-v0.4.0",
     ):
         assert fragment in base_template
@@ -778,7 +801,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const pinProbabilityAtPointer = (event) => {",
         'event.button === 0',
         'event.pointerType === "touch"',
-        'canvas.addEventListener("pointerdown", (event) => {',
+        'hoverSurface.addEventListener("pointerdown", (event) => {',
         "if (suppressNextProbabilityClick && event.detail > 0)",
         "// Date text can change even when the cell geometry does not.",
         "const isProbabilityHistoryViewActive = () => (",

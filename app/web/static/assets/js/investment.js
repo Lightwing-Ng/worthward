@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.135.0
+ * Code version: v2.136.0
+ * - Changed: Overview equity hover now coalesces pointer work through one
+ *   animation frame, updates Chart.js only when the selected point changes,
+ *   and reuses the Backtest DOM crosshair/date-label treatment.
  * - Changed: Holdings, Stock details, and historical timelines now consume
  *   the canonical broker/account/ticker realized-P&L reconciliation result;
  *   historical points sum its dated entries through the hovered date.
@@ -18303,8 +18306,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         clearInvestmentEquityRangeControlBindings();
-        container.innerHTML = `${renderInvestmentEquityRangeControl()}<div class="investment-equity-chart-stage"><canvas id="investmentEquityChart"></canvas><div class="investment-equity-live-marker" data-investment-equity-live-marker hidden aria-hidden="true"><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-outer"></span><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-inner"></span><span class="investment-equity-live-marker-core"></span></div></div>`;
+        container.innerHTML = `${renderInvestmentEquityRangeControl()}<div class="investment-equity-chart-stage"><canvas id="investmentEquityChart"></canvas><div class="trade-chart-hover-line investment-equity-hover-line" data-investment-equity-hover-line aria-hidden="true"></div><div class="trade-chart-hover-date-label investment-equity-hover-date-label" data-investment-equity-hover-date-label aria-hidden="true" hidden><span data-investment-hover-date-line="primary"></span><span data-investment-hover-date-line="secondary"></span></div><div class="investment-equity-live-marker" data-investment-equity-live-marker hidden aria-hidden="true"><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-outer"></span><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-inner"></span><span class="investment-equity-live-marker-core"></span></div></div>`;
         const canvas = document.getElementById('investmentEquityChart');
+        const chartStage = container.querySelector('.investment-equity-chart-stage');
+        const hoverLine = container.querySelector('[data-investment-equity-hover-line]');
+        const hoverDateLabel = container.querySelector('[data-investment-equity-hover-date-label]');
         const realtimeMarkerElement = container.querySelector('[data-investment-equity-live-marker]');
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
@@ -18362,6 +18368,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let tooltipDonutRect = null;
         let tooltipLayoutViewportKey = "";
         let tooltipAnchorKey = "";
+        let investmentHoverFrameId = null;
+        let pendingInvestmentHover = null;
+        let activeInvestmentHoverIndex = -1;
+        let investmentHoverPointCacheKey = "";
+        let investmentHoverPointCache = [];
         const getRuntimeState = () => investmentEquityChartRuntimeState || chartState;
 
         cancelInvestmentChartPnlResolution();
@@ -18408,15 +18419,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     chartInstance._activeInvestmentEquityHorizontalGuideBounds = null;
                     return;
                 }
-                ctx.save();
-                ctx.strokeStyle = resolvedTheme.mutedSoft;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x, chartArea.top);
-                ctx.lineTo(x, chartArea.bottom);
-                ctx.stroke();
-                ctx.restore();
-
                 const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
                 const pointEquity = Number(chartInstance.data?.datasets?.[0]?.data?.[pointIndex]);
                 const yScale = scales?.y;
@@ -18930,6 +18932,204 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltipAnchorKey = anchorKey;
         };
 
+        const setInvestmentHoverStyleIfChanged = (element, propertyName, value) => {
+            if (!(element instanceof HTMLElement)) return;
+            if (element.style.getPropertyValue(propertyName) === value) return;
+            element.style.setProperty(propertyName, value);
+        };
+
+        const hideInvestmentHoverOverlay = () => {
+            hoverLine?.classList.remove("is-visible");
+            if (hoverDateLabel instanceof HTMLElement) {
+                hoverDateLabel.hidden = true;
+                hoverDateLabel.classList.remove("is-visible");
+            }
+        };
+
+        const updateInvestmentHoverDateLabel = (x, top, index, rawDates) => {
+            if (
+                !(hoverDateLabel instanceof HTMLElement)
+                || !Number.isFinite(x)
+                || !Number.isFinite(top)
+            ) {
+                hideInvestmentHoverOverlay();
+                return;
+            }
+            const dateParts = parseRawDate(rawDates[index]);
+            if (!dateParts) {
+                hideInvestmentHoverOverlay();
+                return;
+            }
+            const [firstLine, secondLine] = formatChartDateLines(dateParts);
+            const primaryLine = hoverDateLabel.querySelector(
+                '[data-investment-hover-date-line="primary"]',
+            );
+            const secondaryLine = hoverDateLabel.querySelector(
+                '[data-investment-hover-date-line="secondary"]',
+            );
+            if (primaryLine && primaryLine.textContent !== (firstLine || "")) {
+                primaryLine.textContent = firstLine || "";
+            }
+            if (secondaryLine instanceof HTMLElement) {
+                if (secondaryLine.textContent !== (secondLine || "")) {
+                    secondaryLine.textContent = secondLine || "";
+                }
+                secondaryLine.hidden = !secondLine;
+            }
+            hoverDateLabel.hidden = false;
+            const halfWidth = (hoverDateLabel.offsetWidth || 42) / 2;
+            const stageWidth = chartStage instanceof HTMLElement
+                ? chartStage.clientWidth
+                : 0;
+            const clampedX = stageWidth > 0
+                ? Math.max(halfWidth, Math.min(stageWidth - halfWidth, x))
+                : x;
+            setInvestmentHoverStyleIfChanged(hoverDateLabel, "left", `${clampedX}px`);
+            setInvestmentHoverStyleIfChanged(hoverDateLabel, "top", `${top}px`);
+            hoverDateLabel.hidden = false;
+            hoverDateLabel.classList.add("is-visible");
+        };
+
+        const getInvestmentHoverPointCache = (chart) => {
+            const points = chart?.getDatasetMeta?.(0)?.data || [];
+            const data = chart?.data?.datasets?.[0]?.data || [];
+            const cacheKey = `${chart?.width || 0}:${chart?.height || 0}:${data.length}:${points.length}`;
+            if (cacheKey === investmentHoverPointCacheKey) return investmentHoverPointCache;
+            investmentHoverPointCacheKey = cacheKey;
+            investmentHoverPointCache = points
+                .map((point, index) => ({
+                    index,
+                    point,
+                    x: Number(point?.x),
+                    value: Number(data[index]),
+                }))
+                .filter((entry) => (
+                    Number.isFinite(entry.x)
+                    && Number.isFinite(entry.value)
+                    && entry.point?.skip !== true
+                ));
+            return investmentHoverPointCache;
+        };
+
+        const resolveNearestInvestmentHoverPoint = (chart, relativeX) => {
+            const points = getInvestmentHoverPointCache(chart);
+            if (!points.length || !Number.isFinite(relativeX)) return null;
+            if (relativeX <= points[0].x) return points[0];
+            const lastPoint = points[points.length - 1];
+            if (relativeX >= lastPoint.x) return lastPoint;
+            let low = 0;
+            let high = points.length - 1;
+            while (low < high) {
+                const midpoint = Math.floor((low + high) / 2);
+                if (points[midpoint].x < relativeX) low = midpoint + 1;
+                else high = midpoint;
+            }
+            const rightPoint = points[low];
+            const leftPoint = points[Math.max(0, low - 1)];
+            return Math.abs(leftPoint.x - relativeX) <= Math.abs(rightPoint.x - relativeX)
+                ? leftPoint
+                : rightPoint;
+        };
+
+        const clearInvestmentChartHover = (chart) => {
+            pendingInvestmentHover = null;
+            if (investmentHoverFrameId !== null) {
+                window.cancelAnimationFrame(investmentHoverFrameId);
+                investmentHoverFrameId = null;
+            }
+            activeInvestmentHoverIndex = -1;
+            hideInvestmentHoverOverlay();
+            if (!chart || !chart.ctx) return;
+            chart.setActiveElements?.([]);
+            chart.tooltip?.setActiveElements?.([], {x: 0, y: 0});
+            chart.draw?.();
+        };
+
+        const renderInvestmentHoverFrame = (chart, pointer) => {
+            if (
+                !chart
+                || !chart.ctx
+                || !(canvas instanceof HTMLCanvasElement)
+                || !canvas.isConnected
+                || !(chartStage instanceof HTMLElement)
+            ) return;
+            const chartArea = chart.chartArea;
+            const canvasRect = canvas.getBoundingClientRect();
+            const stageRect = chartStage.getBoundingClientRect();
+            const scaleX = chart.width > 0 ? canvasRect.width / chart.width : 0;
+            const scaleY = chart.height > 0 ? canvasRect.height / chart.height : 0;
+            if (
+                !chartArea
+                || !(scaleX > 0)
+                || !(scaleY > 0)
+                || !Number.isFinite(pointer?.clientX)
+            ) return;
+            const relativeX = (pointer.clientX - canvasRect.left) / scaleX;
+            canvas.dataset.investmentHoverDebug = `relative:${relativeX}:${chartArea.left}:${chartArea.right}`;
+            if (relativeX < chartArea.left || relativeX > chartArea.right) {
+                clearInvestmentChartHover(chart);
+                return;
+            }
+            let resolvedPoint;
+            try {
+                resolvedPoint = resolveNearestInvestmentHoverPoint(chart, relativeX);
+            } catch (error) {
+                const message = String(error?.message || error);
+                window.__investmentHoverDebugLastError = message;
+                canvas.dataset.investmentHoverDebug = `error:${message}`;
+                return;
+            }
+            canvas.dataset.investmentHoverDebug = resolvedPoint
+                ? `point:${resolvedPoint.index}:${resolvedPoint.x}`
+                : 'point:none';
+            if (!resolvedPoint) {
+                clearInvestmentChartHover(chart);
+                return;
+            }
+            const activePointChanged = resolvedPoint.index !== activeInvestmentHoverIndex;
+            activeInvestmentHoverIndex = resolvedPoint.index;
+            if (activePointChanged) {
+                const activeElement = [{datasetIndex: 0, index: resolvedPoint.index}];
+                chart.setActiveElements?.(activeElement);
+                chart.tooltip?.setActiveElements?.(activeElement, {
+                    x: resolvedPoint.point.x,
+                    y: resolvedPoint.point.y,
+                });
+                chart.draw?.();
+            }
+
+            const pointX = Number(resolvedPoint.point.x) * scaleX;
+            const lineX = canvasRect.left - stageRect.left + pointX;
+            const plotTop = canvasRect.top - stageRect.top + (chartArea.top * scaleY);
+            const plotHeight = Math.max(0, (chartArea.bottom - chartArea.top) * scaleY);
+            setInvestmentHoverStyleIfChanged(hoverLine, "top", `${plotTop}px`);
+            setInvestmentHoverStyleIfChanged(hoverLine, "height", `${plotHeight}px`);
+            setInvestmentHoverStyleIfChanged(hoverLine, "--trade-chart-hover-line-x", `${lineX}px`);
+            hoverLine?.classList.add("is-visible");
+            updateInvestmentHoverDateLabel(
+                lineX,
+                canvasRect.top - stageRect.top + (chartArea.bottom * scaleY),
+                resolvedPoint.index,
+                Array.isArray(getRuntimeState().rawDates) ? getRuntimeState().rawDates : [],
+            );
+        };
+
+        const scheduleInvestmentHover = (clientX, clientY) => {
+            pendingInvestmentHover = {clientX, clientY};
+            canvas.dataset.investmentHoverDebug = `scheduled:${clientX}:${clientY}`;
+            if (investmentHoverFrameId !== null) return;
+            investmentHoverFrameId = window.requestAnimationFrame(() => {
+                investmentHoverFrameId = null;
+                const pointer = pendingInvestmentHover;
+                pendingInvestmentHover = null;
+                canvas.dataset.investmentHoverDebug = pointer
+                    ? `frame:${pointer.clientX}:${pointer.clientY}`
+                    : 'frame:none';
+                if (!pointer || investmentEquityChartInstance?.canvas !== canvas) return;
+                renderInvestmentHoverFrame(investmentEquityChartInstance, pointer);
+            });
+        };
+
         const holdingsMarkerRadius = 5;
         const holdingsMarkerStrokeWidth = 2.8;
         const holdingsMarkerSafePadding = Math.ceil(holdingsMarkerRadius + holdingsMarkerStrokeWidth + 2);
@@ -18952,6 +19152,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     bottom: 24,
                 },
             },
+            events: [],
             interaction: { mode: "index", intersect: false },
             plugins: {
                 legend: { display: false },
@@ -19023,6 +19224,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             },
             plugins: [hoverGuidePlugin, holdingsHoverMarkerPlugin, realtimeEndMarkerPlugin, xAxisLabelPlugin],
+        });
+        canvas.addEventListener('mousemove', (event) => {
+            if (!canvas.isConnected) return;
+            scheduleInvestmentHover(event.clientX, event.clientY);
+        });
+        canvas.addEventListener('mouseleave', () => {
+            clearInvestmentChartHover(investmentEquityChartInstance);
         });
         scheduleInvestmentOverviewIntradayLinePoints(chartPoints);
         if (activeHoldingsHoverLedgerNo > 0) {

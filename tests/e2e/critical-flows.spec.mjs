@@ -1,4 +1,4 @@
-/* Code version: v1.203.20 */
+/* Code version: v1.203.22 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -7304,6 +7304,26 @@ test('resizes the investment overview and history responsively in portrait layou
     const history = page.locator('#investment_history_surface');
     await expect(handle).toBeVisible();
 
+    const overviewSpacing = await overview.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            paddingTop: style.paddingTop,
+            paddingRight: style.paddingRight,
+            paddingBottom: style.paddingBottom,
+            paddingLeft: style.paddingLeft,
+            rowGap: style.rowGap,
+            columnGap: style.columnGap,
+        };
+    });
+    expect(overviewSpacing).toEqual({
+        paddingTop: '0px',
+        paddingRight: '4px',
+        paddingBottom: '4px',
+        paddingLeft: '4px',
+        rowGap: '4px',
+        columnGap: '4px',
+    });
+
     const resizerGeometry = await handle.evaluate((element) => ({
         fontSize: getComputedStyle(element).fontSize,
         height: element.getBoundingClientRect().height,
@@ -8614,7 +8634,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.6';
+            && url.searchParams.get('v') === '1.78.8';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -13066,6 +13086,7 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
 });
 
 test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async ({page}) => {
+    page.on('pageerror', (error) => console.log('INV_PAGEERROR', error.message, error.stack));
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-06-01', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 100, amount: -100},
@@ -13086,8 +13107,54 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     });
     await expect.poll(readPoint).not.toBeNull();
     const point = await readPoint();
+    await page.evaluate(() => {
+        const canvas = document.querySelector('#investmentEquityChart');
+        canvas?.addEventListener('mousemove', () => {
+            window.__investmentCanvasMouseMoveSeen = true;
+        });
+        const nativeRaf = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = (callback) => nativeRaf((timestamp) => {
+            window.__investmentRafSeen = (window.__investmentRafSeen || 0) + 1;
+            callback(timestamp);
+        });
+    });
 
     await page.mouse.move(point.x, point.y);
+    const debugState = await page.evaluate(() => {
+        const canvas = document.querySelector('#investmentEquityChart');
+        const chart = window.Chart?.getChart(canvas);
+        const point = chart?.getDatasetMeta(0)?.data?.[0];
+        return {
+            canvas: canvas?.getBoundingClientRect().toJSON(),
+            chart: {width: chart?.width, height: chart?.height, area: chart?.chartArea},
+            point: {x: point?.x, y: point?.y, skip: point?.skip, value: chart?.data?.datasets?.[0]?.data?.[0]},
+            overlays: document.querySelectorAll('[data-investment-equity-hover-line]').length,
+            overlayState: (() => {
+                const line = document.querySelector('[data-investment-equity-hover-line]');
+                const label = document.querySelector('[data-investment-equity-hover-date-label]');
+                return {
+                    lineClass: line?.className || '',
+                    lineX: line?.style.getPropertyValue('--trade-chart-hover-line-x') || '',
+                    labelClass: label?.className || '',
+                    labelHidden: label?.hidden ?? null,
+                    labelText: label?.textContent || '',
+                };
+            })(),
+            tooltipState: {
+                opacity: chart?.tooltip?.opacity,
+                active: chart?.tooltip?._active?.map(({index}) => index),
+                eventPosition: chart?.tooltip?._eventPosition,
+            },
+            hitTarget: document.elementFromPoint(point.x, point.y)?.id || '',
+            canvasPointerEvents: canvas ? getComputedStyle(canvas).pointerEvents : '',
+            mouseMoveSeen: window.__investmentCanvasMouseMoveSeen === true,
+            rafSeen: window.__investmentRafSeen || 0,
+            sourceHoverDebug: canvas?.dataset.investmentHoverDebug || '',
+            sourceHoverError: window.__investmentHoverDebugLastError || '',
+            tooltip: document.querySelector('[data-investment-chart-tooltip="1"]')?.className || '',
+        };
+    });
+    throw new Error(`INV_HOVER_DEBUG ${JSON.stringify(debugState)}`);
     const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
     await expect(tooltip).toHaveClass(/is-visible/);
     expect(await tooltip.locator('.chart-tooltip-label').evaluateAll((labels) => (
@@ -16333,6 +16400,21 @@ test('pins the Bayesian overview origin on primary press, mouse click, and touch
     await clearPin();
 
     anchor = await readAnchor(page);
+    // Let pointer-driven pan settle before pressing the newly visible curve,
+    // just as the primary-press assertion above does.
+    await page.mouse.move(anchor.x, anchor.y);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    anchor = await page.evaluate(({x}) => {
+        const chart = window.Chart.getChart(document.querySelector('#tradePriceChart'));
+        const rect = chart.canvas.getBoundingClientRect();
+        const chartX = (Math.trunc(x) - rect.left) * chart.width / rect.width;
+        const {point, index} = chart.getDatasetMeta(0).data
+            .map((point, index) => ({point, index}))
+            .filter(({point}) => Number.isFinite(point.x) && Number.isFinite(point.y))
+            .reduce((best, candidate) => Math.abs(candidate.point.x - chartX)
+                < Math.abs(best.point.x - chartX) ? candidate : best);
+        return {x, index, y: rect.top + point.y * rect.height / chart.height};
+    }, anchor);
     await page.mouse.click(anchor.x, anchor.y, {button: 'left'});
     await pinnedIndex('A normal mouse click must pin the origin');
     await page.mouse.click(anchor.x, anchor.y, {button: 'right'});

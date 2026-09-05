@@ -1,4 +1,4 @@
-/* Code version: v0.19.8 */
+/* Code version: v0.19.9 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -7,7 +7,7 @@
 	--trade-control-label-gap: var(--sidebar-form-field-label-gap);
 	--trade-control-input-height: var(--sidebar-form-control-min-height);
 	--trade-control-inline-gap: var(--sidebar-form-inline-gap);
-	--strategy-param-field-height: var(--numeric-input-control-height);
+	--strategy-param-field-height: 35px;
 	--strategy-param-control-height: var(--numeric-input-control-height);
 	--ticker-control-width: 80%;
 	--ticker-suggestions-radius: var(--radius-soft);
@@ -1210,7 +1210,9 @@ input[type="number"],
 }
 .trade-strategy-param + .trade-strategy-param {
 	border-top: 1px solid var(--theme-glass-border);
-	padding-top: 10px;
+	padding-top: 0;
+	min-height: calc(var(--strategy-param-field-height) + 1px);
+	box-sizing: border-box;
 }
 .trade-strategy-param > label {
 	margin: 0;
@@ -1853,7 +1855,7 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-field.is-peer-highlight .date-picker-trigger,
 .date-picker-field.is-peer-highlight .date-picker-manual-input { border-color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); }
 .date-picker-trigger.is-invalid { color: var(--theme-error-strong); border-color: color-mix(in srgb, var(--theme-error) 78%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-error-strong) 72%, transparent); }
-.date-picker-trigger-value { display: flex; align-items: center; width: 100%; min-height: 34px; text-align: left; white-space: nowrap; line-height: 1.2; color: inherit; font: inherit; font-weight: var(--font-weight-regular); font-variant-numeric: tabular-nums; outline: none; caret-color: currentColor; }
+.date-picker-trigger-value { display: flex; align-items: center; width: 100%; min-height: 30px; text-align: left; white-space: nowrap; line-height: 1.2; color: inherit; font: inherit; font-weight: var(--font-weight-regular); font-variant-numeric: tabular-nums; outline: none; caret-color: currentColor; }
 .date-picker-trigger-value.is-invalid { color: var(--theme-error-strong); }
 .date-picker-trigger-value[data-empty="1"]::before { content: attr(data-placeholder); color: color-mix(in srgb, var(--theme-text) 58%, transparent); }
 .date-picker-popover { position: fixed; top: 0; left: 0; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-radius: var(--radius-panel); background: var(--glass-popover-background); box-shadow: 0 24px 56px var(--theme-shadow-ambient), 0 10px 24px var(--theme-shadow-ambient); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); z-index: var(--layer-global-popover); }

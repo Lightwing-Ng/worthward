@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.7.0
+Code version: v0.8.0
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -88,7 +88,7 @@ VALIDATION_FOLD_COUNT = 3
 MAX_LEADERBOARD_ENTRIES = 256
 ROBUST_CANDIDATE_COUNT = 32
 ROBUST_SEEDS = (42, 43, 44)
-MINIMUM_TRAINING_SECONDS = 60.0
+MINIMUM_TRAINING_SECONDS = 180.0
 DEFAULT_GA_SEED = 20260903
 
 _FACTOR_PARAMETER_KEYS = {
@@ -256,7 +256,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.7.0",
+        "runner_version": "v0.8.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
