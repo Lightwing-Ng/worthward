@@ -9,6 +9,9 @@ openpyxl==3.1.5
 curl_cffi~=0.15.0
 certifi>=2024.8.30
 numpy~=2.3.5
+# Bayesian and LSTM Apple Silicon/CUDA acceleration. The application still
+# falls back to the deterministic NumPy CPU backend when no device is usable.
+torch==2.14.0
 
 # Development and quality dependencies pinned for the supported runtime and quality gate.
 pytest==9.0.3

@@ -1,7 +1,7 @@
 """
 Read-only Longbridge CLI factor data for Price Field models.
 
-Code version: v1.8.0
+Code version: v1.9.0
 - Changed: The canonical provider module is model-neutral and serves both
   Bayesian Price Field and LSTM Price Field.
 - Changed: Public bundle, loader, and cache names use Price Field terminology;
@@ -28,6 +28,9 @@ Code version: v1.8.0
   backtest. They remain visible as research controls, but cannot enter a
   walk-forward feature matrix until Longbridge exposes a verifiable
   availability timestamp.
+- Fixed: Local Price Field bundles now require finite observed OHLC values;
+  missing or invalid executable prices and volume-profile bounds fail closed
+  instead of using Close as a synthetic proxy.
 """
 
 from __future__ import annotations
@@ -254,7 +257,7 @@ def build_local_price_field_factor_bundle(
 
     missing_columns = [
         column
-        for column in ("Date", "Close")
+        for column in ("Date", "Open", "High", "Low", "Close")
         if column not in frame.columns
     ]
     if missing_columns:
@@ -274,10 +277,11 @@ def build_local_price_field_factor_bundle(
                 normalized_frame[column],
                 errors="coerce",
             )
+    normalized_ohlc = normalized_frame[["Open", "High", "Low", "Close"]]
+    finite_ohlc = normalized_ohlc.map(math.isfinite).all(axis=1)
     normalized_frame = normalized_frame.loc[
         normalized_frame["Date"].notna()
-        & normalized_frame["Close"].notna()
-        & normalized_frame["Close"].map(math.isfinite)
+        & finite_ohlc
         & (normalized_frame["Date"].dt.date >= normalized_start)
         & (normalized_frame["Date"].dt.date <= normalized_end)
     ].sort_values("Date").drop_duplicates("Date", keep="last").copy()
@@ -289,7 +293,7 @@ def build_local_price_field_factor_bundle(
 
     source = "local-market-store"
 
-    def finite_value(row: pd.Series, column: str, fallback: float) -> float:
+    def optional_finite_value(row: pd.Series, column: str, fallback: float) -> float:
         value = row.get(column)
         if value is None or not pd.notna(value):
             return fallback
@@ -299,13 +303,13 @@ def build_local_price_field_factor_bundle(
     ohlcv = tuple(
         OhlcvBar(
             observed_at=pd.Timestamp(row["Date"]).to_pydatetime(),
-            open=finite_value(row, "Open", float(row["Close"])),
-            high=finite_value(row, "High", float(row["Close"])),
-            low=finite_value(row, "Low", float(row["Close"])),
+            open=float(row["Open"]),
+            high=float(row["High"]),
+            low=float(row["Low"]),
             close=float(row["Close"]),
-            volume=finite_value(row, "Volume", 0.0),
+            volume=optional_finite_value(row, "Volume", 0.0),
             turnover=(
-                finite_value(row, "Turnover", 0.0)
+                optional_finite_value(row, "Turnover", 0.0)
                 if row.get("Turnover") is not None
                 and pd.notna(row.get("Turnover"))
                 else None

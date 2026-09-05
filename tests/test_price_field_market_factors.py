@@ -1,6 +1,6 @@
 """Focused tests for the read-only Price Field Longbridge factor provider.
 
-Code version: v1.8.0
+Code version: v1.9.0
 """
 
 from __future__ import annotations
@@ -95,6 +95,38 @@ class PriceFieldMarketFactorProviderTests(unittest.TestCase):
         self.assertEqual(bundle.factor_status["pe"], "unavailable_point_in_time")
         self.assertEqual(bundle.factor_status["options"], "unavailable")
         self.assertEqual(bundle.source_commands, ("local-market-store:historical",))
+
+    def test_local_bundle_requires_observed_ohlc_columns(self) -> None:
+        frame = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-08-27"]),
+            "Close": [10.0],
+        })
+        with patch("app.services.market_data.fetch_history", return_value=frame):
+            with self.assertRaisesRegex(ValueError, "missing Open, High, Low"):
+                factors.build_local_price_field_factor_bundle(
+                    "AAPL.US",
+                    "2026-08-27",
+                    "2026-08-27",
+                )
+
+    def test_local_bundle_drops_nonfinite_ohlc_rows_without_close_proxy(self) -> None:
+        frame = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-08-27", "2026-08-28"]),
+            "Open": [float("nan"), 10.0],
+            "High": [11.0, 12.0],
+            "Low": [8.0, 9.0],
+            "Close": [10.0, 11.0],
+        })
+        with patch("app.services.market_data.fetch_history", return_value=frame):
+            bundle = factors.build_local_price_field_factor_bundle(
+                "AAPL.US",
+                "2026-08-27",
+                "2026-08-28",
+            )
+
+        self.assertEqual(len(bundle.ohlcv), 1)
+        self.assertEqual(bundle.ohlcv[0].observed_at.date().isoformat(), "2026-08-28")
+        self.assertEqual(bundle.ohlcv[0].open, 10.0)
 
     @staticmethod
     def _ohlcv_fetch_result(

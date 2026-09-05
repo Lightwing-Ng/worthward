@@ -6,7 +6,7 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.27.0
+Code version: v1.29.0
 - Changed: Model-neutral causal Price Field preparation now lives in the
   shared pipeline; Bayesian retains posterior inference, factor selection,
   and backend scheduling.
@@ -73,6 +73,12 @@ Code version: v1.27.0
 - Added: The probability field now exposes opt-in Longbridge research factors.
 - Added: The Bayesian Price Field exposes a private absolute probability display
   threshold for focusing the rendered field without changing signals or scores.
+- Changed: Bayesian startup defaults now use the selected GA winner's model
+  factors and hyperparameters; browser-local strategy memory and explicit URL
+  parameters remain authoritative overrides.
+- Fixed: Model fingerprints now include the backend that actually produced the
+  result, including resolved device, execution engine, numeric precision, and
+  whole-run runtime fallback state.
 """
 
 from __future__ import annotations
@@ -188,6 +194,18 @@ _BAYESIAN_FINGERPRINT_PARAMETER_KEYS = (
 
 _BayesianFactorDefinition = PriceFieldFactorDefinition
 _BAYESIAN_FACTOR_DEFINITIONS = PRICE_FIELD_FACTOR_DEFINITIONS
+
+# Selected default profile from the DRAM Bayesian Price Field GA run. These
+# factors are enabled only when their historical observations are available
+# and pass the model's causal factor-selection gate.
+_BAYESIAN_DEFAULT_ON_FACTOR_KEYS = frozenset({
+    "use_options",
+    "use_option_call_volume",
+    "use_option_put_call_open_interest_ratio",
+    "use_option_put_call_volume_ratio",
+    "use_volume",
+    "use_volume_at_price",
+})
 
 
 
@@ -986,6 +1004,7 @@ def _frame_fingerprint(
         factor_values: dict[str, np.ndarray],
         params: dict[str, Any],
         bundle_fingerprint: str,
+        backend: _ComputeBackend | None = None,
 ) -> str:
     """Hash every model input, including derived factors and model settings."""
     columns = [
@@ -1017,10 +1036,20 @@ def _frame_fingerprint(
         derived_frame,
         index=False,
     ).to_numpy().tobytes()
+    backend_payload = None
+    if backend is not None:
+        backend_payload = {
+            "requested": backend.requested,
+            "resolved": backend.resolved,
+            "engine": backend.engine,
+            "numeric_precision": backend.numeric_precision,
+            "runtime_fallback": backend.runtime_fallback,
+        }
     contract_bytes = json.dumps(
         {
             "bundle_fingerprint": str(bundle_fingerprint or ""),
             "model_version": _MODEL_VERSION,
+            "backend": backend_payload,
             "params": {
                 key: value
                 for key, value in params.items()
@@ -1076,7 +1105,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     label=definition.label,
                     kind="boolean",
                     group="factors",
-                    default=definition.default,
+                    default=definition.parameter_key in _BAYESIAN_DEFAULT_ON_FACTOR_KEYS,
                     help_text=definition.help_text,
                 )
                 for definition in _BAYESIAN_FACTOR_DEFINITIONS
@@ -1101,7 +1130,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="training_window",
                 label="Training Window",
                 kind="integer",
-                default=120,
+                default=30,
                 minimum=30,
                 maximum=504,
                 step=1,
@@ -1112,7 +1141,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="chip_window",
                 label="Volume-at-price Window",
                 kind="integer",
-                default=30,
+                default=41,
                 minimum=5,
                 maximum=252,
                 step=1,
@@ -1123,7 +1152,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="prior_strength",
                 label="Prior Strength",
                 kind="number",
-                default=1.0,
+                default=1.51,
                 minimum=0.01,
                 maximum=100.0,
                 step=0.01,
@@ -1313,6 +1342,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             factor_values,
             normalized_params,
             bundle_fingerprint,
+            backend,
         )
         source_commands = [
             str(command)

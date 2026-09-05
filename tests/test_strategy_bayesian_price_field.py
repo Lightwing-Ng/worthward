@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.26.2."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.26.4."""
 
 from __future__ import annotations
 
@@ -226,6 +226,47 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(
             factor_labels,
             sorted(factor_labels, key=str.casefold),
+        )
+        expected_on_factors = {
+            "use_options",
+            "use_option_call_volume",
+            "use_option_put_call_open_interest_ratio",
+            "use_option_put_call_volume_ratio",
+            "use_volume",
+            "use_volume_at_price",
+        }
+        self.assertEqual(
+            {
+                definition.key: definition.default
+                for definition in factor_definitions
+            },
+            {
+                definition.key: definition.key in expected_on_factors
+                for definition in factor_definitions
+            },
+        )
+        startup_params = strategy.get_startup_params()
+        self.assertEqual(startup_params["training_window"], 30)
+        self.assertEqual(startup_params["chip_window"], 41)
+        self.assertEqual(startup_params["prior_strength"], 1.51)
+        self.assertEqual(startup_params["entry_probability"], 60.0)
+        self.assertEqual(startup_params["compute_backend"], "Auto")
+        self.assertEqual(
+            strategy.normalize_params(
+                {
+                    "training_window": 120,
+                    "chip_window": 30,
+                    "prior_strength": 10.52,
+                    "use_options": False,
+                }
+            ),
+            {
+                **startup_params,
+                "training_window": 120,
+                "chip_window": 30,
+                "prior_strength": 10.52,
+                "use_options": False,
+            },
         )
         self.assertFalse(definitions["use_dynamic_pe_ratio"].default)
         self.assertEqual(definitions["cell_display_threshold"].kind, "number")
@@ -806,7 +847,10 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         stale_strategy = BayesianPriceFieldStrategy()
         stale_strategy._warmup_bundle = stale_bundle
-        stale_result = stale_strategy.compute_signals(frame, _cpu_params())
+        stale_result = stale_strategy.compute_signals(
+            frame,
+            _cpu_params(use_pe_ratio=True),
+        )
         stale_factors = {
             factor["key"]: factor
             for factor in stale_result.presentation["factors"]
@@ -827,7 +871,11 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         one_value_strategy._warmup_bundle = one_value_bundle
         one_value_result = one_value_strategy.compute_signals(
             frame,
-            _cpu_params(use_options=True, use_volume=False),
+            _cpu_params(
+                use_pe_ratio=True,
+                use_options=True,
+                use_volume=False,
+            ),
         )
         one_value_factors = {
             factor["key"]: factor
@@ -939,6 +987,39 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(unchanged_display_threshold, baseline)
         self.assertEqual(unchanged_lstm_parameter, baseline)
+
+    def test_model_fingerprint_covers_effective_compute_backend(self) -> None:
+        frame = _market_frame(80)
+        strategy = BayesianPriceFieldStrategy()
+        params = strategy.normalize_params(_cpu_params(compute_backend="Auto"))
+        factors = _build_factor_columns(frame, int(params["chip_window"]))
+        cpu_backend = _ComputeBackend(
+            requested="Auto",
+            resolved="cpu",
+            engine="numpy",
+            numeric_precision="float64",
+        )
+        mps_backend = _ComputeBackend(
+            requested="Auto",
+            resolved="mps",
+            engine="hybrid",
+            numeric_precision="float32",
+        )
+        fallback_backend = _ComputeBackend(
+            requested="Auto",
+            resolved="cpu",
+            engine="numpy-fallback",
+            numeric_precision="float64",
+            runtime_fallback=True,
+        )
+
+        fingerprints = {
+            _frame_fingerprint(frame, factors, params, "bundle-a", cpu_backend),
+            _frame_fingerprint(frame, factors, params, "bundle-a", mps_backend),
+            _frame_fingerprint(frame, factors, params, "bundle-a", fallback_backend),
+        }
+
+        self.assertEqual(len(fingerprints), 3)
 
     def test_lstm_only_parameters_do_not_change_bayesian_compute_signals(self) -> None:
         frame = _market_frame(80)
@@ -1568,10 +1649,18 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 end=pd.Timestamp("2025-04-01"),
                 params=_cpu_params(
                     training_window=120,
-                    chip_window=30,
-                    use_pe_ratio=False,
-                    use_options=False,
-                ),
+                chip_window=30,
+                use_pe_ratio=False,
+                use_options=False,
+                use_option_call_open_interest=False,
+                use_option_call_volume=False,
+                use_option_put_call_open_interest_ratio=False,
+                use_option_put_call_volume_ratio=False,
+                use_option_put_open_interest=False,
+                use_option_put_volume=False,
+                use_option_total_open_interest=False,
+                use_option_total_volume=False,
+            ),
             )
 
         self.assertIs(strategy._warmup_bundle, bundle)
