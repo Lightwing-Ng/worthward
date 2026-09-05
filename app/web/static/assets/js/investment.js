@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.136.0
+ * Code version: v2.136.1
  * - Changed: Overview equity hover now coalesces pointer work through one
  *   animation frame, updates Chart.js only when the selected point changes,
  *   and reuses the Backtest DOM crosshair/date-label treatment.
@@ -19065,23 +19065,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 || !Number.isFinite(pointer?.clientX)
             ) return;
             const relativeX = (pointer.clientX - canvasRect.left) / scaleX;
-            canvas.dataset.investmentHoverDebug = `relative:${relativeX}:${chartArea.left}:${chartArea.right}`;
-            if (relativeX < chartArea.left || relativeX > chartArea.right) {
+            const chartAreaEdgeTolerance = 1;
+            if (
+                relativeX < chartArea.left - chartAreaEdgeTolerance
+                || relativeX > chartArea.right + chartAreaEdgeTolerance
+            ) {
                 clearInvestmentChartHover(chart);
                 return;
             }
-            let resolvedPoint;
-            try {
-                resolvedPoint = resolveNearestInvestmentHoverPoint(chart, relativeX);
-            } catch (error) {
-                const message = String(error?.message || error);
-                window.__investmentHoverDebugLastError = message;
-                canvas.dataset.investmentHoverDebug = `error:${message}`;
-                return;
-            }
-            canvas.dataset.investmentHoverDebug = resolvedPoint
-                ? `point:${resolvedPoint.index}:${resolvedPoint.x}`
-                : 'point:none';
+            const resolvedPoint = resolveNearestInvestmentHoverPoint(chart, relativeX);
             if (!resolvedPoint) {
                 clearInvestmentChartHover(chart);
                 return;
@@ -19116,15 +19108,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const scheduleInvestmentHover = (clientX, clientY) => {
             pendingInvestmentHover = {clientX, clientY};
-            canvas.dataset.investmentHoverDebug = `scheduled:${clientX}:${clientY}`;
             if (investmentHoverFrameId !== null) return;
             investmentHoverFrameId = window.requestAnimationFrame(() => {
                 investmentHoverFrameId = null;
                 const pointer = pendingInvestmentHover;
                 pendingInvestmentHover = null;
-                canvas.dataset.investmentHoverDebug = pointer
-                    ? `frame:${pointer.clientX}:${pointer.clientY}`
-                    : 'frame:none';
                 if (!pointer || investmentEquityChartInstance?.canvas !== canvas) return;
                 renderInvestmentHoverFrame(investmentEquityChartInstance, pointer);
             });

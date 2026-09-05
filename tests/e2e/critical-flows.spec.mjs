@@ -1,4 +1,4 @@
-/* Code version: v1.203.22 */
+/* Code version: v1.203.23 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -13086,7 +13086,6 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
 });
 
 test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async ({page}) => {
-    page.on('pageerror', (error) => console.log('INV_PAGEERROR', error.message, error.stack));
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-06-01', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 100, amount: -100},
@@ -13107,56 +13106,58 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     });
     await expect.poll(readPoint).not.toBeNull();
     const point = await readPoint();
-    await page.evaluate(() => {
-        const canvas = document.querySelector('#investmentEquityChart');
-        canvas?.addEventListener('mousemove', () => {
-            window.__investmentCanvasMouseMoveSeen = true;
-        });
-        const nativeRaf = window.requestAnimationFrame.bind(window);
-        window.requestAnimationFrame = (callback) => nativeRaf((timestamp) => {
-            window.__investmentRafSeen = (window.__investmentRafSeen || 0) + 1;
-            callback(timestamp);
-        });
-    });
 
     await page.mouse.move(point.x, point.y);
-    const debugState = await page.evaluate(() => {
-        const canvas = document.querySelector('#investmentEquityChart');
-        const chart = window.Chart?.getChart(canvas);
-        const point = chart?.getDatasetMeta(0)?.data?.[0];
-        return {
-            canvas: canvas?.getBoundingClientRect().toJSON(),
-            chart: {width: chart?.width, height: chart?.height, area: chart?.chartArea},
-            point: {x: point?.x, y: point?.y, skip: point?.skip, value: chart?.data?.datasets?.[0]?.data?.[0]},
-            overlays: document.querySelectorAll('[data-investment-equity-hover-line]').length,
-            overlayState: (() => {
-                const line = document.querySelector('[data-investment-equity-hover-line]');
-                const label = document.querySelector('[data-investment-equity-hover-date-label]');
-                return {
-                    lineClass: line?.className || '',
-                    lineX: line?.style.getPropertyValue('--trade-chart-hover-line-x') || '',
-                    labelClass: label?.className || '',
-                    labelHidden: label?.hidden ?? null,
-                    labelText: label?.textContent || '',
-                };
-            })(),
-            tooltipState: {
-                opacity: chart?.tooltip?.opacity,
-                active: chart?.tooltip?._active?.map(({index}) => index),
-                eventPosition: chart?.tooltip?._eventPosition,
-            },
-            hitTarget: document.elementFromPoint(point.x, point.y)?.id || '',
-            canvasPointerEvents: canvas ? getComputedStyle(canvas).pointerEvents : '',
-            mouseMoveSeen: window.__investmentCanvasMouseMoveSeen === true,
-            rafSeen: window.__investmentRafSeen || 0,
-            sourceHoverDebug: canvas?.dataset.investmentHoverDebug || '',
-            sourceHoverError: window.__investmentHoverDebugLastError || '',
-            tooltip: document.querySelector('[data-investment-chart-tooltip="1"]')?.className || '',
-        };
-    });
-    throw new Error(`INV_HOVER_DEBUG ${JSON.stringify(debugState)}`);
     const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
     await expect(tooltip).toHaveClass(/is-visible/);
+    const hoverLine = page.locator('#investment_equity_chart [data-investment-equity-hover-line]');
+    const hoverDateLabel = page.locator('#investment_equity_chart [data-investment-equity-hover-date-label]');
+    await expect(hoverLine).toHaveClass(/is-visible/);
+    await expect(hoverDateLabel).toHaveClass(/is-visible/);
+    await expect(hoverDateLabel.locator('[data-investment-hover-date-line="primary"]')).toHaveText('1 Jun');
+    await expect(hoverDateLabel.locator('[data-investment-hover-date-line="secondary"]')).toHaveText('2026');
+    await expect.poll(() => hoverDateLabel.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+            minWidth: style.minWidth,
+        };
+    })).toMatchObject({
+        backgroundColor: 'rgb(0, 85, 204)',
+        color: 'rgb(255, 255, 255)',
+        minWidth: '42px',
+    });
+
+    await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        if (!chart) return;
+        const originalUpdate = chart.update.bind(chart);
+        const originalDraw = chart.draw.bind(chart);
+        const calls = {draw: 0, update: 0};
+        chart.update = (...args) => {
+            calls.update += 1;
+            return originalUpdate(...args);
+        };
+        chart.draw = (...args) => {
+            calls.draw += 1;
+            return originalDraw(...args);
+        };
+        window.__investmentSamePointHoverCalls = () => ({...calls});
+        window.__restoreInvestmentSamePointHoverCalls = () => {
+            chart.update = originalUpdate;
+            chart.draw = originalDraw;
+        };
+    });
+    for (const offset of [1, 2, 3]) {
+        await page.mouse.move(point.x + offset, point.y);
+    }
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.__investmentSamePointHoverCalls?.())).toEqual({
+        draw: 0,
+        update: 0,
+    });
+    await page.evaluate(() => window.__restoreInvestmentSamePointHoverCalls?.());
     expect(await tooltip.locator('.chart-tooltip-label').evaluateAll((labels) => (
         labels.slice(-3).map((label) => label.textContent)
     ))).toEqual([
@@ -13196,6 +13197,8 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     ))).toBeLessThan(2);
 
     await page.mouse.move(0, 0);
+    await expect(hoverLine).not.toHaveClass(/is-visible/);
+    await expect(hoverDateLabel).not.toHaveClass(/is-visible/);
     await page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
         if (!chart) return;
