@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.16.1
+Code version: v1.17.0
 """
 
 from __future__ import annotations
@@ -158,6 +158,10 @@ def build_style_token_rows(
             "sample_title": "LSTM parameters",
             "tokens": [
                 px_token("--collapse-section-gap", 8),
+                px_token("--collapse-icon-size", 20),
+                px_token("--collapse-icon-gap", 8),
+                raw_token("--collapse-icon-closed", 'url("/static/images/arrowtriangle.down.circle.svg")'),
+                raw_token("--collapse-icon-open", 'url("/static/images/arrowtriangle.down.circle.fill.svg")'),
                 raw_token("--collapse-summary-padding", "10px 0"),
                 raw_token("--collapse-body-padding", "0 10px 10px"),
                 raw_token("--collapse-font-size", "var(--font-size-5)"),

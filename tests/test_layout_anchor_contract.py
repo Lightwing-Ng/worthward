@@ -152,7 +152,7 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.26.1");' in app_css
+    assert '@import url("./views/settings.css?v=0.26.2");' in app_css
     assert f'@import url("./foundation/tokens.css?v={_css_code_version(ASSET_ROOT / "css/foundation/tokens.css").removeprefix("v")}");' in app_css
     assert f'@import url("./components/forms.css?v={_css_code_version(ASSET_ROOT / "css/components/forms.css").removeprefix("v")}");' in app_css
     assert '@import url("./views/investment.css?v=1.78.9");' in app_css

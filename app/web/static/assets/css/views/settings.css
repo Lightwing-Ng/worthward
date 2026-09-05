@@ -1,4 +1,4 @@
-/* Code version: v0.26.1 */
+/* Code version: v0.26.2 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -1941,8 +1941,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-strategy-card > .settings-strategy-summary {
-    list-style: none;
-    display: block;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -1951,12 +1949,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     cursor: pointer;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
-}
-
-.settings-strategy-summary::marker,
-.settings-strategy-summary::-webkit-details-marker {
-    display: none;
-    content: "";
 }
 
 .settings-strategy-main {
@@ -3736,8 +3728,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     .settings-strategy-card > .settings-strategy-summary {
         min-height: 0;
         padding: 6px 4px;
-        display: flex;
-        align-items: flex-start;
+        display: grid;
+        align-items: start;
     }
 
     .settings-strategy-params-shell {

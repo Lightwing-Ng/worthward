@@ -1,4 +1,4 @@
-/* Code version: v0.28.2 */
+/* Code version: v0.29.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -23,6 +23,10 @@
 	--responsive-breakpoint-live-pin-tight-max: 420px;
 	--sidebar-form-gap: 2px;
 	--collapse-section-gap: 8px;
+	--collapse-icon-size: 20px;
+	--collapse-icon-gap: 8px;
+	--collapse-icon-closed: url("/static/images/arrowtriangle.down.circle.svg");
+	--collapse-icon-open: url("/static/images/arrowtriangle.down.circle.fill.svg");
 	--collapse-summary-padding: 10px 0;
 	--collapse-body-padding: 0 10px 10px;
 	--collapse-font-size: var(--font-size-5);

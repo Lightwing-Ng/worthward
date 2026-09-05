@@ -1,6 +1,26 @@
 # Testing guide
 
-Documentation version: `v1.50.2`
+Documentation version: `v1.50.3`
+
+## Shared disclosure icon refactor on 5 Sep 2026
+
+Every native `details > summary` disclosure now uses a trailing two-column
+affordance. The closed state uses
+`arrowtriangle.down.circle.svg` rotated to point right; the open state uses
+`arrowtriangle.down.circle.fill.svg` pointing down. The text remains in the first
+column, so Backtest parameters, Strategy, Settings strategy cards, and the Style
+tokens specimen keep the same left edge at desktop and narrow widths. The icon
+size, gap, masks, and spatial transition are shared tokens; the Settings mobile
+branch now keeps the same grid contract instead of overriding it with flex.
+
+`tests/test_price_field_contract.py` and the layout-anchor contracts pass. The
+isolated `tests/e2e/collapse-trailing-icons.spec.mjs` passes four cases at 1,138px
+and 390px in light and dark modes, including keyboard open/close, exact asset
+masks, text alignment, and zero horizontal overflow. `shared-backtest-controls`
+also passes in both modes and widths. Final focused JavaScript validation passes
+324 tests. The complete gate passes 1,159 Python tests and 324 JavaScript tests;
+Chromium passes 322 tests, with one pre-existing Holdings/history Market value
+alignment failure at 856px (4.25px edge delta) outside this component change.
 
 ## External audit challenge on 5 Sep 2026
 

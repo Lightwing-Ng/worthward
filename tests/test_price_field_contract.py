@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.1.0."""
+"""Shared Price Field contract tests. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -192,18 +192,17 @@ class PriceFieldContractTests(unittest.TestCase):
         self.assertIn("probability-grid-v1", source)
         self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.29.0\"", source)
 
-    def test_native_disclosures_use_the_shared_triangle_asset(self) -> None:
+    def test_native_disclosures_use_shared_trailing_circle_assets(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        trade_css = (root / "app/web/static/assets/css/components/collapse.css").read_text(
-            encoding="utf-8",
-        )
-        triangle_asset = root / "app/web/static/images/triangle.fill.svg"
-        self.assertTrue(triangle_asset.is_file())
-        self.assertIn("details > summary::before", trade_css)
-        self.assertIn('mask: url("/static/images/triangle.fill.svg")', trade_css)
-        self.assertIn('-webkit-mask: url("/static/images/triangle.fill.svg")', trade_css)
-        self.assertIn("details[open] > summary::before", trade_css)
-        self.assertNotIn("details > summary::-webkit-details-marker {\n\tdisplay: list-item", trade_css)
+        css = (root / "app/web/static/assets/css/components/collapse.css").read_text()
+        tokens = (root / "app/web/static/assets/css/foundation/tokens.css").read_text()
+        for asset in ("arrowtriangle.down.circle.svg", "arrowtriangle.down.circle.fill.svg"):
+            self.assertTrue((root / "app/web/static/images" / asset).is_file())
+            self.assertIn(asset, tokens)
+        self.assertIn("details > summary::after", css)
+        self.assertIn("details[open] > summary::after", css)
+        self.assertNotIn("summary::before", css)
+        self.assertNotIn("triangle.fill.svg", css)
 
 
 if __name__ == "__main__":
