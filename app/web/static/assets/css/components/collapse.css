@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 /* One trailing disclosure affordance for every native details control. */
 details > summary {
 	display: grid;
@@ -19,7 +19,7 @@ details > summary::after {
 	grid-row: 1;
 	width: var(--collapse-icon-size);
 	height: var(--collapse-icon-size);
-	background-color: currentColor;
+	background-color: var(--accent);
 	mask: var(--collapse-icon-closed) center/contain no-repeat;
 	-webkit-mask: var(--collapse-icon-closed) center/contain no-repeat;
 	transform: rotate(-90deg);

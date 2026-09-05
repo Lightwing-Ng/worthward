@@ -1,6 +1,14 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.3`
+Documentation version: `v1.243.4`
+
+LSTM GA v0.9.0 adds opt-in `--objective probability` and a SHA-256-pinned
+`--snapshot-file` input. It ranks chronological validation Brier scores with
+missing-prediction penalties and excludes holdout results from selection.
+The default direction objective retains its existing legacy ranking. See
+[LSTM probability tuning](LSTM_PROBABILITY_TUNING.md) for the offline budget,
+selection boundaries, and hard-stop limitation. Native disclosure masks now use
+the standard blue accent in both open and closed states.
 
 Backtest annotation follow-up, 5 Sep 2026: algorithmic stop-loss exits and trade
 details now default off throughout web configuration and URL state. Explicit

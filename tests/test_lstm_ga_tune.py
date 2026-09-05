@@ -1,4 +1,4 @@
-"""Tests for the durable LSTM GA runner. Code version: v1.0.2."""
+"""Tests for the durable LSTM GA runner. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -17,6 +17,31 @@ from scripts import lstm_ga_tune as ga
 
 
 class LstmGaTuneTests(unittest.TestCase):
+    def test_probability_fitness_counts_missing_predictions_and_accepts_neutral(self) -> None:
+        opens = np.arange(100.0, 132.0)
+        score = ga._score_slice(opens, np.zeros(32), np.ones(32), np.full(32, 0.5), 0, 32)
+        self.assertEqual(score["probability_score_pct"], 75.0)
+        self.assertEqual(score["selection_probability_score_pct"], 75.0)
+        result = {"objective": "probability", "validation_folds": {str(i): score for i in range(3)}}
+        self.assertEqual(ga._fitness_fields(result)["fitness"], 75.0)
+        probabilities = np.full(32, 0.5)
+        probabilities[:3] = np.nan
+        incomplete = ga._score_slice(opens, np.zeros(32), np.ones(32), probabilities, 0, 32)
+        self.assertLess(incomplete["selection_probability_score_pct"], 75.0)
+
+    def test_probability_ranking_ignores_holdout_and_returns(self) -> None:
+        def candidate(key, fitness, holdout):
+            return [{"model_key": key, "objective": "probability", "status": "ok",
+                     "params": {"lstm_seed": seed}, "feasible": True, "fitness": fitness,
+                     "validation_median_probability_score_pct": fitness,
+                     "validation_median_hit_rate_pct": 50,
+                     "holdout": {"direction_hit_rate_pct": holdout}}
+                    for seed in ga.ROBUST_SEEDS]
+        ranked = ga._aggregate_robust(candidate("better", 80, 0) + candidate("worse", 75, 100))
+        self.assertEqual(ranked[0]["model_key"], "better")
+        self.assertTrue(ranked[0]["feasible"])
+        self.assertEqual(ga._ranking_key({"objective": "probability", "feasible": True, "fitness": 80, "backtest": {"net_return_pct": -100}}), (1.0, 80.0))
+
     def test_bundle_payload_round_trips_dataclass_records(self) -> None:
         observed_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
         bundle = PriceFieldMarketFactorBundle(

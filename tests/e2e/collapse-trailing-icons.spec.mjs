@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -14,6 +14,8 @@ for (const colorScheme of ['light', 'dark']) {
                 range.selectNodeContents(text);
                 const after = getComputedStyle(el, '::after');
                 return {
+                    color: after.backgroundColor,
+                    accent: getComputedStyle(el).getPropertyValue("--accent").trim(),
                     textLeft: range.getBoundingClientRect().left,
                     labelLeft: document.querySelector('label[for="trade_strategy"]').getBoundingClientRect().left,
                     before: getComputedStyle(el, '::before').content,
@@ -27,6 +29,8 @@ for (const colorScheme of ['light', 'dark']) {
             let state = await read();
             expect(Math.abs(state.textLeft - state.labelLeft)).toBeLessThan(1);
             expect(state.before).toBe('none');
+            const blue = await summary.evaluate(el => { const probe = document.createElement('span'); probe.style.color = 'var(--accent)'; el.append(probe); const value = getComputedStyle(probe).color; probe.remove(); return value; });
+            expect(state.color).toBe(blue);
             expect(state.column).toBe('2');
             expect(state.width).toBe('20px');
             expect(state.mask).toContain('arrowtriangle.down.circle.fill.svg');
@@ -37,6 +41,7 @@ for (const colorScheme of ['light', 'dark']) {
             await expect(page.locator('[data-collapse="backtest"]')).not.toHaveAttribute('open');
             await page.waitForTimeout(650);
             state = await read();
+            expect(state.color).toBe(blue);
             expect(state.mask).toContain('arrowtriangle.down.circle.svg');
             expect(state.transform).toBe('matrix(0, -1, 1, 0, 0, 0)');
             expect(Math.abs(state.textLeft - state.labelLeft)).toBeLessThan(1);

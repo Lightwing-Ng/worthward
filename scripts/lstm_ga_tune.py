@@ -5,7 +5,8 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.8.0
+Code version: v0.9.0
+- Added: Probability-first validation ranking and frozen local snapshot input.
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
   market-factor provider and pipeline
   directly instead of importing Bayesian strategy helpers.
@@ -113,6 +114,7 @@ class EvaluationContext:
     holdout_start: int
     snapshot_fingerprint: str
     interval: str = "1d"
+    objective: str = "direction"
     minimum_training_seconds: float = 0.0
     backtest_settings: dict[str, Any] | None = None
 
@@ -256,7 +258,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.8.0",
+        "runner_version": "v0.9.0",
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
         "ticker": str(args.ticker).strip().upper(),
@@ -267,6 +269,11 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "max_workers": int(args.max_workers),
         "ga_seed": int(args.ga_seed),
         "offline": bool(args.offline),
+        "objective": getattr(args, "objective", "direction"),
+        "source_snapshot_sha256": (
+            hashlib.sha256(Path(args.snapshot_file).read_bytes()).hexdigest()
+            if getattr(args, "snapshot_file", None) else None
+        ),
         "selected_params": validate_selected_params(selected) if selected is not None else None,
         "base_params": validate_selected_params(base) if base is not None else None,
         "configuration": validate_training_configuration(getattr(args, "configuration", None)),
@@ -477,8 +484,15 @@ def _effective_factor_keys(full_frame: pd.DataFrame, bundle_payload: Mapping[str
 
 def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[EvaluationContext, dict[str, Any]]:
     interval = _request_spec(args)["interval"]
-    if paths.snapshot.exists():
-        raw = _read_json(paths.snapshot)
+    source_snapshot = getattr(args, "snapshot_file", None)
+    snapshot_path = (
+        paths.snapshot if paths.snapshot.exists()
+        else Path(source_snapshot) if source_snapshot else None
+    )
+    if snapshot_path is not None:
+        raw = _read_json(snapshot_path)
+        if str(raw.get("ticker", "")).upper() != str(args.ticker).upper() or raw.get("interval", "1d") != interval:
+            raise ValueError("Snapshot ticker or interval does not match the request.")
         visible_frame = pd.DataFrame(raw.get("visible_rows") or [])
         if visible_frame.empty:
             raise ValueError("The saved GA snapshot contains no visible rows.")
@@ -486,6 +500,8 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         if not isinstance(bundle_payload, dict):
             raise ValueError("The saved GA snapshot has no factor bundle.")
         context = _context_from_snapshot(raw, visible_frame, bundle_payload)
+        if snapshot_path != paths.snapshot:
+            _atomic_write_json(paths.snapshot, raw)
         return context, raw
 
     strategy = LSTMPriceFieldStrategy()
@@ -801,7 +817,16 @@ def _score_slice(
     hit_rate = hits / directional_points * 100.0 if directional_points else None
     coverage = directional_points / eligible_points * 100.0 if eligible_points else 0.0
     probability_score = (1.0 - brier) * 100.0 if brier is not None else None
+    eligible_targets = int(np.count_nonzero(np.isfinite(target)))
+    penalized_loss = (
+        (float(np.sum(np.square(probability[valid] - outcome[valid])))
+         + eligible_targets - valid_points) / eligible_targets
+        if eligible_targets else None
+    )
     return {
+        "eligible_target_points": eligible_targets,
+        "prediction_coverage_pct": 100.0 * valid_points / eligible_targets if eligible_targets else 0.0,
+        "selection_probability_score_pct": 100.0 * (1.0 - penalized_loss) if penalized_loss is not None else None,
         "direction_hit_rate_pct": round(hit_rate, 4) if hit_rate is not None else None,
         "direction_hits": hits,
         "direction_scored_points": directional_points,
@@ -855,7 +880,7 @@ def _evaluate_signal_result(
         probabilities = frame["lstm_probability_up"].to_numpy(dtype=np.float64)
         full_score = _score_slice(opens, means, scales, probabilities, 0, len(frame))
         validation_scores = {
-            label: _score_slice(opens, means, scales, probabilities, start, end)
+            label: _score_slice(opens, means, scales, probabilities, start, end - 2 if context.objective == "probability" else end)
             for label, start, end in context.validation_folds
         }
         holdout_score = _score_slice(
@@ -881,6 +906,7 @@ def _evaluate_signal_result(
             **candidate,
             "snapshot_fingerprint": context.snapshot_fingerprint,
             "status": "ok",
+            "objective": context.objective,
             "full": full_score,
             "validation_folds": validation_scores,
             "holdout": holdout_score,
@@ -944,6 +970,19 @@ def _fitness_fields(result: Mapping[str, Any]) -> dict[str, Any]:
         if feasible
         else -math.inf
     )
+    if result.get("objective") == "probability":
+        counts = [int(value.get("eligible_target_points", 0)) for value in fold_values]
+        scores = [_finite_metric(value.get("selection_probability_score_pct")) for value in fold_values]
+        feasible = (
+            len(fold_values) == VALIDATION_FOLD_COUNT
+            and all(count >= 15 for count in counts)
+            and all(math.isfinite(score) for score in scores)
+            and all(
+                float(value.get("prediction_coverage_pct", 0)) >= MIN_COVERAGE_PCT
+                for value in fold_values
+            )
+        )
+        fitness = float(np.average(scores, weights=counts)) if feasible else -math.inf
     return {
         "feasible": feasible,
         "validation_median_hit_rate_pct": round(validation_median, 4) if math.isfinite(validation_median) else None,
@@ -969,6 +1008,8 @@ def _initialize_worker(context: EvaluationContext) -> None:
 
 def _ranking_key(result: Mapping[str, Any]) -> tuple[float, ...]:
     backtest = result.get("backtest") or {}
+    if result.get("objective") == "probability":
+        return (float(bool(result.get("feasible"))), _finite_metric(result.get("fitness")))
     return (
         1.0 if bool(result.get("feasible")) else 0.0,
         _finite_metric(result.get("fitness")),
@@ -1267,7 +1308,18 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
                 for item in group
             )
         )
+        probability_mode = group[0].get("objective") == "probability"
+        seed_fitness = [_finite_metric(item.get("fitness")) for item in group]
+        if probability_mode:
+            feasible = (
+                len(group) == len(ROBUST_SEEDS)
+                and {int(item["params"]["lstm_seed"]) for item in group} == set(ROBUST_SEEDS)
+                and all(item.get("feasible") for item in group)
+                and all(math.isfinite(value) for value in seed_fitness)
+            )
         aggregate = {
+            "objective": group[0].get("objective", "direction"),
+            "validation_mean_probability_fitness": float(np.mean(seed_fitness)) if probability_mode and feasible else None,
             "model_key": model_key,
             "params": {
                 key: value
@@ -1286,7 +1338,7 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
         aggregated.append(aggregate)
     return sorted(
         aggregated,
-        key=lambda item: (
+        key=lambda item: (float(bool(item["feasible"])), _finite_metric(item.get("validation_mean_probability_fitness"))) if item.get("objective") == "probability" else (
             1.0 if item["feasible"] else 0.0,
             _finite_metric(item.get("holdout_median_hit_rate_pct")),
             _finite_metric(item.get("holdout_min_hit_rate_pct")),
@@ -1425,6 +1477,7 @@ def _run(args: argparse.Namespace) -> int:
         context, snapshot = _build_snapshot(args, paths)
         if spec["selected_params"] is not None:
             return _run_selected_configuration(spec, paths, context)
+        context.objective = spec.get("objective", "direction")
         strategy = LSTMPriceFieldStrategy()
         base_params = _canonical_params(
             _base_params(strategy, spec["base_params"]),
@@ -1634,7 +1687,7 @@ def _run(args: argparse.Namespace) -> int:
                         continue
                     seen_models.add(model_key)
                     top_models.append(result)
-                    if len(top_models) >= ROBUST_CANDIDATE_COUNT:
+                    if len(top_models) >= (8 if context.objective == "probability" else ROBUST_CANDIDATE_COUNT):
                         break
                 robust_candidates: list[dict[str, Any]] = []
                 for result in top_models:
@@ -1750,6 +1803,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--selected-params", default=None, help="Train one exact strategy configuration supplied as JSON instead of running GA.")
     parser.add_argument("--base-params", default=None, help="Use the supplied strategy configuration as the GA baseline while still searching optimizable parameters.")
     parser.add_argument("--configuration", default=None, help="Saved date range and Backtest settings as JSON.")
+    parser.add_argument("--snapshot-file", default=None, help="Reuse a real frozen local snapshot; its dates override the relative period.")
+    parser.add_argument("--objective", choices=("direction", "probability"), default="direction")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
     parser.add_argument("--prepared-request", default=None, help=argparse.SUPPRESS)
