@@ -89,6 +89,19 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert 'data-summary-scope="both"' in html
 
 
+def test_style_tokens_render_examples_inside_the_collapse_specimen() -> None:
+    html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
+
+    collapse_html = html.split('data-style-token-card="collapse"', 1)[1].split(
+        'data-style-token-card="', 1
+    )[0]
+    assert 'data-style-token-collapse-example' in collapse_html
+    assert "LSTM Price Field" in collapse_html
+    assert ">8</span><span class=\"style-token-collapse-example-unit\">bars</span>" in collapse_html
+    assert ">0.050</span>" in collapse_html
+    assert ">60.0</span><span class=\"style-token-collapse-example-unit\">%</span>" in collapse_html
+
+
 def test_style_token_shared_filter_demo_uses_the_shared_select_contract() -> None:
     client = create_app().test_client()
 

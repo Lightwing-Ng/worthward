@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.17.0
+Code version: v1.18.0
 """
 
 from __future__ import annotations
@@ -156,6 +156,13 @@ def build_style_token_rows(
             "name": "Collapse",
             "sample_kind": "collapse",
             "sample_title": "LSTM parameters",
+            "sample_fields": [
+                {"label": "LSTM lookback", "value": "8", "unit": "bars"},
+                {"label": "LSTM hidden size", "value": "8", "unit": "units"},
+                {"label": "LSTM epochs", "value": "6", "unit": "steps"},
+                {"label": "LSTM learning rate", "value": "0.050", "unit": ""},
+                {"label": "Entry probability", "value": "60.0", "unit": "%"},
+            ],
             "tokens": [
                 px_token("--collapse-section-gap", 8),
                 px_token("--collapse-icon-size", 20),

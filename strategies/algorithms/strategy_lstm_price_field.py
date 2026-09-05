@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.4.0
+Code version: v1.5.0
 - Changed: Model-neutral causal Price Field preparation now comes from the
   shared pipeline instead of the Bayesian strategy module.
 """
@@ -65,7 +65,7 @@ _PROBABILITY_COLUMN = "lstm_probability_up"
 _AUTOREGRESSION_COLUMN = "lstm_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "lstm_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "lstm_return_innovation_std"
-_MODEL_VERSION = "lstm-price-field-model/v1.0.2"
+_MODEL_VERSION = "lstm-price-field-model/v1.1.0"
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
@@ -401,6 +401,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
         factor_values = _build_factor_columns(
             full_frame,
             int(normalized_params["chip_window"]),
+            use_volume_at_price=bool(normalized_params["use_volume_at_price"]),
         )
         enabled_factors = [
             definition.key
@@ -498,7 +499,11 @@ class LSTMPriceFieldStrategy(BaseStrategy):
         output["sell_signal"] = pd.Series(sell_signals, index=output.index, dtype="bool")
 
         latest_origin = max(0, len(output) - 1)
-        factor_selection = _latest_lstm_factor_selection(feature_names, latest_origin)
+        actual_features = backend.origin_feature_names.get(len(full_frame) - 1, ())
+        factor_selection = _latest_lstm_factor_selection(actual_features, latest_origin)
+        for name in feature_names:
+            if name != LAG_RETURN_FEATURE and name not in actual_features:
+                factor_selection["selection_status"][name] = "unavailable"
         factors = build_price_field_factor_status(
             self._warmup_bundle,
             full_frame,

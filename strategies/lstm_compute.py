@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -235,6 +235,7 @@ class LstmBackend:
     training_compute_seconds: float = 0.0
     optimizer_steps: int = 0
     require_accelerator: bool = False
+    origin_feature_names: dict[int, tuple[str, ...]] = field(default_factory=dict)
 
     def fall_back_to_cpu(self, reason: str) -> None:
         self.resolved = "cpu"
@@ -534,7 +535,9 @@ def _torch_train_and_predict(
         learning_rate: float,
         seed: int,
         work: TrainingWork | None = None,
+        timings: dict[str, float] | None = None,
 ) -> tuple[float, float]:
+    training_started = time.perf_counter()
     torch_module = backend.torch_module
     if torch_module is None:
         raise RuntimeError("Torch is unavailable.")
@@ -581,6 +584,11 @@ def _torch_train_and_predict(
         if work is not None:
             getattr(torch_module, backend.resolved).synchronize()
             work.record(started)
+    if backend.resolved in {"mps", "cuda"}:
+        getattr(torch_module, backend.resolved).synchronize()
+    inference_started = time.perf_counter()
+    if timings is not None:
+        timings["train_ms"] = (inference_started - training_started) * 1000.0
     model.eval()
     head.eval()
     with torch_module.no_grad():
@@ -593,6 +601,8 @@ def _torch_train_and_predict(
         raw = head(encoded[:, -1, :])
         mean = float(raw[0, 0].detach().cpu().item())
         log_std = float(raw[0, 1].clamp(_LOG_STD_MIN, _LOG_STD_MAX).detach().cpu().item())
+    if timings is not None:
+        timings["infer_ms"] = (time.perf_counter() - inference_started) * 1000.0
     scale = math.exp(log_std)
     if not math.isfinite(mean) or not math.isfinite(scale) or scale <= 0.0:
         raise ValueError("Torch LSTM prediction was non-finite.")
@@ -624,6 +634,7 @@ def _gather_origin_batch(
         origin: int,
         training_window: int,
         lookback: int,
+        used_columns: list[int] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
     """Return causal train sequences/targets and the current sequence.
 
@@ -663,6 +674,8 @@ def _gather_origin_batch(
     usable[lag_index] = True
     if not bool(np.any(usable)):
         return None
+    if used_columns is not None:
+        used_columns.extend(int(index) for index in np.flatnonzero(usable))
     train = train[:, :, usable]
     current_values = current_values[:, usable]
     if not np.all(np.isfinite(train)) or not np.all(np.isfinite(current_values)):
@@ -684,11 +697,10 @@ def _numpy_origin_prediction(
         learning_rate: float,
         seed: int,
         work: TrainingWork | None = None,
+        timings: dict[str, float] | None = None,
 ) -> tuple[float, float]:
-    standardized = _standardize_training(train_sequences, current_sequence)
-    if standardized is None:
-        raise ValueError("LSTM feature standardization was non-finite.")
-    train, current = standardized
+    training_started = time.perf_counter()
+    train, current = train_sequences, current_sequence
     rng = np.random.default_rng(int(seed))
     model = _NumpyLSTM(train.shape[-1], hidden_size, rng)
     residual_scale = float(np.std(train_targets, ddof=1)) if len(train_targets) > 1 else 0.02
@@ -696,7 +708,11 @@ def _numpy_origin_prediction(
         residual_scale = 0.02
     model.b_out[1] = math.log(residual_scale)
     model.train(train, train_targets, epochs=epochs, learning_rate=learning_rate, work=work)
+    inference_started = time.perf_counter()
     mean, scale = model.predict(current[None, :, :])
+    if timings is not None:
+        timings["train_ms"] = (inference_started - training_started) * 1000.0
+        timings["infer_ms"] = (time.perf_counter() - inference_started) * 1000.0
     predicted_mean = float(mean[0])
     predicted_scale = float(scale[0])
     if (
@@ -742,15 +758,18 @@ def walk_forward_lstm_predictions(
             raise ValueError("No causal training windows are available for this selection.")
     backend.training_compute_seconds = 0.0
     backend.optimizer_steps = 0
+    backend.origin_feature_names = {}
     for origin in range(row_count):
         if progress is not None:
             progress(origin, row_count)
+        used_columns: list[int] = []
         batch = _gather_origin_batch(
             feature_values,
             target_values,
             origin,
             training_window,
             lookback,
+            used_columns,
         )
         if batch is None:
             failed += 1
@@ -762,8 +781,13 @@ def walk_forward_lstm_predictions(
             (lambda: progress(origin, row_count)) if progress is not None else None,
         ) if minimum > 0 else None
         work_options = {"work": work} if work is not None else {}
-        started = time.perf_counter()
+        timings: dict[str, float] = {}
+        work_options["timings"] = timings
         try:
+            standardized = _standardize_training(train_sequences, current_sequence)
+            if standardized is None:
+                raise ValueError("LSTM feature standardization was non-finite.")
+            train_sequences, current_sequence = standardized
             if backend.engine == "torch":
                 mean, scale = _torch_train_and_predict(
                     backend,
@@ -776,7 +800,7 @@ def walk_forward_lstm_predictions(
                     origin_seed,
                     **work_options,
                 )
-            else:
+            elif backend.engine in {"numpy", "numpy-fallback"}:
                 mean, scale = _numpy_origin_prediction(
                     train_sequences,
                     train_targets,
@@ -787,6 +811,8 @@ def walk_forward_lstm_predictions(
                     seed=origin_seed,
                     **work_options,
                 )
+            else:
+                raise RuntimeError(f"Unsupported LSTM engine: {backend.engine}")
         except (RuntimeError, TypeError, ValueError) as exc:
             if minimum > 0 or backend.require_accelerator:
                 raise RuntimeError(f"Training failed on {backend.resolved}: {exc}") from exc
@@ -808,9 +834,12 @@ def walk_forward_lstm_predictions(
                 )
             failed += 1
             continue
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        train_ms += elapsed_ms
-        infer_ms += elapsed_ms
+        train_ms += timings.get("train_ms", 0.0)
+        infer_ms += timings.get("infer_ms", 0.0)
+        backend.origin_feature_names[origin] = tuple(
+            backend.feature_names[index] for index in used_columns
+            if index < len(backend.feature_names)
+        )
         means[origin] = mean
         scales[origin] = scale
         trained += 1

@@ -1,4 +1,4 @@
-{# Code version: v0.15.1 #}
+{# Code version: v0.15.2 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -1179,6 +1179,22 @@
                 <div class="style-token-demo">
                     {% if row.sample_kind == "collapse" %}
                         {% call render_collapse(row.sample_title, "style-token-collapse") %}
+                        <div class="style-token-collapse-example" data-style-token-collapse-example>
+                            <div class="style-token-collapse-example-header">
+                                <span class="style-token-collapse-example-title">{{ translate_ui('LSTM Price Field') }}</span>
+                                <span class="style-token-collapse-example-badge">{{ translate_ui('Default') }}</span>
+                            </div>
+                            <div class="style-token-collapse-example-grid">
+                                {% for field in row.sample_fields %}
+                                <div class="style-token-collapse-example-row">
+                                    <span class="style-token-collapse-example-label">{{ translate_ui(field.label) }}</span>
+                                    <span class="style-token-collapse-example-value">
+                                        <span>{{ field.value }}</span>{% if field.unit %}<span class="style-token-collapse-example-unit">{{ field.unit }}</span>{% endif %}
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
                         {% endcall %}
                     {% elif row.sample_kind == "range-mode" %}
                     <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">

@@ -1,4 +1,85 @@
-/* Code version: v0.26.2 */
+/* Code version: v0.27.0 */
+
+.style-token-collapse-example {
+    display: grid;
+    gap: var(--collapse-section-gap);
+    width: 100%;
+    min-width: 0;
+}
+
+.style-token-collapse-example-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--collapse-icon-gap);
+    min-width: 0;
+    padding-bottom: var(--collapse-section-gap);
+    border-bottom: 1px solid var(--theme-glass-border);
+}
+
+.style-token-collapse-example-title {
+    min-width: 0;
+    color: var(--text);
+    font-size: var(--font-form-label);
+    font-weight: var(--font-weight-bold);
+    overflow-wrap: anywhere;
+}
+
+.style-token-collapse-example-badge {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-fill);
+    color: var(--accent-text);
+    font-size: var(--font-ui-xs);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+}
+
+.style-token-collapse-example-grid {
+    display: grid;
+    min-width: 0;
+}
+
+.style-token-collapse-example-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--collapse-icon-gap);
+    min-width: 0;
+    min-height: var(--strategy-param-control-height);
+    border-bottom: 1px solid var(--theme-glass-border);
+}
+
+.style-token-collapse-example-row:last-child {
+    border-bottom: 0;
+}
+
+.style-token-collapse-example-label {
+    min-width: 0;
+    color: var(--muted);
+    font-size: var(--font-table-body);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.style-token-collapse-example-value {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 4px;
+    color: var(--text);
+    font-size: var(--font-table-body);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-bold);
+    white-space: nowrap;
+}
+
+.style-token-collapse-example-unit {
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    font-weight: var(--font-weight-regular);
+}
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;

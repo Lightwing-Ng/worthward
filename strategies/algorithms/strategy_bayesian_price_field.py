@@ -6,7 +6,7 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.29.0
+Code version: v1.29.1
 - Changed: Model-neutral causal Price Field preparation now lives in the
   shared pipeline; Bayesian retains posterior inference, factor selection,
   and backend scheduling.
@@ -1241,6 +1241,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         factor_values = _build_factor_columns(
             full_frame,
             int(normalized_params["chip_window"]),
+            use_volume_at_price=bool(normalized_params["use_volume_at_price"]),
         )
         enabled_factors = [
             definition.key

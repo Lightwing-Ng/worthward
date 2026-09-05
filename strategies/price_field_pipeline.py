@@ -6,7 +6,7 @@ AR(1) return state, diagnostics, and signal/presentation support. Model
 training, posterior inference, factor selection, and backend scheduling remain
 strategy-owned.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -792,9 +792,18 @@ def _rolling_volume_at_price_percentile(
     return percentile
 
 
-def _build_factor_columns(frame: pd.DataFrame, chip_window: int) -> dict[str, np.ndarray]:
+def _build_factor_columns(
+        frame: pd.DataFrame,
+        chip_window: int,
+        *,
+        use_volume_at_price: bool = True,
+) -> dict[str, np.ndarray]:
     volume = pd.to_numeric(frame["Volume"], errors="coerce").clip(lower=0.0)
-    volume_at_price = _rolling_volume_at_price_percentile(frame, chip_window)
+    volume_at_price = (
+        _rolling_volume_at_price_percentile(frame, chip_window)
+        if use_volume_at_price
+        else np.full(len(frame), np.nan, dtype=np.float64)
+    )
 
     pe_source = frame.get("bayesian_pe_ratio", frame.get("pe_ratio"))
     option_source = frame.get(
@@ -1080,7 +1089,8 @@ def load_price_field_market_bundle(
     normalized_params = dict(params or {})
     warmup_bars = max(
         int(normalized_params.get("training_window", 60)),
-        int(normalized_params.get("chip_window", 30)),
+        int(normalized_params.get("chip_window", 30))
+        if bool(normalized_params.get("use_volume_at_price", True)) else 0,
     ) + 2
     warmup_days = math.ceil(warmup_bars * 7 / 5) + 14
     warmup_start = _normalized_timestamp(start) - timedelta(days=warmup_days)
