@@ -1,4 +1,4 @@
-/* Code version: v1.203.25 */
+/* Code version: v1.203.27 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8243,25 +8243,32 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     });
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
+    const currentModuleVersion = async (relativePath) => {
+        const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
+        return source.match(/Code version: (v[0-9.]+)/)[1];
+    };
+    const currentEntryVersion = await currentModuleVersion('../../app/web/static/assets/js/investment.js');
+    const currentDataUtilsVersion = await currentModuleVersion('../../app/web/static/assets/js/investment/data-utils.js');
+    const currentStockDetailsVersion = await currentModuleVersion('../../app/web/static/assets/js/investment/stock-details.js');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.136.2',
+        entry: currentEntryVersion,
         chartOrbit: 'v1.38.0',
-        dataUtils: 'v1.110.0',
+        dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.9.0',
         layout: 'v1.4.0',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
         numericDisplay: 'v1.1.0',
-        stockDetails: 'v0.28.0',
+        stockDetails: currentStockDetailsVersion,
         transactionFilters: 'v1.3.0',
         transactionTable: 'v1.0.2',
         urlState: 'v1.2.0',
     });
-    await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
+    await expect.poll(() => page.evaluate((version) => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/stock-details.js')
-            && url.searchParams.get('v') === 'investment-stock-details-v0.28.0';
-    }))).toBe(true);
+            && url.searchParams.get('v') === `investment-stock-details-${version}`;
+    }), currentStockDetailsVersion)).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/import-feedback.js')
@@ -8634,7 +8641,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.8';
+            && url.searchParams.get('v') === '1.78.9';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -13118,15 +13125,35 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     await expect(hoverDateLabel.locator('[data-investment-hover-date-line="secondary"]')).toHaveText('2026');
     await expect.poll(() => hoverDateLabel.evaluate((element) => {
         const style = getComputedStyle(element);
+        const axis = window.Chart?.getChart(document.querySelector('#investmentEquityChart'))
+            ?.options?.plugins?.investmentXAxisLabels || {};
         return {
+            axisFontFamily: axis.fontFamily,
+            axisFontSize: `${axis.fontSize}px`,
+            axisFontWeight: String(axis.fontWeight),
+            axisLineHeight: `${axis.lineHeight}px`,
             backgroundColor: style.backgroundColor,
             color: style.color,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
             minWidth: style.minWidth,
+            textAlign: style.textAlign,
         };
     })).toMatchObject({
+        axisFontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+        axisFontSize: '12px',
+        axisFontWeight: '400',
+        axisLineHeight: '10px',
         backgroundColor: 'rgb(0, 85, 204)',
         color: 'rgb(255, 255, 255)',
+        fontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+        fontSize: '12px',
+        fontWeight: '400',
+        lineHeight: '10px',
         minWidth: '42px',
+        textAlign: 'center',
     });
 
     await page.evaluate(() => {

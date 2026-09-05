@@ -1,4 +1,4 @@
-/* Code version: v1.78.8 */
+/* Code version: v1.78.9 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2334,6 +2334,13 @@
 
 .investment-equity-chart-stage > .trade-chart-hover-line {
     bottom: auto;
+}
+
+.investment-equity-hover-date-label {
+    font-family: "GDS Transport", "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 10px;
 }
 
 .investment-equity-live-marker {

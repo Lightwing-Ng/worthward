@@ -1,9 +1,10 @@
-/* Code version: v1.45.0 */
+/* Code version: v1.46.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    getInvestmentAggregatePnlCoverage,
     INVESTMENT_REPLAY_ORDER_SYMBOL,
     applyInvestmentVerifiedTaxLotCompatibilityFallbacks,
     classifyInvestmentUsRealtimeSession,
@@ -2495,6 +2496,7 @@ test('Longbridge HK GaoTeng cash equivalents resolve to their ISIN share classes
     const previousWindow = globalThis.window;
     globalThis.window = {
         WORTHWARD_INVESTMENT_DATA: {
+            fx_rate_history_by_currency: {HKD: {dates: ['2025-01-03'], values: {'2025-01-03': 7.8}}},
             ticker_lineage: {
                 'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_USD.USD': ['HK0000584737'],
                 'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_HKD.HKD': ['HK0000478872'],
@@ -2626,7 +2628,7 @@ function makeImportedTrade({ type, date, quantity, price }) {
 }
 
 test('KOL rewards count as realized income and legacy deposits are detected', () => {
-    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [] } };
+    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [], fx_rate_history_by_currency: {SGD: {dates: ['2024-07-25'], values: {'2024-07-25': 1.3}}} } };
     const transactions = [
         {
             type: 'kol_reward',
@@ -3464,6 +3466,7 @@ test('authoritative Longbridge HK signs aggregate with independently evidenced a
 test('tax-lot replay uses broker execution chronology instead of same-time cash ordering', () => {
     globalThis.window = {
         WORTHWARD_INVESTMENT_DATA: {
+            fx_rate_history_by_currency: {HKD: {dates: ['2023-03-02'], values: {'2023-03-02': 7.8}}},
             ticker_lineage: {},
             money_market_tickers: [],
             summary: {performance_snapshot_authoritative: false},
@@ -4622,9 +4625,17 @@ test('missing DRAM opening lots without broker realized P&L are unavailable', ()
     assert.equal(dram.realizedPnlAccounts[0].source, 'unavailable');
 });
 
-test('live API payload enforces snapshot baseline plus boundary increment', () => {
+for (const useCompleteFileHistory of [false, true]) {
+test(`snapshot baseline plus increment with complete file history=${useCompleteFileHistory}`, () => {
     const previousWindow = globalThis.window;
     const fixture = structuredClone(LIVE_INVESTMENT_API_FIXTURE);
+    if (useCompleteFileHistory) {
+        fixture.transactions.forEach((transaction) => {
+            if (transaction.broker === 'ibkr' && transaction.source?.file_kind === 'ibkr_web_trade_notification') {
+                transaction.source.file_kind = 'gainskeeper';
+            }
+        });
+    }
     globalThis.window = {WORTHWARD_INVESTMENT_DATA: fixture};
     try {
         const expected = fixture.expected;
@@ -4695,6 +4706,8 @@ test('live API payload enforces snapshot baseline plus boundary increment', () =
         }
     }
 });
+
+}
 
 test('missing supplemental replay boundary cannot become complete', () => {
     const previousWindow = globalThis.window;
@@ -4776,5 +4789,53 @@ test('legacy ticker performance fallback cannot override required account replay
         } else {
             globalThis.window = previousWindow;
         }
+    }
+});
+
+test('missing FX never becomes currency parity or zero cash and equity', () => {
+    const utils = createUtils();
+    const timeline = {baseCurrency: 'USD', ratesByCurrency: {}};
+    for (const rate of [undefined, 0, -1, NaN]) {
+        timeline.ratesByCurrency.HKD = {dates: ['2026-01-02'], values: {'2026-01-02': rate}};
+        assert.ok(Number.isNaN(utils.convertAmountToBaseCurrency(1000, 'HKD', '2026-01-02', timeline)));
+        assert.ok(Number.isNaN(utils.convertAmountToBaseCurrencyAtLatestRate(1000, 'HKD', timeline)));
+        const cash = utils.sumCashLedgerInBaseCurrency({USD: 100, HKD: 1000}, '2026-01-02', timeline);
+        assert.ok(Number.isNaN(cash));
+        assert.equal(utils.computeInvestmentLiveHoldingsTotalEquity([], cash), null);
+    }
+    assert.equal(utils.convertAmountToBaseCurrency(0, 'HKD', '2026-01-02', timeline), 0);
+    assert.equal(utils.convertAmountToBaseCurrency(1000, 'USD', '2026-01-02', timeline), 1000);
+    assert.equal(utils.computeInvestmentLiveHoldingsTotalEquity([], null), null);
+});
+
+test('aggregate P&L distinguishes empty, complete, partial, and unavailable coverage', () => {
+    const complete = {ticker: 'KNOWN', realizedPnl: 0, unrealizedPnl: 5, hasOpenPosition: true, realizedPnlStatus: 'complete'};
+    const missing = {ticker: 'UNKNOWN', realizedPnl: null, unrealizedPnl: null, pnlUnavailable: true};
+    assert.equal(getInvestmentAggregatePnlCoverage([]).status, 'complete');
+    assert.equal(getInvestmentAggregatePnlCoverage([complete]).status, 'complete');
+    assert.deepEqual(getInvestmentAggregatePnlCoverage([complete, missing]), {status: 'partial', completeCount: 1, totalCount: 2, missingTickers: ['UNKNOWN']});
+    assert.equal(getInvestmentAggregatePnlCoverage([missing]).status, 'unavailable');
+    assert.equal(getInvestmentAggregatePnlCoverage([{...complete, realizedPnlStatus: 'partial'}]).status, 'partial');
+    assert.equal(getInvestmentAggregatePnlCoverage([{...complete, unrealizedPnl: null}]).status, 'unavailable');
+    assert.equal(getInvestmentAggregatePnlCoverage([{...complete, hasOpenPosition: false, unrealizedPnl: null}]).status, 'complete');
+});
+
+test('missing FX invalidates an open foreign holding and historical valuation', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {}};
+    try {
+        const transactions = [{ticker: '5.HK', currency: 'HKD', type: 'buy', date: '2026-01-02', quantity: 10, price: 100}];
+        const [summary] = buildTickerSummaries(transactions, {'5.HK': 110}, 1000, {});
+        assert.equal(summary.marketValue, null);
+        assert.equal(summary.pnlUnavailable, true);
+        assert.equal(summary.pnlUnavailableReason, 'missing_fx_rate');
+        assert.equal(summary.unrealizedPnl, null);
+        assert.equal(summary.positionWeight, null);
+        const valuation = calculateSnapshotMarketValue({holdings: {'5.HK': 10}}, '2026-01-02', buildTickerPriceIndex({'5.HK': {'2026-01-02': 110}}), new Set(), {baseCurrency: 'USD', ratesByCurrency: {}}, 'USD');
+        assert.equal(valuation.isComplete, false);
+        assert.deepEqual(valuation.missingPriceTickers, []);
+        assert.ok(Number.isNaN(valuation.marketValue));
+    } finally {
+        globalThis.window = previousWindow;
     }
 });

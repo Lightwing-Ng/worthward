@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.136.2
+ * Code version: v2.137.1
+ * - Fixed: Missing FX and partial P&L coverage withhold aggregate valuations.
  * - Changed: Overview equity hover now coalesces pointer work through one
  *   animation frame, updates Chart.js only when the selected point changes,
  *   and reuses the Backtest DOM crosshair/date-label treatment.
@@ -352,6 +353,7 @@ import {
 } from './investment/chart-orbit.js?v=investment-chart-orbit-v1.38.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    getInvestmentAggregatePnlCoverage,
     INVESTMENT_REPLAY_ORDER_SYMBOL,
     applyInvestmentVerifiedTaxLotCompatibilityFallbacks,
     classifyInvestmentUsRealtimeSession,
@@ -361,7 +363,7 @@ import {
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.110.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.111.1';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -392,7 +394,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.28.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.28.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -441,7 +443,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.136.2',
+    entry: 'v2.137.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -2741,10 +2743,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isInvestmentAggregatePnlUnavailable(tickerSummaries = []) {
-        const safeSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
-        return safeSummaries.length > 0 && safeSummaries.every(
-            (summary) => summary?.pnlUnavailable === true,
-        );
+        return getInvestmentAggregatePnlCoverage(tickerSummaries).status !== 'complete';
     }
 
     function getInvestmentSecurityTransferAttributionOptions(receiptTxn) {
@@ -3733,7 +3732,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
                 finalAggregateBalances[currency] = (Number(finalAggregateBalances[currency]) || 0) + numericValue;
             });
-            finalAggregateCash += Number(lastBrokerTxn?.broker_running_cash) || 0;
+            finalAggregateCash += Number(lastBrokerTxn?.broker_running_cash);
         });
         const allBrokerStartingBoundariesPresent = brokerCodes.every((brokerCode) => (
             Object.keys(getInvestmentBrokerStartingCashBalances(brokerCode) || {}).length > 0
@@ -3786,7 +3785,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (binding?.targetTxn) resolvedTransferTransactions.add(binding.targetTxn);
         });
         transactions.forEach((txn) => {
-            const rawRunningCash = Number(txn?.aggregate_raw_running_cash ?? txn?.aggregate_running_cash ?? txn?.running_cash) || 0;
+            const rawRunningCash = Number(txn?.aggregate_raw_running_cash ?? txn?.aggregate_running_cash ?? txn?.running_cash);
             const rawPendingSettlementCash = Number(txn?.aggregate_pending_settlement_cash) || 0;
             const rawDisplayCash = Number.isFinite(Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash))
                 ? Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash)
@@ -3949,7 +3948,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let cumulativeBridgeAdjustment = 0;
         transactions.forEach((txn, index) => {
             cumulativeBridgeAdjustment += Number(bridgeDeltasByIndex.get(index)) || 0;
-            const rawRunningCash = Number(txn?.aggregate_raw_running_cash) || 0;
+            const rawRunningCash = Number(txn?.aggregate_raw_running_cash);
             const rawDisplayCash = Number(txn?.aggregate_raw_display_cash) || rawRunningCash;
             const rawMarketValueValue = txn?.aggregate_raw_market_value;
             const rawMarketValueCandidate = Number(rawMarketValueValue);
@@ -12227,7 +12226,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
         const hasBreakdown = details.length > 0;
         const value = pnlUnavailable
-            ? 'Unavailable'
+            ? (metricValues?.pnlCoverage?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
             : (definition?.formatValue
             ? definition.formatValue(metricValues)
             : formatAmount(metricValues?.[definition?.valueKey]));
@@ -12303,7 +12302,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${renderMetricValueWithTooltip({
                         key: definition.key,
                         value: pnlUnavailable
-                            ? 'Unavailable'
+                            ? (metricValues?.pnlCoverage?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
                             : (definition.formatValue
                             ? definition.formatValue(metricValues)
                             : formatAmount(metricValues?.[definition.valueKey])),
@@ -12326,9 +12325,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getBrokerRewardRealizedIncome(brokerBenefitMetrics) {
         return (
-            (Number(brokerBenefitMetrics?.couponRebateIncome) || 0)
-            + (Number(brokerBenefitMetrics?.cashRewardIncome) || 0)
-            + (Number(brokerBenefitMetrics?.kolRewardIncome) || 0)
+            Number(brokerBenefitMetrics?.couponRebateIncome ?? 0)
+            + Number(brokerBenefitMetrics?.cashRewardIncome ?? 0)
+            + Number(brokerBenefitMetrics?.kolRewardIncome ?? 0)
         );
     }
 
@@ -12403,7 +12402,9 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let index = source.length - 1; index >= 0; index -= 1) {
                 const transaction = source[index];
                 for (const key of cashKeys) {
+                    if (!Object.prototype.hasOwnProperty.call(transaction || {}, key)) continue;
                     const value = getOptionalInvestmentNumber(transaction?.[key]);
+                    if (value === null) return {cash: null, cashIsApproximate: false};
                     if (value !== null) {
                         return {
                             cash: value,
@@ -12417,6 +12418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         };
 
+        if (Number.isNaN(currentCash)) return {cash: null, cashIsApproximate: false};
         const explicitCurrentCash = getOptionalInvestmentNumber(currentCash);
         if (explicitCurrentCash !== null) {
             const latestProcessed = investmentProcessedTransactionsCache[
@@ -13560,8 +13562,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const openSummaries = summarySummaries.filter((summary) => summary.hasOpenPosition);
         const openCount = openSummaries.length;
         const closedCount = summarySummaries.length - openCount;
+        const pnlCoverage = normalizedSummaryScope === 'all' && holdingsSummaryMetrics?.pnlCoverage
+            ? holdingsSummaryMetrics.pnlCoverage
+            : getInvestmentAggregatePnlCoverage(summarySummaries);
+        const pnlCoverageLabel = pnlCoverage.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable';
         const hasPnlUnavailable = (
-            holdingsSummaryMetrics?.pnlUnavailable === true
+            (normalizedSummaryScope === 'all' && holdingsSummaryMetrics?.pnlUnavailable === true)
             || isInvestmentAggregatePnlUnavailable(summarySummaries)
         );
         const holdingsRealizedPnl = summarySummaries.reduce(
@@ -13584,7 +13590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return totals;
         }, { realized: 0, unrealized: 0 });
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
-        const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number.isFinite(summary.marketValue) ? summary.marketValue : NaN), 0);
         const totalWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9
             ? (totalNetMarketValue / TOTAL_EQUITY) * 100
             : 0;
@@ -13785,7 +13791,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasLiveBadgeSession = hasInvestmentHoldingLiveBadgeSession(summarySummaries);
 
         const summaryRowHtml = `
-            <tr class="investment-holdings-summary-row" data-table-summary-row data-summary-scope="${normalizedSummaryScope}" data-summary-all-count="${summaries.length}" data-summary-filtered-count="${filteredSummaries.length}">
+            <tr class="investment-holdings-summary-row" data-table-summary-row data-pnl-coverage="${pnlCoverage.status}" title="${escapeHtml(pnlCoverage.missingTickers.length ? `P&L unavailable for: ${pnlCoverage.missingTickers.join(', ')}` : (pnlCoverage.cashFlowFxUnavailable ? 'Cash-flow FX unavailable' : ''))}" data-summary-scope="${normalizedSummaryScope}" data-summary-all-count="${summaries.length}" data-summary-filtered-count="${filteredSummaries.length}">
                 <td class="investment-holdings-cell investment-holdings-cell-center"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-ticker">
                     <span class="investment-holdings-summary-ticker-body">
@@ -13823,7 +13829,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cumulative P&amp;L</span>
-                                ${hasPnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
+                                ${hasPnlUnavailable ? renderWorkspaceMetricValueContent(pnlCoverageLabel) : renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
                                     className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cumulativePnlClass}`,
                                     formatter: (nextValue) => formatSignedHoldingsMoney(nextValue),
                                     useSplitValue: true,
@@ -13844,7 +13850,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(hasPnlUnavailable ? 'Unavailable' : formatHoldingsMoney(totalRealizedPnl))}</span>
+                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(hasPnlUnavailable ? pnlCoverageLabel : formatHoldingsMoney(totalRealizedPnl))}</span>
                         ${!hasPnlUnavailable ? renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_realized_pnl',
                             '',
@@ -13855,7 +13861,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${hasPnlUnavailable ? renderWorkspaceMetricValueContent('Unavailable') : renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
+                        ${hasPnlUnavailable ? renderWorkspaceMetricValueContent(pnlCoverageLabel) : renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
                             formatter: (nextValue) => formatHoldingsMoney(nextValue),
                             useSplitValue: true,
@@ -14449,8 +14455,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary?.hasOpenPosition
                 && configuredTickers.has(String(summary.ticker || '').trim().toUpperCase())
             ))
-            .reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
-        return cash + cashEquivalentMarketValue;
+            .reduce((sum, summary) => sum + (Number.isFinite(summary.marketValue) ? summary.marketValue : NaN), 0);
+        return Number.isFinite(cashEquivalentMarketValue) ? cash + cashEquivalentMarketValue : null;
     }
 
     function resolveInvestmentTickerReferenceClose(ticker) {
@@ -14644,12 +14650,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return nextSummary;
         });
         const liveTotalEquity = computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash);
-        const totalEquity = Number.isFinite(liveTotalEquity)
-            ? liveTotalEquity
-            : (Number.isFinite(preliminaryTotalEquity)
-                ? preliminaryTotalEquity
-                : computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash));
-        const resolvedTotalEquity = Number.isFinite(totalEquity) ? totalEquity : 0;
+        const resolvedTotalEquity = liveTotalEquity;
         if (Math.abs(resolvedTotalEquity - safeTotalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON) {
             summaries.forEach((summary) => {
                 if (!summary?.hasOpenPosition) return;
@@ -14753,17 +14754,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const aggregateTransactions = getInvestmentAggregateOnlyTransactions(
             investmentRawTransactionsCache,
         );
-        const hasPnlUnavailable = isInvestmentAggregatePnlUnavailable(summaries);
         const brokerBenefitMetrics = getBrokerBenefitMetrics(
             aggregateTransactions,
             investmentLatestPricesCache,
             totalEquity,
         );
-        const totalRealizedPnl = hasPnlUnavailable ? null : getRealizedPnlAttribution(
+        const realizedAttribution = getRealizedPnlAttribution(
             aggregateTransactions,
             summaries,
             brokerBenefitMetrics,
-        ).totalRealizedPnl;
+        );
+        const hasPnlUnavailable = isInvestmentAggregatePnlUnavailable(summaries)
+            || !Number.isFinite(realizedAttribution.totalRealizedPnl);
+        const totalRealizedPnl = hasPnlUnavailable ? null : realizedAttribution.totalRealizedPnl;
         const totalUnrealizedPnl = hasPnlUnavailable
             ? null
             : summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
@@ -14779,7 +14782,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hasPnlUnavailable ? null : totalRealizedPnl,
             hasPnlUnavailable ? null : totalUnrealizedPnl,
         );
-        const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number.isFinite(summary.marketValue) ? summary.marketValue : NaN), 0);
         const hasUnavailableOpenMarketValue = openSummaries.some(
             (summary) => !Number.isFinite(summary.marketValue),
         );
@@ -16596,14 +16599,14 @@ document.addEventListener('DOMContentLoaded', () => {
         processed.forEach((txn) => {
             const aggregateHoldings = txn.aggregate_holdings || txn.holdings || {};
             const aggregateMoneyMarketAnchors = txn.aggregate_money_market_anchors || txn.money_market_anchors || {};
-            const aggregateRunningCash = Number(txn.aggregate_running_cash ?? txn.running_cash) || 0;
+            const aggregateRunningCash = Number(txn.aggregate_running_cash ?? txn.running_cash);
             const aggregatePendingSettlementCash = Number(txn.aggregate_pending_settlement_cash) || 0;
             const aggregateDisplayCash = Number.isFinite(Number(txn.aggregate_display_cash))
                 ? Number(txn.aggregate_display_cash)
                 : aggregateRunningCash + aggregatePendingSettlementCash;
             const brokerHoldings = txn.broker_holdings || {};
             const brokerMoneyMarketAnchors = txn.broker_money_market_anchors || {};
-            const brokerRunningCash = Number(txn.broker_running_cash) || 0;
+            const brokerRunningCash = Number(txn.broker_running_cash);
             const brokerPendingSettlementCash = Number(txn.broker_pending_settlement_cash) || 0;
             const brokerDisplayCash = Number.isFinite(Number(txn.broker_display_cash))
                 ? Number(txn.broker_display_cash)
@@ -16963,7 +16966,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rawAggregateDisplayCash = Number.isFinite(Number(txn?.aggregate_display_cash))
                     ? Number(txn.aggregate_display_cash)
                     : rawAggregateRunningCash + (Number(txn?.aggregate_pending_settlement_cash) || 0);
-                const rawBrokerRunningCash = Number(txn?.broker_running_cash) || 0;
+                const rawBrokerRunningCash = Number(txn?.broker_running_cash);
                 const rawBrokerDisplayCash = Number.isFinite(Number(txn?.broker_display_cash))
                     ? Number(txn.broker_display_cash)
                     : rawBrokerRunningCash + (Number(txn?.broker_pending_settlement_cash) || 0);
@@ -17312,7 +17315,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const baseCash = Number.isFinite(Number(txn?.broker_display_cash))
                     ? Number(txn.broker_display_cash)
-                    : (Number(txn?.broker_running_cash) || 0);
+                    : (Number(txn?.broker_running_cash));
                 const ledgerDate = normalizeLedgerDate(txn?.date);
                 const settlementBoundary = getHsbcHistorySettlementCashBoundary(txn);
                 if (settlementBoundary) {
@@ -17636,9 +17639,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialTickerSummaries,
             AGGREGATE_CASH,
         );
-        const AGGREGATE_TOTAL_EQUITY = Number.isFinite(liveAggregateTotalEquity)
-            ? liveAggregateTotalEquity
-            : chartTotalEquity;
+        const AGGREGATE_TOTAL_EQUITY = liveAggregateTotalEquity;
         const tickerSummaries = applyInvestmentCurrentTotalEquityToSummaryWeights(
             initialTickerSummaries,
             AGGREGATE_TOTAL_EQUITY,
@@ -19494,16 +19495,25 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const realizedPnlRowSet = new Set(getBrokerRewardLedgerRows(brokerBenefitMetrics));
         let standaloneCashRealizedPnl = 0;
+        let conversionIncomplete = false;
 
         const recordCategoryAmount = (key, value, ledgerNo) => {
             const numericValue = Number(value);
-            if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return;
+            if (!Number.isFinite(numericValue)) {
+                conversionIncomplete = true;
+                return;
+            }
+            if (Math.abs(numericValue) <= 1e-9) return;
             categoryAmounts[key] += numericValue;
             realizedPnlRowSet.add(ledgerNo);
         };
         const addStandaloneCashAmount = (key, value, ledgerNo) => {
             const numericValue = Number(value);
-            if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return;
+            if (!Number.isFinite(numericValue)) {
+                conversionIncomplete = true;
+                return;
+            }
+            if (Math.abs(numericValue) <= 1e-9) return;
             standaloneCashRealizedPnl += numericValue;
             recordCategoryAmount(key, numericValue, ledgerNo);
         };
@@ -19646,7 +19656,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return {
-            totalRealizedPnl,
+            totalRealizedPnl: conversionIncomplete ? null : totalRealizedPnl,
             realizedPnlRows: Array.from(realizedPnlRowSet),
             realizedPnlDetails,
         };
@@ -19679,7 +19689,13 @@ document.addEventListener('DOMContentLoaded', () => {
             tickerSummaries,
             resolvedBrokerBenefitMetrics,
         );
-        const pnlUnavailable = isInvestmentAggregatePnlUnavailable(tickerSummaries);
+        const pnlCoverage = getInvestmentAggregatePnlCoverage(tickerSummaries);
+        if (!Number.isFinite(realizedPnlAttribution.totalRealizedPnl)) {
+            pnlCoverage.cashFlowFxUnavailable = true;
+            pnlCoverage.status = pnlCoverage.completeCount > 0 ? 'partial' : 'unavailable';
+        }
+        const pnlUnavailable = pnlCoverage.status !== 'complete'
+            || !Number.isFinite(realizedPnlAttribution.totalRealizedPnl);
         const totalRealizedPnl = pnlUnavailable ? null : realizedPnlAttribution.totalRealizedPnl;
         const totalUnrealizedPnl = pnlUnavailable
             ? null
@@ -19687,7 +19703,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cumulativePnl = pnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         const openSummaries = tickerSummaries.filter((summary) => summary?.hasOpenPosition === true);
         const hasUnavailableMarketValue = openSummaries.some(
-            (summary) => !Number.isFinite(Number(summary?.marketValue)),
+            (summary) => !Number.isFinite(summary?.marketValue),
         );
         const marketValue = hasUnavailableMarketValue
             ? null
@@ -19698,9 +19714,9 @@ document.addEventListener('DOMContentLoaded', () => {
             currentCash,
         );
         const cash = currentCashSnapshot.cash;
-        const resolvedTotalEquity = Number.isFinite(Number(cash)) && Number.isFinite(Number(marketValue))
-            ? Number(cash) + Number(marketValue)
-            : getOptionalInvestmentNumber(TOTAL_EQUITY);
+        const resolvedTotalEquity = Number.isFinite(cash) && Number.isFinite(marketValue)
+            ? cash + marketValue
+            : null;
         const openTickers = new Set(
             tickerSummaries
                 .filter((summary) => summary.hasOpenPosition)
@@ -19755,6 +19771,7 @@ document.addEventListener('DOMContentLoaded', () => {
             totalUnrealizedPnl,
             cumulativePnl,
             pnlUnavailable,
+            pnlCoverage,
             realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
             realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
             unrealizedPnlRows: pnlUnavailable ? [] : unrealizedPnlRows,

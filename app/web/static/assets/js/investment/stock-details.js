@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.28.0
+ * Code version: v0.28.1
  * - Changed: Stock details now reads the canonical reconciliation timeline
  *   and requires its completeness invariant before using broker totals.
  * - Refactored: Investment y-axis badges now delegate to the shared chart-axis
@@ -112,11 +112,11 @@
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.110.0';
+} from './data-utils.js?v=investment-data-utils-v1.111.1';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.28.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.28.1';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;

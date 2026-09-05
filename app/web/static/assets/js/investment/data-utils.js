@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.110.0
+ * Code version: v1.111.1
+ * - Fixed: Complete file history can reconstruct an omitted IBKR position boundary.
+ * - Fixed: Missing FX propagates an unknown valuation instead of currency parity.
+ * - Added: Aggregate P&L coverage distinguishes complete, partial, and unavailable.
  * - Added: Broker-scoped realized-P&L reconciliation now carries coverage,
  *   independent as-of dates, replay state, and the snapshot-plus-increment
  *   invariant consumed by every Investment surface.
@@ -1522,7 +1525,8 @@ export function createInvestmentDataUtils({
 
     function convertAmountToBaseCurrencyAtLatestRate(amount, currency, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
         const numericAmount = Number(amount);
-        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return 0;
+        if (amount === null || amount === undefined || amount === '' || !Number.isFinite(numericAmount)) return NaN;
+        if (numericAmount === 0) return 0;
         const normalizedCurrency = normalizeCurrencyCode(currency) || normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         if (normalizedCurrency === normalizedBaseCurrency) {
@@ -1536,12 +1540,14 @@ export function createInvestmentDataUtils({
         if (Number.isFinite(latestRate) && latestRate > 0) {
             return numericAmount / latestRate;
         }
-        return numericAmount;
+        // NaN preserves unknown values through arithmetic; null would add as zero.
+        return NaN;
     }
 
     function convertAmountToBaseCurrency(amount, currency, targetDate, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
         const numericAmount = Number(amount);
-        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return 0;
+        if (amount === null || amount === undefined || amount === '' || !Number.isFinite(numericAmount)) return NaN;
+        if (numericAmount === 0) return 0;
         const normalizedCurrency = normalizeCurrencyCode(currency) || normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         if (normalizedCurrency === normalizedBaseCurrency) {
@@ -1551,7 +1557,8 @@ export function createInvestmentDataUtils({
         if (Number.isFinite(rate) && rate > 0) {
             return numericAmount / rate;
         }
-        return numericAmount;
+        // NaN preserves unknown values through arithmetic; null would add as zero.
+        return NaN;
     }
 
     function sumCashLedgerInBaseCurrency(balances, targetDate, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
@@ -2868,7 +2875,6 @@ export function createInvestmentDataUtils({
             || scope.broker !== 'ibkr'
             || !scopeState
             || scopeState.realizedPnlStatus !== 'complete'
-            || scopeState.hasPartialTaxLotHistory !== true
             || validation?.matched !== true
             || validation?.history_complete !== false
             || validation?.comparison_scope !== 'user_confirmed_current_position_snapshot'
@@ -4521,6 +4527,7 @@ export function createInvestmentDataUtils({
     }
 
     function computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash) {
+        if (aggregateCash === null || aggregateCash === undefined || aggregateCash === '') return null;
         const safeCash = Number(aggregateCash);
         if (!Number.isFinite(safeCash)) return null;
         const openSummaries = (Array.isArray(summaries) ? summaries : [])
@@ -5128,7 +5135,7 @@ export function createInvestmentDataUtils({
             holdingPrices,
             missingPriceTickers: Array.from(missingPriceTickers).sort(),
             degradedPriceTickers: Array.from(degradedPriceTickers).sort(),
-            isComplete: missingPriceTickers.size === 0,
+            isComplete: missingPriceTickers.size === 0 && Number.isFinite(marketValue),
         };
     }
 
@@ -5290,15 +5297,15 @@ export function createInvestmentDataUtils({
             const rawRunningCash = Number(
                 activeSnapshot?.aggregate_running_cash
                 ?? activeSnapshot?.running_cash,
-            ) || 0;
-            const aggregatePendingSettlementCash = Number(activeSnapshot?.aggregate_pending_settlement_cash) || 0;
+            );
+            const aggregatePendingSettlementCash = Number(activeSnapshot?.aggregate_pending_settlement_cash ?? 0);
             const currentRunningCash = rawRunningCash;
             const currentDisplayCash = Number(
                 activeSnapshot?.aggregate_display_cash
                 ?? currentRunningCash + aggregatePendingSettlementCash,
             );
             const isCurrentReplayBoundary = activeSnapshot === chartTransactions[chartTransactions.length - 1];
-            const aggregateBridgeAdjustment = Number(activeSnapshot?.aggregate_bridge_adjustment) || 0;
+            const aggregateBridgeAdjustment = Number(activeSnapshot?.aggregate_bridge_adjustment ?? 0);
             const historicalRunningCash = Number(activeSnapshot?.aggregate_history_running_cash);
             const aggregateRunningCash = Number(
                 isCurrentReplayBoundary
@@ -5306,7 +5313,7 @@ export function createInvestmentDataUtils({
                     : Number.isFinite(historicalRunningCash)
                         ? historicalRunningCash
                         : Number(activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash) + aggregateBridgeAdjustment,
-            ) || 0;
+            );
             const historicalDisplayCash = Number(activeSnapshot?.aggregate_history_display_cash);
             const rawAggregateDisplayCash = Number(
                 isCurrentReplayBoundary
@@ -5319,10 +5326,10 @@ export function createInvestmentDataUtils({
                 ? rawAggregateDisplayCash
                 : aggregateRunningCash + aggregatePendingSettlementCash;
             const aggregateMarketValue = valuation.marketValue;
-            const aggregateTotalEquity = valuation.isComplete
+            const aggregateTotalEquity = valuation.isComplete && Number.isFinite(aggregateDisplayCash)
                 ? aggregateDisplayCash + aggregateMarketValue
                 : null;
-            const currentTotalEquity = valuation.isComplete
+            const currentTotalEquity = valuation.isComplete && Number.isFinite(currentDisplayCash)
                 ? currentDisplayCash + aggregateMarketValue
                 : null;
             const ledgerEntry = ledgerDateMap.get(date);
@@ -5351,7 +5358,7 @@ export function createInvestmentDataUtils({
                 total_equity: aggregateTotalEquity,
                 aggregate_total_equity: aggregateTotalEquity,
                 aggregate_current_total_equity: currentTotalEquity,
-                valuation_complete: valuation.isComplete,
+                valuation_complete: valuation.isComplete && Number.isFinite(aggregateDisplayCash),
                 missing_price_tickers: valuation.missingPriceTickers,
                 degraded_price_tickers: valuation.degradedPriceTickers,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
@@ -5720,9 +5727,13 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
+            if (realizedPnl !== null && !Number.isFinite(realizedPnl)) {
+                status = 'unavailable';
+                source = 'missing_fx_rate';
+            }
             const accountResult = {
                 ...scope,
-                realizedPnl: realizedPnl === null ? null : Number(realizedPnl.toFixed(12)),
+                realizedPnl: Number.isFinite(realizedPnl) ? Number(realizedPnl.toFixed(12)) : null,
                 realizedPnlLocal: realizedPnlLocal === null
                     ? null
                     : Number(realizedPnlLocal.toFixed(12)),
@@ -5809,12 +5820,12 @@ export function createInvestmentDataUtils({
                     )
                 ))
             );
-            const pnlUnavailable = (
+            let pnlUnavailable = (
                 realizedCoverageUnavailable
                 || (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl)
             )
                 || (Boolean(snapshotEntry) && costBasisStatus !== 'known');
-            const pnlUnavailableReason = !pnlUnavailable
+            let pnlUnavailableReason = !pnlUnavailable
                 ? null
                 : (realizedCoverageUnavailable
                     ? 'realized_pnl_reconciliation_unavailable'
@@ -5942,7 +5953,7 @@ export function createInvestmentDataUtils({
                 : (hasOpenPosition
                 ? (marketValueFromSnapshot !== null
                     ? marketValueFromSnapshot
-                    : (lastPrice !== null ? shares * lastPrice : 0))
+                    : (lastPrice !== null ? shares * lastPrice : null))
                 : 0);
             const marketValue = marketValueLocal === null
                 ? null
@@ -5967,6 +5978,13 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
+            const missingFxRate = realizedPnlAccounts.some((result) => result.source === 'missing_fx_rate')
+                || Number.isNaN(marketValue)
+                || Number.isNaN(unrealizedPnl);
+            if (missingFxRate) {
+                pnlUnavailable = true;
+                pnlUnavailableReason = 'missing_fx_rate';
+            }
             const scopedRealizedPnlByDateLocal = completeRealizedPnlAccounts.reduce(
                 (dailyTotals, result) => {
                     Object.entries(result.reconciliation?.realizedPnlByDateLocal || {}).forEach(
@@ -6084,7 +6102,7 @@ export function createInvestmentDataUtils({
                 realizedPnlLocal: realizedPnl === null
                     ? null
                     : Number(realizedPnlLocal.toFixed(12)),
-                realizedPnl: realizedPnl === null ? null : Number(realizedPnl.toFixed(12)),
+                realizedPnl: Number.isFinite(realizedPnl) ? Number(realizedPnl.toFixed(12)) : null,
                 realizedPnlByDateLocal: {...scopedRealizedPnlByDateLocal},
                 realizedPnlByDate: {...realizedPnlByDate},
                 accounts: accountReconciliations,
@@ -6132,7 +6150,8 @@ export function createInvestmentDataUtils({
                 costBasisMethod: summary.costBasisMethod,
                 lotMatchingMethod: summary.lotMatchingMethod || getInvestmentCostBasisMethod(),
                 lastPrice,
-                marketValue,
+                marketValue: Number.isFinite(marketValue) ? marketValue : null,
+                valuationComplete: Number.isFinite(marketValue),
                 realizedPnl: safeRealizedPnl,
                 realizedPnlLocal: safeRealizedPnlLocal,
                 realizedPnlAccounts: safeRealizedPnlAccounts,
@@ -6308,4 +6327,25 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.110.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.111.1';
+
+// Coverage is independent of the numeric subtotal; unknown components never count as zero.
+export function getInvestmentAggregatePnlCoverage(summaries = []) {
+    const rows = Array.isArray(summaries) ? summaries : [];
+    const missing = rows.filter((summary) => (
+        summary?.pnlUnavailable === true
+        || (summary?.realizedPnlStatus && summary.realizedPnlStatus !== 'complete')
+        || !Number.isFinite(summary?.realizedPnl)
+        || (summary?.hasOpenPosition && !Number.isFinite(summary?.unrealizedPnl))
+    ));
+    return {
+        status: missing.length === 0
+            ? 'complete'
+            : (missing.length < rows.length || rows.some((summary) => summary?.realizedPnlStatus === 'partial')
+                ? 'partial'
+                : 'unavailable'),
+        completeCount: rows.length - missing.length,
+        totalCount: rows.length,
+        missingTickers: missing.map((summary) => summary?.ticker).filter(Boolean),
+    };
+}

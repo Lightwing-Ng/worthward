@@ -1,6 +1,11 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.242.2`
+Documentation version: `v1.243.1`
+
+IBKR supplemental realized-P&L replay accepts complete file history when a
+user-confirmed partial position snapshot omits a ticker. Transaction-source
+partial-history flags are not prerequisites; complete scoped replay and the
+existing position-boundary checks still determine whether reconciliation is available.
 
 Manual LSTM training now requires at least 180 seconds of optimizer work,
 distributed across eligible causal origins. Loading and evaluation add wall time.
@@ -197,6 +202,16 @@ is claimed and concurrent layout work remains preserved.
   receive later imports.
 
 ## Accounting behavior
+
+- Investment FX conversion returns an internal nonfinite sentinel when a nonzero
+  foreign amount has no valid rate. Cash arithmetic preserves that unknown;
+  Holdings market values and equity expose unavailable values instead of currency
+  parity. Zero amounts and base-currency amounts do not require an FX rate.
+- Aggregate P&L tracks complete, partial, and unavailable ticker coverage. Partial
+  coverage displays `Partial · total unavailable`, and complete totals are withheld
+  across Holdings and Metrics. Missing standalone cash-flow FX also withholds the
+  total. Valid ticker rows remain individually inspectable.
+
 
 - Unknown cost basis, incomplete history, and conflicting broker snapshots are
   represented explicitly instead of being replaced with guessed values.
