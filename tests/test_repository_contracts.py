@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.3.3
+Code version: v1.3.4
 """
 
 from __future__ import annotations
@@ -244,3 +244,10 @@ def test_duplicate_copy_ignore_rule_is_narrow() -> None:
 
     assert ".coverage [0-9]*" in source
     assert "**/* [0-9]*" not in source
+
+
+def test_investment_runtime_entry_version_matches_source() -> None:
+    path = JAVASCRIPT_ROOT / "investment.js"
+    match = re.search(r"entry:\s*['\"](v\d+\.\d+\.\d+)['\"]", _read(path))
+    assert match is not None
+    assert match.group(1) == _code_version(path)

@@ -1,4 +1,4 @@
-{# Code version: v0.33.11 #}
+{# Code version: v0.33.12 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.70.2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.70.3') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
 </head>
 <body>
@@ -375,7 +375,7 @@
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.29.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.40.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.40.1') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.4.0') }}"></script>
 {% if selected_strategy_id == 'dca' %}
     <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>

@@ -1,4 +1,4 @@
-/* Code version: v3.61.1 */
+/* Code version: v3.61.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -444,6 +444,12 @@
 .backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"])
     > .backtest-view-surface {
     padding-block-start: 0;
+}
+
+/* A visible output drawer owns a rail above the chart heading. */
+.backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"]:not([hidden]))
+    > .backtest-view-surface {
+    padding-block-start: calc(var(--backtest-share-action-inset-block-start) + var(--settings-round-icon-button-size));
 }
 
 .backtest-section-resizer {

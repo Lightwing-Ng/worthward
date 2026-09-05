@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.6
+Code version: v0.10.7
 """
 
 from pathlib import Path
@@ -823,6 +823,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'cell.setAttribute("title", hoverSummary);',
         "probabilityGridApi.summarizeProbabilityRow?.(",
         "probabilityGridApi.summarizeProbabilityField?.(cells)",
+        "if (!showTradeDetails || index === null) {",
         "limitRowsToChartArea: false,",
         "const resolveProbabilityFieldReferenceCellSize = (chart, stepPixels) => {",
         "const referenceWindow = rangeEnd - referenceStart;",

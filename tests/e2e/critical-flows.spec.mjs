@@ -1,4 +1,4 @@
-/* Code version: v1.203.24 */
+/* Code version: v1.203.25 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -607,7 +607,7 @@ test('copies every Style token name from a right-aligned round button with feedb
     const stepperInput = page.locator(
         '[data-style-token-card="trade-strategy-stepper"] .style-token-stepper-input',
     );
-    await expect(stepperInput).toHaveCSS('height', '24px');
+    await expect(stepperInput).toHaveCSS('height', '30px');
     await expect(copyButton).toHaveAttribute('data-style-token-copy', 'Settings execution option');
 
     const geometry = await titleRow.evaluate((row) => {
@@ -7103,8 +7103,8 @@ test('aligns Holdings Market value and clips fixed table layers at every support
             ) / 2;
             const leftDelta = Math.abs(holdingsHeaderRect.left - historyHeaderRect.left);
             const rightDelta = Math.abs(holdingsHeaderRect.right - historyHeaderRect.right);
-            return Math.max(headerCenterDelta, leftDelta, rightDelta) <= 1;
-        })).toBe(true);
+            return Math.max(headerCenterDelta, leftDelta, rightDelta);
+        }), {message: `Holdings/history Market value edges at ${viewport.width}px`}).toBeLessThanOrEqual(1);
         const alignment = await page.evaluate(() => {
             const holdingsHeader = document.querySelector(
                 '#investment_holdings_panel .investment-holdings-table[data-table-header] thead tr:first-child',
@@ -8244,7 +8244,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await page.setViewportSize({width: 1024, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
-        entry: 'v2.135.0',
+        entry: 'v2.136.2',
         chartOrbit: 'v1.38.0',
         dataUtils: 'v1.110.0',
         importFeedback: 'v1.9.0',
@@ -17775,7 +17775,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
 
     expect(layout).not.toBeNull();
     expect(layout?.overviewPadding).toEqual(['0px', '0px']);
-    expect(layout?.contentCardPadding).toEqual(['6px', '6px']);
+    expect(layout?.contentCardPadding).toEqual(['2px', '2px']);
     expect(layout?.resizerFontSize).toBe('12px');
     expect(layout?.resizerHeight).toBe('10px');
     expect(layout?.numericCells.length).toBe(7);
@@ -18111,6 +18111,8 @@ test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state
     await page.setViewportSize({width: 390, height: 844});
     const visibleNoticeClose = page.locator('[data-dismissible-notice]:not([hidden]) .notice-close').first();
     if (await visibleNoticeClose.isVisible()) {
+        await visibleNoticeClose.locator('..').hover();
+        await expect(visibleNoticeClose).toHaveCSS('pointer-events', 'auto');
         await visibleNoticeClose.click();
     }
     await setSidebarExpanded(page, false);
@@ -19497,8 +19499,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(contract.thresholdVisibleCellCount).toBe(contract.cellCount);
     expect(contract.thresholdHiddenCellCount).toBe(0);
     expect(contract.maximumOpacity).toBe(1);
-    expect(contract.minimumOpacity).toBe(0);
-    expect(contract.invisibleCellCount).toBeGreaterThan(0);
+    expect(contract.minimumOpacity).toBeGreaterThan(0);
+    expect(contract.invisibleCellCount).toBe(0);
     expect(contract.nonlinearDistance).toBeGreaterThan(1e-4);
     expect(contract.opacityCurveDelta).toBeLessThanOrEqual(1e-6);
     expect(contract.opacityInlineDelta).toBeLessThanOrEqual(1e-6);
@@ -19924,7 +19926,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     baselineGeometry = await readBaselineGeometry();
     expect(baselineGeometry).not.toBeNull();
 
-    const rightAnchor = await pointAt(1);
+    // Leave real curve content to pan; the final endpoint has zero automatic pan capacity.
+    const rightAnchor = await pointAt(0.85);
     if (!rightAnchor) throw new Error('Bayesian right-side hover anchor is unavailable.');
     await page.mouse.move(rightAnchor.x, rightAnchor.y);
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
@@ -19990,6 +19993,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         );
         return {
             activeIndex: bounds?.index,
+            expectedActiveIndex: chart.getDatasetMeta(0).data.reduce((best, point, index, points) => (
+                Math.abs(priceRect.left + point.x * priceRect.width / chart.width - pointerX)
+                < Math.abs(priceRect.left + points[best].x * priceRect.width / chart.width - pointerX)
+                    ? index : best
+            ), 0),
             canvasTooltipAnchorDelta: Number.isFinite(curveRightContentLeft)
                 ? Math.abs(
                     tooltipRect.left
@@ -20084,11 +20092,11 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
         };
     }, {expectedTooltipWidth: contract.tooltipWidth, pointerX: rightAnchor.x, pointerY: rightAnchor.y});
     expect(rightPan).not.toBeNull();
-    expect(rightPan.activeIndex).toBe(rightAnchor.index);
+    expect(rightPan.activeIndex).toBe(rightPan.expectedActiveIndex);
     expect(rightPan.target).toBeGreaterThan(0);
     expect(rightPan.maximumOpacity).toBe(1);
-    expect(rightPan.minimumOpacity).toBe(0);
-    expect(rightPan.invisibleCellCount).toBeGreaterThan(0);
+    expect(rightPan.minimumOpacity).toBeGreaterThan(0);
+    expect(rightPan.invisibleCellCount).toBe(0);
     expect(Math.abs(rightPan.scrollLeft - rightPan.target))
         .toBeLessThanOrEqual(probabilityScrollPositionTolerance);
     expect(Math.abs(rightPan.portScrollLeft - rightPan.target))

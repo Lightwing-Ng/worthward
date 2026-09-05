@@ -1,4 +1,4 @@
-/* Code version: v0.40.0 */
+/* Code version: v0.40.1 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1633,6 +1633,15 @@
 				if (emptyState.textContent !== copy) emptyState.textContent = copy;
 				emptyState.hidden = !empty;
 			}
+            // Derive the axis boundary from rendered geometry, including panel insets.
+            const detailPlot = probabilityDetailYAxis.closest("[data-backtest-probability-detail-plot]");
+            if (detailPlot && priceChart?.chartArea) {
+                const axisWidth = Math.max(0,
+                    priceCanvas.getBoundingClientRect().left + priceChart.chartArea.left
+                    - detailPlot.getBoundingClientRect().left,
+                );
+                detailPlot.style.gridTemplateColumns = `${axisWidth}px minmax(0, 1fr)`;
+            }
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
 				? Math.max(0, Number(detailGridViewportRect.width))
@@ -3182,12 +3191,12 @@
 			setActive(equityChart);
 			const probabilityRendered = updateSharedTooltip(index, sourceCanvas, sourceChart);
 
-			if (index !== null) {
+			if (!showTradeDetails || index === null) {
+				activateBacktestRows([], null);
+			} else {
 				const scrollContainer = document.querySelector("#tradeTransactionsTable")?.closest(".scrollable-data-table-scroll");
 				const rows = Array.from(document.querySelectorAll(`#tradeTransactionsTable tbody tr[data-chart-index="${index}"]`));
 				activateBacktestRows(rows, scrollContainer);
-			} else {
-				activateBacktestRows([], null);
 			}
 			return probabilityRendered;
 		};
@@ -3253,6 +3262,8 @@
 					&& equityCanvas?.closest(".trade-chart-panel")?.contains(event.target)
 				) return;
 				if (canvas === priceCanvas && strategyPresentation) {
+					// Cancel the equity leave frame before it can clear the new price pointer.
+					cancelScheduledHoverSync();
 					probabilityHoverPointerX = Number(event.clientX);
 					probabilityHoverPointerY = Number(event.clientY);
 					probabilityHoverPointerActive = true;

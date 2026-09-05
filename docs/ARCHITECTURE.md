@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.77.0`
+Documentation version: `v1.77.1`
 
 ## Shared Backtest controls and research
 
@@ -209,9 +209,9 @@ to 8 rows.
 The contained detail surface reuses the overview price chart's axis contract:
 its Y-axis boundary is aligned to the main price Canvas plot boundary, and its
 Y ticks and forecast-date ticks use the same `GDS Transport` 12px, regular-weight
-font and 10px line height as the Canvas labels. The responsive inline offset is
-measured through the Backtest layout tokens so the alignment remains exact when
-the sidebar collapses.
+font and 10px line height as the Canvas labels. The browser measures the rendered Canvas plot boundary against the detail plot
+before measuring its grid viewport, so panel insets and sidebar changes cannot
+leave a stale fixed axis offset.
 
 The overview hover surface maps the pointer onto the visible price curve.
 Tracking solves automatic overflow pan directly from screen-space pointer X and

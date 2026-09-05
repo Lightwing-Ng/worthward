@@ -1,6 +1,6 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.242.1`
+Documentation version: `v1.242.2`
 
 Manual LSTM training now requires at least 180 seconds of optimizer work,
 distributed across eligible causal origins. Loading and evaluation add wall time.
@@ -114,6 +114,26 @@ uses 1.78.7. The focused JavaScript suite separately passed all 319 tests.
 
 ## Browser-gate follow-up
 
+Current verification: the 5 Sep 2026 complete gate passed 304 Chromium cases and
+failed four. Three were corrected and passed focused replay. The remaining
+Holdings/history Market value alignment differs by 4.25px at an 856px viewport,
+exceeding the 1px contract. No tolerance was relaxed; this layout finding remains
+open. The full gate was not repeated after the test-only follow-ups.
+
+On 5 Sep 2026, a fresh audit reproduced all five previously listed failures.
+The Investment diagnostic map now matches its entry source version, with a
+repository regression preventing drift. The detail axis uses measured Canvas
+geometry. A visible Backtest share drawer reserves its own heading rail; hidden
+drawers retain compact spacing. The spacing assertion follows the existing 2px
+contract. Zero-threshold tests retain positive-probability cells and the nonlinear
+opacity checks. Automatic-pan coverage uses an interior origin because the final
+curve endpoint has no remaining curve content to pan. The existing endpoint and
+future-drag tests cover that separate boundary. Returning from Equity to Price
+also cancels the queued Equity leave callback before it can erase the new pointer.
+See the latest Testing record
+for current outcomes; the dated failures below remain historical evidence.
+
+
 The latest 4 Sep 2026 complete gate passes Python/JavaScript and 294 Chromium
 cases but fails six browser cases. Five repeat the recorded Backtest share-heading
 clearance, Bayesian axis geometry, 6px versus 2px padding, zero-opacity, and
@@ -210,7 +230,7 @@ is claimed and concurrent layout work remains preserved.
 - Interactive LSTM `Auto` uses NumPy CPU because origin-local tiny LSTM training is faster
   on unified-memory CPU than GPU kernel launch. An explicit `GPU` request uses
   Apple MPS or CUDA only after a real tensor readback.
-- Durable training uses a minimum 60-second optimizer-work budget and resolves
+- Durable training uses a minimum 180-second optimizer-work budget and resolves
   Auto to confirmed MPS/CUDA. Accelerator failures are visible failures, not silent
   CPU successes. Explicit CPU remains available. The configured epoch count is a
   floor during durable training. MPS was exercised on this Mac; Windows CUDA

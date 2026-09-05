@@ -1,6 +1,79 @@
 # Testing guide
 
-Documentation version: `v1.50.0`
+Documentation version: `v1.50.1`
+
+## External audit challenge on 5 Sep 2026
+
+Starting source: clean `main` at `c17dd71b`. The external report's five failures
+were reproduced on this checkout rather than accepted from historical records.
+The report's 60-second training description is stale: the current runner requires
+180 seconds. Saved-case selection restores configuration, not frozen weights.
+Missing live evidence is a verification limitation, not a severity-ranked defect.
+
+Changes: Investment entry diagnostics v2.136.2 and a repository drift regression;
+Backtest v0.40.1 measured detail-axis alignment and cancellation of a pending
+Equity leave callback on Price re-entry; trade.css v3.61.2 reserves a rail only
+for a visible output drawer. Browser assertions preserve the established 2px
+padding and zero-threshold positive-probability behavior. The pan test uses an
+interior origin and independently resolves the post-pan point under the cursor.
+Existing endpoint coverage remains intact. Cache queries and operator training
+budget documentation were synchronized.
+
+Completed focused commands:
+
+- `./scripts/test.sh tests/test_strategy_tuning.py tests/test_lstm_training.py tests/test_price_field_contract.py tests/test_backtest_page.py tests/test_layout_anchor_contract.py tests/test_repository_contracts.py`: exit 0, 177 passed and 16 subtests passed in 35.23 seconds before edits.
+- `./scripts/test.sh tests/test_repository_contracts.py tests/test_layout_anchor_contract.py`: exit 0, 40 passed after edits.
+- `./scripts/test_e2e.sh tests/e2e/backtest-share-layout.spec.mjs tests/e2e/critical-flows.spec.mjs --grep 'Backtest output control|Neo stock-details composition|Bayesian Price Field axes|compact numeric display and Backtest|renders, pans, pins'`: baseline exit 1, all five failed. First correction run: exit 1, three passed and two failed; the share control, module version, and spacing cases passed.
+- `./scripts/test_e2e.sh tests/e2e/critical-flows.spec.mjs --grep 'Bayesian Price Field axes|renders, pans, pins'`: the measured axis passed; the remaining interaction test exposed additional stale pan assumptions and a real Equity-to-Price callback race.
+- `./scripts/test_e2e.sh tests/e2e/critical-flows.spec.mjs --grep 'renders, pans, pins'`: final focused exit 0, one passed in 38.6 seconds, including pan, pin, clear, and return from Equity.
+- `node --check app/web/static/assets/js/backtest.js` and `git diff --check`: exit 0.
+
+Read-only 8688 checks preserved user-owned PID 37665 and returned HTTP 200 for
+About and the current Investment/Backtest scripts. This is asset-serving evidence,
+not proof that an existing browser tab refreshed or that real training ran.
+No production training, deletion, broker import, or order was submitted. E2E used
+the supported isolated runtime. Ten differing numbered files were retained:
+six coverage histories and four protected investment-cache files. No cleanup or
+sibling source change was performed. Evidence logs use the local prefix
+`/tmp/worthward-audit-`; the housekeeping inventory is
+`/tmp/worthward-audit-housekeeping.json`.
+
+Final complete-gate result on 5 Sep 2026:
+
+- `./scripts/check.sh`: exit 1. Python: 1,157 passed, six skipped, 180 subtests
+  passed in 322.26 seconds; total coverage 73.7%. JavaScript: all 319 passed.
+  Chromium: 304 passed, four failed in 12.8 minutes. All five original audited
+  failures passed in this run. The final Price re-entry fix landed during the
+  Python stage, before the JavaScript and browser stages; its syntax was also
+  checked separately.
+- Failures were the obsolete 24px Style-token stepper expectation, Holdings/history
+  Market value edge alignment, a notification-close click missing the new hover
+  precondition, and the LSTM test's old Backtest asset-version expectation.
+- After test-only corrections, `./scripts/test_e2e.sh tests/e2e/lstm-price-field.spec.mjs tests/e2e/critical-flows.spec.mjs --grep 'copies every Style token|aligns Holdings Market value|narrow Backtest tables scrollable|stays square at 390px'`:
+  exit 1, three passed and one failed in 34.1 seconds. The remaining failure is
+  Holdings alignment. No tolerance was relaxed and no force-click was used.
+- A final diagnostic refinement reports the numeric edge difference instead of
+  a boolean. `./scripts/test_e2e.sh tests/e2e/critical-flows.spec.mjs --grep 'aligns Holdings Market value'`
+  still exits 1: at 856px, the largest Market value edge difference is 4.25px,
+  exceeding the existing 1px contract. Both selectors address the correct column.
+  This is an unresolved layout finding, not a financial-calculation finding;
+  untouched-baseline attribution was not established. No Investment layout or
+  accounting code was changed to hide it.
+
+The complete gate was not repeated after these test-only corrections and final
+documentation edits. This remains a non-green gate, with one reproduced open
+browser finding. The audit runtime fixes were exercised in the complete gate; later test changes
+have focused coverage. Final inspection also found a concurrent change in
+`backtest.js` that avoids highlighting hidden transaction rows, and its assertion
+in `tests/test_layout_anchor_contract.py`. Those edits were preserved; their
+author and exact timing relative to the gate were not established, so the gate
+does not certify the complete final shared checkout. The final layout/repository
+replay passed 40 tests. Starting/final HEAD remains `c17dd71b`, branch `main`;
+all edits are uncommitted and there were no initial dirty source files. Changes
+are limited to README, Architecture/Testing/Known Issues, Backtest/Investment
+scripts, trade.css and its cache manifest/templates, and the repository/critical-
+flow/LSTM tests. The external shared UI ledger records the pending sibling
+output-rail verification. No sibling source or user-owned service was changed.
 
 ## Price Field future dragging and saved-case selection
 
