@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.9.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.10.0."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def test_style_token_stepper_input_has_a_compact_demo_height_fallback() -> None:
     stepper_rule = settings_css.split(
         ".style-token-stepper-input {", 1
     )[1].split("}", 1)[0]
-    assert "height: var(--strategy-param-control-height, 24px);" in stepper_rule
-    assert "min-height: var(--strategy-param-control-height, 24px);" in stepper_rule
+    assert "height: var(--strategy-param-control-height, 30px);" in stepper_rule
+    assert "min-height: var(--strategy-param-control-height, 30px);" in stepper_rule
 
 
 def test_style_tokens_expose_the_shared_switch_contract() -> None:

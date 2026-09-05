@@ -1,4 +1,4 @@
-/* Code version: v0.19.9 */
+/* Code version: v0.20.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -8,7 +8,6 @@
 	--trade-control-input-height: var(--sidebar-form-control-min-height);
 	--trade-control-inline-gap: var(--sidebar-form-inline-gap);
 	--strategy-param-field-height: 35px;
-	--strategy-param-control-height: var(--numeric-input-control-height);
 	--ticker-control-width: 80%;
 	--ticker-suggestions-radius: var(--radius-soft);
 	--ticker-validation-arrow-size: 12px;
@@ -1457,8 +1456,46 @@ input[type="number"],
 	0% { transform: translateX(-100%); }
 	100% { transform: translateX(100%); }
 }
-.secondary-button { background: var(--panel-strong); color: var(--accent-text); box-shadow: none; font-weight: var(--font-weight-semibold); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.secondary-button:hover, .secondary-button:focus-visible { transform: none; box-shadow: none; background: var(--panel-strong); }
+.secondary-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    justify-self: end;
+    margin-inline-start: auto;
+    border: var(--glass-chip-border);
+    border-radius: var(--radius-pill);
+    background: var(--glass-chip-background-strong);
+    box-shadow: var(--glass-chip-shadow);
+    color: var(--accent-text);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+    padding: 8px 12px;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard), transform 160ms var(--motion-press);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+    background: var(--glass-chip-background-hover);
+    box-shadow: var(--glass-chip-shadow-hover);
+    color: var(--accent-text-hover);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.secondary-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+}
+
 .flat-link-button { background: transparent; color: var(--accent-text); box-shadow: none; font-weight: var(--font-weight-semibold); display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 6px 4px; }
 .flat-link-button:hover, .flat-link-button:focus-visible { transform: none; box-shadow: none; background: transparent; color: var(--accent-text-hover); }
 .icon { display: inline-block; width: 16px; height: 16px; vertical-align: middle; background-color: currentColor; }
@@ -2008,3 +2045,10 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 	color: var(--settings-round-icon-button-color-hover);
 }
 .chart-panel { padding: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+.backtest-shared-select-row > .trade-strategy-select,
+.backtest-shared-select-trigger.trade-strategy-select {
+    height: var(--shared-select-control-height);
+    min-height: var(--shared-select-control-height);
+    padding-block: 0;
+}

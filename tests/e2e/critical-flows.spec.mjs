@@ -1,4 +1,4 @@
-/* Code version: v1.203.23 */
+/* Code version: v1.203.24 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -15249,24 +15249,24 @@ test('serializes Settings language tabs and pagination in the canonical URL', as
     await expect(page).toHaveURL(/\/settings\/general$/);
 });
 
-test('shows the standalone primary button specimen and keeps its inverted variant', async ({page}) => {
+test('shows the standalone primary button specimen alongside the shared Secondary button', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
     const primaryCard = page.locator('[data-style-token-card="primary-button"]');
     const primary = primaryCard.locator('.style-token-demo > button');
-    const invertedCard = page.locator('[data-style-token-card="primary-inverted-button"]');
-    const inverted = invertedCard.locator('.style-token-demo > button');
+    const secondaryCard = page.locator('[data-style-token-card="secondary-button"]');
+    const secondary = secondaryCard.locator('.style-token-demo > button');
 
     await expect(primaryCard).toHaveCount(1);
     await expect(primary).toHaveText('Maintain all data');
     await expect(primary).toHaveClass(/settings-inline-button-primary/);
-    await expect(primary).not.toHaveClass(/settings-inline-button-primary-inverted/);
-    await expect(invertedCard.locator('.style-token-title')).toHaveText('Primary (inverted) button');
-    await expect(inverted).toHaveClass(/settings-inline-button-primary-inverted/);
+    await expect(primary).not.toHaveClass(/secondary-button/);
+    await expect(secondaryCard.locator('.style-token-title')).toHaveText('Secondary button');
+    await expect(secondary).toHaveClass(/secondary-button/);
 
     const state = await page.evaluate(() => {
         const primaryButton = document.querySelector('[data-style-token-card="primary-button"] .style-token-demo > button');
-        const button = document.querySelector('[data-style-token-card="primary-inverted-button"] .style-token-demo > button');
+        const button = document.querySelector('[data-style-token-card="secondary-button"] .style-token-demo > button');
         if (!(primaryButton instanceof HTMLElement) || !(button instanceof HTMLElement)) return null;
         const primaryStyle = getComputedStyle(primaryButton);
         const style = getComputedStyle(button);
@@ -15286,16 +15286,17 @@ test('shows the standalone primary button specimen and keeps its inverted varian
     expect(state.primaryFontWeight).toBe('500');
     expect(state.primaryBorderWidth).toBe('0px');
     expect(state.borderWidth).toBe('1px');
-    expect(state.fontWeight).toBe('500');
+    expect(state.fontWeight).toBe('600');
     expect(state.radius).toBe('999px');
-    expect(state.minHeight).toBe('32px');
+    expect(state.minHeight).toBe('0px');
 
     const closeControls = [
         page.locator('[data-style-token-card="modal-dialog"] .workspace-modal-close'),
         page.locator('[data-style-token-card="modal-dialog-banner-message"] .notice-close'),
     ];
     for (const closeControl of closeControls) {
-        await closeControl.hover();
+        await closeControl.locator('..').hover();
+        await expect(closeControl).toHaveCSS('opacity', '1');
         const closeState = await closeControl.evaluate((element) => {
             const style = getComputedStyle(element);
             return {
@@ -15313,18 +15314,18 @@ test('shows the standalone primary button specimen and keeps its inverted varian
     await page.reload();
     const narrowState = await page.evaluate(() => {
         const primaryButton = document.querySelector('[data-style-token-card="primary-button"] .style-token-demo > button');
-        const invertedButton = document.querySelector('[data-style-token-card="primary-inverted-button"] .style-token-demo > button');
+        const secondaryButton = document.querySelector('[data-style-token-card="secondary-button"] .style-token-demo > button');
         const primaryRect = primaryButton?.getBoundingClientRect();
-        const invertedRect = invertedButton?.getBoundingClientRect();
+        const secondaryRect = secondaryButton?.getBoundingClientRect();
         return {
             documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             primaryWidth: primaryRect?.width ?? 0,
-            invertedWidth: invertedRect?.width ?? 0,
+            secondaryWidth: secondaryRect?.width ?? 0,
         };
     });
     expect(narrowState.documentOverflow).toBeLessThanOrEqual(1);
     expect(narrowState.primaryWidth).toBeGreaterThan(0);
-    expect(narrowState.invertedWidth).toBeGreaterThan(0);
+    expect(narrowState.secondaryWidth).toBeGreaterThan(0);
 });
 
 test('shows the standard Switch specimen and preserves its checked geometry', async ({page}) => {

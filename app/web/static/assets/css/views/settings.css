@@ -1,4 +1,4 @@
-/* Code version: v0.25.4 */
+/* Code version: v0.26.0 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -667,7 +667,7 @@
     overflow: visible;
 }
 
-.style-token-demo > * {
+.style-token-demo > :not(.secondary-button) {
     min-width: 0;
     width: 100%;
     max-width: 100%;
@@ -1048,27 +1048,6 @@ div.style-token-modal-demo {
 .style-token-metric-card-demo {
     --trade-metric-card-radius: 0;
     width: min(100%, 280px);
-}
-
-.style-token-workspace-header-demo {
-    width: min(100%, 360px);
-    margin: 0;
-    flex: 0 0 auto;
-}
-
-.style-token-workspace-article-demo {
-    width: 100%;
-    margin: 0;
-}
-
-.style-token-workspace-article-copy {
-    display: grid;
-    gap: 12px;
-    min-width: 0;
-}
-
-.style-token-workspace-article-copy > p {
-    margin: 0;
 }
 
 .style-token-table-demo-shell {
@@ -1620,8 +1599,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .style-token-stepper-input {
     flex: 1 1 auto;
-    height: var(--strategy-param-control-height, 24px);
-    min-height: var(--strategy-param-control-height, 24px);
+    height: var(--strategy-param-control-height, 30px);
+    min-height: var(--strategy-param-control-height, 30px);
     min-width: 0;
     text-align: right;
 }
@@ -3665,14 +3644,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     background: var(--primary-button-background-pending);
     border: var(--primary-button-border);
     box-shadow: none;
-}
-
-.settings-inline-button-primary-inverted {
-    --primary-button-background: var(--primary-button-inverted-background);
-    --primary-button-color: var(--primary-button-inverted-color);
-    --primary-button-border: var(--primary-button-inverted-border);
-    --primary-button-background-hover: var(--primary-button-inverted-background-hover);
-    --primary-button-border-hover: var(--primary-button-inverted-border-hover);
 }
 
 .settings-inline-button-secondary-token {

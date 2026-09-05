@@ -1,4 +1,4 @@
-/* Code version: v1.22.4 */
+/* Code version: v1.23.1 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -1523,14 +1523,6 @@
     overflow: hidden;
 }
 
-.workspace-modal-dialog::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 18%, transparent) 0%, transparent 68%);
-    pointer-events: none;
-}
 
 .workspace-modal-icon {
     grid-column: 1;
@@ -2709,5 +2701,24 @@ body.is-price-subplot-reordering {
     .price-subplot.is-order-insert-before::before,
     .price-subplot.is-order-insert-after::before {
         animation: none;
+    }
+}
+
+/* Reveal dismiss actions on their owning surface; preserve keyboard and touch access. */
+:is(.workspace-modal-dialog, .notice-floating, .notice-floating-banner) > :is(.dismiss-button, .workspace-modal-close, .notice-close),
+:is(.workspace-modal-dialog, .notice-floating, .notice-floating-banner) > :is(.dismiss-button, .workspace-modal-close, .notice-close):hover,
+:is(.workspace-modal-dialog, .notice-floating, .notice-floating-banner) > :is(.dismiss-button, .workspace-modal-close, .notice-close):focus-visible {
+    color: var(--theme-error);
+    background: transparent;
+    box-shadow: none;
+}
+@media (hover: hover) and (pointer: fine) {
+    :is(.workspace-modal-dialog, .notice-floating, .notice-floating-banner) > :is(.dismiss-button, .workspace-modal-close, .notice-close) {
+        opacity: 0;
+        pointer-events: none;
+    }
+    :is(.workspace-modal-dialog, .notice-floating, .notice-floating-banner):is(:hover, :focus-within) > :is(.dismiss-button, .workspace-modal-close, .notice-close) {
+        opacity: 1;
+        pointer-events: auto;
     }
 }

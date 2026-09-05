@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.0.2`
+Documentation version: `v1.1.1`
 
 This is the normative spatial contract for the sibling projects
 `/Users/example/Desktop/worthward` and
@@ -9,6 +9,34 @@ different product surfaces, but shared shell geometry, token meanings, ownership
 boundaries, and acceptance tolerances are the same.
 
 ## Canonical dimensions
+
+### Component catalog ownership
+
+Style tokens documents reusable components, not an alternate page layout. The
+obsolete Workspace article specimen, registry row, and demo-only CSS are removed.
+Live article containers remain governed by this contract's semantic layout roles.
+The Collapse specimen has no placeholder explanatory paragraph.
+
+- Secondary button supersedes Primary (inverted) button in the catalog. Use
+  agenticContext's intrinsic-width glass-chip primitive: fit-content width,
+  maximum 100%, right alignment, pill radius, and shared hover/disabled states.
+  Product labels may differ; do not stretch the button to fill its specimen cell.
+- Shared select dropdown and filter triggers use
+  `--shared-select-control-height: 30px` at all existing breakpoints. This does not
+  change the separate 36px Agent session-control rail.
+- Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
+  including its specimen input. agenticContext has no trade-strategy stepper and
+  does not add a fictitious product component.
+- Modal and floating-notice dismiss buttons use standard error red
+  (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
+  focusing within the owning modal/notice, not the entire page. Keyboard focus
+  reveals the control; coarse/no-hover devices keep it visible. Hidden controls
+  do not intercept pointer events.
+
+These rules are not tied to the annotation's 1,024px viewport. Existing desktop,
+overlay, and compact breakpoints and role-based shell geometry remain unchanged.
+
+### Spatial tokens
 
 The following values are semantic tokens, not page-local overrides:
 

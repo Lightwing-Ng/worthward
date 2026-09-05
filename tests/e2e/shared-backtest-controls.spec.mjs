@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.0.0 */
+/* Shared Backtest control primitives. Code version: v1.0.1 */
 import {test, expect} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -15,10 +15,16 @@ for (const colorScheme of ['light', 'dark']) {
             await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=0');
             const common = page.locator('[data-collapse="backtest"]');
             const training = page.locator('[data-collapse="training"]');
+            const summary = common.locator(':scope > summary');
+            await expect(summary).toHaveCSS('padding-left', '0px');
+            await expect(summary).toHaveCSS('padding-right', '0px');
+            const strategyLabel = page.locator('label[for="trade_strategy"]');
+            expect(Math.abs((await summary.boundingBox()).x - (await strategyLabel.boundingBox()).x)).toBeLessThan(1);
             await expect(common.locator('#trade_initial_capital')).toBeVisible();
             await common.locator(':scope > summary').click();
             await expect(common.locator('#trade_initial_capital')).toBeHidden();
             await expect(common.locator('#show_trade_details')).toBeHidden();
+            expect(Math.abs((await summary.boundingBox()).x - (await strategyLabel.boundingBox()).x)).toBeLessThan(1);
             await expect(training.locator('details')).toHaveCount(0);
             const button = training.locator('[data-lstm-training-action]');
             await expect(button).toBeVisible();
@@ -54,6 +60,24 @@ for (const colorScheme of ['light', 'dark']) {
             await page.goto('/settings/style-tokens');
             await expect(page.locator('#collapse .ui-collapse > summary')).toHaveText('LSTM parameters');
             await expect(page.locator('#collapse')).toContainText('--collapse-summary-padding');
+            await expect(page.locator('#collapse .ui-collapse > summary')).toHaveCSS('padding-left', '0px');
+            const modalMaterial = await page.locator('.workspace-modal-dialog.style-token-modal-demo').evaluate(node => {
+                const probe = document.createElement('div');
+                probe.style.cssText = 'background:var(--frosted-glass-background);backdrop-filter:var(--frosted-glass-blur)';
+                node.append(probe);
+                const result = {
+                    background: getComputedStyle(node).background,
+                    expected: getComputedStyle(probe).background,
+                    blur: getComputedStyle(node).backdropFilter,
+                    expectedBlur: getComputedStyle(probe).backdropFilter,
+                    extraLayer: getComputedStyle(node, '::after').content,
+                };
+                probe.remove();
+                return result;
+            });
+            expect(modalMaterial.background).toBe(modalMaterial.expected);
+            expect(modalMaterial.blur).toBe(modalMaterial.expectedBlur);
+            expect(modalMaterial.extraLayer).toBe('none');
         });
     }
 }

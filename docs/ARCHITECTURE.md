@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.76.0`
+Documentation version: `v1.77.0`
 
 ## Shared Backtest controls and research
 
@@ -13,7 +13,9 @@ private action slots through `BaseStrategy.get_parameter_sections()`; the web
 form builder and one field-grid partial render them without strategy-specific
 DOM regrouping. LSTM declares its training slot; Bayesian declares only model
 parameters and shared factors. Changing a standard collapse token updates every
-consumer; product branches do not copy the base component.
+consumer; product branches do not copy the base component. Summary padding is `10px 0`,
+so disclosure triangles align with adjacent field labels at every width. The shared modal uses
+the standard frosted-glass material directly, without a separate white highlight layer.
 
 The strategy catalog declares `presentation_renderer`. Price Field detection
 uses that capability, not a hard-coded strategy-ID list. A model-neutral
@@ -976,3 +978,14 @@ portfolio, Backtest, Investment, Live Trading, or Settings behavior instead of
 continuing to grow the shared critical-flow file. Splitting the existing file
 requires a dedicated behavior-preserving change with an unchanged collected
 test inventory.
+
+## Shared component catalog, 5 Sep 2026
+
+Style token rows and component CSS follow Shared UI Layout Contract v1.1.0.
+Secondary button replaces the inverted-primary specimen with the intrinsic-width
+agenticContext glass-chip action. The foundation owns the 30px shared-select and
+strategy-stepper heights; the 28px general numeric-input contract is unchanged.
+Modal and notice dismiss controls reveal on owner hover or keyboard focus, and
+remain visible for touch input. The obsolete Workspace article catalog row and
+demo branch are removed, without deleting role-governed live page containers.
+Responsive acceptance lives in tests/e2e/style-token-alignment.spec.mjs.

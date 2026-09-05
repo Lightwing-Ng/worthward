@@ -1,4 +1,4 @@
-{# Code version: v0.14.0 #}
+{# Code version: v0.15.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -1163,7 +1163,6 @@
                 <div class="style-token-demo">
                     {% if row.sample_kind == "collapse" %}
                         {% call render_collapse(row.sample_title, "style-token-collapse") %}
-                        <p>Shared parameters and strategy actions</p>
                         {% endcall %}
                     {% elif row.sample_kind == "range-mode" %}
                     <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
@@ -1217,17 +1216,6 @@
                         label_class="style-token-action-package-live-label",
                         input_attrs="data-style-token-action-package-live"
                     ) }}
-                    {% elif row.sample_kind == "workspace-article" %}
-                    <section class="workspace-header style-token-workspace-header-demo" aria-hidden="true">
-                        <article class="report-card workspace-article-card style-token-workspace-article-demo">
-                            <div class="report-heading-row">
-                                <p class="report-heading">{{ row.sample_title }}</p>
-                            </div>
-                            <div class="style-token-workspace-article-copy">
-                                <p>{{ row.sample_copy }}</p>
-                            </div>
-                        </article>
-                    </section>
                     {% elif row.sample_kind == "text-input-control" %}
                     <div class="style-token-settings-input-shell style-token-text-input-shell">
                         <label class="style-token-settings-input-label" for="style_token_text_input">{{ row.sample_title }}</label>

@@ -1,4 +1,4 @@
-/* Code version: v0.27.0 */
+/* Code version: v0.28.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -23,7 +23,7 @@
 	--responsive-breakpoint-live-pin-tight-max: 420px;
 	--sidebar-form-gap: 2px;
 	--collapse-section-gap: 8px;
-	--collapse-summary-padding: 10px;
+	--collapse-summary-padding: 10px 0;
 	--collapse-body-padding: 0 10px 10px;
 	--collapse-font-size: var(--font-size-5);
 	--collapse-font-weight: var(--font-weight-medium);
@@ -33,6 +33,8 @@
 	--sidebar-form-inline-gap: 8px;
 	--sidebar-form-control-min-height: 30px;
 	--numeric-input-control-height: 28px;
+	--shared-select-control-height: 30px;
+	--strategy-param-control-height: 30px;
 	--sidebar-form-control-padding-inline: 10px;
 	--sidebar-form-control-padding-block: 0px;
 	--sidebar-form-popover-gap: 6px;
@@ -179,11 +181,6 @@
 	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
 	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
 	--primary-button-font-weight: var(--font-weight-medium);
-	--primary-button-inverted-background: var(--color-white-adaptive);
-	--primary-button-inverted-color: var(--accent-text);
-	--primary-button-inverted-border: 1px solid var(--accent-border-soft);
-	--primary-button-inverted-background-hover: color-mix(in srgb, var(--theme-accent-primary) 8%, var(--color-white-adaptive));
-	--primary-button-inverted-border-hover: 1px solid var(--accent-border-strong);
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;
 	--settings-round-icon-button-radius: var(--radius-pill);

@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.8.3
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ class WebTokenRegistryTests(unittest.TestCase):
 
         action_package = next(row for row in style_rows if row["name"] == "Settings action package")
         primary_button = next(row for row in style_rows if row["name"] == "Primary button")
-        inverted_button = next(row for row in style_rows if row["name"] == "Primary (inverted) button")
+        secondary_button = next(row for row in style_rows if row["name"] == "Secondary button")
         self.assertNotIn("Settings action button", {row["name"] for row in style_rows})
         self.assertEqual(primary_button["id"], "primary-button")
         self.assertEqual(
@@ -252,9 +252,9 @@ class WebTokenRegistryTests(unittest.TestCase):
                 "--primary-button-radius",
             },
         )
-        self.assertEqual(inverted_button["id"], "primary-inverted-button")
-        self.assertIn("settings-inline-button-primary-inverted", inverted_button["sample_button_class"])
-        self.assertEqual(inverted_button["related_styles"], [])
+        self.assertEqual(secondary_button["id"], "secondary-button")
+        self.assertIn("secondary-button", secondary_button["sample_button_class"])
+        self.assertEqual(secondary_button["related_styles"], [])
         self.assertEqual(
             action_package["related_styles"],
             [{"name": "Settings execution option", "target_id": "settings-execution-option"}],

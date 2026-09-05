@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.5
+Code version: v0.10.6
 """
 
 from pathlib import Path
@@ -152,9 +152,9 @@ def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
     ):
         assert fragment in settings_css
 
-    assert '@import url("./views/settings.css?v=0.25.4");' in app_css
+    assert '@import url("./views/settings.css?v=0.26.0");' in app_css
     assert f'@import url("./foundation/tokens.css?v={_css_code_version(ASSET_ROOT / "css/foundation/tokens.css").removeprefix("v")}");' in app_css
-    assert '@import url("./components/forms.css?v=3.40.9");' in app_css
+    assert f'@import url("./components/forms.css?v={_css_code_version(ASSET_ROOT / "css/components/forms.css").removeprefix("v")}");' in app_css
     assert '@import url("./views/investment.css?v=1.78.8");' in app_css
 
 
