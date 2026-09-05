@@ -1,4 +1,4 @@
-/* Code version: v0.40.1 */
+/* Code version: v0.41.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -81,12 +81,12 @@
 	const getBacktestTradeDetailsInput = () => document.getElementById("show_trade_details");
 	const isBacktestTradeDetailsEnabled = () => {
 		const input = getBacktestTradeDetailsInput();
-		return !(input instanceof HTMLInputElement) || input.checked;
+		return input instanceof HTMLInputElement && input.checked;
 	};
 	const persistBacktestTradeDetailsPreference = (enabled) => {
 		const nextUrl = new URL(window.location.href);
 		if (enabled) {
-			nextUrl.searchParams.delete("show_trade_details");
+			nextUrl.searchParams.set("show_trade_details", "1");
 		} else {
 			nextUrl.searchParams.set("show_trade_details", "0");
 			if (nextUrl.searchParams.get("tab") === "transactions") {

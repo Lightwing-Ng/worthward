@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.5.0 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.6.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -19,7 +19,7 @@ const createRuntime = () => {
 test("publishes the canonical Workspace query contract", () => {
     const api = createRuntime();
 
-    assert.equal(api.VERSION, "v1.5.0");
+    assert.equal(api.VERSION, "v1.6.0");
     assert.deepEqual(Array.from(api.getParameterNames()), [
         "ticker",
         "metric",
@@ -320,7 +320,8 @@ test("serializes the shared backtest trade-details switch against its default", 
     const defaultState = api.parseWorkspaceUrlState(
         "http://localhost:8688/workspaces/backtest?strategy=buy-and-hold",
     );
-    assert.equal(defaultState.showTradeDetailsEnabled, true);
+    assert.equal(defaultState.showTradeDetailsEnabled, false);
+    assert.equal(defaultState.stopLossEnabled, false);
     assert.equal(
         api.buildWorkspaceUrl(
             "http://localhost:8688/workspaces/backtest?tab=transactions",
@@ -343,4 +344,21 @@ test("serializes the shared backtest trade-details switch against its default", 
         "http://localhost:8688/workspaces/backtest?show_trade_details=0",
     );
     assert.equal(hiddenState.showTradeDetailsEnabled, false);
+});
+
+
+test("Backtest opt-ins survive URL round trips with disabled defaults", () => {
+    const api = createRuntime();
+    for (const enabled of [false, true]) {
+        const url = api.buildWorkspaceUrl("http://localhost:8688/workspaces/backtest", {
+            isBacktest: true, tickers: ["QQQ"], defaultTickers: ["QQQ"],
+            stopLossEnabled: enabled, showTradeDetailsEnabled: enabled,
+        });
+        const params = new URL(url, "http://localhost:8688").searchParams;
+        assert.equal(params.get("stop_loss"), enabled ? "1" : null);
+        assert.equal(params.get("show_trade_details"), enabled ? "1" : null);
+        const parsed = api.parseWorkspaceUrlState(new URL(url, "http://localhost:8688").href);
+        assert.equal(parsed.stopLossEnabled, enabled);
+        assert.equal(parsed.showTradeDetailsEnabled, enabled);
+    }
 });

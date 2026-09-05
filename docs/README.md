@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.3.2`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -95,6 +95,12 @@ agent-started server must be stopped before handoff.
 - When a tracked file appears unused, check dynamic loading, route aliases,
   template maps, strategy discovery, and reserved-asset catalogs before
   removal.
+
+## Recent verification records
+
+- [Backtest market-factor validation](BACKTEST_MARKET_FACTORS_VALIDATION.md): disabled defaults, strategy input ownership, shared sections, and isolated verification.
+
+- [Settings annotation validation](SETTINGS_ANNOTATIONS_VALIDATION.md): control ownership, responsive geometry, risk-copy sources, and isolated verification.
 
 ## Release metadata
 

@@ -5,7 +5,7 @@ Refactored to strictly adhere to the Worthward trading system's
 LLM Strategy Developer Prompt guidelines. Reverts to the core
 unfiltered majority-vote logic to preserve high-frequency alpha.
 
-Code version: v0.3.1
+Code version: v0.4.0
 - Changed: Independent causal kNN origins use the shared bounded CPU process
   pool before the stateful signal replay, preserving the original ordering and
   no-future-data boundary.
@@ -173,6 +173,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="indicator",
+                group="factors",
                 label="Indicator",
                 kind="choice",
                 default="All",
@@ -181,6 +182,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="short_window",
+                group="factors",
                 label="Short Period",
                 kind="integer",
                 default=14,
@@ -190,6 +192,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="long_window",
+                group="factors",
                 label="Long Period",
                 kind="integer",
                 default=28,
@@ -207,6 +210,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="volatility_filter",
+                group="factors",
                 label="Volatility Filter",
                 kind="choice",
                 default="Off",

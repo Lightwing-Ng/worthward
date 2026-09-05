@@ -6,7 +6,7 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v0.3.1
+Code version: v0.4.0
 - Changed: Independent causal kNN origins use the shared bounded CPU process
   pool before the stateful signal replay, preserving the original ordering and
   no-future-data boundary.
@@ -200,6 +200,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="indicator",
+                group="factors",
                 label="Indicator",
                 kind="choice",
                 default="All",
@@ -208,6 +209,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="short_window",
+                group="factors",
                 label="Short Period",
                 kind="integer",
                 default=14,
@@ -217,6 +219,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="long_window",
+                group="factors",
                 label="Long Period",
                 kind="integer",
                 default=28,
@@ -234,6 +237,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="volatility_filter",
+                group="factors",
                 label="Volatility Filter",
                 kind="choice",
                 default="Off",

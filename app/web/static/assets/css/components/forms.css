@@ -1,4 +1,4 @@
-/* Code version: v0.20.1 */
+/* Code version: v0.20.2 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -246,7 +246,7 @@ input[type="number"],
 	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard), border-color 220ms var(--motion-standard), transform 320ms var(--motion-emphasized), opacity 220ms var(--motion-standard);
 }
 .ticker-input-control { position: relative; }
-.ticker-input-control input { padding-left: 44px; padding-right: var(--trade-control-input-height); font-variant-numeric: tabular-nums; }
+.ticker-input-control input { --text-input-control-font-size: var(--ticker-input-font-size); font-size: var(--ticker-input-font-size); padding-left: 44px; padding-right: var(--trade-control-input-height); font-variant-numeric: tabular-nums; }
 .ticker-input-control input::placeholder { font-size: var(--font-tooltip); color: color-mix(in srgb, var(--theme-text) 68%, transparent); }
 .ticker-input-control input:hover,
 .ticker-input-control input:focus,

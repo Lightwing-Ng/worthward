@@ -1,4 +1,4 @@
-/* Code version: v0.26.0 */
+/* Code version: v0.26.1 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -311,8 +311,8 @@
 }
 
 .settings-general-option:has(input:checked) {
-    background: color-mix(in srgb, var(--theme-accent-primary) 12%, var(--settings-general-option-background));
-    border-color: color-mix(in srgb, var(--theme-accent-primary) 56%, transparent);
+    background: var(--settings-general-option-background);
+    border-color: var(--theme-accent-primary);
     box-shadow: inset 0 0 0 1px var(--theme-accent-primary);
 }
 
@@ -481,28 +481,15 @@
     grid-row: 2;
 }
 
-.settings-action-package:has(.settings-service-name):has([data-network-last-checked]) {
-    grid-template-rows: auto auto auto auto auto;
-}
-
 .settings-action-package:has(.settings-service-name) .settings-action-package-copy .settings-service-meta {
     grid-column: 2;
     grid-row: 3;
-}
-
-.settings-action-package:has(.settings-service-name) .settings-action-package-copy [data-network-last-checked] {
-    grid-column: 2;
-    grid-row: 4;
 }
 
 .settings-action-package:has(.settings-service-name) .settings-action-package-form {
     grid-column: 2;
     grid-row: 3;
     justify-self: end;
-}
-
-.settings-action-package:has(.settings-service-name):has([data-network-last-checked]) .settings-action-package-form {
-    grid-row: 5;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -667,7 +654,7 @@
     overflow: visible;
 }
 
-.style-token-demo > :not(.secondary-button) {
+.style-token-demo > :not(.secondary-button, .settings-inline-button-primary) {
     min-width: 0;
     width: 100%;
     max-width: 100%;
@@ -1374,7 +1361,6 @@ div.style-token-modal-demo {
     line-height: 1.25;
 }
 
-.settings-color-token-reset-all,
 .settings-color-token-reset {
     min-height: 30px;
     border: 1px solid var(--theme-glass-border);
@@ -1387,8 +1373,6 @@ div.style-token-modal-demo {
     transition: color 160ms var(--motion-standard), border-color 160ms var(--motion-standard), background-color 160ms var(--motion-standard);
 }
 
-.settings-color-token-reset-all:hover,
-.settings-color-token-reset-all:focus-visible,
 .settings-color-token-reset:hover,
 .settings-color-token-reset:focus-visible {
     border-color: var(--accent-border-strong);
@@ -1956,14 +1940,14 @@ div.style-token-modal-demo::-webkit-scrollbar,
     overflow: visible;
 }
 
-.settings-strategy-summary {
+.settings-strategy-card > .settings-strategy-summary {
     list-style: none;
     display: block;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     min-height: var(--settings-strategy-card-min-height);
-    padding: 14px 16px;
+    padding: 6px 4px;
     cursor: pointer;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
@@ -2529,7 +2513,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     min-width: 720px;
 }
 
-.local-store-table-shell {
+.scrollable-data-table-shell.local-store-table-shell {
+    overflow: visible;
     min-height: 0;
 }
 
@@ -3153,6 +3138,12 @@ div.style-token-modal-demo::-webkit-scrollbar,
     margin-bottom: 0;
 }
 
+/* Reading cards have no elevated start-side effects; keep their scrollport inside the workspace. */
+.settings-about-shell > .settings-content-scrollport {
+    margin-inline-start: 0;
+    padding-inline-start: 0;
+}
+
 .settings-about-shell > .settings-content-scrollport > .about-section {
     margin-bottom: 0;
 }
@@ -3596,6 +3587,9 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-inline-button-primary {
+    justify-self: start;
+    align-self: start;
+    max-width: 100%;
     width: fit-content;
     min-width: 0;
     min-height: var(--primary-button-min-height);
@@ -3739,9 +3733,9 @@ div.style-token-modal-demo::-webkit-scrollbar,
         max-height: none;
     }
 
-    .settings-strategy-summary {
+    .settings-strategy-card > .settings-strategy-summary {
         min-height: 0;
-        padding: 16px;
+        padding: 6px 4px;
         display: flex;
         align-items: flex-start;
     }
@@ -4067,7 +4061,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .cash-equivalents-add-action-shell {
     position: static;
-    align-self: flex-start;
+    align-self: flex-end;
     width: var(--settings-round-icon-button-size);
     height: var(--settings-round-icon-button-size);
     margin: 0;

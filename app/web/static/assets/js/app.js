@@ -1,4 +1,4 @@
-/* Code version: v0.52.0 */
+/* Code version: v0.53.0 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -2028,7 +2028,7 @@
         if (state.currentView === "backtest") {
             const showBacktestTradeDetails = showTradeDetailsInput instanceof HTMLInputElement
                 ? showTradeDetailsInput.checked
-                : true;
+                : false;
             const priceFieldStrategyIds = Array.isArray(state.priceFieldStrategyIds)
                 && state.priceFieldStrategyIds.length
                 ? state.priceFieldStrategyIds
@@ -7139,9 +7139,9 @@
             strategyParams: isBacktestView ? collectStrategyParamEntries() : [],
             strategyParamDefaults,
             stopLossEnabled: isBacktestView ? Boolean(stopLossInput?.checked) : undefined,
-            defaultStopLossEnabled: defaults.backtest_stop_loss ?? true,
+            defaultStopLossEnabled: defaults.backtest_stop_loss ?? false,
             showTradeDetailsEnabled: isBacktestView ? Boolean(showTradeDetailsInput?.checked) : undefined,
-            defaultShowTradeDetailsEnabled: defaults.backtest_show_trade_details ?? true,
+            defaultShowTradeDetailsEnabled: defaults.backtest_show_trade_details ?? false,
             isDca: isDcaView,
             amount: isDcaView ? parseTradeCapitalValue(tradeCapitalInput?.value) : "",
             defaultAmount: defaults.dca_amount ?? 1000,

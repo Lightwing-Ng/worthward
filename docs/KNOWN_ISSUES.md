@@ -1,6 +1,40 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.1`
+Documentation version: `v1.243.3`
+
+Backtest annotation follow-up, 5 Sep 2026: algorithmic stop-loss exits and trade
+details now default off throughout web configuration and URL state. Explicit
+opt-ins remain supported. `Market factors` reuses the shared strategy collapse
+for real model inputs; technical-indicator strategies do not expose unsupported
+Longbridge inputs. The final targeted browser run passed 34 cases. Full Python
+and JavaScript checks passed; the pre-existing Holdings/history Market value
+alignment issue still prevents a green full browser gate. See
+[Backtest validation](BACKTEST_MARKET_FACTORS_VALIDATION.md).
+
+Settings annotation follow-up, 5 Sep 2026: primary action specimens retain intrinsic
+width; ticker input controls use the 15px semantic token and their specimen starts
+at the content edge. Selected execution options keep the neutral theme surface and
+standard blue border. Switch thumbs reuse the shared spatial duration and bouncy
+curve, including the existing reduced-motion override. Tooltips resolve their
+material through the canonical frosted-glass background alias.
+
+About now summarizes current research, forecast, import, and optional trading
+features. Its reading scrollport no longer extends into the sidebar; other elevated
+Settings surfaces retain their effect gutters. The risk notice distinguishes
+hypothetical results, model and data limitations, capital loss, live-order failures,
+and nonwaivable legal rights. It is a disclosure, not proof of legal compliance or
+immunity from claims; public distribution or commercial investment use requires a
+fact-specific legal review. Sources: [SEC automated investment tools alert](https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-alerts/investor-56),
+[SEC backtest enforcement example](https://www.sec.gov/newsroom/press-releases/2014-289),
+and [15 U.S.C. 80b-15](https://www.law.cornell.edu/uscode/text/15/80b-15).
+
+General follows About in both navigation order and the active-index mapping.
+Cash-equivalent additions align right. Color reset is the final danger action
+package and retains its browser-local reset handler. Network transport diagnostics
+use the shared disclosure primitive outside the standard action package. Strategy
+summaries use 6px block and 4px inline padding at existing breakpoints. Local-store
+pagination remains outside the table scrollport, with an open effect host; only
+table data scrolls. No broker, persistence, or order-authorization contract changed.
 
 IBKR supplemental realized-P&L replay accepts complete file history when a
 user-confirmed partial position snapshot omits a ticker. Transaction-source

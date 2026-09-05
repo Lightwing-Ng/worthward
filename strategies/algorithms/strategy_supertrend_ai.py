@@ -1,7 +1,7 @@
 """
 SuperTrend AI strategy with factor clustering.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -136,6 +136,7 @@ class SupertrendAiStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="atr_length",
+                group="factors",
                 label="ATR Length",
                 kind="integer",
                 default=10,
@@ -144,6 +145,7 @@ class SupertrendAiStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="min_factor",
+                group="factors",
                 label="Minimum Factor",
                 kind="integer",
                 default=1,
@@ -152,6 +154,7 @@ class SupertrendAiStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="max_factor",
+                group="factors",
                 label="Maximum Factor",
                 kind="integer",
                 default=5,
@@ -160,6 +163,7 @@ class SupertrendAiStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="factor_step",
+                group="factors",
                 label="Factor Step",
                 kind="number",
                 default=0.5,

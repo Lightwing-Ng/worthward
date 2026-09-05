@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ class BaseStrategy:
         return (
             {"key": "parameters", "title": self.strategy_parameter_title, "kind": "fields"},
             *self.strategy_parameter_actions,
-            {"key": "factors", "title": "Training factors", "kind": "fields"},
+            {"key": "factors", "title": "Market factors", "kind": "fields"},
         )
 
     @classmethod

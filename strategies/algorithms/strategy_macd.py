@@ -1,7 +1,7 @@
 """
 MACD crossover strategy.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ class MacdStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="fast_span",
+                group="factors",
                 label="Fast EMA",
                 kind="integer",
                 default=12,
@@ -37,6 +38,7 @@ class MacdStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="slow_span",
+                group="factors",
                 label="Slow EMA",
                 kind="integer",
                 default=26,
@@ -45,6 +47,7 @@ class MacdStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="signal_span",
+                group="factors",
                 label="Signal EMA",
                 kind="integer",
                 default=9,

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.50.1`
+Documentation version: `v1.50.2`
 
 ## External audit challenge on 5 Sep 2026
 
@@ -278,7 +278,7 @@ render from that computation. Walk-forward LSTM training keeps the causal lag
 return even when enabled Longbridge factor columns are entirely unavailable.
 The same file verifies three ordered, sentence-case LSTM accordion groups:
 `LSTM parameters` (Cell display threshold through Compute backend), `LSTM training`,
-and `Training factors` (the boolean factors). Opening a section closes the others
+and `Market factors` (the boolean factors). Opening a section closes the others
 without changing form values; keyboard activation and page reload retain a usable
 initial state. All three sections stay in the
 `Strategy parameters` collapse opened by the round `Tune strategy parameters`

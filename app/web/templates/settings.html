@@ -1,4 +1,4 @@
-{# Code version: v0.15.0 #}
+{# Code version: v0.15.1 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -6,6 +6,7 @@
 {% block sidebar_content %}
 {% set nav_sections = [
     'about',
+    'general',
     'backtest',
     'broker-access',
     'cash-equivalents',
@@ -14,7 +15,6 @@
     'export-image',
     'font-tokens',
     'color-tokens',
-    'general',
     'investment',
     'local-market-store',
     'material-tokens',
@@ -32,6 +32,10 @@
     <a href="{{ settings_urls.about }}" class="settings-nav-item settings-nav-item-about{% if settings_section == 'about' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-about"></span></span>
         <span class="settings-nav-label">{{ labels.about }}</span>
+    </a>
+    <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
+        <span class="settings-nav-label">{{ translate_ui('General') }}</span>
     </a>
     <a href="{{ settings_urls.backtest }}" class="settings-nav-item settings-nav-item-backtest{% if settings_section == 'backtest' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-backtest"></span></span>
@@ -64,10 +68,6 @@
     <a href="{{ settings_urls['color-tokens'] }}" class="settings-nav-item settings-nav-item-color-tokens{% if settings_section == 'color-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
         <span class="settings-nav-label">{{ translate_ui('Color tokens') }}</span>
-    </a>
-    <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
-        <span class="settings-nav-label">{{ translate_ui('General') }}</span>
     </a>
     <a href="{{ settings_urls.investment }}" class="settings-nav-item settings-nav-item-investment{% if settings_section == 'investment' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-trade-investment"></span></span>
@@ -115,7 +115,8 @@
     {% if settings_section == "about" %}
     <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">{{ translate_ui('What this service does') }}</h2>
-            <p class="about-copy">{{ translate_ui('Worthward is a local-first workspace for comparing supported-market stocks and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running strategy and grid-trading backtests, and reviewing locally imported investment records. It uses locally cached daily and recent 1-minute market data; optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.') }}</p>
+            <p class="about-copy">{{ translate_ui('Compare securities, research strategies, and review your investments in one local-first workspace.') }}</p>
+            <p class="about-copy">{{ translate_ui('Explore price history, portfolios, backtests, and Bayesian or LSTM forecasts. Review imported broker records and use optional protected Longbridge trading. IBKR supports file imports only.') }}</p>
     </article>
 
     <article class="report-card workspace-content-card about-section settings-reading-guard">
@@ -141,9 +142,12 @@
     <article class="report-card workspace-content-card about-section about-disclaimer settings-reading-guard">
             <h2 class="about-heading">{{ translate_ui('Disclaimer') }}</h2>
             <ol class="about-disclaimer-list">
-                <li class="about-copy">{{ translate_ui('This service does not provide financial advice. All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.') }}</li>
-                <li class="about-copy">{{ translate_ui('The value of investments can go down as well as up. Past performance is not a reliable indicator of future results. Seek independent professional advice before making investment decisions.') }}</li>
-                <li class="about-copy">{{ translate_ui('Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.') }}</li>
+                <li class="about-copy">{{ translate_ui('Research only. Outputs are general information, not personalized investment, legal, or tax advice, a recommendation, or an offer to trade. They do not assess your objectives, finances, or risk tolerance. Seek qualified independent advice.') }}</li>
+                <li class="about-copy">{{ translate_ui('Simulations are hypothetical. Backtests, optimized strategies, and model forecasts are not actual trading results or promises. Hindsight, overfitting, data gaps, and assumptions about fills, liquidity, fees, taxes, and corporate actions can materially distort results. Estimated probabilities can be wrong.') }}</li>
+                <li class="about-copy">{{ translate_ui('You can lose money. Past performance does not predict future results. Securities and cash-equivalent classifications do not guarantee safety or liquidity; leverage and margin can produce losses greater than your initial investment.') }}</li>
+                <li class="about-copy">{{ translate_ui('Verify the source. Third-party data, cached prices, imported records, valuations, and calculations may be delayed, incomplete, or incorrect. Reconcile with official broker statements and current market information before relying on an output or filing taxes.') }}</li>
+                <li class="about-copy">{{ translate_ui('Live trading uses real money. Review the account, instrument, side, quantity, price, and order status before authorizing an order. Software, network, or broker failures can delay, reject, or duplicate requests. A submitted request is not confirmation of execution; verify fills with your broker.') }}</li>
+                <li class="about-copy">{{ translate_ui('Availability and legal rights. The software and information are provided as is and as available, without warranties to the extent permitted by applicable law. No uninterrupted service, accuracy, or investment outcome is guaranteed. Nothing in this notice waives nonwaivable rights or excludes liability that applicable law does not allow to be excluded.') }}</li>
             </ol>
     </article>
     {% elif settings_section == "general" %}
@@ -497,8 +501,7 @@
             <div class="settings-action-package-copy settings-callout-text">
                 <p class="settings-service-name">{{ labels.network_self_check }}</p>
                 <p class="settings-service-note">{{ translate_ui('Review every fixed external dependency used by this application from the application host.') }}</p>
-                <p class="settings-service-note settings-service-meta" data-network-transport>{{ translate_ui('Checks run from the application host. HTTP(S) probes honor standard proxy variables and verified TLS; account credentials are not submitted here.') }}</p>
-                <p class="settings-service-note settings-service-meta" data-network-last-checked>{% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text }}{% else %}{{ translate_ui('Last checked:') }} {{ translate_ui('Not checked yet.') }}{% endif %}</p>
+
             </div>
             <div class="settings-action-package-form">
                 <button
@@ -508,6 +511,10 @@
                 >{{ translate_ui('Check again') }}</button>
             </div>
     </section>
+    {% call render_collapse(translate_ui('Connection details'), 'settings-network-details') %}
+                <p class="settings-service-note" data-network-transport>{{ translate_ui('Checks run from the application host. HTTP(S) probes honor standard proxy variables and verified TLS; account credentials are not submitted here.') }}</p>
+                <p class="settings-service-note" data-network-last-checked>{% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text }}{% else %}{{ translate_ui('Last checked:') }} {{ translate_ui('Not checked yet.') }}{% endif %}</p>
+    {% endcall %}
     <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
             <div class="settings-general-header">
                 <p class="settings-general-kicker">{{ labels.service_status }}</p>
@@ -1104,7 +1111,6 @@
                     </a>
                     {% endfor %}
                 </nav>
-                <button type="button" class="settings-color-token-reset-all" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
             </aside>
             {% for group in color_token_rows %}
             <section id="color-token-{{ group.id }}" class="settings-color-token-group settings-card" data-color-token-group="{{ group.id }}">
@@ -1151,6 +1157,16 @@
                 </div>
             </section>
             {% endfor %}
+            <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Reset all color overrides') }}</p>
+                    <p class="settings-service-note">{{ translate_ui('Restore the default Light and Dark palettes in this browser.') }}</p>
+                </div>
+                <div class="settings-action-package-form settings-danger-form">
+                    <button type="button" class="settings-inline-button settings-inline-button-danger" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
+                </div>
+            </section>
         </div>
     </section>
     {% elif settings_section == "style-tokens" %}

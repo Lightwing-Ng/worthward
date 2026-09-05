@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.1.1 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -14,7 +14,7 @@ const readRememberedValue = async (page, strategyId, key) => page.evaluate(
 test('remembers Backtest parameters per strategy and gives explicit URLs precedence', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
-    await expect(page.locator('#tradeEquityChart')).toBeVisible();
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
     await page.evaluate((key) => window.localStorage.removeItem(key), MEMORY_KEY);
 
     const gridFloor = page.locator('#strategy_param_price_floor');
@@ -23,7 +23,7 @@ test('remembers Backtest parameters per strategy and gives explicit URLs precede
     await expect.poll(() => readRememberedValue(page, 'grid-trading', 'price_floor')).toBe('123.45');
 
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=dca&stop_loss=0');
-    await expect(page.locator('#tradeEquityChart')).toBeVisible();
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
     const dcaAmount = page.locator('#strategy_param_amount');
     await dcaAmount.fill('2340');
     await dcaAmount.blur();

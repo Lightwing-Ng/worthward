@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.10.1 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.10.2 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -266,8 +266,8 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.29.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.40.1');
-    expect(desktop.appScript).toContain('app-v0.52.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.41.0');
+    expect(desktop.appScript).toContain('app-v0.53.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -322,7 +322,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(privateMenu.locator('.lstm-training-history-empty')).toHaveText('No historical LSTM training runs.');
 
     await expect(paramsPanel.locator(':scope > details > summary')).toHaveText([
-        'LSTM parameters', 'LSTM training', 'Training factors',
+        'LSTM parameters', 'LSTM training', 'Market factors',
     ]);
     const parametersSection = paramsPanel.locator('[data-collapse="parameters"]');
     await expect(parametersSection.locator('[data-strategy-param-key]')).toHaveCount(10);

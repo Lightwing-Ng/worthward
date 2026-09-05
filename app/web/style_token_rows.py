@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.16.0
+Code version: v1.16.1
 """
 
 from __future__ import annotations
@@ -214,7 +214,7 @@ def build_style_token_rows(
                 raw_token("--switch-thumb-background", "var(--color-white-adaptive)"),
                 raw_token("--switch-thumb-shadow", "inset 0 1px 0 var(--theme-glass-highlight)"),
                 px_token("--switch-thumb-offset", 16, 0),
-                raw_token("--switch-thumb-transition", "transform 260ms var(--motion-emphasized), box-shadow 220ms var(--motion-standard)"),
+                raw_token("--switch-thumb-transition", "transform var(--motion-duration-spatial) var(--motion-bouncy), box-shadow 220ms var(--motion-standard)"),
             ],
             "related_styles": [],
         },
@@ -619,7 +619,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "sample_placeholder": "",
             "sample_value": "NVDA",
-            "tokens": [],
+            "tokens": [raw_token("--ticker-input-font-size", "var(--font-size-5)")],
             "related_styles": [
                 {
                     "name": "Text input control",

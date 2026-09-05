@@ -1,10 +1,10 @@
 /*
  * Canonical Workspace URL state parsing and serialization.
  *
- * Code version: v1.5.0
+ * Code version: v1.6.0
  */
 (() => {
-    const VERSION = "v1.5.0";
+    const VERSION = "v1.6.0";
     const DEFAULT_PERIOD = "1y";
     const PERIOD_VALUES = new Set([
         "1d",
@@ -222,10 +222,10 @@
             interval: normalizeLower(params.get("interval")),
             stopLossEnabled: params.has("stop_loss")
                 ? parseFlag(params, "stop_loss")
-                : true,
+                : false,
             showTradeDetailsEnabled: params.has("show_trade_details")
                 ? parseFlag(params, "show_trade_details")
-                : true,
+                : false,
             amount: normalizeValue(params.get("amount")),
             frequency: normalizeLower(params.get("frequency")),
             weekday: normalizeValue(params.get("weekday")),
@@ -320,13 +320,13 @@
             setIfNonDefault(params, "capital", state.capital, state.defaultCapital ?? "10000");
             setIfNonDefault(params, "interval", state.interval, state.defaultInterval || "1d");
             if (state.stopLossEnabled !== undefined) {
-                const defaultStopLossEnabled = state.defaultStopLossEnabled ?? true;
+                const defaultStopLossEnabled = state.defaultStopLossEnabled ?? false;
                 if (Boolean(state.stopLossEnabled) !== Boolean(defaultStopLossEnabled)) {
                     params.set("stop_loss", state.stopLossEnabled ? "1" : "0");
                 }
             }
             if (state.showTradeDetailsEnabled !== undefined) {
-                const defaultShowTradeDetailsEnabled = state.defaultShowTradeDetailsEnabled ?? true;
+                const defaultShowTradeDetailsEnabled = state.defaultShowTradeDetailsEnabled ?? false;
                 if (Boolean(state.showTradeDetailsEnabled) !== Boolean(defaultShowTradeDetailsEnabled)) {
                     params.set("show_trade_details", state.showTradeDetailsEnabled ? "1" : "0");
                 }

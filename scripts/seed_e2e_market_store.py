@@ -1,4 +1,4 @@
-"""Build the isolated deterministic market store used by Playwright. Code version: v1.2.0."""
+"""Build the isolated deterministic market store used by Playwright. Code version: v1.2.1."""
 
 from __future__ import annotations
 
@@ -98,6 +98,15 @@ def seed_market_store(store_dir: Path) -> None:
     resolved_store = store_dir.resolve()
     if resolved_store != EXPECTED_STORE_DIR:
         raise ValueError(f"Refusing to seed unexpected E2E market-store path: {resolved_store}")
+
+    # Every fixture ticker needs an asset to qualify for Local market store.
+    # Use a bundled neutral icon only inside the validated isolated runtime.
+    logo_dir = resolved_store / "logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    neutral_logo = ROOT_DIR / "app/web/static/images/building.columns.fill.svg"
+    for ticker in DAILY_TICKERS:
+        if not any((logo_dir / f"{ticker}.{extension}").exists() for extension in ("svg", "png", "jpg", "webp")):
+            (logo_dir / f"{ticker}.svg").write_bytes(neutral_logo.read_bytes())
 
     historical_dir = resolved_store / "historical"
     historical_dir.mkdir(parents=True, exist_ok=True)

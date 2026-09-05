@@ -1,6 +1,6 @@
 """Gemini variant of the Lorentzian Classification strategy.
 
-Code version: v0.1.2
+Code version: v0.2.0
 - Changed: Independent causal Lorentzian neighbor predictions use the shared
   bounded CPU process pool before stateful signal replay.
 """
@@ -350,6 +350,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="source",
+                group="factors",
                 label="Source",
                 kind="choice",
                 default="Close",
@@ -375,6 +376,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="feature_count",
+                group="factors",
                 label="Feature Count",
                 kind="integer",
                 default=4,
@@ -392,6 +394,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="use_volatility_filter",
+                group="factors",
                 label="Use Volatility Filter",
                 kind="choice",
                 default="On",
@@ -400,6 +403,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="use_regime_filter",
+                group="factors",
                 label="Use Regime Filter",
                 kind="choice",
                 default="Off",
@@ -408,6 +412,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="use_adx_filter",
+                group="factors",
                 label="Use ADX Filter",
                 kind="choice",
                 default="Off",
@@ -416,6 +421,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="regime_threshold",
+                group="factors",
                 label="Regime Threshold",
                 kind="number",
                 default=-0.1,
@@ -426,6 +432,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="adx_threshold",
+                group="factors",
                 label="ADX Threshold",
                 kind="integer",
                 default=20,
@@ -435,6 +442,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f1_string",
+                group="factors",
                 label="Feature 1",
                 kind="choice",
                 default="RSI",
@@ -443,6 +451,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f1_param_a",
+                group="factors",
                 label="Feature 1 Param A",
                 kind="integer",
                 default=14,
@@ -451,6 +460,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f1_param_b",
+                group="factors",
                 label="Feature 1 Param B",
                 kind="integer",
                 default=1,
@@ -459,6 +469,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f2_string",
+                group="factors",
                 label="Feature 2",
                 kind="choice",
                 default="WT",
@@ -467,6 +478,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f2_param_a",
+                group="factors",
                 label="Feature 2 Param A",
                 kind="integer",
                 default=10,
@@ -475,6 +487,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f2_param_b",
+                group="factors",
                 label="Feature 2 Param B",
                 kind="integer",
                 default=11,
@@ -483,6 +496,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f3_string",
+                group="factors",
                 label="Feature 3",
                 kind="choice",
                 default="CCI",
@@ -491,6 +505,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f3_param_a",
+                group="factors",
                 label="Feature 3 Param A",
                 kind="integer",
                 default=20,
@@ -499,6 +514,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f3_param_b",
+                group="factors",
                 label="Feature 3 Param B",
                 kind="integer",
                 default=1,
@@ -507,6 +523,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f4_string",
+                group="factors",
                 label="Feature 4",
                 kind="choice",
                 default="ADX",
@@ -515,6 +532,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f4_param_a",
+                group="factors",
                 label="Feature 4 Param A",
                 kind="integer",
                 default=20,
@@ -523,6 +541,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f4_param_b",
+                group="factors",
                 label="Feature 4 Param B",
                 kind="integer",
                 default=2,
@@ -531,6 +550,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f5_string",
+                group="factors",
                 label="Feature 5",
                 kind="choice",
                 default="RSI",
@@ -539,6 +559,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f5_param_a",
+                group="factors",
                 label="Feature 5 Param A",
                 kind="integer",
                 default=9,
@@ -547,6 +568,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="f5_param_b",
+                group="factors",
                 label="Feature 5 Param B",
                 kind="integer",
                 default=1,
@@ -555,6 +577,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="use_ema_filter",
+                group="factors",
                 label="Use EMA Filter",
                 kind="choice",
                 default="Off",
@@ -563,6 +586,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="ema_period",
+                group="factors",
                 label="EMA Period",
                 kind="integer",
                 default=200,
@@ -571,6 +595,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="use_sma_filter",
+                group="factors",
                 label="Use SMA Filter",
                 kind="choice",
                 default="Off",
@@ -579,6 +604,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="sma_period",
+                group="factors",
                 label="SMA Period",
                 kind="integer",
                 default=200,

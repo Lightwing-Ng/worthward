@@ -1,4 +1,4 @@
-/* Code version: v1.203.27 */
+/* Code version: v1.203.28 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -16559,7 +16559,7 @@ test('resizes the backtest overview and transaction history with the shared sect
 
 test('keeps the Backtest Metrics and Transactions resizer endpoints aligned', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=grid-trading');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=1y&strategy=grid-trading');
 
     const resizer = page.locator('#backtest_section_resizer');
     const historySurface = page.locator('#backtest_history_surface');
@@ -16602,10 +16602,10 @@ test('keeps the Backtest Metrics and Transactions resizer endpoints aligned', as
 
 test('rebinds the backtest section handle after same-page result hydration', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?stop_loss=0');
+    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=0');
 
     const handle = page.locator('#backtest_section_resizer');
-    expect(page.url()).toContain('stop_loss=0');
+    expect(new URL(page.url()).searchParams.get('stop_loss')).not.toBe('1');
     await expect(handle).toBeVisible();
     await expect(page.locator('#stop_loss')).not.toBeChecked();
     await page.locator('label[for="stop_loss"]').click();
@@ -16647,7 +16647,7 @@ test('rebinds the backtest section handle after same-page result hydration', asy
 
 test('keeps the Backtest Metrics and Transactions pill synchronized', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
 
     const viewSegmented = page.locator('#backtest_history_view_segmented');
     const historyArticle = page.locator('#backtest_history_surface');
@@ -16713,7 +16713,7 @@ test('keeps the Backtest Metrics and Transactions pill synchronized', async ({pa
 
 test('toggles the shared Backtest trade-details presentation without recomputing', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=6mo&strategy=buy-and-hold');
 
     const detailsSwitch = page.locator('#show_trade_details');
     const viewSegmented = page.locator('#backtest_history_view_segmented');
@@ -16896,7 +16896,7 @@ test('keeps the Backtest interval pill aligned and static in the 1m state', asyn
 
 test('formats daily Backtest x-axis labels without a midnight time', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=6mo&strategy=buy-and-hold');
     await expect.poll(() => page.evaluate(() => Boolean(
         window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
     ))).toBe(true);
@@ -16964,7 +16964,7 @@ test('switches an unsupported 1 year Backtest period to the available 1m maximum
     await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=buy-and-hold');
 
     await expect(page.locator('#period')).toHaveValue('1y');
-    await expect(page.locator('#stop_loss')).toBeChecked();
+    await expect(page.locator('#stop_loss')).not.toBeChecked();
     await expect(page.locator('label[for="stop_loss"]')).toContainText('Allow algorithmic stop-loss exits');
     await expect.poll(() => page.evaluate(() => (
         window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
@@ -17101,7 +17101,7 @@ test('applies the Scrollable table style to Backtest transaction details', async
     await expect(referenceTableShell).toBeVisible();
     const referenceStyle = await readHostStyle(referenceTableShell);
 
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
     const backtestTableHost = page.locator('#backtest_history_table_wrap');
     await expect(backtestTableHost).toBeVisible();
     await expect(backtestTableHost).toHaveClass(/scrollable-data-table-shell/);
@@ -17135,7 +17135,7 @@ test('uses the global compact date format and split numeric typography in Backte
 
     await setCompactDateFormat('dd_mm_yyyy');
     try {
-        await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+        await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
         const transactionHost = page.locator('#backtest_history_table_wrap');
         await expect(transactionHost).toBeVisible();
         const firstRow = transactionHost.locator('table[data-table-body] tbody tr').first();
@@ -17186,7 +17186,7 @@ test('uses the global compact date format and split numeric typography in Backte
 
 test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?period=6mo&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?show_trade_details=1&period=6mo&strategy=buy-and-hold');
 
     const strategyIds = await page.locator('#trade_strategy option').evaluateAll((options) => (
         [...new Set(options.map((option) => option.value))]
@@ -17254,7 +17254,7 @@ test('starts every backtest strategy with its starter parameters from the dropdo
 });
 
 test('removes the horizontal reference line from the exact backtest equity canvas', async ({page}) => {
-    await page.goto('/workspaces/backtest?ticker=QQQ&range=6mo&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=6mo&strategy=buy-and-hold');
 
     const exactCanvas = page.locator(
         '#backtest_overview_panel .trade-chart-panel-equity #tradeEquityChart',
@@ -17324,9 +17324,9 @@ test('formats Backtest price and equity axes with distinct precision', async ({p
         expect(axes.equity?.width).toBeGreaterThanOrEqual(72);
     };
 
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=5y&strategy=dca&stop_loss=0&month_day=1');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=5y&strategy=dca&stop_loss=0&month_day=1');
     await assertAxisContract();
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=5y&strategy=buy-and-hold&stop_loss=0');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=5y&strategy=buy-and-hold&stop_loss=0');
     await assertAxisContract();
 });
 
@@ -17390,7 +17390,7 @@ test('shares the tokenized chart stroke width between Backtest price and Investm
 
 test('enters DCA through the Backtest strategy dropdown and tunes private parameters', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=buy-and-hold');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=buy-and-hold');
 
     const strategyTrigger = page.locator('[data-trade-strategy-trigger]');
     await expect(strategyTrigger).toBeVisible();
@@ -17756,7 +17756,7 @@ test('shares the plain switch style between Backtest controls and strategy boole
 
 test('reuses compact numeric display and Backtest section spacing contracts', async ({page}) => {
     await page.setViewportSize({width: 1033, height: 841});
-    await page.goto('/workspaces/backtest?ticker=QQQI&range=3y&return=price&strategy=dca&stop_loss=0&month_day=1');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQI&range=3y&return=price&strategy=dca&stop_loss=0&month_day=1');
 
     const firstRow = page.locator('#backtest_history_table_wrap table[data-table-body] tbody tr').first();
     await expect(firstRow).toBeVisible();
@@ -17811,7 +17811,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
 
 test('renders the Backtest transaction contract for intraday results', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=QQQ&range=3d&interval=1m&strategy=buy-and-hold&stop_loss=0');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=3d&interval=1m&strategy=buy-and-hold&stop_loss=0');
 
     const headerCells = page.locator('#backtest_history_table_wrap [data-table-header] thead th');
     await expect(headerCells).toHaveText([
@@ -17958,7 +17958,7 @@ test('waits for Grid Trading parameter blur before recalculating', async ({page}
     });
 
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&fall=0.50');
-    await expect(page.locator('#tradeEquityChart')).toBeVisible();
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
     await expect.poll(() => page.locator('#ticker_1').getAttribute('data-unknown')).not.toBe('1');
 
     const fallInput = page.locator('#strategy_param_fall');
@@ -18066,12 +18066,12 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
     await controlsSurface.evaluate((surface) => {
         surface.scrollTop = surface.scrollHeight;
     });
-    const lastParameter = paramsPanel.locator('[data-strategy-param-key]').last();
+    const lastParameter = paramsPanel.locator('details[open] [data-strategy-param-key]').last();
     await expect(lastParameter).toBeVisible();
     const scrolledGeometry = await page.evaluate(() => {
         const surface = document.querySelector('[data-backtest-parameter-panel]');
         const lastParameterField = document.querySelector(
-            '#trade_strategy_params_panel [data-strategy-param-key]:last-child',
+            '#trade_strategy_params_panel details[open] [data-strategy-param-key]:last-child',
         );
         if (!(surface instanceof HTMLElement) || !(lastParameterField instanceof HTMLElement)) return null;
         const surfaceRect = surface.getBoundingClientRect();
@@ -18134,7 +18134,7 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
 
 test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state accurate', async ({page}) => {
     await page.setViewportSize({width: 1280, height: 720});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
     await page.setViewportSize({width: 390, height: 844});
     const visibleNoticeClose = page.locator('[data-dismissible-notice]:not([hidden]) .notice-close').first();
     if (await visibleNoticeClose.isVisible()) {
@@ -18312,7 +18312,7 @@ test('keeps the narrow-screen sidebar toggle clear of the sidebar edge and theme
 test('renders, pans, pins, and clears the Bayesian Backtest probability field', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 841});
-    await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=bayesian-price-field');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=NVDA&range=6mo&strategy=bayesian-price-field');
     const chartHeading = page.locator('#backtest_overview_panel > .backtest-surface > .chart-heading-row > .chart-heading');
     await expect(chartHeading).toHaveText('Trade actions and net asset curve');
     await expect.poll(() => chartHeading.evaluate((element) => {

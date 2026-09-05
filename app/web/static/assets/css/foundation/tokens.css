@@ -1,4 +1,4 @@
-/* Code version: v0.28.1 */
+/* Code version: v0.28.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -234,6 +234,7 @@
 	--ticker-identity-min-height: 28px;
 	--ticker-identity-logo-height: 20px;
 	--ticker-identity-logo-max-width: 28px;
+	--ticker-input-font-size: var(--font-size-5);
 	--ticker-identity-symbol-font-size: var(--font-tooltip);
 	--ticker-identity-name-margin-top: 2px;
 	--ticker-identity-name-font-size: var(--font-ui-xs);
@@ -280,7 +281,7 @@
 	--switch-thumb-background: var(--color-white-adaptive);
 	--switch-thumb-shadow: inset 0 1px 0 var(--theme-glass-highlight);
 	--switch-thumb-offset: 16px;
-	--switch-thumb-transition: transform 260ms var(--motion-emphasized), box-shadow 220ms var(--motion-standard);
+	--switch-thumb-transition: transform var(--motion-duration-spatial) var(--motion-bouncy), box-shadow 220ms var(--motion-standard);
 	--demo-accent-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
 	--strategy-stepper-width: 20px;
 	--strategy-stepper-radius: var(--radius-soft);
@@ -416,7 +417,7 @@
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
 	--frosted-glass-blur: blur(12px);
-	--tooltip-background: var(--frosted-glass-surface);
+	--tooltip-background: var(--frosted-glass-background);
 	--tooltip-border: var(--frosted-glass-border);
 	--tooltip-shadow: var(--frosted-glass-shadow);
 	--tooltip-blur: var(--frosted-glass-blur);

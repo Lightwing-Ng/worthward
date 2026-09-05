@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.6.0
+Code version: v0.6.1
 """
 
 from __future__ import annotations
@@ -33,6 +33,16 @@ HTML_LANG_BY_LANGUAGE: dict[LanguageCode, str] = {
 }
 
 DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
+    {'en': 'Compare securities, research strategies, and review your investments in one local-first workspace.', 'zh_hant_hk': '在本機優先的工作區比較證券、研究策略及檢視投資。', 'zh_hans_cn': '在本地优先的工作区比较证券、研究策略并查看投资。'},
+    {'en': 'Explore price history, portfolios, backtests, and Bayesian or LSTM forecasts. Review imported broker records and use optional protected Longbridge trading. IBKR supports file imports only.', 'zh_hant_hk': '探索歷史價格、投資組合、回測及貝葉斯或 LSTM 預測。檢視匯入的券商紀錄，並選用受保護的 Longbridge 交易。IBKR 僅支援檔案匯入。', 'zh_hans_cn': '探索历史价格、投资组合、回测及贝叶斯或 LSTM 预测。查看导入的券商记录，并选用受保护的 Longbridge 交易。IBKR 仅支持文件导入。'},
+    {'en': 'Research only. Outputs are general information, not personalized investment, legal, or tax advice, a recommendation, or an offer to trade. They do not assess your objectives, finances, or risk tolerance. Seek qualified independent advice.', 'zh_hant_hk': '僅供研究。輸出為一般資訊，並非個人化投資、法律或稅務意見、推薦或交易要約，不會評估你的目標、財務狀況或風險承受能力。請尋求合資格的獨立專業意見。', 'zh_hans_cn': '仅供研究。输出为一般信息，并非个性化投资、法律或税务建议、推荐或交易要约，不会评估你的目标、财务状况或风险承受能力。请寻求合格的独立专业意见。'},
+    {'en': 'Simulations are hypothetical. Backtests, optimized strategies, and model forecasts are not actual trading results or promises. Hindsight, overfitting, data gaps, and assumptions about fills, liquidity, fees, taxes, and corporate actions can materially distort results. Estimated probabilities can be wrong.', 'zh_hant_hk': '模擬屬假設結果。回測、最佳化策略及模型預測並非實際交易績效或承諾。事後偏差、過度擬合、資料缺漏及成交、流動性、費用、稅項和公司行動假設可嚴重扭曲結果。估計機率可能錯誤。', 'zh_hans_cn': '模拟属于假设结果。回测、优化策略及模型预测并非实际交易业绩或承诺。事后偏差、过拟合、数据缺漏及成交、流动性、费用、税项和公司行动假设可能严重扭曲结果。估计概率可能错误。'},
+    {'en': 'You can lose money. Past performance does not predict future results. Securities and cash-equivalent classifications do not guarantee safety or liquidity; leverage and margin can produce losses greater than your initial investment.', 'zh_hant_hk': '你可能損失資金。過往績效不能預測未來結果。證券及現金等價物分類不保證安全或流動性；槓桿及孖展可能造成超過初始投資的損失。', 'zh_hans_cn': '你可能损失资金。过往业绩不能预测未来结果。证券及现金等价物分类不保证安全或流动性；杠杆及保证金交易可能造成超过初始投资的损失。'},
+    {'en': 'Verify the source. Third-party data, cached prices, imported records, valuations, and calculations may be delayed, incomplete, or incorrect. Reconcile with official broker statements and current market information before relying on an output or filing taxes.', 'zh_hant_hk': '請核實來源。第三方資料、快取價格、匯入紀錄、估值及計算可能延遲、不完整或有誤。依賴輸出或報稅前，請與正式券商結單及最新市場資訊核對。', 'zh_hans_cn': '请核实来源。第三方数据、缓存价格、导入记录、估值及计算可能延迟、不完整或有误。依赖输出或报税前，请与正式券商对账单及最新市场信息核对。'},
+    {'en': 'Live trading uses real money. Review the account, instrument, side, quantity, price, and order status before authorizing an order. Software, network, or broker failures can delay, reject, or duplicate requests. A submitted request is not confirmation of execution; verify fills with your broker.', 'zh_hant_hk': '實盤交易涉及真實資金。授權訂單前，請核對帳戶、商品、買賣方向、數量、價格及訂單狀態。軟體、網絡或券商故障可能延遲、拒絕或重複請求。提交請求不代表已成交；請向券商核實成交。', 'zh_hans_cn': '实盘交易涉及真实资金。授权订单前，请核对账户、标的、买卖方向、数量、价格及订单状态。软件、网络或券商故障可能延迟、拒绝或重复请求。提交请求不代表已成交；请向券商核实成交。'},
+    {'en': 'Availability and legal rights. The software and information are provided as is and as available, without warranties to the extent permitted by applicable law. No uninterrupted service, accuracy, or investment outcome is guaranteed. Nothing in this notice waives nonwaivable rights or excludes liability that applicable law does not allow to be excluded.', 'zh_hant_hk': '可用性及法律權利。軟體及資訊按現狀及可用情況提供，在適用法律允許的範圍內不提供保證。不保證服務不中斷、資料準確或任何投資結果。本聲明不放棄不可放棄的權利，亦不排除適用法律禁止排除的責任。', 'zh_hans_cn': '可用性及法律权利。软件及信息按现状及可用情况提供，在适用法律允许的范围内不提供保证。不保证服务不中断、数据准确或任何投资结果。本声明不放弃不可放弃的权利，也不排除适用法律禁止排除的责任。'},
+    {'en': 'Restore the default Light and Dark palettes in this browser.', 'zh_hant_hk': '還原此瀏覽器的預設淺色與深色配色。', 'zh_hans_cn': '恢复此浏览器的默认浅色与深色配色。'},
+    {'en': 'Connection details', 'zh_hant_hk': '連線詳情', 'zh_hans_cn': '连接详情'},
     {"en": "About", "zh_hant_hk": "關於", "zh_hans_cn": "关于"},
     {"en": "Appearance", "zh_hant_hk": "外觀", "zh_hans_cn": "外观"},
     {"en": "Backtest", "zh_hant_hk": "回測", "zh_hans_cn": "回测"},

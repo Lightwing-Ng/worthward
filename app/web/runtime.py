@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.96.0
+Code version: v0.97.0
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -3002,7 +3002,7 @@ def build_web_runtime() -> WebRuntime:
         )
         stop_loss_enabled = parse_bool_flag(
             "stop_loss",
-            default=bool(defaults.get("backtest_stop_loss", True)),
+            default=bool(defaults.get("backtest_stop_loss", False)),
         )
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         supported_intervals = _strategy_supported_execution_intervals(
@@ -3310,7 +3310,7 @@ def build_web_runtime() -> WebRuntime:
         params = collect_strategy_form_values("dca")
         stop_loss_enabled = parse_bool_flag(
             "stop_loss",
-            default=bool(defaults.get("backtest_stop_loss", True)),
+            default=bool(defaults.get("backtest_stop_loss", False)),
         )
         result = simulate_recurring_investment(
             ticker,
@@ -3960,11 +3960,11 @@ def build_web_runtime() -> WebRuntime:
         )
         stop_loss_enabled = parse_bool_flag(
             "stop_loss",
-            default=bool(defaults.get("backtest_stop_loss", True)),
+            default=bool(defaults.get("backtest_stop_loss", False)),
         )
         show_trade_details = parse_bool_flag(
             "show_trade_details",
-            default=bool(defaults.get("backtest_show_trade_details", True)),
+            default=bool(defaults.get("backtest_show_trade_details", False)),
         )
         if current_view in {"prices", "market-caps"}:
             price_only = True

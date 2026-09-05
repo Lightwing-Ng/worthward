@@ -1,4 +1,4 @@
-/* Code version: v3.61.2 */
+/* Code version: v3.61.3 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -2003,15 +2003,15 @@
 
 .style-token-ticker-input-shell {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     width: min(100%, var(--style-token-demo-width));
-    padding: 2rem 0;
+    padding: 0;
 }
 
 .style-token-ticker-input-form {
     width: 100%;
-    max-width: 320px;
+    max-width: var(--layout-control-width);
 }
 
 .style-token-ticker-input-form .ticker-field {
@@ -2019,6 +2019,7 @@
 }
 
 .style-token-ticker-input-form .ticker-input-row {
+    margin: 0;
     padding: 0;
     background: transparent;
     box-shadow: none;

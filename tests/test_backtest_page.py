@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.11.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -111,13 +111,13 @@ class BacktestPageTests(unittest.TestCase):
         self.assertNotIn('id="backtest_view_segmented"', html)
         self.assertNotIn('<p class="chart-heading">Transaction details</p>', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
-        self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1" checked', html)
+        self.assertNotIn("checked", _input_attributes_by_id(html, "stop_loss"))
         self.assertIn("Allow algorithmic stop-loss exits", html)
-        self.assertIn('id="show_trade_details" name="show_trade_details" type="checkbox" value="1" checked', html)
+        self.assertNotIn("checked", _input_attributes_by_id(html, "show_trade_details"))
         self.assertIn("Show trade details", html)
         self.assertLess(html.index('data-backtest-trade-details-field'), html.index('data-trade-strategy-field'))
-        self.assertIn('data-trade-details-visible="true"', html)
-        self.assertNotIn('id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" data-backtest-history-transactions disabled', html)
+        self.assertIn('data-trade-details-visible="false"', html)
+        self.assertIn("disabled", _input_attributes_by_id(html, "backtest_history_transactions"))
         self.assertIn(
             'title="Allow strategy sell or cover signals to close a position when the exit price '
             'represents a loss relative to the entry price. This price-only check excludes dividends '
@@ -125,7 +125,26 @@ class BacktestPageTests(unittest.TestCase):
             'This setting does not add a separate fixed-price stop."',
             html,
         )
+        self.assertFalse(run_backtest.call_args.kwargs["stop_loss_enabled"])
+
+    def test_backtest_switches_preserve_explicit_opt_in(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()) as run_backtest,
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/backtest?stop_loss=1&show_trade_details=1"
+            )
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        for key in ("stop_loss", "show_trade_details"):
+            self.assertIn("checked", _input_attributes_by_id(html, key))
         self.assertTrue(run_backtest.call_args.kwargs["stop_loss_enabled"])
+        self.assertIn('data-trade-details-visible="true"', html)
+        self.assertNotIn("disabled", _input_attributes_by_id(html, "backtest_history_transactions"))
 
     def test_backtest_trade_details_switch_can_hide_equity_and_transactions(self) -> None:
         with (
@@ -958,7 +977,7 @@ class BacktestPageTests(unittest.TestCase):
         ):
             client = create_app().test_client()
             response = client.get(
-                "/api/export-transactions?strategy=leveraged-rotation&drawdown_pct=10"
+                "/api/export-transactions?strategy=leveraged-rotation&drawdown_pct=10&stop_loss=1"
                 "&period=1y&capital=10000"
             )
 
