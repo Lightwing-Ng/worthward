@@ -1,6 +1,13 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.8`
+Documentation version: `v1.243.9`
+
+Browser gate correction, 6 Sep 2026: Investment history now uses the same 4px
+article inline padding as Holdings, keeping Market value columns aligned at
+856px, 1,024px, and 1,440px without relaxing the 1px tolerance. The Bayesian
+chart-edge lattice regression selects an origin with a valid forecast; warmup
+points with null predictions correctly have no probability tooltip. The full
+20-by-20 detail lattice and edge-capped hover assertions remain enforced.
 
 LSTM defaults, 6 Sep 2026: the completed DRAM probability GA robust winner
 is now the strategy default: training window 60, chip window 83, lookback 4,

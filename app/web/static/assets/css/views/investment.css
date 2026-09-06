@@ -1,4 +1,4 @@
-/* Code version: v1.78.9 */
+/* Code version: v1.78.10 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1191,6 +1191,11 @@
     --workspace-article-pad-inline: 4px;
     --workspace-article-pad-block-end: 4px;
     gap: 4px;
+}
+
+#investment_history_surface {
+    --workspace-article-pad-inline: 4px;
+    padding-inline: var(--workspace-article-pad-inline);
 }
 
 .investment-view-segmented-wrap > .investment-share-actions {

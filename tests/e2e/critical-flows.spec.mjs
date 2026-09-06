@@ -1,4 +1,4 @@
-/* Code version: v1.203.28 */
+/* Code version: v1.203.29 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8641,7 +8641,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.9';
+            && url.searchParams.get('v') === '1.78.10';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -21095,8 +21095,15 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
         if (!(canvas instanceof HTMLCanvasElement) || !rect || !chart?.chartArea || !points.length) {
             return null;
         }
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        // Warmup points have no forecast; choose a forecastable chart-edge origin.
         const point = points
-            .filter((candidate) => Number.isFinite(candidate?.x) && Number.isFinite(candidate?.y))
+            .filter((candidate, index) => (
+                Number.isFinite(candidate?.x) && Number.isFinite(candidate?.y)
+                && Number.isFinite(presentation?.predictive_mean?.[index])
+                && Number.isFinite(presentation?.predictive_scale?.[index])
+                && presentation.predictive_scale[index] > 0
+            ))
             .reduce((closest, candidate) => {
                 if (!closest) return candidate;
                 const candidateDistance = Math.min(
