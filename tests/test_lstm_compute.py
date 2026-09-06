@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.5.0."""
+"""LSTM compute backend and causality tests. Code version: v1.5.1."""
 
 from __future__ import annotations
 
@@ -152,12 +152,21 @@ class LstmComputeTests(unittest.TestCase):
         self.assertIn("torch is not installed", str(backend.fallback_reason))
 
     def test_neural_engine_falls_back_without_claiming_npu_use(self) -> None:
-        backend = resolve_lstm_backend("Neural Engine")
-        report = probe_neural_engine()
-        self.assertEqual(backend.resolved, "cpu")
-        self.assertFalse(report["confirmed"])
-        self.assertFalse(backend.capabilities["neural_engine"]["confirmed"])
-        self.assertIn("coremltools is not installed", str(backend.fallback_reason))
+        for apple_silicon, reason in (
+            (False, "Neural Engine requires Apple Silicon macOS"),
+            (True, "coremltools is not installed"),
+        ):
+            with (
+                self.subTest(apple_silicon=apple_silicon),
+                patch("strategies.lstm_compute._apple_silicon", return_value=apple_silicon),
+                patch("strategies.lstm_compute._load_optional_module", return_value=None),
+            ):
+                backend = resolve_lstm_backend("Neural Engine")
+                report = probe_neural_engine()
+                self.assertEqual(backend.resolved, "cpu")
+                self.assertFalse(report["confirmed"])
+                self.assertFalse(backend.capabilities["neural_engine"]["confirmed"])
+                self.assertEqual(backend.fallback_reason, reason)
 
     def test_auto_reports_the_resolved_backend_not_the_request(self) -> None:
         backend = resolve_lstm_backend("Auto")

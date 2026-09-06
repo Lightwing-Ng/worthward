@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.12.0
+Code version: v0.12.1
 """
 
 from __future__ import annotations
@@ -860,6 +860,16 @@ class BacktestPageTests(unittest.TestCase):
                 patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
                 patch("app.web.runtime.record_strategy_usage"),
                 patch(
+                    "strategies.algorithms.strategy_lstm_price_field."
+                    "LSTMPriceFieldStrategy.load_market_datasets",
+                    return_value=[bayesian_dataset],
+                ),
+                patch(
+                    "strategies.algorithms.strategy_lstm_price_field."
+                    "load_price_field_market_bundle",
+                    side_effect=AssertionError("Page defaults must not load real market data"),
+                ) as real_lstm_loader,
+                patch(
                     "strategies.algorithms.strategy_bayesian_price_field."
                     "BayesianPriceFieldStrategy.load_market_datasets",
                     return_value=[bayesian_dataset],
@@ -869,10 +879,11 @@ class BacktestPageTests(unittest.TestCase):
                     f"/workspaces/backtest?period=6mo&strategy={strategy_id}"
                 )
 
-            html = response.get_data(as_text=True)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('id="backtest_view_surface"', html)
-            self.assertIn('id="backtest_history_table_wrap"', html)
+                real_lstm_loader.assert_not_called()
+                html = response.get_data(as_text=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('id="backtest_view_surface"', html)
+                self.assertIn('id="backtest_history_table_wrap"', html)
 
     def test_dca_is_rendered_as_a_backtest_strategy(self) -> None:
         dates = pd.date_range("2025-01-01", periods=420, freq="B")

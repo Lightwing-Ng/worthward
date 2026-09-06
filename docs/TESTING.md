@@ -1,6 +1,19 @@
 # Testing guide
 
-Documentation version: `v1.50.4`
+Documentation version: `v1.50.5`
+
+## CI environment isolation on 6 Sep 2026
+
+The all-enabled-strategy page regression supplies deterministic market datasets
+to both Bayesian and LSTM Price Field loaders. It asserts that the LSTM market
+bundle loader is never called, so installed Longbridge tools and local market
+caches cannot mask a missing test double. Rendering assertions remain inside
+each strategy subtest so failures identify the responsible strategy.
+
+The Neural Engine fallback regression explicitly covers unsupported hardware
+and Apple Silicon with missing optional packages. Both cases must resolve to
+CPU without claiming confirmed Neural Engine execution, and each must retain
+its specific fallback reason regardless of the test host.
 
 ## Shared disclosure icon refactor on 5 Sep 2026
 
