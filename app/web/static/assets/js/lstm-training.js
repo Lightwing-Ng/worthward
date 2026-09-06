@@ -1,4 +1,4 @@
-/* Code version: v0.9.0 */
+/* Code version: v0.9.2 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -133,6 +133,9 @@
             return false;
         }
         applyingRunId = run.id;
+        const workspace = document.getElementById("workspace_panel");
+        if (workspace) workspace.dataset.workspacePending = "1";
+        window.WORTHWARD_BOOTSTRAP?.setBacktestLoadState?.("loading");
         updateMenu(activeMenu);
         window.location.assign(configurationUrl(config).href);
         return true;
@@ -253,7 +256,15 @@
         summary.title = run.configuration ? "Apply saved settings; forecasts are recomputed"
             : run.configuration_error || "View training details";
         summary.setAttribute("aria-expanded", String(expandedRunId === run.id));
-        summary.setAttribute("aria-pressed", String(selection?.id === run.id));
+        const loadState = window.WORTHWARD_BOOTSTRAP?.backtestLoadState || "loading";
+        const selected = selection?.id === run.id;
+        const loading = selected && (Boolean(applyingRunId) || loadState === "loading");
+        summary.setAttribute("aria-pressed", String(selected && !applyingRunId && loadState === "ready"));
+        summary.setAttribute("aria-busy", String(loading));
+        if (loading) {
+            const spinner = appendText(summary, "suggestion-loading-spinner lstm-training-apply-spinner", "");
+            spinner.setAttribute("aria-label", "Loading saved configuration");
+        }
         summary.setAttribute("aria-controls", `lstm-run-details-${run.id}`);
         const check = appendText(summary, "lstm-training-selected-icon", "");
         check.setAttribute("aria-hidden", "true");
@@ -373,7 +384,7 @@
         if (count instanceof HTMLElement) count.textContent = formatNumber(historyRuns.length);
         const historyItems = menu.querySelector("[data-lstm-training-history-items]");
         if (!(historyItems instanceof HTMLElement)) return;
-        const snapshot = JSON.stringify([historyRuns, expandedRunId, selection?.id, pendingAction, applyingRunId, protocolVersion]);
+        const snapshot = JSON.stringify([historyRuns, expandedRunId, selection?.id, pendingAction, applyingRunId, protocolVersion, window.WORTHWARD_BOOTSTRAP?.backtestLoadState]);
         if (historySnapshots.get(historyItems) === snapshot) return;
         historySnapshots.set(historyItems, snapshot);
         const focusedRunId = document.activeElement?.closest("[data-lstm-training-run-id]")?.dataset.lstmTrainingRunId;
@@ -389,6 +400,13 @@
             entry.className = "lstm-training-history-entry";
             entry.appendChild(item);
             if (run.status !== "completed") appendText(entry, "lstm-training-status", statusLabel(run.status));
+            if (run.error && run.status !== "completed") {
+                const gpuAutoFailure = run.selected_params?.compute_backend === "Auto"
+                    && String(run.error).includes("requires a working PyTorch MPS or CUDA GPU");
+                const failure = appendText(entry, "lstm-training-history-error", gpuAutoFailure
+                    ? "Auto run required an unavailable GPU." : String(run.error));
+                failure.title = String(run.error);
+            }
             historyItems.appendChild(entry);
             if (focusedRunId === String(run.id || "")) item.querySelector(".lstm-training-history-select").focus({preventScroll: true});
         });

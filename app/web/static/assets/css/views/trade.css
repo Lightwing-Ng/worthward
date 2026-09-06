@@ -1,4 +1,4 @@
-/* Code version: v3.61.3 */
+/* Code version: v3.63.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -640,6 +640,8 @@
 
 .backtest-probability-detail-status-row {
     display: block;
+    height: calc(var(--font-form-label) * 2.7);
+    overflow: hidden;
     min-width: 0;
     margin-top: 3px;
     pointer-events: none;
@@ -647,6 +649,7 @@
 
 .backtest-probability-detail-plot {
     --backtest-probability-detail-plot-inline-start: 28px;
+    max-width: 100%;
     display: grid;
     flex: 1 1 auto;
     grid-template-columns: calc(
@@ -2040,4 +2043,60 @@
 .icon-settings-material-tokens {
     mask: url("/static/images/cube.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/cube.fill.svg") center/contain no-repeat;
+}
+
+#backtest_overview_panel > .backtest-surface {
+    position: relative;
+}
+.backtest-load-status:not([hidden]) {
+    pointer-events: none;
+    position: absolute;
+    inset: 40px 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    background: var(--theme-background);
+    z-index: 5;
+}
+.lstm-training-history-select[aria-busy="true"] .lstm-training-selected-icon {
+    display: none;
+}
+.lstm-training-apply-spinner {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+}
+
+.backtest-probability-detail-history {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+}
+.backtest-probability-detail-history path {
+    fill: none;
+    stroke: var(--theme-accent-primary);
+    stroke-width: var(--trade-chart-series-line-width, 2px);
+    vector-effect: non-scaling-stroke;
+}
+.backtest-probability-detail-origin {
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 1px;
+    background: color-mix(in srgb, var(--theme-muted) 72%, transparent);
+    transform: translateX(-0.5px);
+    pointer-events: none;
+}
+
+.backtest-probability-detail-y-tick:first-child {
+    transform: none;
+}
+.backtest-probability-detail-y-tick:last-child {
+    transform: translateY(-100%);
 }

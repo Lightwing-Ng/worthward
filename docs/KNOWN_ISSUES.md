@@ -1,6 +1,39 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.10`
+Backtest loading feedback, 6 Sep 2026: the chart retains a centered spinner and
+`Loading backtest…` while a refresh or saved-case navigation is pending, even
+when the modal is dismissed. A saved case receives its green check only after
+the current charts report readiness; chart initialization failures never mark
+it successful.
+
+Verification boundary, 6 Sep 2026: the centered-detail full gate completed with
+1,188 Python tests, 333 JavaScript tests, and 332 Chromium scenarios passing.
+The earlier 28/29 Jul guide-alignment failure passed in that complete run.
+Subsequent square-grid/symmetric-time changes have their own validation record.
+
+Training failure diagnosis, 6 Sep 2026: QQQ runs `260906(02)` and `260906(03)`
+recorded `Auto` but failed immediately because the earlier durable-training path
+required a working PyTorch MPS/CUDA GPU. Their saved failure evidence is retained.
+The corrected worker preserves `Auto` as NumPy CPU; explicit GPU continues to
+require an accelerator. The history list now exposes the error without requiring
+expansion. A short isolated execution exercised the corrected Auto CPU path;
+it is not evidence of a completed production training run.
+
+Market-factor source review, 6 Sep 2026: [TradingView_TA](https://python-tradingview-ta.readthedocs.io/en/stable/faq.html)
+explicitly does not retrieve historical data. Its 1-day and 1-minute analysis
+intervals are current snapshots, not historical factor series. The original
+[repository](https://github.com/AnalyzerREST/python-tradingview-ta) was archived
+on 13 Jun 2024. It is not integrated as a historical fallback. Longbridge CLI
+already exposes daily/minute OHLCV and server-side `quant run` indicators.
+The Price Field provider still lacks defensible point-in-time historical
+availability for ownership and short-selling series, and supported historical
+capital-flow/broker-aggregation inputs. Current snapshots cannot fill those
+past rows. Price Field models currently form daily features and may execute
+those daily signals on real minute bars; this is not minute-frequency model
+training. Adding technical indicators from local OHLCV would add derived
+features, not the missing external observations or independent accuracy proof.
+
+Documentation version: `v1.243.13`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
@@ -352,11 +385,13 @@ is claimed and concurrent layout work remains preserved.
 - Interactive LSTM `Auto` uses NumPy CPU because origin-local tiny LSTM training is faster
   on unified-memory CPU than GPU kernel launch. An explicit `GPU` request uses
   Apple MPS or CUDA only after a real tensor readback.
-- Durable training uses a minimum 180-second optimizer-work budget and resolves
-  Auto to confirmed MPS/CUDA. Accelerator failures are visible failures, not silent
-  CPU successes. Explicit CPU remains available. The configured epoch count is a
-  floor during durable training. MPS was exercised on this Mac; Windows CUDA
-  selection and portable process/lock paths have no live Windows hardware proof.
+- Durable training uses a minimum 180-second optimizer-work budget while preserving
+  the selected compute-backend semantics. `Auto` remains NumPy CPU, matching
+  interactive LSTM behavior; an explicit `GPU` request requires confirmed MPS/CUDA,
+  and accelerator failures are visible failures rather than silent CPU successes.
+  Explicit CPU remains available. The configured epoch count is a floor during
+  durable training. MPS was exercised on this Mac; Windows CUDA selection and
+  portable process/lock paths have no live Windows hardware proof.
 - Neural Engine is never claimed from a static import or an unconfirmed Core ML
   compile. `Auto` does not select it. An explicit `Neural Engine` request falls
   back to CPU when compute-unit execution is not confirmed.

@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.1."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.2."""
 
 from __future__ import annotations
 
@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from app.services import lstm_training
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
 from scripts import lstm_ga_tune as ga_runner
+from strategies.lstm_compute import LstmBackend
 from tests.factories.market import ohlc_frame_for_dates
 
 
@@ -387,6 +389,43 @@ def test_unsupported_interval_never_launches_or_creates_state(interval, tmp_path
     with pytest.raises(ValueError, match="requires Interval 1d"):
         lstm_training.LstmTrainingManager(tmp_path).start("DRAM", "6mo", {}, interval=interval)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_durable_auto_configuration_preserves_auto_backend_semantics(monkeypatch):
+    strategy = ga_runner.LSTMPriceFieldStrategy()
+    strategy.training_min_seconds = 180.0
+    frame = ohlc_frame_for_dates(
+        "QQQ", pd.bdate_range("2025-01-02", periods=80).strftime("%Y-%m-%d").tolist()
+    )
+    params = strategy.normalize_params({
+        definition.key: False
+        for definition in strategy.get_parameter_definitions()
+        if definition.group == "factors"
+    })
+    params.update({"compute_backend": "Auto", "training_window": 30, "lstm_lookback": 4})
+    captured = {}
+
+    def resolve(requested):
+        captured["requested"] = requested
+        return LstmBackend(requested)
+
+    def predict(features, targets, **kwargs):
+        captured["backend"] = kwargs["backend"]
+        row_count = min(len(features), len(targets))
+        return np.full(row_count, 0.001), np.full(row_count, 0.01)
+
+    monkeypatch.setattr(
+        "strategies.algorithms.strategy_lstm_price_field.resolve_lstm_backend", resolve
+    )
+    monkeypatch.setattr(
+        "strategies.algorithms.strategy_lstm_price_field.walk_forward_lstm_predictions", predict
+    )
+    strategy.compute_signals(frame, params)
+
+    assert captured["requested"] == "Auto"
+    assert captured["backend"].requested == "Auto"
+    assert captured["backend"].minimum_training_seconds == 180.0
+    assert captured["backend"].require_accelerator is False
 
 
 def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypatch):

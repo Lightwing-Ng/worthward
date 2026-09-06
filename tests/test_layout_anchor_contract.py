@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.12
+Code version: v0.11.1
 """
 
 from pathlib import Path
@@ -366,6 +366,7 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
     assert (
         ".backtest-probability-detail-plot {\n"
         "    --backtest-probability-detail-plot-inline-start: 28px;\n"
+        "    max-width: 100%;\n"
         "    display: grid;\n"
         "    flex: 1 1 auto;\n"
         "    grid-template-columns: calc(\n"
@@ -794,14 +795,12 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const formatSelectedDate = (dateParts) => {",
         'formatFullDateParts(dateParts, { includeTime: false })',
         "latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;",
-        "const buildProbabilityDetailTickIndexSet = (count, plotWidth) => {",
         'const chartAxisFontFamily = chartAxisStyles.getPropertyValue(',
         'const chartAxisFontSize = readPxToken(tradeChartStack, "--backtest-chart-axis-font-size", 12);',
         'const chartAxisCanvasFont = `${chartAxisFontWeight} ${chartAxisFontSize}px ${chartAxisFontFamily}`;',
         "const fixedYAxisWidth = readPxToken(tradeChartStack, \"--backtest-chart-y-axis-width\", 72);",
         "ctx.font = chartAxisCanvasFont;",
         "family: chartAxisFontFamily,",
-        "const renderedTicks = xTickNodes.filter(Boolean);",
         "const hoverDateLabel = document.createElement(\"div\");",
         "const updateHoverDateLabel = (x, top, index) => {",
         "updateHoverDateLabel(x, plotFrame.bottom, activeIndex);",
@@ -812,7 +811,6 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         'event.pointerType === "touch"',
         'hoverSurface.addEventListener("pointerdown", (event) => {',
         "if (suppressNextProbabilityClick && event.detail > 0)",
-        "// Date text can change even when the cell geometry does not.",
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
         "const buildProbabilityDetailModel = (index, model) => {",
@@ -879,10 +877,13 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "probabilityDetailLayoutObserver.observe(probabilityDetailGrid.parentElement);",
         "cellSizeTargetPx",
         "if (detailModel) renderProbabilityDetail(detailIndex, detailModel);",
-        "formatChartDateLines(dateParts)",
-        "buildProbabilityDetailTickIndexSet(geometry.columnCount",
+        "formatChartDateLines(item.parts)",
+        "window.WORTHWARD_PRICE_FIELD_DETAIL_CHART.computeLayout({",
+        "const history = close.slice(historyStart, index + 1);",
+        '{key: "origin", x: layout.anchorX',
         "probabilityDetailPanel.dataset.activeIndex = String(index);",
-        "probabilityDetailGrid.style.gridTemplateColumns = `repeat(${geometry.columnCount}, ${detailCellSize}px)`;",
+        "gridTemplateColumns: `repeat(${geometry.columnCount}, ${layout.cellWidth}px)`,",
+        "gridTemplateRows: `repeat(${geometry.rowCount}, ${layout.cellHeight}px)`,",
     ):
         assert fragment in backtest_script
     for fragment in (

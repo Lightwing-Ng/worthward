@@ -1,4 +1,4 @@
-{# Code version: v1.1.0 #}
+{# Code version: v1.2.0 #}
 {# Shared Price Field detail surface for Bayesian and LSTM. #}
 <section class="backtest-probability-detail-panel"
          id="backtest_probability_detail_panel"
@@ -22,6 +22,10 @@
         </div>
         <div class="backtest-probability-detail-main">
             <div class="backtest-probability-detail-grid-viewport" data-backtest-probability-detail-grid-viewport>
+                <svg class="backtest-probability-detail-history" data-backtest-probability-detail-history role="img" aria-label="Historical prices through the selected date">
+                    <path data-backtest-probability-detail-history-path></path>
+                </svg>
+                <span class="backtest-probability-detail-origin" data-backtest-probability-detail-origin aria-hidden="true"></span>
                 <div class="backtest-probability-detail-grid" data-backtest-probability-detail-grid role="img" aria-label="Future price probability field"></div>
                 <span class="backtest-probability-detail-anchor" data-backtest-probability-detail-anchor aria-hidden="true"></span>
                 <div class="backtest-probability-detail-side-summary" role="group" aria-label="Normalized directional shares of represented probability mass">

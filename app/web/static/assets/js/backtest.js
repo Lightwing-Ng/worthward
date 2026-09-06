@@ -1,4 +1,4 @@
-/* Code version: v0.41.1 */
+/* Code version: v0.41.2 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "worthward:backtest-history-view-change";
@@ -116,15 +116,56 @@
 		syncPanels();
 	};
 
+	bootstrap.setBacktestLoadState = (status) => {
+		if (window.WORTHWARD_APP?.currentView !== "backtest"
+			|| window.WORTHWARD_APP?.selectedStrategyId === "dca") return;
+		bootstrap.backtestLoadState = status;
+		const surface = document.querySelector("#backtest_overview_panel > .backtest-surface");
+		if (surface) {
+			surface.setAttribute("aria-busy", String(status === "loading"));
+			let feedback = surface.querySelector("[data-backtest-load-status]");
+			if (!feedback) {
+				feedback = document.createElement("div");
+				feedback.dataset.backtestLoadStatus = "true";
+				feedback.className = "backtest-load-status";
+				feedback.setAttribute("role", "status");
+				feedback.setAttribute("aria-live", "polite");
+				surface.appendChild(feedback);
+			}
+			feedback.hidden = status === "ready";
+			feedback.replaceChildren();
+			if (status === "loading") {
+				const spinner = document.createElement("span");
+				spinner.className = "suggestion-loading-spinner";
+				spinner.setAttribute("aria-hidden", "true");
+				feedback.appendChild(spinner);
+			}
+			const label = document.createElement("span");
+			label.textContent = status === "loading" ? "Loading backtest…" : "Backtest could not be loaded.";
+			feedback.appendChild(label);
+		}
+		window.WORTHWARD_LSTM_TRAINING?.renderMenu?.();
+	};
+
 	const initBacktestWorkspace = () => {
 		initBacktestTradeDetailsPreference();
 		initBacktestHistoryTabs();
+		if (document.getElementById("workspace_panel")?.dataset.workspacePending === "1") return;
+		bootstrap.setBacktestLoadState("loading");
 		bootstrap.backtestHoverController?.destroy?.();
 		const controller = window.WORTHWARD_BACKTEST_CHART_CONTROLLER.createController({
 			isBacktestTradeDetailsEnabled,
 		});
 		bootstrap.backtestHoverController = controller;
-		controller.mount(window.WORTHWARD_APP);
+		try {
+			controller.mount(window.WORTHWARD_APP);
+			if (!window.Chart?.getChart?.(document.getElementById("tradePriceChart"))) {
+				bootstrap.setBacktestLoadState("error");
+			}
+		} catch (error) {
+			bootstrap.setBacktestLoadState("error");
+			throw error;
+		}
 	};
 
 	const share = () => bootstrap.workspaceShare || {};

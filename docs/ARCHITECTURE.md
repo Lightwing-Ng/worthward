@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.77.2`
+Documentation version: `v1.79.0`
 
 ## Shared Backtest controls and research
 
@@ -224,12 +224,26 @@ Backtest keeps the overview minimum and compresses history instead of scaling
 both tracks; shrinking the published plot minimum is what drops a 10-row field
 to 8 rows.
 
-The contained detail surface reuses the overview price chart's axis contract:
-its Y-axis boundary is aligned to the main price Canvas plot boundary, and its
-Y ticks and forecast-date ticks use the same `GDS Transport` 12px, regular-weight
-font and 10px line height as the Canvas labels. The browser measures the rendered Canvas plot boundary against the detail plot
-before measuring its grid viewport, so panel insets and sidebar changes cannot
-leave a stale fixed axis offset.
+The contained detail timeline uses `backtest/detail-chart.js` and
+`chart-controller.js`. Its selected date stays at horizontal center, with the
+complete square-cell forecast grid on the right and the same number of trading
+sessions on the left. The chart frame fits the available width and height without
+stretching cells. Unavailable earlier history remains empty; historical prices
+outside the forecast price scale are clipped rather than changing cell geometry.
+Both halves share one trading-session time scale and one linear price scale.
+The axis column and tick positions depend only on the container geometry; hover
+changes prices and dates without moving the axis. A fixed status row prevents
+text wrapping from changing the plotting frame during hover.
+Known dates come from the observed series. Beyond its endpoints, date ticks use
+weekday projections, with the assumption available in their tooltip and no
+approximation prefix. Historical start, origin, and forecast end remain visible;
+intermediate labels are collision-filtered. No future prices are manufactured.
+
+The contained detail surface reuses the overview price chart's axis typography.
+Its Y-axis column has a fixed token-based width; Y ticks and date ticks use the
+same `GDS Transport` 12px, regular-weight font and 10px line height as Canvas
+labels. The centered frame fits the detail container's current dimensions,
+including sidebar and resize changes, independently of the overview hover state.
 
 The overview hover surface maps the pointer onto the visible price curve.
 Tracking solves automatic overflow pan directly from screen-space pointer X and

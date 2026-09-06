@@ -1,4 +1,4 @@
-/* Code version: v1.203.29 */
+/* Code version: v1.205.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -15997,7 +15997,7 @@ test('aligns the Backtest page and Performance result titles on the shared deskt
     expect(geometry.themeDelta).toBeLessThanOrEqual(1);
 });
 
-test('aligns the Bayesian Price Field axes and date typography with the price chart', async ({page}) => {
+test('keeps the Bayesian Price Field axis column fixed and shares chart typography', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 974, height: 1_354});
     await page.goto(
@@ -16070,11 +16070,11 @@ test('aligns the Bayesian Price Field axes and date typography with the price ch
     });
 
     expect(geometry).not.toBeNull();
-    expect(geometry.yAxis.right).toBeCloseTo(geometry.chartPlotLeft, 0);
-    expect(geometry.gridViewport.left).toBeCloseTo(geometry.chartPlotLeft, 0);
-    expect(geometry.xAxis.left).toBeCloseTo(geometry.chartPlotLeft, 0);
+    expect(geometry.yAxis.width).toBeCloseTo(44, 0);
+    expect(geometry.gridViewport.left).toBeCloseTo(geometry.yAxis.right, 0);
+    expect(geometry.xAxis.left).toBeCloseTo(geometry.yAxis.right, 0);
     expect(geometry.yTick.rect.right).toBeCloseTo(
-        geometry.chartYAxisRight - geometry.chartYAxisPadding,
+        geometry.yAxis.right - 8,
         0,
     );
     for (const font of [geometry.yTick, geometry.xTick]) {
@@ -19625,9 +19625,8 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             })
             : Number.NaN;
         const firstTick = xTicks[0];
-        const firstHorizon = Number(firstTick?.dataset.horizon);
         const rawDates = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates || [];
-        const rawDate = rawDates[activeIndex + firstHorizon];
+        const rawDate = firstTick?.dataset.rawDate;
         const dateMatch = typeof rawDate === 'string'
             ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rawDate)
             : null;
@@ -19643,7 +19642,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             activeIndex,
             ariaHidden: panel?.getAttribute('aria-hidden'),
             cellCount: detailCells.length,
-            cellSquareDelta: Math.max(...detailCellRects.map((rect) => Math.abs(rect.width - rect.height))),
+            detailCellSizesPositive: detailCellRects.every((rect) => rect.width > 0 && rect.height > 0 && Math.abs(rect.width - rect.height) <= 0.1),
             columns: Number(detailGrid?.dataset.columnCount),
             detailRowsAbove,
             detailGridWidth: detailGridRect?.width ?? Number.NaN,
@@ -19703,10 +19702,10 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(detailContract.columns).toBe(20);
     expect(detailContract.rows).toBe(detailContract.requestedRows);
     expect(detailContract.detailRowsAbove).toBe(10);
-    expect(detailContract.cellSquareDelta).toBeLessThanOrEqual(0.1);
+    expect(detailContract.detailCellSizesPositive).toBe(true);
     expect(detailContract.gap).toBeCloseTo(2, 1);
     expect(detailContract.xTickCount).toBeGreaterThanOrEqual(1);
-    expect(detailContract.xTickCount).toBeLessThanOrEqual(4);
+    expect(detailContract.xTickCount).toBeLessThanOrEqual(9);
     expect(detailContract.xTicksDoNotOverlap).toBe(true);
     expect(detailContract.yTickCount).toBe(5);
     expect(detailContract.yTicksHaveValues).toBe(true);
@@ -20577,7 +20576,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
             .filter(Number.isFinite);
         return {
             cardToResizerGap: resizerRect.top - cardRect.bottom,
-            detailCellSquareDelta: Math.max(...detailCellRects.map((rect) => Math.abs(rect.width - rect.height))),
+            detailCellSizesPositive: detailCellRects.every((rect) => rect.width > 0 && rect.height > 0 && Math.abs(rect.width - rect.height) <= 0.1),
             detailCellCount: detailCells.length,
             detailCellSizes: detailCellRects.slice(0, 5).map((rect) => ({width: rect.width, height: rect.height, x: rect.x, y: rect.y})),
             detailGridWidth: detailGrid?.getBoundingClientRect().width ?? Number.NaN,
@@ -20639,9 +20638,9 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     expect(narrowLayout.detailRows).toBe(20);
     expect(narrowLayout.detailTopInset).toBeGreaterThanOrEqual(-1);
     expect(narrowLayout.detailBottomInset).toBeGreaterThanOrEqual(-1);
-    expect(narrowLayout.detailCellSquareDelta).toBeLessThanOrEqual(0.1);
+    expect(narrowLayout.detailCellSizesPositive).toBe(true);
     expect(narrowLayout.detailXTickCount).toBeGreaterThanOrEqual(1);
-    expect(narrowLayout.detailXTickCount).toBeLessThanOrEqual(4);
+    expect(narrowLayout.detailXTickCount).toBeLessThanOrEqual(9);
     expect(narrowLayout.resultsHeight).toBeGreaterThanOrEqual(599);
     expect(narrowLayout.stackHeight).toBeGreaterThanOrEqual(253);
     expect(narrowLayout.pricePixelSpan).toBeGreaterThanOrEqual(24);

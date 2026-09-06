@@ -1,4 +1,4 @@
-/* Code version: v0.53.0 */
+/* Code version: v0.53.1 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -2390,6 +2390,7 @@
     };
 
     const applyBacktestPendingState = () => {
+        bootstrap.setBacktestLoadState?.("loading");
         const workspacePanel = document.getElementById("workspace_panel");
         if (!workspacePanel) return;
         const metricNodes = Array.from(workspacePanel.querySelectorAll('[data-workspace-mask="trade-metric"]'));

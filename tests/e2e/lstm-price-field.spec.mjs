@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.11.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.13.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -266,8 +266,8 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.30.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.41.1');
-    expect(desktop.appScript).toContain('app-v0.53.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.41.2');
+    expect(desktop.appScript).toContain('app-v0.53.1');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -519,7 +519,24 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     const buttonWidth = await menu.locator('.lstm-training-action').evaluate((node) => node.getBoundingClientRect().width);
     expect(buttonWidth).toBeLessThan(await menu.evaluate((node) => node.getBoundingClientRect().width) - 50);
 
-    await rows.first().click();
+    const pending = await rows.first().evaluate((node) => {
+        node.click();
+        const row = document.querySelector('.lstm-training-history-select');
+        const feedback = document.querySelector('[data-backtest-load-status]');
+        const box = feedback.getBoundingClientRect();
+        const parent = feedback.parentElement.getBoundingClientRect();
+        return {
+            busy: row.getAttribute('aria-busy'),
+            pressed: row.getAttribute('aria-pressed'),
+            spinner: Boolean(row.querySelector('.lstm-training-apply-spinner')),
+            feedback: feedback.textContent,
+            visible: !feedback.hidden && box.height > 0,
+            centerError: Math.abs(box.x + box.width / 2 - parent.x - parent.width / 2),
+        };
+    });
+    expect(pending).toMatchObject({busy: 'true', pressed: 'false', spinner: true,
+        feedback: 'Loading backtest…', visible: true});
+    expect(pending.centerError).toBeLessThanOrEqual(1);
     await expect(page).toHaveURL(/ticker=NVDA/);
     await expect(page.locator('[data-ticker-input]')).toHaveValue('NVDA');
     await expect(page.locator('[name="range"][value="exact"]')).toBeChecked();
@@ -532,6 +549,8 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(page.locator('#strategy_param_lstm_seed')).toHaveValue('19');
     await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
     await expect(menu.locator('.lstm-training-selected-icon').first()).toBeVisible();
+    await expect(rows.first()).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('[data-backtest-load-status]')).toBeHidden();
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
     expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('monospace');
     await page.reload();
@@ -910,4 +929,158 @@ test('controller routes custom distributions and rejects explicit unknown kinds'
     expect(result.custom.label).toContain('75.0%');
     expect(result.unknown).toBe(0);
     expect(result.restored).toBe(1);
+});
+
+test('Backtest keeps centered loading feedback after dismissing the refresh modal', async ({page}) => {
+    await page.goto(lstmUrl);
+    await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
+    let releaseRefresh;
+    const gate = new Promise((resolve) => { releaseRefresh = resolve; });
+    await page.route('**/workspaces/backtest?**', async (route) => {
+        if (route.request().headers()['x-requested-with'] === 'workspace-hydrate') await gate;
+        await route.continue();
+    });
+    await page.locator('#trade_initial_capital').fill('12000');
+    await page.locator('#trade_initial_capital').blur();
+    await expect(page.locator('#workspace_modal_overlay')).toBeVisible();
+    await page.locator('#workspace_modal_overlay .workspace-modal-dialog').hover();
+    await page.locator('#workspace_modal_overlay_close').click();
+    const feedback = page.locator('[data-backtest-load-status]');
+    await expect(feedback).toBeVisible();
+    await expect(feedback).toHaveText('Loading backtest…');
+    await expect(feedback.locator('.suggestion-loading-spinner')).toBeVisible();
+    releaseRefresh();
+    await expect(feedback).toBeHidden({timeout: 30_000});
+    await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
+});
+
+for (const width of [1161, 390]) {
+    for (const strategy of ['lstm', 'bayesian']) {
+        test(`shared ${strategy} detail centers history and forecasts at ${width}px`, async ({page}, testInfo) => {
+            await page.setViewportSize({width, height: 959});
+            await page.emulateMedia({colorScheme: width === 1161 ? 'dark' : 'light'});
+            await page.goto(strategy === 'lstm' ? lstmUrl : bayesianUrl);
+            await injectPriceFieldPresentation(page, `${strategy}-price-field/v1`);
+            await page.locator('label[for="backtest_history_probability"]').click();
+            const panel = page.locator('#backtest_probability_detail_panel');
+            await expect(panel.locator('[data-backtest-probability-detail-history-path]')).toHaveAttribute('d', /L/);
+            const contract = await panel.evaluate((element) => {
+                const viewport = element.querySelector('[data-backtest-probability-detail-grid-viewport]').getBoundingClientRect();
+                const grid = element.querySelector('[data-backtest-probability-detail-grid]').getBoundingClientRect();
+                const origin = element.querySelector('[data-backtest-probability-detail-origin]').getBoundingClientRect();
+                const path = element.querySelector('[data-backtest-probability-detail-history-path]');
+                const end = path.getPointAtLength(path.getTotalLength());
+                const chart = window.WORTHWARD_APP.backtestResult.chart;
+                const index = Number(element.dataset.activeIndex);
+                const tick = (role) => element.querySelector(`[data-timeline-role="${role}"]`);
+                const cell = element.querySelector('.backtest-probability-detail-cell').getBoundingClientRect();
+                return {
+                    originError: Math.abs(origin.x + origin.width / 2 - viewport.x - viewport.width / 2),
+                    gridStartsAfterOrigin: grid.x >= viewport.x + viewport.width / 2,
+                    gridFits: grid.right <= viewport.right + 0.5 && grid.bottom <= viewport.bottom + 0.5 && grid.top >= viewport.top - 0.5,
+                    historyCount: Number(element.querySelector('svg').dataset.pointCount), expectedCount: Math.min(index, Number(tick('end').dataset.horizon)) + 1,
+                    endXError: Math.abs(end.x - viewport.width / 2), endYError: Math.abs(end.y - viewport.height / 2),
+                    firstDate: tick('start')?.dataset.rawDate, expectedFirst: chart.raw_dates[index - Number(tick('end').dataset.horizon)]?.slice(0, 10),
+                    originDate: tick('origin')?.dataset.rawDate, expectedOrigin: chart.raw_dates[index].slice(0, 10),
+                    finalDate: tick('end')?.dataset.rawDate, finalSource: tick('end')?.dataset.dateSource,
+                    finalHorizon: Number(tick('end')?.dataset.horizon),
+                    cellWidth: cell.width, cellHeight: cell.height,
+                    rightGap: viewport.right - grid.right,
+                    visibleTicks: [...element.querySelectorAll('[data-backtest-probability-detail-x-tick]')].map((node) => {
+                        const rect = node.getBoundingClientRect();
+                        return {left: rect.left, right: rect.right};
+                    }).sort((a, b) => a.left - b.left),
+                };
+            });
+            expect(contract.originError).toBeLessThanOrEqual(0.5);
+            expect(contract.gridStartsAfterOrigin).toBe(true);
+            expect(contract.gridFits).toBe(true);
+            expect(contract.historyCount).toBe(contract.expectedCount);
+            expect(contract.endXError).toBeLessThan(0.1);
+            expect(contract.endYError).toBeLessThan(0.1);
+            if (contract.expectedFirst) expect(contract.firstDate).toBe(contract.expectedFirst);
+            expect(contract.originDate).toBe(contract.expectedOrigin);
+            expect(contract.finalDate > contract.originDate).toBe(true);
+            expect(contract.finalSource).toBe('projected');
+            expect(contract.finalHorizon).toBeGreaterThan(0);
+            expect(contract.cellWidth).toBeGreaterThan(0);
+            expect(Math.abs(contract.cellWidth - contract.cellHeight)).toBeLessThan(0.1);
+            expect(contract.cellHeight).toBeGreaterThan(0);
+            expect(contract.rightGap).toBeLessThanOrEqual(4);
+            await expect(panel.locator('[data-backtest-probability-detail-x-axis]')).not.toContainText("≈");
+            for (let index = 1; index < contract.visibleTicks.length; index += 1) {
+                expect(contract.visibleTicks[index].left).toBeGreaterThanOrEqual(contract.visibleTicks[index - 1].right - 0.5);
+            }
+            const readAxis = () => panel.locator('[data-backtest-probability-detail-y-axis]').boundingBox();
+            let lastAxis = null;
+            let stableAxisSamples = 0;
+            await expect.poll(async () => {
+                const axis = await readAxis();
+                stableAxisSamples = lastAxis && ['x', 'y', 'width', 'height'].every((key) => Math.abs(axis[key] - lastAxis[key]) < 0.1)
+                    ? stableAxisSamples + 1 : 0;
+                lastAxis = axis;
+                return stableAxisSamples;
+            }, {intervals: [100], timeout: 5_000}).toBeGreaterThanOrEqual(3);
+            const beforeAxis = await readAxis();
+            const probes = await page.evaluate(() => {
+                const canvas = document.querySelector('#tradePriceChart');
+                const chart = window.Chart.getChart(canvas);
+                const rect = canvas.getBoundingClientRect();
+                const points = chart.getDatasetMeta(0).data;
+                return [0.4, 0.7].map((fraction) => {
+                    const index = Math.round((points.length - 1) * fraction);
+                    return {index, x: rect.left + points[index].x * rect.width / chart.width,
+                        y: rect.top + points[index].y * rect.height / chart.height};
+                });
+            });
+            for (const probe of probes) {
+                const previousIndex = Number(await panel.getAttribute('data-active-index'));
+                await page.mouse.move(probe.x, probe.y);
+                await expect.poll(async () => Number(await panel.getAttribute('data-active-index'))).not.toBe(previousIndex);
+                const afterAxis = await readAxis();
+                for (const key of ['x', 'y', 'width', 'height']) expect(Math.abs(afterAxis[key] - beforeAxis[key])).toBeLessThanOrEqual(0.5);
+                const symmetry = await panel.evaluate((element) => {
+                    const index = Number(element.dataset.activeIndex);
+                    const horizon = Number(element.querySelector('[data-timeline-role="end"]').dataset.horizon);
+                    const dates = window.WORTHWARD_APP.backtestResult.chart.raw_dates;
+                    return {start: element.querySelector('[data-timeline-role="start"]').dataset.rawDate,
+                        expectedStart: dates[index - horizon]?.slice(0, 10),
+                        count: Number(element.querySelector('svg').dataset.pointCount), expectedCount: Math.min(index, horizon) + 1};
+                });
+                if (symmetry.expectedStart) expect(symmetry.start).toBe(symmetry.expectedStart);
+                expect(symmetry.count).toBe(symmetry.expectedCount);
+            }
+            await panel.screenshot({path: testInfo.outputPath(`detail-${strategy}-${width}.png`)});
+        });
+    }
+}
+
+test('shared detail upgrades a cached template without restarting the service', async ({page}) => {
+    await page.route('**/workspaces/backtest?**', async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text())
+            .replace(/<script[^>]*src="[^"]*backtest\/detail-chart\.js[^>]*><\/script>/g, '')
+            .replace(/<svg[^>]*data-backtest-probability-detail-history[\s\S]*?<\/svg>/g, '')
+            .replace(/<span[^>]*data-backtest-probability-detail-origin[^>]*><\/span>/g, '');
+        await route.fulfill({response, body});
+    });
+    await page.goto(lstmUrl);
+    await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('[data-backtest-probability-detail-history-path]')).toHaveAttribute('d', /L/);
+    await expect(page.locator('[data-backtest-probability-detail-origin]')).toHaveCount(1);
+    await expect(page.locator('script[src*="backtest/detail-chart.js"]')).toHaveCount(1);
+});
+
+test('failed Auto training history exposes its GPU error without hiding the cause', async ({page}) => {
+    await page.route('**/api/lstm-training', (route) => route.fulfill({json: {protocol_version: 2, runs: [{
+        id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'QQQ', identifier: '260906(03)', status: 'failed_closed',
+        selected_params: {compute_backend: 'Auto'}, started_at: '2026-09-06T13:19:09Z',
+        error: 'RuntimeError: Training requires a working PyTorch MPS or CUDA GPU. Install a supported PyTorch build or explicitly select CPU.'
+    }]}}));
+    await page.goto(lstmUrl);
+    const entry = page.locator('.lstm-training-history-entry');
+    await expect(entry).toContainText('Auto run required an unavailable GPU.');
+    await entry.locator('.lstm-training-history-select').click();
+    await expect(entry.locator('.lstm-training-history-details')).toContainText('Training requires a working PyTorch MPS or CUDA GPU.');
 });
