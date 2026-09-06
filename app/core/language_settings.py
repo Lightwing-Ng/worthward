@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.6.1
+Code version: v0.6.2
 """
 
 from __future__ import annotations
@@ -290,6 +290,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Google (Hong Kong) is reachable from this device.", "此裝置可連線至 Google（香港）。", "此设备可连接至 Google（香港）。"),
         ("Google (Hong Kong) could not be reached from this device.", "此裝置無法連線至 Google（香港）。", "此设备无法连接至 Google（香港）。"),
         ("Value name", "數值名稱", "数值名称"),
+        ("LSTM Price Field", "LSTM 價格欄位", "LSTM 价格字段"),
         ("Default", "預設值", "默认值"),
         ("Meaning", "含義", "含义"),
         ("Close", "關閉", "关闭"),

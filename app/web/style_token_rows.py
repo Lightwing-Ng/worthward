@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.18.0
+Code version: v1.18.1
 """
 
 from __future__ import annotations
@@ -165,10 +165,11 @@ def build_style_token_rows(
             ],
             "tokens": [
                 px_token("--collapse-section-gap", 8),
-                px_token("--collapse-icon-size", 20),
+                px_token("--collapse-icon-size", 12),
+                px_token("--collapse-icon-height", 8),
                 px_token("--collapse-icon-gap", 8),
-                raw_token("--collapse-icon-closed", 'url("/static/images/arrowtriangle.down.circle.svg")'),
-                raw_token("--collapse-icon-open", 'url("/static/images/arrowtriangle.down.circle.fill.svg")'),
+                raw_token("--collapse-icon-closed", 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 12 8\'%3E%3Cpath d=\'M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z\' fill=\'currentColor\'/%3E%3C/svg%3E")'),
+                raw_token("--collapse-icon-open", "var(--collapse-icon-closed)"),
                 raw_token("--collapse-summary-padding", "10px 0"),
                 raw_token("--collapse-body-padding", "0 10px 10px"),
                 raw_token("--collapse-font-size", "var(--font-size-5)"),

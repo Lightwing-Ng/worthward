@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.4.0."""
+"""LSTM compute backend and causality tests. Code version: v1.5.0."""
 
 from __future__ import annotations
 
@@ -24,6 +24,36 @@ from strategies.lstm_compute import (
 
 
 class LstmComputeTests(unittest.TestCase):
+    def test_backends_receive_identical_causal_standardized_inputs(self):
+        features = np.column_stack((np.linspace(-0.01, 0.02, 30), np.arange(30) + 100_000.0))
+        targets = np.linspace(-0.01, 0.01, 30)
+        captured = {}
+        for engine, function in (("numpy", "_numpy_origin_prediction"), ("torch", "_torch_train_and_predict")):
+            batches = []
+
+            def predict(*args, **kwargs):
+                offset = int(engine == "torch")
+                train, labels, current = args[offset:offset + 3]
+                batches.append((train.copy(), labels.copy(), current.copy()))
+                kwargs["timings"].update(train_ms=7.0, infer_ms=2.0)
+                return 0.01, 0.02
+
+            backend = LstmBackend("CPU", engine=engine)
+            with patch(f"strategies.lstm_compute.{function}", side_effect=predict):
+                walk_forward_lstm_predictions(features, targets, training_window=20,
+                                              lookback=4, hidden_size=4, epochs=1,
+                                              learning_rate=0.01, seed=1, backend=backend)
+            self.assertEqual(backend.train_ms, backend.origins_trained * 7.0)
+            self.assertEqual(backend.infer_ms, backend.origins_trained * 2.0)
+            captured[engine] = batches
+        self.assertGreater(len(captured["numpy"]), 0)
+        for cpu, gpu in zip(captured["numpy"], captured["torch"], strict=True):
+            for left, right in zip(cpu, gpu, strict=True):
+                np.testing.assert_array_equal(left, right)
+            np.testing.assert_allclose(cpu[0].mean(axis=(0, 1)), 0.0, atol=1e-10)
+            np.testing.assert_allclose(cpu[0].std(axis=(0, 1)), 1.0, atol=1e-10)
+            self.assertGreater(cpu[2][-1, 1], cpu[0][-1, -1, 1])
+
     def test_minimum_work_continues_optimizer_updates_without_reinitializing(self):
         sequences = np.ones((16, 4, 1), dtype=np.float64) * 0.01
         targets = np.linspace(-0.02, 0.02, 16)

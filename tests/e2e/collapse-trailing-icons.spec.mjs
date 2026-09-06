@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import {expect, test} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -51,8 +51,18 @@ for (const colorScheme of ['light', 'dark']) {
             await page.waitForTimeout(650);
             await page.goto('/settings/style-tokens');
             const specimen = page.locator('#collapse details > summary');
+            const collapseExample = page.locator('[data-style-token-collapse-example]');
             await expect(specimen).toHaveCSS('display', 'grid');
             await expect(specimen).toHaveCSS('padding-left', '0px');
+            await expect(collapseExample).toBeHidden();
+            await specimen.click();
+            await expect(collapseExample).toBeVisible();
+            await expect(collapseExample.locator('.style-token-collapse-example-row')).toHaveCount(5);
+            await expect(collapseExample).toContainText('LSTM lookback');
+            await expect(collapseExample).toContainText('0.050');
+            expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+            await specimen.click();
+            await expect(collapseExample).toBeHidden();
             await page.goto('/settings/strategies');
             await expect(page.locator('.settings-strategy-summary').first()).toHaveCSS('display', 'grid');
             expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);

@@ -1,6 +1,30 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.6`
+Documentation version: `v1.243.8`
+
+LSTM defaults, 6 Sep 2026: the completed DRAM probability GA robust winner
+is now the strategy default: training window 60, chip window 83, lookback 4,
+hidden size 9, epochs 7, learning rate 0.003, seed 42, GPU, entry probability
+60%, and cell display threshold 2%. Enabled factors are options, call open
+interest, call volume, put volume, put/call volume ratio, and volume. Other
+factors default off. Explicit request parameters still override defaults.
+The winner was rescored with seeds 42/43/44; seed 42 is the default member,
+not an ensemble. Historical scores require reevaluation after model changes.
+
+LSTM backend audit correction, 6 Sep 2026: model `v1.1.0` standardizes each
+origin's inputs using only its causal training sequences before NumPy/Torch
+dispatch. Existing tuned GPU configurations must be reevaluated under this
+model version; prior scores do not establish performance after preprocessing
+changes. NumPy and Torch still differ in initialization, gradient clipping, and
+precision, so shared preprocessing does not guarantee equal predictions.
+Disabled volume-at-price skips the rolling kernel and contributes no chip-window
+warmup in either Price Field model. Latest factor selection now reflects columns
+actually used by the final origin, and is empty when that origin cannot train.
+Training timing includes model setup and input transfer; inference timing includes
+prediction and result readback. Accelerator work is synchronized at the boundary;
+these are host elapsed times, not GPU occupancy or kernel-only measurements.
+MLX/ANE training and concurrent origins remain unimplemented. Their absence is
+not benchmark evidence that using them would improve this small workload.
 
 External Price Field audit follow-up, 6 Sep 2026: the reported Bayesian
 loss-exit behavior follows the configured execution policy. This does not

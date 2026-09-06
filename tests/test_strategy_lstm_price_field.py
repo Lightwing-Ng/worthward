@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.3.0."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -69,6 +69,33 @@ def _cpu_params(**overrides: object) -> dict[str, object]:
 
 
 class LSTMPriceFieldStrategyTests(unittest.TestCase):
+    def test_disabled_vap_skips_kernel_and_chip_window_warmup(self):
+        from strategies.price_field_pipeline import load_price_field_market_bundle
+
+        with patch("strategies.price_field_pipeline._rolling_volume_at_price_percentile",
+                   side_effect=AssertionError("Disabled VAP must not run")):
+            result = LSTMPriceFieldStrategy().compute_signals(_market_frame(), _cpu_params(chip_window=74))
+        self.assertNotIn("volume_at_price", result.presentation["factor_selection"]["selected"])
+        starts = []
+        with patch("strategies.price_field_pipeline.is_remote_market_access_disabled", return_value=True), patch(
+                "app.services.price_field_market_factors.build_local_price_field_factor_bundle") as loader:
+            for chip, enabled in ((74, False), (30, False), (74, True)):
+                load_price_field_market_bundle(["TEST"], interval="1d", start="2025-06-01",
+                                               end="2025-07-01", params=_cpu_params(
+                                                   training_window=57, chip_window=chip,
+                                                   use_volume_at_price=enabled))
+                starts.append(loader.call_args.args[1])
+        self.assertEqual(starts[0], starts[1])
+        self.assertLess(starts[2], starts[0])
+
+    def test_latest_selection_excludes_a_factor_missing_in_current_sequence(self):
+        frame = _market_frame()
+        frame.loc[len(frame) - 1, "Volume"] = np.nan
+        result = LSTMPriceFieldStrategy().compute_signals(frame, _cpu_params())
+        selection = result.presentation["factor_selection"]
+        self.assertNotIn("volume", selection["selected"])
+        self.assertEqual(selection["selection_status"]["volume"], "unavailable")
+
     def test_training_progress_reports_actual_origins_without_changing_results(self) -> None:
         strategy = LSTMPriceFieldStrategy()
         observed = []
@@ -197,7 +224,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             definitions["compute_backend"].options,
             ("Auto", "CPU", "GPU", "Neural Engine"),
         )
-        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.0.2")
+        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.1.0")
         self.assertFalse(strategy.backtest_cacheable)
         self.assertEqual(strategy.get_signal_bridge("1m"), "daily-close-to-next-session-open")
 
