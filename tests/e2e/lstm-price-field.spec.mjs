@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.10.2 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.11.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -262,11 +262,11 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.29.0');
+    expect(desktop.version).toBe('v0.30.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.29.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.41.0');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.30.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.41.1');
     expect(desktop.appScript).toContain('app-v0.53.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
@@ -790,8 +790,8 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.29.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.29.0');
+    expect(contract.version).toBe('v0.30.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.30.0');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Price field detail');
@@ -821,4 +821,93 @@ test('the two supplied DRAM audit URLs render model-specific fields on the share
             showTradeDetails: false,
         });
     }
+});
+
+
+for (const url of [lstmUrl, bayesianUrl]) {
+    test(`shared chart controller remounts and disposes cleanly: ${url}`, async ({page}) => {
+        const errors = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.goto(url);
+        await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
+        for (const width of [1280, 390]) {
+            await page.setViewportSize({width, height: 900});
+            const lifecycle = await page.evaluate(async () => {
+                const bootstrap = window.WORTHWARD_BOOTSTRAP;
+                const controller = bootstrap.backtestHoverController;
+                const original = Chart.getChart('tradePriceChart');
+                controller.update();
+                controller.mount(window.WORTHWARD_APP);
+                const replacement = Chart.getChart('tradePriceChart');
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const mounted = {
+                    replaced: replacement !== original && !original.ctx,
+                    fields: document.querySelectorAll('[data-backtest-chart-tooltip="probability-grid"]').length,
+                    axes: document.querySelectorAll('.backtest-fixed-price-axis').length,
+                };
+                controller.destroy();
+                controller.destroy();
+                window.dispatchEvent(new Event('resize'));
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const destroyed = {
+                    chart: Boolean(Chart.getChart('tradePriceChart')),
+                    fields: document.querySelectorAll('[data-backtest-chart-tooltip="probability-grid"]').length,
+                    axes: document.querySelectorAll('.backtest-fixed-price-axis').length,
+                };
+                controller.mount(window.WORTHWARD_APP);
+                return {mounted, destroyed};
+            });
+            expect(lifecycle.mounted).toEqual({replaced: true, fields: 1, axes: 1});
+            expect(lifecycle.destroyed).toEqual({chart: false, fields: 0, axes: 0});
+            await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
+        }
+        expect(errors).toEqual([]);
+    });
+}
+
+test('controller routes custom distributions and rejects explicit unknown kinds', async ({page}) => {
+    await page.goto(lstmUrl);
+    await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
+    await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
+    const result = await page.evaluate(async () => {
+        const bootstrap = window.WORTHWARD_BOOTSTRAP;
+        bootstrap.backtestHoverController.destroy();
+        const source = window.WORTHWARD_APP;
+        const stateFor = (kind) => ({...source, backtestResult: {
+            ...source.backtestResult,
+            strategy_presentation: {...source.backtestResult.strategy_presentation, distribution_kind: kind},
+        }});
+        const registry = window.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS.createRegistry({
+            'custom-return': {
+                probabilityBetweenPrices: () => 0.25,
+                probabilityAboveAnchor: ({anchorPrice}) => anchorPrice > 0 ? 0.75 : null,
+            },
+        });
+        const controller = window.WORTHWARD_BACKTEST_CHART_CONTROLLER.createController({distributionRegistry: registry});
+        bootstrap.backtestHoverController = controller;
+        const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        controller.mount(stateFor('custom-return'));
+        await settle();
+        const chart = Chart.getChart('tradePriceChart');
+        const point = chart.getDatasetMeta(0).data[32];
+        const bounds = chart.canvas.getBoundingClientRect();
+        chart.canvas.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.left + point.x, clientY: bounds.top + point.y, bubbles: true,
+        }));
+        await settle();
+        const field = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const cells = [...field.querySelectorAll('.backtest-probability-cell')];
+        const custom = {count: cells.length, masses: [...new Set(cells.map((cell) => cell.dataset.probability))], label: field.getAttribute('aria-label')};
+        controller.update(stateFor('unknown-return'));
+        await settle();
+        const unknown = document.querySelectorAll('[data-backtest-chart-tooltip="probability-grid"]').length;
+        controller.update(source);
+        await settle();
+        return {custom, unknown, restored: document.querySelectorAll('[data-backtest-chart-tooltip="probability-grid"]').length};
+    });
+    expect(result.custom.count).toBeGreaterThan(0);
+    expect(result.custom.masses).toEqual(['0.25']);
+    expect(result.custom.label).toContain('75.0%');
+    expect(result.unknown).toBe(0);
+    expect(result.restored).toBe(1);
 });

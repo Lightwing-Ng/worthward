@@ -1,9 +1,10 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
+    + '&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40'
     + '&show_trade_details=0&use_option_total_open_interest=1'
     + '&use_option_total_volume=1&cell_display_threshold=2.00'
 );

@@ -1,6 +1,16 @@
 # Known issues and operating constraints
 
-Documentation version: `v1.243.9`
+Documentation version: `v1.243.10`
+
+Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
+case requested three years of LSTM data with the default GPU backend. It timed
+out, then the isolated server aborted with Metal's
+`commit command buffer with uncommitted encoder` assertion. Subsequent connection
+failures were consequences of that server exit. Layout-only LSTM cases now use
+explicit lightweight CPU parameters; their focused checks pass. This isolates
+UI tests but does not fix or establish compatibility of the GPU training path.
+The native backend failure remains an independent issue requiring a compute-focused
+reproduction. No production backend default or UI tolerance was changed.
 
 Browser gate correction, 6 Sep 2026: Investment history now uses the same 4px
 article inline padding as Holdings, keeping Market value columns aligned at

@@ -1,6 +1,6 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.2.2`
+Documentation version: `v1.2.3`
 
 This project implements the shared Agent Optimization contract at
 `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
@@ -61,7 +61,7 @@ Run the focused contract, rendering, and random-port disposable-browser layers w
 
 ```bash
 node --test tests/test_agent_optimization.mjs
-/usr/local/bin/python3.13 -m pytest -q -p no:cacheprovider \
+./scripts/test.sh -p no:cacheprovider \
   tests/test_agent_optimization.py \
   tests/test_agent_optimization_browser.py
 ```

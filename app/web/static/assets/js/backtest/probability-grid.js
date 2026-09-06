@@ -2,9 +2,10 @@
  * Shared probability-grid geometry and interaction helpers.
  *
  * Bayesian and LSTM Price Field strategies emit this renderer payload.
- * Layout, hover, pin, resize, thresholding, and styling live only here.
+ * This module owns geometry, cells, opacity, and the pure pin reducer.
+ * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.29.0
+ * Code version: v0.30.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -36,7 +37,8 @@
     const DEFAULT_CELL_DISPLAY_THRESHOLD_PCT = 5;
     const DEFAULT_MAX_CELL_PX = 10;
     const MAX_TARGET_CELL_PX = 64;
-    const MAX_ABS_AUTOREGRESSION = 0.95;
+    const distributions = globalScope.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS;
+    const {MAX_ABS_AUTOREGRESSION, normalCdf, multiStepNormalParameters, probabilityBetweenPrices} = distributions;
 
     const GEOMETRY_LIMITS = Object.freeze({
         columns: Object.freeze([1, 72]),
@@ -224,26 +226,6 @@
             return_innovation_scale: returnInnovationScale,
             ...(hasDataKeys ? {data_keys: dataKeys} : {}),
         });
-    };
-
-    // Abramowitz and Stegun 7.1.26; sufficient for visual probability mass.
-    const normalCdf = (value) => {
-        const z = Number(value);
-        if (!Number.isFinite(z)) return z < 0 ? 0 : 1;
-        const sign = z < 0 ? -1 : 1;
-        const x = Math.abs(z) / Math.sqrt(2);
-        const t = 1 / (1 + (0.3275911 * x));
-        const coefficients = [
-            0.254829592,
-            -0.284496736,
-            1.421413741,
-            -1.453152027,
-            1.061405429,
-        ];
-        const polynomial = (((((coefficients[4] * t) + coefficients[3]) * t + coefficients[2]) * t
-            + coefficients[1]) * t + coefficients[0]) * t;
-        const erf = sign * (1 - (polynomial * Math.exp(-(x * x))));
-        return clamp(0.5 * (1 + erf), 0, 1);
     };
 
     const computeGridGeometry = ({
@@ -592,77 +574,6 @@
             : (positiveSteps[midpoint - 1] + positiveSteps[midpoint]) / 2;
     };
 
-    const multiStepNormalParameters = ({
-        mean,
-        scale,
-        horizon,
-        autoregression = 0,
-        longRunMean = 0,
-        innovationScale = scale,
-    } = {}) => {
-        const oneStepMean = Number(mean);
-        const oneStepScale = Number(scale);
-        const steps = Number(horizon);
-        const phi = clamp(Number(autoregression), -MAX_ABS_AUTOREGRESSION, MAX_ABS_AUTOREGRESSION);
-        const equilibriumMean = Number(longRunMean);
-        const nextInnovationScale = Number(innovationScale);
-        if (!Number.isFinite(oneStepMean) || !(oneStepScale > 0)
-            || !Number.isInteger(steps) || !(steps > 0)
-            || !Number.isFinite(phi) || !Number.isFinite(equilibriumMean)
-            || !(nextInnovationScale > 0)) return null;
-        let stateMean = oneStepMean;
-        let stateVariance = oneStepScale * oneStepScale;
-        let cumulativeMean = stateMean;
-        let cumulativeVariance = stateVariance;
-        let cumulativeStateCovariance = stateVariance;
-        const innovationVariance = nextInnovationScale * nextInnovationScale;
-        for (let step = 1; step < steps; step += 1) {
-            stateMean = equilibriumMean + (phi * (stateMean - equilibriumMean));
-            const nextStateVariance = (phi * phi * stateVariance) + innovationVariance;
-            const previousCumulativeNextStateCovariance = phi * cumulativeStateCovariance;
-            cumulativeMean += stateMean;
-            cumulativeVariance += nextStateVariance
-                + (2 * previousCumulativeNextStateCovariance);
-            cumulativeStateCovariance = previousCumulativeNextStateCovariance
-                + nextStateVariance;
-            stateVariance = nextStateVariance;
-        }
-        return Object.freeze({
-            mean: cumulativeMean,
-            scale: Math.sqrt(Math.max(Number.EPSILON, cumulativeVariance)),
-        });
-    };
-
-    const probabilityBetweenPrices = ({
-        anchorPrice,
-        lowerPrice,
-        upperPrice,
-        mean,
-        scale,
-        horizon,
-        autoregression,
-        longRunMean,
-        innovationScale,
-    }) => {
-        const anchor = Number(anchorPrice);
-        const lower = Number(lowerPrice);
-        const upper = Number(upperPrice);
-        const forecast = multiStepNormalParameters({
-            mean,
-            scale,
-            horizon,
-            autoregression,
-            longRunMean,
-            innovationScale,
-        });
-        if (!(anchor > 0) || !(lower > 0) || !(upper > lower) || !forecast) {
-            return 0;
-        }
-        const lowerZ = (Math.log(lower / anchor) - forecast.mean) / forecast.scale;
-        const upperZ = (Math.log(upper / anchor) - forecast.mean) / forecast.scale;
-        return clamp(normalCdf(upperZ) - normalCdf(lowerZ), 0, 1);
-    };
-
     const computeInstantOpacityProfile = (
         probabilities,
         {
@@ -734,6 +645,7 @@
 
     const buildProbabilityCells = ({
         geometry,
+        distribution = distributions.gaussian,
         anchorPrice,
         mean,
         scale,
@@ -750,7 +662,8 @@
         const geometryStepPixels = Number(geometry?.stepPixels);
         const daysPerColumn = Number(geometry?.daysPerColumn);
         const slotWidth = Number(geometry?.slotWidth);
-        if (!geometry || typeof valueForPixel !== "function"
+        if (!geometry || typeof distribution?.probabilityBetweenPrices !== "function"
+            || typeof valueForPixel !== "function"
             || !Number.isFinite(normalizedStepPixels) || !(normalizedStepPixels > 0)
             || !Number.isFinite(geometryStepPixels) || !(geometryStepPixels > 0)
             || Math.abs(geometryStepPixels - normalizedStepPixels) > 1e-9
@@ -777,7 +690,7 @@
                     + (visualColumn * slotWidth);
                 const centerX = x + (geometry.cellSize / 2);
                 const horizon = (visualColumn + 1) * daysPerColumn;
-                const probability = probabilityBetweenPrices({
+                const probability = distribution.probabilityBetweenPrices({
                     anchorPrice,
                     lowerPrice,
                     upperPrice,
@@ -788,6 +701,7 @@
                     longRunMean,
                     innovationScale,
                 });
+                if (!Number.isFinite(probability) || probability < 0 || probability > 1) return [];
                 cells.push({
                     centerX,
                     column: visualColumn,
@@ -999,7 +913,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.29.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.30.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

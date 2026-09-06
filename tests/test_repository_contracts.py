@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.3.4
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -32,41 +32,28 @@ APP_CSS_IMPORT_ORDER = (
 )
 
 DOCUMENTATION_ENTRYPOINTS = (
+    *sorted((PROJECT_ROOT / "docs").glob("*.md")),
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "AGENTS.md",
     PROJECT_ROOT / "SHARED_UI_LAYOUT_CONTRACT.md",
-    PROJECT_ROOT / "docs/README.md",
-    PROJECT_ROOT / "docs/AGENTS.md",
-    PROJECT_ROOT / "docs/ARCHITECTURE.md",
-    PROJECT_ROOT / "docs/TESTING.md",
-    PROJECT_ROOT / "docs/AGENT_OPTIMIZATION.md",
-    PROJECT_ROOT / "docs/KNOWN_ISSUES.md",
-    PROJECT_ROOT / "docs/COMPATIBILITY.md",
-    PROJECT_ROOT / "docs/HANDOFF_TEMPLATE.md",
-    PROJECT_ROOT / "docs/SHARED_UI_WORKFLOW.md",
-    PROJECT_ROOT / "docs/INVESTMENT_FRONTEND_CHANGELOG.md",
-    PROJECT_ROOT / "app/web/static/assets/css/README.md",
-    PROJECT_ROOT / "app/web/static/assets/fonts/README.md",
-    PROJECT_ROOT / "app/web/static/images/SF_SYMBOLS.md",
+    *sorted(STATIC_ROOT.rglob("*.md")),
 )
 
 VERSIONED_DOCUMENTS = (
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "SHARED_UI_LAYOUT_CONTRACT.md",
-    PROJECT_ROOT / "docs/README.md",
-    PROJECT_ROOT / "docs/ARCHITECTURE.md",
-    PROJECT_ROOT / "docs/TESTING.md",
-    PROJECT_ROOT / "docs/AGENT_OPTIMIZATION.md",
-    PROJECT_ROOT / "docs/KNOWN_ISSUES.md",
-    PROJECT_ROOT / "docs/COMPATIBILITY.md",
-    PROJECT_ROOT / "docs/HANDOFF_TEMPLATE.md",
-    PROJECT_ROOT / "docs/SHARED_UI_WORKFLOW.md",
-    PROJECT_ROOT / "docs/INVESTMENT_FRONTEND_CHANGELOG.md",
+    *(
+        path
+        for path in sorted((PROJECT_ROOT / "docs").glob("*.md"))
+        if path.name != "AGENTS.md"
+    ),
 )
 
 MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 CODE_VERSION_PATTERN = re.compile(r"Code version:\s*(v\d+\.\d+\.\d+)")
-DOCUMENT_VERSION_PATTERN = re.compile(r"Documentation version:\s*`v\d+\.\d+\.\d+`")
+DOCUMENT_VERSION_PATTERN = re.compile(
+    r"Documentation version:[ \t]*`?v\d+\.\d+\.\d+`?(?=\s|$)"
+)
 MODULE_IMPORT_PATTERN = re.compile(
     r"\bfrom\s+['\"](?P<path>\.{1,2}/[^'\"]+\.js)\?v=(?P<query>[^'\"]+)['\"]"
 )
@@ -107,6 +94,9 @@ def test_documentation_entrypoints_exist_and_local_links_resolve() -> None:
                 if Path(target).is_absolute()
                 else markdown_path.parent / target
             ).resolve()
+            if resolved_target == PROJECT_ROOT.parent / "SHARED_STATIC_FILE_HOUSEKEEPING.md":
+                # The shared desktop contract is intentionally external to CI checkouts.
+                continue
             assert resolved_target.is_relative_to(PROJECT_ROOT), (
                 f"Local link escapes the repository in "
                 f"{markdown_path.relative_to(PROJECT_ROOT)}: {raw_target}"

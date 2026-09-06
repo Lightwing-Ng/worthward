@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.3.2`
+Documentation version: `v1.4.1`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -96,7 +96,16 @@ agent-started server must be stopped before handoff.
   template maps, strategy discovery, and reserved-asset catalogs before
   removal.
 
+## Domain references and historical evidence
+
+- [LSTM probability tuning](LSTM_PROBABILITY_TUNING.md): offline tuning workflow.
+- [Historical testing evidence](TESTING_HISTORY.md): dated results, not current gate status.
+- [Style token alignment validation](STYLE_TOKEN_ALIGNMENT_VALIDATION.md): dated UI evidence.
+
 ## Recent verification records
+
+- [Price Field reuse validation](PRICE_FIELD_REUSE_VALIDATION.md): controller lifecycle,
+  distribution adapters, and isolated verification boundaries.
 
 - [Backtest market-factor validation](BACKTEST_MARKET_FACTORS_VALIDATION.md): disabled defaults, strategy input ownership, shared sections, and isolated verification.
 

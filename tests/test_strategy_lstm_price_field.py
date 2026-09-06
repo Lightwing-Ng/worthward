@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.4.0."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.4.1."""
 
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             definitions["compute_backend"].options,
             ("Auto", "CPU", "GPU", "Neural Engine"),
         )
-        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.1.0")
+        self.assertEqual(_MODEL_VERSION, "lstm-price-field-model/v1.2.0")
         self.assertFalse(strategy.backtest_cacheable)
         self.assertEqual(strategy.get_signal_bridge("1m"), "daily-close-to-next-session-open")
 

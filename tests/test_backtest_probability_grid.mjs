@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.29.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.30.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +8,9 @@ import {fileURLToPath} from 'node:url';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+require(path.join(root, 'app/web/static/assets/js/backtest/distributions.js'));
 require(path.join(root, 'app/web/static/assets/js/backtest/probability-grid.js'));
+const distributions = globalThis.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS;
 const grid = globalThis.WORTHWARD_BACKTEST_PROBABILITY_GRID;
 
 const rawDates = ['2026-08-25', '2026-08-26', '2026-08-27'];
@@ -48,7 +50,7 @@ test('new models reuse the versioned renderer contract without a model allowlist
 });
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.29.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.30.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -995,4 +997,56 @@ test('intersects a price polyline at the cursor x, including interrupted gaps', 
     assert.equal(grid.intersectPolylineAtX(points, 70)?.index, 4);
     assert.deepEqual(grid.intersectPolylineAtX(points, 70.01), {index: 4, x: 70, y: 60});
     assert.deepEqual(grid.intersectPolylineAtX(points, 8), {index: 0, x: 10, y: 40});
+});
+
+
+test('distribution registries preserve Gaussian aliases and isolate extensions', () => {
+    const baseline = distributions.createRegistry();
+    assert.equal(baseline.resolve('dynamic-normal-log-return'), baseline.resolve('lstm-gaussian-log-return'));
+    assert.equal(baseline.resolve(), baseline.resolve('dynamic-normal-log-return'));
+    assert.equal(baseline.resolve('unknown'), null);
+    const adapter = {probabilityBetweenPrices: () => 0.25, probabilityAboveAnchor: () => 0.75};
+    const extended = distributions.createRegistry({'custom-return': adapter});
+    assert.equal(extended.resolve('custom-return').probabilityAboveAnchor({}), 0.75);
+    assert.equal(baseline.resolve('custom-return'), null);
+    assert.throws(() => distributions.createRegistry({'invalid': {}}), TypeError);
+    assert.throws(() => distributions.createRegistry({'dynamic-normal-log-return': adapter}), TypeError);
+});
+
+test('grid delegates intervals and horizons to its distribution without Gaussian assumptions', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 800, top: 0, bottom: 400},
+        anchorX: 200, anchorY: 200, stepPixels: 10,
+    });
+    const calls = [];
+    const options = {
+        geometry, anchorPrice: 100, stepPixels: 10,
+        valueForPixel: (pixel) => 120 - pixel / 10,
+        cellDisplayThresholdPct: 0,
+        distribution: {
+            probabilityBetweenPrices(parameters) {
+                calls.push(parameters);
+                return parameters.horizon / 1000;
+            },
+        },
+    };
+    const cells = grid.buildProbabilityCells(options);
+    assert.ok(cells.length > 0);
+    assert.equal(calls.length, cells.length);
+    for (const cell of cells) assert.equal(cell.probability, cell.horizon / 1000);
+    assert.ok(calls.every(({lowerPrice, upperPrice}) => lowerPrice < upperPrice));
+    for (const invalid of [NaN, Infinity, -0.1, 1.1]) {
+        assert.deepEqual(grid.buildProbabilityCells({...options,
+            distribution: {probabilityBetweenPrices: () => invalid},
+        }), []);
+    }
+});
+
+test('Gaussian direction adapter agrees with its interval mass and rejects invalid moments', () => {
+    const adapter = distributions.createRegistry().resolve('lstm-gaussian-log-return');
+    const parameters = {mean: 0.01, scale: 0.03, horizon: 3, autoregression: 0.2};
+    const above = adapter.probabilityAboveAnchor(parameters);
+    const mass = adapter.probabilityBetweenPrices({...parameters, anchorPrice: 100, lowerPrice: 100, upperPrice: 1e12});
+    assert.ok(Math.abs(above - mass) < 1e-7);
+    assert.equal(adapter.probabilityAboveAnchor({...parameters, scale: 0}), null);
 });

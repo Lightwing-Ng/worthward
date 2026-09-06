@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.2.1."""
+"""Shared Price Field contract tests. Code version: v1.2.2."""
 
 from __future__ import annotations
 
@@ -190,7 +190,7 @@ class PriceFieldContractTests(unittest.TestCase):
         for strategy_id in PRICE_FIELD_STRATEGY_IDS:
             self.assertIn(f'"{strategy_id}"', source)
         self.assertIn("probability-grid-v1", source)
-        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.29.0\"", source)
+        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.30.0\"", source)
 
     def test_native_disclosures_use_shared_trailing_chevron(self) -> None:
         root = Path(__file__).resolve().parents[1]

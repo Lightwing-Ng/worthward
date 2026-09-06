@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.3.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -645,27 +645,23 @@ def _gather_origin_batch(
         return None
     training_end = max(0, origin - 1)
     training_start = max(lookback - 1, training_end - int(training_window))
-    sequences: list[np.ndarray] = []
-    labels: list[float] = []
-    lag_index = 0
-    for index in range(training_start, training_end):
-        target = float(targets[index])
-        if not math.isfinite(target):
-            continue
-        start = index - lookback + 1
-        sequence = features[start:index + 1]
-        if sequence.shape[0] != lookback:
-            continue
-        if not np.all(np.isfinite(sequence[:, lag_index])):
-            continue
-        sequences.append(sequence)
-        labels.append(target)
-    if len(sequences) < _MIN_TRAINING_SEQUENCES:
+    if training_end - training_start < _MIN_TRAINING_SEQUENCES:
         return None
+    # A strided view replaces one Python/NumPy dispatch per training example.
+    # Select only windows whose label is already observable at this origin.
+    windows = np.lib.stride_tricks.sliding_window_view(features, lookback, axis=0)
+    windows = np.moveaxis(windows, -1, 1)
+    candidates = windows[training_start - lookback + 1:training_end - lookback + 1]
+    labels = np.asarray(targets[training_start:training_end], dtype=np.float64)
+    lag_index = 0
+    valid = np.isfinite(labels) & np.all(np.isfinite(candidates[:, :, lag_index]), axis=1)
+    if np.count_nonzero(valid) < _MIN_TRAINING_SEQUENCES:
+        return None
+    train = candidates[valid]
+    labels = labels[valid]
     current = features[origin - lookback + 1:origin + 1]
     if current.shape[0] != lookback or not np.all(np.isfinite(current[:, lag_index])):
         return None
-    train = np.stack(sequences, axis=0)
     current_values = np.asarray(current, dtype=np.float64)
     usable = np.all(np.isfinite(train), axis=(0, 1)) & np.all(
         np.isfinite(current_values),
@@ -788,6 +784,14 @@ def walk_forward_lstm_predictions(
             if standardized is None:
                 raise ValueError("LSTM feature standardization was non-finite.")
             train_sequences, current_sequence = standardized
+            # Fit the target transform only on this origin's observable labels.
+            # Unit-scale targets keep both Gaussian heads in a useful optimization
+            # range; restore executable-return units after inference.
+            target_location = float(np.mean(train_targets))
+            target_scale = max(float(np.std(train_targets, ddof=1)), math.sqrt(_MIN_NOISE_VARIANCE))
+            if not math.isfinite(target_location) or not math.isfinite(target_scale):
+                raise ValueError("LSTM target standardization was non-finite.")
+            train_targets = (train_targets - target_location) / target_scale
             if backend.engine == "torch":
                 mean, scale = _torch_train_and_predict(
                     backend,
@@ -840,8 +844,8 @@ def walk_forward_lstm_predictions(
             backend.feature_names[index] for index in used_columns
             if index < len(backend.feature_names)
         )
-        means[origin] = mean
-        scales[origin] = scale
+        means[origin] = target_location + target_scale * mean
+        scales[origin] = max(math.sqrt(_MIN_NOISE_VARIANCE), target_scale * scale)
         trained += 1
         if work is not None:
             backend.training_compute_seconds += work.compute_seconds

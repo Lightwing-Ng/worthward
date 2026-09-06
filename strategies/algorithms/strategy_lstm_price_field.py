@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.6.0
+Code version: v1.7.0
 - Changed: Defaults use the completed DRAM probability GA robust winner.
 """
 
@@ -64,7 +64,7 @@ _PROBABILITY_COLUMN = "lstm_probability_up"
 _AUTOREGRESSION_COLUMN = "lstm_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "lstm_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "lstm_return_innovation_std"
-_MODEL_VERSION = "lstm-price-field-model/v1.1.0"
+_MODEL_VERSION = "lstm-price-field-model/v1.2.0"
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 2.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0

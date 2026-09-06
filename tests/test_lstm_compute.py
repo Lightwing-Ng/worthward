@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.5.1."""
+"""LSTM compute backend and causality tests. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -24,6 +24,58 @@ from strategies.lstm_compute import (
 
 
 class LstmComputeTests(unittest.TestCase):
+    def test_target_normalization_is_causal_and_affine_equivariant(self):
+        features = np.column_stack((np.linspace(-0.1, 0.1, 40), np.arange(40)))
+        targets = np.sin(np.arange(40)) * 0.02
+        captures = []
+
+        def predict(_train, labels, _current, **_kwargs):
+            captures.append(labels.copy())
+            self.assertAlmostEqual(float(labels.mean()), 0.0, places=12)
+            self.assertAlmostEqual(float(labels.std(ddof=1)), 1.0, places=12)
+            return 0.25, 0.5
+
+        options = dict(training_window=20, lookback=4, hidden_size=4, epochs=1,
+                       learning_rate=0.01, seed=42)
+        with patch("strategies.lstm_compute._numpy_origin_prediction", side_effect=predict):
+            mean, scale = walk_forward_lstm_predictions(features, targets, backend=LstmBackend("CPU"), **options)
+            shifted_mean, shifted_scale = walk_forward_lstm_predictions(features, targets * 3 + 0.07,
+                                                                       backend=LstmBackend("CPU"), **options)
+            changed = targets.copy()
+            changed[29:] = 10.0
+            later_mean, later_scale = walk_forward_lstm_predictions(features, changed,
+                                                                   backend=LstmBackend("CPU"), **options)
+        finite = np.isfinite(mean)
+        np.testing.assert_allclose(shifted_mean[finite], mean[finite] * 3 + 0.07)
+        np.testing.assert_allclose(shifted_scale[finite], scale[finite] * 3)
+        np.testing.assert_allclose(later_mean[:31], mean[:31], equal_nan=True)
+        np.testing.assert_allclose(later_scale[:31], scale[:31], equal_nan=True)
+        self.assertGreater(len(captures), 0)
+
+    def test_vectorized_origin_windows_preserve_scalar_causal_selection(self):
+        from strategies.lstm_compute import _gather_origin_batch
+        features = np.column_stack((np.sin(np.arange(70)), np.arange(70), np.ones(70)))
+        features[25, 0] = np.nan
+        features[40, 1] = np.nan
+        targets = np.cos(np.arange(70))
+        targets[30] = np.nan
+        for origin in range(70):
+            used = []
+            actual = _gather_origin_batch(features, targets, origin, 35, 4, used)
+            end = max(0, origin - 1)
+            indices = [i for i in range(max(3, end - 35), end)
+                       if np.isfinite(targets[i]) and np.all(np.isfinite(features[i - 3:i + 1, 0]))]
+            current = features[max(0, origin - 3):origin + 1]
+            if len(indices) < 16 or len(current) != 4 or not np.all(np.isfinite(current[:, 0])):
+                self.assertIsNone(actual)
+                continue
+            expected = np.stack([features[i - 3:i + 1] for i in indices])
+            columns = np.all(np.isfinite(expected), axis=(0, 1)) & np.all(np.isfinite(current), axis=0)
+            np.testing.assert_array_equal(actual[0], expected[:, :, columns])
+            np.testing.assert_array_equal(actual[1], targets[indices])
+            np.testing.assert_array_equal(actual[2], current[:, columns])
+            self.assertEqual(used, list(np.flatnonzero(columns)))
+
     def test_backends_receive_identical_causal_standardized_inputs(self):
         features = np.column_stack((np.linspace(-0.01, 0.02, 30), np.arange(30) + 100_000.0))
         targets = np.linspace(-0.01, 0.01, 30)

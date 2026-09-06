@@ -1,4 +1,4 @@
-/* Shared chart axis helper contracts. Code version: v1.4.0 */
+/* Shared chart axis helper contracts. Code version: v1.4.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -297,7 +297,7 @@ test('adds a currency prefix only when a stock-price axis requests it', () => {
 
 test('every stock-price chart consumer delegates its y-axis labels to the shared formatter', async () => {
     const consumerPaths = [
-        'app/web/static/assets/js/backtest.js',
+        'app/web/static/assets/js/backtest/chart-controller.js',
         'app/web/static/assets/js/dca.js',
         'app/web/static/assets/js/price-compare.js',
         'app/web/static/assets/js/live-trading.js',

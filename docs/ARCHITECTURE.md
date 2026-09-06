@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.77.1`
+Documentation version: `v1.77.2`
 
 ## Shared Backtest controls and research
 
@@ -120,10 +120,28 @@ service restart, never an agent-triggered restart.
 Bayesian Price Field and LSTM Price Field share one Backtest history `Price Field`
 option between `Metrics` and `Transactions` when a valid strategy presentation is
 available. Both strategies emit the `probability-grid-v1` renderer payload defined
-in `strategies/price_field_contract.py`. The browser owns layout, hover, pin,
-resize, thresholding, and styling in `app/web/static/assets/js/backtest/probability-grid.js`
-and `app/web/templates/_backtest_probability_field.html`; the strategies do not
-fork those files.
+in `strategies/price_field_contract.py`. The browser uses three shared owners:
+
+- `app/web/static/assets/js/backtest/chart-controller.js` exposes a controller
+  factory with `mount(state)`, `update(state)`, and idempotent `destroy()`. It owns
+  the synchronized Price/Equity charts, probability DOM, hover/pin/drag state,
+  caches, listeners, observers, and scheduled work. Mount replaces the previous
+  runtime; update with a different state object remounts, while update without
+  new state refreshes layout. `backtest.js` owns workspace preferences, tabs,
+  sharing, and controller wiring.
+- `app/web/static/assets/js/backtest/probability-grid.js` owns geometry, cells,
+  opacity, thresholding, and the pure pin-state reducer.
+- `app/web/static/assets/js/backtest/distributions.js` owns probability math.
+  Each controller receives an immutable registry whose adapters implement
+  `probabilityBetweenPrices(parameters)` and `probabilityAboveAnchor(parameters)`.
+  Bayesian and LSTM distribution kinds share the existing Gaussian/AR(1) adapter.
+  Extensions are local to a registry and cannot overwrite built-ins. Omitted
+  legacy kinds retain Gaussian behavior; explicit unknown kinds do not render a
+  field. Invalid adapter probability masses reject the cell set. New distributions
+  still need to supply the aligned predictive-series envelope required by v1.
+
+The existing template `app/web/templates/_backtest_probability_field.html` and
+shared styles remain common to both strategies. Neither model forks these files.
 
 The model-neutral server-side foundation is
 `strategies/price_field_pipeline.py`. It owns the warm-up-inclusive Longbridge

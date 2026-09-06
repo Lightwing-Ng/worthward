@@ -2,8 +2,8 @@
 Shared probability-grid contract for Price Field strategies.
 
 Bayesian Price Field and LSTM Price Field both emit this geometry and
-renderer payload. The browser owns layout, hover, pin, resize, thresholding,
-and styling in one module.
+renderer payload. Shared browser geometry, distribution adapters, and the chart
+controller own layout, probability math, interaction, and lifecycle.
 
 Code version: v1.1.0
 """

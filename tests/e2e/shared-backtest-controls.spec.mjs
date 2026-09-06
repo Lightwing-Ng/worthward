@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.0.1 */
+/* Shared Backtest control primitives. Code version: v1.0.2 */
 import {test, expect} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -12,7 +12,7 @@ for (const colorScheme of ['light', 'dark']) {
                     ticker: 'NVDA', identifier: '260904(01)', status: 'completed', active: false,
                     accuracy_pct: 65, started_at: '2026-09-04T00:00:00Z'}],
             }}));
-            await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=0');
+            await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=0&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
             const common = page.locator('[data-collapse="backtest"]');
             const training = page.locator('[data-collapse="training"]');
             const summary = common.locator(':scope > summary');

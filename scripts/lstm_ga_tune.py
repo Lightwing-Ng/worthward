@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.10.0
+Code version: v0.11.0
 - Added: Complete close-price grid scoring, with equal weight for 20 horizons.
 - Fixed: Deadline polling and rejection of an infeasible final winner.
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
@@ -269,7 +269,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.10.0",
+        "runner_version": "v0.11.0",
         "grid_scoring_version": GRID_SCORING_VERSION,
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
@@ -277,6 +277,8 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         "period": str(args.period).strip().lower(),
         "interval": validate_training_interval(getattr(args, "interval", "1d")),
         "duration_seconds": int(args.duration_seconds),
+        "final_reserve_seconds": getattr(args, "final_reserve_seconds", None),
+        "rescore_backends": getattr(args, "rescore_backends", None),
         "population_size": int(args.population_size),
         "max_workers": int(args.max_workers),
         "ga_seed": int(args.ga_seed),
@@ -829,6 +831,13 @@ def _score_slice(
     hit_rate = hits / directional_points * 100.0 if directional_points else None
     coverage = directional_points / eligible_points * 100.0 if eligible_points else 0.0
     probability_score = (1.0 - brier) * 100.0 if brier is not None else None
+    direction_targets = np.isfinite(target) & (target != 0.0)
+    positive_count = int(np.count_nonzero(direction_targets & outcome))
+    negative_count = int(np.count_nonzero(direction_targets & ~outcome))
+    positive_hits = int(np.count_nonzero(directional & outcome & (probability > 0.5)))
+    negative_hits = int(np.count_nonzero(directional & ~outcome & (probability < 0.5)))
+    balanced_accuracy = 50.0 * (positive_hits / positive_count + negative_hits / negative_count) if positive_count and negative_count else None
+    direction_target_count = positive_count + negative_count
     eligible_targets = int(np.count_nonzero(np.isfinite(target)))
     penalized_loss = (
         (float(np.sum(np.square(probability[valid] - outcome[valid])))
@@ -837,6 +846,10 @@ def _score_slice(
     )
     return {
         "eligible_target_points": eligible_targets,
+        "direction_target_points": direction_target_count,
+        "always_up_hit_rate_pct": 100.0 * positive_count / direction_target_count if direction_target_count else None,
+        "balanced_accuracy_pct": balanced_accuracy,
+        "penalized_direction_hit_rate_pct": 100.0 * hits / direction_target_count if direction_target_count else None,
         "prediction_coverage_pct": 100.0 * valid_points / eligible_targets if eligible_targets else 0.0,
         "selection_probability_score_pct": 100.0 * (1.0 - penalized_loss) if penalized_loss is not None else None,
         "direction_hit_rate_pct": round(hit_rate, 4) if hit_rate is not None else None,
@@ -1178,8 +1191,27 @@ def _new_population(
     return population
 
 
+class BackendEvaluationExecutor:
+    """Route MPS work to one worker without blocking the CPU evaluation pool."""
+
+    def __init__(self, primary: ProcessPoolExecutor, gpu: ProcessPoolExecutor | None) -> None:
+        self.primary = primary
+        self.gpu = gpu
+
+    def submit(self, function: Callable[..., Any], candidate: Mapping[str, Any]) -> Any:
+        pool = self.gpu if self.gpu is not None and candidate["params"].get("compute_backend") == "GPU" else self.primary
+        return pool.submit(function, candidate)
+
+    def shutdown(self, *, wait: bool, cancel_futures: bool) -> None:
+        try:
+            self.primary.shutdown(wait=wait, cancel_futures=cancel_futures)
+        finally:
+            if self.gpu is not None:
+                self.gpu.shutdown(wait=wait, cancel_futures=cancel_futures)
+
+
 def _evaluate_batch(
-        executor: ProcessPoolExecutor,
+        executor: ProcessPoolExecutor | BackendEvaluationExecutor,
         candidates: Sequence[Mapping[str, Any]],
         deadline: float,
 ) -> list[dict[str, Any]]:
@@ -1597,7 +1629,9 @@ def _run(args: argparse.Namespace) -> int:
         signal.signal(signal.SIGINT, _handle_stop)
         signal.signal(signal.SIGTERM, _handle_stop)
         total_deadline = time.monotonic() + max(0.0, float(args.duration_seconds) - elapsed_seconds)
-        final_reserve = min(900.0, max(300.0, float(args.duration_seconds) * 0.03))
+        final_reserve = getattr(args, "final_reserve_seconds", None)
+        if final_reserve is None:
+            final_reserve = min(900.0, max(300.0, float(args.duration_seconds) * 0.03))
         main_deadline = max(time.monotonic(), total_deadline - final_reserve)
         mp_context = __import__("multiprocessing").get_context("spawn")
         executor = ProcessPoolExecutor(
@@ -1606,6 +1640,14 @@ def _run(args: argparse.Namespace) -> int:
             initializer=_initialize_worker,
             initargs=(context,),
         )
+        rescore_backends = tuple(getattr(args, "rescore_backends", None) or (base_params["compute_backend"],))
+        gpu_executor = None
+        if "GPU" in rescore_backends and base_params["compute_backend"] != "GPU":
+            gpu_executor = ProcessPoolExecutor(
+                max_workers=1, mp_context=mp_context,
+                initializer=_initialize_worker, initargs=(context,),
+            )
+        executor = BackendEvaluationExecutor(executor, gpu_executor)
         robust_results: list[dict[str, Any]] = []
         try:
             while (
@@ -1729,20 +1771,17 @@ def _run(args: argparse.Namespace) -> int:
                         break
                 robust_candidates: list[dict[str, Any]] = []
                 for result in top_models:
-                    for seed in ROBUST_SEEDS:
-                        params = dict(result["params"])
-                        params["lstm_seed"] = seed
-                        robust_candidates.append(_candidate_record(
-                            _canonical_params(
-                                params,
-                                base_params,
-                                context.active_factor_keys,
-                                context.bounds,
-                            ),
-                            generation,
-                            "robust-rescore",
-                            context.snapshot_fingerprint,
-                        ))
+                    for rescore_backend in rescore_backends:
+                        for seed in ROBUST_SEEDS:
+                            params = dict(result["params"])
+                            params["lstm_seed"] = seed
+                            params = _canonical_params(params, base_params, context.active_factor_keys, context.bounds)
+                            # Backend is part of model identity; CPU and GPU are
+                            # independently trained finalists, never interchangeable weights.
+                            params["compute_backend"] = rescore_backend
+                            robust_candidates.append(_candidate_record(
+                                params, generation, "robust-rescore", context.snapshot_fingerprint,
+                            ))
                 robust_results = _evaluate_batch(
                     executor,
                     robust_candidates,
@@ -1873,6 +1912,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--period", default="1y", choices=tuple(PERIOD_OFFSETS))
     parser.add_argument("--interval", default="1d", choices=("1d",))
     parser.add_argument("--duration-seconds", type=int, default=DEFAULT_DURATION_SECONDS)
+    parser.add_argument("--final-reserve-seconds", type=int, default=None, help="Reserve time inside the run budget for multi-seed selection and holdout reporting.")
+    parser.add_argument("--rescore-backends", nargs="+", choices=("CPU", "GPU"), default=None, help="Validate finalists on these actual backends before freezing selection.")
     parser.add_argument("--population-size", type=int, default=DEFAULT_POPULATION_SIZE)
     parser.add_argument("--max-workers", type=int, default=min(MAX_WORKERS, max(1, (os.cpu_count() or 2) - 2)))
     parser.add_argument("--ga-seed", type=int, default=DEFAULT_GA_SEED)
@@ -1892,6 +1933,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.duration_seconds < 600:
         raise SystemExit("duration-seconds must be at least 600 seconds for a durable GA run.")
+    if args.final_reserve_seconds is not None and not 60 <= args.final_reserve_seconds < args.duration_seconds:
+        raise SystemExit("final-reserve-seconds must be at least 60 and below duration-seconds.")
+    if args.rescore_backends and len(args.rescore_backends) != len(set(args.rescore_backends)):
+        raise SystemExit("rescore-backends must not contain duplicates.")
     if args.population_size < 4:
         raise SystemExit("population-size must be at least 4.")
     if args.max_workers < 1 or args.max_workers > MAX_WORKERS:

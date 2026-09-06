@@ -1,4 +1,4 @@
-"""Tests for the durable LSTM GA runner. Code version: v1.1.0."""
+"""Tests for the durable LSTM GA runner. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -17,6 +17,35 @@ from scripts import lstm_ga_tune as ga
 
 
 class LstmGaTuneTests(unittest.TestCase):
+    def test_gpu_finalists_use_the_dedicated_pool_and_remain_distinct_models(self):
+        from unittest.mock import Mock
+        cpu, gpu = Mock(), Mock()
+        routed = ga.BackendEvaluationExecutor(cpu, gpu)
+        candidates = [{"params": {"compute_backend": backend, "lstm_seed": 42}} for backend in ("CPU", "GPU")]
+        for candidate in candidates:
+            routed.submit(ga._evaluate_candidate, candidate)
+        cpu.submit.assert_called_once_with(ga._evaluate_candidate, candidates[0])
+        gpu.submit.assert_called_once_with(ga._evaluate_candidate, candidates[1])
+        self.assertNotEqual(ga._model_key(candidates[0]["params"], "snapshot"),
+                            ga._model_key(candidates[1]["params"], "snapshot"))
+        routed.shutdown(wait=True, cancel_futures=True)
+        cpu.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+        gpu.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+
+    def test_direction_baselines_expose_always_up_imbalance(self):
+        returns = np.where(np.arange(34) % 4 == 0, -0.02, 0.01)
+        opens = 100 * np.exp(np.cumsum(returns))
+        score = ga._score_slice(opens, np.zeros(34), np.ones(34), np.ones(34), 0, 34)
+        self.assertAlmostEqual(score["balanced_accuracy_pct"], 50.0)
+        self.assertEqual(score["always_up_hit_rate_pct"], score["penalized_direction_hit_rate_pct"])
+        self.assertGreater(score["always_up_hit_rate_pct"], 50.0)
+
+    def test_final_reserve_must_fit_inside_the_supervised_budget(self):
+        with self.assertRaisesRegex(SystemExit, "final-reserve-seconds"):
+            ga.main(["--duration-seconds", "600", "--final-reserve-seconds", "600"])
+        args = ga._build_parser().parse_args(["--duration-seconds", "21000", "--final-reserve-seconds", "3600"])
+        self.assertEqual(ga._request_spec(args)["final_reserve_seconds"], 3600)
+
     def test_probability_fitness_counts_missing_predictions_and_accepts_neutral(self) -> None:
         opens = np.arange(100.0, 132.0)
         score = ga._score_slice(opens, np.zeros(32), np.ones(32), np.full(32, 0.5), 0, 32)

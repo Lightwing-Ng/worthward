@@ -1,10 +1,29 @@
 # Offline LSTM probability tuning
 
-Documentation version: v1.1.0
+Documentation version: v1.2.0
 
-Runner version: v0.10.0. Exact-configuration web training remains separate.
+Runner version: v0.11.0. Model version: `lstm-price-field-model/v1.2.0`.
+Exact-configuration web training remains separate.
 All GA objectives now rank multi-seed finalists by validation fitness; the legacy
 direction mode no longer ranks or rejects finalists using holdout results.
+
+## Causal target normalization
+
+Each forecast origin fits feature and target transforms only on its observable
+training examples. Target normalization subtracts the training-label mean and
+divides by its sample standard deviation, floored at 0.0001. Both NumPy and Torch
+train on these unit-scale labels. Inference restores executable log-return units
+for the predicted mean and standard deviation before the shared Price Field
+projection. This corrects the unit-scale Gaussian head's mismatch with small
+raw returns; it does not change the target to future close returns.
+
+Training windows use a strided array view instead of a Python loop per example.
+The existing chronology, minimum of 16 usable sequences, and exclusion of factor
+columns with missing observations remain enforced. Future-label mutation and
+affine-target tests cover causal normalization; scalar-reference comparisons
+cover window selection with missing targets and features. The model version
+invalidates old fingerprints. Earlier tuned settings can be reevaluated, but
+their old scores and weights do not establish performance under this model.
 
 ## Complete price-grid objective
 
@@ -80,9 +99,18 @@ holdout is not new prospective evidence; repeated research on the same window
 still risks overfitting. Compare with the original configuration and the 75-point
 constant-probability reference on the same origins.
 
+Direction reporting also includes the always-up hit rate, balanced accuracy
+(the mean of upward and downward recall), and hit rate over all finite nonzero
+targets. Missing and neutral forecasts count as misses in the latter two model
+metrics. Balanced accuracy is unavailable when either direction is absent.
+Keep the original conditional hit rate and coverage visible: selecting only a
+few confident forecasts must not look equivalent to predicting every target.
+
 ## Search and local execution
 
-Use population 32 and two spawn workers on Apple MPS. Retain four elites,
+Use population 32 and explicitly size the spawn pool from local measurements.
+For tiny origin-local networks, NumPy CPU can substantially outperform MPS;
+kernel launch and graph compilation can dominate GPU arithmetic. Retain four elites,
 tournament selection, uniform crossover, and 10% mutation, increasing to 20%
 after 20 stagnant generations. Search training window 30 through the available
 row count (capped at 504), chip window 5 through available rows (capped at 252),
@@ -92,7 +120,7 @@ The base configuration seeds the population; it does not freeze factor switches.
 `cell_display_threshold` stays fixed and never enters fitness.
 
 Use a new external `--state-root`, `--offline`, `--snapshot-file`, and an explicit
-GPU base parameter. The snapshot must be genuine local data for the requested
+base compute backend. The snapshot must be genuine local data for the requested
 ticker and interval. Its dates override the relative period. The request hashes
 the source snapshot; the run then owns a separate frozen copy. The original
 snapshot, market store, and broker stores remain unchanged.
@@ -101,6 +129,22 @@ Set `WORTHWARD_REMOTE_MARKET_ACCESS=disabled` and run under an OS network-denial
 sandbox for a strict offline boundary. There are no LLM calls in the search.
 MPS is the GPU compute backend; Neural Engine execution is not claimed. Keep the
 machine on power and use `caffeinate -i` during the job.
+
+`--rescore-backends CPU GPU` expands each of the top eight configurations into
+three seeds per backend. With a CPU search base, CPU evaluations reuse the main
+pool while GPU evaluations use one separate spawn worker. Backend is part of
+model identity: the resulting 16 three-seed groups are independently trained,
+and validation scores select both configuration and backend before holdout
+inference. This is a CPU-led hyperparameter search followed by GPU validation,
+not an exhaustive independent GPU hyperparameter search. Omitting the option
+retains the base backend alone. GPU failures cannot count as confirmed GPU
+evidence; inspect the actual engine and fallback fields in every result.
+
+The local accelerator mechanism follows Apple's
+[PyTorch Metal backend](https://developer.apple.com/metal/pytorch/) and PyTorch's
+[MPS backend documentation](https://docs.pytorch.org/docs/stable/notes/mps.html).
+Backend availability alone is insufficient; require a real tensor readback and
+record the actual training device. Cold and warm MPS timings must be distinguished.
 
 ## Ten-hour wall-clock budget
 
@@ -125,6 +169,65 @@ an interrupted job. `result.json` with completed status is required for a final
 winner. Budget exhaustion or incomplete rescore is an incomplete run, even if a
 provisional leaderboard exists. Return a reproducible winner URL with its actual
 seed and frozen date range only after successful completion.
+
+## Six-hour single-stock research protocol
+
+The 6 Sep 2026 NVDA experiment uses 753 visible daily observations from
+6 Sep 2023 through 4 Sep 2026, plus 130 earlier warmup observations. Longbridge
+forward-adjusted daily OHLCV supplies the immutable input. Only volume and
+volume-at-price are searchable external features because the snapshot contains
+no authoritative historical options or fundamental observations. The final 20%
+begins on 30 Jan 2026. Earlier NVDA research has already inspected related
+historical periods; this holdout remains retrospective evidence.
+
+On the measured Apple M1 Max with 32 GiB of unified memory, this run uses a
+four-worker CPU search and a one-worker MPS finalist pool. The supervisor budget
+is 21,600 seconds. The runner budget is 21,000 seconds with
+`--final-reserve-seconds 7200`, leaving roughly three hours and 50 minutes for
+search, two hours for multi-seed validation and holdout reporting, and ten
+minutes of outer shutdown margin. The reserve is a scheduling allowance, not a
+guarantee that every finalist will complete. `result.json` remains mandatory.
+The source tree, input, parameters, random seed, hardware, and launch command
+are frozen outside the repository; network access and repository writes are
+denied for the research process. The running web application is not restarted.
+
+A fixed-parameter development comparison used only early observations, before
+the experiment's final holdout. It produced the following grid scores on common
+origins. These are probability scores, not directional hit rates.
+
+| Backend | Model v1.1.0 grid score | Model v1.2.0 grid score | v1.2.0 random-walk Brier skill |
+| --- | ---: | ---: | ---: |
+| NumPy CPU | 58.13794 | 59.15007 | 0.00602 |
+| Torch MPS | 51.67047 | 59.20184 | 0.00728 |
+
+For the 149 nonflat development direction targets, MPS directional accuracy
+rose from 48.32% to 57.05%; always-up achieved 56.38%, and the new model's
+balanced accuracy was 54.08%. New MPS one-step Brier loss was 0.25012, slightly
+worse than the constant-0.5 reference's 0.25. These small, single-seed historical
+results support testing the scale correction, not claiming predictive alpha.
+
+CPU completed the benchmark in about 2.65 seconds. Initial MPS order
+(old, new) took 37.68 and 24.72 seconds; reversing the order took 32.84 seconds
+for new and 25.03 for old. Scores reproduced, but the timings reveal a large
+cold/warm effect. No MPS speedup percentage is attributed to the code change.
+A separate real mixed-pool smoke test completed three seeds on each backend,
+with two feasible groups, confirmed MPS execution, and no runtime fallback.
+This does not resolve the previously observed web-process Metal abort.
+
+The changed runner, compute, strategy, scoring, and training suites passed
+103 tests and two subtest checks on 6 Sep 2026. The durable research run's
+checkpoint and leaderboard are progress evidence; its final winner and holdout
+comparison require successful completion of the supervised run.
+
+The complete gate then exited 1: Python passed 1,187 tests with six skips and
+216 subtest checks, JavaScript passed 329 tests, and Chromium passed 325 tests
+with one Bayesian pan-reset failure. The failure retained a 0.0008057px visual
+offset while the remaining reset fields were zero. Two unchanged focused
+replays passed; this does not make the full gate green or resolve the
+intermittent reset issue. Its 0.001px early-return guard is also present in the
+committed pre-extraction controller. No tolerance, animation, or test behavior
+was changed during this research task. The final documentation contract replay
+passed 12 tests. The six-hour offline research process continued independently.
 
 ## Verification on 5 Sep 2026
 

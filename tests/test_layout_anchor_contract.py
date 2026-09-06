@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.10.11
+Code version: v0.10.12
 """
 
 from pathlib import Path
@@ -328,7 +328,10 @@ def test_investment_section_resizer_uses_compact_handle_contract() -> None:
 
 def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> None:
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
-    backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    backtest_script = (
+        _read(ASSET_ROOT / "js/backtest.js")
+        + _read(ASSET_ROOT / "js/backtest/chart-controller.js")
+    )
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
     pending_app = _read(ASSET_ROOT / "js/app.js")
     stack_contract = trade_css[
@@ -466,7 +469,10 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
 def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() -> None:
     tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
-    backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    backtest_script = (
+        _read(ASSET_ROOT / "js/backtest.js")
+        + _read(ASSET_ROOT / "js/backtest/chart-controller.js")
+    )
     backtest_layout = _read(ASSET_ROOT / "js/backtest/layout.js")
     probability_grid = _read(ASSET_ROOT / "js/backtest/probability-grid.js")
     app_script = _read(ASSET_ROOT / "js/app.js")
@@ -706,7 +712,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.29.0",
+        "-backtest-probability-grid-v0.30.0",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
         "-backtest-layout-v0.4.0",
     ):
@@ -716,7 +722,10 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None:
     backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
     probability_field_partial = _read(TEMPLATE_ROOT / "_backtest_probability_field.html")
-    backtest_script = _read(ASSET_ROOT / "js/backtest.js")
+    backtest_script = (
+        _read(ASSET_ROOT / "js/backtest.js")
+        + _read(ASSET_ROOT / "js/backtest/chart-controller.js")
+    )
     pending_app = _read(ASSET_ROOT / "js/app.js")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
     probability_grid = _read(ASSET_ROOT / "js/backtest/probability-grid.js")
