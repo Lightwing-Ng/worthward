@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.4.0-agent-contract.0`
+Policy version: `v1.4.1-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -45,7 +45,7 @@ discovery. This file remains the canonical guide.
 
 ## Manual launch ownership
 
-- The user owns the final launch of this project from their own Terminal. The canonical command is `./scripts/run_app.sh` from the project root; direct `python3 main.py` is supported when the shell's `python3` resolves to Python `3.13` or `3.14`.
+- The user owns the final launch of this project from their own Terminal. The canonical command is `./scripts/run_app.sh` from the project root; direct `python3 main.py` is supported when the shell's `python3` resolves to Python `3.13` or newer.
 - The agent may temporarily start the application during debugging when necessary, but must stop that process before handoff and must not leave the application running in an opaque agent-managed or background process.
 - Do not replace the user's manual launch workflow with an IDE task, hidden service, daemon, or other automatic startup mechanism.
 

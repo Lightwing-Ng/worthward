@@ -1,25 +1,23 @@
 """Runtime compatibility helpers.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-SUPPORTED_PYTHON_VERSIONS = ((3, 13), (3, 14))
+MINIMUM_PYTHON_VERSION = (3, 13)
 
 
 def require_supported_python(version_info: Sequence[int]) -> None:
     """Raise a clear error when the interpreter is outside the supported range."""
-    if tuple(version_info[:2]) in SUPPORTED_PYTHON_VERSIONS:
+    if tuple(version_info[:2]) >= MINIMUM_PYTHON_VERSION:
         return
 
     detected_version = ".".join(str(part) for part in version_info[:3])
-    supported_versions = " or ".join(
-        f"{major}.{minor}" for major, minor in SUPPORTED_PYTHON_VERSIONS
-    )
+    minimum_version = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
     raise RuntimeError(
-        f"Worthward requires Python {supported_versions}. "
+        f"Worthward requires Python {minimum_version} or newer. "
         f"Detected Python {detected_version}."
     )

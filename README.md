@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.6.2`
+Documentation version: `v3.6.3`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -38,54 +38,48 @@ read-compatible interfaces; the application writes only the Worthward names.
 
 ## Runtime requirements
 
-- Python `3.13` or `3.14`
+- Python `3.13` or newer
 - Dependencies from `requirements.txt`
 - `pyarrow` for parquet persistence
 - Node.js `22` for the JavaScript and browser quality gate
 - Optional Longbridge credentials for broker-backed market-data fallback
 - Yahoo Mail app password for SMTP alerts
 
-The supported launch and test workflows use host Python `3.13` or `3.14`.
-Direct `python3` commands must resolve to one of those supported versions.
-The helper scripts prefer the pinned macOS `3.13` interpreter when it exists
-and otherwise use the first supported interpreter available on the host.
+The supported launch and test workflows use host Python `3.13` or newer.
+Direct `python3` commands must resolve to Python `3.13` or newer.
+The helper scripts use the first supported `python3` or `python` on PATH.
+There is no upper version limit or pinned interpreter path.
 
 ## Quick start
 
-Install dependencies into the pinned host interpreter:
+Install dependencies into the selected host interpreter:
 
 ```bash
 ./scripts/setup_python.sh
 ```
 
-By default, the setup script uses:
-
-```text
-/Library/Frameworks/Python.framework/Versions/3.13/bin/python3
-```
-
-If your Python `3.13` or `3.14` executable lives elsewhere, override it explicitly:
+If your Python `3.13` or newer executable lives elsewhere, override it explicitly:
 
 ```bash
-WORTHWARD_PYTHON=/absolute/path/to/python3.14 ./scripts/setup_python.sh
+WORTHWARD_PYTHON=/absolute/path/to/python3 ./scripts/setup_python.sh
 ```
 
-Run the app from the project root with the pinned interpreter:
+Run the app from the project root with the selected interpreter:
 
 ```bash
 ./scripts/run_app.sh
 ```
 
-The launcher invokes Python `3.13` or `3.14`. Direct `python3 main.py` is
-supported when `python3 --version` reports either version; otherwise the
+The launcher invokes Python `3.13` or newer. Direct `python3 main.py` is
+supported when `python3 --version` reports 3.13 or newer; otherwise the
 entrypoint exits with an explicit version error.
 
 On Windows PowerShell, install dependencies and launch with the Python
 Launcher for Windows:
 
 ```powershell
-py -3.14 -m pip install --upgrade -r requirements.txt
-py -3.14 main.py
+py -3 -m pip install --upgrade -r requirements.txt
+py -3 main.py
 ```
 
 The default server bind is:
@@ -318,11 +312,11 @@ or curl error `60` with `verify=False`; configure the corporate CA PEM instead.
 The focused offline regression command is documented in
 [the testing guide](docs/TESTING.md).
 
-After pulling a dependency update on Windows, refresh the active Python `3.14`
+After pulling a dependency update on Windows, refresh the active Python `3.13` or newer
 environment before launching the app:
 
 ```powershell
-py -3.14 -m pip install --upgrade -r requirements.txt
+py -3 -m pip install --upgrade -r requirements.txt
 ```
 
 ### Metadata and search caches
@@ -518,13 +512,13 @@ On Windows PowerShell, inspect the local ledger and any evidence sidecar before
 performing another broker import:
 
 ```powershell
-py -3.14 scripts/verify_investment_evidence.py
+py -3 scripts/verify_investment_evidence.py
 ```
 
 For a non-default ledger location, pass its Parquet path explicitly:
 
 ```powershell
-py -3.14 scripts/verify_investment_evidence.py --store D:\worthward\settings_store\investment.parquet
+py -3 scripts/verify_investment_evidence.py --store D:\worthward\settings_store\investment.parquet
 ```
 
 If verification reports a missing or changed artifact, read-only startup remains
@@ -534,7 +528,7 @@ that directory, or the original broker export files, into a temporary Windows
 folder, safely materialize only exact manifest matches:
 
 ```powershell
-py -3.14 scripts/verify_investment_evidence.py --restore-from D:\worthward-evidence-recovery
+py -3 scripts/verify_investment_evidence.py --restore-from D:\worthward-evidence-recovery
 ```
 
 The recovery mode does not rewrite the ledger and does not overwrite an existing
@@ -645,7 +639,7 @@ revision markers, not the app metadata shown in the interface.
 
 ## Running tests
 
-Run Python tests through the pinned host interpreter:
+Run Python tests through the selected host interpreter:
 
 ```bash
 ./scripts/test.sh

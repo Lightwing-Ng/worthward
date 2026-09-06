@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.4.0
+# Code version: v0.4.1
 
 set -euo pipefail
 
@@ -10,7 +10,7 @@ PYTHON_BIN="$(resolve_python_bin)"
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
-	echo "Install Python 3.13 or 3.14, run $ROOT_DIR/scripts/setup_python.sh, or set WORTHWARD_PYTHON." >&2
+	echo "Install Python 3.13 or newer, run $ROOT_DIR/scripts/setup_python.sh, or set WORTHWARD_PYTHON." >&2
 	exit 1
 fi
 

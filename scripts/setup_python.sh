@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.6.0
+# Code version: v0.7.0
 
 set -euo pipefail
 
@@ -10,16 +10,16 @@ PYTHON_BIN="$(resolve_python_bin)"
 
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
-	echo "Set WORTHWARD_PYTHON to a valid Python 3.13 or 3.14 executable and rerun." >&2
+	echo "Set WORTHWARD_PYTHON to a valid Python 3.13 or newer executable and rerun." >&2
 	exit 1
 fi
 
 "$PYTHON_BIN" - <<'PY'
 import sys
 
-if sys.version_info[:2] not in ((3, 13), (3, 14)):
+if sys.version_info[:2] < (3, 13):
     raise SystemExit(
-        "Expected Python 3.13 or 3.14, but got "
+        "Expected Python 3.13 or newer, but got "
         f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}."
     )
 PY

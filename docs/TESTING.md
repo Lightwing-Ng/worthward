@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.50.5`
+Documentation version: `v1.50.6`
 
 ## CI environment isolation on 6 Sep 2026
 
@@ -527,8 +527,9 @@ Install all runtime and development dependencies:
 ./scripts/setup_python.sh
 ```
 
-The supported host interpreters are Python `3.13` and `3.14`. On Windows,
-install the same dependencies with `py -3.14 -m pip install -r
+The minimum host interpreter version is Python `3.13`, with no upper version
+limit. CI versions are test coverage targets, not a runtime allowlist. On Windows,
+install the same dependencies with `py -3 -m pip install -r
 requirements.txt`.
 
 The JavaScript toolchain requires Node.js `22`. The setup script validates the
