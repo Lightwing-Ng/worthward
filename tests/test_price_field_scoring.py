@@ -78,7 +78,7 @@ def test_grid_ranking_ignores_holdout_and_requires_every_seed(forecast_frame):
     result["holdout"] = {"direction_hit_rate_pct": 100}
     assert ga._fitness_fields(result) == fitness
     groups = [
-        {**result, **fitness, "model_key": "a", "params": {"lstm_seed": seed}}
+        {**result, **fitness, "status": "ok", "model_key": "a", "params": {"lstm_seed": seed}}
         for seed in ga.ROBUST_SEEDS
     ]
     assert ga._aggregate_robust(groups)[0]["feasible"]
@@ -92,3 +92,25 @@ def test_deadline_returns_even_when_worker_never_finishes():
     executor = Mock()
     executor.submit.return_value = future
     assert ga._evaluate_batch(executor, [{"params": {}}], -math.inf) == []
+
+
+def test_grid_search_removes_holdout_from_model_input(forecast_frame):
+    bundle = {"ohlcv": [{"observed_at": str(day), "close": 100} for day in forecast_frame.Date]}
+    context = ga.EvaluationContext(forecast_frame, bundle, (), {}, (), 88, "test", objective="grid")
+    visible, trimmed = ga._evaluation_inputs({"origin": "random"}, context)
+    assert len(visible) == 88
+    assert len(trimmed["ohlcv"]) == 88
+    assert len(bundle["ohlcv"]) == 110
+    full, original = ga._evaluation_inputs({"origin": "holdout-report"}, context)
+    assert len(full) == 110 and original is bundle
+
+
+def test_legacy_direction_robust_ranking_no_longer_selects_on_holdout():
+    results = [
+        {"model_key": key, "objective": "direction", "status": "ok", "feasible": True,
+         "fitness": fitness, "params": {"lstm_seed": seed},
+         "holdout": {"direction_hit_rate_pct": holdout}}
+        for key, fitness, holdout in [("validation-winner", 65, 0), ("holdout-winner", 55, 100)]
+        for seed in ga.ROBUST_SEEDS
+    ]
+    assert ga._aggregate_robust(results)[0]["model_key"] == "validation-winner"

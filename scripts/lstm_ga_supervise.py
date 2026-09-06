@@ -42,6 +42,7 @@ def supervise(command: list[str], metadata: Path, budget: float) -> int:
             start_new_session=True,
         )
         awake = None
+        previous_handlers = {}
         try:
             if Path("/usr/bin/caffeinate").exists():
                 awake = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(process.pid)])
@@ -53,8 +54,8 @@ def supervise(command: list[str], metadata: Path, budget: float) -> int:
                 nonlocal stop_requested
                 stop_requested = True
 
-            signal.signal(signal.SIGTERM, request_stop)
-            signal.signal(signal.SIGINT, request_stop)
+            for signum in (signal.SIGTERM, signal.SIGINT):
+                previous_handlers[signum] = signal.signal(signum, request_stop)
             signaled_at = None
             while process.poll() is None:
                 elapsed = time.monotonic() - started
@@ -78,6 +79,8 @@ def supervise(command: list[str], metadata: Path, budget: float) -> int:
             persist()
             return int(process.returncode or 0)
         finally:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
             # Cover an unexpected supervisor exception and orphaned workers.
             terminate_group(process.pid, signal.SIGKILL)
             if awake is not None and awake.poll() is None:

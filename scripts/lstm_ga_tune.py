@@ -858,6 +858,21 @@ def _finite_metric(value: Any, default: float = -math.inf) -> float:
     return parsed if math.isfinite(parsed) else default
 
 
+def _evaluation_inputs(candidate: Mapping[str, Any], context: EvaluationContext) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if context.objective != "grid" or candidate.get("origin") == "holdout-report":
+        return context.visible_frame, context.bundle_payload
+    visible = context.visible_frame.iloc[:context.holdout_start].copy()
+    cutoff = pd.Timestamp(visible["Date"].iloc[-1]).date()
+    bundle = dict(context.bundle_payload)
+    for key, values in bundle.items():
+        if isinstance(values, list) and values and isinstance(values[0], dict) and "observed_at" in values[0]:
+            bundle[key] = [
+                row for row in values
+                if pd.Timestamp(row["observed_at"]).date() <= cutoff
+            ]
+    return visible, bundle
+
+
 def _evaluate_signal_result(
         candidate: Mapping[str, Any],
         context: EvaluationContext,
@@ -865,13 +880,13 @@ def _evaluate_signal_result(
 ) -> dict[str, Any]:
     started = time.perf_counter()
     strategy = LSTMPriceFieldStrategy()
-    strategy._warmup_bundle = context.bundle_payload
+    visible_frame, strategy._warmup_bundle = _evaluation_inputs(candidate, context)
     strategy.training_progress = progress
     strategy.training_min_seconds = context.minimum_training_seconds
     settings = context.backtest_settings or validate_training_configuration(None)
     params = dict(candidate["params"])
     try:
-        signal_result = strategy.compute_signals(context.visible_frame, params)
+        signal_result = strategy.compute_signals(visible_frame, params)
         device = signal_result.presentation.get("device", {})
         if str(params.get("compute_backend", "CPU")) == "GPU":
             resolved = str(device.get("resolved", "")).lower()
@@ -1335,27 +1350,17 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
             _finite_metric(item.get("validation_median_probability_score_pct"))
             for item in group
         ]
-        feasible = (
-            len(group) == len(ROBUST_SEEDS)
-            and all(math.isfinite(value) for value in holdout_rates)
-            and all(value >= MIN_COVERAGE_PCT for value in holdout_coverages)
-            and all(
-                int((item.get("holdout") or {}).get("direction_scored_points", 0) or 0)
-                >= MIN_HOLDOUT_DIRECTION_POINTS
-                for item in group
-            )
-        )
         probability_mode = group[0].get("objective") in {"probability", "grid"}
         seed_fitness = [_finite_metric(item.get("fitness")) for item in group]
-        if probability_mode:
-            feasible = (
-                len(group) == len(ROBUST_SEEDS)
-                and {int(item["params"]["lstm_seed"]) for item in group} == set(ROBUST_SEEDS)
-                and all(item.get("feasible") for item in group)
-                and all(math.isfinite(value) for value in seed_fitness)
-            )
+        feasible = (
+            len(group) == len(ROBUST_SEEDS)
+            and {int(item["params"]["lstm_seed"]) for item in group} == set(ROBUST_SEEDS)
+            and all(item.get("feasible") for item in group)
+            and all(math.isfinite(value) for value in seed_fitness)
+        )
         aggregate = {
             "objective": group[0].get("objective", "direction"),
+            "validation_mean_fitness": float(np.mean(seed_fitness)) if feasible else None,
             "validation_mean_probability_fitness": float(np.mean(seed_fitness)) if probability_mode and feasible else None,
             "validation_fitness_std": float(np.std(seed_fitness)) if probability_mode and feasible else None,
             "model_key": model_key,
@@ -1376,13 +1381,7 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
         aggregated.append(aggregate)
     return sorted(
         aggregated,
-        key=lambda item: (float(bool(item["feasible"])), _finite_metric(item.get("validation_mean_probability_fitness"))) if item.get("objective") in {"probability", "grid"} else (
-            1.0 if item["feasible"] else 0.0,
-            _finite_metric(item.get("holdout_median_hit_rate_pct")),
-            _finite_metric(item.get("holdout_min_hit_rate_pct")),
-            _finite_metric(item.get("validation_median_hit_rate_pct")),
-            _finite_metric(item.get("validation_median_probability_score_pct")),
-        ),
+        key=lambda item: (float(bool(item["feasible"])), _finite_metric(item.get("validation_mean_fitness"))),
         reverse=True,
     )
 
@@ -1761,6 +1760,34 @@ def _run(args: argparse.Namespace) -> int:
                     best_aggregate = aggregates[0] if aggregates else None
                     if not best_aggregate or not best_aggregate.get("feasible"):
                         raise RuntimeError("No feasible multi-seed winner; inspect the preserved evaluations and checkpoint.")
+                    if context.objective == "grid":
+                        # Freeze selection before any holdout inference, including
+                        # backend failures. Never promote a runner-up on holdout.
+                        _atomic_write_json(paths.state / "selection.json", {
+                            "selected_at": _now_utc().isoformat(),
+                            "best": best_aggregate,
+                            "robust_leaderboard": aggregates,
+                        })
+                        report_candidates = [
+                            _candidate_record(item["params"], generation, "holdout-report", context.snapshot_fingerprint)
+                            for item in best_aggregate["seed_results"]
+                        ]
+                        report_candidates.append(_candidate_record(
+                            base_params, generation, "holdout-report", context.snapshot_fingerprint,
+                        ))
+                        report_candidates = list({item["candidate_key"]: item for item in report_candidates}.values())
+                        reports = _evaluate_batch(executor, report_candidates, total_deadline)
+                        for report in reports:
+                            _append_jsonl(paths.evaluations, report)
+                        evaluated += len(reports)
+                        if len(reports) != len(report_candidates) or any(report.get("status") != "ok" for report in reports):
+                            raise RuntimeError("Winner selection is frozen, but final holdout reporting is incomplete.")
+                        best_aggregate["holdout_reports"] = [
+                            report for report in reports if report["model_key"] == best_aggregate["model_key"]
+                        ]
+                        baseline["holdout_report"] = next(
+                            report for report in reports if report["candidate_key"] == baseline_candidate["candidate_key"]
+                        )
                     final_payload = {
                         "schema": 1,
                         "status": "completed",
@@ -1826,6 +1853,15 @@ def _run(args: argparse.Namespace) -> int:
                     leaderboard=leaderboard,
                     context=context,
                 ))
+        except Exception as exc:
+            _atomic_write_json(paths.status, _status_payload(
+                spec, paths, status="failed", started_at=started_at_text,
+                elapsed_seconds=time.monotonic() - (total_deadline - float(args.duration_seconds)),
+                generation=generation, evaluated=evaluated, phase=phase,
+                leaderboard=leaderboard, context=context, error=f"{type(exc).__name__}: {exc}",
+            ))
+            _write_log(paths.log, f"failed: {type(exc).__name__}: {exc}")
+            raise
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
     return 0
