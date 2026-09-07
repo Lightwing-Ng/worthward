@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.1.1`
+Documentation version: `v1.1.3`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -36,6 +36,15 @@ dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
 
+Ticker inputs share one leading-slot geometry in `components/forms.css`: the
+logo center is half the input height from its leading edge and vertically
+centered. Text padding follows the same center and logo size, preserving the
+existing logo-to-text gap as responsive control heights change.
+
+Nested `ui-collapse` children retain their leading indentation while their
+containing body omits trailing padding. Parent and child disclosure chevrons
+therefore share the same trailing edge at every nesting level.
+
 The shared `ui-collapse` primitive owns native disclosure markers and token-driven
 header/body spacing. Native disclosures use the agenticContext browser-picker
 chevron: 12px by 8px, current text color, down when closed and rotated 180
@@ -56,3 +65,13 @@ inheriting the same primitive. Do not restore model-specific accordion CSS.
 Keep selector order stable unless the change intentionally modifies cascade
 behavior. Run the static cache-version contract and browser checks after a
 manifest or load-order change.
+
+## Field-label typography
+
+Ordinary form labels, ticker field headings, switch captions, and strategy parameter
+labels use `--font-ui-lg` (15px) and `--font-weight-regular` (400), matching the
+agenticContext Agent Session source label. Forms and workspace component owners
+apply this contract at every existing breakpoint. Keep input values, selected
+segmented options, section headings, and data-table headers on their own semantic
+typography rules. Do not change `--font-form-label` globally: legacy consumers also
+include control values and supporting copy.

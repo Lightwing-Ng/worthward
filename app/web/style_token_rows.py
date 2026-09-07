@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.18.1
+Code version: v1.18.2
 """
 
 from __future__ import annotations
@@ -190,11 +190,11 @@ def build_style_token_rows(
             "tokens": [
                 material_reference_token("--segmented-control-material", "Frosted glass"),
                 raw_token("--mode-switch-radius", "var(--radius-pill)"),
-                px_token("--mode-switch-pad", 4, 0),
+                px_token("--mode-switch-pad", 2, 0),
                 px_token("--mode-switch-gap", 4, 0),
-                px_token("--mode-switch-min-height", 36, 1),
-                px_token("--mode-switch-thumb-inset", 4, 0),
-                px_token("--mode-switch-thumb-offset", 6, 0),
+                px_token("--mode-switch-min-height", 32, 1),
+                px_token("--mode-switch-thumb-inset", 2, 0),
+                px_token("--mode-switch-thumb-offset", 4, 0),
                 px_token("--mode-switch-label-pad-inline", 12, 0),
                 px_token("--mode-switch-label-min-height", 28, 1),
                 raw_token("--mode-switch-thumb-background", "var(--accent-fill)"),

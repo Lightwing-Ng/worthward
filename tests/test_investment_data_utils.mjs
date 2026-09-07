@@ -1,4 +1,4 @@
-/* Code version: v1.46.1 */
+/* Code version: v1.46.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -4837,5 +4837,44 @@ test('missing FX invalidates an open foreign holding and historical valuation', 
         assert.ok(Number.isNaN(valuation.marketValue));
     } finally {
         globalThis.window = previousWindow;
+    }
+});
+
+test('dated performance snapshots count dividend income and withholding once across the boundary', () => {
+    for (const includesIncome of [false, true]) {
+        for (const asOf of ['2026-07-15', '2026-08-31']) {
+            const incomeInSnapshot = asOf === '2026-07-15' ? 18 : 27;
+            globalThis.window = {WORTHWARD_INVESTMENT_DATA: {
+                broker_summaries: {ibkr: {
+                    account: 'U999999',
+                    performance_snapshot_authoritative: true,
+                    performance_snapshot_as_of: asOf,
+                    performance_snapshot: {QQQI: {
+                        currency: 'USD', realized_total: includesIncome ? String(incomeInSnapshot) : '0',
+                        realized_total_includes_nonperformance: includesIncome,
+                    }},
+                    position_snapshot_authoritative: true,
+                    position_snapshot_as_of: '2026-08-31',
+                    position_snapshot: {QQQI: {quantity: '10', cost_price: '50'}},
+                }},
+            }};
+            const buy = {...makeImportedTrade({type: 'buy', date: '2026-06-01', quantity: 10, price: 50}),
+                broker: 'ibkr', account: 'U999999', ticker: 'QQQI'};
+            const income = (date, type, amount) => ({broker: 'ibkr', account: 'U999999',
+                ticker: 'QQQI', currency: 'USD', date, type, normalized: {net_amount: String(amount)}});
+            const transactions = [buy,
+                income('2026-06-18', 'dividend', 20),
+                income('2026-06-18', 'foreign_tax_withholding', -2),
+                income('2026-08-21', 'payment_in_lieu', 10),
+                income('2026-08-21', 'foreign_tax_withholding', -1),
+            ];
+            const qqqi = buildTickerSummaries(transactions, {}, 0, {})[0];
+            assert.equal(qqqi.realizedPnl, 27, `${asOf}, includesIncome=${includesIncome}`);
+            const account = qqqi.realizedPnlAccounts[0];
+            assert.equal(account.status, 'complete');
+            assert.equal(Object.values(account.realizedPnlByDateLocal).reduce((sum, n) => sum + n, 0), 27);
+            assert.equal(account.reconciliation.baselineRealizedPnlLocal, incomeInSnapshot);
+            assert.equal(account.reconciliation.incrementalRealizedPnlLocal, 27 - incomeInSnapshot);
+        }
     }
 });

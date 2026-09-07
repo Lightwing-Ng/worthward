@@ -1,4 +1,4 @@
-/* Code version: v0.29.1 */
+/* Code version: v0.29.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -261,11 +261,11 @@
 	--local-store-pagination-motion-duration: var(--motion-duration-spatial);
 	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
-	--mode-switch-pad: 4px;
+	--mode-switch-pad: 2px;
 	--mode-switch-gap: 4px;
-	--mode-switch-min-height: 36px;
-	--mode-switch-thumb-inset: 4px;
-	--mode-switch-thumb-offset: 6px;
+	--mode-switch-min-height: 32px;
+	--mode-switch-thumb-inset: 2px;
+	--mode-switch-thumb-offset: 4px;
 	--mode-switch-label-pad-inline: 12px;
 	--mode-switch-label-min-height: 28px;
 	--mode-switch-thumb-background: var(--accent-fill);

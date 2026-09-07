@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.30.0
+ * Code version: v0.30.1
  * - Added: Hover dates reuse the Overview date badge component and shared updater.
  * - Changed: Hover guides intersect the price curve at pointer X using the
  *   Backtest polyline resolver, independently of trade-marker snapping.
@@ -114,15 +114,15 @@
  */
 
 import '../backtest/distributions.js?v=backtest-distributions-v1.0.0';
-import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.30.0';
+import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.30.1';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.111.1';
+} from './data-utils.js?v=investment-data-utils-v1.111.2';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.30.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.30.1';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;

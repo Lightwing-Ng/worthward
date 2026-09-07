@@ -1,5 +1,16 @@
 # Known issues and operating constraints
 
+Dividend reconciliation, 7 Sep 2026: when an authoritative trading-performance
+snapshot precedes later income, dividends, payment in lieu, withholding, and
+included cash adjustments after that boundary enter only incremental P&L.
+They are not also added to the baseline. Snapshots already including income
+retain their reported baseline.
+
+HSBC pending-order history cash, 7 Sep 2026: an unresolved order uses the
+authoritative bank cash plus the signed, source-bounded pending amount once.
+Earlier settlement replay corrections cannot change this row when the broker
+filter changes. The provisional marker remains until settlement is evidenced.
+
 Market factor expansion, 7 Sep 2026: 36 shared Price Field controls now include
 13 opt-in historical quantity/price factors. Generic parameter subgroups reuse
 the existing Collapse and field primitives. Snapshot-only and undisclosed
@@ -93,7 +104,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.9`
+Documentation version: `v1.244.12`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
@@ -351,6 +362,12 @@ See `TESTING.md` for exact commands and evidence; no clean-baseline attribution
 is claimed and concurrent layout work remains preserved.
 
 ## Investment imports
+
+- IBKR cash boundaries with explicit intraday times are compared
+  chronologically. Reapplying an older same-day web capture cannot overwrite
+  newer file cash, and obsolete currency components are removed with the old
+  boundary. A canonical cumulative CSV performance snapshot also refreshes
+  the compatibility broker summary, including its independent as-of date.
 
 - Import-complete `Transfer review` feedback is scoped to source rows that
   became actionable during that import. Pre-existing `Unbound` rows remain

@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 /* One trailing disclosure affordance for every native details control. */
 details > summary {
 	display: grid;
@@ -55,4 +55,7 @@ details[open] > summary::after {
 .ui-collapse-body {
 	min-width: 0;
 	padding: var(--collapse-body-padding);
+}
+.ui-collapse-body:has(> .ui-collapse) {
+	padding-inline-end: 0;
 }

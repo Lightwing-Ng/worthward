@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.111.1
+ * Code version: v1.111.2
+ * - Fixed: Post-snapshot income belongs only to incremental realized P&L,
+ *   preventing dividends and withholding from also entering the baseline.
  * - Fixed: Complete file history can reconstruct an omitted IBKR position boundary.
  * - Fixed: Missing FX propagates an unknown valuation instead of currency parity.
  * - Added: Aggregate P&L coverage distinguishes complete, partial, and unavailable.
@@ -2225,6 +2227,7 @@ export function createInvestmentDataUtils({
             totalCost: 0,
             realizedPnl: 0,
             nonPerformanceRealizedPnl: 0,
+            nonPerformanceRealizedPnlByDate: {},
             realizedPnlByDate: {},
             lastCloseDate: null,
             lastTradeDate: null,
@@ -3251,9 +3254,19 @@ export function createInvestmentDataUtils({
                 || seedReplayRequired
             ),
         );
+        const postPerformanceIncome = normalizedPerformanceAsOf
+            ? Object.entries(scopeState?.nonPerformanceRealizedPnlByDate || {}).reduce(
+                (total, [date, amount]) => date > normalizedPerformanceAsOf
+                    ? total + (Number(amount) || 0)
+                    : total,
+                0,
+            )
+            : 0;
         const baselineRealizedPnlLocal = hasPerformance
             ? Number(performanceEntry.realizedTotal)
-                + (performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal)
+                + (performanceEntry.includesNonperformance
+                    ? 0
+                    : nonPerformanceRealizedPnlLocal - postPerformanceIncome)
             : 0;
         const incrementalRealizedPnlLocal = hasPerformance
             ? (supplementalComplete ? Number(supplemental.realizedPnl) || 0 : 0)
@@ -4007,6 +4020,12 @@ export function createInvestmentDataUtils({
         ) {
             summary.realizedPnl += amount;
             summary.nonPerformanceRealizedPnl += amount;
+            if (ledgerDate) {
+                summary.nonPerformanceRealizedPnlByDate ||= {};
+                summary.nonPerformanceRealizedPnlByDate[ledgerDate] = (
+                    Number(summary.nonPerformanceRealizedPnlByDate[ledgerDate]) || 0
+                ) + amount;
+            }
             return amount;
         }
         return 0;
@@ -6327,7 +6346,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.111.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.111.2';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

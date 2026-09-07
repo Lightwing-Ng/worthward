@@ -1,4 +1,4 @@
-/* Code version: v3.64.3 */
+/* Code version: v3.64.4 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -1994,9 +1994,9 @@
 
 .style-token-settings-input-label {
     margin: 0;
-    font-size: var(--font-form-label);
+    font-size: var(--font-ui-lg);
     line-height: 1.25;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-regular);
     color: var(--text);
 }
 

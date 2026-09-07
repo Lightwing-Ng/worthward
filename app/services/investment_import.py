@@ -1,7 +1,9 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.105.0
+Code version: v0.106.0
+- Fixed: Newer IBKR cash evidence replaces the entire dated cash boundary,
+  and canonical CSV performance snapshots also refresh compatibility summaries.
 - Added: Broker snapshot payloads now expose per-account and per-ticker
   realized-P&L coverage, independent as-of dates, and replay requirements so
   consumers cannot treat a partial performance boundary as complete.
@@ -8377,6 +8379,20 @@ def _ibkr_user_verified_cash_summary_can_replace(
         )
     if not incoming_datetime:
         return False
+    if any(
+        _normalize_ibkr_cash_snapshot_datetime(existing_summary.get(field_name))
+        for field_name in (
+            "ending_cash_replay_as_of_datetime",
+            "ending_cash_as_of_datetime",
+        )
+    ):
+        # Reapplying an older capture after a file merge must not roll back
+        # a later same-day file boundary.
+        return incoming_datetime > existing_datetime or (
+            incoming_datetime == existing_datetime
+            and _parse_decimal_text_or_none(existing_summary.get("ending_cash"))
+            == _parse_decimal_text_or_none(incoming_summary.get("ending_cash"))
+        )
     # A user capture with the same calendar date as an older date-only file
     # snapshot is allowed to refine that snapshot with its exact fill time.
     return incoming_datetime[:10] >= existing_datetime[:10]
@@ -8408,6 +8424,8 @@ def _merge_ibkr_cash_snapshot_fields(
     if incoming_is_newer:
         merged = {**existing_summary, **incoming_summary}
         for field_name in (
+            "ending_cash_by_currency",
+            "ending_cash_base_currency",
             "ending_cash_as_of_datetime",
             "ending_cash_replay_as_of_datetime",
             "cash_snapshot_verification",
@@ -8419,6 +8437,8 @@ def _merge_ibkr_cash_snapshot_fields(
 
     merged = {**existing_summary, **incoming_summary}
     protected_fields = (
+        "ending_cash_by_currency",
+        "ending_cash_base_currency",
         "ending_cash",
         "ending_cash_raw",
         "cash_snapshot_source",
@@ -9232,6 +9252,17 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
                 and _normalize_text(entry.get("realized_total_source"))
                 == "ibkr_closed_trades"
                 for entry in summary_performance_snapshot.values()
+            )
+            and not (
+                snapshot.get("performance_snapshot_authoritative") is True
+                and _normalize_text(snapshot.get("performance_snapshot_source"))
+                == "ibkr_csv_realized_summary"
+                and any(
+                    isinstance(entry, dict)
+                    and _normalize_text(entry.get("realized_total_source"))
+                    == "ibkr_csv_cumulative_non_overlapping_periods"
+                    for entry in snapshot.get("performance_snapshot", {}).values()
+                )
             )
         )
         performance_fields = {

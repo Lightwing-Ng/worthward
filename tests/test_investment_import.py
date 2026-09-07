@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.39.0
+Code version: v0.40.0
+- Added: Same-day file cash supersedes older web cash without stale currency
+  components, and canonical CSV P&L refreshes legacy summaries.
 - Added: HSBC non-USD cash-only merges retain the existing authoritative USD
   current-cash boundary for current total-equity calculations.
 - Added: IBKR Your Holdings clipboard captures produce validated cash and
@@ -7730,6 +7732,41 @@ Fees: 0.0""",
             "2026-07-02 22:33:38",
         )
 
+    def test_ibkr_same_day_file_cash_replaces_older_web_boundary_in_both_orders(self) -> None:
+        web = {
+            "broker": "ibkr",
+            "account": "U00000001",
+            "ending_cash": "100",
+            "ending_cash_by_currency": {"USD": "100"},
+            "summary": {
+                "cash_snapshot_authoritative": True,
+                "cash_snapshot_source": "ibkr_user_verified_app_cash",
+                "ending_cash_as_of": "2026-07-02",
+                "ending_cash_replay_as_of": "2026-07-02",
+                "ending_cash_as_of_datetime": "2026-07-02 09:00:00",
+                "ending_cash_replay_as_of_datetime": "2026-07-02 09:00:00",
+            },
+            "transactions": [],
+        }
+        evidence = InvestmentImportTests._ibkr_gainskeeper_evidence_file().replace(
+            b"</INVSTMTRS>",
+            b"<INVBAL><BALLIST><BAL><NAME>Cash</NAME><VALUE>312.45</VALUE>"
+            b"</BAL></BALLIST></INVBAL></INVSTMTRS>",
+        )
+        file_payload = build_investment_payload_from_ibkr_gainskeeper_files([
+            (evidence, "cash-boundary.gkx"),
+        ])
+        for first, second in ((web, file_payload), (file_payload, web)):
+            with self.subTest(first=first["summary"]["cash_snapshot_source"]):
+                merged = merge_investment_payloads(deepcopy(first), deepcopy(second))
+                summary = merged["broker_summaries"]["ibkr"]
+                self.assertEqual(summary["ending_cash"], "312.45")
+                self.assertEqual(summary["cash_snapshot_source"], "ibkr_gainskeeper_balances")
+                self.assertEqual(summary["ending_cash_as_of_datetime"], "2026-07-02 22:33:38")
+                self.assertNotEqual(summary.get("ending_cash_by_currency"), {"USD": "100"})
+                repeated = merge_investment_payloads(merged, deepcopy(web))
+                self.assertEqual(repeated["broker_summaries"]["ibkr"]["ending_cash"], "312.45")
+
     def test_ibkr_gainskeeper_other_transactions_preserve_source_identity(self) -> None:
         payload = build_investment_payload_from_ibkr_gainskeeper_files([
             (
@@ -8858,6 +8895,18 @@ Fees: 0.0"""
             dram["realized_total_source"],
             "ibkr_csv_cumulative_non_overlapping_periods",
         )
+        stale_summary = merged["broker_summaries"]["ibkr"]
+        stale_summary["performance_snapshot"] = {
+            "DRAM": {
+                "realized_total": "159.716076",
+                "realized_total_source": "ibkr_closed_trades",
+            },
+        }
+        stale_summary["performance_snapshot_as_of"] = "2026-07-31"
+        refreshed = normalize_investment_payload_tickers(merged)
+        refreshed_summary = refreshed["broker_summaries"]["ibkr"]
+        self.assertEqual(refreshed_summary["performance_snapshot"]["DRAM"], dram)
+        self.assertEqual(refreshed_summary["performance_snapshot_as_of"], "2026-08-14")
 
     def test_newer_ibkr_gainskeeper_marks_preserve_existing_csv_cost_basis(self) -> None:
         transactions_csv, positions_csv = InvestmentImportTests._ibkr_csv_evidence_pair()

@@ -1,4 +1,4 @@
-/* Code version: v1.206.4 */
+/* Code version: v1.206.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -10379,6 +10379,49 @@ test('keeps HSBC pending-sell cash source-bounded in history and equity', async 
         liveSummary.cash + liveSummary.marketValue,
         8,
     );
+});
+
+test('keeps pending HSBC history cash independent of earlier settlement corrections and broker filters', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        transactions: [
+            {broker: 'ibkr', date: '2026-08-01', type: 'deposit', currency: 'USD', amount: 4000},
+            {
+                broker: 'hsbc', account: 'HSBC-TEST', date: '2026-08-02',
+                type: 'buy', ticker: 'DRAM', currency: 'USD', quantity: 100, price: 50, amount: -5000,
+                source: {
+                    order_id: 'P-900001', cash_settlement_date: '2026-08-03',
+                    cash_settlement_amount_raw: '-5000', cash_settlement_balance_after_raw: '20000',
+                },
+            },
+            {
+                broker: 'hsbc', account: 'HSBC-TEST', date: '2026-08-04',
+                type: 'sell', ticker: 'DRAM', currency: 'USD', quantity: 5, price: 60, amount: 300,
+                source: {order_id: 'S-900002', cash_replay_pending_settlement: true},
+            },
+        ],
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc', account: 'HSBC-TEST', ending_cash: '20000',
+                ending_cash_base_currency: '20000', cash_snapshot_authoritative: true,
+                cash_snapshot_as_of: '2026-08-05', position_snapshot_authoritative: true,
+                position_snapshot: {DRAM: {quantity: '95', market_value: '5700', last_price: '60'}},
+            },
+        },
+        priceHistoryByTicker: {DRAM: [{date: '2026-08-02', close: 50}, {date: '2026-08-04', close: 60}]},
+        intradayRows: () => [],
+    });
+    for (const broker of ['', 'hsbc', 'hsbc,ibkr']) {
+        await page.goto(`/trade/investment?view=holdings${broker ? `&broker=${broker}` : ''}`);
+        const row = page.locator('[id^="investment_history_row_"]').filter({hasText: 'S-900002'});
+        await expect(row).toHaveCount(1);
+        await expect(row.locator('td').nth(8)).toContainText('5,700.00');
+        await expect(row.locator('td').nth(9)).toContainText('*20,300.00');
+        await expect(row.locator('td').nth(10)).toContainText('*26,000.00');
+        const settled = page.locator('[id^="investment_history_row_"]').filter({hasText: 'Buy'});
+        await expect(settled.locator('td').nth(9)).toContainText('20,000.00');
+        await expect(settled.locator('td').nth(9)).not.toContainText('*');
+    }
 });
 
 test('keeps actual aggregate cash after an internal subaccount bridge', async ({page}) => {

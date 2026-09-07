@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.138.0
+ * Code version: v2.138.2
+ * - Fixed: Pending HSBC history cash uses its authoritative cash boundary once,
+ *   independently of earlier settlement corrections and broker filters.
  * - Fixed: Missing FX and partial P&L coverage withhold aggregate valuations.
  * - Changed: Overview equity hover now coalesces pointer work through one
  *   animation frame, updates Chart.js only when the selected point changes,
@@ -363,7 +365,7 @@ import {
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.111.1';
+} from './investment/data-utils.js?v=investment-data-utils-v1.111.2';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -394,7 +396,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.30.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.30.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -443,7 +445,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.138.0',
+    entry: 'v2.138.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -17339,10 +17341,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     const normalizedCurrency = String(transactionCurrency).trim().toUpperCase() || baseCurrency;
                     delete corrections[normalizedCurrency];
                 }
-                const historyCash = baseCash + getCashCorrectionInBaseCurrency(
-                    corrections,
-                    ledgerDate,
-                );
+                const pendingCashBoundary = isHsbcSettlementActuallyPending(source)
+                    ? getInvestmentBrokerEndingCashInBaseCurrency(brokerCode)
+                    : null;
+                // Pending orders already project the authoritative bank cash.
+                // Older settlement corrections belong to historical replay and
+                // cannot be added to this independently anchored row again.
+                const historyCash = pendingCashBoundary !== null
+                    && Number.isFinite(Number(pendingCashBoundary))
+                    ? Number(pendingCashBoundary) + (Number(txn?.broker_pending_settlement_cash) || 0)
+                    : baseCash + getCashCorrectionInBaseCurrency(corrections, ledgerDate);
                 const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
                 const isProvisional = pendingScopes.has(scopeKey);
                 txn.history_broker_cash = historyCash;
