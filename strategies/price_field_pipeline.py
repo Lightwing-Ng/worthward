@@ -6,7 +6,7 @@ AR(1) return state, diagnostics, and signal/presentation support. Model
 training, posterior inference, factor selection, and backend scheduling remain
 strategy-owned.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -55,9 +55,43 @@ class PriceFieldFactorDefinition:
     observation_key: str | None = None
     max_staleness_days: int | None = None
 
+    @property
+    def category(self) -> str:
+        if self.provider_key == "ohlcv":
+            return "Price and volume"
+        if self.provider_key == "options":
+            return "Options"
+        if self.provider_key in {"pe", "dynamic_pe", "pb_ratio", "ps_ratio", "dividend_yield"}:
+            return "Valuation"
+        if self.provider_key == "market_temperature":
+            return "Market sentiment"
+        return "Research availability"
+
+
+# These inputs reuse the same dated CLI bars; no extra network request or
+# snapshot backfill is needed. Rolling windows require all preceding bars.
+_PRICE_VOLUME_FACTORS = (
+    ("turnover", "Turnover", "Log of observed daily traded value; unavailable when the CLI omits turnover."),
+    ("return_1d", "Daily Return", "Close-to-close log return over one completed trading bar."),
+    ("momentum_5d", "5-day Momentum", "Close-to-close log return over five completed trading bars."),
+    ("momentum_20d", "20-day Momentum", "Close-to-close log return over twenty completed trading bars."),
+    ("momentum_60d", "60-day Momentum", "Close-to-close log return over sixty completed trading bars."),
+    ("volatility_20d", "20-day Volatility", "Standard deviation of the last twenty daily log returns; not annualized."),
+    ("amplitude", "Daily Amplitude", "Observed high-low range divided by the preceding close."),
+    ("overnight_gap", "Overnight Gap", "Log of the current open divided by the preceding close."),
+    ("intraday_return", "Intraday Return", "Log of the current close divided by its open."),
+    ("close_location", "Close Location", "Close position in the daily low-high range; flat ranges remain unavailable."),
+    ("relative_volume_20d", "20-day Relative Volume", "Volume divided by the preceding twenty-bar mean, excluding the current bar; not the CLI intraday volume ratio."),
+    ("volume_change", "Volume Change", "Change in log volume from the previous trading bar."),
+    ("illiquidity_20d", "20-day Illiquidity", "Mean absolute daily return per unit of observed turnover over twenty bars; no estimated turnover."),
+)
 
 PRICE_FIELD_FACTOR_DEFINITIONS = tuple(sorted(
     (
+        *(PriceFieldFactorDefinition(
+            key=key, label=label, parameter_key=f"use_{key}",
+            provider_key="ohlcv", default=False, help_text=help_text,
+        ) for key, label, help_text in _PRICE_VOLUME_FACTORS),
         PriceFieldFactorDefinition(
             key="broker_holding",
             label="Broker Holding",
@@ -815,6 +849,39 @@ def _build_factor_columns(
         "volume": np.log1p(volume.where(volume > 0.0)).to_numpy(dtype=np.float64),
         "volume_at_price": volume_at_price,
     }
+    close = pd.to_numeric(frame["Close"], errors="coerce")
+    close = close.where(np.isfinite(close) & (close > 0.0))
+    open_price = pd.to_numeric(frame["Open"], errors="coerce")
+    open_price = open_price.where(np.isfinite(open_price) & (open_price > 0.0))
+    high = pd.to_numeric(frame["High"], errors="coerce")
+    low = pd.to_numeric(frame["Low"], errors="coerce")
+    span = (high - low).where((high >= close) & (low <= close) & (low > 0.0))
+    log_close = np.log(close)
+    daily_return = log_close.diff()
+    log_volume = np.log1p(volume.where(np.isfinite(volume) & (volume > 0.0)))
+    turnover = pd.to_numeric(
+        frame.get("Turnover", pd.Series(np.nan, index=frame.index)), errors="coerce",
+    )
+    turnover = turnover.where(np.isfinite(turnover) & (turnover > 0.0))
+    derived = {
+        "turnover": np.log1p(turnover),
+        "return_1d": daily_return,
+        "momentum_5d": log_close.diff(5),
+        "momentum_20d": log_close.diff(20),
+        "momentum_60d": log_close.diff(60),
+        "volatility_20d": daily_return.rolling(20, min_periods=20).std(ddof=1),
+        "amplitude": span / close.shift(1),
+        "overnight_gap": np.log(open_price / close.shift(1)),
+        "intraday_return": np.log(close / open_price),
+        "close_location": (close - low) / span.where(span > 0.0),
+        "relative_volume_20d": volume / volume.shift(1).rolling(20, min_periods=20).mean().replace(0.0, np.nan),
+        "volume_change": log_volume.diff(),
+        "illiquidity_20d": (daily_return.abs() / turnover).rolling(20, min_periods=20).mean(),
+    }
+    result.update({
+        key: value.replace([np.inf, -np.inf], np.nan).to_numpy(dtype=np.float64)
+        for key, value in derived.items()
+    })
     if pe_source is not None:
         result["pe"] = _signed_log_series(pe_source).to_numpy(dtype=np.float64)
     dynamic_pe_source = frame.get("bayesian_dynamic_pe_ratio")
@@ -1092,6 +1159,15 @@ def load_price_field_market_bundle(
         int(normalized_params.get("chip_window", 30))
         if bool(normalized_params.get("use_volume_at_price", True)) else 0,
     ) + 2
+    derived_lookbacks = {
+        "momentum_60d": 60, "momentum_20d": 20, "momentum_5d": 5,
+        "volatility_20d": 20, "relative_volume_20d": 20, "illiquidity_20d": 20,
+        "return_1d": 1, "overnight_gap": 1, "volume_change": 1, "amplitude": 1,
+    }
+    warmup_bars += max((
+        bars for key, bars in derived_lookbacks.items()
+        if bool(normalized_params.get(f"use_{key}", False))
+    ), default=0)
     warmup_days = math.ceil(warmup_bars * 7 / 5) + 14
     warmup_start = _normalized_timestamp(start) - timedelta(days=warmup_days)
 

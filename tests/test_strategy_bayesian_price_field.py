@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.26.4."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.27.0."""
 
 from __future__ import annotations
 
@@ -183,6 +183,11 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         }
         self.assertEqual(
             {
+                "use_turnover", "use_return_1d", "use_momentum_5d",
+                "use_momentum_20d", "use_momentum_60d", "use_volatility_20d",
+                "use_amplitude", "use_overnight_gap", "use_intraday_return",
+                "use_close_location", "use_relative_volume_20d",
+                "use_volume_change", "use_illiquidity_20d",
                 "use_pe_ratio",
                 "use_dynamic_pe_ratio",
                 "use_volume",

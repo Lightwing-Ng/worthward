@@ -1,4 +1,4 @@
-/* Code version: v3.64.2 */
+/* Code version: v3.64.3 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -2115,4 +2115,27 @@
 }
 .lstm-training-history-entry > .lstm-training-history-error {
     display: block;
+}
+
+/* Nested factor groups share the field grid without percentage-gap overflow. */
+.strategy-factor-group .trade-strategy-param {
+    grid-template-columns: minmax(0, 65fr) minmax(0, 35fr);
+}
+.strategy-factor-group > .ui-collapse-body {
+    padding-inline: 0;
+}
+.strategy-factor-group .trade-strategy-boolean-row {
+    min-width: 0;
+}
+.strategy-factor-group .trade-strategy-param-label-trigger {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.strategy-factor-group {
+    container-type: inline-size;
+}
+.strategy-factor-group .trade-strategy-param-help {
+    box-sizing: border-box;
+    max-width: min(280px, 100cqi);
 }

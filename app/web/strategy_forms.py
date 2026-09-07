@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -177,6 +177,7 @@ def build_strategy_form_field(
     return {
         "key": definition.key,
         "group": definition.group,
+        "subgroup": definition.subgroup,
         "label": definition.label,
         "kind": definition.kind,
         "field_type": field_type,
@@ -241,7 +242,13 @@ def build_strategy_form_sections(
     for section in strategy.get_parameter_sections():
         members = [field for field in fields if field.get("group", "parameters") == section["key"]]
         if members or section["kind"] == "action":
-            sections.append({**section, "fields": members})
+            groups: dict[str, list[dict[str, object]]] = {}
+            for member in members:
+                groups.setdefault(str(member.get("subgroup", "")), []).append(member)
+            sections.append({
+                **section, "fields": members,
+                "subgroups": [{"title": title, "fields": items} for title, items in groups.items()],
+            })
     return sections
 
 

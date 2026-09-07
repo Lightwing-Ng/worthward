@@ -1,11 +1,41 @@
 # Longbridge factor coverage audit
 
-Documentation version: v1.0.0
+Documentation version: v1.1.0
 Verified: 7 Sep 2026. Installed CLI: longbridge 0.23.1.
 
-## Existing controls and current selection
+## Implemented expansion
 
-The shared Price Field registry exposes 23 switches. The observed Backtest form
+The shared catalog now exposes 36 controls. Thirteen opt-in factors reuse
+Longbridge historical K-line OHLCV and observed turnover: turnover, daily return,
+5/20/60-bar momentum, 20-bar volatility, daily amplitude, overnight gap,
+intraday return, close location, 20-bar relative volume, volume change, and
+20-bar Amihud-style illiquidity. Relative volume compares the current bar with
+the preceding 20-bar mean; it is not the CLI intraday volume-ratio index.
+Rolling inputs require complete windows. Missing or nonpositive turnover stays
+unavailable; Close times Volume is never substituted. Extra warm-up history is
+requested when a derived lookback is enabled. Existing default selections are
+preserved; adding controls does not establish improved model performance.
+
+The catalog owns labels, provider identity, help text, and categories. Both
+Price Field strategies map that metadata into the generic parameter subgroup
+contract. The presentation builder groups fields once; the template composes
+existing Collapse and parameter-grid primitives, including switches, tooltips,
+keyboard behavior, reduced motion, and independent disclosure state. Nested
+field grids account for column gaps; help width uses the actual inline container
+(100cqi) without introducing viewport-specific breakpoints. No strategy
+IDs or factor lists are duplicated in the browser renderer. Five categories are
+Price and volume, Options, Valuation, Market sentiment, and Research availability.
+
+Read-only verification on 7 Sep 2026: `kline history DRAM.US --start 2026-09-01
+--end 2026-09-04 --period day --format json` returned observed turnover alongside
+OHLCV. `institution-rating NVDA.US --history --count 3` returned long historical
+arrays despite the count argument; rating periods and monthly target timestamps
+do not establish publication or revision availability. Those arrays are not
+silently promoted to causal financial-statement or analyst features.
+
+## Previous controls and observed selection
+
+Before this expansion, the shared Price Field registry exposed 23 switches. The observed Backtest form
 had eight enabled: volume, options, call open interest, call volume, put volume,
 put/call open-interest ratio, total open interest, and total option volume.
 
@@ -32,10 +62,10 @@ of better out-of-sample performance, because these counts and ratios overlap.
 | Analyst EPS revisions, rating changes, target-price revisions | forecast-eps, institution-rating | Current consensus alone is insufficient; use timestamped historical revisions |
 | Order-book imbalance, trade imbalance, capital-distribution composition | depth, trades, capital | Intraday/current observations need historical collection and market-session alignment |
 
-Historical returns and volatility can also be derived from existing causal
-OHLCV. Such derived features are new model inputs, not missing raw CLI fields.
-These are candidates for a separately validated model extension; this audit does
-not add switches backed only by present-day data.
+Historical returns and volatility are now implemented from causal OHLCV as
+described above. Snapshot-only capabilities in this table remain unavailable to
+historical training; adding them requires point-in-time data rather than more
+unchecked toggles.
 
 ## Read-only spot checks
 

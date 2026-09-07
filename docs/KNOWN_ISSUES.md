@@ -1,5 +1,11 @@
 # Known issues and operating constraints
 
+Market factor expansion, 7 Sep 2026: 36 shared Price Field controls now include
+13 opt-in historical quantity/price factors. Generic parameter subgroups reuse
+the existing Collapse and field primitives. Snapshot-only and undisclosed
+research data remain unavailable to causal training. See the factor audit for
+formulas, source checks, and eligibility boundaries.
+
 Backtest disclosures and training history, 7 Sep 2026: strategy parameter,
 training, and market-factor sections no longer share a native details name, so
 all can remain open independently. Training history entries use 2px padding and
@@ -87,7 +93,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.8`
+Documentation version: `v1.244.9`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

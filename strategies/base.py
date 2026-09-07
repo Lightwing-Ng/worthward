@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.10.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -70,6 +70,7 @@ class StrategyParameterDefinition:
     unit_hint: str = ""
     placeholder: str = ""
     group: Literal["parameters", "factors"] = "parameters"
+    subgroup: str = ""
     optimizable: bool = True
 
     def display_default(self) -> str:

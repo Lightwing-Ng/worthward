@@ -1,9 +1,14 @@
-"""Shared Price Field contract tests. Code version: v1.2.2."""
+"""Shared Price Field contract tests. Code version: v1.3.0."""
 
 from __future__ import annotations
 
 from pathlib import Path
 import unittest
+
+import numpy as np
+import pandas as pd
+
+from tests.factories.market import ohlc_frame_for_dates
 
 import strategies.algorithms.strategy_bayesian_price_field as bayesian_module
 import strategies.algorithms.strategy_lstm_price_field as lstm_module
@@ -25,6 +30,44 @@ from strategies.price_field_contract import (
 
 
 class PriceFieldContractTests(unittest.TestCase):
+    def test_derived_factors_are_causal_and_preserve_missing_turnover(self) -> None:
+        frame = ohlc_frame_for_dates("NVDA", pd.bdate_range("2025-01-01", periods=100).astype(str).tolist())
+        frame["Volume"] = np.arange(100, 200, dtype=float)
+        frame["Turnover"] = frame["Volume"] * frame["Close"]
+        build = pipeline_module.build_price_field_factor_columns
+        values = build(frame, 20, use_volume_at_price=False)
+        prefix = build(frame.iloc[:75], 20, use_volume_at_price=False)
+        for key, _, _ in pipeline_module._PRICE_VOLUME_FACTORS:
+            np.testing.assert_allclose(values[key][:75], prefix[key], equal_nan=True)
+        self.assertTrue(np.isnan(values["momentum_60d"][:60]).all())
+        self.assertAlmostEqual(values["momentum_60d"][60], np.log(frame.Close[60] / frame.Close[0]))
+        self.assertAlmostEqual(values["relative_volume_20d"][20], 120 / np.mean(np.arange(100, 120)))
+        self.assertAlmostEqual(values["turnover"][0], np.log1p(frame.Turnover[0]))
+        missing = build(frame.drop(columns="Turnover"), 20, use_volume_at_price=False)
+        self.assertTrue(np.isnan(missing["turnover"]).all())
+        self.assertTrue(np.isnan(missing["illiquidity_20d"]).all())
+        frame.loc[30, "High"] = frame.loc[30, "Low"] = frame.loc[30, "Close"]
+        frame.loc[40, "Turnover"] = -1
+        invalid = build(frame, 20, use_volume_at_price=False)
+        self.assertTrue(np.isnan(invalid["close_location"][30]))
+        self.assertTrue(np.isnan(invalid["turnover"][40]))
+        self.assertTrue(np.isnan(invalid["illiquidity_20d"][40:60]).all())
+
+    def test_factor_subgroups_are_reusable_without_duplicating_controls(self) -> None:
+        from app.web.strategy_forms import build_strategy_form_fields, build_strategy_form_sections
+        for strategy in (bayesian_module.BayesianPriceFieldStrategy(), lstm_module.LSTMPriceFieldStrategy()):
+            def factory(_key):
+                return strategy
+            fields = build_strategy_form_fields(strategy.strategy_id, {}, strategy_factory=factory)
+            sections = build_strategy_form_sections(strategy.strategy_id, fields, strategy_factory=factory)
+            factors = next(section for section in sections if section["key"] == "factors")
+            flattened = [field for group in factors["subgroups"] for field in group["fields"]]
+            self.assertCountEqual([field["key"] for field in flattened], list(pipeline_module.PRICE_FIELD_FACTOR_PARAMETER_KEYS))
+            self.assertEqual(len(flattened), len({field["key"] for field in flattened}))
+            self.assertIn("Price and volume", [group["title"] for group in factors["subgroups"]])
+            for key, _, _ in pipeline_module._PRICE_VOLUME_FACTORS:
+                self.assertFalse(strategy.get_default_params()[f"use_{key}"])
+
     def test_model_neutral_pipeline_is_the_runtime_owner(self) -> None:
         for name in (
             "_build_factor_columns",

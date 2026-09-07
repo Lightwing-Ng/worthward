@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.0.3 */
+/* Shared Backtest control primitives. Code version: v1.1.0 */
 import {test, expect} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -59,6 +59,24 @@ for (const colorScheme of ['light', 'dark']) {
             await expect(page.locator('#trade_strategy_params_panel > details[open]')).toHaveCount(2);
             await training.locator(':scope > summary').press('Enter');
             await expect(page.locator('#trade_strategy_params_panel > details[open]')).toHaveCount(3);
+            const factorGroups = page.locator('[data-collapse="factors"] .strategy-factor-group');
+            await expect(factorGroups).toHaveCount(5);
+            for (const group of await factorGroups.all()) {
+                await group.locator(':scope > summary').click();
+            }
+            await expect(page.locator('.strategy-factor-group[open]')).toHaveCount(5);
+            await expect(page.locator('[data-collapse="factors"] [data-strategy-param-key]')).toHaveCount(36);
+            await expect(page.locator('#strategy_param_use_turnover_switch')).not.toBeChecked();
+            const factorOverflow = await page.locator('[data-collapse="factors"]').evaluate(el => {
+                const bounds = el.getBoundingClientRect();
+                return [...el.querySelectorAll('[data-strategy-param-key], .switch, .trade-strategy-param-label-trigger > span:first-child')]
+                    .filter(node => {
+                        const rect = node.getBoundingClientRect();
+                        return rect.left < bounds.left - 1 || rect.right > bounds.right + 1;
+                    }).map(node => ({text: node.textContent.slice(0, 40), width: node.getBoundingClientRect().width}));
+            });
+            expect(factorOverflow).toEqual([]);
+            await page.screenshot({path: testInfo.outputPath('factor-groups.png'), fullPage: true});
             const remove = entry.locator('[data-lstm-training-delete]');
             await page.mouse.move(width - 10, 10);
             await expect(remove).toHaveCSS('opacity', '0');

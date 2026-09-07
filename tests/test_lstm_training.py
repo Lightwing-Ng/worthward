@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.3."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.7.0."""
 
 from __future__ import annotations
 
@@ -59,7 +59,9 @@ def test_history_exposes_complete_exact_configuration_and_measured_score(tmp_pat
     assert config["stop_loss"] is False
     assert config["params"]["lstm_seed"] == 17
     assert config["params"]["use_broker_holding"] is True
-    assert len(config["params"]) == 33
+    assert len(config["params"]) == 46
+    assert config["params"]["use_turnover"] is False
+    assert config["params"]["use_momentum_60d"] is False
 
 
 def test_delete_is_recoverable_and_does_not_renumber_survivors(tmp_path):

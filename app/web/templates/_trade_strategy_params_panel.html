@@ -1,4 +1,4 @@
-{# Code version: v0.5.1 #}
+{# Code version: v0.6.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% set has_actions = strategy_form_sections|selectattr("kind", "equalto", "action")|list|length > 0 %}
 {% for section in strategy_form_sections %}
@@ -6,9 +6,19 @@
         {% if section.kind == "action" %}
         <div class="strategy-action-slot" data-strategy-action-slot="{{ section.slot }}"></div>
         {% else %}
-            {% with strategy_form_fields=section.fields %}
-                {% include "_trade_strategy_param_grid.html" %}
-            {% endwith %}
+            {% for subgroup in section.subgroups %}
+                {% if subgroup.title %}
+                    {% call render_collapse(subgroup.title, section.key ~ "-" ~ loop.index, "", false, "strategy-factor-group") %}
+                        {% with strategy_form_fields=subgroup.fields %}
+                            {% include "_trade_strategy_param_grid.html" %}
+                        {% endwith %}
+                    {% endcall %}
+                {% else %}
+                    {% with strategy_form_fields=subgroup.fields %}
+                        {% include "_trade_strategy_param_grid.html" %}
+                    {% endwith %}
+                {% endif %}
+            {% endfor %}
         {% endif %}
     {% endcall %}
 {% endfor %}
