@@ -1,5 +1,32 @@
 # Known issues and operating constraints
 
+Overview tooltip coverage, 7 Sep 2026: historical realized P&L requires complete
+reconciliation coverage, but verified unrealized P&L for open positions is evaluated
+independently. Missing realized coverage on a closed ticker no longer blanks the
+unrealized total. Cumulative P&L remains unavailable unless both components are
+known. Pending values show `--`; completed unavailable values show `Unavailable`.
+The Investment report card uses zero bottom padding across its tabs and breakpoints;
+Backtest and Live trading retain their existing scoped padding.
+
+Settings surface annotations, 7 Sep 2026: language pagination uses the shared
+frosted-glass background, border, shadow, blur, and pill radius. Network status
+masks stay inside their status boxes, including wrapped text. The SMTP symbol
+uses an accent-text mask while preserving the existing image semantics. Strategy
+disclosure chevrons sit 12px from the summary top rather than centering against
+its full multi-line description. These changes are owned by settings.css v0.27.1.
+
+Stock-details compact layout, 7 Sep 2026: below 768px, the single-column
+identity, metrics, price chart, and allocation chart retain their natural heights.
+The Stock-details panel owns vertical scrolling. The price chart reuses the equity
+stage height token with a 200px floor, so its canvas and date axis remain intact
+instead of being compressed beneath the allocation chart. Scroll the upper panel
+to inspect its content; the transaction history retains its own scroll position.
+
+Stock-details hover date, 7 Sep 2026: the x-axis date badge shares the Overview
+blue date component, typography, date formatter, and chart-axis update helper.
+Its two-line date follows the curve intersection rather than a nearby trade marker;
+plot exit and chart destruction clear it. Range changes recreate one badge.
+
 Stock-details crosshair, 7 Sep 2026: hover uses the Backtest polyline intersection
 at pointer X, clamped to the first/last finite price point. Vertical pointer movement
 does not change the guide price. Trade-marker selection retains its linked history
@@ -53,7 +80,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.3`
+Documentation version: `v1.244.7`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

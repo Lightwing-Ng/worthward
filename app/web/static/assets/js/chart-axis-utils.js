@@ -1,7 +1,7 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
  * - Added: Shared rounded y-axis value badges preserve the Investment chart's
  *   decimal anchor, axis-label bounds, and theme radius contract.
  * - Added: Shared stock-price y-axis labels use grouped integers at or above
@@ -293,9 +293,40 @@
         };
     };
 
+    // Shared by Investment Overview and Stock details; styling stays in the
+    // existing trade-chart-hover-date-label component.
+    const updateHoverDateLabel = (element, {lines, x, top, width} = {}) => {
+        if (!element) return;
+        if (!lines || !Number.isFinite(x) || !Number.isFinite(top)) {
+            element.hidden = true;
+            element.classList.remove("is-visible");
+            return;
+        }
+        const spans = element.querySelectorAll("span");
+        for (let index = 0; index < 2; index += 1) {
+            const line = spans[index];
+            if (!line) continue;
+            const text = lines[index] || "";
+            if (line.textContent !== text) line.textContent = text;
+            if (index === 1) line.hidden = !text;
+        }
+        element.hidden = false;
+        const halfWidth = (element.offsetWidth || 42) / 2;
+        const clampedX = width > 0
+            ? Math.max(halfWidth, Math.min(width - halfWidth, x))
+            : x;
+        for (const [property, value] of [["left", `${clampedX}px`], ["top", `${top}px`]]) {
+            if (element.style.getPropertyValue(property) !== value) {
+                element.style.setProperty(property, value);
+            }
+        }
+        element.classList.add("is-visible");
+    };
+
     const api = Object.freeze({
         WIDE_CHART_BREAKPOINT_PX,
         STOCK_PRICE_INTEGER_THRESHOLD,
+        updateHoverDateLabel,
         buildTickIndexSet,
         sortedTickIndexes,
         formatStockPriceAxisValue,
@@ -305,7 +336,7 @@
         readThemeToken,
         readThemeTokens,
         normalizeSafeImageUrl,
-        CHART_AXIS_UTILS_VERSION: "v1.4.0",
+        CHART_AXIS_UTILS_VERSION: "v1.5.0",
     });
 
     globalScope.WORTHWARD_CHART_AXIS = api;

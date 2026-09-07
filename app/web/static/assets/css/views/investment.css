@@ -1,4 +1,4 @@
-/* Code version: v1.78.10 */
+/* Code version: v1.78.12 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1189,7 +1189,7 @@
 
 .investment-workspace-header > .investment-report-card:not(.live-trading-card):not(.backtest-trade-performance-card) {
     --workspace-article-pad-inline: 4px;
-    --workspace-article-pad-block-end: 4px;
+    --workspace-article-pad-block-end: 0px;
     gap: 4px;
 }
 
@@ -5607,9 +5607,16 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         --portfolio-donut-size: clamp(62px, 88%, 120px);
     }
 
-    .investment-stock-details-overview {
+    #stock_panel {
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+    }
+
+    #stock_panel > .investment-stock-details-overview {
+        flex: 0 0 auto;
+        min-height: min-content;
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto;
+        grid-template-rows: repeat(4, auto);
         height: auto;
         overflow: visible;
     }
@@ -5627,7 +5634,13 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         padding: 0;
     }
 
+    .investment-stock-details-metrics {
+        height: auto;
+        overflow: visible;
+    }
+
     .investment-stock-details-price-chart-card {
+        height: auto;
         padding: 0 4px;
     }
 
@@ -5637,8 +5650,9 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
     .investment-stock-details-price-chart-shell,
     .investment-stock-details-price-chart-empty {
+        flex: 0 0 auto;
         min-height: 200px;
-        height: auto;
+        height: max(200px, var(--investment-equity-stage-min-height));
     }
 
     .live-trading-surface {

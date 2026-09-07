@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.29.0
+ * Code version: v0.30.0
+ * - Added: Hover dates reuse the Overview date badge component and shared updater.
  * - Changed: Hover guides intersect the price curve at pointer X using the
  *   Backtest polyline resolver, independently of trade-marker snapping.
  * - Changed: Stock details now reads the canonical reconciliation timeline
@@ -121,7 +122,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.29.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.30.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -1758,6 +1759,7 @@ export function createInvestmentStockDetailsUtils({
         chartHost.innerHTML = `
             <div class="investment-stock-details-price-chart-stage">
                 <canvas class="investment-stock-details-price-chart-canvas"></canvas>
+                <div class="trade-chart-hover-date-label investment-equity-hover-date-label" data-investment-stock-details-hover-date-label aria-hidden="true" hidden><span></span><span></span></div>
                 <div class="investment-stock-details-live-marker" data-investment-stock-details-live-marker hidden aria-hidden="true">
                     <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-outer"></span>
                     <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-inner"></span>
@@ -1766,6 +1768,7 @@ export function createInvestmentStockDetailsUtils({
             </div>
         `;
         const canvas = chartHost.querySelector('canvas');
+        const hoverDateLabel = chartHost.querySelector('[data-investment-stock-details-hover-date-label]');
         const realtimeMarkerElement = chartHost.querySelector('[data-investment-stock-details-live-marker]');
         if (!(canvas instanceof HTMLCanvasElement)) return;
 
@@ -2361,6 +2364,9 @@ export function createInvestmentStockDetailsUtils({
         };
         const hoverGuidePlugin = {
             id: 'investmentStockDetailsHoverGuidePlugin',
+            afterDestroy() {
+                hoverDateLabel?.remove();
+            },
             beforeDatasetsDraw(chartInstance) {
                 const { ctx, chartArea } = chartInstance;
                 const y = chartInstance?._activeInvestmentStockDetailsGuideY;
@@ -2378,8 +2384,18 @@ export function createInvestmentStockDetailsUtils({
             },
             afterDatasetsDraw(chartInstance) {
                 const { ctx, chartArea, scales, tooltip } = chartInstance;
-                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
                 const x = chartInstance._activeInvestmentStockDetailsGuideX;
+                const dateParts = parseRawDate(labels[chartInstance._activeInvestmentStockDetailsGuideIndex]);
+                const rect = canvas.getBoundingClientRect();
+                const stage = canvas.parentElement;
+                window.WORTHWARD_CHART_AXIS.updateHoverDateLabel(hoverDateLabel, {
+                    lines: chartArea && tooltip?.opacity && Number.isFinite(x) && dateParts
+                        ? formatAxisDateOnlyLines(dateParts) : null,
+                    x: canvas.offsetLeft + x * rect.width / chartInstance.width,
+                    top: canvas.offsetTop + (chartArea?.bottom || 0) * rect.height / chartInstance.height,
+                    width: stage.clientWidth,
+                });
+                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
                 if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
                 ctx.save();
                 ctx.strokeStyle = resolvedTheme.mutedSoft;
@@ -2850,6 +2866,7 @@ export function createInvestmentStockDetailsUtils({
                 return {
                     index: snappedMarker.index,
                     markerType: String(snappedMarker.type || ''),
+                    guideIndex: nearestIndex,
                     guideX,
                     guideY,
                     markerPosition: {
@@ -2858,10 +2875,11 @@ export function createInvestmentStockDetailsUtils({
                     },
                 };
             }
-            return { index: nearestIndex, markerType: '', guideX, guideY };
+            return { index: nearestIndex, guideIndex: nearestIndex, markerType: '', guideX, guideY };
         };
         const syncStockDetailsHoverState = (chart, hoverState) => {
             const index = hoverState && Number.isInteger(hoverState.index) ? hoverState.index : null;
+            chart._activeInvestmentStockDetailsGuideIndex = hoverState?.guideIndex ?? null;
             const guideX = hoverState?.guideX;
             const guideY = hoverState?.guideY;
             chart._activeInvestmentStockDetailsGuideX = Number.isFinite(guideX) ? guideX : null;

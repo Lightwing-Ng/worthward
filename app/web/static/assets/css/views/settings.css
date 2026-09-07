@@ -1,4 +1,4 @@
-/* Code version: v0.27.0 */
+/* Code version: v0.27.1 */
 
 .style-token-collapse-example {
     display: grid;
@@ -4144,4 +4144,57 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .cash-equivalents-add-action-shell > #add_ticker {
     pointer-events: auto;
     margin: 0;
+}
+
+/* Shared material and bounded status surfaces for Settings controls. */
+.settings-language-pagination {
+    box-sizing: border-box;
+    padding: 4px;
+    border: var(--frosted-glass-border);
+    border-radius: var(--radius-pill);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+}
+.settings-language-pagination .local-store-page-button:not(.is-active) {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.settings-service-state [data-settings-service-status] {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+}
+.settings-service-state {
+    min-width: 0;
+}
+body.is-workspace-switching .settings-service-row [data-workspace-mask].is-masked-during-switch::after,
+.settings-service-row .is-pending-value[data-workspace-mask]::after {
+    inset: 0;
+    box-sizing: border-box;
+}
+.settings-service-row[data-service-key="smtp"] .settings-service-logo {
+    visibility: hidden;
+    grid-row: 1;
+}
+.settings-service-row[data-service-key="smtp"] .settings-service-heading::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    grid-column: 1;
+    grid-row: 1;
+    background: var(--accent-text);
+    mask: url("/static/images/envelope.fill.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/envelope.fill.svg") center/contain no-repeat;
+    border-radius: 0;
+}
+.settings-strategy-card > .settings-strategy-summary::after {
+    align-self: start;
+    margin-top: 6px;
+    margin-right: 6px;
+    justify-self: end;
 }

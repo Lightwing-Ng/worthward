@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.137.2
+ * Code version: v2.138.0
  * - Fixed: Missing FX and partial P&L coverage withhold aggregate valuations.
  * - Changed: Overview equity hover now coalesces pointer work through one
  *   animation frame, updates Chart.js only when the selected point changes,
@@ -394,7 +394,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.29.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.30.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -443,7 +443,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.137.2',
+    entry: 'v2.138.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -17855,20 +17855,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             ),
         );
-        if (isInvestmentAggregatePnlUnavailable(tickerSummaries)) {
-            investmentChartPnlMetricsByPoint.set(pointRecord, unavailableMetrics);
-            return unavailableMetrics;
-        }
-
-        const realizedPnl = getInvestmentHistoricalRealizedPnl(
-            pointTransactions,
-            tickerSummaries,
-            pointDate,
-        );
-        const unrealizedPnl = tickerSummaries.reduce(
-            (sum, summary) => sum + (Number(summary?.unrealizedPnl) || 0),
-            0,
-        );
+        // Realized coverage and open-position valuation are independent.
+        const realizedPnl = isInvestmentAggregatePnlUnavailable(tickerSummaries)
+            ? null
+            : getInvestmentHistoricalRealizedPnl(pointTransactions, tickerSummaries, pointDate);
+        const openPositions = tickerSummaries.filter((summary) => summary?.hasOpenPosition);
+        const unrealizedComplete = openPositions.every((summary) => (
+            summary?.pnlUnavailable !== true
+            && summary?.unrealizedPnlStatus === 'complete'
+            && getOptionalInvestmentNumber(summary?.unrealizedPnl) !== null
+        ));
+        const unrealizedPnl = unrealizedComplete
+            ? openPositions.reduce((sum, summary) => sum + summary.unrealizedPnl, 0)
+            : null;
         const metrics = buildInvestmentChartPnlMetrics(realizedPnl, unrealizedPnl);
         investmentChartPnlMetricsByPoint.set(pointRecord, metrics);
         return metrics;
@@ -18653,7 +18652,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!(valueElement instanceof HTMLElement)) return;
                 const numericValue = getOptionalInvestmentNumber(value);
                 valueElement.textContent = numericValue === null
-                    ? '--'
+                    ? 'Unavailable'
                     : formatHoldingsMoney(numericValue);
                 valueElement.classList.remove(
                     'investment-holdings-value-positive',
@@ -18858,7 +18857,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         tooltipRows.push({
                             label,
                             pnlKey,
-                            formattedValue: numericValue === null ? '--' : formatHoldingsMoney(numericValue),
+                            formattedValue: numericValue === null
+                                ? (useCurrentHoldingsPnl || cachedHistoricalPnl ? 'Unavailable' : '--')
+                                : formatHoldingsMoney(numericValue),
                             color: numericValue === null
                                 ? resolvedTheme.muted
                                 : (numericValue >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary),
@@ -18961,34 +18962,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 hideInvestmentHoverOverlay();
                 return;
             }
-            const [firstLine, secondLine] = formatChartDateLines(dateParts);
-            const primaryLine = hoverDateLabel.querySelector(
-                '[data-investment-hover-date-line="primary"]',
-            );
-            const secondaryLine = hoverDateLabel.querySelector(
-                '[data-investment-hover-date-line="secondary"]',
-            );
-            if (primaryLine && primaryLine.textContent !== (firstLine || "")) {
-                primaryLine.textContent = firstLine || "";
-            }
-            if (secondaryLine instanceof HTMLElement) {
-                if (secondaryLine.textContent !== (secondLine || "")) {
-                    secondaryLine.textContent = secondLine || "";
-                }
-                secondaryLine.hidden = !secondLine;
-            }
-            hoverDateLabel.hidden = false;
-            const halfWidth = (hoverDateLabel.offsetWidth || 42) / 2;
-            const stageWidth = chartStage instanceof HTMLElement
-                ? chartStage.clientWidth
-                : 0;
-            const clampedX = stageWidth > 0
-                ? Math.max(halfWidth, Math.min(stageWidth - halfWidth, x))
-                : x;
-            setInvestmentHoverStyleIfChanged(hoverDateLabel, "left", `${clampedX}px`);
-            setInvestmentHoverStyleIfChanged(hoverDateLabel, "top", `${top}px`);
-            hoverDateLabel.hidden = false;
-            hoverDateLabel.classList.add("is-visible");
+            chartAxis.updateHoverDateLabel(hoverDateLabel, {
+                lines: formatChartDateLines(dateParts),
+                x,
+                top,
+                width: chartStage instanceof HTMLElement ? chartStage.clientWidth : 0,
+            });
         };
 
         const getInvestmentHoverPointCache = (chart) => {

@@ -1,4 +1,4 @@
-/* Code version: v1.206.1 */
+/* Code version: v1.206.4 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -13285,6 +13285,40 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     }
 });
 
+test('keeps verified unrealized tooltip P&L when a closed ticker lacks realized coverage', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-05-01', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 10, price: 100, amount: -1000},
+            {broker: 'ibkr', date: '2026-05-01', type: 'buy', ticker: 'OLD', currency: 'USD', quantity: 1, price: 10, amount: -10},
+            {broker: 'ibkr', date: '2026-06-01', type: 'sell', ticker: 'OLD', currency: 'USD', quantity: 1, price: 12, amount: 12},
+        ],
+        summary: {security_transfer_reconciliation: {pnl_unavailable_tickers: ['OLD'], pnl_unavailable_reason: 'cost_basis_unverified'}},
+        priceHistoryByTicker: {
+            QQQ: [{date: '2026-05-01', close: 100}, {date: '2026-06-01', close: 120}, {date: '2026-08-01', close: 130}],
+            OLD: [{date: '2026-05-01', close: 10}, {date: '2026-06-01', close: 12}],
+        },
+    });
+    await page.goto('/trade/investment?view=overview&range=max');
+    await expect.poll(() => page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return chart?.data.labels.findIndex((date) => String(date).startsWith('2026-06-01')) ?? -1;
+    })).toBeGreaterThanOrEqual(0);
+    await page.evaluate(() => {
+        const chart = window.Chart.getChart(document.querySelector('#investmentEquityChart'));
+        const index = chart.data.labels.findIndex((date) => String(date).startsWith('2026-06-01'));
+        const point = chart.getDatasetMeta(0).data[index];
+        chart.setActiveElements([{datasetIndex: 0, index}]);
+        chart.tooltip.setActiveElements([{datasetIndex: 0, index}], {x: point.x, y: point.y});
+        chart.update('none');
+    });
+    const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
+    await expect(tooltip).toHaveAttribute('data-investment-pnl-state', 'ready');
+    await expect(tooltip.locator('[data-investment-tooltip-pnl="realizedPnl"] .chart-tooltip-value')).toHaveText('Unavailable');
+    await expect(tooltip.locator('[data-investment-tooltip-pnl="unrealizedPnl"] .chart-tooltip-value')).toHaveText('200.00');
+    await expect(tooltip.locator('[data-investment-tooltip-pnl="cumulativePnl"] .chart-tooltip-value')).toHaveText('Unavailable');
+    await expect(page.locator('.investment-report-card').first()).toHaveCSS('padding-bottom', '0px');
+});
+
 test('defers uncached 3M historical P&L replay until chart pointer movement settles', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
@@ -13552,7 +13586,7 @@ test('leaves an average-price chart gap while a split-adjusted historical positi
     })).toBeNull();
 });
 
-for (const viewportWidth of [1_024, 820]) {
+for (const viewportWidth of [1_024, 820, 646, 390]) {
 test(`draws the exact-price horizontal hover guide across every stock-details range at ${viewportWidth}px`, async ({page}) => {
     const dailyHistory = Array.from({length: 566}, (_, index) => {
         const date = new Date(Date.UTC(2025, 0, 1 + index));
@@ -13605,6 +13639,24 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             );
         }), {timeout: 30_000}).toBe(true);
         await canvas.scrollIntoViewIfNeeded();
+        const layout = await canvas.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const card = element.closest('.investment-stock-details-price-chart-card').getBoundingClientRect();
+            const panel = document.querySelector('#stock_panel').getBoundingClientRect();
+            const donut = document.querySelector('.investment-stock-details-donut-card').getBoundingClientRect();
+            return {
+                height: rect.height,
+                insideCard: rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1,
+                insidePanel: rect.top >= panel.top - 1 && rect.bottom <= panel.bottom + 1,
+                donutOverlaps: donut.left < rect.right && donut.right > rect.left
+                    && donut.top < rect.bottom && donut.bottom > rect.top,
+            };
+        });
+        expect(layout.height).toBeGreaterThanOrEqual(199);
+        expect(layout.insideCard).toBe(true);
+        expect(layout.insidePanel).toBe(true);
+        expect(layout.donutOverlaps).toBe(false);
+
         const hoverPoint = await canvas.evaluate((element) => {
             const chart = element._investmentStockDetailsChart;
             const rect = element.getBoundingClientRect();
@@ -13618,6 +13670,31 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
         await expect.poll(() => canvas.evaluate((element) => (
             element._investmentStockDetailsChart?._activeInvestmentStockDetailsGuideBounds?.formattedPrice || ''
         ))).toMatch(/^-?\d{1,3}(?:,\d{3})*\.\d{2,}$/);
+
+        const dateBadge = page.locator('[data-investment-stock-details-hover-date-label]');
+        await expect(dateBadge).toHaveCount(1);
+        await expect(dateBadge).toBeVisible();
+        await expect(dateBadge).toHaveClass(/trade-chart-hover-date-label investment-equity-hover-date-label/);
+        const badgeState = await canvas.evaluate((element) => {
+            const chart = element._investmentStockDetailsChart;
+            const badge = element.parentElement.querySelector('[data-investment-stock-details-hover-date-label]');
+            const date = new Date(`${chart.data.labels[chart._activeInvestmentStockDetailsGuideIndex].slice(0, 10)}T12:00:00Z`);
+            const rect = badge.getBoundingClientRect();
+            const canvasRect = element.getBoundingClientRect();
+            const style = getComputedStyle(badge);
+            return {
+                text: Array.from(badge.children).map((line) => line.textContent),
+                expected: [`${date.getUTCDate()} ${date.toLocaleString('en-US', {month: 'short', timeZone: 'UTC'})}`, `${date.getUTCFullYear()}`],
+                topDelta: Math.abs(rect.top - (canvasRect.top + chart.chartArea.bottom * canvasRect.height / chart.height)),
+                background: style.backgroundColor,
+                color: style.color,
+                height: style.height,
+                fontSize: style.fontSize,
+            };
+        });
+        expect(badgeState.text).toEqual(badgeState.expected);
+        expect(badgeState.topDelta).toBeLessThan(1);
+        expect(badgeState).toMatchObject({background: 'rgb(0, 85, 204)', color: 'rgb(255, 255, 255)', height: '20px', fontSize: '12px'});
 
         const readIntersection = () => canvas.evaluate((element) => {
             const chart = element._investmentStockDetailsChart;
@@ -13714,6 +13791,7 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
         });
         await page.mouse.move(0, 0);
         await expect.poll(readIntersection).toEqual({x: null, y: null});
+        await expect(dateBadge).toBeHidden();
         expect(await canvas.evaluate((element) => (
             element._investmentStockDetailsChart._activeInvestmentStockDetailsGuideBounds
         ))).toBeNull();
