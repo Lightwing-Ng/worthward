@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.138.2
+ * Code version: v2.138.3
  * - Fixed: Pending HSBC history cash uses its authoritative cash boundary once,
  *   independently of earlier settlement corrections and broker filters.
  * - Fixed: Missing FX and partial P&L coverage withhold aggregate valuations.
@@ -445,7 +445,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.138.2',
+    entry: 'v2.138.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -3260,6 +3260,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const sourceTransactions = [];
         const targetTransactions = [];
         const storedBindings = readInvestmentInternalTransferBindings();
+        // Keep persisted target ownership even when the owning broker is hidden
+        // or its imported source identity is awaiting migration.
+        const persistedTargetOwners = new Map();
+        Object.entries(storedBindings).forEach(([sourceKey, targetKey]) => {
+            if (!persistedTargetOwners.has(targetKey)) persistedTargetOwners.set(targetKey, sourceKey);
+        });
         const baseKeyCounts = new Map();
         processedTransactions.forEach((txn) => {
             const baseKey = buildInvestmentTransactionBaseBindingKey(txn);
@@ -3357,6 +3363,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!targetKey) return false;
                     if (ambiguousTargetKeys.has(targetKey)) return false;
                     if (claimedTargetKeys.has(targetKey)) return false;
+                    if (persistedTargetOwners.has(targetKey)
+                        && persistedTargetOwners.get(targetKey) !== sourceKey) return false;
                     if (!isInvestmentInternalTransferTargetCandidateForDirection(sourceTxn, targetTxn, direction)) return false;
                     if (!isInvestmentInternalTransferChronologicallyValid(sourceTxn, targetTxn)) return false;
                     const targetDate = normalizeLedgerDate(targetTxn?.date);

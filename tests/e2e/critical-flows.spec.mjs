@@ -1,4 +1,4 @@
-/* Code version: v1.206.5 */
+/* Code version: v1.206.6 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -21652,3 +21652,25 @@ for (const viewport of responsiveViewports) {
         }
     });
 }
+
+test('reserves persisted transfer targets when their owning broker is filtered out', async ({page}) => {
+    const sourceKey = 'v2:["ibkr","ibkr:u-suffix:99999","2026-06-20","deposit","CNH","1500"]';
+    const targetKey = 'v2:["boc_hk","TEST","2026-06-20","withdrawal","CNH","-1500"]';
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr', 'boc_hk'],
+        transactions: [
+            {broker: 'hsbc', account: 'TEST', date: '2026-06-20', type: 'deposit', currency: 'CNH', amount: 1490, description: 'Unrelated savings receipt'},
+            {broker: 'boc_hk', account: 'TEST', date: '2026-06-20', type: 'withdrawal', currency: 'CNH', amount: -1500},
+            {broker: 'ibkr', account: 'U999999', date: '2026-06-20', type: 'deposit', currency: 'CNH', amount: 1500},
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        fxRateHistoryByCurrency: {CNH: {dates: ['2026-06-20'], values: {'2026-06-20': 7}}},
+        intradayRows: () => [],
+    });
+    for (const broker of ['hsbc,boc_hk', 'hsbc,boc_hk,ibkr']) {
+        await page.goto(`/trade/investment?view=holdings&broker=${broker}`);
+        const receipt = page.locator('[id^="investment_history_row_"]').filter({hasText: 'Unrelated savings receipt'});
+        await expect(receipt).toHaveCount(1);
+        await expect(receipt.locator('select[data-investment-transfer-source-key]')).toHaveCount(0);
+    }
+});

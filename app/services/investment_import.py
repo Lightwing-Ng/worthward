@@ -1,7 +1,7 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.106.0
+Code version: v0.107.0
 - Fixed: Newer IBKR cash evidence replaces the entire dated cash boundary,
   and canonical CSV performance snapshots also refresh compatibility summaries.
 - Added: Broker snapshot payloads now expose per-account and per-ticker
@@ -3117,6 +3117,8 @@ def _replace_ibkr_transaction_history_cash_with_native_summary(
         source["replaced_base_amount_raw"] = _normalize_text(
             base_record.get("net_amount_raw")
         )
+        source["replaced_base_date"] = base_record.get("date")
+        source["replaced_base_source"] = dict(base_record.get("source") or {})
     retained_transactions.extend(materialized_native_records)
     return (
         retained_transactions,
@@ -11361,10 +11363,53 @@ def normalize_investment_internal_transfer_bindings(
         if effective_key and len(effective_key_index.get(effective_key, [])) == 1:
             legacy_to_effective[legacy_key] = effective_key
 
+    # Native-currency cash rows retain explicit provenance for the replaced
+    # base-currency export row. Use that evidence, never an inferred FX rate.
+    replacement_aliases: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for record in transactions:
+        if not isinstance(record, dict) or record.get("broker") != "ibkr":
+            continue
+        source = record.get("source") if isinstance(record.get("source"), dict) else {}
+        if (
+            source.get("source_format") != "ibkr_realized_summary_csv"
+            or source.get("replaced_base_amount_raw") in (None, "")
+            or source.get("replaces_transaction_history_row_number") in (None, "")
+            or record.get("type") not in {"deposit", "withdrawal"}
+        ):
+            continue
+        alias = dict(record)
+        alias["currency"] = "USD"
+        alias["date"] = source.get("replaced_base_date") or record.get("date")
+        alias["net_amount_raw"] = source["replaced_base_amount_raw"]
+        alias["source"] = source.get("replaced_base_source") or {
+            "file_kind": "transactions",
+            "row_number": source["replaces_transaction_history_row_number"],
+        }
+        replacement_aliases.append((alias, record))
+    alias_counts = Counter(
+        build_investment_internal_transfer_binding_key(alias)
+        for alias, _ in replacement_aliases
+    )
+    replacement_key_candidates: defaultdict[str, set[str]] = defaultdict(set)
+    for alias, record in replacement_aliases:
+        alias_key = _build_effective_investment_internal_transfer_binding_key(
+            alias, base_key=build_investment_internal_transfer_binding_key(alias),
+            base_key_counts=alias_counts,
+        )
+        current_key = _build_effective_investment_internal_transfer_binding_key(
+            record, base_key=build_investment_internal_transfer_binding_key(record),
+            base_key_counts=base_key_counts,
+        )
+        if len(effective_key_index.get(current_key, [])) == 1:
+            replacement_key_candidates[alias_key].add(current_key)
+
     def resolve_stable_key(key: str) -> str:
         direct_matches = effective_key_index.get(key, [])
         if len(direct_matches) == 1:
             return key
+        replacement_candidates = replacement_key_candidates.get(key, set())
+        if len(replacement_candidates) == 1:
+            return next(iter(replacement_candidates))
         migrated_legacy_key = legacy_to_effective.get(key)
         if migrated_legacy_key:
             return migrated_legacy_key

@@ -1,5 +1,10 @@
 # Known issues and operating constraints
 
+Transfer bindings, 7 Sep 2026: IBKR native-currency replacements migrate uniquely
+identified base-currency binding keys using retained replacement evidence.
+New imports preserve the replaced date and source identity. Ambiguous mappings
+remain unchanged; persisted target ownership survives broker filtering.
+
 Dividend reconciliation, 7 Sep 2026: when an authoritative trading-performance
 snapshot precedes later income, dividends, payment in lieu, withholding, and
 included cash adjustments after that boundary enter only incremental P&L.
@@ -104,7 +109,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.12`
+Documentation version: `v1.244.13`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
