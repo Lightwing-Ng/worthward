@@ -1,5 +1,11 @@
 # Known issues and operating constraints
 
+Stock-details crosshair, 7 Sep 2026: hover uses the Backtest polyline intersection
+at pointer X, clamped to the first/last finite price point. Vertical pointer movement
+does not change the guide price. Trade-marker selection retains its linked history
+behavior without moving the crosshair away from the price curve. Leaving the plot
+clears both guides. All date ranges use the same resolver.
+
 Shared disclosure motion, 7 Sep 2026: `.ui-collapse` expands with the existing
 620ms bouncy spring, including a small height overshoot before settling to its
 natural size. Native keyboard toggles and named accordion behavior remain intact.
@@ -47,7 +53,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.2`
+Documentation version: `v1.244.3`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.28.1
+ * Code version: v0.29.0
+ * - Changed: Hover guides intersect the price curve at pointer X using the
+ *   Backtest polyline resolver, independently of trade-marker snapping.
  * - Changed: Stock details now reads the canonical reconciliation timeline
  *   and requires its completeness invariant before using broker totals.
  * - Refactored: Investment y-axis badges now delegate to the shared chart-axis
@@ -110,13 +112,16 @@
  * - Added: Stock-details chart hover tooltips now expose date-scoped realized and unrealized P&L using the shared base-currency accounting contract.
  */
 
+import '../backtest/distributions.js?v=backtest-distributions-v1.0.0';
+import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.30.0';
+
 import {
     aggregateInvestmentScopedPositionStates,
 } from './data-utils.js?v=investment-data-utils-v1.111.1';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.28.1';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.29.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -2358,7 +2363,7 @@ export function createInvestmentStockDetailsUtils({
             id: 'investmentStockDetailsHoverGuidePlugin',
             beforeDatasetsDraw(chartInstance) {
                 const { ctx, chartArea } = chartInstance;
-                const y = Number(chartInstance?._activeInvestmentStockDetailsGuideY);
+                const y = chartInstance?._activeInvestmentStockDetailsGuideY;
                 if (!chartArea || !Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
                 const { left, right } = chartArea;
                 chartInstance._activeInvestmentStockDetailsGuideBounds = { left, right, y };
@@ -2374,7 +2379,7 @@ export function createInvestmentStockDetailsUtils({
             afterDatasetsDraw(chartInstance) {
                 const { ctx, chartArea, scales, tooltip } = chartInstance;
                 if (!chartArea || !tooltip || tooltip.opacity === 0) return;
-                const x = tooltip.caretX;
+                const x = chartInstance._activeInvestmentStockDetailsGuideX;
                 if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
                 ctx.save();
                 ctx.strokeStyle = resolvedTheme.mutedSoft;
@@ -2385,7 +2390,7 @@ export function createInvestmentStockDetailsUtils({
                 ctx.stroke();
                 ctx.restore();
 
-                const y = Number(chartInstance?._activeInvestmentStockDetailsGuideY);
+                const y = chartInstance?._activeInvestmentStockDetailsGuideY;
                 const yScale = scales?.y;
                 if (!yScale || !Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
                 const price = Number(yScale.getValueForPixel(y));
@@ -2739,6 +2744,7 @@ export function createInvestmentStockDetailsUtils({
                         bottom: 24,
                     },
                 },
+                events: [],
                 interaction: { mode: 'index', intersect: false },
                 animation: false,
                 plugins: {
@@ -2806,24 +2812,18 @@ export function createInvestmentStockDetailsUtils({
             const chartArea = chart?.chartArea;
             if (!chartArea || !labels.length) return null;
             const canvasRect = chart.canvas.getBoundingClientRect();
-            const relativeX = event.clientX - canvasRect.left;
-            const relativeY = event.clientY - canvasRect.top;
-            if (!Number.isFinite(relativeX)) return null;
+            const relativeX = (event.clientX - canvasRect.left) * chart.width / canvasRect.width;
+            const relativeY = (event.clientY - canvasRect.top) * chart.height / canvasRect.height;
+            if (!Number.isFinite(relativeX) || !Number.isFinite(relativeY)
+                || relativeX < chartArea.left || relativeX > chartArea.right
+                || relativeY < chartArea.top || relativeY > chartArea.bottom) return null;
             const points = chart.getDatasetMeta(0)?.data || [];
-            let nearestIndex = null;
-            let nearestDistance = Number.POSITIVE_INFINITY;
-            points.forEach((point, index) => {
-                if (!point || !Number.isFinite(point.x)) return;
-                const distance = Math.abs(point.x - relativeX);
-                if (distance < nearestDistance) {
-                    nearestDistance = distance;
-                    nearestIndex = index;
-                }
-            });
-            if (!Number.isInteger(nearestIndex)) return null;
-            if (!Number.isFinite(relativeY)) return { index: nearestIndex, markerType: '' };
-            if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return { index: nearestIndex, markerType: '' };
-            const guideY = relativeY;
+            const intersection = window.WORTHWARD_BACKTEST_PROBABILITY_GRID
+                ?.intersectPolylineAtX(points, relativeX);
+            if (!intersection) return null;
+            const nearestIndex = intersection.index;
+            const guideX = intersection.x;
+            const guideY = intersection.y;
             const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
             let snappedMarker = null;
             let snappedMarkerDistance = Number.POSITIVE_INFINITY;
@@ -2850,6 +2850,7 @@ export function createInvestmentStockDetailsUtils({
                 return {
                     index: snappedMarker.index,
                     markerType: String(snappedMarker.type || ''),
+                    guideX,
                     guideY,
                     markerPosition: {
                         x: snappedMarker.pixelX,
@@ -2857,11 +2858,13 @@ export function createInvestmentStockDetailsUtils({
                     },
                 };
             }
-            return { index: nearestIndex, markerType: '', guideY };
+            return { index: nearestIndex, markerType: '', guideX, guideY };
         };
         const syncStockDetailsHoverState = (chart, hoverState) => {
             const index = hoverState && Number.isInteger(hoverState.index) ? hoverState.index : null;
-            const guideY = Number(hoverState?.guideY);
+            const guideX = hoverState?.guideX;
+            const guideY = hoverState?.guideY;
+            chart._activeInvestmentStockDetailsGuideX = Number.isFinite(guideX) ? guideX : null;
             chart._activeInvestmentStockDetailsGuideY = Number.isFinite(guideY) ? guideY : null;
             if (!Number.isFinite(guideY)) chart._activeInvestmentStockDetailsGuideBounds = null;
             chart._activeInvestmentStockDetailsMarkerType = index === null

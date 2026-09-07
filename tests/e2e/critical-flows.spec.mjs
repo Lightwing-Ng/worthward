@@ -1,4 +1,4 @@
-/* Code version: v1.206.0 */
+/* Code version: v1.206.1 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -13552,7 +13552,8 @@ test('leaves an average-price chart gap while a split-adjusted historical positi
     })).toBeNull();
 });
 
-test('draws the exact-price horizontal hover guide across every stock-details range', async ({page}) => {
+for (const viewportWidth of [1_024, 820]) {
+test(`draws the exact-price horizontal hover guide across every stock-details range at ${viewportWidth}px`, async ({page}) => {
     const dailyHistory = Array.from({length: 566}, (_, index) => {
         const date = new Date(Date.UTC(2025, 0, 1 + index));
         const close = 100 + (index * 0.25);
@@ -13576,7 +13577,7 @@ test('draws the exact-price horizontal hover guide across every stock-details ra
                 {date: `${day} 15:59`, open: 201 + dayIndex, high: 202 + dayIndex, low: 200 + dayIndex, close: 201.25 + dayIndex},
             ]),
     });
-    await page.setViewportSize({width: 1_024, height: 863});
+    await page.setViewportSize({width: viewportWidth, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
 
     const canvas = page.locator('.investment-stock-details-price-chart-canvas');
@@ -13603,18 +13604,44 @@ test('draws the exact-price horizontal hover guide across every stock-details ra
                 && !chart._e2ePreviousRangeChart
             );
         }), {timeout: 30_000}).toBe(true);
+        await canvas.scrollIntoViewIfNeeded();
         const hoverPoint = await canvas.evaluate((element) => {
             const chart = element._investmentStockDetailsChart;
             const rect = element.getBoundingClientRect();
             return {
-                x: rect.left + ((chart.chartArea.left + chart.chartArea.right) / 2),
-                y: rect.top + ((chart.chartArea.top + chart.chartArea.bottom) / 2),
+                deltaY: Math.max(1, Math.min(25, Math.floor(chart.chartArea.height / 4))),
+                x: Math.floor(rect.left + ((chart.chartArea.left + chart.chartArea.right) / 2)),
+                y: Math.floor(rect.top + ((chart.chartArea.top + chart.chartArea.bottom) / 2)),
             };
         });
         await page.mouse.move(hoverPoint.x, hoverPoint.y);
         await expect.poll(() => canvas.evaluate((element) => (
             element._investmentStockDetailsChart?._activeInvestmentStockDetailsGuideBounds?.formattedPrice || ''
         ))).toMatch(/^-?\d{1,3}(?:,\d{3})*\.\d{2,}$/);
+
+        const readIntersection = () => canvas.evaluate((element) => {
+            const chart = element._investmentStockDetailsChart;
+            return {
+                x: chart._activeInvestmentStockDetailsGuideX,
+                y: chart._activeInvestmentStockDetailsGuideY,
+            };
+        });
+        const initialIntersection = await readIntersection();
+        const expectedIntersection = await canvas.evaluate((element, pointerX) => {
+            const chart = element._investmentStockDetailsChart;
+            const x = (pointerX - element.getBoundingClientRect().left)
+                * chart.width / element.getBoundingClientRect().width;
+            const points = chart.getDatasetMeta(0).data;
+            const rightIndex = points.findIndex((point) => point.x >= x);
+            const right = points[Math.max(0, rightIndex)];
+            const left = points[Math.max(0, rightIndex - 1)];
+            const fraction = right.x > left.x ? (x - left.x) / (right.x - left.x) : 0;
+            return {x, y: left.y + (right.y - left.y) * fraction};
+        }, hoverPoint.x);
+        expect(initialIntersection.x).toBeCloseTo(expectedIntersection.x, 1);
+        expect(initialIntersection.y).toBeCloseTo(expectedIntersection.y, 1);
+        await page.mouse.move(hoverPoint.x, hoverPoint.y + hoverPoint.deltaY);
+        expect(await readIntersection()).toEqual(initialIntersection);
 
         await expect.poll(() => canvas.evaluate((element, injectFractionalTick) => {
             const chart = element._investmentStockDetailsChart;
@@ -13685,8 +13712,16 @@ test('draws the exact-price horizontal hover guide across every stock-details ra
             rightDelta: 0,
             yWithinPlot: true,
         });
+        await page.mouse.move(0, 0);
+        await expect.poll(readIntersection).toEqual({x: null, y: null});
+        expect(await canvas.evaluate((element) => (
+            element._investmentStockDetailsChart._activeInvestmentStockDetailsGuideBounds
+        ))).toBeNull();
+
     }
 });
+
+}
 
 test('keeps stock details as the only visible transaction table and preserves exact row hover', async ({page}) => {
     const transactions = Array.from({length: 20}, (_, index) => ({
