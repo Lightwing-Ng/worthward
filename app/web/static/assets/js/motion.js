@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 (() => {
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const clamp = (value, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
@@ -214,5 +214,47 @@
         scheduler,
         springPresets,
         tween,
+    });
+})();
+
+(() => {
+    const motion = window.WorthwardMotion;
+    if (!motion || typeof document === "undefined") return;
+    const animations = new Map();
+
+    const stop = (details) => {
+        animations.get(details)?.cancel();
+        animations.delete(details);
+    };
+
+    // Native toggles preserve keyboard activation and named accordion behavior.
+    document.addEventListener("toggle", (event) => {
+        const details = event.target;
+        if (!(details instanceof HTMLDetailsElement) || !details.matches(".ui-collapse")) return;
+        stop(details);
+        if (!details.open || motion.isReducedMotion()) return;
+        const summary = details.querySelector(":scope > summary");
+        if (!summary || typeof details.animate !== "function") return;
+        const style = getComputedStyle(details);
+        const inset = ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"]
+            .reduce((sum, key) => sum + (parseFloat(style[key]) || 0), 0);
+        const expanded = details.getBoundingClientRect().height;
+        const collapsed = summary.getBoundingClientRect().height + inset;
+        const adjustment = style.boxSizing === "border-box" ? 0 : inset;
+        const preset = motion.springPresets.bouncy;
+        const frames = Array.from({length: 41}, (_, index) => {
+            const progress = index / 40;
+            const height = collapsed + (expanded - collapsed) * motion.easing.spring(progress, preset);
+            return {height: `${Math.max(0, height - adjustment)}px`, overflow: "clip", offset: progress};
+        });
+        const animation = details.animate(frames, {duration: preset.duration, easing: "linear"});
+        animations.set(details, animation);
+        animation.finished.catch(() => {}).finally(() => {
+            if (animations.get(details) === animation) animations.delete(details);
+        });
+    }, true);
+
+    motion.reducedMotionQuery.addEventListener("change", () => {
+        if (motion.isReducedMotion()) [...animations.keys()].forEach(stop);
     });
 })();

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.80.0`
+Documentation version: `v1.80.1`
 
 ## Shared Backtest controls and research
 
@@ -241,9 +241,8 @@ intermediate labels are collision-filtered. No future prices are manufactured.
 
 The forecast half also overlays observed prices when later bars already exist.
 This read-only SVG layer ends at the earlier of the last real bar or the forecast
-horizon. Segments above the selected price use the positive theme token; those
-below use the secondary token, with exact crossing splits and the historical
-curve's stroke width. Missing prices remain gaps. Observations never alter the
+horizon. All segments use the same muted gray color and opacity as the crosshair
+guides, below the probability grid and with the historical curve's stroke width. Missing prices remain gaps. Observations never alter the
 forecast bins, fitting scale, or model inputs. Backtest's overview heading is
 "Price and strategy analysis" for both prediction-only and trading analysis.
 

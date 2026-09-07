@@ -1,5 +1,19 @@
 # Known issues and operating constraints
 
+Shared disclosure motion, 7 Sep 2026: `.ui-collapse` expands with the existing
+620ms bouncy spring, including a small height overshoot before settling to its
+natural size. Native keyboard toggles and named accordion behavior remain intact.
+Closing cancels the expansion; reduced-motion preference bypasses it, including
+when that preference changes during playback. The Style tokens Collapse specimen
+and product disclosures share `motion.js` v1.2.0.
+
+Manual LSTM startup, 7 Sep 2026: the CLI now decodes `--selected-params`
+JSON before validating the requested compute backend. Previously every web
+launch failed before training because a JSON string reached the dictionary-only
+validator. Regression coverage follows the web manager's generated command
+through the CLI entrypoint and prepared-request claim. Saved failed runs remain
+historical records; start a new run to retry.
+
 Backtest loading feedback, 6 Sep 2026: the chart retains a centered spinner and
 `Loading backtest…` while a refresh or saved-case navigation is pending, even
 when the modal is dismissed. A saved case receives its green check only after
@@ -33,7 +47,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.0`
+Documentation version: `v1.244.2`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

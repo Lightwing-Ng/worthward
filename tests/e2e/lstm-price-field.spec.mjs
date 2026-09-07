@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.14.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.14.1 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -1067,21 +1067,14 @@ for (const width of [1161, 390]) {
                     const index = Number(element.dataset.activeIndex);
                     const horizon = Number(element.querySelector('[data-timeline-role="end"]').dataset.horizon);
                     const dates = window.WORTHWARD_APP.backtestResult.chart.raw_dates;
-                    const resolveColor = (token) => {
-                        const probe = document.createElement('span');
-                        probe.style.color = `var(${token})`;
-                        element.appendChild(probe);
-                        const color = getComputedStyle(probe).color;
-                        probe.remove();
-                        return color;
-                    };
                     return {hasLaterPrices: index < dates.length - 1, up: observed.querySelector('.is-up').getAttribute('d'), down: observed.querySelector('.is-down').getAttribute('d'),
                         endDate: observed.dataset.endDate, expectedEnd: dates[Math.min(index + horizon, dates.length - 1)],
                         width: getComputedStyle(observed.querySelector('path')).strokeWidth,
                         historyWidth: getComputedStyle(element.querySelector('[data-backtest-probability-detail-history] path')).strokeWidth,
                         upColor: getComputedStyle(observed.querySelector('.is-up')).stroke,
                         downColor: getComputedStyle(observed.querySelector('.is-down')).stroke,
-                        expectedUp: resolveColor('--theme-accent-positive'), expectedDown: resolveColor('--theme-accent-secondary')};
+                        guideColor: getComputedStyle(element.querySelector('.backtest-probability-detail-origin')).backgroundColor,
+                        belowGrid: Number(getComputedStyle(observed).zIndex) < Number(getComputedStyle(element.querySelector('.backtest-probability-detail-grid')).zIndex)};
                 });
                 if (actual.hasLaterPrices) {
                     expect(actual.up + actual.down).toContain('L');
@@ -1089,8 +1082,9 @@ for (const width of [1161, 390]) {
                 } else expect(actual.up + actual.down).toBe('');
                 expect(actual.endDate).toBe(actual.expectedEnd);
                 expect(actual.width).toBe(actual.historyWidth);
-                expect(actual.upColor).toBe(actual.expectedUp);
-                expect(actual.downColor).toBe(actual.expectedDown);
+                expect(actual.upColor).toBe(actual.guideColor);
+                expect(actual.downColor).toBe(actual.guideColor);
+                expect(actual.belowGrid).toBe(true);
 
             }
             expect(observedProbeCount).toBeGreaterThan(0);

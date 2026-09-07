@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.2."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.6.3."""
 
 from __future__ import annotations
 
@@ -159,13 +159,29 @@ def test_web_launch_reservation_is_claimed_once_without_implicit_resume(tmp_path
     reached = []
     monkeypatch.setattr(ga_runner, "_build_snapshot", lambda *_args: (None, {}))
     monkeypatch.setattr(ga_runner, "_run_selected_configuration", lambda spec, paths, context: reached.append(paths.state.name) or 0)
-    assert ga_runner._run(args) == 0
+    from scripts import lstm_runtime
+    runtimes = []
+    monkeypatch.setattr(lstm_runtime, "ensure_training_runtime", lambda backend, *_args: runtimes.append(backend))
+    assert ga_runner.main(command[2:]) == 0
+    assert runtimes == [ga_runner.validate_selected_params({})["compute_backend"]]
     assert reached == [run["id"]]
     with pytest.raises(FileExistsError):
         ga_runner._run(args)
     args.prepared_request = None
     with pytest.raises(RuntimeError, match="use --resume"):
         ga_runner._run(args)
+
+
+@pytest.mark.parametrize("raw", ["", "{", "null", "[]", "false", '{"compute_backend":"invalid"}'])
+def test_cli_rejects_invalid_selected_json_before_runtime_or_training(raw, monkeypatch):
+    from scripts import lstm_runtime
+
+    def forbidden(*_args):
+        pytest.fail("Invalid parameters must not start runtime selection or training.")
+
+    monkeypatch.setattr(lstm_runtime, "ensure_training_runtime", forbidden)
+    monkeypatch.setattr(ga_runner, "_run", forbidden)
+    assert ga_runner.main(["--selected-params", raw]) == 1
 
 
 def test_startup_failure_is_reported_without_rewriting_saved_history(tmp_path, monkeypatch):
