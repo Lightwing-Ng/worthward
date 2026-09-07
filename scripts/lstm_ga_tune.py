@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.11.0
+Code version: v0.12.0
 - Added: Complete close-price grid scoring, with equal weight for 20 horizons.
 - Fixed: Deadline polling and rejection of an infeasible final winner.
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
@@ -1942,6 +1942,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.max_workers < 1 or args.max_workers > MAX_WORKERS:
         raise SystemExit(f"max-workers must be between 1 and {MAX_WORKERS}.")
     try:
+        from scripts.lstm_runtime import ensure_training_runtime
+        selected = validate_selected_params(args.selected_params) if args.selected_params else None
+        if selected:
+            ensure_training_runtime(selected["compute_backend"], PROJECT_ROOT,
+                                    list(argv) if argv is not None else sys.argv[1:])
         return _run(args)
     except KeyboardInterrupt:
         return 130

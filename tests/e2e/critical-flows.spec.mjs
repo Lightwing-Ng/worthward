@@ -1,4 +1,4 @@
-/* Code version: v1.205.0 */
+/* Code version: v1.206.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -18314,7 +18314,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     await page.setViewportSize({width: 1021, height: 841});
     await page.goto('/workspaces/backtest?show_trade_details=1&ticker=NVDA&range=6mo&strategy=bayesian-price-field');
     const chartHeading = page.locator('#backtest_overview_panel > .backtest-surface > .chart-heading-row > .chart-heading');
-    await expect(chartHeading).toHaveText('Trade actions and net asset curve');
+    await expect(chartHeading).toHaveText('Price and strategy analysis');
     await expect.poll(() => chartHeading.evaluate((element) => {
         const style = getComputedStyle(element);
         return {fontSize: style.fontSize, fontWeight: style.fontWeight};

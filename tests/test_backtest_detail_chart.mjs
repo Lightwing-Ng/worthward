@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -43,4 +43,16 @@ test('short observed history retains empty earlier time and does not distort squ
     assert.ok(Math.abs(layout.anchorX - layout.historyX(0) - layout.pitch) < 1e-9);
     assert.equal(layout.cellWidth, layout.cellHeight);
     assert.ok(layout.historyX(0) > layout.historyLeft);
+});
+
+test('observed prices split at the selected price and never bridge unavailable bars', () => {
+    const {buildObservedPaths} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+    const layout = {anchorX: 100, pitch: 10, priceToY: (price) => 100 - price};
+    const paths = buildObservedPaths([50, 60, 40, null, 70, 80], layout, 50, 5, 5);
+    assert.equal(paths.up, 'M100,50 L110,40 M110,40 L115,50 M140,30 L150,20');
+    assert.equal(paths.down, 'M115,50 L120,60');
+    assert.deepEqual(buildObservedPaths([50], layout, 50, 5, 5), {up: '', down: ''});
+    const limited = buildObservedPaths([50, 60, 40], layout, 50, 1, 1);
+    assert.equal(limited.up, 'M100,50 L110,40');
+    assert.equal(limited.down, '');
 });

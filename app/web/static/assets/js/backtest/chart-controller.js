@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -19,7 +19,7 @@
 		if (window.WORTHWARD_PRICE_FIELD_DETAIL_CHART) return Promise.resolve();
 		if (!detailModulePromise) detailModulePromise = new Promise((resolve, reject) => {
 			const script = document.createElement("script");
-			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.1.0";
+			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.2.0";
 			script.onload = () => window.WORTHWARD_PRICE_FIELD_DETAIL_CHART
 				? resolve() : reject(new Error("Price Field detail module is unavailable."));
 			script.onerror = () => reject(new Error("Price Field detail module could not be loaded."));
@@ -504,6 +504,10 @@
 			resetProbabilityScrollPort();
 		}
 		
+        const overviewHeading = priceCanvas.closest('.backtest-surface')?.querySelector('.chart-heading');
+        if (overviewHeading?.textContent.trim() === 'Trade actions and net asset curve') {
+            overviewHeading.textContent = 'Price and strategy analysis';
+        }
 		const interval = backtestResult.interval || "1d";
 		const rawTimestamps = rawDates.map((value) => {
 			const parsed = Date.parse(value);
@@ -1708,6 +1712,30 @@
 				});
 				historyPath.setAttribute("d", commands.join(" "));
 			}
+            let observedSvg = detailGridViewport.querySelector('[data-backtest-probability-detail-observed]');
+            if (!observedSvg) {
+                observedSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                observedSvg.classList.add('backtest-probability-detail-observed');
+                observedSvg.dataset.backtestProbabilityDetailObserved = '';
+                observedSvg.setAttribute('role', 'img');
+                observedSvg.setAttribute('aria-label', 'Observed prices after the selected date');
+                for (const side of ['up', 'down']) {
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    path.classList.add(`is-${side}`);
+                    observedSvg.appendChild(path);
+                }
+                detailGridViewport.appendChild(observedSvg);
+            }
+            const observedEnd = Math.min(close.length - 1, rawDates.length - 1, index + finalHorizon);
+            const observedPrices = close.slice(index, observedEnd + 1);
+            const observedPaths = window.WORTHWARD_PRICE_FIELD_DETAIL_CHART.buildObservedPaths(
+                observedPrices, layout, anchorPrice, finalHorizon, geometry.columnCount,
+            );
+            observedSvg.setAttribute('viewBox', `0 0 ${detailGridViewportWidth} ${detailGridViewportHeight}`);
+            observedSvg.dataset.endDate = rawDates[observedEnd] || '';
+            observedSvg.dataset.pointCount = String(observedPrices.length);
+            observedSvg.querySelector('.is-up').setAttribute('d', observedPaths.up);
+            observedSvg.querySelector('.is-down').setAttribute('d', observedPaths.down);
 			probabilityDetailYAxis.replaceChildren();
 			for (let tickIndex = 0; tickIndex < 5; tickIndex += 1) {
 				const tick = document.createElement("span");

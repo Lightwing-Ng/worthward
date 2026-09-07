@@ -1,4 +1,4 @@
-/* Code version: v0.9.2 */
+/* Code version: v0.10.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -344,18 +344,11 @@
         const ticker = currentTicker();
         const activeRun = cachedRuns.find((run) => run.active && run.ticker === ticker) || cachedRuns.find((run) => run.active) || null;
         if (!applyingRunId && lastFetchedAt && selection && !configurationMatches(selection.configuration)) saveSelection(null);
-        const heading = menu.closest('[data-collapse="training"]')?.querySelector(":scope > summary");
-        if (heading) {
-            let spinner = heading.querySelector(".lstm-training-spinner");
-            if (!spinner) {
-                spinner = appendText(heading, "suggestion-loading-spinner lstm-training-spinner", "");
-                spinner.setAttribute("role", "status");
-                spinner.setAttribute("aria-label", "Training in progress");
-            }
-            spinner.hidden = !activeRun && pendingAction !== "start";
-        }
+        menu.closest('[data-collapse="training"]')?.querySelector('.lstm-training-spinner')?.remove();
         const liveProgress = menu.querySelector("[data-lstm-training-progress]");
-        if (liveProgress) liveProgress.replaceChildren(...(activeRun ? [buildProgress(activeRun)] : []));
+        const progressRun = activeRun || (pendingAction === "start"
+            ? {ticker, status: "starting", active: true} : null);
+        if (liveProgress) liveProgress.replaceChildren(...(progressRun ? [buildProgress(progressRun)] : []));
         const button = menu.querySelector("[data-lstm-training-action]");
         if (button instanceof HTMLButtonElement) {
             const action = activeRun ? "stop" : "start";

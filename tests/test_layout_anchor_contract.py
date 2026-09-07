@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.11.1
+Code version: v0.11.2
 """
 
 from pathlib import Path
@@ -229,7 +229,7 @@ def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
     assert "padding: 2px;" in detail_panel_rule
 
     assert (
-        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 4px;"
+        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 6px;"
         in trade_css
     )
     assert (
@@ -533,7 +533,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "min-height: var(--backtest-probability-narrow-results-min-height);",
         ".backtest-results-stack.has-probability-field .trade-chart-stack {",
         "min-height: var(--backtest-probability-narrow-chart-stage-min-height);",
-        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 4px;",
+        ".trade-chart-stack.has-probability-field {\n    padding-bottom: 6px;",
         "@media (min-width: 1008px) {",
         ".workspace-mode-layout:has(.backtest-results-stack.has-probability-field) {",
         "clamp(264px, calc(100% - 398px), var(--sidebar-width))",

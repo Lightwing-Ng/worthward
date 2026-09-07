@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.1.0`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -77,3 +77,14 @@ Before deleting a compatibility candidate:
 4. Add or retain an explicit redirect regression.
 5. Update this matrix, Architecture or Known Issues as appropriate.
 6. Run the focused domain tests and the complete quality gate.
+
+## GPU training interpreter compatibility
+
+Web and durable training processes may use different installed Python interpreters.
+The training CLI can replace its interpreter before creating run output when an
+explicit GPU request cannot use the web process's environment. Candidates must
+support Python 3.13 or newer, import the project, and confirm MPS/CUDA execution.
+Set `WORTHWARD_TRAINING_PYTHON` to require a particular environment. Existing
+training records and process identifiers are preserved; Auto/CPU are unaffected.
+The current English overview heading is upgraded in cached page shells while
+custom and localized headings remain under their normal label configuration.

@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.4.2."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.4.3."""
 
 from __future__ import annotations
 
@@ -215,7 +215,7 @@ def test_backtest_results_match_investment_surface_layout() -> None:
     assert 'data-trade-detail-shell' not in html
     assert 'id="trade_detail_transactions"' not in html
     assert 'id="backtest_overview_panel"' in html
-    assert 'Trade actions and net asset curve' in html
+    assert 'Price and strategy analysis' in html
     assert 'class="chart-surface investment-history-surface backtest-history-surface"' in html
     assert 'data-table-header' in html
     assert 'id="tradeTransactionsTable"' in html

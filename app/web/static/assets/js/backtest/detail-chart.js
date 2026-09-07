@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 /** Shared square-cell layout with equal historical and forecast time spans. */
 (function bootstrapPriceFieldDetailChart(scope) {
     "use strict";
@@ -33,6 +33,28 @@
             maxPrice: anchorPrice + anchorY / scale,
             priceToY, historyX});
     };
-    scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART = Object.freeze({computeLayout});
+    const buildObservedPaths = (prices, layout, anchorPrice, horizon, columns) => {
+        const paths = {up: [], down: []};
+        const valid = (value) => typeof value === "number" && Number.isFinite(value);
+        const point = (index) => ({x: layout.anchorX + index * columns * layout.pitch / horizon,
+            y: layout.priceToY(prices[index])});
+        const segment = (side, start, end) => paths[side].push(`M${start.x},${start.y} L${end.x},${end.y}`);
+        for (let index = 1; index < prices.length && index <= horizon; index += 1) {
+            if (!valid(prices[index - 1]) || !valid(prices[index])) continue;
+            const start = point(index - 1);
+            const end = point(index);
+            const beforeUp = prices[index - 1] >= anchorPrice;
+            const afterUp = prices[index] >= anchorPrice;
+            if (beforeUp === afterUp) segment(beforeUp ? "up" : "down", start, end);
+            else {
+                const fraction = (anchorPrice - prices[index - 1]) / (prices[index] - prices[index - 1]);
+                const crossing = {x: start.x + fraction * (end.x - start.x), y: layout.priceToY(anchorPrice)};
+                segment(beforeUp ? "up" : "down", start, crossing);
+                segment(afterUp ? "up" : "down", crossing, end);
+            }
+        }
+        return {up: paths.up.join(" "), down: paths.down.join(" ")};
+    };
+    scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART = Object.freeze({computeLayout, buildObservedPaths});
     if (typeof module !== "undefined" && module.exports) module.exports = scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
 })(typeof globalThis !== "undefined" ? globalThis : window);

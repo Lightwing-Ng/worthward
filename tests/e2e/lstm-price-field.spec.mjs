@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.13.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.14.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -387,6 +387,8 @@ test('LSTM training toggles one button and displays real progress and artifact m
     let runs = [];
     let historyFails = false;
     let startRequests = 0;
+    let releaseStart;
+    const startResponse = new Promise((resolve) => { releaseStart = resolve; });
     const run = {
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'DRAM', period: '1y',
         status: 'running', active: true, started_at: '2026-09-04T00:00:00Z',
@@ -399,6 +401,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     }));
     await page.route('**/api/lstm-training/start', async (route) => {
         startRequests += 1;
+        await startResponse;
         runs = [{...run}];
         await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify({success: true, run: runs[0]})});
     });
@@ -412,6 +415,10 @@ test('LSTM training toggles one button and displays real progress and artifact m
     const button = menu.locator('[data-lstm-training-action]');
     await expect(button).toHaveText('Start training');
     await button.click();
+    await expect(button).toHaveText('Starting training…');
+    await expect(menu.getByRole('progressbar')).toBeVisible();
+    await expect(page.locator('.lstm-training-spinner')).toHaveCount(0);
+    releaseStart();
     await expect(button).toHaveText('Stop training');
     await expect(button).toBeEnabled();
     await expect(button).toHaveCount(1);
@@ -420,7 +427,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await expect(menu.locator('.lstm-training-history-details')).toBeHidden();
     await expect(menu.locator('.lstm-training-history-item')).toHaveCount(0);
     await expect(menu.locator('[data-lstm-training-progress] [role="progressbar"]')).toHaveCount(1);
-    await expect(page.locator('.lstm-training-spinner')).toBeVisible();
+    await expect(page.locator('.lstm-training-spinner')).toHaveCount(0);
     expect(await button.locator('.icon').evaluate((node) => getComputedStyle(node).maskImage)).toContain('/static/images/stop.fill.svg');
     await expect(menu.locator('.lstm-training-progress-fill')).toHaveCSS('background-image', 'none');
     expect(await menu.locator('.lstm-training-progress-fill').evaluate((node) => {
@@ -1011,6 +1018,11 @@ for (const width of [1161, 390]) {
             for (let index = 1; index < contract.visibleTicks.length; index += 1) {
                 expect(contract.visibleTicks[index].left).toBeGreaterThanOrEqual(contract.visibleTicks[index - 1].right - 0.5);
             }
+            await expect(panel.locator('[data-backtest-probability-detail-observed] .is-up')).toHaveAttribute('d', '');
+            await expect(panel.locator('[data-backtest-probability-detail-observed] .is-down')).toHaveAttribute('d', '');
+            await expect(page.locator('.backtest-surface > .chart-heading-row .chart-heading')).toHaveText('Price and strategy analysis');
+            await expect(page.locator('.trade-chart-stack.has-probability-field')).toHaveCSS('padding-bottom', '6px');
+            await expect(panel.locator('.backtest-probability-detail-heading')).toHaveCSS('margin-bottom', '4px');
             const readAxis = () => panel.locator('[data-backtest-probability-detail-y-axis]').boundingBox();
             let lastAxis = null;
             let stableAxisSamples = 0;
@@ -1033,6 +1045,7 @@ for (const width of [1161, 390]) {
                         y: rect.top + points[index].y * rect.height / chart.height};
                 });
             });
+            let observedProbeCount = 0;
             for (const probe of probes) {
                 const previousIndex = Number(await panel.getAttribute('data-active-index'));
                 await page.mouse.move(probe.x, probe.y);
@@ -1049,7 +1062,38 @@ for (const width of [1161, 390]) {
                 });
                 if (symmetry.expectedStart) expect(symmetry.start).toBe(symmetry.expectedStart);
                 expect(symmetry.count).toBe(symmetry.expectedCount);
+                const actual = await panel.evaluate((element) => {
+                    const observed = element.querySelector('[data-backtest-probability-detail-observed]');
+                    const index = Number(element.dataset.activeIndex);
+                    const horizon = Number(element.querySelector('[data-timeline-role="end"]').dataset.horizon);
+                    const dates = window.WORTHWARD_APP.backtestResult.chart.raw_dates;
+                    const resolveColor = (token) => {
+                        const probe = document.createElement('span');
+                        probe.style.color = `var(${token})`;
+                        element.appendChild(probe);
+                        const color = getComputedStyle(probe).color;
+                        probe.remove();
+                        return color;
+                    };
+                    return {hasLaterPrices: index < dates.length - 1, up: observed.querySelector('.is-up').getAttribute('d'), down: observed.querySelector('.is-down').getAttribute('d'),
+                        endDate: observed.dataset.endDate, expectedEnd: dates[Math.min(index + horizon, dates.length - 1)],
+                        width: getComputedStyle(observed.querySelector('path')).strokeWidth,
+                        historyWidth: getComputedStyle(element.querySelector('[data-backtest-probability-detail-history] path')).strokeWidth,
+                        upColor: getComputedStyle(observed.querySelector('.is-up')).stroke,
+                        downColor: getComputedStyle(observed.querySelector('.is-down')).stroke,
+                        expectedUp: resolveColor('--theme-accent-positive'), expectedDown: resolveColor('--theme-accent-secondary')};
+                });
+                if (actual.hasLaterPrices) {
+                    expect(actual.up + actual.down).toContain('L');
+                    observedProbeCount += 1;
+                } else expect(actual.up + actual.down).toBe('');
+                expect(actual.endDate).toBe(actual.expectedEnd);
+                expect(actual.width).toBe(actual.historyWidth);
+                expect(actual.upColor).toBe(actual.expectedUp);
+                expect(actual.downColor).toBe(actual.expectedDown);
+
             }
+            expect(observedProbeCount).toBeGreaterThan(0);
             await panel.screenshot({path: testInfo.outputPath(`detail-${strategy}-${width}.png`)});
         });
     }

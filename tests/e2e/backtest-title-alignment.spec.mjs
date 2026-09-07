@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {test, expect} from '@playwright/test';
 
 test('Backtest result title shares the desktop centerline and preserves compact flow', async ({page}) => {
@@ -38,7 +38,7 @@ test('Backtest result title shares the desktop centerline and preserves compact 
             compactFlow: true,
             chartVisible: true,
             splitterBelowChart: true,
-            probabilityStackBottomPadding: '4px',
+            probabilityStackBottomPadding: '6px',
             overviewInlinePadding: ['6px', '6px'],
             noHorizontalOverflow: true,
         });

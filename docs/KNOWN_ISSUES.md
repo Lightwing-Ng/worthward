@@ -33,7 +33,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.243.13`
+Documentation version: `v1.244.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
@@ -439,3 +439,10 @@ is claimed and concurrent layout work remains preserved.
   once; the repository contains neither a default PIN nor a default token.
 - IBKR remains file-import-only. No broker session, credential, market-data,
   or order-routing transport is implemented.
+
+GPU worker runtime diagnosis, 6 Sep 2026: a later explicit-GPU training failure
+came from the web service's Python 3.14 environment without Torch. The installed
+Python 3.13 framework environment confirmed MPS and completed isolated optimizer
+work. The training CLI now discovers and verifies a compatible installed GPU
+interpreter before replacing its worker process. This does not convert saved
+failed runs into successes or establish completion of a new production run.

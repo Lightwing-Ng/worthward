@@ -1,4 +1,4 @@
-/* Code version: v3.63.0 */
+/* Code version: v3.64.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -236,11 +236,6 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
-.lstm-training-spinner {
-	margin-inline-start: 8px;
-	vertical-align: -2px;
-}
-.lstm-training-spinner[hidden],
 .lstm-training-history-details[hidden] {
 	display: none;
 }
@@ -618,7 +613,7 @@
     flex: 0 1 auto;
     min-width: 0;
     min-height: 0;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
 }
 
 .backtest-probability-detail-heading .chart-heading {
@@ -757,7 +752,7 @@
     position: absolute;
     inset-inline-end: 0;
     top: 50%;
-    z-index: 1;
+    z-index: 3;
     display: grid;
     gap: 2px;
     justify-items: end;
@@ -1380,7 +1375,7 @@
 }
 
 .trade-chart-stack.has-probability-field {
-    padding-bottom: 4px;
+    padding-bottom: 6px;
 }
 
 .backtest-fixed-price-axis {
@@ -2070,7 +2065,8 @@
     flex: 0 0 12px;
 }
 
-.backtest-probability-detail-history {
+.backtest-probability-detail-history,
+.backtest-probability-detail-observed {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -2078,7 +2074,8 @@
     pointer-events: none;
     overflow: hidden;
 }
-.backtest-probability-detail-history path {
+.backtest-probability-detail-history path,
+.backtest-probability-detail-observed path {
     fill: none;
     stroke: var(--theme-accent-primary);
     stroke-width: var(--trade-chart-series-line-width, 2px);
@@ -2099,4 +2096,17 @@
 }
 .backtest-probability-detail-y-tick:last-child {
     transform: translateY(-100%);
+}
+
+.backtest-probability-detail-observed {
+    z-index: 2;
+}
+.backtest-probability-detail-observed .is-up {
+    stroke: var(--theme-accent-positive);
+}
+.backtest-probability-detail-observed .is-down {
+    stroke: var(--theme-accent-secondary);
+}
+.lstm-training-history-entry > .lstm-training-history-error {
+    display: block;
 }

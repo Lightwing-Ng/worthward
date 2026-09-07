@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.79.0`
+Documentation version: `v1.80.0`
 
 ## Shared Backtest controls and research
 
@@ -238,6 +238,14 @@ Known dates come from the observed series. Beyond its endpoints, date ticks use
 weekday projections, with the assumption available in their tooltip and no
 approximation prefix. Historical start, origin, and forecast end remain visible;
 intermediate labels are collision-filtered. No future prices are manufactured.
+
+The forecast half also overlays observed prices when later bars already exist.
+This read-only SVG layer ends at the earlier of the last real bar or the forecast
+horizon. Segments above the selected price use the positive theme token; those
+below use the secondary token, with exact crossing splits and the historical
+curve's stroke width. Missing prices remain gaps. Observations never alter the
+forecast bins, fitting scale, or model inputs. Backtest's overview heading is
+"Price and strategy analysis" for both prediction-only and trading analysis.
 
 The contained detail surface reuses the overview price chart's axis typography.
 Its Y-axis column has a fixed token-based width; Y ticks and date ticks use the
@@ -564,6 +572,16 @@ The probability field is not a Frosted Glass consumer. Its matrix is explicitly 
 The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each hover side independently to `min(10, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`; the half-plot cap prevents edge-adjacent hover fields from consuming the entire plot. The contained Price Field detail surface uses the complete strategy-owned row counts without the hover boundary cap and scales them inside its own viewport. Grid cells use a fixed 2 px logical gap; the same 2 px inset separates the vertical guide from the first column. They map their top and bottom pixels through the live Y scale to exact price intervals and map horizontally to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It has no cell or outer radius and uses an explicitly transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding. The shared vertical resizer invokes the Backtest overlay refresh after Chart.js has resized, so a pinned or tracking field cannot retain a stale geometry frame. During native or visual probability scrolling, the pointer-defined crosshair is recomputed in the same frame as the overlay translation. Every chart layout refresh clears screen-space pointer coordinates before recalculating geometry, so viewport, sidebar, and resizer reflows cannot inherit a stale pointer anchor or overflowed field; the next real pointer event re-establishes both guides from the current chart bounds. This matrix has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
 
 The model diagnostics are independent of the viewport-quantized 20-column grid. Direction hit rate, Brier probability score, Gaussian log score, and CRPS score the single executable next-open-to-following-open outcome for each origin. None is a model feature, signal input, or cache key. Browser columns may still represent more than one trading day, but their probability masses come from the origin's fitted return-state transition rather than a frozen one-day diffusion.
+
+Durable LSTM GPU workers use `scripts/lstm_runtime.py` before starting a run.
+The worker checks the current interpreter, an explicit configured runtime, the
+project virtual environment, PATH interpreters, and standard macOS framework
+installations. Only an interpreter with compatible project imports and a real
+MPS/CUDA readback is selected. `WORTHWARD_TRAINING_PYTHON` is authoritative when
+set. Process replacement preserves the worker PID and arguments, including stop
+ownership; Auto and CPU retain the launching interpreter. Failure to find a
+usable GPU runtime is explicit and never silently changes a GPU request to CPU.
+Training startup and execution use the progress bar without a heading spinner.
 
 Research-factor time semantics fail closed. The provider accepts real `published_at`, `available_at`, or equivalent disclosure timestamps; it does not use `filing_date`, report period, settlement date, `updated_at`, or a snapshot timestamp as a historical availability date. Until a source exposes a verifiable availability timestamp and a causal aggregation rule, capital flow, broker holding, shareholder concentration, fund-holder weight, short interest, and short volume report `unsupported_history` or `unavailable_point_in_time` and cannot enter the factor matrix. The safe historical research set is limited to P/B, P/S, dividend yield, and market temperature when they meet the timestamp rule. A GPU failure restarts the complete walk-forward calculation with a fresh NumPy float64 CPU backend; it never combines prior GPU rows with later CPU rows, and its presentation exposes the effective device, numeric precision, and fallback reason.
 
