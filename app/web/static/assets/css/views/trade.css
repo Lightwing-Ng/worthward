@@ -1,4 +1,4 @@
-/* Code version: v3.64.1 */
+/* Code version: v3.64.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -125,7 +125,9 @@
 .lstm-training-history-entry {
 	position: relative;
 	min-width: 0;
-	padding: 6px 8px;
+	padding: 2px;
+	min-height: 36px;
+	box-sizing: border-box;
 	border-radius: var(--radius-soft);
 	background: var(--control-liquid-background);
 }
@@ -139,13 +141,13 @@
 }
 .lstm-training-history-select {
 	display: grid;
-	grid-template-columns: 12px 5em max-content minmax(0, 1fr);
+	grid-template-columns: 12px minmax(0, 1fr) max-content max-content;
 	align-items: center;
 	justify-content: space-between;
 	gap: 4px;
 	min-width: 0;
 	width: 100%;
-	min-height: 28px;
+	min-height: 32px;
 	margin: 0;
 	padding: 0 20px 0 0;
 	border: none;
@@ -161,6 +163,12 @@
 .lstm-training-history-select:focus-visible {
 	outline: 2px solid var(--accent-text);
 	outline-offset: 2px;
+}
+.lstm-training-history-run {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .lstm-training-selected-icon {
 	width: 12px;
@@ -220,7 +228,7 @@
 }
 .lstm-training-history-select .lstm-training-accuracy {
 	grid-column: 3;
-	inline-size: calc(7ch + 2 * var(--investment-holdings-allocation-badge-padding-inline));
+	inline-size: var(--investment-holdings-allocation-badge-inline-size);
 	min-inline-size: 0;
 	box-sizing: border-box;
 	text-align: right;

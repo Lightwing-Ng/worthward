@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.0.2 */
+/* Shared Backtest control primitives. Code version: v1.0.3 */
 import {test, expect} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -36,6 +36,29 @@ for (const colorScheme of ['light', 'dark']) {
             expect(geometry.width).toBeLessThan(geometry.parentWidth);
             expect(Math.abs(geometry.rightGap)).toBeLessThan(1);
             const entry = training.locator('.lstm-training-history-entry');
+            await expect(entry).toHaveCSS('padding', '2px');
+            await expect(entry).toHaveCSS('height', '36px');
+            const historyGeometry = await entry.evaluate(node => {
+                const heading = node.closest('.lstm-training-history-collapse').querySelector('.lstm-training-history-heading').getBoundingClientRect();
+                const row = node.getBoundingClientRect();
+                const pill = node.querySelector('.lstm-training-history-select').getBoundingClientRect();
+                return {entryLeft: row.left - heading.left, pillLeft: pill.left - heading.left,
+                    rightInset: row.right - pill.right};
+            });
+            expect(Math.abs(historyGeometry.entryLeft)).toBeLessThan(1);
+            expect(historyGeometry.pillLeft).toBe(2);
+            expect(historyGeometry.rightInset).toBe(2);
+            expect(await entry.locator('.lstm-training-history-identifier').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+            expect(await entry.locator('.lstm-training-history-run').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+            const sections = page.locator('#trade_strategy_params_panel > details');
+            for (const section of await sections.all()) {
+                if (!(await section.evaluate(el => el.open))) await section.locator(':scope > summary').click();
+            }
+            await expect(page.locator('#trade_strategy_params_panel > details[open]')).toHaveCount(3);
+            await training.locator(':scope > summary').press('Enter');
+            await expect(page.locator('#trade_strategy_params_panel > details[open]')).toHaveCount(2);
+            await training.locator(':scope > summary').press('Enter');
+            await expect(page.locator('#trade_strategy_params_panel > details[open]')).toHaveCount(3);
             const remove = entry.locator('[data-lstm-training-delete]');
             await page.mouse.move(width - 10, 10);
             await expect(remove).toHaveCSS('opacity', '0');

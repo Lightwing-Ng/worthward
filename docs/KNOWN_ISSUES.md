@@ -1,5 +1,12 @@
 # Known issues and operating constraints
 
+Backtest disclosures and training history, 7 Sep 2026: strategy parameter,
+training, and market-factor sections no longer share a native details name, so
+all can remain open independently. Training history entries use 2px padding and
+a 36px compact row (32px selection control). Expanded details retain natural
+height. The selection focus ring aligns with the Training history heading.
+See [Longbridge factor audit](LONGBRIDGE_FACTOR_AUDIT.md) for current CLI gaps.
+
 Overview tooltip coverage, 7 Sep 2026: historical realized P&L requires complete
 reconciliation coverage, but verified unrealized P&L for open positions is evaluated
 independently. Missing realized coverage on a closed ticker no longer blanks the
@@ -80,7 +87,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.7`
+Documentation version: `v1.244.8`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
