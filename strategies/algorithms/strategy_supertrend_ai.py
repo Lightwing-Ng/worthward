@@ -1,122 +1,101 @@
-"""
-SuperTrend AI strategy with factor clustering.
+"""SuperTrend AI with causal trailing factor-performance clustering.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import deque
 import math
 
+import numpy as np
 import pandas as pd
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 
-@dataclass
-class _SupertrendState:
-    upper: float
-    lower: float
-    output: float
-    perf: float
-    factor: float
-    trend: int
-
-
 def _true_range(frame: pd.DataFrame) -> pd.Series:
     previous_close = frame["Close"].shift(1)
-    ranges = pd.concat(
-        [
-            frame["High"] - frame["Low"],
-            (frame["High"] - previous_close).abs(),
-            (frame["Low"] - previous_close).abs(),
-        ],
-        axis=1,
-    )
-    return ranges.max(axis=1)
+    return pd.concat([
+        frame["High"] - frame["Low"],
+        (frame["High"] - previous_close).abs(),
+        (frame["Low"] - previous_close).abs(),
+    ], axis=1).max(axis=1)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
+    """Seed Wilder smoothing with the first complete true-range average."""
     true_range = _true_range(frame)
-    return true_range.ewm(alpha=1 / length, adjust=False, min_periods=1).mean()
+    values = np.full(len(frame), np.nan)
+    if len(frame) >= length:
+        values[length - 1] = true_range.iloc[:length].mean()
+        for index in range(length, len(frame)):
+            values[index] = ((length - 1) * values[index - 1] + true_range.iloc[index]) / length
+    return pd.Series(values, index=frame.index, dtype="float64")
 
 
 def _ensure_ohlc_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Reject unavailable price evidence instead of inventing OHLC from Close."""
     normalized = frame.copy()
-    close = pd.to_numeric(normalized["Close"], errors="coerce")
-    for column in ("Open", "High", "Low"):
-        if column not in normalized.columns:
-            normalized[column] = close
-        else:
-            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").fillna(close)
-    normalized["Close"] = close
+    if normalized.empty:
+        return normalized
+    required = ("Open", "High", "Low", "Close")
+    if any(column not in normalized for column in required):
+        raise ValueError("SuperTrend requires observed Open, High, Low, and Close prices.")
+    for column in required:
+        normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+    values = normalized[list(required)].to_numpy(dtype="float64")
+    if not np.isfinite(values).all() or np.any(values <= 0):
+        raise ValueError("SuperTrend requires finite positive OHLC prices.")
+    if ((normalized["High"] < normalized[["Open", "Close", "Low"]].max(axis=1))
+            | (normalized["Low"] > normalized[["Open", "Close", "High"]].min(axis=1))).any():
+        raise ValueError("SuperTrend requires High and Low to enclose the observed bar.")
     return normalized
 
 
-def _percentile(values: list[float], quantile: float) -> float:
-    if not values:
-        return 0.0
-    return float(pd.Series(values, dtype="float64").quantile(quantile, interpolation="linear"))
-
-
-def _mean_or_none(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return sum(values) / len(values)
+def _factor_values(minimum: float, maximum: float, step: float) -> np.ndarray:
+    if minimum > maximum:
+        raise ValueError("Minimum factor cannot be greater than maximum factor.")
+    steps = (maximum - minimum) / step
+    if not math.isfinite(steps) or steps >= 512:
+        raise ValueError("The factor range and step may produce at most 512 candidates.")
+    count = math.floor(steps + 1e-9) + 1
+    return minimum + np.arange(count, dtype="float64") * step
 
 
 def _cluster_factor_and_score(
-        perf_values: list[float],
-        factor_values: list[float],
-        cluster_name: str,
-        max_iter: int,
+        perf_values: list[float], factor_values: list[float],
+        cluster_name: str, max_iter: int,
 ) -> tuple[float | None, float | None]:
+    """Select by occupied-cluster performance, including tied/empty clusters."""
     if not perf_values or not factor_values:
         return None, None
     if len(perf_values) != len(factor_values):
         raise ValueError("Performance values and factor values must have the same length.")
-
-    centroids = [
-        _percentile(perf_values, 0.25),
-        _percentile(perf_values, 0.50),
-        _percentile(perf_values, 0.75),
-    ]
-
-    target_index = {
-        "Worst": 0,
-        "Average": 1,
-        "Best": 2,
-    }.get(cluster_name, 2)
-
-    factor_clusters: list[list[float]] = [[], [], []]
-    perf_clusters: list[list[float]] = [[], [], []]
-
-    for _ in range(max_iter + 1):
-        factor_clusters = [[], [], []]
-        perf_clusters = [[], [], []]
-
-        for factor, perf in zip(factor_values, perf_values):
-            distances = [abs(perf - centroid) for centroid in centroids]
-            cluster_index = distances.index(min(distances))
-            factor_clusters[cluster_index].append(factor)
-            perf_clusters[cluster_index].append(perf)
-
-        new_centroids = []
-        for index, cluster in enumerate(perf_clusters):
-            cluster_mean = _mean_or_none(cluster)
-            new_centroids.append(centroids[index] if cluster_mean is None else cluster_mean)
-
-        if all(
-                math.isclose(old, new, rel_tol=1e-12, abs_tol=1e-12)
-                for old, new in zip(centroids, new_centroids)
-        ):
+    scores, factors = np.asarray(perf_values), np.asarray(factor_values)
+    centroids = np.percentile(scores, [25, 50, 75])
+    clusters = np.zeros(len(scores), dtype=int)
+    for _ in range(max(1, max_iter)):
+        clusters = np.argmin(np.abs(scores[:, None] - centroids), axis=1)
+        updated = np.array([scores[clusters == index].mean() if np.any(clusters == index)
+                            else centroids[index] for index in range(3)])
+        updated.sort()
+        if np.allclose(centroids, updated, rtol=1e-12, atol=1e-12):
             break
-        centroids = new_centroids
-
-    target_factor = _mean_or_none(factor_clusters[target_index])
-    target_perf = _mean_or_none(perf_clusters[target_index])
-    return target_factor, target_perf
+        centroids = updated
+    # Reassign to the final ordered centroids even when the iteration limit ends.
+    clusters = np.argmin(np.abs(scores[:, None] - centroids), axis=1)
+    occupied = [(float(scores[clusters == index].mean()), index) for index in range(3)
+                if np.any(clusters == index)]
+    occupied.sort()
+    if cluster_name == "Worst":
+        chosen = occupied[0][1]
+    elif cluster_name == "Average":
+        chosen = min(occupied, key=lambda item: abs(item[0] - float(np.median(scores))))[1]
+    else:
+        chosen = occupied[-1][1]
+    selected = clusters == chosen
+    return float(factors[selected].mean()), float(scores[selected].mean())
 
 
 class SupertrendAiStrategy(BaseStrategy):
@@ -192,7 +171,8 @@ class SupertrendAiStrategy(BaseStrategy):
                 label="Maximum Iteration Steps",
                 kind="integer",
                 default=1_000,
-                minimum=0,
+                minimum=1,
+                maximum=1_000,
                 unit_hint="iters",
                 help_text="Sets the maximum number of clustering passes on each run. Higher values give the clusters more chances to settle.",
             ),
@@ -202,165 +182,106 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=10_000,
                 minimum=1,
-                help_text="Sets how many recent bars the strategy can use while tuning the factor. Lower values reduce workload but use less history.",
+                help_text="Limits factor-performance scoring to this many trailing bars at each historical origin.",
             ),
         )
 
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
+        checked_params = dict(params or {})
+        for definition in self.get_parameter_definitions():
+            raw = checked_params.get(definition.key)
+            if raw is None or definition.kind not in {"integer", "number"}:
+                continue
+            try:
+                numeric = float(raw)
+                valid = math.isfinite(numeric) and (definition.kind != "integer" or numeric.is_integer())
+            except (TypeError, ValueError, OverflowError):
+                valid = False
+            if not valid:
+                raise ValueError(f"{definition.label} must be a finite {definition.kind} value.")
+            checked_params[definition.key] = int(numeric) if definition.kind == "integer" else numeric
+        normalized = self.normalize_params(checked_params)
+        factors = _factor_values(float(normalized["min_factor"]), float(normalized["max_factor"]),
+                                 float(normalized["factor_step"]))
         frame = _ensure_ohlc_columns(dataset).reset_index(drop=True)
         if frame.empty:
-            frame["buy_signal"] = pd.Series(dtype="bool")
-            frame["sell_signal"] = pd.Series(dtype="bool")
-            return StrategySignalResult(
-                frame=frame,
-                buy_signal_column="buy_signal",
-                sell_signal_column="sell_signal",
-            )
+            frame["buy_signal"], frame["sell_signal"] = False, False
+            return StrategySignalResult(frame, "buy_signal", "sell_signal", required_execution_mode="next_open")
 
-        normalized_params = self.normalize_params(params)
-        atr_length = int(normalized_params["atr_length"])
-        min_factor = int(normalized_params["min_factor"])
-        max_factor = int(normalized_params["max_factor"])
-        factor_step = float(normalized_params["factor_step"])
-        perf_alpha = float(normalized_params["performance_memory"])
-        from_cluster = str(normalized_params["from_cluster"])
-        max_iter = int(normalized_params["max_iteration_steps"])
-        max_data = int(normalized_params["historical_bars_calculation"])
-
-        if min_factor > max_factor:
-            raise ValueError("Minimum factor cannot be greater than maximum factor.")
-        if factor_step <= 0:
-            raise ValueError("Factor step must be greater than zero.")
-
-        hl2 = (frame["High"] + frame["Low"]) / 2.0
-        close = frame["Close"].astype("float64")
-        atr = _atr(frame, atr_length)
-        denominator = close.diff().abs().ewm(
-            span=max(int(perf_alpha), 1),
-            adjust=False,
-            min_periods=1,
-        ).mean()
-
-        factors: list[float] = []
-        next_factor = float(min_factor)
-        max_factor_value = float(max_factor)
-        while next_factor <= max_factor_value + 1e-9:
-            factors.append(round(next_factor, 10))
-            next_factor += factor_step
-        if not factors:
-            factors.append(float(min_factor))
-
-        initial_mid = float(hl2.iloc[0])
-        states = [
-            _SupertrendState(
-                upper=initial_mid,
-                lower=initial_mid,
-                output=math.nan,
-                perf=0.0,
-                factor=factor,
-                trend=0,
-            )
-            for factor in factors
-        ]
-
-        target_factors: list[float] = []
-        perf_indexes: list[float] = []
-        trends: list[int] = []
-        trailing_stops: list[float] = []
-        adaptive_trailing_stops: list[float] = []
-
-        active_upper = initial_mid
-        active_lower = initial_mid
+        length = int(normalized["atr_length"])
+        history = int(normalized["historical_bars_calculation"])
+        weight = 2.0 / (float(normalized["performance_memory"]) + 1.0)
+        decay = 1.0 - weight
+        expired_weight = weight * decay ** history
+        close = frame["Close"].to_numpy(dtype="float64")
+        midpoint = ((frame["High"] + frame["Low"]) / 2.0).to_numpy()
+        atr = _atr(frame, length).to_numpy()
+        size = len(frame)
+        target_factors = np.full(size, np.nan)
+        perf_indexes = np.zeros(size)
+        trends = np.zeros(size, dtype=int)
+        stops, adaptive_stops = np.full(size, np.nan), np.full(size, np.nan)
+        upper, lower, output = (np.full(len(factors), np.nan) for _ in range(3))
+        factor_trends = np.zeros(len(factors), dtype=int)
+        performance = np.zeros(len(factors))
+        contributions = deque()
+        denominator, active_changes = 0.0, 0
+        active_upper = active_lower = adaptive_stop = math.nan
         active_trend = 0
-        active_trailing_stop = initial_mid
-        perf_ama = math.nan
-        lookback_start = max(len(frame) - max_data, 0)
-        perf_weight = 2.0 / (perf_alpha + 1.0)
 
-        for index in range(len(frame)):
-            current_close = float(close.iloc[index])
-            current_hl2 = float(hl2.iloc[index])
-            current_atr = float(atr.iloc[index])
-            previous_close = float(close.iloc[index - 1]) if index > 0 else current_close
+        for index in range(length - 1, size):
+            price, mid, volatility = close[index], midpoint[index], atr[index]
+            previous_close = close[index - 1] if index >= length else price
+            delta = price - previous_close
+            up, down = mid + volatility * factors, mid - volatility * factors
+            if index == length - 1:
+                upper, lower = up.copy(), down.copy()
+            factor_trends = np.where(price > upper, 1, np.where(price < lower, 0, factor_trends))
+            upper = np.where(previous_close < upper, np.minimum(up, upper), up)
+            lower = np.where(previous_close > lower, np.maximum(down, lower), down)
+            direction = np.where(np.isfinite(output), np.sign(previous_close - output), 0.0)
+            contribution = delta * direction
+            performance = decay * performance + weight * contribution
+            denominator = decay * denominator + weight * abs(delta)
+            contributions.append((contribution, abs(delta)))
+            active_changes += delta != 0
+            if len(contributions) > history:
+                expired, expired_change = contributions.popleft()
+                performance -= expired_weight * expired
+                denominator -= expired_weight * expired_change
+                active_changes -= expired_change != 0
+            if not active_changes:
+                performance.fill(0.0)
+                denominator = 0.0
+            output = np.where(factor_trends == 1, lower, upper)
+            factor, score = _cluster_factor_and_score(
+                performance.tolist(), factors.tolist(), str(normalized["from_cluster"]),
+                int(normalized["max_iteration_steps"]),
+            )
+            target_factors[index] = factor
+            perf_index = float(np.clip(score / denominator, 0.0, 1.0)) if denominator > 0 else 0.0
+            perf_indexes[index] = perf_index
 
-            for state in states:
-                up = current_hl2 + (current_atr * state.factor)
-                down = current_hl2 - (current_atr * state.factor)
-                if current_close > state.upper:
-                    state.trend = 1
-                elif current_close < state.lower:
-                    state.trend = 0
-
-                state.upper = min(up, state.upper) if previous_close < state.upper else up
-                state.lower = max(down, state.lower) if previous_close > state.lower else down
-
-                if math.isnan(state.output):
-                    diff = 0.0
-                elif previous_close == state.output:
-                    diff = 0.0
-                else:
-                    diff = math.copysign(1.0, previous_close - state.output)
-
-                price_delta = current_close - previous_close if index > 0 else 0.0
-                state.perf += perf_weight * ((price_delta * diff) - state.perf)
-                state.output = state.lower if state.trend == 1 else state.upper
-
-            if index >= lookback_start:
-                perf_values = [state.perf for state in states]
-                factor_values = [state.factor for state in states]
-                target_factor, target_perf = _cluster_factor_and_score(
-                    perf_values=perf_values,
-                    factor_values=factor_values,
-                    cluster_name=from_cluster,
-                    max_iter=max_iter,
-                )
-            else:
-                target_factor = None
-                target_perf = None
-
-            if target_factor is None:
-                target_factor = target_factors[-1] if target_factors else factors[0]
-            target_factors.append(target_factor)
-
-            perf_denominator = float(denominator.iloc[index]) if not pd.isna(denominator.iloc[index]) else 0.0
-            if target_perf is None or perf_denominator <= 0:
-                perf_index = 0.0
-            else:
-                perf_index = max(target_perf, 0.0) / perf_denominator
-            perf_indexes.append(perf_index)
-
-            up = current_hl2 + (current_atr * target_factor)
-            down = current_hl2 - (current_atr * target_factor)
+            up, down = mid + volatility * factor, mid - volatility * factor
+            if index == length - 1:
+                active_upper, active_lower = up, down
             active_upper = min(up, active_upper) if previous_close < active_upper else up
             active_lower = max(down, active_lower) if previous_close > active_lower else down
-
-            if current_close > active_upper:
+            if price > active_upper:
                 active_trend = 1
-            elif current_close < active_lower:
+            elif price < active_lower:
                 active_trend = 0
-
-            active_trailing_stop = active_lower if active_trend == 1 else active_upper
-            if math.isnan(perf_ama):
-                perf_ama = active_trailing_stop
-            else:
-                perf_ama += perf_index * (active_trailing_stop - perf_ama)
-
-            trends.append(active_trend)
-            trailing_stops.append(active_trailing_stop)
-            adaptive_trailing_stops.append(perf_ama)
+            stop = active_lower if active_trend == 1 else active_upper
+            adaptive_stop = stop if math.isnan(adaptive_stop) else adaptive_stop + perf_index * (stop - adaptive_stop)
+            trends[index], stops[index], adaptive_stops[index] = active_trend, stop, adaptive_stop
 
         frame["target_factor"] = target_factors
         frame["performance_index"] = perf_indexes
         frame["supertrend_trend"] = trends
-        frame["trailing_stop"] = trailing_stops
-        frame["trailing_stop_ama"] = adaptive_trailing_stops
-
-        previous_trend = frame["supertrend_trend"].shift(1).fillna(frame["supertrend_trend"].iloc[0]).astype(int)
-        frame["buy_signal"] = (frame["supertrend_trend"] > previous_trend).fillna(False)
-        frame["sell_signal"] = (frame["supertrend_trend"] < previous_trend).fillna(False)
-
-        return StrategySignalResult(
-            frame=frame,
-            buy_signal_column="buy_signal",
-            sell_signal_column="sell_signal",
-        )
+        frame["trailing_stop"], frame["trailing_stop_ama"] = stops, adaptive_stops
+        ready = pd.Series(np.isfinite(atr), index=frame.index)
+        comparable = ready & ready.shift(1, fill_value=False)
+        previous_trend = frame["supertrend_trend"].shift(1)
+        frame["buy_signal"] = comparable & (frame["supertrend_trend"] > previous_trend)
+        frame["sell_signal"] = comparable & (frame["supertrend_trend"] < previous_trend)
+        return StrategySignalResult(frame, "buy_signal", "sell_signal", required_execution_mode="next_open")

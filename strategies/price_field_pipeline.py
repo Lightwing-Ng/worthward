@@ -6,7 +6,7 @@ AR(1) return state, diagnostics, and signal/presentation support. Model
 training, posterior inference, factor selection, and backend scheduling remain
 strategy-owned.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -18,8 +18,6 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
-
-from app.infrastructure.connectivity import is_remote_market_access_disabled
 
 _PRICE_FIELD_PE_MAX_STALENESS_DAYS = 14
 _PRICE_FIELD_DYNAMIC_PE_MAX_STALENESS_DAYS = 1
@@ -1204,6 +1202,13 @@ def load_price_field_market_bundle(
         include_options=option_factors_requested,
         research_factors=research_factors,
     )
+
+
+def is_remote_market_access_disabled() -> bool:
+    """Resolve provider access only when loading, keeping model imports pure."""
+    from app.infrastructure.connectivity import is_remote_market_access_disabled as disabled
+
+    return disabled()
 
 
 def _json_number_list(values: Sequence[float]) -> list[float | None]:

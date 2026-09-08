@@ -5,7 +5,7 @@ Bayesian Price Field and LSTM Price Field both emit this geometry and
 renderer payload. Shared browser geometry, distribution adapters, and the chart
 controller own layout, probability math, interaction, and lifecycle.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -116,6 +116,7 @@ def build_probability_grid_presentation(
         source: Mapping[str, Any],
         fingerprint: str,
         extra: Mapping[str, Any] | None = None,
+        geometry_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one JSON-safe probability-grid payload for the shared renderer."""
     if not re.fullmatch(r"[a-z][a-z0-9-]*/v[1-9][0-9]*", schema):
@@ -141,6 +142,11 @@ def build_probability_grid_presentation(
         "source": dict(source),
         "fingerprint": str(fingerprint),
     }
+    if geometry_metadata:
+        permitted = {"target_interval", "price_anchor_kind", "multi_step_kind", "metric_geometry"}
+        if set(geometry_metadata) - permitted:
+            raise ValueError("Only forecast semantics may override probability-grid metadata.")
+        presentation.update(geometry_metadata)
     if extra:
         for key, value in extra.items():
             if key in presentation:

@@ -1,0 +1,101 @@
+{# Code version: v0.1.0 #}
+{% extends "base.html" %}
+{% from "_collapse.html" import render_collapse %}
+
+{% block head_extras %}
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/views/beta.css', v='beta-v0.1.0') }}">
+{% endblock %}
+
+{% block application_state %}
+<script id="worthward_state" type="application/json">{{ beta_state|tojson }}</script>
+<script>
+    window.WORTHWARD_APP = JSON.parse(document.getElementById("worthward_state").textContent);
+    window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+</script>
+{% endblock %}
+
+{% block sidebar_content %}
+{% set ns = namespace(active_index=0) %}
+{% for item in beta_experiments %}{% if item.id == beta_experiment.id %}{% set ns.active_index = loop.index0 %}{% endif %}{% endfor %}
+<nav class="settings-nav" aria-label="Beta experiments" style="--settings-active-index: {{ ns.active_index }};">
+    {% for item in beta_experiments %}
+    <a href="{{ url_for('beta.page', experiment=item.id) }}" class="settings-nav-item{% if item.id == beta_experiment.id %} is-active{% endif %}"{% if item.id == beta_experiment.id %} aria-current="page"{% endif %}>
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon {{ item.icon }}"></span></span>
+        <span class="settings-nav-label">{{ item.title }}</span>
+    </a>
+    {% endfor %}
+</nav>
+<div class="beta-sidebar-note">
+    <span class="beta-eyebrow">Experimental · v0.1.0</span>
+    <p>A place to test better questions.</p>
+</div>
+{% endblock %}
+
+{% block workspace_content %}
+<section class="workspace-header settings-workspace-header beta-workspace" data-beta-root data-experiment="{{ beta_experiment.id }}" data-endpoint="{{ url_for('beta.analyze') }}">
+    <article class="report-card workspace-article-card workspace-summary-card settings-summary-card" data-layout-role="title-rail">
+        <div class="report-heading-row" data-layout-role="title-heading">
+            <h2 class="report-heading">{{ beta_experiment.title }}</h2>
+        </div>
+    </article>
+    <div class="settings-content-scrollport beta-content" data-layout-role="content-scrollport">
+        <article class="report-card workspace-content-card beta-intro">
+            <div class="beta-heading-line"><span class="beta-eyebrow">Worthward / Beta</span><span class="beta-status-pill">{{ 'Local history' if beta_experiment.interactive else 'Research workspace' }}</span></div>
+            <h3>{{ beta_experiment.question }}</h3>
+            <p>{{ beta_experiment.description }}</p>
+        </article>
+        {% if beta_experiment.interactive %}
+        <article class="report-card workspace-content-card beta-panel">
+            <form class="beta-analysis-form" data-beta-analysis-form>
+                <label class="field beta-ticker-field" for="beta_ticker"><span>Cached ticker</span>
+                    <input id="beta_ticker" name="ticker" type="text" maxlength="24" required autocomplete="off" spellcheck="false" placeholder="Ticker symbol" aria-describedby="beta_data_help">
+                </label>
+                <button class="secondary-button" type="submit" data-beta-run>Run experiment</button>
+                <button class="secondary-button" type="button" data-beta-cancel hidden>Cancel</button>
+            </form>
+            <p class="beta-caption" id="beta_data_help">Uses existing daily Close history. Nothing is downloaded or refreshed.</p>
+            <p class="beta-feedback" data-beta-feedback role="status" aria-live="polite">Choose a ticker already available in your local market store.</p>
+        </article>
+        <section data-beta-results hidden aria-label="Experiment results">
+            <p class="beta-provenance" data-beta-provenance></p>
+            <div class="trade-metrics-grid beta-metrics" data-beta-metrics></div>
+            <article class="report-card workspace-content-card beta-panel">
+                <div class="beta-heading-line"><h3>Historical lens</h3><button type="button" class="secondary-button" data-beta-export>Export observations</button></div>
+                <div class="beta-chart"><canvas data-beta-chart role="img" aria-label="Historical experiment chart"></canvas></div>
+                <div class="beta-table-scroll" tabindex="0" role="region" aria-label="Observed values"><table class="events-table" data-beta-table></table></div>
+            </article>
+            {% if beta_experiment.id == 'stress-lab' %}
+            <article class="report-card workspace-content-card beta-panel" data-beta-shock>
+                <h3>What if the next session gaps?</h3>
+                <p class="beta-caption">A one-step hypothetical loss on a chosen exposure. Separate from the historical observations above.</p>
+                <div class="beta-input-grid">
+                    <label class="field" for="beta_shock"><span>Price shock (%)</span><input id="beta_shock" type="number" min="-100" max="100" step="1" value="-20"></label>
+                    <label class="field" for="beta_exposure"><span>Exposure (%)</span><input id="beta_exposure" type="number" min="0" max="100" step="1" value="100"></label>
+                </div>
+                <output data-beta-shock-result class="beta-shock-result"></output>
+                <p class="beta-caption">Unlevered exposure; remaining cash is flat. No fees, liquidity model, or likelihood estimate.</p>
+            </article>
+            {% endif %}
+            <ul class="beta-notes" data-beta-notes></ul>
+        </section>
+        {% elif beta_experiment.id == 'thesis-lab' %}
+            {% include "_beta_thesis.html" %}
+        {% elif beta_experiment.id == 'research-frontier' %}
+            {% include "_beta_frontier.html" %}
+        {% endif %}
+        <article class="report-card workspace-content-card beta-panel beta-method">
+            {% call render_collapse('Method & boundaries', 'beta-method', open=false) %}
+            <p>{{ beta_experiment.method }}</p>
+            <p>{{ beta_experiment.limitation }}</p>
+            {% endcall %}
+        </article>
+    </div>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script type="module" src="{{ url_for('static', filename='assets/js/beta.js', v='beta-v0.1.0') }}"></script>
+{% if beta_experiment.id == 'thesis-lab' %}
+<script type="module" src="{{ url_for('static', filename='assets/js/beta-notebook.js', v='beta-notebook-v0.1.0') }}"></script>
+{% endif %}
+{% endblock %}

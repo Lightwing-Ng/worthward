@@ -1,4 +1,4 @@
-/* Code version: v0.10.0 */
+/* Code version: v0.11.2 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -11,8 +11,10 @@
     let actionError = "";
     let historyError = "";
     let protocolVersion = 0;
+    let cachedStrategy = "";
     const selectionKey = "worthward.lstm.selected-configuration.v1";
-    let requestedSelectionId = new URL(window.location.href).searchParams.get("lstm_training_run") || "";
+    let requestedSelectionId = new URL(window.location.href).searchParams.get("price_field_training_run")
+        || new URL(window.location.href).searchParams.get("lstm_training_run") || "";
     let applyingRunId = "";
     let selectionValidationFrame = null;
     let selection = null;
@@ -23,14 +25,22 @@
     const stoppingRunIds = new Set();
     const historySnapshots = new WeakMap();
 
-    const isLstmStrategySelected = () => (
-        String(document.getElementById("trade_strategy")?.value || "") === "lstm-price-field"
-    );
+    const currentStrategy = () => String(document.getElementById("trade_strategy")?.value || "");
+    const isLegacyLstm = () => currentStrategy() === "lstm-price-field";
+    const isLstmStrategySelected = () => isLegacyLstm() || Boolean(document.querySelector(
+        '#trade_strategy_params_panel [data-strategy-action-slot="price-field-training"]',
+    ));
+    const trainingEndpoint = (action = "") => {
+        const prefix = isLegacyLstm() ? "lstmTraining" : "priceFieldTraining";
+        const suffix = action ? `${action[0].toUpperCase()}${action.slice(1)}` : "";
+        const fallback = `/api/${isLegacyLstm() ? "lstm" : "price-field"}-training${action ? `/${action}` : ""}`;
+        return endpoint(`${prefix}${suffix}`, fallback);
+    };
 
     const endpoint = (name, fallback) => String(state.endpoints?.[name] || fallback);
 
     const privateMenuHost = () => document.querySelector(
-        '#trade_strategy_params_panel [data-strategy-action-slot="lstm-training"]',
+        '#trade_strategy_params_panel [data-strategy-action-slot="lstm-training"], #trade_strategy_params_panel [data-strategy-action-slot="price-field-training"]',
     );
     const currentTicker = () => String(
         document.querySelector("[data-ticker-input]")?.value || "",
@@ -82,6 +92,7 @@
             requestedSelectionId = "";
             const url = new URL(window.location.href);
             url.searchParams.delete("lstm_training_run");
+            url.searchParams.delete("price_field_training_run");
             window.history.replaceState(window.history.state, "", url);
         }
         try {
@@ -96,7 +107,7 @@
         const same = (left, right) => typeof right === "number" ? Number(left) === right
             : typeof right === "boolean" ? [true, "true", "1", 1].includes(left) === right : left === right;
         return isLstmStrategySelected() && Object.entries(config).every(([key, value]) => {
-            if (key === "strategy") return value === "lstm-price-field";
+            if (key === "strategy") return value === currentStrategy();
             if (key === "params") return Object.entries(value).every(([name, saved]) => same(params[name], saved));
             return same(current[key], value);
         });
@@ -109,7 +120,7 @@
         Object.entries({...config, ...config.params}).forEach(([key, value]) => {
             if (key !== "params") url.searchParams.set(aliases[key] || key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
         });
-        if (selection?.id) url.searchParams.set("lstm_training_run", selection.id);
+        if (selection?.id) url.searchParams.set(config.strategy === "lstm-price-field" ? "lstm_training_run" : "price_field_training_run", selection.id);
         return url;
     };
 
@@ -117,7 +128,7 @@
         if (!selection || !configurationMatches(selection.configuration)) {
             if (!requestedSelectionId) return source;
             const pendingUrl = new URL(source, window.location.href);
-            pendingUrl.searchParams.set("lstm_training_run", requestedSelectionId);
+            pendingUrl.searchParams.set(isLegacyLstm() ? "lstm_training_run" : "price_field_training_run", requestedSelectionId);
             return `${pendingUrl.pathname}${pendingUrl.search}${pendingUrl.hash}`;
         }
         const url = configurationUrl(selection.configuration, source);
@@ -190,6 +201,7 @@
         starting: "Starting",
         running: "Running",
         stopping: "Stopping",
+        stopped: "Stopped",
         completed: "Completed",
         interrupted: "Interrupted",
         time_budget_reached: "Time budget reached",
@@ -269,9 +281,11 @@
         const check = appendText(summary, "lstm-training-selected-icon", "");
         check.setAttribute("aria-hidden", "true");
         appendText(summary, "lstm-training-history-run", run.ticker || "Unknown ticker");
-        if (typeof run.accuracy_pct === "number" && Number.isFinite(run.accuracy_pct)) {
-            const badge = appendText(summary, "investment-holdings-allocation-badge lstm-training-accuracy", `${formatNumber(run.accuracy_pct, 2)}%`);
-            badge.title = run.accuracy_label || "Holdout direction accuracy";
+        const score = run.probability_score_pct ?? run.accuracy_pct;
+        if (typeof score === "number" && Number.isFinite(score)) {
+            const badge = appendText(summary, "investment-holdings-allocation-badge lstm-training-accuracy", `${formatNumber(score, 2)}%`);
+            badge.title = run.probability_score_pct !== null && run.probability_score_pct !== undefined
+                ? run.probability_score_label : run.accuracy_label || "Holdout direction accuracy";
             badge.setAttribute("aria-label", `${badge.title}: ${badge.textContent}`);
         }
         appendText(summary, "lstm-training-history-identifier", identifier || "Date unavailable");
@@ -305,7 +319,17 @@
         if (run.configuration) appendText(details, "lstm-training-history-meta", `${run.configuration.from} – ${run.configuration.to} · ${run.configuration.interval}`);
         if (run.requested_range?.from && run.requested_range?.to) appendText(details, "lstm-training-history-meta", `Requested window ${run.requested_range.from} – ${run.requested_range.to}`);
         if (run.configuration_error) appendText(details, "lstm-training-history-meta", run.configuration_error);
-        if (run.device) appendText(details, "lstm-training-history-meta", `Backend ${run.device.resolved} · ${formatNumber(run.device.optimizer_steps)} optimizer steps · ${formatNumber(run.device.training_compute_seconds, 2)} s compute`);
+        if (run.device) {
+            const device = run.device;
+            const compute = [`Backend ${device.resolved}`];
+            if (Number.isFinite(device.optimizer_steps)) compute.push(`${formatNumber(device.optimizer_steps)} optimizer steps`);
+            if (Number.isFinite(device.train_ms) && device.train_ms >= 0) compute.push(`${formatNumber(device.train_ms / 1000, 2)} s training`);
+            if (Number.isFinite(device.infer_ms) && device.infer_ms >= 0) compute.push(`${formatNumber(device.infer_ms / 1000, 2)} s inference`);
+            if (!Number.isFinite(device.train_ms) && Number.isFinite(device.training_compute_seconds)) {
+                compute.push(`${formatNumber(device.training_compute_seconds, 2)} s compute`);
+            }
+            appendText(details, "lstm-training-history-meta", compute.join(" · "));
+        }
         const progress = [];
         if (run.generation != null && Number.isFinite(Number(run.generation))) progress.push(`Generation ${formatNumber(run.generation)}`);
         if (run.evaluated != null && Number.isFinite(Number(run.evaluated))) progress.push(`${formatNumber(run.evaluated)} evaluations`);
@@ -383,7 +407,8 @@
         const focusedRunId = document.activeElement?.closest("[data-lstm-training-run-id]")?.dataset.lstmTrainingRunId;
         historyItems.replaceChildren();
         if (!historyRuns.length) {
-            appendText(historyItems, "lstm-training-history-empty", "No historical LSTM training runs.");
+            appendText(historyItems, "lstm-training-history-empty", isLegacyLstm()
+                ? "No historical LSTM training runs." : "No historical training runs for this model.");
             return;
         }
         const identifiers = historyIdentifiers(cachedRuns);
@@ -416,14 +441,19 @@
             updateMenu(menu);
             return;
         }
-        const url = endpoint("lstmTraining", "/api/lstm-training");
+        const selectedStrategy = currentStrategy();
+        const url = new URL(trainingEndpoint(), window.location.href);
+        if (!isLegacyLstm()) url.searchParams.set("strategy", selectedStrategy);
         fetchInFlight = fetch(url, {credentials: "same-origin", cache: "no-store"})
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
+                if (selectedStrategy !== currentStrategy()) return;
                 if (!response.ok || payload.success === false) {
-                    throw new Error(payload.error || "LSTM training history is unavailable.");
+                    throw new Error(payload.error || "Training history is unavailable.");
                 }
-                cachedRuns = Array.isArray(payload.runs) ? payload.runs : [];
+                cachedRuns = Array.isArray(payload.runs) ? payload.runs.filter((run) => (
+                    selectedStrategy === "lstm-price-field" || run.strategy === selectedStrategy
+                )) : [];
                 protocolVersion = Number(payload.protocol_version || 0);
                 if (requestedSelectionId && !applyingRunId) {
                     const requested = cachedRuns.find((run) => run.id === requestedSelectionId);
@@ -440,7 +470,7 @@
                 historyError = "";
             })
             .catch((error) => {
-                historyError = error.message || "LSTM training history is unavailable.";
+                if (selectedStrategy === currentStrategy()) historyError = error.message || "Training history is unavailable.";
             })
             .finally(() => {
                 fetchInFlight = null;
@@ -452,7 +482,7 @@
     const postTrainingAction = async (menu, action, runId = "") => {
         if (pendingAction) return;
         if (action === "start" && currentInterval() !== "1d") {
-            actionError = "LSTM training currently requires Interval 1d. Select 1d to train; 1m is not supported.";
+            actionError = "Training requires Interval 1d. Select 1d to train.";
             updateMenu(menu);
             return;
         }
@@ -461,12 +491,10 @@
         updateMenu(menu);
         const csrfToken = String(state.security?.investmentCsrfToken || "");
         const payload = action === "start"
-            ? {ticker: currentTicker(), period: currentPeriod(), interval: currentInterval(), params: currentParameters(), configuration: currentConfiguration()}
+            ? {strategy: currentStrategy(), ticker: currentTicker(), period: currentPeriod(), interval: currentInterval(), params: currentParameters(), configuration: currentConfiguration()}
             : {run_id: runId};
-        const url = endpoint(
-            {start: "lstmTrainingStart", stop: "lstmTrainingStop", delete: "lstmTrainingDelete"}[action],
-            `/api/lstm-training/${action}`,
-        );
+        const url = trainingEndpoint(action);
+        const selectedStrategy = currentStrategy();
         try {
             const response = await fetch(url, {
                 method: "POST",
@@ -479,8 +507,9 @@
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok || result.success === false) {
-                throw new Error(result.error || "The LSTM training action failed.");
+                throw new Error(result.error || "The training action failed.");
             }
+            if (selectedStrategy !== currentStrategy()) return;
             if (result.run?.id) cachedRuns = [result.run, ...cachedRuns.filter((run) => run.id !== result.run.id)];
             if (action === "stop" && result.run?.active) stoppingRunIds.add(runId);
             if (action === "delete") {
@@ -492,7 +521,7 @@
             lastFetchedAt = 0;
             await refreshRuns(menu, true);
         } catch (error) {
-            actionError = error.message || "The LSTM training action failed.";
+            if (selectedStrategy === currentStrategy()) actionError = error.message || "The training action failed.";
         } finally {
             pendingAction = "";
             updateMenu(menu);
@@ -519,6 +548,14 @@
     };
 
     const renderMenu = () => {
+        if (cachedStrategy !== currentStrategy()) {
+            cachedStrategy = currentStrategy();
+            cachedRuns = [];
+            lastFetchedAt = 0;
+            protocolVersion = 0;
+            actionError = "";
+            historyError = "";
+        }
         const host = privateMenuHost();
         if (!(host instanceof HTMLElement)) {
             stopPolling();
@@ -579,5 +616,6 @@
         refreshRuns(menu);
     };
 
-    window.WORTHWARD_LSTM_TRAINING = {renderMenu, preserveSelectionUrl};
+    window.WORTHWARD_PRICE_FIELD_TRAINING = {renderMenu, preserveSelectionUrl};
+    window.WORTHWARD_LSTM_TRAINING = window.WORTHWARD_PRICE_FIELD_TRAINING;
 })();

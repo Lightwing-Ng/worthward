@@ -1,0 +1,63 @@
+{# Code version: v0.1.0 #}
+<section class="settings-general-stack" data-beta-thesis aria-label="Thesis Lab">
+    <article class="report-card workspace-content-card beta-thesis-panel">
+        <h2 class="about-heading">Make an idea falsifiable</h2>
+        <p class="settings-summary">Turn your own notes into a Proponent, Skeptic, and Experimenter research brief. This is a local writing tool; it does not run an AI analysis. Start with a claim that could be proven wrong.</p>
+        <div class="settings-stack-form">
+            <div class="beta-thesis-grid">
+                <div class="field beta-thesis-wide">
+                    <label for="beta_thesis_hypothesis">Hypothesis</label>
+                    <textarea class="beta-thesis-input" id="beta_thesis_hypothesis" data-thesis-field="hypothesis" rows="3" maxlength="2000" aria-describedby="beta_thesis_hypothesis_help"></textarea>
+                    <p class="settings-summary" id="beta_thesis_hypothesis_help">What should happen, why, and under which conditions? Required to build a brief. Up to 2,000 characters.</p>
+                </div>
+                <div class="field">
+                    <label for="beta_thesis_support">Supporting evidence</label>
+                    <textarea class="beta-thesis-input" id="beta_thesis_support" data-thesis-field="supportingEvidence" rows="4" maxlength="6000" aria-describedby="beta_thesis_support_help"></textarea>
+                    <p class="settings-summary" id="beta_thesis_support_help">Record observations, sources, and publication dates. Optional; up to 6,000 characters.</p>
+                </div>
+                <div class="field">
+                    <label for="beta_thesis_counter">Counterevidence</label>
+                    <textarea class="beta-thesis-input" id="beta_thesis_counter" data-thesis-field="counterevidence" rows="4" maxlength="6000" aria-describedby="beta_thesis_counter_help"></textarea>
+                    <p class="settings-summary" id="beta_thesis_counter_help">What challenges the claim or supports another explanation? Optional; up to 6,000 characters.</p>
+                </div>
+                <div class="field beta-thesis-wide">
+                    <label for="beta_thesis_falsification">Falsification trigger</label>
+                    <textarea class="beta-thesis-input" id="beta_thesis_falsification" data-thesis-field="falsificationTrigger" rows="2" maxlength="2000" aria-describedby="beta_thesis_falsification_help"></textarea>
+                    <p class="settings-summary" id="beta_thesis_falsification_help">State an observable condition that would make you reject the claim. Required; up to 2,000 characters.</p>
+                </div>
+                <div class="field">
+                    <label for="beta_thesis_cutoff">Data cutoff</label>
+                    <input class="beta-thesis-input" id="beta_thesis_cutoff" data-thesis-field="dataCutoff" type="text" placeholder="D MMM YYYY" maxlength="11" autocomplete="off" spellcheck="false" aria-describedby="beta_thesis_cutoff_help">
+                    <p class="settings-summary" id="beta_thesis_cutoff_help">Latest date allowed in the research inputs. Required; use D MMM YYYY.</p>
+                </div>
+                <div class="field">
+                    <label for="beta_thesis_deadline">Test deadline</label>
+                    <input class="beta-thesis-input" id="beta_thesis_deadline" data-thesis-field="testDeadline" type="text" placeholder="D MMM YYYY" maxlength="11" autocomplete="off" spellcheck="false" aria-describedby="beta_thesis_deadline_help">
+                    <p class="settings-summary" id="beta_thesis_deadline_help">When the planned test should finish. Required; use D MMM YYYY.</p>
+                </div>
+                <div class="field">
+                    <label for="beta_thesis_review">Review date</label>
+                    <input class="beta-thesis-input" id="beta_thesis_review" data-thesis-field="reviewDate" type="text" placeholder="D MMM YYYY" maxlength="11" autocomplete="off" spellcheck="false" aria-describedby="beta_thesis_review_help">
+                    <p class="settings-summary" id="beta_thesis_review_help">When you will revisit the evidence. Required; no reminder is scheduled.</p>
+                </div>
+            </div>
+            <div class="settings-form-actions">
+                <button type="button" class="primary-button" data-thesis-action="build">Build brief</button>
+                <button type="button" class="secondary-button" data-thesis-action="save">Save draft</button>
+                <button type="button" class="secondary-button" data-thesis-action="delete">Delete saved draft</button>
+            </div>
+            <p class="settings-summary beta-thesis-status" data-thesis-draft-status data-state="unsaved" role="status" aria-live="polite">Not saved. Inputs stay on this page until you explicitly save a draft.</p>
+            <p class="settings-summary">One draft is stored in this browser only. Delete saved draft removes only this experiment's saved copy and keeps the current inputs. No server, model, broker, or portfolio connection is used.</p>
+        </div>
+    </article>
+    <article class="report-card workspace-content-card beta-thesis-panel">
+        <h2 class="about-heading">Research brief</h2>
+        <p class="settings-summary">Complete the required fields and build your brief. Copying or downloading exports your notes and a research protocol; it does not send them to an agent.</p>
+        <div class="settings-form-actions">
+            <button type="button" class="secondary-button" data-thesis-action="copy" disabled>Copy Markdown</button>
+            <button type="button" class="secondary-button" data-thesis-action="download" disabled>Download Markdown</button>
+        </div>
+        <p class="settings-summary beta-thesis-status" data-thesis-action-status role="status" aria-live="polite"></p>
+        <pre class="beta-thesis-brief" data-thesis-brief tabindex="0" aria-label="Generated research brief" hidden></pre>
+    </article>
+</section>

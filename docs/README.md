@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.4.1`
+Documentation version: `v1.4.5`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -98,7 +98,11 @@ agent-started server must be stopped before handoff.
 
 ## Domain references and historical evidence
 
+- [Beta research laboratory](BETA_LAB.md): removable experiments, read-only history diagnostics, local thesis briefs, and research sources.
+
 - [LSTM probability tuning](LSTM_PROBABILITY_TUNING.md): offline tuning workflow.
+- [Neural Price Field research](NEURAL_PRICE_FIELD_RESEARCH.md): eight shared neural strategies, direct horizon probability scores, Apple Silicon training, explicit research groups, and frozen validation.
+- [Classic strategy repair](CLASSIC_STRATEGY_REPAIR.md): causal indicators, mature neighbor labels, DCA validation, and rotation execution boundaries.
 - [Historical testing evidence](TESTING_HISTORY.md): dated results, not current gate status.
 - [Style token alignment validation](STYLE_TOKEN_ALIGNMENT_VALIDATION.md): dated UI evidence.
 

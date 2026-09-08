@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.6.3`
+Documentation version: `v3.9.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -11,6 +11,8 @@ read-compatible interfaces; the application writes only the Worthward names.
 
 ## What the app does
 
+- Explore the isolated [Beta research laboratory](docs/BETA_LAB.md): market regimes, historical analogs, stress and start-date sensitivity, local research briefs, and sourced frontier ideas. Beta appears before Settings in the Dock and can be removed with `WORTHWARD_BETA_ENABLED=0`.
+
 - Compare up to 5 tickers over the same window on a normalized return basis
 - Use `Ticker comparison` to compare original price scales for up to 5 tickers or historical market-cap series for up to 10 tickers. Price mode can overlay an OHLCV-derived estimated cost distribution on the right side of each price canvas; hovering a price cross-section updates every profile to the cumulative estimate from the selected range start through the shared vertical guide. This remains a historical volume-profile estimate, not shareholder-level holding data. Market-cap series use same-date daily FX closes for non-USD listings while retaining USD and New York wall time; direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it. The unified Market cap canvas keeps absolute USD values and uses a logarithmic Y axis only when positive values span at least a 6:1 ratio; narrower peer groups stay linear, and nonpositive unknown-history placeholders render as gaps rather than false zero market caps.
 - Build weighted portfolios with custom allocations
@@ -20,6 +22,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
 - Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from the shared causal Price Field pipeline and Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars
 - Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
+- Compare eight additional neural Price Fields: PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT. They share training controls and Market factors, predict 20 daily return distributions directly, and use verified Torch MPS/CUDA or CPU. [The research contract](docs/NEURAL_PRICE_FIELD_RESEARCH.md) explains their full-grid probability scores, causal factor timing, compact architecture adaptations, and held-out evaluation.
 - Start or stop exact-configuration LSTM training using the selected ticker, relative or exact range, 1d interval, and private controls. Durable runs perform at least 180 seconds of optimizer work; Auto uses confirmed MPS/CUDA, while an explicit CPU choice stays on CPU. Select a completed case to restore its actual data window and all saved settings; editing any control detaches it. History has single-open details, measured accuracy badges, stable date codes, and recoverable deletion. Compute-job state stays outside market and investment stores.
 - Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
 - Switch between relative periods and exact date ranges

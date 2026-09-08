@@ -6,10 +6,9 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v0.4.0
-- Changed: Independent causal Lorentzian neighbor predictions use the shared
-  bounded CPU process pool before stateful signal replay; each prediction still
-  sees only matured historical labels.
+Code version: v0.5.0
+- Fixed: Train on mature forward labels, preserve indicator warmup, and track
+  actual long-entry intents for next-open execution and bounded holding exits.
 """
 
 from __future__ import annotations
@@ -21,6 +20,14 @@ import pandas as pd
 from app.infrastructure.parallel import map_ordered_batches
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
+from .strategy_knn_machine_learning import (
+    _atr as _atr,
+    _ensure_ohlcv_columns as _ensure_ohlcv_columns,
+    _normalize_neighbor_params as _normalize_neighbor_params,
+    _rsi as _rsi,
+    _true_range as _true_range,
+    _wilder_average,
+)
 
 LONG = 1
 SHORT = -1
@@ -30,42 +37,12 @@ _PREDICTION_PARALLEL_MIN_ROWS = 64
 _PREDICTION_PARALLEL_MAX_WORKERS = 8
 
 
-def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    normalized = frame.copy()
-    close = pd.to_numeric(normalized["Close"], errors="coerce")
-
-    for column in ("Open", "High", "Low"):
-        if column not in normalized.columns:
-            normalized[column] = close
-        else:
-            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").fillna(close)
-
-    if "Volume" not in normalized.columns:
-        normalized["Volume"] = pd.Series(0.0, index=normalized.index)
-    else:
-        normalized["Volume"] = pd.to_numeric(normalized["Volume"], errors="coerce").fillna(0.0)
-
-    normalized["Close"] = close
-    return normalized
-
-
 def _ema(series: pd.Series, length: int) -> pd.Series:
-    return series.ewm(span=max(length, 1), adjust=False, min_periods=1).mean()
+    return series.ewm(span=max(length, 1), adjust=False, min_periods=max(length, 1)).mean()
 
 
 def _sma(series: pd.Series, length: int) -> pd.Series:
-    return series.rolling(window=max(length, 1), min_periods=1).mean()
-
-
-def _rsi(series: pd.Series, length: int) -> pd.Series:
-    delta = series.diff()
-    gains = delta.clip(lower=0.0)
-    losses = (-delta).clip(lower=0.0)
-    average_gain = gains.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
-    average_loss = losses.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
-    relative_strength = average_gain / average_loss.replace(0.0, np.nan)
-    rsi = 100.0 - (100.0 / (1.0 + relative_strength))
-    return rsi.fillna(50.0)
+    return series.rolling(window=max(length, 1), min_periods=max(length, 1)).mean()
 
 
 def _cci_from_series(series: pd.Series, length: int) -> pd.Series:
@@ -77,24 +54,7 @@ def _cci_from_series(series: pd.Series, length: int) -> pd.Series:
 
     mean_dev = series.rolling(window=max(length, 1), min_periods=length).apply(mean_deviation, raw=False)
     denominator = (0.015 * mean_dev).replace(0.0, np.nan)
-    return ((series - moving_average) / denominator).fillna(0.0)
-
-
-def _true_range(frame: pd.DataFrame) -> pd.Series:
-    previous_close = frame["Close"].shift(1)
-    ranges = pd.concat(
-        [
-            frame["High"] - frame["Low"],
-            (frame["High"] - previous_close).abs(),
-            (frame["Low"] - previous_close).abs(),
-        ],
-        axis=1,
-    )
-    return ranges.max(axis=1)
-
-
-def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
-    return _true_range(frame).ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
+    return ((series - moving_average) / denominator).mask(mean_dev.eq(0), 0.0)
 
 
 def _adx(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -112,21 +72,21 @@ def _adx(frame: pd.DataFrame, length: int) -> pd.Series:
         index=frame.index,
         dtype="float64",
     )
-
-    atr = _true_range(frame).ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
-    plus_di = 100.0 * plus_dm.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean() / atr.replace(0.0, np.nan)
-    minus_di = 100.0 * minus_dm.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean() / atr.replace(0.0, np.nan)
-    dx = (100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)).fillna(0.0)
-    return dx.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean().fillna(0.0)
+    observed_moves = up_move.notna() & down_move.notna()
+    plus_average = _wilder_average(plus_dm.where(observed_moves), length)
+    minus_average = _wilder_average(minus_dm.where(observed_moves), length)
+    total = plus_average + minus_average
+    dx = (100.0 * (plus_average - minus_average).abs() / total.replace(0.0, np.nan)).mask(total.eq(0), 0.0)
+    return _wilder_average(dx, length)
 
 
 def _wave_trend(hlc3: pd.Series, channel_length: int, average_length: int) -> pd.Series:
     esa = _ema(hlc3, channel_length)
     deviation = _ema((hlc3 - esa).abs(), channel_length)
     channel_index = (hlc3 - esa) / (0.015 * deviation.replace(0.0, np.nan))
-    wt1 = _ema(channel_index.fillna(0.0), average_length)
+    wt1 = _ema(channel_index.mask(deviation.eq(0), 0.0), average_length)
     wt2 = _sma(wt1, 4)
-    return (wt1 - wt2).fillna(0.0)
+    return wt1 - wt2
 
 
 def _feature_series(
@@ -209,21 +169,78 @@ def _lorentzian_prediction_at_index(
         max_bars_back: int,
 ) -> float:
     """Compute one causal neighbor vote from matured historical labels."""
-    if index <= 0 or not np.isfinite(features[index]).all():
+    candidates, _ = _mature_lorentzian_neighbors(
+        index, features, training_labels, np.isfinite(training_labels),
+        neighbors_count, max_bars_back, 4, 4,
+    )
+    if candidates.size == 0:
         return 0.0
-    start = max(0, index - max_bars_back)
-    hist_features = features[start:index]
-    sub_indices = np.arange(0, len(hist_features), step=4)
-    if len(sub_indices) == 0:
-        return 0.0
-    sampled_hist = hist_features[sub_indices]
-    dist = np.log1p(np.abs(sampled_hist - features[index])).sum(axis=1)
-    nearest_count = min(neighbors_count, len(dist))
-    if nearest_count <= 0:
-        return 0.0
-    nearest_indices = np.argpartition(dist, nearest_count - 1)[:nearest_count]
-    actual_indices = start + sub_indices[nearest_indices]
-    return float(np.sum(training_labels[actual_indices]))
+    return float(np.sum(training_labels[candidates]))
+
+
+def _mature_lorentzian_neighbors(
+        current_index: int,
+        features: np.ndarray,
+        training_labels: np.ndarray,
+        label_available: np.ndarray,
+        neighbors_count: int,
+        max_bars_back: int,
+        sample_step: int,
+        label_horizon: int,
+        finite_rows: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Select finite forward labels observable at this close, with recent ties."""
+    empty = (np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64))
+    if min(neighbors_count, max_bars_back, sample_step, label_horizon) < 1:
+        return empty
+    if current_index < label_horizon or not np.isfinite(features[current_index]).all():
+        return empty
+    matured_end = current_index - label_horizon
+    history_start = max(0, current_index - max_bars_back)
+    sampled = np.arange(matured_end, history_start - 1, -sample_step, dtype=np.int64)
+    if finite_rows is None:
+        finite_rows = np.isfinite(features).all(axis=1)
+    valid = sampled[
+        finite_rows[sampled]
+        & label_available[sampled]
+        & np.isfinite(training_labels[sampled])
+    ]
+    if valid.size == 0:
+        return empty
+    distances = np.log1p(np.abs(features[valid] - features[current_index])).sum(axis=1)
+    nearest = np.lexsort((-valid, distances))[:neighbors_count]
+    return valid[nearest], distances[nearest]
+
+
+def _long_only_signals(
+        signal: pd.Series,
+        entry_allowed: pd.Series,
+        bearish_alert: pd.Series,
+        *,
+        dynamic_exits: bool,
+        holding_bars: int = 4,
+) -> tuple[pd.Series, pd.Series]:
+    """Replay entry/exit intents; hold age belongs to the actual entry event."""
+    buy = np.zeros(len(signal), dtype=bool)
+    sell = np.zeros(len(signal), dtype=bool)
+    entry_index: int | None = None
+    previously_eligible = False
+    for index, direction in enumerate(signal.to_numpy(dtype=np.int64)):
+        eligible = direction == LONG and bool(entry_allowed.iloc[index])
+        if entry_index is not None:
+            timed_exit = not dynamic_exits and index - entry_index >= holding_bars
+            kernel_exit = dynamic_exits and bool(bearish_alert.iloc[index])
+            if direction == SHORT or timed_exit or kernel_exit:
+                sell[index] = True
+                entry_index = None
+        elif eligible and not previously_eligible:
+            buy[index] = True
+            entry_index = index
+        previously_eligible = eligible
+    return (
+        pd.Series(buy, index=signal.index, dtype="bool"),
+        pd.Series(sell, index=signal.index, dtype="bool"),
+    )
 
 
 def _lorentzian_prediction_batch(
@@ -585,7 +602,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             dataset: pd.DataFrame,
             params: dict | None = None,
     ) -> StrategySignalResult:
-        frame = _ensure_ohlcv_columns(dataset).reset_index(drop=True)
+        frame = _ensure_ohlcv_columns(dataset)
         if frame.empty:
             frame["buy_signal"] = pd.Series(dtype="bool")
             frame["sell_signal"] = pd.Series(dtype="bool")
@@ -593,9 +610,10 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 frame=frame,
                 buy_signal_column="buy_signal",
                 sell_signal_column="sell_signal",
+                required_execution_mode="next_open",
             )
 
-        normalized_params = self.normalize_params(params)
+        normalized_params = _normalize_neighbor_params(self, params)
         close = frame["Close"]
         hlc3 = (frame["High"] + frame["Low"] + frame["Close"]) / 3.0
         ohlc4 = (frame["Open"] + frame["High"] + frame["Low"] + frame["Close"]) / 4.0
@@ -645,7 +663,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             )
             feature_matrix.append(feature_series.to_numpy(dtype=np.float64))
 
-        training_labels = np.sign(source - source.shift(4)).fillna(0.0).astype(int).to_numpy(dtype=np.int64)
+        training_labels = np.sign(source.shift(-4) - source).to_numpy(dtype=np.float64)
         prediction_values = np.zeros(len(frame), dtype=np.float64)
         signal_values = np.zeros(len(frame), dtype=np.int64)
 
@@ -656,14 +674,12 @@ class LorentzianClassificationStrategy(BaseStrategy):
         regime_series = (
                 regime_basis.diff(5)
                 / regime_basis.abs().rolling(window=20, min_periods=1).mean().replace(0.0, np.nan)
-        ).fillna(0.0)
+        )
 
         ema_line = _ema(close, ema_period)
         sma_line = _sma(close, sma_period)
         is_ema_uptrend = pd.Series(True, index=frame.index) if not use_ema_filter else (close > ema_line)
-        is_ema_downtrend = pd.Series(True, index=frame.index) if not use_ema_filter else (close < ema_line)
         is_sma_uptrend = pd.Series(True, index=frame.index) if not use_sma_filter else (close > sma_line)
-        is_sma_downtrend = pd.Series(True, index=frame.index) if not use_sma_filter else (close < sma_line)
 
         yhat1 = _rational_quadratic_kernel(source, kernel_lookback, kernel_relative_weighting, kernel_regression_level)
         yhat2 = _gaussian_kernel(source, max(kernel_lookback - kernel_lag, 1), kernel_regression_level)
@@ -674,23 +690,18 @@ class LorentzianClassificationStrategy(BaseStrategy):
         is_bearish_change = (is_bearish_rate & was_bullish_rate).fillna(False)
         is_bearish_cross_alert = ((yhat2 < yhat1) & (yhat2.shift(1) >= yhat1.shift(1))).fillna(False)
         is_bullish_smooth = (yhat2 >= yhat1).fillna(False)
-        is_bearish_smooth = (yhat2 <= yhat1).fillna(False)
         alert_bearish = is_bearish_cross_alert if use_kernel_smoothing else is_bearish_change
         is_bullish = (
             is_bullish_smooth if use_kernel_smoothing else is_bullish_rate.fillna(False)
         ) if use_kernel_filter else pd.Series(True, index=frame.index)
-        is_bearish = (
-            is_bearish_smooth if use_kernel_smoothing else is_bearish_rate.fillna(False)
-        ) if use_kernel_filter else pd.Series(True, index=frame.index)
 
         # Optimization: Use numpy for k-NN search
         features = np.stack(feature_matrix, axis=1)  # (N, features)
-        training_labels_np = training_labels.astype(np.int64)
         prediction_values_list, _ = map_ordered_batches(
             _lorentzian_prediction_batch,
             range(1, len(frame)),
             mode="cpu",
-            static_args=(features, training_labels_np, neighbors_count, max_bars_back),
+            static_args=(features, training_labels, neighbors_count, max_bars_back),
             min_items=_PREDICTION_PARALLEL_MIN_ROWS,
             max_workers=_PREDICTION_PARALLEL_MAX_WORKERS,
         )
@@ -698,6 +709,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
         if prediction_values_list:
             prediction_values[1:] = np.asarray(prediction_values_list, dtype=np.float64)
         current_signal = NEUTRAL
+        entry_allowed = pd.Series(False, index=frame.index, dtype="bool")
 
         for i in range(1, len(frame)):
             prediction = float(prediction_values[i])
@@ -712,58 +724,24 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 current_signal = SHORT
 
             signal_values[i] = current_signal
+            entry_allowed.iloc[i] = bool(prediction > 0 and filter_all)
 
         signal_series = pd.Series(signal_values, index=frame.index, dtype="int64")
-        signal_changed = signal_series.ne(_shift_int(signal_series, 1, fill_value=NEUTRAL))
-
-        bars_held = np.zeros(len(frame), dtype=np.int64)
-        for index in range(len(frame)):
-            if index == 0 or signal_changed.iloc[index]:
-                bars_held[index] = 0
-            else:
-                bars_held[index] = bars_held[index - 1] + 1
-        bars_held_series = pd.Series(bars_held, index=frame.index, dtype="int64")
-
-        # Entry/Exit Logic
-        is_held_four_bars = bars_held_series.eq(4)
-        is_held_less_than_four_bars = bars_held_series.gt(0) & bars_held_series.lt(4)
-
-        is_buy_signal = signal_series.eq(LONG) & is_ema_uptrend & is_sma_uptrend
-        is_sell_signal = signal_series.eq(SHORT) & is_ema_downtrend & is_sma_downtrend
-
-        is_new_buy_signal = is_buy_signal & signal_changed
-        is_new_sell_signal = is_sell_signal & signal_changed
-
-        # Look back 4 bars for Signal validation (matching PineScript logic)
-        is_last_signal_buy = _shift_int(signal_series, 4, fill_value=NEUTRAL).eq(LONG)
-
-        start_long_trade = is_new_buy_signal & is_bullish & is_ema_uptrend & is_sma_uptrend
-        start_short_trade = is_new_sell_signal & is_bearish & is_ema_downtrend & is_sma_downtrend
-
-        # Exit Logic
-        bars_since_long_entry = _bars_since(start_long_trade)
-        bars_since_bearish_exit = _bars_since(alert_bearish)
-        is_valid_long_exit = bars_since_bearish_exit > bars_since_long_entry
-        end_long_trade_dynamic = is_bearish_change & _shift_bool(is_valid_long_exit, 1)
-
-        end_long_trade_strict = (
-                (
-                        (is_held_four_bars & is_last_signal_buy)
-                        | (is_held_less_than_four_bars & is_new_sell_signal)
-                )
-                & _shift_bool(start_long_trade.rolling(window=100, min_periods=1).max().astype(bool), 1)
+        buy_signal, sell_signal = _long_only_signals(
+            signal_series,
+            entry_allowed & is_bullish & is_ema_uptrend & is_sma_uptrend,
+            alert_bearish,
+            dynamic_exits=use_dynamic_exits,
         )
-
-        is_dynamic_exit_valid = (not use_ema_filter) and (not use_sma_filter) and (not use_kernel_smoothing)
-        end_long = end_long_trade_dynamic if (use_dynamic_exits and is_dynamic_exit_valid) else end_long_trade_strict
 
         frame["lorentzian_prediction"] = prediction_values
         frame["lorentzian_signal"] = signal_series
-        frame["buy_signal"] = start_long_trade.fillna(False).astype(bool)
-        frame["sell_signal"] = (start_short_trade | end_long).fillna(False).astype(bool)
+        frame["buy_signal"] = buy_signal
+        frame["sell_signal"] = sell_signal
 
         return StrategySignalResult(
             frame=frame,
             buy_signal_column="buy_signal",
             sell_signal_column="sell_signal",
+            required_execution_mode="next_open",
         )

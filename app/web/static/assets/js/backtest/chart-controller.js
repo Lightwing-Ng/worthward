@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -1527,6 +1527,9 @@
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
+			if (detailModel.maxHorizon) {
+				latestProbabilityDetailBaseStatus += ` · Direct close-price forecasts: 1–${detailModel.maxHorizon} trading days`;
+			}
 			if (strategyPresentation?.training_label) {
 				const trainingLabel = String(strategyPresentation.training_label);
 				const device = strategyPresentation.device || {};
@@ -2289,6 +2292,10 @@
 			const autoregression = Number(autoregressionValue);
 			const longRunMean = Number(longRunMeanValue);
 			const innovationScale = Number(innovationScaleValue);
+			const horizonMean = strategyPresentation.horizon_predictive_mean?.[index];
+			const horizonStd = strategyPresentation.horizon_predictive_std?.[index];
+			const maxHorizon = strategyPresentation.distribution_kind === "direct-normal-horizon"
+				? strategyPresentation.max_horizon : null;
 			const anchorPrice = Number(close[index]);
 			if (meanValue === null || meanValue === undefined
 				|| scaleValue === null || scaleValue === undefined
@@ -2326,6 +2333,9 @@
 				autoregression,
 				longRunMean,
 				innovationScale,
+				horizonMean,
+				horizonStd,
+				maxHorizon,
 				stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
@@ -2343,6 +2353,9 @@
 				autoregression,
 				longRunMean,
 				innovationScale,
+				horizonMean,
+				horizonStd,
+				maxHorizon,
 				stepPixels,
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			};
@@ -2393,7 +2406,7 @@
 		const buildProbabilityDetailModel = (index, model) => {
 			if (!strategyPresentation || !model?.geometry || !priceChart?.chartArea
 				|| !priceChart?.scales?.y) return null;
-			const geometry = probabilityGridApi.computeGridGeometry?.({
+			const nativeGeometry = probabilityGridApi.computeGridGeometry?.({
 				chartArea: priceChart.chartArea,
 				anchorX: model.geometry.anchorX,
 				anchorY: model.geometry.anchorY,
@@ -2408,6 +2421,10 @@
 				cellSizeTargetPx: model.geometry.cellSize,
 				limitRowsToChartArea: false,
 			});
+			// The contained field owns its forecast-day axis, so direct models
+			// can show every learned horizon even when the overview is zoomed out.
+			const geometry = nativeGeometry && model.maxHorizon
+				? {...nativeGeometry, daysPerColumn: 1} : nativeGeometry;
 			if (!geometry) return null;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
 				distribution,
@@ -2418,6 +2435,9 @@
 				autoregression: model.autoregression,
 				longRunMean: model.longRunMean,
 				innovationScale: model.innovationScale,
+				horizonMean: model.horizonMean,
+				horizonStd: model.horizonStd,
+				maxHorizon: model.maxHorizon,
 				stepPixels: model.stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
@@ -2560,9 +2580,12 @@
 				return false;
 			}
 			const upProbability = distribution.probabilityAboveAnchor({...baseModel, horizon: 1});
+			const forecastDescription = baseModel.maxHorizon
+				? `signal-close to future-close forecasts; learned horizons 1–${baseModel.maxHorizon} trading days; later horizons unavailable`
+				: "displayed from the signal-close anchor; executable target is next-open to-following-open";
 			probabilityTooltip.setAttribute(
 				"aria-label",
-				`${labels[index] || "Selected date"}, ${formatMoney(baseModel.anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability field; displayed from the signal-close anchor; executable target is next-open to-following-open`,
+				`${labels[index] || "Selected date"}, ${formatMoney(baseModel.anchorPrice)}, ${(upProbability * 100).toFixed(1)}% probability field; ${forecastDescription}`,
 			);
 			probabilityTooltip.classList.add("is-visible");
 			priceChart._activeBacktestProbabilityGridBounds = {

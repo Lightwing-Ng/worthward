@@ -1,15 +1,18 @@
 """Regression coverage for exclusive Playwright runtime ownership."""
 
-# Code version: v1.0.1
+# Code version: v1.1.0
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
+
+import pytest
 
 from scripts.e2e_lock import E2E_PORT, e2e_lock_path
 
@@ -144,6 +147,73 @@ def test_concurrent_e2e_launchers_cannot_clean_the_active_runtime(tmp_path: Path
     assert third.returncode == 0
     assert len(calls.read_text(encoding="utf-8").splitlines()) == 2
     assert not other_runtime_root.exists()
+
+
+@pytest.mark.parametrize("inherited_compute_root", [False, True])
+def test_app_launcher_isolates_training_state_and_cleans_only_its_runtime(
+    tmp_path: Path,
+    inherited_compute_root: bool,
+) -> None:
+    sandbox_root = _copy_e2e_launchers(tmp_path, "repository")
+    runtime_root = sandbox_root / "test-results/runtime-store"
+    protected_root = tmp_path / "user-compute-jobs"
+    protected_root.mkdir()
+    protected_marker = protected_root / "preserved"
+    protected_marker.write_bytes(b"existing user research must remain unchanged")
+    observed = tmp_path / "observed.jsonl"
+    logo = sandbox_root / "market_store/logos/TEST.svg"
+    logo.parent.mkdir(parents=True)
+    logo.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+    for command in (["git", "init", "-q"], ["git", "add", "market_store/logos/TEST.svg"]):
+        subprocess.run(command, cwd=sandbox_root, check=True, capture_output=True, timeout=10)
+
+    probe = '''import json, os
+from pathlib import Path
+names = ("WORTHWARD_MARKET_STORE_DIR", "WORTHWARD_SETTINGS_STORE_DIR", "WORTHWARD_COMPUTE_ROOT")
+state = {name: os.environ.get(name) for name in names}
+state["program"] = Path(__file__).name
+state["remote_access"] = os.environ.get("WORTHWARD_REMOTE_MARKET_ACCESS")
+state["port"] = os.environ.get("WORTHWARD_PORT")
+with Path(os.environ["E2E_TEST_OBSERVED"]).open("a") as stream:
+    stream.write(json.dumps(state) + "\\n")
+root = Path(os.environ["WORTHWARD_COMPUTE_ROOT"])
+root.mkdir(parents=True, exist_ok=True)
+(root / "isolated-training-record").write_text("test-owned")
+'''
+    (sandbox_root / "main.py").write_text(probe, encoding="utf-8")
+    (sandbox_root / "scripts/seed_e2e_market_store.py").write_text(probe, encoding="utf-8")
+    environment = {
+        **os.environ,
+        "WORTHWARD_PYTHON": sys.executable,
+        "WORTHWARD_E2E_LOCK_FILE_OVERRIDE": str(tmp_path / "host.lock"),
+        "E2E_TEST_OBSERVED": str(observed),
+    }
+    for name in ("WORTHWARD_E2E_LOCK_TOKEN", "ANTIGRAVITY_E2E_LOCK_TOKEN", "WORTHWARD_COMPUTE_ROOT"):
+        environment.pop(name, None)
+    if inherited_compute_root:
+        environment["WORTHWARD_COMPUTE_ROOT"] = str(protected_root)
+    completed = subprocess.run(
+        [str(sandbox_root / "scripts/run_e2e_app.sh")],
+        cwd=sandbox_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    records = [json.loads(line) for line in observed.read_text(encoding="utf-8").splitlines()]
+    assert [record["program"] for record in records] == ["seed_e2e_market_store.py", "main.py"]
+    for record in records:
+        assert record["WORTHWARD_COMPUTE_ROOT"] == str(runtime_root / "compute-jobs")
+        assert record["WORTHWARD_MARKET_STORE_DIR"] == str(runtime_root / "market_store")
+        assert record["WORTHWARD_SETTINGS_STORE_DIR"] == str(runtime_root / "settings_store")
+        assert record["remote_access"] == "disabled"
+        assert record["port"] == "8699"
+    assert not runtime_root.exists()
+    assert list(protected_root.iterdir()) == [protected_marker]
+    assert protected_marker.read_bytes() == b"existing user research must remain unchanged"
 
 
 def test_default_lock_is_shared_across_repository_roots(

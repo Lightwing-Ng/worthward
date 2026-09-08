@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.12.1
+Code version: v0.12.2
 """
 
 from __future__ import annotations
@@ -854,7 +854,10 @@ class BacktestPageTests(unittest.TestCase):
                 continue
             with (
                 self.subTest(strategy=strategy_id),
-                patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
+                patch(
+                    "app.web.runtime.fetch_history",
+                    side_effect=lambda *args, **kwargs: fetch_history_stub(*args, **kwargs).assign(Volume=1_000_000.0),
+                ),
                 patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
                 patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
                 patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
@@ -874,12 +877,21 @@ class BacktestPageTests(unittest.TestCase):
                     "BayesianPriceFieldStrategy.load_market_datasets",
                     return_value=[bayesian_dataset],
                 ),
+                patch(
+                    "strategies.neural_price_field.NeuralPriceFieldStrategy.load_market_datasets",
+                    return_value=[bayesian_dataset],
+                ),
+                patch(
+                    "strategies.neural_price_field.load_price_field_market_bundle",
+                    side_effect=AssertionError("Page defaults must not load real market data"),
+                ) as real_neural_loader,
             ):
                 response = client.get(
                     f"/workspaces/backtest?period=6mo&strategy={strategy_id}"
                 )
 
                 real_lstm_loader.assert_not_called()
+                real_neural_loader.assert_not_called()
                 html = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="backtest_view_surface"', html)

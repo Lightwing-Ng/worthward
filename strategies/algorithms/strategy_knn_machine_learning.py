@@ -6,10 +6,9 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v0.4.0
-- Changed: Independent causal kNN origins use the shared bounded CPU process
-  pool before the stateful signal replay, preserving the original ordering and
-  no-future-data boundary.
+Code version: v0.5.0
+- Fixed: Validate real market bars, preserve indicator warmup and neutral
+  neighbors, and execute close-derived decisions at the following open.
 """
 
 from __future__ import annotations
@@ -31,34 +30,82 @@ _PREDICTION_PARALLEL_MIN_ROWS = 64
 _PREDICTION_PARALLEL_MAX_WORKERS = 8
 
 
+def _normalize_neighbor_params(strategy: BaseStrategy, params: dict | None) -> dict:
+    """Validate explicit numeric input before the shared default/bound handling."""
+    checked = dict(params or {})
+    for definition in strategy.get_parameter_definitions():
+        raw = checked.get(definition.key)
+        if raw is None or definition.kind not in {"integer", "number"}:
+            continue
+        try:
+            numeric = float(raw)
+            valid = math.isfinite(numeric) and (definition.kind != "integer" or numeric.is_integer())
+        except (TypeError, ValueError, OverflowError):
+            valid = False
+        if not valid:
+            raise ValueError(f"{definition.label} must be a finite {definition.kind} value.")
+        checked[definition.key] = int(numeric) if definition.kind == "integer" else numeric
+    return strategy.normalize_params(checked)
+
+
 def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate observed execution bars without inventing missing prices."""
     normalized = frame.copy()
-    close = pd.to_numeric(normalized["Close"], errors="coerce")
-
-    for column in ("Open", "High", "Low"):
-        if column not in normalized.columns:
-            normalized[column] = close
-        else:
-            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").fillna(close)
-
-    if "Volume" not in normalized.columns:
-        normalized["Volume"] = pd.Series(0.0, index=normalized.index)
-    else:
-        normalized["Volume"] = pd.to_numeric(normalized["Volume"], errors="coerce").fillna(0.0)
-
-    normalized["Close"] = close
+    if normalized.empty:
+        return normalized
+    if "Date" in normalized:
+        dates = pd.to_datetime(normalized["Date"], errors="coerce")
+        if dates.isna().any() or not dates.is_monotonic_increasing or dates.duplicated().any():
+            raise ValueError("Neighbor strategies require unique, chronological observed dates.")
+    for column in ("Open", "High", "Low", "Close"):
+        if column not in normalized:
+            raise ValueError(f"Neighbor strategies require observed {column} prices.")
+        normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+        values = normalized[column].to_numpy(dtype=np.float64)
+        if not (np.isfinite(values) & (values > 0)).all():
+            raise ValueError(f"Neighbor strategies require finite positive {column} prices.")
+    if (
+        (normalized["High"] < normalized[["Open", "Close", "Low"]].max(axis=1)).any()
+        or (normalized["Low"] > normalized[["Open", "Close", "High"]].min(axis=1)).any()
+    ):
+        raise ValueError("Neighbor strategies require coherent OHLC price bounds.")
+    if "Volume" in normalized:
+        normalized["Volume"] = pd.to_numeric(normalized["Volume"], errors="coerce")
     return normalized
+
+
+def _wilder_average(series: pd.Series, length: int) -> pd.Series:
+    """Seed Wilder smoothing from a complete observed arithmetic mean."""
+    window = max(int(length), 1)
+    result = np.full(len(series), np.nan, dtype=np.float64)
+    total = 0.0
+    count = 0
+    average = np.nan
+    for index, value in enumerate(series.to_numpy(dtype=np.float64)):
+        if not np.isfinite(value):
+            total, count, average = 0.0, 0, np.nan
+            continue
+        if count < window:
+            total += value
+            count += 1
+            if count == window:
+                average = total / window
+        else:
+            average += (value - average) / window
+        result[index] = average
+    return pd.Series(result, index=series.index, dtype="float64")
 
 
 def _rsi(series: pd.Series, length: int) -> pd.Series:
     delta = series.diff()
     gains = delta.clip(lower=0.0)
     losses = (-delta).clip(lower=0.0)
-    average_gain = gains.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
-    average_loss = losses.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
+    average_gain = _wilder_average(gains, length)
+    average_loss = _wilder_average(losses, length)
     relative_strength = average_gain / average_loss.replace(0.0, np.nan)
     rsi = 100.0 - (100.0 / (1.0 + relative_strength))
-    return rsi.fillna(50.0)
+    rsi = rsi.mask(average_loss.eq(0) & average_gain.gt(0), 100.0)
+    return rsi.mask(average_loss.eq(0) & average_gain.eq(0), 50.0)
 
 
 def _cci(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -72,19 +119,19 @@ def _cci(frame: pd.DataFrame, length: int) -> pd.Series:
     mean_dev = typical_price.rolling(window=length, min_periods=length).apply(mean_deviation, raw=False)
     denominator = (0.015 * mean_dev).replace(0.0, np.nan)
     cci = (typical_price - moving_average) / denominator
-    return cci.fillna(0.0)
+    return cci.mask(mean_dev.eq(0), 0.0)
 
 
 def _roc(series: pd.Series, length: int) -> pd.Series:
-    return (series.pct_change(periods=length) * 100.0).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return (series.pct_change(periods=length, fill_method=None) * 100.0).replace([np.inf, -np.inf], np.nan)
 
 
 def _minimax(series: pd.Series, period: int, min_value: float, max_value: float) -> pd.Series:
-    highest = series.rolling(window=period, min_periods=1).max()
-    lowest = series.rolling(window=period, min_periods=1).min()
+    highest = series.rolling(window=period, min_periods=period).max()
+    lowest = series.rolling(window=period, min_periods=period).min()
     scale = (highest - lowest).replace(0.0, np.nan)
     normalized = (max_value - min_value) * (series - lowest) / scale + min_value
-    return normalized.fillna(min_value)
+    return normalized.mask(highest.eq(lowest), min_value)
 
 
 def _true_range(frame: pd.DataFrame) -> pd.Series:
@@ -101,7 +148,7 @@ def _true_range(frame: pd.DataFrame) -> pd.Series:
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
-    return _true_range(frame).ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
+    return _wilder_average(_true_range(frame), length)
 
 
 def _select_feature_pair(
@@ -124,8 +171,8 @@ def _select_feature_pair(
     if indicator_name == "Volume":
         return vs, vf
     return (
-        pd.concat([rs, cs, os, vs], axis=1).mean(axis=1),
-        pd.concat([rf, cf, of, vf], axis=1).mean(axis=1),
+        pd.concat([rs, cs, os, vs], axis=1).mean(axis=1, skipna=False),
+        pd.concat([rf, cf, of, vf], axis=1).mean(axis=1, skipna=False),
     )
 
 
@@ -139,7 +186,7 @@ def _knn_prediction_at_index(
     """Compute one causal kNN vote using only rows before ``index``."""
     current_f1 = feature1_values[index]
     current_f2 = feature2_values[index]
-    if index <= 0 or not np.isfinite(current_f1) or not np.isfinite(current_f2):
+    if index <= 0 or k_value <= 0 or not np.isfinite(current_f1) or not np.isfinite(current_f2):
         return 0.0
     history_f1 = feature1_values[:index]
     history_f2 = feature2_values[:index]
@@ -147,16 +194,14 @@ def _knn_prediction_at_index(
     valid_mask = (
         np.isfinite(history_f1)
         & np.isfinite(history_f2)
-        & (history_directions != 0)
+        & np.isfinite(history_directions)
     )
     if not np.any(valid_mask):
         return 0.0
-    distances = np.sqrt(
-        np.square(current_f1 - history_f1[valid_mask])
-        + np.square(current_f2 - history_f2[valid_mask])
-    )
+    distances = np.hypot(current_f1 - history_f1[valid_mask], current_f2 - history_f2[valid_mask])
     nearest_count = min(k_value, len(distances))
-    nearest_indices = np.argpartition(distances, nearest_count - 1)[:nearest_count]
+    # Equal distances use the most recent mature observations deterministically.
+    nearest_indices = np.lexsort((-np.flatnonzero(valid_mask), distances))[:nearest_count]
     return float(history_directions[valid_mask][nearest_indices].sum())
 
 
@@ -233,7 +278,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 kind="integer",
                 default=252,
                 minimum=5,
-                help_text="Sets the base neighbour pool used before the square-root rule picks the final k. Larger values make the classifier look further back.",
+                help_text="Sets k as floor(sqrt(Base Neighbours)). The model compares all mature historical observations; this setting controls the number of votes.",
             ),
             StrategyParameterDefinition(
                 key="volatility_filter",
@@ -261,7 +306,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
             dataset: pd.DataFrame,
             params: dict | None = None,
     ) -> StrategySignalResult:
-        frame = _ensure_ohlcv_columns(dataset).reset_index(drop=True)
+        frame = _ensure_ohlcv_columns(dataset)
         if frame.empty:
             frame["buy_signal"] = pd.Series(dtype="bool")
             frame["sell_signal"] = pd.Series(dtype="bool")
@@ -269,10 +314,16 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 frame=frame,
                 buy_signal_column="buy_signal",
                 sell_signal_column="sell_signal",
+                required_execution_mode="next_open",
             )
 
-        normalized_params = self.normalize_params(params)
+        normalized_params = _normalize_neighbor_params(self, params)
         indicator_name = str(normalized_params["indicator"])
+        volume = frame.get("Volume", pd.Series(np.nan, index=frame.index, dtype="float64"))
+        if indicator_name in {"Volume", "All"} and not (
+            np.isfinite(volume.to_numpy(dtype=np.float64)) & volume.ge(0).to_numpy()
+        ).all():
+            raise ValueError("Volume features require observed finite nonnegative Volume.")
         short_window = int(normalized_params["short_window"])
         long_window = int(normalized_params["long_window"])
         base_k = int(normalized_params["base_k"])
@@ -288,11 +339,11 @@ class KnnMachineLearningStrategy(BaseStrategy):
         cf = _cci(frame, short_window)
         os = _roc(frame["Close"], long_window)
         of = _roc(frame["Close"], short_window)
-        vs = _minimax(frame["Volume"], long_window, 0.0, 99.0)
-        vf = _minimax(frame["Volume"], short_window, 0.0, 99.0)
+        vs = _minimax(volume, long_window, 0.0, 99.0)
+        vf = _minimax(volume, short_window, 0.0, 99.0)
         feature1, feature2 = _select_feature_pair(indicator_name, rs, rf, cs, cf, os, of, vs, vf)
 
-        directions = np.sign(frame["Close"].shift(-1) - frame["Close"]).fillna(0.0).astype(int)
+        directions = np.sign(frame["Close"].shift(-1) - frame["Close"])
         raw_signal = np.zeros(len(frame), dtype=int)
 
         k_value = max(1, int(math.floor(math.sqrt(max(base_k, 1)))))
@@ -304,7 +355,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
 
         feature1_values = feature1.to_numpy(dtype=np.float64)
         feature2_values = feature2.to_numpy(dtype=np.float64)
-        direction_values = directions.to_numpy(dtype=np.int64)
+        direction_values = directions.to_numpy(dtype=np.float64)
 
         prediction_values, _ = map_ordered_batches(
             _knn_prediction_batch,
@@ -334,7 +385,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 active_bars = 0
             elif desired_signal != current_signal:
                 current_signal = desired_signal
-                active_bars = 1
+                active_bars = 0
             else:
                 active_bars += 1
                 if active_bars >= bar_threshold:
@@ -355,4 +406,5 @@ class KnnMachineLearningStrategy(BaseStrategy):
             frame=frame,
             buy_signal_column="buy_signal",
             sell_signal_column="sell_signal",
+            required_execution_mode="next_open",
         )

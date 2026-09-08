@@ -1,7 +1,11 @@
-{# Code version: v0.5.0 #}
+{# Code version: v0.5.1 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
+{% set field_presentation = backtest_result.strategy_presentation|default({}) %}
+{% set direct_probability_field = field_presentation.distribution_kind|default('') == 'direct-normal-horizon' %}
+{% set metric_strategy = (strategy_options|default([])|selectattr('id', 'equalto', selected_strategy_id)|first)|default({}) %}
+{% set probability_metric_name = (metric_strategy.name|default('Neural Price Field')|replace(' Price Field', '')) if direct_probability_field else ('LSTM' if selected_strategy_id == 'lstm-price-field' else 'Bayesian') %}
 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid"
      id="backtest_metrics_panel">
     <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span
@@ -26,17 +30,17 @@
     </div>
     {% if backtest_result.summary.probability_field_direction_hit_rate_pct is defined %}
     <div class="trade-metric-card" data-backtest-metric="probability-field-direction-hit-rate"
-         data-probability-field-metric="next-open-direction-hit-rate"
-         title="Percentage of causal predictions whose 50% direction matched the executable next-open-to-following-open return. This is an observed direction hit rate, not a probability-grid cell score.">
-        <span class="trade-metric-label">{{ 'LSTM direction hit rate' if selected_strategy_id == 'lstm-price-field' else 'Bayesian direction hit rate' }}</span>
+         data-probability-field-metric="{{ 'next-close-direction-hit-rate' if direct_probability_field else 'next-open-direction-hit-rate' }}"
+         title="{% if direct_probability_field %}Percentage of causal predictions whose direction matched the signal-close-to-next-close return. Neutral 50% predictions and unchanged prices are excluded. This observed direction hit rate is separate from the complete-grid probability score.{% else %}Percentage of causal predictions whose 50% direction matched the executable next-open-to-following-open return. This is an observed direction hit rate, not a probability-grid cell score.{% endif %}">
+        <span class="trade-metric-label">{{ probability_metric_name }} direction hit rate</span>
         <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.probability_field_direction_hit_rate_pct is none or (backtest_result.summary.probability_field_direction_scored_points is defined and backtest_result.summary.probability_field_direction_scored_points == 0) else "%.2f"|format(backtest_result.summary.probability_field_direction_hit_rate_pct) ~ "%" }}</span>
     </div>
     {% endif %}
     {% if backtest_result.summary.probability_field_probability_score_pct is defined %}
     <div class="trade-metric-card" data-backtest-metric="probability-field-probability-score"
-         data-probability-field-metric="one-minus-brier-score"
-         title="Bounded proper probability score: 100% times one minus the mean Brier loss for the executable next-open direction. Higher is better; this is not a hit rate.">
-        <span class="trade-metric-label">{{ 'LSTM probability score' if selected_strategy_id == 'lstm-price-field' else 'Bayesian probability score' }}</span>
+         data-probability-field-metric="{{ 'direct-close-full-grid-brier' if direct_probability_field else 'one-minus-brier-score' }}"
+         title="{% if direct_probability_field %}Complete-grid probability score: 100% times one minus the equally weighted mean normalized multiclass Brier loss across close-to-future-close horizons 1–20, using 20 price bands and both tails. Missing forecasts receive maximum loss. Scored horizons: {{ field_presentation.diagnostics.horizon_count|default(0) }} of 20; shorter windows are partial. Higher is better; this is not a win rate.{% else %}Bounded proper probability score: 100% times one minus the mean Brier loss for the executable next-open direction. Higher is better; this is not a hit rate.{% endif %}">
+        <span class="trade-metric-label">{{ probability_metric_name }} probability score</span>
         <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.probability_field_probability_score_pct is none or (backtest_result.summary.probability_field_scored_points is defined and backtest_result.summary.probability_field_scored_points == 0) else "%.2f"|format(backtest_result.summary.probability_field_probability_score_pct) ~ "%" }}</span>
     </div>
     {% endif %}

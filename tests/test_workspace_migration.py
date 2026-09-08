@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.8.1
+Code version: v1.8.2
 """
 
 from __future__ import annotations
@@ -308,7 +308,8 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
         self.assertIn('aria-label="Workspace"', dock_html)
         self.assertIn('data-tooltip="Workspace"', dock_html)
-        self.assertEqual(dock_html.count('class="sidebar-dock-item'), 3)
+        self.assertEqual(dock_html.count('class="sidebar-dock-item'), 4)
+        self.assertLess(dock_html.index('data-dock-group="beta"'), dock_html.index('data-dock-group="settings"'))
         self.assertNotIn('data-tooltip="Compare stocks"', dock_html)
         self.assertNotIn('data-tooltip="Compute your portfolio"', dock_html)
         self.assertNotIn('data-tooltip="Backtest"', dock_html)

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (function bootstrapPriceFieldDistributions(globalScope) {
     "use strict";
     const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -103,11 +103,41 @@
         },
     });
 
+    // Each head predicts a cumulative log return directly. Never apply an AR
+    // projection or extrapolate beyond the horizons learned by this model.
+    const directNormalParameters = ({horizon, horizonMean, horizonStd} = {}) => {
+        const index = Number(horizon) - 1;
+        if (!Number.isInteger(index) || index < 0 || !Array.isArray(horizonMean)
+            || !Array.isArray(horizonStd) || index >= horizonMean.length
+            || index >= horizonStd.length) return null;
+        const mean = horizonMean[index];
+        const scale = horizonStd[index];
+        if (typeof mean !== "number" || !Number.isFinite(mean)
+            || typeof scale !== "number" || !Number.isFinite(scale) || !(scale > 0)) return null;
+        return Object.freeze({mean, scale});
+    };
+    const directGaussian = Object.freeze({
+        probabilityBetweenPrices(parameters) {
+            const forecast = directNormalParameters(parameters);
+            const anchor = Number(parameters.anchorPrice);
+            const lower = Number(parameters.lowerPrice);
+            const upper = Number(parameters.upperPrice);
+            if (!forecast || !(anchor > 0) || !(lower > 0) || !(upper > lower)) return null;
+            return clamp(normalCdf((Math.log(upper / anchor) - forecast.mean) / forecast.scale)
+                - normalCdf((Math.log(lower / anchor) - forecast.mean) / forecast.scale), 0, 1);
+        },
+        probabilityAboveAnchor(parameters) {
+            const forecast = directNormalParameters(parameters);
+            return forecast ? normalCdf(forecast.mean / forecast.scale) : null;
+        },
+    });
+
     // Registries belong to a controller; extensions cannot mutate another chart.
     const createRegistry = (extensions = {}) => {
         const adapters = new Map([
             ["dynamic-normal-log-return", gaussian],
             ["lstm-gaussian-log-return", gaussian],
+            ["direct-normal-horizon", directGaussian],
         ]);
         for (const [kind, adapter] of Object.entries(extensions)) {
             if (!kind || adapters.has(kind)
@@ -125,7 +155,7 @@
             resolve: (kind) => adapters.get(kind === undefined ? "dynamic-normal-log-return" : kind) || null,
         });
     };
-    const api = Object.freeze({MAX_ABS_AUTOREGRESSION, createRegistry, gaussian, normalCdf, multiStepNormalParameters, probabilityBetweenPrices});
+    const api = Object.freeze({MAX_ABS_AUTOREGRESSION, createRegistry, gaussian, directGaussian, directNormalParameters, normalCdf, multiStepNormalParameters, probabilityBetweenPrices});
     globalScope.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : window);

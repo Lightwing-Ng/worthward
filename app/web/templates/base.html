@@ -1,4 +1,4 @@
-{# Code version: v0.33.34 #}
+{# Code version: v0.34.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,8 +127,9 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.73.9') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.73.10') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
+    {% block head_extras %}{% endblock %}
 </head>
 <body>
 {% include "_agent_optimization.html" %}
@@ -136,7 +137,9 @@
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
     try {
-        const storedSidebarState = window.WORTHWARD_STORAGE.session.getItem("worthward:sidebar-open");
+        const sidebarMemoryKey = {{ ("worthward:beta:v1:sidebar-open" if current_view == "beta" else "worthward:sidebar-open")|tojson }};
+        const storedSidebarState = window.WORTHWARD_STORAGE.session.getItem(sidebarMemoryKey)
+            ?? window.WORTHWARD_STORAGE.session.getItem("worthward:sidebar-open");
         const sidebarOverlayMedia = window.WORTHWARD_RESPONSIVE?.media?.("sidebarOverlayMax");
         const shouldStartCollapsed = storedSidebarState === "false"
             || (storedSidebarState === null && Boolean(sidebarOverlayMedia?.matches));
@@ -174,7 +177,7 @@
     </button>
     <div class="app-shell is-sidebar-open">
         <div class="global-quick-actions" id="global_quick_actions" data-layout-role="global-action-column" aria-label="{{ translate_ui('Global quick actions') }}">
-            <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
+            <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle"{% if current_view == "beta" %} disabled{% endif %} aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>
             </button>
             <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" data-layout-role="global-theme-anchor" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
@@ -201,15 +204,21 @@
         </section>
     </div>
     <nav class="sidebar-dock" aria-label="{{ translate_ui('Workspace modes') }}" data-layout-role="sidebar-dock">
-        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
+        <a href="{{ dock_urls.backtest }}" data-dock-group="workspace" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ dock_workspace_label }}</span>
         </a>
-        <a href="{{ dock_urls.trade }}" class="sidebar-dock-item sidebar-dock-item-trade{% if current_view == 'trade' %} is-active{% endif %}" aria-current="{% if current_view == 'trade' %}page{% endif %}" aria-label="{{ labels.dock_trade }}" data-tooltip="{{ labels.dock_trade }}">
+        <a href="{{ dock_urls.trade }}" data-dock-group="trade" class="sidebar-dock-item sidebar-dock-item-trade{% if current_view == 'trade' %} is-active{% endif %}" aria-current="{% if current_view == 'trade' %}page{% endif %}" aria-label="{{ labels.dock_trade }}" data-tooltip="{{ labels.dock_trade }}">
             <span class="icon icon-dock-trade" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ labels.dock_trade }}</span>
         </a>
-        <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
+        {% if beta_enabled %}
+        <a href="{{ beta_url }}" data-dock-group="beta" class="sidebar-dock-item sidebar-dock-item-beta{% if current_view == 'beta' %} is-active{% endif %}"{% if current_view == 'beta' %} aria-current="page"{% endif %} aria-label="Beta" data-tooltip="Beta">
+            <span class="icon icon-settings-strategies" aria-hidden="true"></span>
+            <span class="sidebar-dock-label" aria-hidden="true">Beta</span>
+        </a>
+        {% endif %}
+        <a href="{{ dock_urls.settings }}" data-dock-group="settings" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
             <span class="icon icon-dock-settings" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ labels.dock_settings }}</span>
         </a>
@@ -225,6 +234,7 @@
         <p id="workspace_modal_overlay_copy" class="workspace-modal-copy">{{ translate_ui('This may take a moment while the app checks remote data and refreshes the local store.') }}</p>
     </div>
 </div>
+{% block application_state %}
 <script id="worthward_state" type="application/json">{{ {
     "defaults": defaults,
     "labels": labels,
@@ -274,6 +284,7 @@
     window.WORTHWARD_APP = JSON.parse(document.getElementById("worthward_state").textContent);
     window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 </script>
+{% endblock %}
 <script>
     // Code version: v0.1.1
     (() => {
@@ -367,17 +378,17 @@
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.24.3') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.10.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.11.2') }}"></script>
 {% endif %}
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.53.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.53.2') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/backtest/distributions.js', v=version ~ '-backtest-distributions-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.30.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/distributions.js', v=version ~ '-backtest-distributions-v1.1.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.31.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest/detail-chart.js', v=version ~ '-backtest-detail-chart-v1.2.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.3.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.4.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.41.2') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.4.0') }}"></script>
 {% if selected_strategy_id == 'dca' %}

@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.14.1 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.14.5 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -262,12 +262,12 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.30.0');
+    expect(desktop.version).toBe('v0.31.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.30.0');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.31.0');
     expect(desktop.backtestScript).toContain('backtest-v0.41.2');
-    expect(desktop.appScript).toContain('app-v0.53.1');
+    expect(desktop.appScript).toContain('app-v0.53.2');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -333,19 +333,27 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-size', '15px');
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-weight', '500');
     const factorsSection = paramsPanel.locator('[data-collapse="factors"]');
-    await expect(factorsSection.locator('[data-strategy-param-key]')).toHaveCount(23);
+    await expect(factorsSection.locator('[data-strategy-param-key]')).toHaveCount(36);
     await expect(trainingSection).toHaveCSS('border-top-width', '0px');
     const fieldValues = () => paramsPanel.locator('[data-strategy-param-input][name]').evaluateAll(
         (nodes) => nodes.map((node) => [node.name, node.value]),
     );
     const originalValues = await fieldValues();
     await factorsSection.locator(':scope > summary').click();
-    await expect(privateMenu).toBeHidden();
+    await expect(privateMenu).toBeVisible();
+    const researchFactors = factorsSection.locator('.strategy-factor-group').filter({
+        has: page.locator('[data-strategy-param-key="use_broker_holding"]'),
+    });
+    await researchFactors.locator(':scope > summary').click();
     await expect(factorsSection.locator('[data-strategy-param-key="use_broker_holding"]')).toBeVisible();
     await trainingSection.locator(':scope > summary').focus();
     await page.keyboard.press('Enter');
+    await expect(privateMenu).toBeHidden();
+    await expect(factorsSection.locator('[data-strategy-param-key="use_broker_holding"]')).toBeVisible();
+    await page.keyboard.press('Enter');
     await expect(privateMenu).toBeVisible();
-    await expect(factorsSection.locator('[data-trade-strategy-params-grid]')).toBeHidden();
+    await factorsSection.locator(':scope > summary').click();
+    await expect(factorsSection.locator('[data-strategy-param-key="use_broker_holding"]')).toBeHidden();
     expect(await fieldValues()).toEqual(originalValues);
 
     let trainingRequest;
@@ -356,7 +364,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await factorsSection.locator(':scope > summary').click();
     await factorsSection.locator('[data-strategy-param-key="use_broker_holding"] [data-strategy-param-switch]').click();
     const selectedValues = Object.fromEntries(await fieldValues());
-    await trainingSection.locator(':scope > summary').click();
+    await expect(privateMenu).toBeVisible();
     await privateMenu.locator('[data-lstm-training-action="start"]').click();
     await expect.poll(() => trainingRequest?.params).toEqual(selectedValues);
     expect(trainingRequest.ticker).toBe('DRAM');
@@ -366,7 +374,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
 
     await page.reload();
     await expect(privateMenu).toBeVisible();
-    await expect(paramsPanel.locator('[data-collapse]')).toHaveCount(3);
+    await expect(paramsPanel.locator(':scope > [data-collapse]')).toHaveCount(3);
 
     await tuneButton.click();
     await expect(paramsPanel).toBeHidden();
@@ -816,8 +824,8 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.30.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.30.0');
+    expect(contract.version).toBe('v0.31.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.31.0');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Price field detail');
@@ -966,6 +974,11 @@ for (const width of [1161, 390]) {
         test(`shared ${strategy} detail centers history and forecasts at ${width}px`, async ({page}, testInfo) => {
             await page.setViewportSize({width, height: 959});
             await page.emulateMedia({colorScheme: width === 1161 ? 'dark' : 'light'});
+            // Keep this geometry check independent of asynchronously loaded
+            // local training history above the chart on narrow screens.
+            await page.route('**/api/lstm-training', (route) => route.fulfill({
+                json: {success: true, protocol_version: 2, runs: []},
+            }));
             await page.goto(strategy === 'lstm' ? lstmUrl : bayesianUrl);
             await injectPriceFieldPresentation(page, `${strategy}-price-field/v1`);
             await page.locator('label[for="backtest_history_probability"]').click();

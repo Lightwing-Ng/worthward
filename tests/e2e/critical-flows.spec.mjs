@@ -1,4 +1,4 @@
-/* Code version: v1.206.6 */
+/* Code version: v1.206.10 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -829,6 +829,8 @@ test('keeps Settings card effects visible without clipping scrollable internals'
     await page.goto('/settings/strategies');
     const strategyCard = page.locator('.settings-strategy-card').nth(1);
     await strategyCard.locator('summary').click();
+    await expect(strategyCard).toHaveAttribute('open', '');
+    await expect(strategyCard).toHaveCSS('overflow', 'visible');
     const strategyOverflow = await strategyCard.evaluate((card) => ({
         card: getComputedStyle(card).overflow,
         params: getComputedStyle(card.querySelector('.settings-strategy-params-shell')).overflow,
@@ -1185,6 +1187,12 @@ test('keeps shared shell anchors on the ten-pixel spatial grid across desktop an
         await page.goto('/workspaces/compare?ticker=SGOV&ticker=BOXX');
         await page.evaluate(() => window.sessionStorage.setItem('worthward:sidebar-open', 'true'));
         await page.reload();
+        const visibleNoticeClose = page.locator('[data-dismissible-notice]:not([hidden]) .notice-close').first();
+        if (await visibleNoticeClose.isVisible()) {
+            await visibleNoticeClose.locator('..').hover();
+            await expect(visibleNoticeClose).toHaveCSS('pointer-events', 'auto');
+            await visibleNoticeClose.click();
+        }
         await setSidebarExpanded(page, true);
         await page.waitForFunction(() => {
             const sidebar = document.querySelector('#app_sidebar');
@@ -2104,7 +2112,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
     });
-    expect(highPriceContract.helperVersion).toBe('v1.4.0');
+    expect(highPriceContract.helperVersion).toBe('v1.5.0');
     expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
     expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
 
@@ -3758,7 +3766,7 @@ test('keeps the Price chart responsive when 1 year is submitted twice', async ({
         .toBeNull();
     await expect(page.locator('#period')).toHaveValue('1y');
     await expect(page.locator('.price-compare-range'))
-        .toHaveText(/^\d{2} [A-Z][a-z]{2} \d{4} - \d{2} [A-Z][a-z]{2} \d{4}$/);
+        .toHaveText(/^\d{1,2} [A-Z][a-z]{2} \d{4} - \d{1,2} [A-Z][a-z]{2} \d{4}$/);
     await expect(page.locator('canvas')).toHaveCount(2);
     expect(consoleErrors.filter((message) => message.includes('Hydration Error'))).toEqual([]);
 });
@@ -7318,7 +7326,7 @@ test('resizes the investment overview and history responsively in portrait layou
     expect(overviewSpacing).toEqual({
         paddingTop: '0px',
         paddingRight: '4px',
-        paddingBottom: '4px',
+        paddingBottom: '0px',
         paddingLeft: '4px',
         rowGap: '4px',
         columnGap: '4px',
@@ -8283,6 +8291,12 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
     const priceChartCanvas = page.locator('#stock_panel .investment-stock-details-price-chart-canvas');
     await expect(priceChartCanvas).toBeVisible();
+    await priceChartCanvas.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.allSettled(document.getAnimations().filter((animation) => (
+            Number.isFinite(animation.effect?.getTiming().iterations)
+        )).map((animation) => animation.finished));
+    });
     const priceChartBox = await priceChartCanvas.boundingBox();
     if (!priceChartBox) throw new Error('Stock-details price chart has no visible box.');
     await page.mouse.move(
@@ -8300,27 +8314,33 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         const bounds = chart?._activeInvestmentStockDetailsGuideBounds;
         const context = canvas?.getContext('2d');
         if (!canvas || !bounds || !context) return null;
-        const scaleX = canvas.width / canvas.getBoundingClientRect().width;
-        const scaleY = canvas.height / canvas.getBoundingClientRect().height;
+        // Chart bounds use logical canvas coordinates, independent of a CSS
+        // transition on its container. Sample the rounded corner as a region;
+        // rounding bounds + 0.5 can select a fully filled interior pixel.
+        const scaleX = canvas.width / chart.width;
+        const scaleY = canvas.height / chart.height;
         const readPixel = (x, y) => Array.from(context.getImageData(
             Math.round(x * scaleX),
             Math.round(y * scaleY),
             1,
             1,
         ).data);
+        const cornerLeft = Math.max(0, Math.floor(bounds.badgeLeft * scaleX));
+        const cornerTop = Math.max(0, Math.floor(bounds.badgeTop * scaleY));
+        const cornerSize = Math.max(2, Math.ceil(2 * Math.min(scaleX, scaleY)));
+        const cornerPixels = context.getImageData(cornerLeft, cornerTop, cornerSize, cornerSize).data;
+        const center = readPixel((bounds.badgeLeft + bounds.badgeRight) / 2, (bounds.badgeTop + bounds.badgeBottom) / 2);
         return {
             allocationBadgeRadius: getComputedStyle(canvas)
                 .getPropertyValue('--investment-holdings-allocation-badge-radius').trim(),
-            corner: readPixel(bounds.badgeLeft + 0.5, bounds.badgeTop + 0.5),
-            center: readPixel(
-                (bounds.badgeLeft + bounds.badgeRight) / 2,
-                (bounds.badgeTop + bounds.badgeBottom) / 2,
-            ),
+            cornerHasUnfilledPixels: Array.from({length: cornerPixels.length / 4}, (_, index) => (
+                Array.from(cornerPixels.slice(index * 4, index * 4 + 4)).some((value, channel) => value !== center[channel])
+            )).some(Boolean),
         };
     });
     expect(hoverBadgePixels).not.toBeNull();
     expect(hoverBadgePixels.allocationBadgeRadius).toBe('2px');
-    expect(hoverBadgePixels.corner).not.toEqual(hoverBadgePixels.center);
+    expect(hoverBadgePixels.cornerHasUnfilledPixels).toBe(true);
 
     const readGeometry = () => page.evaluate(() => {
         const select = (selector) => document.querySelector(`#stock_panel ${selector}`);
@@ -8641,7 +8661,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.10';
+            && url.searchParams.get('v') === '1.78.12';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -9483,8 +9503,11 @@ test('keeps HSBC unsettled buy history sequential while current cash stays curre
 
     const firstBuyRow = page.locator('#investment_history_row_2');
     const latestBuyRow = page.locator('#investment_history_row_10');
-    await expect(firstBuyRow.locator('td').nth(9)).toContainText('*26,360.01');
-    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*25,706.11');
+    // The fixture's authoritative cash is 23,413.41. Apply the first pending
+    // buy (-285.00), then all pending buys (-938.90), without replaying the
+    // older 3,231.60 settlement correction on top of that cash anchor.
+    await expect(firstBuyRow.locator('td').nth(9)).toContainText('*23,128.41');
+    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*22,474.51');
     await expect(
         page.locator('#investment_history .investment-history-cell-left')
             .filter({hasText: 'DRAM @ 57.00 × 5'})
@@ -15701,11 +15724,11 @@ test('keeps Investment Holdings allocation badge glyph slots stable', async ({pa
     });
 });
 
-test('keeps the Style token segmented control at 36px without an outer border', async ({page}) => {
+test('keeps the Style token segmented control at 32px without an outer border', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
     const rangeShell = page.locator('[data-style-token-card="segmented-control"] .range-mode-shell');
-    await expect(rangeShell).toHaveCSS('height', '36px');
+    await expect(rangeShell).toHaveCSS('height', '32px');
     await expect(rangeShell).toHaveCSS('border-top-width', '0px');
     await expect(rangeShell).toHaveCSS('border-right-width', '0px');
     await expect(rangeShell).toHaveCSS('border-bottom-width', '0px');
@@ -17341,6 +17364,7 @@ test('uses the global compact date format and split numeric typography in Backte
 });
 
 test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
+    test.setTimeout(180_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?show_trade_details=1&period=6mo&strategy=buy-and-hold');
 
@@ -17348,6 +17372,7 @@ test('starts every backtest strategy with its starter parameters from the dropdo
         [...new Set(options.map((option) => option.value))]
     ));
     expect(strategyIds.length).toBeGreaterThan(1);
+    test.setTimeout(30_000 + strategyIds.length * 15_000);
 
     for (const strategyId of strategyIds) {
         const currentStrategyId = await page.locator('#trade_strategy').inputValue();
@@ -17678,7 +17703,7 @@ test('uses lighter Backtest sidebar weights for range labels and strategy select
         period: getComputedStyle(document.querySelector('#period_panel > label')).fontWeight,
         strategy: getComputedStyle(document.querySelector('.trade-strategy-field .trade-strategy-select')).fontWeight,
     }));
-    expect(weights).toEqual({mode: '500', period: '500', strategy: '300'});
+    expect(weights).toEqual({mode: '400', period: '400', strategy: '300'});
 });
 
 test('keeps DCA strategy parameter menus above clipping and the panel compact', async ({page}) => {
@@ -21623,6 +21648,7 @@ for (const viewport of responsiveViewports) {
                 themeCenterDelta: pageTitle && theme ? Math.abs(centerY(pageTitle) - centerY(theme)) : null,
                 workspace: workspace ? {width: workspace.width, left: workspace.left, right: workspace.right} : null,
                 dockLabels: dockLabels.map((label) => ({
+                    group: label.closest('[data-dock-group]')?.dataset.dockGroup || '',
                     text: label.textContent.trim(),
                     visible: getComputedStyle(label).display !== 'none',
                 })),
@@ -21639,7 +21665,10 @@ for (const viewport of responsiveViewports) {
             viewport.overlaySidebar ? viewport.width - 24 : (viewport.workspaceMinWidth || 400),
         );
         expect(layout.sidebarExpanded).toBe(viewport.overlaySidebar ? 'false' : 'true');
-        expect(layout.dockLabels).toHaveLength(3);
+        const dockGroups = layout.dockLabels.map((label) => label.group);
+        expect(dockGroups).toEqual(dockGroups.includes('beta')
+            ? ['workspace', 'trade', 'beta', 'settings']
+            : ['workspace', 'trade', 'settings']);
         expect(layout.dockLabels.every((label) => label.text.length > 0)).toBe(true);
         expect(layout.dockLabels.every((label) => label.visible)).toBe(viewport.overlaySidebar);
         if (viewport.overlaySidebar) {

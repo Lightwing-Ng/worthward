@@ -1,7 +1,7 @@
 """
 Tests for the SuperTrend AI strategy.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class SupertrendAiStrategyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             strategy.compute_signals(dataset, {"min_factor": 6, "max_factor": 5})
 
-    def test_strategy_accepts_close_only_trade_dataset(self) -> None:
+    def test_strategy_rejects_close_only_data_without_inventing_ohlc(self) -> None:
         strategy = instantiate_strategy("supertrend-ai")
         dataset = pd.DataFrame(
             {
@@ -67,12 +67,9 @@ class SupertrendAiStrategyTests(unittest.TestCase):
             }
         )
 
-        result = strategy.compute_signals(dataset)
-
-        self.assertIn("High", result.frame.columns)
-        self.assertIn("Low", result.frame.columns)
-        self.assertIn("Open", result.frame.columns)
-        self.assertEqual(len(result.frame), len(dataset))
+        with self.assertRaisesRegex(ValueError, "observed Open, High, Low, and Close"):
+            strategy.compute_signals(dataset)
+        self.assertEqual(list(dataset.columns), ["Date", "Close"])
 
 
 if __name__ == "__main__":

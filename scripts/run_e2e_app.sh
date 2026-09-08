@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.4.0
+# Code version: v1.5.0
 
 set -euo pipefail
 
@@ -67,6 +67,7 @@ mkdir -p "$RUNTIME_ROOT/settings_store"
 
 export WORTHWARD_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"
 export WORTHWARD_SETTINGS_STORE_DIR="$RUNTIME_ROOT/settings_store"
+export WORTHWARD_COMPUTE_ROOT="$RUNTIME_ROOT/compute-jobs"
 export WORTHWARD_REMOTE_MARKET_ACCESS="disabled"
 export WORTHWARD_PORT="8699"
 

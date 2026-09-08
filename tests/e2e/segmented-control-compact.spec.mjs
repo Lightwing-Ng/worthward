@@ -1,4 +1,4 @@
-/* Code version: v0.1.1 */
+/* Code version: v0.1.2 */
 import {expect, test} from '@playwright/test';
 
 const backtestUrl = '/workspaces/backtest?ticker=MU&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_pe_ratio=0&use_market_temperature=1&use_capital_flow=1&use_short_interest=1&use_short_volume=1&training_window=200&compute_backend=GPU';
@@ -17,6 +17,14 @@ const readCompactGeometry = async (control) => control.evaluate((element) => {
             ? Math.abs((controlRect.left + (controlRect.width / 2)) - (ownerRect.left + (ownerRect.width / 2)))
             : Number.POSITIVE_INFINITY,
         optionWidths,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        dataOverflow: element.dataset.segmentedOverflow,
+        nativeInputOverflow: [...element.querySelectorAll('input[type="radio"]')].some((input) => {
+            const inputRect = input.getBoundingClientRect();
+            const optionRect = input.parentElement.getBoundingClientRect();
+            return inputRect.left < optionRect.left - 1 || inputRect.right > optionRect.right + 1;
+        }),
         overflow: element.scrollWidth > element.clientWidth + 1,
     };
 });
@@ -26,7 +34,8 @@ const expectCompactGeometry = (geometry) => {
     expect(geometry.controlWidth).toBeLessThan(geometry.ownerWidth - 1);
     expect(geometry.centerDelta).toBeLessThanOrEqual(1);
     expect(Math.max(...geometry.optionWidths) - Math.min(...geometry.optionWidths)).toBeLessThanOrEqual(1);
-    expect(geometry.overflow).toBe(false);
+    expect(geometry.overflow, JSON.stringify(geometry)).toBe(false);
+    expect(geometry.nativeInputOverflow).toBe(false);
 };
 
 const readLabelAlignment = async (control) => control.evaluate((element) => (

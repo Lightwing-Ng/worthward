@@ -1,11 +1,12 @@
 """
 Web route assembly entrypoint.
 
-Code version: v0.3.1
+Code version: v0.4.0
 """
 
 from flask import Flask
 
+from app.beta import register_beta
 from app.web.routes.backtest import register_backtest_routes
 from app.web.routes.compare import register_compare_routes
 from app.web.routes.dca import register_dca_routes
@@ -23,3 +24,4 @@ def register_routes(app: Flask) -> None:
     register_backtest_routes(app, runtime)
     register_trade_routes(app, runtime)
     register_settings_routes(app, runtime)
+    register_beta(app)

@@ -1,8 +1,8 @@
 """Gemini variant of the Lorentzian Classification strategy.
 
-Code version: v0.2.0
-- Changed: Independent causal Lorentzian neighbor predictions use the shared
-  bounded CPU process pool before stateful signal replay.
+Code version: v0.3.0
+- Fixed: Reuse causal indicators and mature neighbor selection, honor neutral
+  exact matches, and replay observed long-entry intents with next-open fills.
 """
 
 from __future__ import annotations
@@ -13,6 +13,23 @@ import pandas as pd
 from app.infrastructure.parallel import map_ordered_batches
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
+from .strategy_lorentzian_classification import (
+    _adx as _adx,
+    _atr as _atr,
+    _cci_from_series as _cci_from_series,
+    _ema as _ema,
+    _ensure_ohlcv_columns as _ensure_ohlcv_columns,
+    _feature_series as _feature_series,
+    _gaussian_kernel as _gaussian_kernel,
+    _long_only_signals,
+    _mature_lorentzian_neighbors,
+    _normalize_neighbor_params,
+    _rational_quadratic_kernel as _rational_quadratic_kernel,
+    _rsi as _rsi,
+    _sma as _sma,
+    _true_range as _true_range,
+    _wave_trend as _wave_trend,
+)
 
 LONG = 1
 SHORT = -1
@@ -20,174 +37,6 @@ NEUTRAL = 0
 
 _PREDICTION_PARALLEL_MIN_ROWS = 64
 _PREDICTION_PARALLEL_MAX_WORKERS = 8
-
-
-def _ensure_ohlcv_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    normalized = frame.copy()
-    close = pd.to_numeric(normalized["Close"], errors="coerce")
-
-    for column in ("Open", "High", "Low"):
-        if column not in normalized.columns:
-            normalized[column] = close
-        else:
-            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").fillna(close)
-
-    if "Volume" not in normalized.columns:
-        normalized["Volume"] = pd.Series(0.0, index=normalized.index, dtype="float64")
-    else:
-        normalized["Volume"] = pd.to_numeric(normalized["Volume"], errors="coerce").fillna(0.0)
-
-    normalized["Close"] = close
-    return normalized
-
-
-def _ema(series: pd.Series, length: int) -> pd.Series:
-    return series.ewm(span=max(length, 1), adjust=False, min_periods=1).mean()
-
-
-def _sma(series: pd.Series, length: int) -> pd.Series:
-    return series.rolling(window=max(length, 1), min_periods=1).mean()
-
-
-def _rsi(series: pd.Series, length: int) -> pd.Series:
-    delta = series.diff()
-    gains = delta.clip(lower=0.0)
-    losses = (-delta).clip(lower=0.0)
-    average_gain = gains.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
-    average_loss = losses.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=length).mean()
-    relative_strength = average_gain / average_loss.replace(0.0, np.nan)
-    rsi = 100.0 - (100.0 / (1.0 + relative_strength))
-    return rsi.fillna(50.0)
-
-
-def _cci_from_series(series: pd.Series, length: int) -> pd.Series:
-    window = max(length, 1)
-    moving_average = series.rolling(window=window, min_periods=window).mean()
-
-    def mean_deviation(values: np.ndarray) -> float:
-        center = float(values.mean())
-        return float(np.abs(values - center).mean())
-
-    mean_dev = series.rolling(window=window, min_periods=window).apply(mean_deviation, raw=True)
-    denominator = (0.015 * mean_dev).replace(0.0, np.nan)
-    return ((series - moving_average) / denominator).fillna(0.0)
-
-
-def _true_range(frame: pd.DataFrame) -> pd.Series:
-    previous_close = frame["Close"].shift(1)
-    ranges = pd.concat(
-        [
-            frame["High"] - frame["Low"],
-            (frame["High"] - previous_close).abs(),
-            (frame["Low"] - previous_close).abs(),
-        ],
-        axis=1,
-    )
-    return ranges.max(axis=1)
-
-
-def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
-    return _true_range(frame).ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
-
-
-def _adx(frame: pd.DataFrame, length: int) -> pd.Series:
-    high = frame["High"]
-    low = frame["Low"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-    plus_dm = pd.Series(
-        np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
-        index=frame.index,
-        dtype="float64",
-    )
-    minus_dm = pd.Series(
-        np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
-        index=frame.index,
-        dtype="float64",
-    )
-
-    atr = _true_range(frame).ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
-    plus_di = (
-            100.0
-            * plus_dm.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
-            / atr.replace(0.0, np.nan)
-    )
-    minus_di = (
-            100.0
-            * minus_dm.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean()
-            / atr.replace(0.0, np.nan)
-    )
-    dx = (100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)).fillna(0.0)
-    return dx.ewm(alpha=1 / max(length, 1), adjust=False, min_periods=1).mean().fillna(0.0)
-
-
-def _wave_trend(hlc3: pd.Series, channel_length: int, average_length: int) -> pd.Series:
-    esa = _ema(hlc3, channel_length)
-    deviation = _ema((hlc3 - esa).abs(), channel_length)
-    channel_index = (hlc3 - esa) / (0.015 * deviation.replace(0.0, np.nan))
-    wt1 = _ema(channel_index.fillna(0.0), average_length)
-    wt2 = _sma(wt1, 4)
-    return (wt1 - wt2).fillna(0.0)
-
-
-def _feature_series(
-        feature_name: str,
-        frame: pd.DataFrame,
-        source: pd.Series,
-        hlc3: pd.Series,
-        param_a: int,
-        param_b: int,
-) -> pd.Series:
-    if feature_name == "RSI":
-        return _ema(_rsi(source, param_a), max(param_b, 1))
-    if feature_name == "WT":
-        return _wave_trend(hlc3, param_a, max(param_b, 1))
-    if feature_name == "CCI":
-        return _ema(_cci_from_series(source, param_a), max(param_b, 1))
-    if feature_name == "ADX":
-        return _adx(frame, param_a)
-    raise ValueError(f"Unsupported feature: {feature_name}.")
-
-
-def _rational_quadratic_kernel(
-        series: pd.Series,
-        lookback: int,
-        relative_weight: float,
-        regression_level: int,
-) -> pd.Series:
-    values = series.to_numpy(dtype=np.float64)
-    result = np.full(len(values), np.nan, dtype=np.float64)
-    effective_window = max(lookback, regression_level, 1)
-    alpha = max(relative_weight, 1e-6)
-
-    for index in range(len(values)):
-        start = max(0, index - effective_window + 1)
-        window = values[start: index + 1]
-        distances = np.arange(len(window) - 1, -1, -1, dtype=np.float64)
-        weights = np.power(
-            1.0 + (np.square(distances) / (2.0 * alpha * max(lookback, 1) ** 2)),
-            -alpha,
-        )
-        result[index] = float(np.dot(window, weights) / weights.sum())
-
-    return pd.Series(result, index=series.index, dtype="float64")
-
-
-def _gaussian_kernel(series: pd.Series, lookback: int, regression_level: int) -> pd.Series:
-    values = series.to_numpy(dtype=np.float64)
-    result = np.full(len(values), np.nan, dtype=np.float64)
-    effective_window = max(lookback, regression_level, 1)
-    sigma = max(lookback, 1) / 2.0
-
-    for index in range(len(values)):
-        start = max(0, index - effective_window + 1)
-        window = values[start: index + 1]
-        distances = np.arange(len(window) - 1, -1, -1, dtype=np.float64)
-        weights = np.exp(-0.5 * np.square(distances / max(sigma, 1e-6)))
-        result[index] = float(np.dot(window, weights) / weights.sum())
-
-    return pd.Series(result, index=series.index, dtype="float64")
 
 
 def _bars_since(condition: pd.Series) -> pd.Series:
@@ -233,33 +82,19 @@ def _lorentzian_prediction_at_index(
         label_horizon: int,
         finite_rows: np.ndarray | None = None,
 ) -> float:
-    if current_index <= 0 or not np.isfinite(features[current_index]).all():
-        return 0.0
-    matured_end = current_index - label_horizon
-    if matured_end < 0:
-        return 0.0
-    history_start = max(0, matured_end - max_bars_back)
-    sampled_idx = np.arange(history_start, matured_end + 1, sample_step, dtype=np.int64)
-    if sampled_idx.size == 0:
-        return 0.0
-    if finite_rows is None:
-        finite_rows = np.isfinite(features).all(axis=1)
-    valid_idx = sampled_idx[finite_rows[sampled_idx] & label_available[sampled_idx]]
-    if valid_idx.size == 0:
-        return 0.0
-    distances = np.log1p(np.abs(features[valid_idx] - features[current_index])).sum(axis=1)
-    nearest_count = min(neighbors_count, distances.size)
-    if nearest_count <= 0:
-        return 0.0
-    near_idx = (
-        np.argpartition(distances, nearest_count - 1)[:nearest_count]
-        if nearest_count < distances.size
-        else np.arange(distances.size)
+    candidates, distances = _mature_lorentzian_neighbors(
+        current_index, features, training_labels, label_available,
+        neighbors_count, max_bars_back, sample_step, label_horizon, finite_rows,
     )
-    near_distances = distances[near_idx]
-    near_labels = training_labels[valid_idx[near_idx]].astype(np.float64)
-    weights = 1.0 / np.maximum(near_distances, 1e-9)
-    return float(np.dot(near_labels, weights) / weights.sum())
+    if candidates.size == 0:
+        return 0.0
+    labels = training_labels[candidates].astype(np.float64)
+    exact_matches = distances == 0
+    if exact_matches.any():
+        return float(labels[exact_matches].mean())
+    weights = distances.min() / distances
+    vote = float(np.dot(labels, weights) / weights.sum())
+    return 0.0 if abs(vote) < 1e-12 else vote
 
 
 def _lorentzian_prediction_batch(
@@ -668,15 +503,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             dataset: pd.DataFrame,
             params: dict | None = None,
     ) -> StrategySignalResult:
-        """
-        Code version: v0.3.1
-        Changes:
-        - Replaced explicit loop in `_bars_held_from_signal` with vectorized implementation.
-        - Streamlined boolean condition chaining to avoid redundant missing value allocations.
-        - Structured strict dynamic exit conditions for better readability.
-        - Run independent causal neighbor predictions through the shared
-          bounded CPU process pool before signal replay.
-        """
+        """Compute mature forward-label votes and next-open long-only intents."""
         frame = _ensure_ohlcv_columns(dataset.copy())
         if frame.empty:
             frame["buy_signal"] = pd.Series(dtype="bool", index=frame.index)
@@ -685,9 +512,10 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 frame=frame,
                 buy_signal_column="buy_signal",
                 sell_signal_column="sell_signal",
+                required_execution_mode="next_open",
             )
 
-        normalized_params = self.normalize_params(params)
+        normalized_params = _normalize_neighbor_params(self, params)
         index = frame.index
 
         close = frame["Close"]
@@ -759,9 +587,9 @@ class LorentzianClassificationStrategy(BaseStrategy):
         features = np.column_stack(feature_arrays)
 
         label_horizon = 4
-        training_label_series = np.sign(source.shift(-label_horizon) - source).fillna(0.0)
-        training_labels = training_label_series.to_numpy(dtype=np.int64)
-        label_available = source.shift(-label_horizon).notna().to_numpy(dtype=bool)
+        training_label_series = np.sign(source.shift(-label_horizon) - source)
+        training_labels = training_label_series.to_numpy(dtype=np.float64)
+        label_available = (source.notna() & source.shift(-label_horizon).notna()).to_numpy(dtype=bool)
 
         prediction_values = _lorentzian_knn_predictions(
             features,
@@ -781,16 +609,16 @@ class LorentzianClassificationStrategy(BaseStrategy):
         regime_series = (
                 regime_basis.diff(5)
                 / regime_basis.abs().rolling(window=20, min_periods=1).mean().replace(0.0, np.nan)
-        ).fillna(0.0)
+        )
 
         ema_line = _ema(close, ema_period)
         sma_line = _sma(close, sma_period)
 
         # 1.2 Feature Engineering: Safely casting boolean indices without warnings
         is_ema_uptrend = pd.Series(True, index=index, dtype=bool) if not use_ema_filter else (close > ema_line).fillna(False)
-        is_ema_downtrend = pd.Series(True, index=index, dtype=bool) if not use_ema_filter else (close < ema_line).fillna(False)
+
         is_sma_uptrend = pd.Series(True, index=index, dtype=bool) if not use_sma_filter else (close > sma_line).fillna(False)
-        is_sma_downtrend = pd.Series(True, index=index, dtype=bool) if not use_sma_filter else (close < sma_line).fillna(False)
+
 
         yhat1 = _rational_quadratic_kernel(
             source,
@@ -812,15 +640,11 @@ class LorentzianClassificationStrategy(BaseStrategy):
         is_bearish_cross_alert = ((yhat2 < yhat1) & (yhat2.shift(1) >= yhat1.shift(1))).fillna(False)
 
         is_bullish_smooth = (yhat2 >= yhat1).fillna(False)
-        is_bearish_smooth = (yhat2 <= yhat1).fillna(False)
 
         alert_bearish = is_bearish_cross_alert if use_kernel_smoothing else is_bearish_change
 
         is_bullish = (
             is_bullish_smooth if use_kernel_smoothing else is_bullish_rate
-        ) if use_kernel_filter else pd.Series(True, index=index, dtype=bool)
-        is_bearish = (
-            is_bearish_smooth if use_kernel_smoothing else is_bearish_rate
         ) if use_kernel_filter else pd.Series(True, index=index, dtype=bool)
 
         volatility_ok = (atr_fast > atr_slow).fillna(False) if use_volatility_filter else pd.Series(True, index=index, dtype=bool)
@@ -855,51 +679,21 @@ class LorentzianClassificationStrategy(BaseStrategy):
             signal_values[i] = current_signal
 
         signal_series = pd.Series(signal_values, index=index, dtype="int64")
-        signal_changed = signal_series.ne(_shift_int(signal_series, 1, fill_value=NEUTRAL))
-
-        bars_held_series = _bars_held_from_signal(signal_series)
-        is_held_four_bars = bars_held_series.ge(4)
-        is_held_less_than_four_bars = bars_held_series.gt(0) & bars_held_series.lt(4)
-
-        is_buy_signal = signal_series.eq(LONG) & is_ema_uptrend & is_sma_uptrend
-        is_sell_signal = signal_series.eq(SHORT) & is_ema_downtrend & is_sma_downtrend
-
-        is_new_buy_signal = is_buy_signal & signal_changed
-        is_new_sell_signal = is_sell_signal & signal_changed
-        is_last_signal_buy = _shift_int(signal_series, 4, fill_value=NEUTRAL).eq(LONG)
-
-        start_long_trade = is_new_buy_signal & is_bullish & is_ema_uptrend & is_sma_uptrend
-        start_short_trade = is_new_sell_signal & is_bearish & is_ema_downtrend & is_sma_downtrend
-
-        bars_since_long_entry = _bars_since(start_long_trade)
-        bars_since_bearish_exit = _bars_since(alert_bearish)
-
-        is_valid_long_exit = (bars_since_bearish_exit > bars_since_long_entry).fillna(False)
-        end_long_trade_dynamic = is_bearish_change & _shift_bool(is_valid_long_exit, 1)
-
-        long_trade_lookback_flag = _shift_bool(start_long_trade.rolling(window=100, min_periods=1).max().astype(bool), 1)
-        end_long_trade_strict = (
-                (
-                        (is_held_four_bars & is_last_signal_buy)
-                        | (is_held_less_than_four_bars & is_new_sell_signal)
-                )
-                & long_trade_lookback_flag
-        )
-
-        is_dynamic_exit_valid = True
-        end_long = (
-            end_long_trade_dynamic
-            if (use_dynamic_exits and is_dynamic_exit_valid)
-            else end_long_trade_strict
+        buy_signal, sell_signal = _long_only_signals(
+            signal_series,
+            confirmed_long & filter_all & is_bullish & is_ema_uptrend & is_sma_uptrend,
+            alert_bearish,
+            dynamic_exits=use_dynamic_exits,
         )
 
         frame["lorentzian_prediction"] = prediction_values
         frame["lorentzian_signal"] = signal_series
-        frame["buy_signal"] = start_long_trade.fillna(False).astype(bool)
-        frame["sell_signal"] = (start_short_trade | end_long).fillna(False).astype(bool)
+        frame["buy_signal"] = buy_signal
+        frame["sell_signal"] = sell_signal
 
         return StrategySignalResult(
             frame=frame,
             buy_signal_column="buy_signal",
             sell_signal_column="sell_signal",
+            required_execution_mode="next_open",
         )

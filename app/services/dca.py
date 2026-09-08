@@ -1,7 +1,7 @@
 """
 Recurring investment simulator.
 
-Code version: v0.1.8
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ from __future__ import annotations
 from calendar import monthrange
 from collections import Counter
 from datetime import date, timedelta
+from math import isfinite
+from numbers import Number
 
 import pandas as pd
 
@@ -21,6 +23,62 @@ WEEKDAY_LABELS = {
     3: "Thursday",
     4: "Friday",
 }
+
+
+def _finite_number(raw_value: object, error_message: str) -> float:
+    try:
+        if pd.api.types.is_bool_dtype(type(raw_value)):
+            raise ValueError(error_message)
+        value = float(raw_value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(error_message) from exc
+    if not isfinite(value):
+        raise ValueError(error_message)
+    return value
+
+
+def _normalize_daily_date(raw_value: object) -> pd.Timestamp:
+    error_message = "DCA market data must contain valid calendar dates."
+    try:
+        if (
+            isinstance(raw_value, Number)
+            or pd.api.types.is_bool_dtype(type(raw_value))
+            or pd.isna(raw_value)
+        ):
+            raise ValueError(error_message)
+        timestamp = pd.Timestamp(raw_value)
+        if pd.isna(timestamp):
+            raise ValueError(error_message)
+        # Daily bars retain their trading calendar date, including zoned inputs.
+        return timestamp.tz_localize(None).normalize().as_unit("ns")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(error_message) from exc
+
+
+def _validated_daily_market_data(target_dataset: pd.DataFrame) -> pd.DataFrame:
+    if (
+        not {"Date", "Close"}.issubset(target_dataset.columns)
+        or target_dataset.columns.duplicated().any()
+    ):
+        raise ValueError("DCA market data must contain unique Date and Close columns.")
+    columns = ["Date", "Close"]
+    if "Dividends" in target_dataset.columns:
+        columns.append("Dividends")
+    merged = target_dataset[columns].copy()
+    merged["Date"] = merged["Date"].map(_normalize_daily_date)
+    if merged["Date"].duplicated().any():
+        raise ValueError("DCA market data must not contain duplicate calendar dates.")
+    for column in columns[1:]:
+        error_message = f"DCA {column} observations must be finite, nonnegative numbers."
+        merged[column] = [_finite_number(value, error_message) for value in merged[column]]
+        if (merged[column] < 0).any():
+            raise ValueError(error_message)
+    return merged.sort_values("Date", kind="stable")
+
+
+def _require_finite_arithmetic(*values: float) -> None:
+    if not all(isfinite(value) for value in values):
+        raise ValueError("DCA inputs exceed the range of finite arithmetic.")
 
 
 def _format_trade_date(value: pd.Timestamp | str) -> str:
@@ -127,12 +185,12 @@ def simulate_recurring_investment(
     normalized_stop_loss_enabled = bool(stop_loss_enabled)
     if target_dataset.empty:
         raise ValueError(f"No market data available for {ticker}.")
-    columns = ["Date", "Close"]
-    if "Dividends" in target_dataset.columns:
-        columns.append("Dividends")
-    merged = target_dataset[columns].copy().sort_values("Date")
+    merged = _validated_daily_market_data(target_dataset)
 
-    periodic_amount = max(float(amount_per_period), 1.0)
+    periodic_amount = max(
+        _finite_number(amount_per_period, "DCA requires a finite contribution amount."),
+        1.0,
+    )
     normalized_frequency = _normalize_frequency(frequency)
     normalized_weekday = _normalize_weekday(weekday, 0)
     normalized_month_day = _normalize_month_day(month_day, 15)
@@ -149,8 +207,10 @@ def simulate_recurring_investment(
 
     schedule_counter = Counter(pd.Timestamp(value).normalize() for value in schedule_dates)
     total_planned_amount = periodic_amount * len(schedule_dates)
+    _require_finite_arithmetic(total_planned_amount)
     first_bar_price = float(merged["Close"].iloc[0]) if not merged.empty else 0.0
     all_in_shares = (total_planned_amount / first_bar_price) if first_bar_price > 0 else 0.0
+    _require_finite_arithmetic(all_in_shares)
     all_in_dividend_cash = 0.0
     target_shares = 0.0
     target_dividend_cash = 0.0
@@ -185,6 +245,14 @@ def simulate_recurring_investment(
             market_value = target_shares * target_close
             cash_value = remaining_cash + target_dividend_cash
             target_equity_after_buy = market_value + cash_value
+            _require_finite_arithmetic(
+                target_buy_shares,
+                target_shares,
+                total_invested,
+                market_value,
+                cash_value,
+                target_equity_after_buy,
+            )
             trades.append({
                 "date": _format_trade_date(trade_date),
                 "raw_date": trade_date.strftime("%Y-%m-%d"),
@@ -207,6 +275,14 @@ def simulate_recurring_investment(
         remaining_cash = max(total_planned_amount - total_invested, 0.0)
         target_equity = (target_shares * target_close) + remaining_cash + target_dividend_cash
         all_in_equity = ((all_in_shares * target_close) + all_in_dividend_cash) if all_in_shares > 0 else 0.0
+        _require_finite_arithmetic(
+            target_shares,
+            all_in_shares,
+            target_dividend_cash,
+            all_in_dividend_cash,
+            target_equity,
+            all_in_equity,
+        )
         target_equity_series.append(round(target_equity, 4))
         all_in_equity_series.append(round(all_in_equity, 4))
         contribution_markers.append(event_count > 0)
@@ -218,6 +294,7 @@ def simulate_recurring_investment(
     total_return_pct = ((final_equity / total_invested) - 1.0) * 100.0 if total_invested > 0 else 0.0
     all_in_return_pct = ((all_in_final_equity / total_planned_amount) - 1.0) * 100.0 if total_planned_amount > 0 else 0.0
     average_cost = (total_invested / target_shares) if target_shares > 0 else 0.0
+    _require_finite_arithmetic(total_return_pct, all_in_return_pct, average_cost)
     end_date = pd.Timestamp(merged["Date"].iloc[-1])
 
     return {

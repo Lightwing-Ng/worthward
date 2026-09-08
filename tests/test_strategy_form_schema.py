@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class StrategyFormSchemaTests(unittest.TestCase):
                 if factors:
                     self.assertEqual(factors[0]["title"], "Market factors")
                     self.assertTrue(factors[0]["fields"])
-                    if strategy_id not in {"bayesian-price-field", "lstm-price-field"}:
+                    if entry.get("presentation_renderer") != "probability-grid-v1":
                         self.assertNotIn("use_pe_ratio", keys)
                         self.assertNotIn("use_option_call_volume", keys)
 

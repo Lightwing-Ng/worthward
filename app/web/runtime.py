@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.97.0
+Code version: v0.98.0
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -258,6 +258,7 @@ from app.services.date_constraints import (
 )
 from app.services.dca import simulate_recurring_investment
 from app.services.lstm_training import LstmTrainingConflict, LstmTrainingManager
+from app.services.price_field_training import PriceFieldTrainingConflict, PriceFieldTrainingManager
 from app.services.market_cap import (
     build_market_cap_series_payload,
     extract_stock_split_events,
@@ -674,6 +675,10 @@ class WebRuntime:
     lstm_training_start_api: Any
     lstm_training_stop_api: Any
     lstm_training_delete_api: Any
+    price_field_training_list_api: Any
+    price_field_training_start_api: Any
+    price_field_training_stop_api: Any
+    price_field_training_delete_api: Any
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
@@ -757,6 +762,7 @@ def build_web_runtime() -> WebRuntime:
         else {}
     )
     lstm_training_manager = LstmTrainingManager()
+    price_field_training_manager = PriceFieldTrainingManager()
 
     def quote_profile_to_json(profile: QuoteProfile) -> dict[str, str | None]:
         return {
@@ -5586,6 +5592,10 @@ def build_web_runtime() -> WebRuntime:
                 "lstmTrainingStart": "/api/lstm-training/start",
                 "lstmTrainingStop": "/api/lstm-training/stop",
                 "lstmTrainingDelete": "/api/lstm-training/delete",
+                "priceFieldTraining": "/api/price-field-training",
+                "priceFieldTrainingStart": "/api/price-field-training/start",
+                "priceFieldTrainingStop": "/api/price-field-training/stop",
+                "priceFieldTrainingDelete": "/api/price-field-training/delete",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
@@ -7308,6 +7318,54 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({"success": False, "error": "The training run could not be archived."})
             response.status_code = 500
         return apply_no_store_headers(response)
+
+    def price_field_training_action(action):
+        if action != "list":
+            security_error = validate_local_browser_write_request(request, action_label="Probability-model training changes")
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+        payload = request.get_json(silent=True) or {} if action != "list" else {}
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError("Training request must be a JSON object.")
+            if action == "list":
+                outcome = {"runs": price_field_training_manager.list_runs(str(request.args.get("strategy", ""))),
+                           "protocol_version": 3}
+            elif action == "start":
+                outcome = {"run": price_field_training_manager.start(
+                    strategy_id=str(payload.get("strategy", "")), ticker=str(payload.get("ticker", "")),
+                    period=str(payload.get("period", "")), params=payload.get("params"),
+                    interval=str(payload.get("interval", "")), configuration=payload.get("configuration"),
+                )}
+            elif action == "stop":
+                outcome = {"run": price_field_training_manager.stop(str(payload.get("run_id", "")))}
+            else:
+                outcome = price_field_training_manager.delete(str(payload.get("run_id", "")))
+            response = jsonify({"success": True, **outcome})
+            if action == "start":
+                response.status_code = 202
+        except (ValueError, PriceFieldTrainingConflict) as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 409 if isinstance(exc, PriceFieldTrainingConflict) else 400
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Probability training action failed: %s", action)
+            response = jsonify({"success": False, "error": "The probability-model training action could not be completed."})
+            response.status_code = 500
+        return apply_no_store_headers(response)
+
+    def price_field_training_list_api():
+        return price_field_training_action("list")
+
+    def price_field_training_start_api():
+        return price_field_training_action("start")
+
+    def price_field_training_stop_api():
+        return price_field_training_action("stop")
+
+    def price_field_training_delete_api():
+        return price_field_training_action("delete")
 
     def settings_network_status_api():
         if request.args.get("refresh", "").strip() == "1":
@@ -9106,6 +9164,10 @@ def build_web_runtime() -> WebRuntime:
         lstm_training_start_api=lstm_training_start_api,
         lstm_training_stop_api=lstm_training_stop_api,
         lstm_training_delete_api=lstm_training_delete_api,
+        price_field_training_list_api=price_field_training_list_api,
+        price_field_training_start_api=price_field_training_start_api,
+        price_field_training_stop_api=price_field_training_stop_api,
+        price_field_training_delete_api=price_field_training_delete_api,
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,

@@ -1,6 +1,6 @@
 """Contract tests for alternative strategy implementations.
 
-Code version: v1.0.1
+Code version: v1.0.2
 """
 
 from __future__ import annotations
@@ -149,6 +149,7 @@ class StrategyVariantContractTests(unittest.TestCase):
         )
         changed.loc[future_start:, "High"] = changed.loc[future_start:, "Close"] * 1.02
         changed.loc[future_start:, "Low"] = changed.loc[future_start:, "Close"] * 0.98
+        changed.loc[future_start:, "Open"] = changed.loc[future_start:, "Close"]
         changed.loc[future_start:, "Volume"] *= 5.0
 
         for strategy_class in self.strategy_classes:

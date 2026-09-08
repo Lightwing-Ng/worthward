@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.11.3
+Code version: v0.11.4
 """
 
 from pathlib import Path
@@ -290,11 +290,10 @@ def test_backtest_boolean_switches_share_the_plain_switch_row_contract() -> None
     assert 'row_class="switch-row switch-row--plain trade-strategy-boolean-row"' in strategy_template
     assert ".trade-strategy-boolean-row .switch-label > span:not(.field-tooltip)" not in forms_css
 
-    broker_label_start = forms_css.index(
-        '.trade-strategy-param[data-strategy-param-key="use_broker_holding"] > label {'
-    )
-    broker_label_rule = forms_css[broker_label_start : forms_css.index("\n}", broker_label_start)]
-    assert "font-weight: var(--font-weight-medium);" in broker_label_rule
+    label_start = forms_css.index('.trade-strategy-param > label {')
+    label_rule = forms_css[label_start : forms_css.index("\n}", label_start)]
+    assert "font-weight: var(--font-weight-regular);" in label_rule
+    assert '.trade-strategy-param[data-strategy-param-key="use_broker_holding"] > label {' not in forms_css
 
 
 def test_backtest_chart_heading_uses_compact_regular_typography() -> None:
@@ -408,20 +407,14 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
         "    contain: layout paint;\n"
         "    overflow: hidden;\n"
     ) in trade_css
-    assert (
-        ".backtest-probability-detail-grid {\n"
-        "    position: absolute;\n"
-        "    top: 50%;\n"
-        "    left: 0;\n"
-        "    display: grid;\n"
-        "    box-sizing: border-box;\n"
-        "    align-content: stretch;\n"
-        "    justify-content: stretch;\n"
-        "    min-width: 0;\n"
-        "    min-height: 0;\n"
-        "    contain: strict;\n"
-        "    overflow: hidden;\n"
-    ) in trade_css
+    detail_start = trade_css.index(".backtest-probability-detail-grid {")
+    detail_rule = trade_css[detail_start : trade_css.index("\n}", detail_start)]
+    for declaration in (
+        "position: absolute;", "z-index: 1;", "top: 50%;", "left: 0;", "display: grid;",
+        "box-sizing: border-box;", "align-content: stretch;", "justify-content: stretch;",
+        "min-width: 0;", "min-height: 0;", "contain: strict;", "overflow: hidden;",
+    ):
+        assert declaration in detail_rule
 
     assert "var(--accent-scrollbar)" not in scroll_contract
     assert ".trade-chart-stack.has-probability-scroll {" not in trade_css
@@ -715,7 +708,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.30.0",
+        "-backtest-probability-grid-v0.31.0",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
         "-backtest-layout-v0.4.0",
     ):

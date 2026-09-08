@@ -1,0 +1,66 @@
+"""Opt-in research experiments with no strategy registration. Code version: v0.1.0."""
+
+EXPERIMENTS = (
+    {
+        "id": "regime-radar",
+        "title": "Regime Radar",
+        "icon": "icon-settings-network",
+        "description": "Read the market's current texture before choosing a model.",
+        "question": "Is this a trend, a volatility expansion, or a drawdown recovery?",
+        "method": "Compare trailing trend, realized volatility, and drawdown using local daily closes.",
+        "limitation": "Descriptive indicators do not establish hidden regimes or predict a transition.",
+        "interactive": True,
+    },
+    {
+        "id": "analog-explorer",
+        "title": "Analog Explorer",
+        "icon": "icon-settings-store",
+        "description": "Find earlier price paths that resemble the latest chapter.",
+        "question": "When history looked like this, what happened next?",
+        "method": "Rank 20-close log-price shapes; inspect fully observed, non-overlapping 20-session continuations.",
+        "limitation": "Selected analogs are historical examples, not calibrated probabilities or forecasts.",
+        "interactive": True,
+    },
+    {
+        "id": "stress-lab",
+        "title": "Stress Lab",
+        "icon": "icon-settings-broker",
+        "description": "Replay the uncomfortable windows that averages conceal.",
+        "question": "What would the worst observed 5-, 20-, or 60-session shock look like?",
+        "method": "Inspect minimum close-to-close window returns and the worst 20-session historical path.",
+        "limitation": "One instrument's past shocks omit liquidity, leverage, correlations, and unobserved crises.",
+        "interactive": True,
+    },
+    {
+        "id": "robustness-lab",
+        "title": "Robustness Lab",
+        "icon": "icon-settings-style-tokens",
+        "description": "Make start-date luck and holding-period sensitivity visible.",
+        "question": "How much does a simple holding outcome depend on when it began?",
+        "method": "Compare every fully observed rolling 5-, 20-, and 60-session price return.",
+        "limitation": "Overlapping windows are dependent; this is a holding diagnostic, not strategy validation.",
+        "interactive": True,
+    },
+    {
+        "id": "thesis-lab",
+        "title": "Thesis Lab",
+        "icon": "icon-settings-strategies",
+        "description": "Turn an attractive story into a falsifiable research brief.",
+        "question": "What observation would make you abandon this thesis?",
+        "method": "Write the mechanism, observable evidence, competing explanation, and failure condition before testing.",
+        "limitation": "A structured brief organizes reasoning; it does not independently verify evidence.",
+        "interactive": False,
+    },
+    {
+        "id": "research-frontier",
+        "title": "Research Frontier",
+        "icon": "icon-settings-about",
+        "description": "Explore the next experiments and the evidence needed to earn them.",
+        "question": "Which frontier idea deserves a small, falsifiable experiment next?",
+        "method": "Connect emerging research to existing local data and define a bounded validation step.",
+        "limitation": "Research directions are proposals until their data, implementation, and evaluation exist.",
+        "interactive": False,
+    },
+)
+
+EXPERIMENT_BY_ID = {experiment["id"]: experiment for experiment in EXPERIMENTS}

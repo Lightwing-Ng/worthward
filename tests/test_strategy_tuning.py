@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.1.0."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.1.2."""
 
 from dataclasses import replace
 import json
@@ -56,6 +56,7 @@ def test_every_strategy_uses_real_execution_engines_on_isolated_factory_data(
         for ticker in tickers
     ]
     for frame in frames:
+        frame["Volume"] = 1_000_000.0
         frame.attrs["market_data_source"] = strategy.strategy_market_data_source
     if strategy.strategy_market_data_source != "default":
         monkeypatch.setattr(
@@ -70,7 +71,8 @@ def test_every_strategy_uses_real_execution_engines_on_isolated_factory_data(
                 if definition.group == "factors"
             }
         )
-        params.update({"training_window": 30, "compute_backend": "CPU"})
+        window = next(definition for definition in strategy.get_parameter_definitions() if definition.key == "training_window")
+        params.update({"training_window": max(30, window.minimum or 0), "compute_backend": "CPU"})
     session = ResearchSession(
         ResearchRequest(
             entry["id"], tickers, "2025-01-02", "2026-01-02", params=params

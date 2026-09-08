@@ -5,7 +5,7 @@
  * This module owns geometry, cells, opacity, and the pure pin reducer.
  * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.30.0
+ * Code version: v0.31.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -133,6 +133,25 @@
             : [];
         if (!predictiveMean.length || predictiveMean.length !== predictiveScale.length) return null;
         if (expected.length !== null && predictiveMean.length !== expected.length) return null;
+        const directHorizons = value.distribution_kind === "direct-normal-horizon";
+        const normalizeHorizonSeries = (rows, positive) => {
+            if (!Array.isArray(rows) || rows.length !== predictiveMean.length) return null;
+            const normalized = rows.map((row) => Array.isArray(row) && row.length === DEFAULT_COLUMN_COUNT
+                ? row.map((item) => {
+                    const number = finiteOrNull(item);
+                    return number !== null && (!positive || number > 0) ? number : null;
+                }) : null);
+            return normalized.some((row) => row === null) ? null : normalized;
+        };
+        const horizonMean = directHorizons ? normalizeHorizonSeries(value.horizon_predictive_mean, false) : null;
+        const horizonStd = directHorizons ? normalizeHorizonSeries(value.horizon_predictive_std, true) : null;
+        if (directHorizons && (Number(value.max_horizon) !== DEFAULT_COLUMN_COUNT
+            || !horizonMean || !horizonStd
+            || predictiveMean.some((mean, index) => mean !== null && (
+                horizonMean[index].some((item) => item === null)
+                || horizonStd[index].some((item) => item === null)
+                || horizonMean[index][0] !== mean || horizonStd[index][0] !== predictiveScale[index]
+            )))) return null;
         const usesDynamicReturnState = String(value.multi_step_kind || "")
             === "causal-ar1-return-state";
         const normalizeStateSeries = (rawValues, fallbackBuilder, validator) => {
@@ -224,6 +243,7 @@
             return_autoregression: returnAutoregression,
             return_long_run_mean: returnLongRunMean,
             return_innovation_scale: returnInnovationScale,
+            ...(directHorizons ? {horizon_predictive_mean: horizonMean, horizon_predictive_std: horizonStd} : {}),
             ...(hasDataKeys ? {data_keys: dataKeys} : {}),
         });
     };
@@ -652,6 +672,9 @@
         autoregression = 0,
         longRunMean = 0,
         innovationScale = scale,
+        horizonMean,
+        horizonStd,
+        maxHorizon = null,
         stepPixels,
         valueForPixel,
         opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
@@ -690,6 +713,9 @@
                     + (visualColumn * slotWidth);
                 const centerX = x + (geometry.cellSize / 2);
                 const horizon = (visualColumn + 1) * daysPerColumn;
+                // Untrained horizons remain empty; they must never look like a
+                // zero-probability forecast or an autoregressive extension.
+                if (Number.isInteger(maxHorizon) && horizon > maxHorizon) continue;
                 const probability = distribution.probabilityBetweenPrices({
                     anchorPrice,
                     lowerPrice,
@@ -700,6 +726,8 @@
                     autoregression,
                     longRunMean,
                     innovationScale,
+                    horizonMean,
+                    horizonStd,
                 });
                 if (!Number.isFinite(probability) || probability < 0 || probability > 1) return [];
                 cells.push({
@@ -913,7 +941,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.30.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.31.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

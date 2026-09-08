@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.80.1`
+Documentation version: `v1.83.0`
 
 ## Shared Backtest controls and research
 
@@ -53,6 +53,29 @@ window. For mixed-frequency execution, pre-range intents are removed before the
 daily-to-minute bridge. Prediction eligibility is checked on the scored dates
 before bridging, and model provenance survives the bridge. Predictions that exist
 only in warmup cannot make an otherwise unavailable validation/holdout eligible.
+
+## Direct-horizon neural Price Fields
+
+PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT are discovered strategies using
+one `NeuralPriceFieldStrategy`, causal input layer, Torch engine, and scorer.
+They predict 1–20 session close-return marginals directly and share the existing
+renderer through its direct-horizon distribution adapter. The declared
+`neural-price-field-v1` capability connects them to one strategy-scoped training
+manager and the existing training controller. The [neural research contract](NEURAL_PRICE_FIELD_RESEARCH.md)
+owns model evidence, factor timing, probability-score interpretation, runtime
+selection, and frozen validation boundaries. Legacy LSTM and Bayesian numerical
+contracts remain separate.
+
+The immutable `neural_price_field_registry.py` catalog owns architecture identity
+and bounded research domains. `FrontierPriceFieldStrategy` narrows width defaults
+for the four additional architectures while inheriting the complete existing
+strategy contract. Their independently implemented cores live in
+`neural_price_field_models.py` and `neural_price_field_tft.py`; dispatch preserves
+the original four model construction paths. A new research process must explicitly
+select its strategy group. The coordinator defaults to the original four and can
+run CPU-only search, replicated validation, and reporting without creating a GPU
+worker. It scales its final-evaluation reserve to the group, backend, and worker
+count. Existing frozen experiments retain their own source and protocol version.
 
 ## Exact-configuration LSTM training
 
@@ -398,6 +421,14 @@ network-free. The cross-project naming, schema, result, effects, security, evalu
 rules live in `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`; project-specific routes and
 evidence live in [AGENT_OPTIMIZATION.md](AGENT_OPTIMIZATION.md).
 
+## Beta module boundary
+
+`app/beta` registers a separate optional Blueprint, with its own presentation
+context, registry, bounded read-only daily-cache analysis, and scoped assets.
+It has no strategy registration, training lifecycle, market refresh, or broker
+mutation path. See [Beta research laboratory](BETA_LAB.md) for its removal
+switch, numeric interpretation, and browser-only draft storage.
+
 ## Canonical navigation
 
 ```text
@@ -411,6 +442,8 @@ Workspace
 Trade
   Investment         /trade/investment
   Live trading       /trade/live-trading
+
+Beta                 /beta/<experiment>
 
 Settings             /settings/<section>
 

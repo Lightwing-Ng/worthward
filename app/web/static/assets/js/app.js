@@ -1,4 +1,4 @@
-/* Code version: v0.53.1 */
+/* Code version: v0.53.2 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -43,7 +43,7 @@
         accumulator[MONTH_LABELS[index].toLowerCase()] = index;
         return accumulator;
     }, {});
-    const THEME_MODE_STORAGE_KEY = "worthward:theme-mode";
+    const THEME_MODE_STORAGE_KEY = state.currentView === "beta" ? "worthward:beta:v1:theme-mode" : "worthward:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
     const isBacktestView = state.currentView === "backtest";
     const isDcaView = state.currentView === "dca";
@@ -128,7 +128,7 @@
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "worthward:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
-    const SIDEBAR_MEMORY_KEY = "worthward:sidebar-open";
+    const SIDEBAR_MEMORY_KEY = state.currentView === "beta" ? "worthward:beta:v1:sidebar-open" : "worthward:sidebar-open";
     const TRADE_DETAIL_MEMORY_KEY = "worthward:trade-detail-tab";
     const STRATEGY_MEMORY_KEY = "worthward:recent-strategies";
     const BACKTEST_STRATEGY_PARAMS_MEMORY_KEY = "worthward:backtest-strategy-params:v1";
@@ -1159,9 +1159,9 @@
 
     const syncDockPreviewTarget = (targetDockGroup) => {
         if (!targetDockGroup) return;
-        const dockGroupByIndex = ["workspace", "trade", "settings"];
-        $$(".sidebar-dock-item").forEach((link, index) => {
-            const isTarget = dockGroupByIndex[index] === targetDockGroup;
+        $$(".sidebar-dock-item").forEach((link) => {
+            const group = link.dataset.dockGroup || resolveDockGroupFromView(resolveViewFromUrl(link.href));
+            const isTarget = group === targetDockGroup;
             link.classList.toggle("is-active", isTarget);
             if (isTarget) {
                 link.setAttribute("aria-current", "page");
@@ -1334,7 +1334,8 @@
 
     const readSidebarMemory = () => {
         try {
-            const storedValue = preferenceStorage.session.getItem(SIDEBAR_MEMORY_KEY);
+            const storedValue = preferenceStorage.session.getItem(SIDEBAR_MEMORY_KEY)
+                ?? (state.currentView === "beta" ? preferenceStorage.session.getItem("worthward:sidebar-open") : null);
             if (storedValue === "true") return true;
             if (storedValue === "false") return false;
         } catch (_error) {
@@ -2721,7 +2722,7 @@
     };
 
     const rememberCurrentViewUrl = (url = window.location.pathname + window.location.search) => {
-        if (!state.currentView) return;
+        if (!state.currentView || state.currentView === "beta") return;
         const memory = readViewMemory();
         const sanitizedUrl = sanitizeRememberedUrl(url);
         memory[state.currentView] = sanitizedUrl;
@@ -2756,9 +2757,9 @@
     };
 
     const attachDockMemory = () => {
-        const dockGroupByIndex = ["workspace", "trade", "settings"];
-        $$(".sidebar-dock-item").forEach((link, index) => {
-            const targetDockGroup = dockGroupByIndex[index];
+        $$(".sidebar-dock-item").forEach((link) => {
+            const targetDockGroup = link.dataset.dockGroup || resolveDockGroupFromView(resolveViewFromUrl(link.href));
+            if (targetDockGroup === "beta") return;
             if (!targetDockGroup || link.dataset.boundDockMemory === "1") return;
             link.dataset.boundDockMemory = "1";
             link.addEventListener("click", (event) => {
@@ -4323,7 +4324,8 @@
 
     const readThemeModePreference = () => {
         try {
-            const stored = preferenceStorage.local.getItem(THEME_MODE_STORAGE_KEY);
+            const stored = preferenceStorage.local.getItem(THEME_MODE_STORAGE_KEY)
+                ?? (state.currentView === "beta" ? preferenceStorage.local.getItem("worthward:theme-mode") : null);
             return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
         } catch (_error) {
             return "system";

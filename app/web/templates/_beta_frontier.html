@@ -1,0 +1,71 @@
+{# Code version: v0.1.0 #}
+{% set frontiers = [
+    {
+        'title': 'A market that knows when it is unfamiliar',
+        'tag': 'Distribution shift',
+        'question': 'Does a change in the distribution of returns identify periods when a price forecast should abstain?',
+        'idea': 'Compare recent return distributions with earlier regimes, then test whether unfamiliar periods deserve wider uncertainty or no forecast.',
+        'next': 'Freeze a chronological holdout. Compare forecast calibration inside and outside unfamiliar regimes, using only information available at each decision.',
+        'source': 'KASPER · 2025', 'url': 'https://arxiv.org/abs/2507.18983',
+        'status': 'Regime Radar provides descriptive inputs; learned regime detection is a research direction.'
+    },
+    {
+        'title': 'Search history by shape, then challenge the resemblance',
+        'tag': 'Time-series retrieval',
+        'question': 'Do historical analogs remain informative after matching volatility and excluding overlapping episodes?',
+        'idea': 'Retrieve earlier price paths like a visual search engine, then expose where their outcomes disagree.',
+        'next': 'Compare shape-only retrieval with volatility-matched retrieval and a random historical baseline. Keep every candidate outcome before the query window.',
+        'source': 'STUMPY · Pattern matching', 'url': 'https://stumpy.readthedocs.io/en/stable/Tutorial_Pattern_Matching.html',
+        'status': 'Analog Explorer uses bounded distance matching; a full Matrix Profile is not installed.'
+    },
+    {
+        'title': 'Build a wind tunnel for an investment thesis',
+        'tag': 'Generative stress testing',
+        'question': 'Which plausible combinations of gaps, volatility, and delayed recovery would invalidate a strategy thesis?',
+        'idea': 'Start with historical adverse paths. A later experiment can retrieve stress episodes and condition a market simulator on explicit assumptions.',
+        'next': 'Define loss and liquidity limits first. Test historical replay and block resampling before adding a learned simulator.',
+        'source': 'Financial Wind Tunnel · 2025', 'url': 'https://arxiv.org/abs/2503.17909',
+        'status': 'Stress Lab currently provides historical windows and an explicit one-step shock calculator.'
+    },
+    {
+        'title': 'Make disagreement a first-class research output',
+        'tag': 'Research agents',
+        'question': 'Can a skeptic with access to disconfirming evidence improve a research proposal before any model training begins?',
+        'idea': 'Give a proponent, skeptic, and experimenter distinct responsibilities and require them to cite the evidence that could change their view.',
+        'next': 'Use the Thesis Lab brief with your chosen agent. Compare the original proposal with the revised falsification test and retain both records.',
+        'source': 'FinCom · 2026', 'url': 'https://arxiv.org/abs/2606.00939',
+        'status': 'Thesis Lab prepares a structured brief. It does not run or contact agents.'
+    },
+    {
+        'title': 'Find results that survive a change of starting point',
+        'tag': 'Selection bias',
+        'question': 'How much of a strong historical result depends on its selected entry date or a small number of exceptional sessions?',
+        'idea': 'Look across starting dates before trusting the most attractive slice of a backtest.',
+        'next': 'Predeclare the strategy family and chronological test windows. Compare start-date sensitivity, turnover, and transaction-cost assumptions.',
+        'source': 'The Probability of Backtest Overfitting', 'url': 'https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf',
+        'status': 'Robustness Lab measures holding-window sensitivity; it does not estimate a strategy’s overfitting probability.'
+    },
+    {
+        'title': 'Keep the mechanism separate from the correlation',
+        'tag': 'Causal refutation',
+        'question': 'Which alternative explanation could produce the same observed association, and what additional evidence would distinguish it?',
+        'idea': 'Write the claimed mechanism, then construct placebo and refutation checks before attaching a causal explanation to a price pattern.',
+        'next': 'List potential confounders and required point-in-time data. Design a negative control and explicitly state the identification assumptions.',
+        'source': 'PyWhy DoWhy · Refutation', 'url': 'https://www.pywhy.org/dowhy/v0.14/user_guide/refuting_causal_estimates/index.html',
+        'status': 'This is a research brief direction. OHLC correlations alone do not identify causal effects.'
+    }
+] %}
+<p class="beta-caption">A curated research map, reviewed 7 Sep 2026. Each direction includes a concrete next experiment and its current implementation boundary.</p>
+{% for item in frontiers %}
+<article class="report-card workspace-content-card beta-frontier-card">
+    <span class="beta-eyebrow">{{ item.tag }}</span>
+    <h3>{{ item.title }}</h3>
+    <p>{{ item.idea }}</p>
+    <p>Next experiment: {{ item.next }}</p>
+    <p class="beta-caption">{{ item.status }}</p>
+    <div class="beta-frontier-footer">
+        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.source }} ↗</a>
+        <a class="secondary-button" href="{{ url_for('beta.page', experiment='thesis-lab', hypothesis=item.question) }}">Develop this thesis</a>
+    </div>
+</article>
+{% endfor %}

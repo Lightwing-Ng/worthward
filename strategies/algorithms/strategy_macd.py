@@ -1,10 +1,12 @@
 """
 MACD crossover strategy.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
+
+import math
 
 import pandas as pd
 
@@ -58,15 +60,36 @@ class MacdStrategy(BaseStrategy):
 
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
         frame = dataset.copy()
-        normalized_params = self.normalize_params(params)
+        checked_params = dict(params or {})
+        for key in ("fast_span", "slow_span", "signal_span"):
+            raw = checked_params.get(key)
+            if raw is not None:
+                try:
+                    numeric = float(raw)
+                    finite = math.isfinite(numeric) and numeric.is_integer()
+                except (TypeError, ValueError, OverflowError):
+                    finite = False
+                if not finite:
+                    raise ValueError(f"{key} must be a finite integer.")
+                checked_params[key] = int(numeric)
+        normalized_params = self.normalize_params(checked_params)
         fast_span = int(normalized_params["fast_span"])
         slow_span = int(normalized_params["slow_span"])
         signal_span = int(normalized_params["signal_span"])
+        if fast_span >= slow_span:
+            raise ValueError("Fast EMA must be shorter than Slow EMA.")
+        if "Close" not in frame:
+            raise ValueError("MACD requires observed Close prices.")
+        close = pd.to_numeric(frame["Close"], errors="coerce")
+        if close.isna().any() or not close.map(lambda value: math.isfinite(value) and value > 0).all():
+            raise ValueError("MACD requires finite positive Close prices.")
 
-        ema_fast = frame["Close"].ewm(span=fast_span, adjust=False).mean()
-        ema_slow = frame["Close"].ewm(span=slow_span, adjust=False).mean()
+        ema_fast = close.ewm(span=fast_span, adjust=False, min_periods=fast_span).mean()
+        ema_slow = close.ewm(span=slow_span, adjust=False, min_periods=slow_span).mean()
         frame["macd_line"] = ema_fast - ema_slow
-        frame["signal_line"] = frame["macd_line"].ewm(span=signal_span, adjust=False).mean()
+        frame["signal_line"] = frame["macd_line"].ewm(
+            span=signal_span, adjust=False, min_periods=signal_span,
+        ).mean()
 
         previous_macd = frame["macd_line"].shift(1)
         previous_signal = frame["signal_line"].shift(1)
@@ -83,4 +106,5 @@ class MacdStrategy(BaseStrategy):
             frame=frame,
             buy_signal_column="buy_signal",
             sell_signal_column="sell_signal",
+            required_execution_mode="next_open",
         )

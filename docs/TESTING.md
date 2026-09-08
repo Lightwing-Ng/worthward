@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.51.0`
+Documentation version: `v1.51.1`
 
 ## Current workflow
 
@@ -300,12 +300,22 @@ Playwright starts a dedicated app server on `127.0.0.1:8699` through
 `scripts/run_e2e_app.sh`. The launcher copies only Git-tracked bundled logo
 assets that still exist in the working tree, then builds fixed daily,
 one-minute, profile, and market-cap fixtures inside
-`test-results/runtime-store`. It points both application stores at that isolated
-runtime and disables remote market access for the process. Browser checks
+`test-results/runtime-store`. It points the market store, settings store, and
+`WORTHWARD_COMPUTE_ROOT` at that isolated runtime, overriding any inherited
+compute root, and disables remote market access for the process. Both LSTM and
+neural Price Field training histories therefore stay outside the user's compute
+workspace. Browser checks
 therefore use the same deterministic history on local machines and clean GitHub
 runners without reading or copying production Parquet stores. Normal manual
 launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
+
+Pure layout tests intercept asynchronous training history with a stable empty
+response before navigation. Training-history lifecycle tests own their separate
+fixtures; a delayed history response must not alter a layout test's baseline.
+`tests/test_e2e_locking.py` executes the real launcher against isolated probes,
+verifies all three roots at seeding and application startup, and checks that
+cleanup preserves an unrelated inherited compute directory byte-for-byte.
 
 When remote access is disabled, both Price Field strategies load their daily
 OHLCV model input from that existing local store and mark Longbridge-only
