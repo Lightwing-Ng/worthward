@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.1.0 */
+/* Neural Price Field UI integration. Code version: v1.1.2 */
 import {expect, test} from '@playwright/test';
 
 const architectures = ['patchtst', 'tsmixer', 'nhits', 'timexer'];
@@ -62,11 +62,11 @@ test('completed probability history is model-scoped and restores its exact saved
         queries.push(new URL(route.request().url()).searchParams.get('strategy'));
         await route.fulfill({json: {success: true, protocol_version: 3, runs}});
     });
-    await page.goto(urlFor('tsmixer'));
+    await page.goto(urlFor('nhits'));
     const configuration = await page.evaluate(() => {
         const form = document.querySelector('[data-backtest-parameter-form]');
         const field = (name) => form.querySelector(`[name="${name}"]:checked`) || form.querySelector(`[name="${name}"]`);
-        return {strategy: 'tsmixer-price-field', ticker: 'NVDA', period: '2y', interval: '1d',
+        return {strategy: 'nhits-price-field', ticker: 'NVDA', period: '2y', interval: '1d',
             range: field('range').value, from: field('from').value, to: field('to').value,
             initial_capital: Number(field('capital').value.replaceAll(',', '')),
             price_only: field('price_only').checked, reinvest_dividends: field('dividends').checked,
@@ -75,23 +75,28 @@ test('completed probability history is model-scoped and restores its exact saved
                 (input) => [input.name, input.type === 'checkbox' ? input.checked : input.value],
             ))};
     });
-    const completed = {id: 'price-field-bbbbbbbbbbbbbbbbbbbbbbbb', strategy: 'tsmixer-price-field',
+    const completed = {id: 'price-field-bbbbbbbbbbbbbbbbbbbbbbbb', strategy: 'nhits-price-field',
         ticker: 'NVDA', period: '2y', interval: '1d', started_at: '2026-09-07T00:00:00Z',
         status: 'completed', active: false, probability_score_pct: 55.21,
         probability_score_label: 'Complete-grid probability score', configuration, files: [],
         device: {resolved: 'mps', optimizer_steps: 1200, train_ms: 1250, infer_ms: 240}};
-    runs = [completed, {...completed, id: 'price-field-cccccccccccccccccccccccc', strategy: 'nhits-price-field', ticker: 'QQQ'}];
+    runs = [completed, {...completed, id: 'price-field-cccccccccccccccccccccccc', strategy: 'tsmixer-price-field', ticker: 'QQQ'}];
     const menu = page.locator('[data-lstm-training-menu]');
     await expect(menu.locator('.lstm-training-history-select')).toHaveCount(1, {timeout: 10_000});
     await expect(menu.locator('.lstm-training-accuracy')).toHaveText('55.21%');
     await expect(menu.locator('.lstm-training-accuracy')).toHaveAttribute('title', 'Complete-grid probability score');
+    await page.evaluate(() => { window.__savedConfigurationDocument = true; });
     await menu.locator('.lstm-training-history-select').click();
     await expect(page).toHaveURL(/price_field_training_run=price-field-bbbbbbbbbbbbbbbbbbbbbbbb/);
+    await expect.poll(() => page.evaluate(() => Boolean(window.__savedConfigurationDocument))).toBe(false);
     await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('label[for="backtest_history_probability"] span')).toHaveText('Price field');
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').count()).toBeGreaterThan(0);
     await menu.locator('.lstm-training-history-select').click();
     await expect(menu.locator('.lstm-training-history-details')).toContainText('Backend mps · 1,200 optimizer steps · 1.25 s training · 0.24 s inference');
-    expect(queries.every((strategy) => strategy === 'tsmixer-price-field')).toBe(true);
-    await page.goto(urlFor('nhits'));
+    expect(queries.every((strategy) => strategy === 'nhits-price-field')).toBe(true);
+    await page.goto(urlFor('tsmixer'));
     await expect(menu.locator('.lstm-training-history-select')).toHaveCount(1);
     await expect(menu.locator('.lstm-training-history-run')).toHaveText('QQQ');
     await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'false');

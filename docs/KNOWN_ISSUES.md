@@ -72,9 +72,11 @@ head and uses 4px inline and zero bottom body padding. Training history entries
 use zero padding around a 32px selection control while retaining the 36px compact
 row minimum. Factor subgroup summaries append the checked count in plain
 parentheses. LSTM backend and factor changes are staged for durable training and
-do not recalculate the current backtest; selecting a completed case applies its
-configuration. Expanded details retain natural height. The selection focus ring
-aligns with the Training history heading.
+do not recalculate the current backtest; selecting a completed case always
+navigates through its saved configuration and recalculates the probability
+field, including when the displayed controls already match that case. Expanded
+details retain natural height. The selection focus ring aligns with the Training
+history heading.
 See [Longbridge factor audit](LONGBRIDGE_FACTOR_AUDIT.md) for current CLI gaps.
 
 Overview tooltip coverage, 7 Sep 2026: historical realized P&L requires complete
@@ -157,7 +159,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.248.0`
+Documentation version: `v1.248.1`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

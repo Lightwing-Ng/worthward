@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.14.0
+Code version: v0.14.1
 """
 
 from pathlib import Path
@@ -754,7 +754,7 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         assert fragment in probability_field_partial
         assert fragment in pending_app
     for fragment in (
-        '"value": "probability", "label": "Price Field"',
+        '"value": "probability", "label": "Price field"',
         'data-option-count="',
     ):
         assert fragment in backtest_template

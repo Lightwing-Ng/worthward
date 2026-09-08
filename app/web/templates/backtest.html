@@ -1,4 +1,4 @@
-{# Code version: v0.9.0 #}
+{# Code version: v0.9.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -91,7 +91,7 @@
                     ] %}
                     {% if show_probability_field %}
                     {% set history_view_options = history_view_options + [
-                        {"id": "backtest_history_probability", "value": "probability", "label": "Price Field"}
+                        {"id": "backtest_history_probability", "value": "probability", "label": "Price field"}
                     ] %}
                     {% endif %}
                     {% set history_view_options = history_view_options + [

@@ -1,4 +1,4 @@
-/* Code version: v0.61.0 */
+/* Code version: v0.61.1 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -2125,7 +2125,7 @@
                             <div class="segmented-control segmented-control--compact investment-view-segmented backtest-history-view-segmented"
                                  id="backtest_history_view_segmented" data-backtest-history-view-segmented data-active="${showBacktestTradeDetails ? "transactions" : "metrics"}" data-option-count="${showBacktestProbabilityField ? "3" : "2"}" data-segmented-pill="measured" data-segmented-overflow-mode="peek">
                                 <label class="segmented-control-option" for="backtest_history_metrics"><input id="backtest_history_metrics" name="backtest_history_view_tab" type="radio" value="metrics"${showBacktestTradeDetails ? "" : " checked"}><span>Metrics</span></label>
-                                ${showBacktestProbabilityField ? '<label class="segmented-control-option" for="backtest_history_probability"><input id="backtest_history_probability" name="backtest_history_view_tab" type="radio" value="probability"><span>Price Field</span></label>' : ""}
+                                ${showBacktestProbabilityField ? '<label class="segmented-control-option" for="backtest_history_probability"><input id="backtest_history_probability" name="backtest_history_view_tab" type="radio" value="probability"><span>Price field</span></label>' : ""}
                                 <label class="segmented-control-option" for="backtest_history_transactions" data-backtest-history-transactions-option${showBacktestTradeDetails ? "" : " aria-disabled=\"true\""}><input id="backtest_history_transactions" name="backtest_history_view_tab" type="radio" value="transactions" data-backtest-history-transactions${showBacktestTradeDetails ? " checked" : " disabled"}><span>Transactions</span></label>
                             </div>
                         </div>
@@ -2144,7 +2144,7 @@
                                  hidden
                                  aria-hidden="true">
                             <div class="backtest-probability-detail-heading">
-                                <p class="chart-heading" id="backtest_probability_detail_title">${state.selectedStrategyId === "lstm-price-field" ? "LSTM Price Field detail" : "Bayesian Price Field detail"}</p>
+                                <p class="chart-heading" id="backtest_probability_detail_title">Price field detail</p>
                                 <div class="backtest-probability-detail-status-row">
                                     <p class="backtest-probability-detail-status" data-backtest-probability-detail-status aria-live="polite">
                                         Hover a price point to inspect its forecast field.

@@ -1,4 +1,4 @@
-/* Code version: v0.12.0 */
+/* Code version: v0.12.1 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -140,10 +140,6 @@
         const config = run.configuration;
         if (!config || run.status !== "completed") return false;
         saveSelection({id: run.id, configuration: config});
-        if (configurationMatches(config)) {
-            window.history.replaceState(window.history.state, "", configurationUrl(config));
-            return false;
-        }
         applyingRunId = run.id;
         const workspace = document.getElementById("workspace_panel");
         if (workspace) workspace.dataset.workspacePending = "1";

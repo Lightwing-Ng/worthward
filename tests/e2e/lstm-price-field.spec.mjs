@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.15.7 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.15.8 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -244,6 +244,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await expect(page.locator('#trade_strategy')).toHaveValue('lstm-price-field');
     await expect(page.locator('#trade_strategy option[value="lstm-price-field"]')).toHaveText('LSTM Price Field');
     await expect(page.locator('#backtest_history_probability')).toHaveCount(1);
+    await expect(page.locator('label[for="backtest_history_probability"] span')).toHaveText('Price field');
     await expect(page.locator('input[name="lstm_lookback"]')).toHaveCount(1);
     await expect(page.locator('input[name="prior_strength"]')).toHaveCount(0);
 
@@ -267,7 +268,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.32.0');
     expect(desktop.backtestScript).toContain('backtest-v0.41.2');
-    expect(desktop.appScript).toContain('app-v0.61.0');
+    expect(desktop.appScript).toContain('app-v0.61.1');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
