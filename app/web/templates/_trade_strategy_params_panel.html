@@ -1,17 +1,53 @@
-{# Code version: v0.6.0 #}
+{# Code version: v0.8.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% set has_actions = strategy_form_sections|selectattr("kind", "equalto", "action")|list|length > 0 %}
 {% for section in strategy_form_sections %}
-    {% call render_collapse(section.title, section.key, "", section.kind == "action" or (loop.first and not has_actions), "strategy-parameter-collapse") %}
+    {% call render_collapse(section.title, section.key, "", section.kind == "action" or (loop.first and not has_actions), "strategy-parameter-collapse" ~ (" strategy-parameter-collapse--action" if section.kind == "action" else "")) %}
         {% if section.kind == "action" %}
+            {% with strategy_form_fields=section.fields %}
+                {% include "_trade_strategy_param_grid.html" %}
+            {% endwith %}
         <div class="strategy-action-slot" data-strategy-action-slot="{{ section.slot }}"></div>
         {% else %}
             {% for subgroup in section.subgroups %}
                 {% if subgroup.title %}
-                    {% call render_collapse(subgroup.title, section.key ~ "-" ~ loop.index, "", false, "strategy-factor-group") %}
+                    {% set subgroup_enabled_count = subgroup.fields|selectattr("switch_checked")|list|length %}
+                    {% set subgroup_summary = subgroup.title ~ (" (" ~ subgroup_enabled_count ~ ")" if subgroup_enabled_count else "") %}
+                    {% call render_collapse(subgroup_summary, section.key ~ "-" ~ loop.index, "", false, "strategy-factor-group") %}
+                        {% set allocation_primary = subgroup.fields|selectattr("ui_role", "equalto", "allocation-primary")|list %}
+                        {% set allocation_leveraged = subgroup.fields|selectattr("ui_role", "equalto", "allocation-leveraged")|list %}
+                        {% if allocation_primary and allocation_leveraged %}
+                        <div class="strategy-allocation-range"
+                             data-strategy-allocation-range
+                             style="--allocation-primary: {{ allocation_primary[0].value }}%; --allocation-invested: {{ allocation_primary[0].value|float + allocation_leveraged[0].value|float }}%;">
+                            <div class="strategy-allocation-labels" aria-live="polite">
+                                <span data-allocation-primary-label>Ticker 1</span>
+                                <span data-allocation-leveraged-label>Ticker 2</span>
+                                <span data-allocation-cash-label>Cash</span>
+                            </div>
+                            <div class="strategy-allocation-track-shell">
+                                <div class="strategy-allocation-track" aria-hidden="true"></div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.1"
+                                       value="{{ allocation_primary[0].value }}" data-allocation-boundary="primary"
+                                       aria-label="Ticker 1 allocation boundary">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.1"
+                                       value="{{ allocation_primary[0].value|float + allocation_leveraged[0].value|float }}"
+                                       data-allocation-boundary="invested" aria-label="Ticker 2 and cash boundary">
+                            </div>
+                            <div class="trade-strategy-param" data-strategy-param-key="{{ allocation_primary[0].key }}" data-strategy-param-kind="number" hidden>
+                                <input type="hidden" name="{{ allocation_primary[0].key }}" value="{{ allocation_primary[0].value }}"
+                                       data-strategy-param-input="number" data-default="{{ allocation_primary[0].default }}">
+                            </div>
+                            <div class="trade-strategy-param" data-strategy-param-key="{{ allocation_leveraged[0].key }}" data-strategy-param-kind="number" hidden>
+                                <input type="hidden" name="{{ allocation_leveraged[0].key }}" value="{{ allocation_leveraged[0].value }}"
+                                       data-strategy-param-input="number" data-default="{{ allocation_leveraged[0].default }}">
+                            </div>
+                        </div>
+                        {% else %}
                         {% with strategy_form_fields=subgroup.fields %}
                             {% include "_trade_strategy_param_grid.html" %}
                         {% endwith %}
+                        {% endif %}
                     {% endcall %}
                 {% else %}
                     {% with strategy_form_fields=subgroup.fields %}

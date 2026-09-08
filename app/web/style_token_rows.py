@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.18.2
+Code version: v1.19.0
 """
 
 from __future__ import annotations
@@ -672,13 +672,13 @@ def build_style_token_rows(
             "tokens": [
                 material_reference_token("--workspace-modal-material", "Frosted glass"),
                 raw_token("--workspace-modal-radius", "var(--radius-panel)"),
-                px_token("--workspace-modal-pad-block", 18),
-                px_token("--workspace-modal-pad-inline", 18),
-                px_token("--workspace-modal-close-offset", 10),
+                px_token("--workspace-modal-pad-block", 12),
+                px_token("--workspace-modal-pad-inline", 12),
+                px_token("--workspace-modal-close-offset", 12),
                 px_token("--workspace-modal-icon-size", 36),
                 px_token("--workspace-modal-column-gap", 12),
                 px_token("--workspace-modal-row-gap", 4),
-                px_token("--workspace-modal-title-margin-end", 32),
+                px_token("--workspace-modal-title-margin-end", 0),
             ],
             "related_styles": [],
         },

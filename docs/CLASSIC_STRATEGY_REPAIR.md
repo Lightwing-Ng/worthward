@@ -1,12 +1,15 @@
 # Classic strategy signal and execution contract
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.3.0`
 
-The 7 Sep 2026 repair covers the two MACD variants, two SuperTrend variants,
-two kNN variants, three Lorentzian variants, DCA, and Leveraged Rotation.
+The 7 Sep 2026 repair covered MACD, SuperTrend, kNN, Lorentzian, DCA, and
+Leveraged Rotation. On 8 Sep 2026, the duplicate MACD (Gemini), kNN Machine
+Learning (Gemini), Lorentzian Classification (Gemini), Lorentzian Classification
+(ChatGPT), and SuperTrend AI (Gemini) catalog entries and implementations were retired.
 Bayesian Price Field, LSTM Price Field, PatchTST, TSMixer, N-HiTS, TimeXer,
-All in, and Grid are outside this repair. Their implementations and the shared
-strategy base, discovery, tuning, and execution engine retain their source bytes.
+All in, and Grid are outside this repair. Their strategy implementations remain
+outside this change; shared parameter metadata and execution logic change only
+for declarative allocation roles and the Leveraged Rotation profile.
 
 ## Causal indicator decisions
 
@@ -27,10 +30,7 @@ the numerator and denominator; the adaptive smoothing coefficient stays in
 `[0, 1]`. Cluster selection ranks occupied clusters and retains the configured
 factor step, with at most 512 factors to bound allocation.
 
-The MACD variants share one implementation while retaining their catalog IDs.
-The SuperTrend variants similarly share the repaired causal implementation.
-This removes divergent copies of the same algorithm without removing either
-existing strategy selection.
+The retained MACD and SuperTrend implementations each own a single catalog ID.
 
 ## Neighbor labels and indicator availability
 
@@ -45,9 +45,8 @@ matured four-bar forward outcomes: at decision close `t`, an example starting
 at `s` is eligible only when `s + 4 <= t`. Neighbor sampling includes the most
 recent eligible example, measures distance to finite historical features, and
 does not discard neutral labels. Exact-distance matches retain neutral votes.
-The original Lorentzian strategy keeps its unweighted votes; Gemini and ChatGPT
-retain distance weighting and their confirmation behavior. The kNN variants
-share their repaired implementation and retain separate catalog identities.
+The retained Lorentzian strategy uses its unweighted vote contract. The retained
+kNN strategy owns the repaired implementation without a duplicate catalog identity.
 
 Long-only holding timers start at an emitted entry intent rather than unrelated
 prediction flips. Four holding bars are measured consistently with next-open
@@ -59,7 +58,9 @@ probabilities, and these repairs do not establish a higher financial win rate.
 
 Neighbor and SuperTrend strategies reject missing, nonfinite, nonpositive, or
 incoherent OHLC observations instead of manufacturing missing execution prices.
-Volume is required when a selected kNN feature actually uses it. MACD validates
+Volume is required only when the explicit kNN Volume feature is selected. The
+default All feature averages mature price-derived features and any available
+nonnegative volume feature without treating absent Volume as a failed backtest. MACD validates
 the observed Close series used by its calculation; the executor separately
 requires a usable Open for `next_open` execution.
 
@@ -72,14 +73,12 @@ trading-day aggregation, and valid-data All-in comparison formulas remain intact
 
 Leveraged Rotation requires ordered unique dates and aligned, finite positive
 OHLC for both assets. Supplied dividends must be finite and nonnegative. Invalid
-rows are not silently removed inside the strategy. Its drawdown reference is
-the highest prior observed close in the supplied history, not an independently
-verified all-time high. The initial primary allocation remains predetermined.
-Subsequent close-derived decisions require opening-price execution.
-
-Rotation publishes a persistent target allocation. If the shared loss-exit
-switch blocks a rotation, later bars can retry the same target. Recovery intent
-persists after a new observed closing high until the next drawdown regime.
+rows are not silently removed inside the strategy. Its triggers are completed-bar
+daily percentage moves: a configured primary drop enters the leveraged regime,
+and a configured leveraged rise returns to the primary regime. Initial and
+minimum/maximum allocations are applied by market value, then rounded down to
+integer shares; residual capital remains cash. Subsequent close-derived decisions
+require opening-price execution.
 
 ## Preserved integration boundaries
 
@@ -87,14 +86,13 @@ persists after a new observed closing high until the next drawdown regime.
   dates before strategy invocation. Local rotation validation cannot establish
   provenance already lost upstream. Use observed OHLC for execution research.
 - Single-ticker history retains supplied Volume through normalization, cached
-  loading, and price-mode selection. Older caches without Volume now fail for
-  kNN Volume/All features. Existing provider adapters can default absent volume
+  loading, and price-mode selection. Older caches without Volume fail only for
+  an explicitly selected kNN Volume feature. Existing provider adapters can default absent volume
   to zero; strategy-local validation cannot distinguish that upstream default
   from an observed zero. These shared adapters remain outside the repair.
 - The shared rotation executor suppresses a close decision on a bar that already
-  executed a pending morning switch. An opposite close decision on that bar can
-  therefore incur an extra bar of latency; persistent intent prevents it from
-  disappearing. Regression tests explicitly retain this behavior.
+  executed a pending morning rebalance, preventing a same-day round trip based
+  on the previous close.
 - The loss-exit switch can suppress losing algorithmic exits. A generated sell
   intent is not evidence of a completed transaction.
 - GUI and research callers can supply different warmup prefixes. Compare results

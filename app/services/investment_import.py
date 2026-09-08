@@ -1,7 +1,12 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.107.0
+Code version: v0.109.0
+- Added: Schwab dividend reinvestments without a positive price or cash amount
+  retain an explicit unknown-basis marker and import warning.
+- Fixed: IBKR web FX fills retain currency-conversion semantics, quote-currency
+  fee evidence, and every native Holdings cash balance; matching official file
+  rows supersede the provisional capture without creating a duplicate.
 - Fixed: Newer IBKR cash evidence replaces the entire dated cash boundary,
   and canonical CSV performance snapshots also refresh compatibility summaries.
 - Added: Broker snapshot payloads now expose per-account and per-ticker
@@ -4902,6 +4907,23 @@ def _ibkr_stock_identity_date_token(record: dict[str, Any], source: dict[str, An
     return raw_date
 
 
+def _ibkr_forex_identity_date_token(
+    record: dict[str, Any],
+    source: dict[str, Any],
+) -> str:
+    """Use the displayed Hong Kong day to match a web FX fill to its CSV row."""
+    if _normalize_text(source.get("file_kind")) != "ibkr_web_trade_notification":
+        return _record_iso_date_for_merge(record)
+    displayed = _normalize_text(source.get("source_datetime_raw"))
+    displayed_date = displayed.split(",", 1)[0].strip()
+    for format_string in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(displayed_date, format_string).date().isoformat()
+        except ValueError:
+            continue
+    return _record_iso_date_for_merge(record)
+
+
 def _normalize_ibkr_gainskeeper_transaction_datetimes(
     payload: dict[str, Any],
 ) -> int:
@@ -5716,6 +5738,21 @@ def _merge_transaction_records(current: dict[str, Any], incoming: dict[str, Any]
                 _merge_transaction_records_default(supplemental, preferred)
             )
         )
+    if _is_ibkr_web_forex_authoritative_precision_pair(current, incoming):
+        current_source = current.get("source") if isinstance(current.get("source"), dict) else {}
+        incoming_source = incoming.get("source") if isinstance(incoming.get("source"), dict) else {}
+        preferred = (
+            incoming
+            if _ibkr_stock_trade_source_precision(incoming_source)
+            > _ibkr_stock_trade_source_precision(current_source)
+            else current
+        )
+        supplemental = current if preferred is incoming else incoming
+        return _prune_ibkr_authoritative_source_metadata(
+            _prune_hsbc_settled_pending_flag(
+                _merge_transaction_records_default(supplemental, preferred)
+            )
+        )
     if _is_ibkr_csv_gainskeeper_precision_pair(current, incoming):
         current_source = current.get("source") if isinstance(current.get("source"), dict) else {}
         incoming_source = incoming.get("source") if isinstance(incoming.get("source"), dict) else {}
@@ -5743,6 +5780,7 @@ def _prune_ibkr_authoritative_source_metadata(
         "provisional_until_file_import",
         "source_timezone",
         "venue",
+        "cash_delta_status",
     ):
         source.pop(key, None)
     record["source"] = source
@@ -6216,6 +6254,59 @@ def _is_ibkr_web_authoritative_precision_pair(
         ):
             return False
     return True
+
+
+def _is_ibkr_web_forex_authoritative_precision_pair(
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+) -> bool:
+    """Match one provisional web FX fill to its authoritative file component."""
+    if _normalize_broker_code(current.get("broker")) != "ibkr":
+        return False
+    if _normalize_broker_code(incoming.get("broker")) != "ibkr":
+        return False
+    if not (
+        _is_forex_trade_component_record(current)
+        and _is_forex_trade_component_record(incoming)
+    ):
+        return False
+    current_source = current.get("source") if isinstance(current.get("source"), dict) else {}
+    incoming_source = incoming.get("source") if isinstance(incoming.get("source"), dict) else {}
+    file_kinds = {
+        _normalize_text(current_source.get("file_kind")),
+        _normalize_text(incoming_source.get("file_kind")),
+    }
+    if "ibkr_web_trade_notification" not in file_kinds:
+        return False
+    if not file_kinds.intersection({"transactions", "gainskeeper"}):
+        return False
+    current_account = _normalize_text(current.get("account")) or _normalize_text(
+        current_source.get("account")
+    )
+    incoming_account = _normalize_text(incoming.get("account")) or _normalize_text(
+        incoming_source.get("account")
+    )
+    if not _accounts_are_compatible("ibkr", current_account, incoming_account):
+        return False
+    if normalize_ticker(_normalize_text(current.get("ticker"))) != normalize_ticker(
+        _normalize_text(incoming.get("ticker"))
+    ):
+        return False
+    if _ibkr_forex_identity_date_token(
+        current,
+        current_source,
+    ) != _ibkr_forex_identity_date_token(incoming, incoming_source):
+        return False
+    if not _decimal_identity_values_match(
+        current.get("quantity_raw"),
+        incoming.get("quantity_raw"),
+    ):
+        return False
+    return _decimal_identity_values_match(
+        current.get("price_raw"),
+        incoming.get("price_raw"),
+        tolerance=Decimal("0.00001"),
+    )
 
 
 def _decimal_identity_values_match(
@@ -6760,17 +6851,29 @@ def _merge_candidate_index_keys(
                 _normalize_decimal_identity_token(record.get("net_amount_raw")),
                 balance_after,
             ))
-    elif broker == "ibkr" and transaction_type in {"buy", "sell"}:
-        fitid_key = _ibkr_source_fitid_identity_key(record)
-        if fitid_key:
-            keys.append(fitid_key)
-        keys.append((
-            "ibkr_stock_trade",
-            transaction_type,
-            normalize_ticker(_normalize_text(record.get("ticker"))),
-            _normalize_text(record.get("currency")).upper(),
-            _ibkr_stock_identity_date_token(record, source),
-        ))
+    elif broker == "ibkr":
+        if transaction_type in {"buy", "sell"}:
+            fitid_key = _ibkr_source_fitid_identity_key(record)
+            if fitid_key:
+                keys.append(fitid_key)
+            keys.append((
+                "ibkr_stock_trade",
+                transaction_type,
+                normalize_ticker(_normalize_text(record.get("ticker"))),
+                _normalize_text(record.get("currency")).upper(),
+                _ibkr_stock_identity_date_token(record, source),
+            ))
+        elif transaction_type == "forex_trade_component":
+            account = _normalize_text(record.get("account")) or _normalize_text(
+                source.get("account")
+            )
+            keys.append((
+                "ibkr_forex_trade_component",
+                _account_identity_token(broker, account),
+                normalize_ticker(_normalize_text(record.get("ticker"))),
+                _ibkr_forex_identity_date_token(record, source),
+                _normalize_decimal_identity_token(record.get("quantity_raw")),
+            ))
     return keys
 
 
@@ -6784,7 +6887,7 @@ def _merge_slot_for_transaction(
     ],
     slot_order: dict[tuple[tuple[str, ...], int], int],
 ) -> tuple[tuple[tuple[str, ...], int], bool]:
-    if _is_fx_translation_pnl_record(record) or _is_forex_trade_component_record(record):
+    if _is_fx_translation_pnl_record(record):
         return (identity_key, 0), False
     candidate_keys = {
         candidate_key
@@ -6821,6 +6924,8 @@ def _merge_slot_for_transaction(
             return existing_key, False
         if _is_ibkr_web_authoritative_precision_pair(existing_record, record):
             return existing_key, False
+        if _is_ibkr_web_forex_authoritative_precision_pair(existing_record, record):
+            return existing_key, False
     precision_slot = (identity_key, 0)
     existing_record = merged_by_key.get(precision_slot)
     if existing_record is not None:
@@ -6832,6 +6937,10 @@ def _merge_slot_for_transaction(
             return precision_slot, False
         if _is_ibkr_web_authoritative_precision_pair(existing_record, record):
             return precision_slot, False
+        if _is_ibkr_web_forex_authoritative_precision_pair(existing_record, record):
+            return precision_slot, False
+    if _is_forex_trade_component_record(record):
+        return precision_slot, False
     occurrence_index = occurrences.get(identity_key, 0)
     occurrences[identity_key] = occurrence_index + 1
     return (identity_key, occurrence_index), True
@@ -12844,6 +12953,86 @@ def _ibkr_web_execution_key(
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
+def _ibkr_web_forex_pair_currencies(ticker: str) -> tuple[str, str] | None:
+    normalized_ticker = normalize_ticker(ticker)
+    match = re.fullmatch(r"([A-Z]{3})\.([A-Z]{3})", normalized_ticker)
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _convert_ibkr_web_record_to_forex_component(
+    record: dict[str, Any],
+    *,
+    side: str,
+    quantity: Decimal,
+    price: Decimal,
+    fee: Decimal | None,
+) -> dict[str, Any]:
+    """Convert an IBKR web FX fill without inventing its later CSV cash delta."""
+    pair = _ibkr_web_forex_pair_currencies(_normalize_text(record.get("ticker")))
+    if pair is None:
+        return record
+    base_currency, quote_currency = pair
+    signed_quantity = -quantity if side == "sell" else quantity
+    quote_amount = quantity * price
+    quote_cash_delta = quote_amount if side == "sell" else -quote_amount
+    commission_base: Decimal | None = None
+    commission_conversion = "unavailable_without_account_base_cross_rate"
+    if fee is not None:
+        if quote_currency == "USD":
+            commission_base = -fee.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            commission_conversion = "quote_currency_is_account_base"
+        elif base_currency == "USD":
+            commission_base = -(fee / price).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            commission_conversion = "quote_fee_divided_by_fill_rate_to_usd_cent"
+
+    record["type"] = "forex_trade_component"
+    record["currency"] = base_currency
+    record["description"] = _normalize_text(record.get("ticker"))
+    record["quantity_raw"] = _decimal_to_str(signed_quantity)
+    record["quantity_abs"] = _decimal_to_str(quantity)
+    record["price_raw"] = _decimal_to_str(price)
+    record.pop("gross_amount_raw", None)
+    record.pop("net_amount_raw", None)
+    if commission_base is None:
+        record.pop("commission_raw", None)
+        record.pop("commission_abs", None)
+    else:
+        record["commission_raw"] = _decimal_to_str(commission_base)
+        record["commission_abs"] = _decimal_to_str(abs(commission_base))
+
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    source.update({
+        "transaction_type_raw": "Forex Trade Component",
+        "forex_pair": _normalize_text(record.get("ticker")),
+        "forex_action": f"{side}_base",
+        "base_currency": base_currency,
+        "quote_currency": quote_currency,
+        "base_quantity_raw": _decimal_to_str(quantity),
+        "quote_amount_raw": _decimal_to_str(quote_amount),
+        "quote_cash_delta_raw": _decimal_to_str(quote_cash_delta),
+        "fee_amount_raw": _decimal_to_str(fee),
+        "fee_currency": quote_currency if fee is not None else "",
+        "fee_base_conversion": commission_conversion,
+        "cash_delta_status": "awaiting_authoritative_transaction_history",
+    })
+    record["source"] = source
+    record["normalized"] = _build_normalized_view(
+        "forex_trade_component",
+        signed_quantity,
+        price,
+        None,
+        commission_base,
+        None,
+        side_override=side,
+    )
+    return record
+
+
 def _build_ibkr_user_verified_position_snapshot(
     *,
     transactions: list[dict[str, Any]],
@@ -13097,6 +13286,13 @@ def _parse_ibkr_web_trade_notifications(
                 net_amount,
             ),
         }
+        record = _convert_ibkr_web_record_to_forex_component(
+            record,
+            side=side,
+            quantity=quantity,
+            price=price,
+            fee=fee,
+        )
         records.append(record)
 
     if not records or not account:
@@ -13276,12 +13472,14 @@ def _parse_ibkr_web_compact_trade_notifications(
             venue=venue,
         )
         fill_detail = fill_details_by_key.get(detail_key)
+        resolved_fee: Decimal | None = None
         if (
             fill_detail is not None
             and fill_detail["quantity"] == quantity
             and int(fill_detail["count"]) > 0
         ):
             fee = fill_detail["fee"]
+            resolved_fee = fee
             commission = -fee
             net_amount = signed_gross_amount + commission
             source = record["source"]
@@ -13299,6 +13497,13 @@ def _parse_ibkr_web_compact_trade_notifications(
                 commission,
                 net_amount,
             )
+        record = _convert_ibkr_web_record_to_forex_component(
+            record,
+            side=side,
+            quantity=quantity,
+            price=price,
+            fee=resolved_fee,
+        )
         records.append(record)
 
     if not records or not account:
@@ -13381,11 +13586,13 @@ def _parse_ibkr_web_holdings_capture(
         )
 
     cash_row_pattern = re.compile(
-        r"^(?P<currency>[A-Z]{3,6})\s+\(base currency\)\s+"
+        r"^(?P<currency>[A-Z]{3,6})"
+        r"(?P<base_marker>\s+\(base currency\))?\s+"
         r"(?P<amount>[+-]?[\d,]+(?:\.\d+)?)$",
         re.IGNORECASE,
     )
     cash_balances: dict[str, str] = {}
+    base_cash_currencies: set[str] = set()
     for line in lines[cash_index + 1:]:
         match = cash_row_pattern.fullmatch(line)
         if match is None:
@@ -13401,7 +13608,9 @@ def _parse_ibkr_web_holdings_capture(
                 f"The pasted IBKR holdings text repeats the {currency} cash balance."
             )
         cash_balances[currency] = _decimal_to_str(amount) or "0"
-    if not cash_balances:
+        if match.group("base_marker"):
+            base_cash_currencies.add(currency)
+    if len(base_cash_currencies) != 1:
         raise ValueError(
             "The pasted IBKR holdings text does not contain a base-currency Cash Holdings row."
         )
@@ -26603,6 +26812,25 @@ def _build_schwab_transaction_record(
     if net_amount is None and gross_amount is not None:
         net_amount = gross_amount
 
+    reinvestment_cost_basis_status = ""
+    if mapped_type == "dividend_reinvestment":
+        has_reinvestment_quantity = quantity_dec is not None and quantity_dec > ZERO
+        has_reinvestment_value = (
+            (price_dec is not None and price_dec > ZERO)
+            or (gross_amount is not None and abs(gross_amount) > ZERO)
+            or (net_amount is not None and abs(net_amount) > ZERO)
+        )
+        reinvestment_cost_basis_status = (
+            "known"
+            if has_reinvestment_quantity and has_reinvestment_value
+            else "unknown"
+        )
+        if reinvestment_cost_basis_status == "unknown":
+            warnings.append(
+                f"Row {row_number}: Schwab dividend reinvestment has no positive "
+                "quantity-and-value cost-basis evidence; P&L remains unavailable."
+            )
+
     record: dict[str, Any] = {
         "date": date_text,
         "datetime": datetime_text,
@@ -26621,6 +26849,10 @@ def _build_schwab_transaction_record(
             "source_has_intraday_timestamp": _schwab_has_intraday_timestamp(date_str),
         },
     }
+    if reinvestment_cost_basis_status:
+        record["source"][
+            "reinvestment_cost_basis_status"
+        ] = reinvestment_cost_basis_status
     if symbol:
         record["ticker"] = normalize_ticker(symbol)
 

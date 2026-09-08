@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.4.1
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -13,6 +13,20 @@ from app.web.strategy_forms import build_strategy_form_fields, build_strategy_fo
 
 
 class StrategyFormSchemaTests(unittest.TestCase):
+    def test_lstm_training_section_owns_backend_and_staged_factors(self) -> None:
+        strategy_id = "lstm-price-field"
+        fields = build_strategy_form_fields(strategy_id, None, strategy_factory=instantiate_strategy)
+        sections = build_strategy_form_sections(strategy_id, fields, strategy_factory=instantiate_strategy)
+        parameters = next(section for section in sections if section["key"] == "parameters")
+        training = next(section for section in sections if section["key"] == "training")
+        factors = next(section for section in sections if section["key"] == "factors")
+
+        self.assertNotIn("compute_backend", [field["key"] for field in parameters["fields"]])
+        self.assertEqual([field["key"] for field in training["fields"]], ["compute_backend"])
+        self.assertEqual(training["fields"][0]["ui_apply_mode"], "training")
+        self.assertTrue(factors["fields"])
+        self.assertTrue(all(field["ui_apply_mode"] == "training" for field in factors["fields"]))
+
     def test_market_factor_sections_preserve_every_real_parameter_once(self) -> None:
         excluded = {"buy-and-hold", "dca", "grid-trading", "leveraged-rotation"}
         for entry in list_enabled_strategies():

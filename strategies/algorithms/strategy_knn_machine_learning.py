@@ -6,7 +6,7 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v0.5.0
+Code version: v0.5.1
 - Fixed: Validate real market bars, preserve indicator warmup and neutral
   neighbors, and execute close-derived decisions at the following open.
 """
@@ -171,8 +171,8 @@ def _select_feature_pair(
     if indicator_name == "Volume":
         return vs, vf
     return (
-        pd.concat([rs, cs, os, vs], axis=1).mean(axis=1, skipna=False),
-        pd.concat([rf, cf, of, vf], axis=1).mean(axis=1, skipna=False),
+        pd.concat([rs, cs, os, vs], axis=1).mean(axis=1, skipna=True),
+        pd.concat([rf, cf, of, vf], axis=1).mean(axis=1, skipna=True),
     )
 
 
@@ -320,10 +320,12 @@ class KnnMachineLearningStrategy(BaseStrategy):
         normalized_params = _normalize_neighbor_params(self, params)
         indicator_name = str(normalized_params["indicator"])
         volume = frame.get("Volume", pd.Series(np.nan, index=frame.index, dtype="float64"))
-        if indicator_name in {"Volume", "All"} and not (
+        if indicator_name == "Volume" and not (
             np.isfinite(volume.to_numpy(dtype=np.float64)) & volume.ge(0).to_numpy()
         ).all():
             raise ValueError("Volume features require observed finite nonnegative Volume.")
+        if indicator_name == "All":
+            volume = volume.where(np.isfinite(volume) & volume.ge(0))
         short_window = int(normalized_params["short_window"])
         long_window = int(normalized_params["long_window"])
         base_k = int(normalized_params["base_k"])

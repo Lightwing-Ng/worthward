@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1024, 800, 390]) {
@@ -17,7 +17,24 @@ for (const width of [1024, 800, 390]) {
         await expect(secondary).toHaveCSS('height', '31px');
         expect(await secondary.evaluate(e => e.getBoundingClientRect().width < e.parentElement.getBoundingClientRect().width)).toBe(true);
         for (const id of ['modal-dialog', 'modal-dialog-banner-message']) {
+            const surface = page.locator(`#${id} .style-token-modal-demo`);
             const close = page.locator(`#${id} .dismiss-button`);
+            await expect(surface).toHaveCSS('padding', '12px');
+            await expect(close).toHaveCSS('width', '24px');
+            await expect(close).toHaveCSS('height', '24px');
+            await expect(close).toHaveCSS('border-radius', '50%');
+            const geometry = await surface.evaluate((node) => {
+                const button = node.querySelector('.dismiss-button').getBoundingClientRect();
+                const icon = node.querySelector('.workspace-modal-icon').getBoundingClientRect();
+                const bounds = node.getBoundingClientRect();
+                return {
+                    centerTop: button.top + (button.height / 2) - bounds.top,
+                    centerLeft: button.left + (button.width / 2) - bounds.left,
+                    controlIconGap: icon.left - button.right,
+                };
+            });
+            expect(Math.abs(geometry.centerTop - geometry.centerLeft)).toBeLessThanOrEqual(1);
+            expect(geometry.controlIconGap).toBeGreaterThan(0);
             await page.mouse.move(0, 0);
             await expect(close).toHaveCSS('opacity', '0');
             await close.locator('..').hover();

@@ -1,4 +1,4 @@
-/* Code version: v0.53.2 */
+/* Code version: v0.55.0 */
 (() => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -5384,7 +5384,7 @@
             syncNativeSelectSelection(parts.select, parts.select.value);
             refreshSharedSelectField(field);
             if (parts.field.dataset.sharedSelectKind === "strategy-param") {
-                scheduleStrategyParamSubmit(80);
+                stageOrSubmitStrategyParam(parts.field.closest("[data-strategy-param-key]"), 80);
             }
         });
         if (parts.select.id === "period" && parts.select.dataset.periodChangeJsBound !== "1") {
@@ -7139,7 +7139,7 @@
             defaultCapital: defaults.backtest_capital ?? 10000,
             interval: isBacktestView ? getSelectedBacktestInterval() : "",
             defaultInterval: defaults.backtest_interval || "1d",
-            strategyParams: isBacktestView ? collectStrategyParamEntries() : [],
+            strategyParams: isBacktestView ? collectStrategyParamEntries({forBacktest: true}) : [],
             strategyParamDefaults,
             stopLossEnabled: isBacktestView ? Boolean(stopLossInput?.checked) : undefined,
             defaultStopLossEnabled: defaults.backtest_stop_loss ?? false,
@@ -7879,15 +7879,16 @@
         strategyId,
         {respectExplicitUrl = true} = {},
     ) => {
-        if (!isBacktestView || !(root instanceof HTMLElement)) return false;
+        if (!isBacktestView || !(root instanceof HTMLElement)) return {restored: false, requiresSubmit: false};
         const normalizedStrategyId = String(strategyId || "").trim();
-        if (!normalizedStrategyId) return false;
+        if (!normalizedStrategyId) return {restored: false, requiresSubmit: false};
         const remembered = readBacktestStrategyParamMemory()[normalizedStrategyId];
-        if (!remembered || typeof remembered !== "object") return false;
+        if (!remembered || typeof remembered !== "object") return {restored: false, requiresSubmit: false};
         const explicitParams = respectExplicitUrl
             ? new URL(window.location.href).searchParams
             : null;
         let restored = false;
+        let requiresSubmit = false;
         Object.entries(remembered).forEach(([key, value]) => {
             const field = Array.from(root.querySelectorAll("[data-strategy-param-key]"))
                 .find((candidate) => candidate.dataset.strategyParamKey === key);
@@ -7898,16 +7899,15 @@
             if (explicitParams?.has(control.name)) return;
             const normalizedValue = String(value || "").trim();
             if (!normalizedValue) return;
+            let changed = false;
             if (control.dataset.strategyParamInput === "select") {
                 if (!Array.from(control.options).some((option) => option.value === normalizedValue)) return;
                 if (control.value !== normalizedValue) {
                     control.value = normalizedValue;
-                    restored = true;
+                    changed = true;
                 }
                 refreshSharedSelectField(field);
-                return;
-            }
-            if (control.dataset.strategyParamInput === "boolean") {
+            } else if (control.dataset.strategyParamInput === "boolean") {
                 const switchInput = field.querySelector("[data-strategy-param-switch]");
                 const onValue = control.dataset.switchOnValue || "1";
                 const offValue = control.dataset.switchOffValue || "0";
@@ -7917,19 +7917,23 @@
                         ? false
                         : null;
                 if (nextChecked === null) return;
-                const changed = control.value !== normalizedValue
+                changed = control.value !== normalizedValue
                     || (switchInput instanceof HTMLInputElement && switchInput.checked !== nextChecked);
                 control.value = normalizedValue;
                 if (switchInput instanceof HTMLInputElement) switchInput.checked = nextChecked;
-                restored = restored || changed;
-                return;
-            }
-            if (control.value !== normalizedValue) {
+            } else if (control.value !== normalizedValue) {
                 control.value = normalizedValue;
-                restored = true;
+                changed = true;
+            }
+            if (!changed) return;
+            restored = true;
+            if (field.dataset.strategyParamApplyMode === "training") {
+                control.dataset.strategyParamDraft = "1";
+            } else {
+                requiresSubmit = true;
             }
         });
-        return restored;
+        return {restored, requiresSubmit};
     };
 
     const rememberBacktestStrategyParams = (strategyId = "") => {
@@ -7951,7 +7955,7 @@
         scheduleAutoSubmit(delay);
     };
 
-    const collectStrategyParamEntries = () => {
+    const collectStrategyParamEntries = ({forBacktest = false} = {}) => {
         const {field} = getTradeStrategyRefs();
         if (!(field instanceof HTMLElement)) return [];
         const controls = Array.from(field.querySelectorAll("[data-strategy-param-input][name]"));
@@ -7961,9 +7965,36 @@
             }
             const key = control.name?.trim();
             if (!key) return [];
-            const value = control.value ?? "";
+            const value = forBacktest && control.dataset.strategyParamDraft === "1"
+                ? control.dataset.strategyParamActiveValue ?? control.value ?? ""
+                : control.value ?? "";
             return value === "" ? [] : [[key, value]];
         });
+    };
+
+    const syncStrategyFactorGroupCount = (field) => {
+        const group = field?.closest?.(".strategy-factor-group");
+        const summary = group?.querySelector?.(":scope > summary");
+        if (!(group instanceof HTMLDetailsElement) || !(summary instanceof HTMLElement)) return;
+        const baseTitle = summary.dataset.strategyFactorBaseTitle
+            || summary.textContent.trim().replace(/ \(\d+\)$/, "");
+        summary.dataset.strategyFactorBaseTitle = baseTitle;
+        const enabledCount = Array.from(group.querySelectorAll("[data-strategy-param-switch]"))
+            .filter((control) => control instanceof HTMLInputElement && control.checked).length;
+        summary.textContent = enabledCount ? `${baseTitle} (${enabledCount})` : baseTitle;
+    };
+
+    const stageOrSubmitStrategyParam = (field, delay = 160) => {
+        if (!(field instanceof HTMLElement) || field.dataset.strategyParamApplyMode !== "training") {
+            scheduleStrategyParamSubmit(delay);
+            return;
+        }
+        const control = field.querySelector("[data-strategy-param-input][name]");
+        if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) {
+            control.dataset.strategyParamDraft = "1";
+        }
+        syncStrategyFactorGroupCount(field);
+        rememberBacktestStrategyParams();
     };
 
     const positionTradeStrategyPanel = () => {
@@ -8074,7 +8105,7 @@
                         const delta = button.dataset.strategyStepper === "down" ? -stepValue() : stepValue();
                         const currentValue = Number.parseFloat(numberInput.value || "0") || 0;
                         syncStandaloneNumber(currentValue + delta);
-                        scheduleStrategyParamSubmit(80);
+                        stageOrSubmitStrategyParam(field, 80);
                     });
                 });
                 numberInput.addEventListener("focus", () => field.classList.add("is-open"));
@@ -8089,7 +8120,7 @@
                     const hasDraft = numberInput.dataset.strategyParamDirty === "1";
                     syncStandaloneNumber(numberInput.value);
                     delete numberInput.dataset.strategyParamDirty;
-                    if (hasDraft) scheduleStrategyParamSubmit(80);
+                    if (hasDraft) stageOrSubmitStrategyParam(field, 80);
                 });
                 field.addEventListener("focusout", () => window.setTimeout(() => {
                     if (field.matches(":focus-within")) return;
@@ -8109,15 +8140,74 @@
                 };
                 booleanSwitch.addEventListener("change", () => {
                     syncBooleanValue();
-                    scheduleStrategyParamSubmit(80);
+                    stageOrSubmitStrategyParam(field, 80);
                 });
                 syncBooleanValue();
             }
 
             const selectInput = field.querySelector("[data-strategy-param-input='select']");
             if (selectInput instanceof HTMLSelectElement && !selectInput.closest("[data-shared-select-field]")) {
-                selectInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+                selectInput.addEventListener("change", () => stageOrSubmitStrategyParam(field, 80));
             }
+        });
+        root.querySelectorAll?.(".strategy-factor-group").forEach((group) => {
+            syncStrategyFactorGroupCount(group.querySelector("[data-strategy-param-key]"));
+        });
+
+        root.querySelectorAll?.("[data-strategy-allocation-range]").forEach((allocation) => {
+            if (!(allocation instanceof HTMLElement) || allocation.dataset.allocationBound === "1") return;
+            allocation.dataset.allocationBound = "1";
+            const primaryRange = allocation.querySelector("[data-allocation-boundary='primary']");
+            const investedRange = allocation.querySelector("[data-allocation-boundary='invested']");
+            const primaryInput = allocation.querySelector("[name='initial_primary_pct']");
+            const leveragedInput = allocation.querySelector("[name='initial_leveraged_pct']");
+            if (!(primaryRange instanceof HTMLInputElement)
+                || !(investedRange instanceof HTMLInputElement)
+                || !(primaryInput instanceof HTMLInputElement)
+                || !(leveragedInput instanceof HTMLInputElement)) return;
+
+            const formatShares = (value) => Math.max(0, Math.floor(value)).toLocaleString("en-US");
+            const formatCash = (value) => Math.max(0, value).toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+            const readCapital = () => Number.parseFloat(
+                String(document.getElementById("trade_initial_capital")?.value || "0").replaceAll(",", ""),
+            ) || 0;
+            const initial = window.WORTHWARD_APP?.backtestResult?.initial_allocation || {};
+            const primaryOpen = Number(initial.primary_open || 0);
+            const leveragedOpen = Number(initial.leveraged_open || 0);
+            const tickerInputs = Array.from(document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]"));
+            const tickerName = (index) => String(tickerInputs[index]?.value || `Ticker ${index + 1}`).trim().toUpperCase();
+
+            const sync = (source = "") => {
+                let primary = Number.parseFloat(source === "primary" ? primaryRange.value : primaryInput.value) || 0;
+                let invested = source === "invested"
+                    ? Number.parseFloat(investedRange.value) || 0
+                    : primary + (Number.parseFloat(leveragedInput.value) || 0);
+                primary = Math.max(0, Math.min(100, primary));
+                invested = Math.max(primary, Math.min(100, invested));
+                primaryRange.value = primary.toFixed(1);
+                investedRange.value = invested.toFixed(1);
+                primaryInput.value = primary.toFixed(1);
+                leveragedInput.value = (invested - primary).toFixed(1);
+                allocation.style.setProperty("--allocation-primary", `${primary}%`);
+                allocation.style.setProperty("--allocation-invested", `${invested}%`);
+                const capital = readCapital();
+                const primaryShares = primaryOpen > 0 ? Math.floor(capital * primary / 100 / primaryOpen) : 0;
+                const leveragedShares = leveragedOpen > 0 ? Math.floor(capital * (invested - primary) / 100 / leveragedOpen) : 0;
+                const cash = capital - (primaryShares * primaryOpen) - (leveragedShares * leveragedOpen);
+                allocation.querySelector("[data-allocation-primary-label]").textContent = `${tickerName(0)} ${formatShares(primaryShares)} sh · ${primary.toFixed(1)}%`;
+                allocation.querySelector("[data-allocation-leveraged-label]").textContent = `${tickerName(1)} ${formatShares(leveragedShares)} sh · ${(invested - primary).toFixed(1)}%`;
+                allocation.querySelector("[data-allocation-cash-label]").textContent = `Cash ${formatCash(cash)} · ${(100 - invested).toFixed(1)}%`;
+            };
+            primaryRange.addEventListener("input", () => sync("primary"));
+            investedRange.addEventListener("input", () => sync("invested"));
+            primaryRange.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+            investedRange.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+            tickerInputs.forEach((input) => input.addEventListener("input", () => sync()));
+            document.getElementById("trade_initial_capital")?.addEventListener("input", () => sync());
+            sync();
         });
     };
 
@@ -8462,7 +8552,7 @@
         const refs = getTradeStrategyRefs();
         if (!(refs.field instanceof HTMLElement)) return;
         if (refs.field.dataset.tradeStrategyBound === "1") return;
-        const restored = restoreBacktestStrategyParams(
+        const restoration = restoreBacktestStrategyParams(
             refs.field,
             refs.select?.value || state.selectedStrategyId,
         );
@@ -8473,7 +8563,7 @@
         }
         syncTradeStrategyTriggerLabel();
         renderTradeStrategyDropdown();
-        if (restored) scheduleStrategyParamSubmit(0);
+        if (restoration.requiresSubmit) scheduleStrategyParamSubmit(0);
         refs.field.dataset.tradeStrategyBound = "1";
         if (refs.tuneButton instanceof HTMLButtonElement) {
             refs.tuneButton.addEventListener("click", () => {

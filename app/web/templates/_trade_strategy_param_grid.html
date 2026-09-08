@@ -1,9 +1,9 @@
-{# Code version: v0.4.2 #}
+{# Code version: v0.5.0 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
     {% for field in strategy_form_fields %}
-    <div class="trade-strategy-param" data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="{{ field.kind }}">
+    <div class="trade-strategy-param" data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="{{ field.kind }}" data-strategy-param-apply-mode="{{ field.ui_apply_mode }}">
         {% if field.field_type == "number" %}
         <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
             <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
@@ -21,6 +21,7 @@
                     class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
                     data-strategy-param-input="number"
                     data-default="{{ field.default }}"
+                    {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.value }}"{% endif %}
                     type="number"
                     inputmode="{{ field.input_mode }}"
                     value="{{ field.value }}"
@@ -54,6 +55,7 @@
             value="{{ field.switch_on_value if field.switch_checked else field.switch_off_value }}"
             data-strategy-param-input="boolean"
             data-default="{{ field.default }}"
+            {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.switch_on_value if field.switch_checked else field.switch_off_value }}"{% endif %}
             data-switch-on-value="{{ field.switch_on_value }}"
             data-switch-off-value="{{ field.switch_off_value }}"
         >
@@ -73,6 +75,7 @@
                     name="{{ field.key }}"
                     data-strategy-param-input="text"
                     data-default="{{ field.default }}"
+                    {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.value }}"{% endif %}
                     type="text"
                     value="{{ field.value }}"
                     {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
@@ -102,6 +105,7 @@
                     tabindex="-1"
                     data-strategy-param-input="select"
                     data-default="{{ field.default }}"
+                    {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.value }}"{% endif %}
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
             >
                 {% for option in field.options %}

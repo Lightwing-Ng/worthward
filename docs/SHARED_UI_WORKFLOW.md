@@ -1,11 +1,11 @@
 # Shared UI workflow
 
-Documentation version: `v1.1.1`
+Documentation version: `v1.1.2`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
 
-`/Users/example/Desktop/SHARED_UI_SYNC.md`
+`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md`
 
 ## Read order
 

@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.6.3
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -385,14 +385,9 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("This may take a moment while the app checks remote data and refreshes the local store.", "應用程式檢查遠端資料並重新整理本機資料庫時可能需要一些時間。", "应用程序检查远程数据并刷新本地数据库时可能需要一些时间。"),
         ("Buy and hold", "買入並持有", "买入并持有"),
         ("SuperTrend AI", "SuperTrend AI", "SuperTrend AI"),
-        ("SuperTrend AI (Gemini)", "SuperTrend AI（Gemini）", "SuperTrend AI（Gemini）"),
         ("Lorentzian Classification", "Lorentzian 分類", "Lorentzian 分类"),
-        ("Lorentzian Classification (ChatGPT)", "Lorentzian 分類（ChatGPT）", "Lorentzian 分类（ChatGPT）"),
-        ("Lorentzian Classification (Gemini)", "Lorentzian 分類（Gemini）", "Lorentzian 分类（Gemini）"),
         ("MACD", "MACD", "MACD"),
-        ("MACD (Gemini)", "MACD（Gemini）", "MACD（Gemini）"),
         ("kNN Machine Learning", "kNN 機器學習", "kNN 机器学习"),
-        ("kNN Machine Learning (Gemini)", "kNN 機器學習（Gemini）", "kNN 机器学习（Gemini）"),
         ("Grid Trading", "網格交易", "网格交易"),
         ("Baseline strategy that buys at the first available bar and exits at the last available bar.", "在第一個可用訊號柱買入，並在最後一個可用訊號柱退出的基準策略。", "在第一个可用信号柱买入，并在最后一个可用信号柱退出的基准策略。"),
         ("MACD crossover strategy using default daily 12, 26, and 9 settings.", "使用每日 12、26 及 9 預設設定的 MACD 交叉策略。", "使用每日 12、26 及 9 默认设置的 MACD 交叉策略。"),
@@ -452,8 +447,9 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Fast EMA", "快速 EMA", "快速 EMA"),
         ("Slow EMA", "慢速 EMA", "慢速 EMA"),
         ("Signal EMA", "訊號 EMA", "信号 EMA"),
-        ("Trigger price min", "觸發價格下限", "触发价格下限"),
-        ("Trigger price max", "觸發價格上限", "触发价格上限"),
+        ("Current holding", "現有持倉數量", "现有持仓数量"),
+        ("Minimum holding", "最少持倉數量", "最少持仓数量"),
+        ("Maximum holding", "最多持倉數量", "最多持仓数量"),
         ("Rise %", "升幅 %", "涨幅 %"),
         ("Fall %", "跌幅 %", "跌幅 %"),
         ("Segmented control", "分段控制項", "分段控件"),

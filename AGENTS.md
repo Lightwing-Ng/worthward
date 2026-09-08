@@ -6,7 +6,7 @@ Documentation map and repository ownership:
 [`docs/README.md`](docs/README.md)
 
 Shared UI synchronization ledger:
-`/Users/example/Desktop/SHARED_UI_SYNC.md`
+`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md`
 
 The following safety rules apply before reading the canonical guide:
 

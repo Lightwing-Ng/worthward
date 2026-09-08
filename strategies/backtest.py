@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.10.1
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -186,9 +186,19 @@ def _coerce_trade_float(value: object, default: float = 0.0) -> float:
     return parsed if isfinite(parsed) else default
 
 
-def _normalize_transaction_rows(trades: list[dict[str, object]]) -> None:
+def _normalize_transaction_rows(
+        trades: list[dict[str, object]],
+        *,
+        initial_quantity: float = 0.0,
+        initial_unit_cost: float = 0.0,
+) -> None:
     """Add the shared Backtest transaction fields while preserving legacy keys."""
     positions: dict[str, dict[str, float]] = {}
+    if initial_quantity > 0:
+        positions["__single__"] = {
+            "quantity": initial_quantity,
+            "cost": initial_quantity * initial_unit_cost,
+        }
     for trade in trades:
         ticker_key = str(trade.get("ticker") or "__single__")
         position = positions.setdefault(ticker_key, {"quantity": 0.0, "cost": 0.0})
@@ -214,7 +224,7 @@ def _normalize_transaction_rows(trades: list[dict[str, object]]) -> None:
                 position["cost"] = 0.0
 
         market_value = equity - cash
-        unrealized_pnl = market_value - position["cost"]
+        unrealized_pnl = market_value - sum(item["cost"] for item in positions.values())
         trade.update({
             "quantity": round(quantity, 6),
             "realized_pnl": round(realized_pnl, 4),
@@ -368,7 +378,7 @@ def run_leveraged_rotation_backtest(
         include_cash_dividends: bool = True,
         stop_loss_enabled: bool = True,
 ) -> dict[str, object]:
-    """Run a full-capital rotation between the two ordered assets in a signal result."""
+    """Rebalance integer holdings between two assets within allocation bounds."""
     frame = signal_result.frame.copy()
     if frame.empty:
         raise ValueError("No market data available for backtest.")
@@ -385,15 +395,18 @@ def run_leveraged_rotation_backtest(
         tickers = ("Ticker 1", "Ticker 2")
     trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
     normalized_execution_mode = _resolve_execution_mode(signal_result, execution_mode)
+    raw_rotation_params = metadata.get("rotation_parameters", {})
+    rotation_params = raw_rotation_params if isinstance(raw_rotation_params, dict) else {}
     cash = float(initial_capital)
-    shares = 0.0
-    active_asset = 1
-    entry_price: float | None = None
-    pending_asset: int | None = None
+    holdings = [0, 0]
+    average_costs: list[float | None] = [None, None]
+    target_regime = "initial"
+    pending_regime: str | None = None
     equity_points: list[float] = []
     trades: list[dict[str, object]] = []
     realized_gains: list[float] = []
     rotation_results: list[float] = []
+    initial_allocation: dict[str, object] = {}
 
     def asset_column(field: str, asset: int) -> str:
         return field if asset == 1 else f"{field}_2"
@@ -401,103 +414,147 @@ def run_leveraged_rotation_backtest(
     def row_value(row: Any, field: str, asset: int) -> float:
         return float(getattr(row, asset_column(field, asset), 0.0) or 0.0)
 
+    def portfolio_equity(row: Any, price_field: str = "Close") -> float:
+        return cash + sum(
+            holdings[asset - 1] * row_value(row, price_field, asset)
+            for asset in (1, 2)
+        )
+
     def append_trade(
             row: Any,
             side: str,
             asset: int,
             price: float,
             pnl: float,
-            share_count: float | None = None,
+            share_count: int,
     ) -> None:
-        marked_price = row_value(row, "Close", asset)
         trades.append({
             "date": pd.Timestamp(row.Date).strftime(trade_date_format),
             "side": side,
             "ticker": tickers[asset - 1],
             "price": round(price, 4),
-            "shares": round(shares if share_count is None else share_count, 6),
+            "shares": int(share_count),
             "pnl": round(pnl, 4),
             "cash": round(cash, 4),
-            "equity": round(cash + (shares * marked_price), 4),
+            "equity": round(portfolio_equity(row), 4),
         })
 
-    def switch_asset(row: Any, target_asset: int, price_field: str) -> bool:
-        nonlocal active_asset, cash, shares, entry_price
-        if target_asset == active_asset:
-            return False
-        exit_price = row_value(row, price_field, active_asset)
-        target_price = row_value(row, price_field, target_asset)
-        if exit_price <= 0 or target_price <= 0:
-            return False
+    def allocation_targets(regime: str) -> tuple[float, float]:
+        if regime == "leveraged":
+            return (
+                float(rotation_params.get("primary_min_pct", 20.0)),
+                float(rotation_params.get("leveraged_max_pct", 75.0)),
+            )
+        if regime == "primary":
+            return (
+                float(rotation_params.get("primary_max_pct", 95.0)),
+                float(rotation_params.get("leveraged_min_pct", 0.0)),
+            )
+        return (
+            float(rotation_params.get("initial_primary_pct", 70.0)),
+            float(rotation_params.get("initial_leveraged_pct", 25.0)),
+        )
 
-        previous_asset = active_asset
-        previous_shares = shares
-        if (
-            not stop_loss_enabled
-            and previous_shares > 0
-            and entry_price is not None
-            and exit_price < float(entry_price)
-        ):
+    def rebalance(row: Any, regime: str, price_field: str) -> bool:
+        nonlocal cash, target_regime
+        prices = [row_value(row, price_field, asset) for asset in (1, 2)]
+        if any(price <= 0 for price in prices):
             return False
-        realized_pnl = (exit_price - float(entry_price or exit_price)) * previous_shares
-        cash += previous_shares * exit_price
-        shares = 0.0
-        append_trade(row, "Sell", previous_asset, exit_price, realized_pnl, previous_shares)
-        if previous_asset == 2:
-            rotation_results.append(realized_pnl)
-        realized_gains.append(realized_pnl)
+        equity = portfolio_equity(row, price_field)
+        target_pcts = allocation_targets(regime)
+        desired = [int(floor(equity * pct / 100.0 / price)) for pct, price in zip(target_pcts, prices, strict=True)]
+        changed = False
 
-        active_asset = target_asset
-        shares = float(floor(cash / target_price))
-        if shares > 0:
-            cash -= shares * target_price
-            entry_price = target_price
-        else:
-            entry_price = None
-        append_trade(row, "Buy", target_asset, target_price, 0.0)
-        return True
+        for index, asset in enumerate((1, 2)):
+            quantity = max(0, holdings[index] - desired[index])
+            price = prices[index]
+            if quantity <= 0:
+                continue
+            if (
+                not stop_loss_enabled
+                and average_costs[index] is not None
+                and price < float(average_costs[index])
+            ):
+                continue
+            pnl = (price - float(average_costs[index] or price)) * quantity
+            cash += quantity * price
+            holdings[index] -= quantity
+            append_trade(row, "Sell", asset, price, pnl, quantity)
+            realized_gains.append(pnl)
+            if asset == 2:
+                rotation_results.append(pnl)
+            if holdings[index] == 0:
+                average_costs[index] = None
+            changed = True
+
+        for index, asset in enumerate((1, 2)):
+            price = prices[index]
+            quantity = min(
+                max(0, desired[index] - holdings[index]),
+                int(floor(max(cash, 0.0) / price)),
+            )
+            if quantity <= 0:
+                continue
+            previous_holding = holdings[index]
+            previous_cost = float(average_costs[index] or 0.0)
+            cash -= quantity * price
+            holdings[index] += quantity
+            average_costs[index] = (
+                (previous_holding * previous_cost) + (quantity * price)
+            ) / holdings[index]
+            append_trade(row, "Buy", asset, price, 0.0, quantity)
+            changed = True
+        if changed:
+            target_regime = regime
+        return changed
 
     for index, row in enumerate(frame.itertuples(index=False)):
-        if include_cash_dividends and (index > 0 or shares > 0):
-            dividend = row_value(row, "Dividends", active_asset)
-            close_price = row_value(row, "Close", active_asset)
-            cash, shares = _apply_dividend_cash_flow(
-                cash=cash,
-                shares=shares,
-                close_price=close_price,
-                dividend_per_share=dividend,
-                reinvest_cash_dividends=reinvest_cash_dividends,
-            )
+        if include_cash_dividends and index > 0:
+            for asset in (1, 2):
+                dividend_cash = holdings[asset - 1] * row_value(row, "Dividends", asset)
+                cash += dividend_cash
+                if reinvest_cash_dividends:
+                    close_price = row_value(row, "Close", asset)
+                    quantity = int(floor(dividend_cash / close_price)) if close_price > 0 else 0
+                    if quantity > 0 and quantity * close_price <= cash:
+                        previous_holding = holdings[asset - 1]
+                        previous_cost = float(average_costs[asset - 1] or 0.0)
+                        cash -= quantity * close_price
+                        holdings[asset - 1] += quantity
+                        average_costs[asset - 1] = (
+                            previous_holding * previous_cost + quantity * close_price
+                        ) / holdings[asset - 1]
 
         if index == 0:
-            initial_price = row_value(row, "Open", active_asset) or row_value(row, "Close", active_asset)
-            if initial_price <= 0:
-                raise ValueError("The primary ticker has no usable opening price.")
-            shares = float(floor(cash / initial_price))
-            cash -= shares * initial_price
-            entry_price = initial_price
-            append_trade(row, "Buy", active_asset, initial_price, 0.0)
+            if not rebalance(row, "initial", "Open"):
+                raise ValueError("The selected tickers have no usable opening allocation.")
+            initial_allocation = {
+                "primary_shares": holdings[0],
+                "leveraged_shares": holdings[1],
+                "primary_open": round(row_value(row, "Open", 1), 4),
+                "leveraged_open": round(row_value(row, "Open", 2), 4),
+                "cash": round(cash, 2),
+            }
 
         executed_pending = False
-        if pending_asset is not None and index > 0:
-            executed_pending = switch_asset(row, pending_asset, "Open")
-            pending_asset = None
+        if pending_regime is not None and index > 0:
+            executed_pending = rebalance(row, pending_regime, "Open")
+            pending_regime = None
 
         enter_signal = bool(getattr(row, signal_result.buy_signal_column, False))
         exit_signal = bool(getattr(row, signal_result.sell_signal_column, False))
-        if active_asset == 1 and enter_signal and not executed_pending:
+        if enter_signal and not executed_pending:
             if normalized_execution_mode == "next_open":
-                pending_asset = 2
+                pending_regime = "leveraged"
             else:
-                switch_asset(row, 2, "Close")
-        elif active_asset == 2 and exit_signal and not executed_pending:
+                rebalance(row, "leveraged", "Close")
+        elif exit_signal and not executed_pending:
             if normalized_execution_mode == "next_open":
-                pending_asset = 1
+                pending_regime = "primary"
             else:
-                switch_asset(row, 1, "Close")
+                rebalance(row, "primary", "Close")
 
-        marked_price = row_value(row, "Close", active_asset)
-        equity_points.append(cash + (shares * marked_price))
+        equity_points.append(portfolio_equity(row))
 
     frame["Equity"] = equity_points
     bh_equity_series, bh_final_equity = _build_buy_hold_equity_series(
@@ -540,8 +597,9 @@ def run_leveraged_rotation_backtest(
             "long_loss": round(long_loss, 2),
             "short_gain": 0.0,
             "rotation_count": len(rotation_results),
-            "active_ticker": tickers[active_asset - 1],
+            "active_ticker": tickers[1] if target_regime == "leveraged" else tickers[0],
         },
+        "initial_allocation": initial_allocation,
         "chart": {
             "dates": frame["Date"].map(lambda value: _format_chart_date(value, interval)).tolist(),
             "raw_dates": [pd.Timestamp(value).isoformat() for value in frame["Date"].tolist()],
@@ -598,22 +656,35 @@ def run_single_ticker_backtest(
     grid_metadata = signal_result.metadata if isinstance(signal_result.metadata, dict) else {}
     raw_grid_params = grid_metadata.get("grid_parameters", {})
     grid_params = raw_grid_params if isinstance(raw_grid_params, dict) else {}
-    grid_price_floor_value = grid_params.get("price_floor", 0.0)
-    grid_price_ceiling_value = grid_params.get("price_ceiling", float("inf"))
+    grid_initial_holding = float(max(0, int(grid_params.get("initial_holding", 0))))
+    grid_holding_min = float(max(0, int(grid_params.get("holding_min", 0))))
+    grid_holding_max = float(max(grid_holding_min, int(grid_params.get("holding_max", 1_000_000))))
     grid_rise_value = grid_params.get("rise", 0.0)
     grid_fall_value = grid_params.get("fall", 0.0)
-    grid_price_floor = float(0.0 if grid_price_floor_value is None else grid_price_floor_value)
-    grid_price_ceiling = float(
-        float("inf") if grid_price_ceiling_value is None else grid_price_ceiling_value
-    )
     grid_rise = float(0.0 if grid_rise_value is None else grid_rise_value)
     grid_fall = float(0.0 if grid_fall_value is None else grid_fall_value)
+    grid_initial_unit_cost = 0.0
     grid_reference_price: float | None = None
     grid_reference_prices: list[float] = []
     grid_lower_prices: list[float] = []
     grid_upper_prices: list[float] = []
     grid_buy_signals: list[bool] = []
     grid_sell_signals: list[bool] = []
+
+    if is_grid_execution:
+        first_row = frame.iloc[0]
+        first_open = float(first_row.get("Open", first_row["Close"]))
+        grid_initial_unit_cost = first_open if first_open > 0 else float(first_row["Close"])
+        if not isfinite(grid_initial_unit_cost) or grid_initial_unit_cost <= 0:
+            raise ValueError("Grid Trading requires a finite positive initial price.")
+        shares = grid_initial_holding
+        cash -= shares * grid_initial_unit_cost
+        if cash < -1e-9:
+            raise ValueError(
+                "Current holding exceeds the shares supported by Initial capital."
+            )
+        cash = max(0.0, cash)
+        entry_price = grid_initial_unit_cost if shares > 0 else None
 
     def record_grid_execution(execution_price: float) -> None:
         """Advance Grid's trigger anchor only after an order actually fills."""
@@ -625,6 +696,67 @@ def run_single_ticker_backtest(
         if stop_loss_enabled or entry_price is None:
             return True
         return exit_price <= float(entry_price) if short_position else exit_price >= float(entry_price)
+
+    def execute_grid_buy(
+            execution_price: float,
+            trade_date: pd.Timestamp,
+            marked_price: float,
+    ) -> bool:
+        """Buy toward Grid's maximum holding without exceeding available cash."""
+        nonlocal cash, shares, entry_price
+        available_capacity = max(0.0, grid_holding_max - shares)
+        quantity = min(available_capacity, float(floor(cash / execution_price)))
+        if quantity <= 0:
+            return False
+        previous_holding = shares
+        cash -= quantity * execution_price
+        shares += quantity
+        entry_price = (
+            execution_price
+            if previous_holding <= 0 or entry_price is None
+            else (
+                (previous_holding * float(entry_price))
+                + (quantity * execution_price)
+            ) / shares
+        )
+        trades.append({
+            "date": trade_date.strftime(trade_date_format),
+            "side": "Buy",
+            "price": round(execution_price, 4),
+            "shares": round(quantity, 6),
+            "pnl": 0.0,
+            "cash": round(cash, 4),
+            "equity": round(cash + (shares * marked_price), 4),
+        })
+        record_grid_execution(execution_price)
+        return True
+
+    def execute_grid_sell(
+            execution_price: float,
+            trade_date: pd.Timestamp,
+            marked_price: float,
+    ) -> bool:
+        """Sell toward Grid's minimum holding without crossing its floor."""
+        nonlocal cash, shares, entry_price
+        quantity = max(0.0, shares - grid_holding_min)
+        if quantity <= 0 or not stop_loss_allows_exit(execution_price):
+            return False
+        pnl = (execution_price - float(entry_price or execution_price)) * quantity
+        cash += quantity * execution_price
+        shares -= quantity
+        trades.append({
+            "date": trade_date.strftime(trade_date_format),
+            "side": "Sell",
+            "price": round(execution_price, 4),
+            "shares": round(quantity, 6),
+            "pnl": round(pnl, 4),
+            "cash": round(cash, 4),
+            "equity": round(cash + (shares * marked_price), 4),
+        })
+        record_grid_execution(execution_price)
+        if shares <= 0:
+            entry_price = None
+        return True
 
     for row in frame.itertuples(index=False):
         is_first_row = is_at_backtest_start
@@ -692,7 +824,13 @@ def run_single_ticker_backtest(
                 )
             execution_price = open_price
 
-            if pending_order == "buy" and execution_price > 0:
+            if is_grid_execution and pending_order == "buy" and execution_price > 0:
+                execute_grid_buy(execution_price, trade_date, close_price)
+                pending_order = None
+            elif is_grid_execution and pending_order == "sell" and execution_price > 0:
+                execute_grid_sell(execution_price, trade_date, close_price)
+                pending_order = None
+            elif pending_order == "buy" and execution_price > 0:
                 if shares == 0:  # Entry Long
                     shares = float(floor(cash / execution_price))
                     if shares > 0:
@@ -754,18 +892,17 @@ def run_single_ticker_backtest(
             grid_upper = reference_price * (1.0 + grid_rise)
             high_price = getattr(row, "High", close_price)
             low_price = getattr(row, "Low", close_price)
-            in_trigger_range = (
-                pd.notna(close_price)
-                and grid_price_floor <= close_price <= grid_price_ceiling
-            )
             sell_signal = bool(
-                in_trigger_range
+                pd.notna(close_price)
+                and shares > grid_holding_min
                 and pd.notna(high_price)
                 and float(high_price) >= grid_upper
             )
             buy_signal = bool(
-                in_trigger_range
+                pd.notna(close_price)
                 and not sell_signal
+                and shares < grid_holding_max
+                and cash >= close_price
                 and pd.notna(low_price)
                 and float(low_price) <= grid_lower
             )
@@ -776,7 +913,11 @@ def run_single_ticker_backtest(
             grid_sell_signals.append(sell_signal)
 
         if normalized_execution_mode == "signal_close":
-            if buy_signal and close_price > 0:
+            if is_grid_execution and buy_signal and close_price > 0:
+                execute_grid_buy(close_price, trade_date, close_price)
+            elif is_grid_execution and sell_signal and close_price > 0:
+                execute_grid_sell(close_price, trade_date, close_price)
+            elif buy_signal and close_price > 0:
                 if shares == 0:  # Entry Long
                     shares = float(floor(cash / close_price))
                     if shares > 0:
@@ -829,10 +970,10 @@ def run_single_ticker_backtest(
                 # Do NOT allow entry short in long-only mode
         else:
             if buy_signal and pending_order is None:
-                if shares <= 0:
+                if (is_grid_execution and shares < grid_holding_max) or shares <= 0:
                     pending_order = "buy"
             elif sell_signal and pending_order is None:
-                if shares > 0:
+                if (is_grid_execution and shares > grid_holding_min) or shares > 0:
                     pending_order = "sell"
 
         equity_points.append(cash + (shares * close_price))
@@ -893,7 +1034,11 @@ def run_single_ticker_backtest(
             realized_short_pnl = (s_price - b_price) * s_shares
             short_gain += max(realized_short_pnl, 0.0)
 
-    _normalize_transaction_rows(trades)
+    _normalize_transaction_rows(
+        trades,
+        initial_quantity=grid_initial_holding if is_grid_execution else 0.0,
+        initial_unit_cost=grid_initial_unit_cost if is_grid_execution else 0.0,
+    )
 
     return _attach_strategy_presentation({
         "interval": interval,

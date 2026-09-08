@@ -1,4 +1,4 @@
-/* Code version: v0.11.2 */
+/* Code version: v0.12.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -102,6 +102,7 @@
     };
 
     const configurationMatches = (config) => {
+        if (document.querySelector("#trade_strategy_params_panel [data-strategy-param-draft='1']")) return false;
         const current = {...currentConfiguration(), ticker: currentTicker(), period: currentPeriod(), interval: currentInterval()};
         const params = currentParameters();
         const same = (left, right) => typeof right === "number" ? Number(left) === right

@@ -1,4 +1,4 @@
-"""Causal MACD/SuperTrend signal and execution regressions. Code version: v1.0.0."""
+"""Causal MACD/SuperTrend signal and execution regressions. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -7,14 +7,12 @@ import pandas as pd
 import pytest
 
 from strategies.algorithms.strategy_macd import MacdStrategy
-from strategies.algorithms.strategy_macd_gemini import MacdStrategy as MacdGemini
 from strategies.algorithms.strategy_supertrend_ai import SupertrendAiStrategy, _atr, _cluster_factor_and_score
-from strategies.algorithms.strategy_supertrend_ai_gemini import SupertrendAiStrategy as SupertrendGemini
 from strategies.backtest import run_single_ticker_backtest
 from tests.factories.market import close_frame_for_dates, ohlc_frame_for_dates
 
-MACD = (MacdStrategy, MacdGemini)
-SUPERTREND = (SupertrendAiStrategy, SupertrendGemini)
+MACD = (MacdStrategy,)
+SUPERTREND = (SupertrendAiStrategy,)
 ALL = (*MACD, *SUPERTREND)
 
 
@@ -164,12 +162,6 @@ def test_close_derived_entries_fill_only_at_following_observed_open(strategy_cla
     assert entry["price"] == pytest.approx(round(market_data.loc[first_signal + 1, "Open"], 4))
     truncated = strategy_class().compute_signals(market_data.iloc[:first_signal + 1])
     assert not run_single_ticker_backtest(truncated, 10_000, stop_loss_enabled=True)["trades"]
-
-
-def test_catalog_variants_share_the_same_corrected_formulas(market_data):
-    for first, second in ((MacdStrategy, MacdGemini), (SupertrendAiStrategy, SupertrendGemini)):
-        pd.testing.assert_frame_equal(first().compute_signals(market_data).frame,
-                                      second().compute_signals(market_data).frame)
 
 
 @pytest.mark.parametrize("strategy_class", ALL)

@@ -1,6 +1,6 @@
 """Causal labels, observed bars, and long-only neighbor strategy regressions.
 
-Code version: v1.0.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -13,16 +13,14 @@ import pandas as pd
 import pytest
 
 from strategies.algorithms import strategy_knn_machine_learning as knn
-from strategies.algorithms import strategy_knn_machine_learning_gemini as knn_gemini
 from strategies.algorithms import strategy_lorentzian_classification as lorentzian
-from strategies.algorithms import strategy_lorentzian_classification_chatgpt as lorentzian_chatgpt
-from strategies.algorithms import strategy_lorentzian_classification_gemini as lorentzian_gemini
 from tests.factories.market import ohlc_frame_for_dates
 
 
-KNN_MODULES = (knn, knn_gemini)
-LORENTZIAN_MODULES = (lorentzian, lorentzian_gemini, lorentzian_chatgpt)
+KNN_MODULES = (knn,)
+LORENTZIAN_MODULES = (lorentzian,)
 MODULES = KNN_MODULES + LORENTZIAN_MODULES
+KNN_STRATEGIES = (knn.KnnMachineLearningStrategy,)
 STRATEGIES = tuple(
     module.KnnMachineLearningStrategy if module in KNN_MODULES
     else module.LorentzianClassificationStrategy
@@ -37,7 +35,7 @@ def serial_neighbor_batches():
         return function(tuple(indices), *static_args), None
 
     with ExitStack() as stack:
-        for module in (knn,) + LORENTZIAN_MODULES:
+        for module in MODULES:
             stack.enter_context(patch.object(module, "map_ordered_batches", side_effect=serial))
         yield
 
@@ -94,11 +92,7 @@ def test_knn_equal_distance_boundary_prefers_recent_mature_label(module):
 
 
 def _lorentzian_vote(module, index, features, labels, *, k=1, history=100):
-    if module is lorentzian:
-        return module._lorentzian_prediction_at_index(index, features, labels, k, history)
-    return module._lorentzian_prediction_at_index(
-        index, features, labels, np.ones(len(labels), dtype=bool), k, history, 4, 4,
-    )
+    return module._lorentzian_prediction_at_index(index, features, labels, k, history)
 
 
 @pytest.mark.parametrize("module", LORENTZIAN_MODULES)
@@ -122,15 +116,6 @@ def test_lorentzian_history_bound_is_relative_to_prediction_origin(module):
     assert _lorentzian_vote(module, 8, features, labels, k=8, history=4) == -1
     features[4] = np.nan
     assert _lorentzian_vote(module, 8, features, labels, k=8, history=4) == 0
-
-
-@pytest.mark.parametrize("module", (lorentzian_gemini, lorentzian_chatgpt))
-def test_weighted_lorentzian_exact_neutral_matches_do_not_invent_direction(module):
-    features = np.ones((13, 2))
-    features[[4, 8, 12]] = 0
-    labels = np.ones(13)
-    labels[[4, 8]] = 0
-    assert _lorentzian_vote(module, 12, features, labels, k=3) == 0
 
 
 @pytest.mark.parametrize("strategy_class", STRATEGIES)
@@ -180,7 +165,7 @@ def test_neighbor_history_requires_chronological_observations(strategy_class, ob
 @pytest.mark.parametrize("strategy_class", STRATEGIES)
 @pytest.mark.parametrize("value", (float("nan"), "inf", 2.5))
 def test_numeric_parameters_reject_nonfinite_and_fractional_integers(strategy_class, observed_bars, value):
-    key = "short_window" if strategy_class in STRATEGIES[:2] else "f1_param_a"
+    key = "short_window" if strategy_class in KNN_STRATEGIES else "f1_param_a"
     with pytest.raises(ValueError, match="finite integer"):
         strategy_class().compute_signals(observed_bars, {key: value})
 
@@ -196,7 +181,7 @@ def test_kernel_numeric_parameters_cannot_silently_clamp_nonfinite_values(module
 
 @pytest.mark.parametrize("strategy_class", STRATEGIES)
 def test_integer_form_strings_use_requested_value_and_retain_lower_bound(strategy_class, observed_bars):
-    key = "short_window" if strategy_class in STRATEGIES[:2] else "f1_param_a"
+    key = "short_window" if strategy_class in KNN_STRATEGIES else "f1_param_a"
     strategy = strategy_class()
     expected = strategy.compute_signals(observed_bars, {key: 2}).frame
     actual = strategy.compute_signals(observed_bars, {key: "2.0"}).frame
@@ -223,8 +208,10 @@ def test_original_lorentzian_pairs_features_with_forward_four_bar_target(observe
 @pytest.mark.parametrize("module", KNN_MODULES)
 def test_knn_volume_is_required_only_for_selected_volume_features(module, observed_bars):
     frame = observed_bars.drop(columns="Volume")
+    default_result = module.KnnMachineLearningStrategy().compute_signals(frame)
+    assert default_result.required_execution_mode == "next_open"
     with pytest.raises(ValueError, match="Volume"):
-        module.KnnMachineLearningStrategy().compute_signals(frame)
+        module.KnnMachineLearningStrategy().compute_signals(frame, {"indicator": "Volume"})
     result = module.KnnMachineLearningStrategy().compute_signals(frame, {"indicator": "RSI"})
     assert result.required_execution_mode == "next_open"
 
@@ -268,10 +255,8 @@ def test_opposite_classification_exits_without_short_entry_kernel_permission(mod
             "use_volatility_filter": "Off", "use_regime_filter": "Off", "use_adx_filter": "Off",
             "use_ema_filter": "Off", "use_sma_filter": "Off", "use_kernel_filter": "On",
         }).frame
-    entry = 1 if module is lorentzian else 2
-    exit_index = 3 if module is lorentzian else 4
-    assert result["buy_signal"].to_numpy().nonzero()[0].tolist() == [entry]
-    assert result["sell_signal"].to_numpy().nonzero()[0].tolist() == [exit_index]
+    assert result["buy_signal"].to_numpy().nonzero()[0].tolist() == [1]
+    assert result["sell_signal"].to_numpy().nonzero()[0].tolist() == [3]
 
 
 def test_lorentzian_late_entry_has_own_hold_clock_and_no_orphan_exits():

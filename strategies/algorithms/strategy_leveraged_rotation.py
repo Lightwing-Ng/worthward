@@ -1,7 +1,7 @@
 """
 Leveraged rotation strategy.
 
-Code version: v1.1.0
+Code version: v2.0.0
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ class LeveragedRotationStrategy(BaseStrategy):
     strategy_id = "leveraged-rotation"
     strategy_name = "Leveraged Rotation"
     strategy_description = (
-        "Rotates from the primary ticker into its leveraged companion after a configured drawdown, "
-        "then returns to the primary ticker at a new observed closing high. "
+        "Rebalances integer shares between a primary ticker and its leveraged companion after "
+        "configured daily moves, within declared allocation bounds. "
         "Close-derived rotation decisions use subsequent opening prices."
     )
     strategy_category = "rotation"
@@ -44,20 +44,93 @@ class LeveragedRotationStrategy(BaseStrategy):
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
             StrategyParameterDefinition(
-                key="drawdown_pct",
-                label="Primary drawdown trigger",
+                key="initial_primary_pct",
+                label="Initial Ticker 1 allocation",
                 kind="number",
-                default=10.0,
-                minimum=0.1,
-                maximum=90.0,
+                default=70.0,
+                minimum=0.0,
+                maximum=100.0,
                 step=0.1,
                 unit_hint="%",
-                help_text=(
-                    "Rotates into Ticker 2 when Ticker 1 closes this percentage below its prior "
-                    "highest close in the supplied history."
-                ),
+                subgroup="Initial allocation",
+                ui_role="allocation-primary",
+                help_text="Initial market-value allocation to Ticker 1; shares are rounded down to integers.",
+            ),
+            StrategyParameterDefinition(
+                key="initial_leveraged_pct",
+                label="Initial Ticker 2 allocation",
+                kind="number",
+                default=25.0,
+                minimum=0.0,
+                maximum=100.0,
+                step=0.1,
+                unit_hint="%",
+                subgroup="Initial allocation",
+                ui_role="allocation-leveraged",
+                help_text="Initial market-value allocation to Ticker 2; unallocated and rounding residuals remain cash.",
+            ),
+            StrategyParameterDefinition(
+                key="primary_min_pct", label="Ticker 1 minimum", kind="number",
+                default=20.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
+                subgroup="Allocation limits",
+            ),
+            StrategyParameterDefinition(
+                key="primary_max_pct", label="Ticker 1 maximum", kind="number",
+                default=95.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
+                subgroup="Allocation limits",
+            ),
+            StrategyParameterDefinition(
+                key="leveraged_min_pct", label="Ticker 2 minimum", kind="number",
+                default=0.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
+                subgroup="Allocation limits",
+            ),
+            StrategyParameterDefinition(
+                key="leveraged_max_pct", label="Ticker 2 maximum", kind="number",
+                default=75.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
+                subgroup="Allocation limits",
+            ),
+            StrategyParameterDefinition(
+                key="buy_leveraged_drop_pct",
+                label="Ticker 1 daily drop trigger",
+                kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.1,
+                unit_hint="%", subgroup="Rotation triggers",
+                help_text="After Ticker 1 falls by this daily percentage, the next open rebalances toward Ticker 2.",
+            ),
+            StrategyParameterDefinition(
+                key="sell_leveraged_rise_pct",
+                label="Ticker 2 daily rise trigger",
+                kind="number", default=5.0, minimum=0.1, maximum=200.0, step=0.1,
+                unit_hint="%", subgroup="Rotation triggers",
+                help_text="After Ticker 2 rises by this daily percentage, the next open rebalances toward Ticker 1.",
             ),
         )
+
+    def normalize_params(self, params: dict | None = None) -> dict:
+        normalized = super().normalize_params(params)
+        primary_min = float(normalized["primary_min_pct"])
+        leveraged_min = min(float(normalized["leveraged_min_pct"]), 100.0 - primary_min)
+        primary_max = max(primary_min, float(normalized["primary_max_pct"]))
+        leveraged_max = max(leveraged_min, float(normalized["leveraged_max_pct"]))
+        primary_max = min(primary_max, 100.0 - leveraged_min)
+        leveraged_max = min(leveraged_max, 100.0 - primary_min)
+        primary_initial = min(max(float(normalized["initial_primary_pct"]), primary_min), primary_max)
+        leveraged_initial = min(
+            max(float(normalized["initial_leveraged_pct"]), leveraged_min),
+            leveraged_max,
+        )
+        if primary_initial + leveraged_initial > 100.0:
+            leveraged_initial = max(leveraged_min, 100.0 - primary_initial)
+            if primary_initial + leveraged_initial > 100.0:
+                primary_initial = 100.0 - leveraged_initial
+        normalized.update({
+            "primary_min_pct": primary_min,
+            "primary_max_pct": primary_max,
+            "leveraged_min_pct": leveraged_min,
+            "leveraged_max_pct": leveraged_max,
+            "initial_primary_pct": primary_initial,
+            "initial_leveraged_pct": leveraged_initial,
+        })
+        return normalized
 
     def compute_signals(
             self,
@@ -95,40 +168,46 @@ class LeveragedRotationStrategy(BaseStrategy):
                     raise ValueError("Leveraged Rotation requires finite, nonnegative dividends when supplied.")
                 frame[column] = dividends
 
-        raw_trigger = (params or {}).get("drawdown_pct", 10.0)
-        try:
-            finite_trigger = isfinite(float(raw_trigger))
-        except (TypeError, ValueError, OverflowError):
-            finite_trigger = False
-        if not finite_trigger:
-            raise ValueError("Primary drawdown trigger must be a finite number.")
+        for key in self.get_default_params():
+            raw_value = (params or {}).get(key, self.get_default_params()[key])
+            try:
+                finite_value = isfinite(float(raw_value))
+            except (TypeError, ValueError, OverflowError):
+                finite_value = False
+            if not finite_value:
+                raise ValueError(f"{key} must be a finite number.")
         normalized_params = self.normalize_params(params)
         primary_close = frame["Close"]
-        drawdown_trigger = -float(normalized_params["drawdown_pct"])
-        prior_high = primary_close.cummax().shift(1)
-        reference_high = prior_high.fillna(primary_close.iloc[0])
-        drawdown_pct = ((primary_close / reference_high) - 1.0) * 100.0
-
-        # These are persistent allocation intents, not assumed fills. The executor
-        # may block a losing exit; repeat the current intent until the regime changes.
-        targets: list[int] = []
+        leveraged_close = frame["Close_2"]
+        primary_daily_pct = primary_close.pct_change(fill_method=None) * 100.0
+        leveraged_daily_pct = leveraged_close.pct_change(fill_method=None) * 100.0
+        target_regimes: list[str] = []
+        enter_intents: list[bool] = []
         exit_intents: list[bool] = []
-        target_asset = 1
-        has_drawdown = False
-        new_highs = primary_close > reference_high
-        for below_trigger, new_high in zip(drawdown_pct <= drawdown_trigger, new_highs, strict=True):
-            if below_trigger:
-                target_asset = 2
-                has_drawdown = True
-            elif new_high:
-                target_asset = 1
-            targets.append(target_asset)
-            exit_intents.append(has_drawdown and target_asset == 1)
+        regime = "initial"
+        for primary_move, leveraged_move in zip(primary_daily_pct, leveraged_daily_pct, strict=True):
+            enter = bool(
+                regime != "leveraged"
+                and pd.notna(primary_move)
+                and primary_move <= -float(normalized_params["buy_leveraged_drop_pct"])
+            )
+            exit_ = bool(
+                regime == "leveraged"
+                and pd.notna(leveraged_move)
+                and leveraged_move >= float(normalized_params["sell_leveraged_rise_pct"])
+            )
+            if enter:
+                regime = "leveraged"
+            elif exit_:
+                regime = "primary"
+            target_regimes.append(regime)
+            enter_intents.append(enter)
+            exit_intents.append(exit_)
 
-        frame["rotation_primary_high"] = reference_high.to_numpy()
-        frame["rotation_drawdown_pct"] = drawdown_pct.to_numpy()
-        frame["rotation_target_asset"] = targets
-        frame["rotation_enter_signal"] = frame["rotation_target_asset"] == 2
+        frame["rotation_primary_daily_pct"] = primary_daily_pct.to_numpy()
+        frame["rotation_leveraged_daily_pct"] = leveraged_daily_pct.to_numpy()
+        frame["rotation_target_regime"] = target_regimes
+        frame["rotation_enter_signal"] = enter_intents
         frame["rotation_exit_signal"] = exit_intents
 
         return StrategySignalResult(
@@ -140,5 +219,6 @@ class LeveragedRotationStrategy(BaseStrategy):
             metadata={
                 "primary_close_column": "Close",
                 "secondary_close_column": "Close_2",
+                "rotation_parameters": normalized_params,
             },
         )

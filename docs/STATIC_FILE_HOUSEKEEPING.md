@@ -1,9 +1,9 @@
 # Static-file housekeeping project entrypoint
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.0`
 
 This repository follows the canonical cross-project contract at
-[`../../SHARED_STATIC_FILE_HOUSEKEEPING.md`](../../SHARED_STATIC_FILE_HOUSEKEEPING.md). That
+[`../../shared_docs/SHARED_STATIC_FILE_HOUSEKEEPING.md`](../../shared_docs/SHARED_STATIC_FILE_HOUSEKEEPING.md). That
 document owns the numbered-copy definition, evidence requirements, protected boundaries, action
 matrix, recoverable cleanup rule, and final-scan requirement. Do not duplicate those rules here.
 

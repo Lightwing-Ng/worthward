@@ -1,4 +1,4 @@
-/* Code version: v3.64.4 */
+/* Code version: v3.66.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -125,7 +125,7 @@
 .lstm-training-history-entry {
 	position: relative;
 	min-width: 0;
-	padding: 2px;
+	padding: 0;
 	min-height: 36px;
 	box-sizing: border-box;
 	border-radius: var(--radius-soft);
@@ -2124,6 +2124,9 @@
 .strategy-factor-group > .ui-collapse-body {
     padding-inline: 0;
 }
+.strategy-parameter-collapse--action > .ui-collapse-body {
+    padding: 0 4px;
+}
 .strategy-factor-group .trade-strategy-boolean-row {
     min-width: 0;
 }
@@ -2138,4 +2141,87 @@
 .strategy-factor-group .trade-strategy-param-help {
     box-sizing: border-box;
     max-width: min(280px, 100cqi);
+}
+
+.strategy-allocation-range {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 4px 0 8px;
+}
+
+.strategy-allocation-labels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.strategy-allocation-labels > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.strategy-allocation-labels > span:nth-child(2) { text-align: center; }
+.strategy-allocation-labels > span:last-child { text-align: right; }
+
+.strategy-allocation-track-shell {
+    position: relative;
+    height: 24px;
+}
+
+.strategy-allocation-track {
+    position: absolute;
+    inset: 9px 0 auto;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(to right,
+        var(--theme-accent-primary) 0 var(--allocation-primary),
+        var(--theme-accent-positive) var(--allocation-primary) var(--allocation-invested),
+        var(--theme-glass-border) var(--allocation-invested) 100%);
+}
+
+.strategy-allocation-handle {
+    appearance: none;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 24px;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+}
+
+.strategy-allocation-handle::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--theme-background);
+    border-radius: 50%;
+    background: var(--theme-accent-primary);
+    box-shadow: var(--theme-shadow-small);
+    pointer-events: auto;
+    cursor: ew-resize;
+}
+
+.strategy-allocation-handle[data-allocation-boundary="invested"]::-webkit-slider-thumb {
+    background: var(--theme-accent-positive);
+}
+
+.strategy-allocation-handle::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--theme-background);
+    border-radius: 50%;
+    background: var(--theme-accent-primary);
+    box-shadow: var(--theme-shadow-small);
+    pointer-events: auto;
+    cursor: ew-resize;
+}
+
+.strategy-allocation-handle[data-allocation-boundary="invested"]::-moz-range-thumb {
+    background: var(--theme-accent-positive);
 }

@@ -1,5 +1,18 @@
 # Known issues and operating constraints
 
+Investment P&L audit, 8 Sep 2026: dividend-reinvestment shares now retain their
+actual reinvestment cost basis instead of opening zero-cost lots. A reinvestment
+without positive quantity-and-value evidence remains explicitly unknown and
+produces an import warning. Open positions with unknown or partial carried basis
+fail P&L closed, including sales whose realized basis cannot be established. If
+one account is incomplete, ticker-level realized, unrealized, and total P&L are
+all withheld while complete account evidence remains inspectable. Historical
+Overview hover P&L now uses only the hovered point's transaction replay; current
+broker performance or position snapshots cannot rewrite earlier chart points.
+Missing quotes, previous closes, or FX rates remain unavailable in Holdings;
+blank live-badge state cannot be reinterpreted as numeric zero during a session
+refresh.
+
 Transfer bindings, 7 Sep 2026: IBKR native-currency replacements migrate uniquely
 identified base-currency binding keys using retained replacement evidence.
 New imports preserve the replaced date and source identity. Ambiguous mappings
@@ -22,11 +35,16 @@ the existing Collapse and field primitives. Snapshot-only and undisclosed
 research data remain unavailable to causal training. See the factor audit for
 formulas, source checks, and eligibility boundaries.
 
-Backtest disclosures and training history, 7 Sep 2026: strategy parameter,
+Backtest disclosures and training history, 8 Sep 2026: strategy parameter,
 training, and market-factor sections no longer share a native details name, so
-all can remain open independently. Training history entries use 2px padding and
-a 36px compact row (32px selection control). Expanded details retain natural
-height. The selection focus ring aligns with the Training history heading.
+all can remain open independently. LSTM training owns Compute backend at its
+head and uses 4px inline and zero bottom body padding. Training history entries
+use zero padding around a 32px selection control while retaining the 36px compact
+row minimum. Factor subgroup summaries append the checked count in plain
+parentheses. LSTM backend and factor changes are staged for durable training and
+do not recalculate the current backtest; selecting a completed case applies its
+configuration. Expanded details retain natural height. The selection focus ring
+aligns with the Training history heading.
 See [Longbridge factor audit](LONGBRIDGE_FACTOR_AUDIT.md) for current CLI gaps.
 
 Overview tooltip coverage, 7 Sep 2026: historical realized P&L requires complete
@@ -109,7 +127,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.244.13`
+Documentation version: `v1.246.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

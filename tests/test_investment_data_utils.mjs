@@ -1,4 +1,4 @@
-/* Code version: v1.46.2 */
+/* Code version: v1.48.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,8 +12,18 @@ import {
     filterAggregateOnlyOverlayTransactions,
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
+    parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
 } from '../app/web/static/assets/js/investment/data-utils.js';
+
+test('optional Investment numbers preserve unavailable values instead of coercing zero', () => {
+    for (const value of [null, undefined, '', '   ', Number.NaN, Number.POSITIVE_INFINITY]) {
+        assert.equal(parseInvestmentOptionalNumber(value), null);
+    }
+    assert.equal(parseInvestmentOptionalNumber(0), 0);
+    assert.equal(parseInvestmentOptionalNumber('0'), 0);
+    assert.equal(parseInvestmentOptionalNumber('12.5'), 12.5);
+});
 
 test('stale backend payloads do not receive browser-synthesized attestations', () => {
     const payload = {
@@ -1909,6 +1919,31 @@ test('cash and FX descriptions retain source evidence without legacy-equivalent 
         }),
         'FX from USD to HKD @ 7.8',
     );
+    assert.equal(
+        formatTransactionDescription({
+            type: 'forex_trade_component',
+            ticker: 'USD.CNH',
+            quantity_raw: '299.58',
+            quantity_abs: '299.58',
+            price_raw: '6.70920',
+            source: {
+                forex_action: 'buy_base',
+                base_quantity_raw: '299.58',
+                quote_amount_raw: '2009.9421360',
+            },
+        }),
+        'Bought 299.58 USD with 2,009.94 CNH @ USD.CNH 6.70920',
+    );
+    assert.equal(
+        formatTransactionDescription({
+            type: 'forex_trade_component',
+            ticker: 'USD.CNH',
+            quantity_raw: '-100',
+            quantity_abs: '100',
+            price_raw: '7.00000',
+        }),
+        'Sold 100.00 USD for 700.00 CNH @ USD.CNH 7.00000',
+    );
 });
 
 test('transaction descriptions canonicalize clause separators without changing identifiers', () => {
@@ -3159,7 +3194,9 @@ test('aggregate ticker holdings keep in-kind transfer pairs cash-neutral', () =>
 
     assert.ok(qqqi);
     assert.equal(qqqi.shares, 315);
-    assert.equal(qqqi.realizedPnl, 0);
+    assert.equal(qqqi.realizedPnl, null);
+    assert.equal(qqqi.pnlUnavailable, true);
+    assert.equal(qqqi.pnlUnavailableReason, 'open_position_cost_basis_unknown');
 });
 
 test('buildTickerSummaries excludes correction cash from broker-reported ticker P&L', () => {
@@ -3822,13 +3859,82 @@ test('unknown transfer-in preserves existing lot order for subsequent FIFO sells
     ];
     const dram = buildTickerSummaries(transactions, {DRAM: 120}, 0, {})[0];
 
-    assert.equal(dram.realizedPnlLocal, 100);
+    assert.equal(dram.realizedPnlLocal, null);
     assert.equal(dram.shares, 10);
-    assert.equal(dram.totalCost, 250);
-    assert.equal(dram.averagePrice, 25);
-    assert.equal(dram.unrealizedPnlLocal, 950);
-    assert.equal(dram.totalPnlLocal, 1050);
+    assert.equal(dram.totalCost, null);
+    assert.equal(dram.averagePrice, null);
+    assert.equal(dram.unrealizedPnlLocal, null);
+    assert.equal(dram.totalPnlLocal, null);
     assert.equal(dram.costBasisStatus, 'unknown');
+    assert.equal(dram.costBasisUnavailable, true);
+    assert.equal(dram.costBasisUnavailableReason, 'open_position_cost_basis_unknown');
+    assert.equal(dram.pnlUnavailable, true);
+    assert.equal(dram.pnlUnavailableReason, 'open_position_cost_basis_unknown');
+});
+
+test('dividend reinvestment opens shares at the reinvestment cost basis', () => {
+    setDramTestWindow();
+    const reinvestment = makeScopedDramTrade({
+        broker: 'schwab', account: 'SCHWAB-1', type: 'dividend_reinvestment',
+        date: '2026-08-05', quantity: 2, price: 50,
+    });
+    reinvestment.normalized.net_amount = '-100';
+
+    const dram = buildTickerSummaries([reinvestment], {DRAM: 50}, 0, {})[0];
+
+    assert.equal(dram.shares, 2);
+    assert.equal(dram.totalCost, 100);
+    assert.equal(dram.averagePrice, 50);
+    assert.equal(dram.unrealizedPnlLocal, 0);
+    assert.equal(dram.totalPnlLocal, 0);
+});
+
+test('dividend reinvestment without value evidence fails cost basis and P&L closed', () => {
+    setDramTestWindow();
+    const reinvestment = makeScopedDramTrade({
+        broker: 'schwab', account: 'SCHWAB-1', type: 'dividend_reinvestment',
+        date: '2026-08-05', quantity: 2, price: 50,
+    });
+    delete reinvestment.price_raw;
+    delete reinvestment.normalized.unit_price;
+    delete reinvestment.normalized.net_amount;
+
+    const dram = buildTickerSummaries([reinvestment], {DRAM: 50}, 0, {})[0];
+
+    assert.equal(dram.shares, 2);
+    assert.equal(dram.totalCost, null);
+    assert.equal(dram.averagePrice, null);
+    assert.equal(dram.costBasisStatus, 'unknown');
+    assert.equal(dram.costBasisUnavailable, true);
+    assert.equal(dram.realizedPnl, null);
+    assert.equal(dram.unrealizedPnlLocal, null);
+    assert.equal(dram.totalPnlLocal, null);
+    assert.equal(dram.pnlUnavailable, true);
+    assert.equal(dram.pnlUnavailableReason, 'open_position_cost_basis_unknown');
+});
+
+test('missing reinvestment basis makes a known open position partially covered', () => {
+    setDramTestWindow();
+    const buy = makeScopedDramTrade({
+        broker: 'schwab', account: 'SCHWAB-1', type: 'buy',
+        date: '2026-08-01', quantity: 2, price: 40,
+    });
+    const reinvestment = makeScopedDramTrade({
+        broker: 'schwab', account: 'SCHWAB-1', type: 'dividend_reinvestment',
+        date: '2026-08-05', quantity: 1, price: 50,
+    });
+    delete reinvestment.price_raw;
+    delete reinvestment.normalized.unit_price;
+    delete reinvestment.normalized.net_amount;
+
+    const dram = buildTickerSummaries([buy, reinvestment], {DRAM: 50}, 0, {})[0];
+
+    assert.equal(dram.shares, 3);
+    assert.equal(dram.totalCost, null);
+    assert.equal(dram.averagePrice, null);
+    assert.equal(dram.costBasisStatus, 'partial');
+    assert.equal(dram.pnlUnavailable, true);
+    assert.equal(dram.pnlUnavailableReason, 'open_position_cost_basis_partial');
 });
 
 test('cross-account sells consume only their account lots before ticker aggregation', () => {
@@ -4329,14 +4435,61 @@ test('partial HSBC histories remain excluded from complete DRAM, BOXX, and EUV a
         );
 
         assert.equal(summary.ticker, ticker);
-        assert.equal(summary.realizedPnl, ibkrRealizedPnl);
+        assert.equal(summary.realizedPnl, null);
+        assert.equal(summary.realizedPnlLocal, null);
         assert.equal(summary.realizedPnlStatus, 'partial');
+        assert.equal(summary.realizedPnlReconciliation.realizedPnl, null);
+        assert.equal(summary.realizedPnlReconciliation.realizedPnlLocal, null);
+        assert.deepEqual(summary.realizedPnlReconciliation.realizedPnlByDate, {});
+        assert.equal(summary.pnlUnavailable, true);
+        assert.equal(summary.pnlUnavailableReason, 'realized_pnl_coverage_partial');
+        assert.equal(summary.totalPnl, null);
         assert.equal(byBroker.ibkr.realizedPnlLocal, ibkrRealizedPnl);
         assert.equal(byBroker.ibkr.status, 'complete');
         assert.equal(byBroker.hsbc.realizedPnlLocal, null);
         assert.equal(byBroker.hsbc.status, 'unverified');
         assert.equal(byBroker.hsbc.source, 'unavailable');
     }
+});
+
+test('one incomplete sold account withholds another account open-position P&L', () => {
+    setDramTestWindow();
+    const unknownTransfer = makeScopedDramTrade({
+        broker: 'hsbc', account: 'HSBC-1', type: 'transfer_in',
+        date: '2026-08-01', quantity: 5, price: 0,
+    });
+    unknownTransfer.carried_cost_basis_status = 'unknown';
+    const transactions = [
+        unknownTransfer,
+        makeScopedDramTrade({
+            broker: 'hsbc', account: 'HSBC-1', type: 'sell',
+            date: '2026-08-02', quantity: 5, price: 120,
+        }),
+        makeScopedDramTrade({
+            broker: 'ibkr', account: 'IBKR-1', type: 'buy',
+            date: '2026-08-03', quantity: 5, price: 100,
+        }),
+    ];
+
+    const dram = buildTickerSummaries(transactions, {DRAM: 120}, 0, {})[0];
+    const byBroker = Object.fromEntries(
+        dram.realizedPnlAccounts.map((result) => [result.broker, result]),
+    );
+
+    assert.equal(dram.shares, 5);
+    assert.equal(dram.totalCost, 500);
+    assert.equal(dram.averagePrice, 100);
+    assert.equal(dram.marketValue, 600);
+    assert.equal(dram.realizedPnlStatus, 'partial');
+    assert.equal(dram.realizedPnl, null);
+    assert.equal(dram.unrealizedPnl, null);
+    assert.equal(dram.totalPnl, null);
+    assert.equal(dram.pnlUnavailable, true);
+    assert.equal(dram.pnlUnavailableReason, 'realized_pnl_coverage_partial');
+    assert.equal(byBroker.hsbc.realizedPnl, null);
+    assert.equal(byBroker.hsbc.status, 'incomplete');
+    assert.equal(byBroker.ibkr.realizedPnl, 0);
+    assert.equal(byBroker.ibkr.status, 'complete');
 });
 
 test('validated HSBC position snapshots attest open same-day tax-lot replay', () => {

@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v0.6.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def _build_strategy_catalog() -> list[dict[str, Any]]:
 
 def load_strategy_registry() -> dict[str, Any]:
     return {
-        "version": "v2.2.0",
+        "version": "v4.0.0",
         "strategies": _build_strategy_catalog(),
     }
 

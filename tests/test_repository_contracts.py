@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.4.0
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -14,6 +14,9 @@ JAVASCRIPT_ROOT = PROJECT_ROOT / "app/web/static/assets/js"
 STATIC_ROOT = PROJECT_ROOT / "app/web/static"
 CSS_ROOT = STATIC_ROOT / "assets/css"
 E2E_ROOT = PROJECT_ROOT / "tests/e2e"
+SHARED_STATIC_HOUSEKEEPING_CONTRACT = (
+    PROJECT_ROOT.parent / "shared_docs" / "SHARED_STATIC_FILE_HOUSEKEEPING.md"
+)
 
 APP_CSS_IMPORT_ORDER = (
     "foundation/fonts.css",
@@ -94,7 +97,7 @@ def test_documentation_entrypoints_exist_and_local_links_resolve() -> None:
                 if Path(target).is_absolute()
                 else markdown_path.parent / target
             ).resolve()
-            if resolved_target == PROJECT_ROOT.parent / "SHARED_STATIC_FILE_HOUSEKEEPING.md":
+            if resolved_target == SHARED_STATIC_HOUSEKEEPING_CONTRACT:
                 # The shared desktop contract is intentionally external to CI checkouts.
                 continue
             assert resolved_target.is_relative_to(PROJECT_ROOT), (

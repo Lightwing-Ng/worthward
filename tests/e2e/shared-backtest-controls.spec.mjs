@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.1.0 */
+/* Shared Backtest control primitives. Code version: v1.2.0 */
 import {test, expect} from '@playwright/test';
 
 for (const colorScheme of ['light', 'dark']) {
@@ -26,6 +26,10 @@ for (const colorScheme of ['light', 'dark']) {
             await expect(common.locator('#show_trade_details')).toBeHidden();
             expect(Math.abs((await summary.boundingBox()).x - (await strategyLabel.boundingBox()).x)).toBeLessThan(1);
             await expect(training.locator('details')).toHaveCount(0);
+            await expect(training.locator(':scope > .ui-collapse-body')).toHaveCSS('padding-right', '4px');
+            await expect(training.locator(':scope > .ui-collapse-body')).toHaveCSS('padding-bottom', '0px');
+            await expect(training.locator(':scope > .ui-collapse-body')).toHaveCSS('padding-left', '4px');
+            await expect(training.locator('[data-strategy-param-key]').first()).toHaveAttribute('data-strategy-param-key', 'compute_backend');
             const button = training.locator('[data-lstm-training-action]');
             await expect(button).toBeVisible();
             const geometry = await button.evaluate(node => ({
@@ -36,7 +40,7 @@ for (const colorScheme of ['light', 'dark']) {
             expect(geometry.width).toBeLessThan(geometry.parentWidth);
             expect(Math.abs(geometry.rightGap)).toBeLessThan(1);
             const entry = training.locator('.lstm-training-history-entry');
-            await expect(entry).toHaveCSS('padding', '2px');
+            await expect(entry).toHaveCSS('padding', '0px');
             await expect(entry).toHaveCSS('height', '36px');
             const historyGeometry = await entry.evaluate(node => {
                 const heading = node.closest('.lstm-training-history-collapse').querySelector('.lstm-training-history-heading').getBoundingClientRect();
@@ -46,8 +50,8 @@ for (const colorScheme of ['light', 'dark']) {
                     rightInset: row.right - pill.right};
             });
             expect(Math.abs(historyGeometry.entryLeft)).toBeLessThan(1);
-            expect(historyGeometry.pillLeft).toBe(2);
-            expect(historyGeometry.rightInset).toBe(2);
+            expect(historyGeometry.pillLeft).toBe(0);
+            expect(historyGeometry.rightInset).toBe(0);
             expect(await entry.locator('.lstm-training-history-identifier').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
             expect(await entry.locator('.lstm-training-history-run').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
             const sections = page.locator('#trade_strategy_params_panel > details');

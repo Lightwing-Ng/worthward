@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v0.6.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from strategies.loader import instantiate_strategy, list_enabled_strategies, loa
 class StrategyLoaderTests(unittest.TestCase):
     def test_registry_is_built_from_strategy_classes(self) -> None:
         registry = load_strategy_registry()
-        self.assertEqual(registry["version"], "v2.2.0")
+        self.assertEqual(registry["version"], "v4.0.0")
         strategies = registry["strategies"]
         self.assertGreaterEqual(len(strategies), 3)
 
@@ -36,14 +36,21 @@ class StrategyLoaderTests(unittest.TestCase):
 
     def test_enabled_strategy_list_is_sorted_by_display_order(self) -> None:
         strategy_ids = [item["id"] for item in list_enabled_strategies()]
-        # With multiple MACD strategies, we have macd followed by macd-gemini at 21
         self.assertEqual(
             strategy_ids[:3],
-            ["buy-and-hold", "macd", "macd-gemini"],
+            ["buy-and-hold", "macd", "supertrend-ai"],
         )
-        # supertrend-ai comes next at 30
-        self.assertEqual(strategy_ids[3], "supertrend-ai")
         self.assertNotIn("supertrend-double-ai", strategy_ids)
+
+    def test_retired_duplicate_strategy_ids_are_not_discoverable(self) -> None:
+        strategy_ids = {item["id"] for item in list_enabled_strategies()}
+        self.assertTrue({
+            "lorentzian-classification-chatgpt",
+            "lorentzian-classification-gemini",
+            "macd-gemini",
+            "knn-machine-learning-gemini",
+            "supertrend_ai_gemini",
+        }.isdisjoint(strategy_ids))
 
     def test_enabled_strategy_list_exposes_categories_for_grouped_ui(self) -> None:
         categories = {item["id"]: item["category"] for item in list_enabled_strategies()}

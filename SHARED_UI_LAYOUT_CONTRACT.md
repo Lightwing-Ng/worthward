@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.1.1`
+Documentation version: `v1.2.0`
 
 This is the normative spatial contract for the sibling projects
 `/Users/example/Desktop/worthward` and
@@ -27,11 +27,16 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
-- Modal and floating-notice dismiss buttons use standard error red
+- Shared workspace-modal and floating-notice dismiss buttons use standard error red
   (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
   focusing within the owning modal/notice, not the entire page. Keyboard focus
   reveals the control; coarse/no-hover devices keep it visible. Hidden controls
-  do not intercept pointer events.
+  do not intercept pointer events. Each shared workspace modal and floating notice uses `12px`
+  padding on all four sides. Its circular `24px` dismiss target sits in the upper
+  left with equal `12px` CSS top and left insets, so the center has the same distance
+  from both axes; any surface border contributes equally. A dedicated leading grid
+  track separates that target from the status icon and content rather than
+  compensating with extra right padding.
 
 These rules are not tied to the annotation's 1,024px viewport. Existing desktop,
 overlay, and compact breakpoints and role-based shell geometry remain unchanged.
@@ -49,6 +54,9 @@ The following values are semantic tokens, not page-local overrides:
 | `B` | Physical-effect bleed | `48px` |
 | `R` | Sidebar and soft card radius | `10px` |
 | `T` | Round action size | project token; geometry is shared |
+| `M` | Modal and floating-notice inner pad | `12px` |
+| `D` | Modal dismiss target size | `24px` |
+| `I` | Modal dismiss top/left edge inset | `12px` |
 
 Each project publishes `--layout-content-width: 640px`,
 `--layout-control-width: 384px`, `--page-edge-pad: 10px`,
@@ -171,6 +179,6 @@ attributes or temporary preview markers.
 Each project must provide static contract tests for tokens, roles, and overflow
 ownership, focused functional tests for its affected surfaces, and rendered browser
 checks at desktop, overlay/iPad, and compact widths. The final synchronization entry in
-`/Users/example/Desktop/SHARED_UI_SYNC.md` may be marked `Synchronized` only after
+`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md` may be marked `Synchronized` only after
 both projects pass their complete gates and the same geometry is measured on isolated
 verification ports.

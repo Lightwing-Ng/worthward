@@ -1,7 +1,17 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.111.2
+ * Code version: v1.113.0
+ * - Fixed: Missing dividend-reinvestment basis remains unknown instead of
+ *   opening a fabricated zero-cost lot for P&L.
+ * - Fixed: Partial account-level realized-P&L coverage now withholds every
+ *   ticker-level P&L total while retaining the account evidence.
+ * - Added: Optional numeric parsing preserves null and blank values instead
+ *   of coercing them to zero.
+ * - Fixed: IBKR forex components show the acquired base currency and paid
+ *   quote currency instead of reversing the fill direction.
+ * - Fixed: Dividend-reinvestment shares carry their reinvestment cost basis, and
+ *   unknown open-position basis now fails P&L closed instead of fabricating zero cost.
  * - Fixed: Post-snapshot income belongs only to incremental realized P&L,
  *   preventing dividends and withholding from also entering the baseline.
  * - Fixed: Complete file history can reconstruct an omitted IBKR position boundary.
@@ -197,6 +207,13 @@
 
 export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
+export function parseInvestmentOptionalNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 const INVESTMENT_COST_BASIS_METHODS = new Set([
     'lowest_cost_first',
     'fifo',
@@ -387,13 +404,15 @@ export function aggregateInvestmentScopedPositionStates(
         aggregate.realizedPnlStatus = (
             aggregate.realizedPnlStatus === 'incomplete' || state.realizedPnlStatus === 'incomplete'
         ) ? 'incomplete' : aggregate.realizedPnlStatus;
-        if (state.costBasisStatus === 'unknown') {
-            aggregate.costBasisStatus = 'unknown';
-        } else if (
-            state.costBasisStatus === 'partial'
-            && aggregate.costBasisStatus === 'known'
-        ) {
-            aggregate.costBasisStatus = 'partial';
+        if (!isFlatScopedPosition(state.shares)) {
+            if (state.costBasisStatus === 'unknown') {
+                aggregate.costBasisStatus = 'unknown';
+            } else if (
+                state.costBasisStatus === 'partial'
+                && aggregate.costBasisStatus === 'known'
+            ) {
+                aggregate.costBasisStatus = 'partial';
+            }
         }
         if (state.costBasisMethod) aggregate.costBasisMethod = state.costBasisMethod;
         if (state.lotMatchingMethod) aggregate.lotMatchingMethod = state.lotMatchingMethod;
@@ -419,15 +438,17 @@ export function aggregateInvestmentScopedPositionStates(
     const positionCurrencies = Array.from(currencies).sort();
     const hasMixedPositionCurrencies = positionCurrencies.length > 1;
     const hasOpenPosition = !isFlatScopedPosition(aggregate.shares);
+    const hasUnknownOpenCostBasis = hasOpenPosition && aggregate.costBasisStatus !== 'known';
     const averagePrice = (
         hasMixedPositionCurrencies
+        || hasUnknownOpenCostBasis
         || !Number.isFinite(aggregate.shares)
         || !hasOpenPosition
     ) ? null : aggregate.totalCost / Math.abs(aggregate.shares);
 
     return {
         ...aggregate,
-        totalCost: hasMixedPositionCurrencies ? null : aggregate.totalCost,
+        totalCost: hasMixedPositionCurrencies || hasUnknownOpenCostBasis ? null : aggregate.totalCost,
         averagePrice,
         currencies: positionCurrencies,
         positionCurrencies,
@@ -1706,18 +1727,36 @@ export function createInvestmentDataUtils({
         const forexPair = String(txn?.ticker || '').trim();
         const [baseCurrency, quoteCurrency] = forexPair.split('.');
         const quantity = getTransactionQuantity(txn);
-        const rate = getTransactionPrice(txn);
+        const rate = Number(txn?.price_raw ?? getTransactionPrice(txn));
 
-        if (!baseCurrency || !quoteCurrency || !Number.isFinite(quantity) || !Number.isFinite(rate)) {
+        if (
+            !baseCurrency
+            || !quoteCurrency
+            || !Number.isFinite(quantity)
+            || !Number.isFinite(rate)
+            || rate <= 0
+        ) {
             return normalizeTransactionDescriptionPresentation(txn.description || '--');
         }
 
-        const acquiredQuantity = quantity * rate;
-        const quantityText = Number.isInteger(acquiredQuantity)
-            ? `${acquiredQuantity}`
-            : formatAmount(acquiredQuantity);
+        const sourceAction = String(txn?.source?.forex_action || '').trim().toLowerCase();
+        const signedQuantity = Number(txn?.quantity_raw ?? quantity);
+        const isBaseSale = sourceAction === 'sell_base' || (!sourceAction && signedQuantity < 0);
+        const baseQuantity = Math.abs(Number(
+            txn?.source?.base_quantity_raw ?? signedQuantity,
+        ));
+        const quoteAmount = Math.abs(Number(
+            txn?.source?.quote_amount_raw ?? (baseQuantity * rate),
+        ));
+        if (!Number.isFinite(baseQuantity) || !Number.isFinite(quoteAmount)) {
+            return normalizeTransactionDescriptionPresentation(txn.description || '--');
+        }
+        const baseQuantityText = formatAmount(baseQuantity);
+        const quoteAmountText = formatAmount(quoteAmount);
         const rateText = String(txn.price_raw ?? txn.normalized?.unit_price ?? rate);
-        return `Bought ${quantityText} ${quoteCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
+        const verb = isBaseSale ? 'Sold' : 'Bought';
+        const connector = isBaseSale ? 'for' : 'with';
+        return `${verb} ${baseQuantityText} ${baseCurrency} ${connector} ${quoteAmountText} ${quoteCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
     }
 
     function normalizeTransactionDescriptionWhitespace(value) {
@@ -3076,7 +3115,7 @@ export function createInvestmentDataUtils({
 
             if (normalizedType === 'grant') return addLot(quantity, 0);
             if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
-                const unitCost = getTransactionEffectiveUnitPrice(txn, quantity);
+                const unitCost = getTransactionEvidencedUnitPrice(txn, quantity);
                 return addLot(quantity, unitCost);
             }
             if (normalizedType === 'transfer_in') {
@@ -3488,8 +3527,8 @@ export function createInvestmentDataUtils({
                     const carriedBasis = getTransactionDerivedCostBasis(txn, 'carried');
                     incomingCostPrice = carriedBasis === null ? null : carriedBasis / quantity;
                 } else {
-                    const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
-                    incomingCostPrice = Number.isFinite(effectiveUnitPrice) && effectiveUnitPrice >= 0
+                    const effectiveUnitPrice = getTransactionEvidencedUnitPrice(txn, quantity);
+                    incomingCostPrice = Number.isFinite(effectiveUnitPrice) && effectiveUnitPrice > 0
                         ? effectiveUnitPrice
                         : null;
                 }
@@ -3843,7 +3882,7 @@ export function createInvestmentDataUtils({
         );
     }
 
-    function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
+    function getTransactionEvidencedUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
         if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
             if (txn?.normalized?.net_amount !== undefined && txn?.normalized?.net_amount !== null) {
@@ -3866,7 +3905,11 @@ export function createInvestmentDataUtils({
             }
         }
         const price = getTransactionPrice(txn);
-        return Number.isFinite(price) ? price : 0;
+        return Number.isFinite(price) ? price : null;
+    }
+
+    function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
+        return getTransactionEvidencedUnitPrice(txn, quantityOverride) ?? 0;
     }
 
     function getTransactionDerivedCostBasis(txn, prefix = 'carried') {
@@ -3943,14 +3986,38 @@ export function createInvestmentDataUtils({
             if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
             return 0;
         }
-        // Dividend reinvestment is funded by a separate dividend cash flow.
         if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
-            openPositionLots(summary, 'long', quantity, 0);
+            // The dividend cash flow is separate, but the reinvested shares still
+            // acquire basis at the actual reinvestment price. Treating DRIP lots
+            // as zero-cost would double count the distribution in later P&L.
+            const evidencedUnitPrice = getTransactionEvidencedUnitPrice(txn, quantity);
+            const resolvedUnitPrice = resolveTradeUnitPrice();
+            if (
+                evidencedUnitPrice === null
+                || evidencedUnitPrice <= 0
+                || !Number.isFinite(resolvedUnitPrice)
+                || resolvedUnitPrice <= 0
+            ) {
+                const hadKnownOpenBasis = (
+                    !isFlatPosition(summary.shares)
+                    && summary.costBasisStatus === 'known'
+                );
+                openPositionLots(summary, 'long', quantity, 0);
+                summary.costBasisStatus = (
+                    hadKnownOpenBasis
+                    || summary.costBasisStatus === 'partial'
+                )
+                    ? 'partial'
+                    : 'unknown';
+            } else {
+                openPositionLots(summary, 'long', quantity, resolvedUnitPrice);
+            }
             if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
             return 0;
         }
         if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
             const sharesBeforeSell = Number(summary.shares) || 0;
+            const costBasisStatusBeforeSell = summary.costBasisStatus;
             const realizedBeforeSell = Number(summary.realizedPnl) || 0;
             applyDirectionalTrade(summary, 'short', quantity, resolveTradeUnitPrice());
             summary.sellCount += 1;
@@ -3962,7 +4029,10 @@ export function createInvestmentDataUtils({
             if (brokerRealizedPnl !== null) {
                 summary.realizedPnl = realizedBeforeSell + brokerRealizedPnl;
                 summary.brokerRealizedSellCount += 1;
-            } else if (sharesBeforeSell < quantity - 1e-9) {
+            } else if (
+                sharesBeforeSell < quantity - 1e-9
+                || costBasisStatusBeforeSell !== 'known'
+            ) {
                 summary.realizedPnlStatus = 'incomplete';
             }
             if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
@@ -5817,6 +5887,11 @@ export function createInvestmentDataUtils({
                 && result?.reconciliation?.coverageStatus === 'complete'
                 && result.realizedPnl !== null
             ));
+            const summaryCoverageStatus = realizedPnlAccounts.length === 0
+                ? (performanceEntry ? 'unavailable' : 'complete')
+                : completeRealizedPnlAccounts.length === realizedPnlAccounts.length
+                    ? 'complete'
+                    : (completeRealizedPnlAccounts.length ? 'partial' : 'unavailable');
             const hasOnlyUnavailableRealizedAccounts = (
                 realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
             );
@@ -5828,39 +5903,40 @@ export function createInvestmentDataUtils({
             ));
             const hasMixedPositionCurrencies = !snapshotEntry && summary.hasMixedPositionCurrencies === true;
             const preserveMixedCurrencyRealizedBreakdown = hasMixedPositionCurrencies;
-            const costBasisUnavailable = hasMixedPositionCurrencies;
-            const realizedCoverageUnavailable = (
-                hasOnlyUnavailableRealizedAccounts
-                && realizedPnlAccounts.some((result) => (
-                    result.status === 'unavailable'
-                    && (
-                        result.reconciliation?.coverageStatus === 'unavailable'
-                        || result.reconciliation?.replay?.status === 'unavailable'
-                    )
-                ))
-            );
+            const hasUnknownOpenCostBasis = !isFlatPosition(shares) && costBasisStatus !== 'known';
+            const costBasisUnavailable = hasMixedPositionCurrencies || hasUnknownOpenCostBasis;
             let pnlUnavailable = (
-                realizedCoverageUnavailable
+                summaryCoverageStatus !== 'complete'
                 || (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl)
-            )
-                || (Boolean(snapshotEntry) && costBasisStatus !== 'known');
+                || hasUnknownOpenCostBasis
+            );
             let pnlUnavailableReason = !pnlUnavailable
                 ? null
-                : (realizedCoverageUnavailable
-                    ? 'realized_pnl_reconciliation_unavailable'
-                    : (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl
-                        ? 'multiple_position_currencies'
-                        : (costBasisStatus === 'partial'
+                : (hasUnknownOpenCostBasis
+                    ? (costBasisStatus === 'partial'
+                        ? (snapshotEntry
                             ? 'authoritative_position_snapshot_cost_basis_partial'
-                            : 'authoritative_position_snapshot_cost_basis_unknown')));
-            const costBasisUnavailableReason = costBasisUnavailable
-                ? 'multiple_position_currencies'
-                : null;
+                            : 'open_position_cost_basis_partial')
+                        : (snapshotEntry
+                            ? 'authoritative_position_snapshot_cost_basis_unknown'
+                            : 'open_position_cost_basis_unknown'))
+                    : (summaryCoverageStatus !== 'complete'
+                        ? (summaryCoverageStatus === 'partial'
+                            ? 'realized_pnl_coverage_partial'
+                            : 'realized_pnl_reconciliation_unavailable')
+                        : 'multiple_position_currencies'));
+            const costBasisUnavailableReason = !costBasisUnavailable
+                ? null
+                : (hasMixedPositionCurrencies
+                    ? 'multiple_position_currencies'
+                    : (costBasisStatus === 'partial'
+                        ? 'open_position_cost_basis_partial'
+                        : 'open_position_cost_basis_unknown'));
             let totalCost = useAuthoritativePositionSnapshot && snapshotEntry
                 ? (snapshotCostPrice === null
                     ? (hasReconstructedCostBasis ? Number(summary.totalCost) : null)
                     : Math.abs(shares) * snapshotCostPrice)
-                : (hasMixedPositionCurrencies ? null : summary.totalCost);
+                : (costBasisUnavailable ? null : summary.totalCost);
             let reconstructedCostBasisApplied = false;
             const reconstructedPositionResults = realizedPnlAccounts.filter((result) => (
                 result.reconstructedPositionShares !== null
@@ -6049,11 +6125,6 @@ export function createInvestmentDataUtils({
             const completeAccountReconciliations = completeRealizedPnlAccounts
                 .map((accountResult) => accountResult.reconciliation)
                 .filter((reconciliation) => reconciliation && typeof reconciliation === 'object');
-            const summaryCoverageStatus = realizedPnlAccounts.length === 0
-                ? (performanceEntry ? 'unavailable' : 'complete')
-                : completeRealizedPnlAccounts.length === realizedPnlAccounts.length
-                    ? 'complete'
-                    : (completeRealizedPnlAccounts.length ? 'partial' : 'unavailable');
             const latestReconciliationDate = (field) => accountReconciliations
                 .map((reconciliation) => normalizeLedgerDate(reconciliation?.asOf?.[field]))
                 .filter(Boolean)
@@ -6118,11 +6189,9 @@ export function createInvestmentDataUtils({
                 },
                 baselineRealizedPnlLocal: Number(summaryBaselineRealizedPnlLocal.toFixed(12)),
                 incrementalRealizedPnlLocal: Number(summaryIncrementalRealizedPnlLocal.toFixed(12)),
-                realizedPnlLocal: realizedPnl === null
-                    ? null
-                    : Number(realizedPnlLocal.toFixed(12)),
-                realizedPnl: Number.isFinite(realizedPnl) ? Number(realizedPnl.toFixed(12)) : null,
-                realizedPnlByDateLocal: {...scopedRealizedPnlByDateLocal},
+                realizedPnlLocal: safeRealizedPnlLocal,
+                realizedPnl: safeRealizedPnl,
+                realizedPnlByDateLocal: {...realizedPnlByDateLocal},
                 realizedPnlByDate: {...realizedPnlByDate},
                 accounts: accountReconciliations,
                 arithmeticCheck: {
@@ -6134,10 +6203,18 @@ export function createInvestmentDataUtils({
                     tolerance: 1e-7,
                 },
             };
-            // Mixed-currency rows cannot expose one combined P&L, but each
-            // account result has already been converted from its own currency
-            // into the workspace base currency and remains useful evidence.
-            const safeRealizedPnlAccounts = pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
+            // Partial coverage retains each account's original evidence. A
+            // separate open-position basis failure still withholds otherwise
+            // complete account totals to preserve the established contract.
+            const preserveRealizedAccountEvidence = (
+                preserveMixedCurrencyRealizedBreakdown
+                || summaryCoverageStatus === 'partial'
+            );
+            const safeRealizedPnlAccounts = (
+                pnlUnavailable
+                && summaryCoverageStatus === 'complete'
+                && !preserveRealizedAccountEvidence
+            )
                 ? realizedPnlAccounts.map((accountResult) => ({
                     ...accountResult,
                     realizedPnl: null,
@@ -6176,13 +6253,15 @@ export function createInvestmentDataUtils({
                 realizedPnlAccounts: safeRealizedPnlAccounts,
                 realizedPnlReconciliation: summaryReconciliation,
                 realizedPnlStatus: summaryCoverageStatus === 'unavailable'
-                    || (pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown)
                     ? 'unavailable'
                     : (summaryCoverageStatus === 'partial'
-                        || realizedPnlAccounts.some((result) => result.status !== 'complete')
                         ? 'partial'
-                        : 'complete'),
-                realizedPnlBreakdownAvailable: preserveMixedCurrencyRealizedBreakdown
+                        : (pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
+                            ? 'unavailable'
+                            : (realizedPnlAccounts.some((result) => result.status !== 'complete')
+                                ? 'partial'
+                                : 'complete'))),
+                realizedPnlBreakdownAvailable: preserveRealizedAccountEvidence
                     && realizedPnlAccounts.some((result) => result.realizedPnl !== null),
                 realizedPnlByDate,
                 realizedPnlByDateLocal,
@@ -6346,7 +6425,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.111.2';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.113.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

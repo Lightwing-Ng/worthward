@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.4.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -178,6 +178,8 @@ def build_strategy_form_field(
         "key": definition.key,
         "group": definition.group,
         "subgroup": definition.subgroup,
+        "ui_role": definition.ui_role,
+        "ui_apply_mode": definition.ui_apply_mode,
         "label": definition.label,
         "kind": definition.kind,
         "field_type": field_type,

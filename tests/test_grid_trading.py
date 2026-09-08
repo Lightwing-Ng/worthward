@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.4.3."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.5.0."""
 
 from __future__ import annotations
 
@@ -23,8 +23,9 @@ def test_grid_trading_strategy_is_discoverable_and_builds_grid_signals() -> None
     })
 
     result = strategy.compute_signals(dataset, {
-        "price_floor": 1.0,
-        "price_ceiling": 1000.0,
+        "initial_holding": 0,
+        "holding_min": 0,
+        "holding_max": 1_000_000,
         "rise": 2.0,
         "fall": 0.5,
     })
@@ -44,8 +45,9 @@ def test_grid_anchor_does_not_advance_after_an_unfilled_sell_signal() -> None:
         "Low": [100.0, 100.5, 97.0, 99.0],
         "Close": [103.0, 100.9, 98.0, 100.0],
     }), {
-        "price_floor": 1.0,
-        "price_ceiling": 1000.0,
+        "initial_holding": 0,
+        "holding_min": 0,
+        "holding_max": 1_000_000,
         "rise": 1.0,
         "fall": 1.0,
     })
@@ -71,8 +73,9 @@ def test_grid_anchor_uses_the_next_open_fill_price_before_later_signals() -> Non
         "Low": [99.0, 90.0, 95.0, 94.0],
         "Close": [99.0, 94.0, 96.0, 95.0],
     }), {
-        "price_floor": 1.0,
-        "price_ceiling": 1000.0,
+        "initial_holding": 0,
+        "holding_min": 0,
+        "holding_max": 1_000_000,
         "rise": 5.0,
         "fall": 0.5,
     })
@@ -89,13 +92,19 @@ def test_grid_anchor_uses_the_next_open_fill_price_before_later_signals() -> Non
     ]
 
 
-def test_grid_trading_uses_reference_project_parameter_defaults_and_bounds() -> None:
+def test_grid_trading_uses_integer_holding_parameters_without_price_bounds() -> None:
     strategy = instantiate_strategy("grid-trading")
     definitions = {item.key: item for item in strategy.get_parameter_definitions()}
 
-    assert tuple(definitions) == ("price_floor", "price_ceiling", "rise", "fall")
-    assert definitions["price_floor"].default == 1.0
-    assert definitions["price_ceiling"].default == 1000.0
+    assert tuple(definitions) == (
+        "initial_holding", "holding_min", "holding_max", "rise", "fall",
+    )
+    assert definitions["initial_holding"].kind == "integer"
+    assert definitions["holding_min"].kind == "integer"
+    assert definitions["holding_max"].kind == "integer"
+    assert definitions["initial_holding"].default == 0
+    assert definitions["holding_min"].default == 0
+    assert definitions["holding_max"].default == 1_000_000
     assert definitions["rise"].default == 2.0
     assert definitions["fall"].default == 0.5
     assert definitions["rise"].minimum == 0.5
@@ -103,16 +112,49 @@ def test_grid_trading_uses_reference_project_parameter_defaults_and_bounds() -> 
     assert definitions["fall"].minimum == 0.5
     assert definitions["fall"].maximum == 5.0
     assert strategy.normalize_params({
-        "price_floor": "1.00",
-        "price_ceiling": "1000.00",
+        "initial_holding": "100",
+        "holding_min": "10",
+        "holding_max": "500",
         "rise": "2.00",
         "fall": "0.50",
     }) == {
-        "price_floor": 1.0,
-        "price_ceiling": 1000.0,
+        "initial_holding": 100,
+        "holding_min": 10,
+        "holding_max": 500,
         "rise": 2.0,
         "fall": 0.5,
     }
+
+
+def test_grid_trading_moves_between_holding_limits() -> None:
+    strategy = instantiate_strategy("grid-trading")
+    signal_result = strategy.compute_signals(pd.DataFrame({
+        "Date": pd.date_range("2026-01-01", periods=3),
+        "Open": [100.0, 99.0, 100.0],
+        "High": [100.0, 99.0, 101.0],
+        "Low": [100.0, 98.0, 100.0],
+        "Close": [100.0, 98.0, 100.0],
+    }), {
+        "initial_holding": 4,
+        "holding_min": 2,
+        "holding_max": 6,
+        "rise": 1.0,
+        "fall": 1.0,
+    })
+
+    result = run_single_ticker_backtest(
+        signal_result,
+        initial_capital=1_000.0,
+        execution_mode="signal_close",
+    )
+
+    assert [(trade["side"], trade["shares"]) for trade in result["trades"]] == [
+        ("Buy", 2.0),
+        ("Sell", 4.0),
+    ]
+    assert result["trades"][0]["cash"] == 404.0
+    assert result["trades"][1]["cash"] == 804.0
+    assert result["summary"]["final_equity"] == 1_004.0
 
 
 def test_legacy_grid_trading_workspace_redirects_to_generic_backtest() -> None:
@@ -162,7 +204,8 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     ):
         response = client.get(
             "/workspaces/backtest?ticker=QQQ&period=1y&capital=10000&strategy=grid-trading"
-            "&price_floor=1.00&price_ceiling=1000.00&rise=1.00&fall=0.50"
+            "&initial_holding=120&holding_min=15&holding_max=600"
+            "&rise=1.00&fall=0.50"
         )
 
     html = response.get_data(as_text=True)
@@ -180,10 +223,18 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'data-shared-select-kind="period"' in html
     assert 'id="period_dropdown"' in html
     assert 'class="trade-strategy-param-select form-select"' not in html
-    assert 'name="price_floor"' in html
-    assert 'value="1.00"' in html
-    assert 'name="price_ceiling"' in html
-    assert 'value="1000.00"' in html
+    assert 'name="price_floor"' not in html
+    assert 'name="price_ceiling"' not in html
+    assert 'name="initial_holding"' in html
+    assert 'value="120"' in html
+    assert 'name="holding_min"' in html
+    assert 'value="15"' in html
+    assert 'name="holding_max"' in html
+    assert 'value="600"' in html
+    assert html.index('name="initial_holding"') < html.index('name="holding_min"')
+    assert html.index('name="holding_min"') < html.index('name="holding_max"')
+    assert html.index('name="holding_max"') < html.index('name="rise"')
+    assert html.count('inputmode="numeric"') >= 3
     assert 'name="rise"' in html
     assert 'value="1.00"' in html
     assert 'name="fall"' in html

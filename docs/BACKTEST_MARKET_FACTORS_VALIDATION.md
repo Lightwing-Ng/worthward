@@ -1,6 +1,6 @@
 # Backtest defaults and market-factor controls
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.2.0`
 Date: `5 Sep 2026`
 
 ## Behavior and ownership
@@ -26,10 +26,10 @@ were introduced.
 
 | Strategies | Market-factor controls | Consumption |
 | --- | --- | --- |
-| MACD, MACD Gemini | Fast, slow, and signal EMA periods | Close-price EMA crossover calculations |
-| KNN, KNN Gemini | Indicator choice, short/long periods, volatility filter | Selected RSI/CCI/ROC/volume feature pair and volatility gating |
-| Lorentzian, Gemini, ChatGPT | Price source, feature count, five feature definitions and their periods, volatility/regime/ADX/EMA/SMA filters | Configured feature vectors and enabled trend/volatility gates; feature count and filter switches govern conditional use |
-| Supertrend AI, Gemini | ATR period and multiplier search range/step | ATR-based candidate trends; clustering and memory remain model parameters |
+| MACD | Fast, slow, and signal EMA periods | Close-price EMA crossover calculations |
+| KNN | Indicator choice, short/long periods, volatility filter | Selected RSI/CCI/ROC/volume feature pair and volatility gating |
+| Lorentzian | Price source, feature count, five feature definitions and their periods, volatility/regime/ADX/EMA/SMA filters | Configured feature vectors and enabled trend/volatility gates; feature count and filter switches govern conditional use |
+| SuperTrend AI | ATR period and multiplier search range/step | ATR-based candidate trends; clustering and memory remain model parameters |
 | Bayesian Price Field, LSTM Price Field | Existing canonical boolean factor definitions | Shared Price Field transforms, model-specific selection/training, and provider availability diagnostics |
 | Buy and hold, Grid Trading, DCA, Leveraged rotation | No factor section | Their controls configure allocation, execution, schedule, or a drawdown trigger, rather than independent indicator inputs |
 
@@ -40,9 +40,10 @@ signals. Price Field retains point-in-time availability rules and unavailable or
 unsupported-market diagnostics; an enabled factor is not a guarantee that causal
 observations exist. LSTM's actual training action remains named `LSTM training`.
 
-An AST comparison against HEAD confirmed that all nine technical-indicator
-implementations are unchanged after removing form-group metadata and documentation.
-Their numerical and trading behavior was not rewritten by this change.
+The 5 Sep 2026 AST comparison confirmed that the then-current technical-indicator
+implementations were unchanged by the form-group metadata change. The four duplicate
+duplicate catalog implementations listed in `CLASSIC_STRATEGY_REPAIR.md` were later retired on
+8 Sep 2026; the retained strategies keep their numerical and trading behavior.
 
 ## Verification
 

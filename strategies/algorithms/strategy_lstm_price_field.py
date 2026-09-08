@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.8.0
+Code version: v1.9.0
 - Fixed: Durable training preserves Auto's NumPy CPU semantics instead of forcing GPU.
 - Changed: Defaults use the completed DRAM probability GA robust winner.
 """
@@ -232,6 +232,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                     ).replace("Put/Call", "Put/call"),
                     kind="boolean",
                     group="factors",
+                    ui_apply_mode="training",
                     default=definition.parameter_key in {
                         "use_options",
                         "use_option_call_open_interest",
@@ -355,6 +356,8 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 optimizable=False,
                 label="Compute backend",
                 kind="choice",
+                group="training",
+                ui_apply_mode="training",
                 default="GPU",
                 options=("Auto", "CPU", "GPU", "Neural Engine"),
                 help_text=(

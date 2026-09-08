@@ -1,4 +1,4 @@
-/* Code version: v1.206.10 */
+/* Code version: v1.207.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -5861,6 +5861,95 @@ test('shows daily price and P&L badges below open-position values', async ({page
         'data-investment-live-display',
         '-10.00',
     );
+});
+
+test('keeps unavailable daily P&L badges hidden after market-session synchronization', async ({page}) => {
+    await page.addInitScript(() => {
+        const RealDate = Date;
+        const fixedTimestamp = new RealDate('2026-09-08T02:00:00Z').valueOf();
+        class FixedDate extends RealDate {
+            constructor(...args) {
+                super(...(args.length ? args : [fixedTimestamp]));
+            }
+
+            static now() {
+                return fixedTimestamp;
+            }
+        }
+        window.Date = FixedDate;
+    });
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {
+                ledger_no: 1,
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-07',
+                type: 'buy',
+                ticker: '5.HK',
+                currency: 'HKD',
+                quantity: 1,
+                price: 100,
+                amount: -100,
+            },
+        ],
+        priceHistoryByTicker: {
+            '5.HK': [
+                {date: '2026-09-07', close: 100},
+                {date: '2026-09-08', close: 110},
+            ],
+        },
+        fxRateHistoryByCurrency: {},
+    });
+
+    let releaseMarketSession;
+    const marketSessionReleased = new Promise((resolve) => {
+        releaseMarketSession = resolve;
+    });
+    await page.route('**/api/market-session/us-equity?*', async (route) => {
+        await marketSessionReleased;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                market: 'us_equity',
+                session: 'off',
+                is_trading_day: false,
+                is_realtime_allowed: false,
+                session_date: '2026-09-08',
+                trading_days: [],
+            }),
+        });
+    });
+
+    await page.goto('/trade/investment?view=holdings');
+    const holding = page.locator(
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll '
+        + 'tr[data-investment-holdings-ticker="5.HK"]',
+    );
+    const dailyPrice = holding.locator('[data-investment-live-field="daily_last_price"]');
+    const dailyUnrealized = holding.locator(
+        '[data-investment-live-field="daily_unrealized_pnl"]',
+    );
+    const summaryUnrealized = page.locator(
+        '#investment_holdings_panel:not([hidden]) '
+        + '[data-investment-live-field="summary_daily_unrealized_pnl"]',
+    );
+    await expect(dailyPrice).toHaveAttribute('data-investment-live-display', '+HKD 10.00');
+    await expect(dailyPrice.locator('..')).toBeVisible();
+    await expect(dailyUnrealized).toHaveAttribute('data-investment-live-number', '');
+    await expect(dailyUnrealized).toHaveAttribute('data-investment-live-display', '-');
+    await expect(dailyUnrealized.locator('..')).toBeHidden();
+    await expect(summaryUnrealized).toHaveAttribute('data-investment-live-number', '');
+    await expect(summaryUnrealized.locator('..')).toBeHidden();
+
+    const sessionResponse = page.waitForResponse((response) => (
+        response.url().includes('/api/market-session/us-equity')
+    ));
+    releaseMarketSession();
+    await sessionResponse;
+    await expect(dailyUnrealized.locator('..')).toBeHidden();
+    await expect(summaryUnrealized.locator('..')).toBeHidden();
 });
 
 test('hides live Holdings change badges while the ticker market is closed', async ({page}) => {
@@ -13385,6 +13474,90 @@ test('keeps verified unrealized tooltip P&L when a closed ticker lacks realized 
     await expect(page.locator('.investment-report-card').first()).toHaveCSS('padding-bottom', '0px');
 });
 
+test('keeps current broker snapshots out of historical Overview hover P&L', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-05-01',
+                type: 'buy',
+                ticker: 'QQQ',
+                currency: 'USD',
+                quantity: 10,
+                price: 100,
+                amount: -1_000,
+            },
+            {
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-07-01',
+                type: 'sell',
+                ticker: 'QQQ',
+                currency: 'USD',
+                quantity: 5,
+                price: 120,
+                amount: 600,
+            },
+        ],
+        priceHistoryByTicker: {
+            QQQ: [
+                {date: '2026-05-01', close: 100},
+                {date: '2026-06-01', close: 110},
+                {date: '2026-07-01', close: 120},
+                {date: '2026-08-01', close: 150},
+            ],
+        },
+        brokerSummaries: {
+            ibkr: {
+                broker: 'ibkr',
+                account_id: 'IBKR-TEST',
+                performance_snapshot_authoritative: true,
+                performance_snapshot_as_of: '2026-08-01',
+                performance_snapshot: {
+                    QQQ: {currency: 'USD', realized_total: '999'},
+                },
+                position_snapshot_authoritative: true,
+                position_snapshot_as_of: '2026-08-01',
+                position_snapshot: {
+                    QQQ: {
+                        quantity: '5',
+                        cost_basis_status: 'known',
+                        cost_price: '80',
+                        market_value: '750',
+                        last_price: '150',
+                    },
+                },
+            },
+        },
+    });
+    await page.goto('/trade/investment?view=overview&range=max');
+    await expect.poll(() => page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return chart?.data.labels.findIndex((date) => String(date).startsWith('2026-06-01')) ?? -1;
+    })).toBeGreaterThanOrEqual(0);
+    await page.evaluate(() => {
+        const chart = window.Chart.getChart(document.querySelector('#investmentEquityChart'));
+        const index = chart.data.labels.findIndex((date) => String(date).startsWith('2026-06-01'));
+        const point = chart.getDatasetMeta(0).data[index];
+        chart.setActiveElements([{datasetIndex: 0, index}]);
+        chart.tooltip.setActiveElements([{datasetIndex: 0, index}], {x: point.x, y: point.y});
+        chart.update('none');
+    });
+
+    const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
+    await expect(tooltip).toHaveAttribute('data-investment-pnl-state', 'ready');
+    await expect(
+        tooltip.locator('[data-investment-tooltip-pnl="realizedPnl"] .chart-tooltip-value'),
+    ).toHaveText('0.00');
+    await expect(
+        tooltip.locator('[data-investment-tooltip-pnl="unrealizedPnl"] .chart-tooltip-value'),
+    ).toHaveText('100.00');
+    await expect(
+        tooltip.locator('[data-investment-tooltip-pnl="cumulativePnl"] .chart-tooltip-value'),
+    ).toHaveText('100.00');
+});
+
 test('defers uncached 3M historical P&L replay until chart pointer movement settles', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
@@ -15561,7 +15734,7 @@ test('shows the standard Switch specimen and preserves its checked geometry', as
         };
     });
 
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend_ai_gemini&interval=1m&stop_loss=0');
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend-ai&interval=1m&stop_loss=0');
     const productionInput = page.locator('[data-dividend-reinvest-field] [data-switch-input], [data-dividend-reinvest-field] input[type="checkbox"]').first();
     await expect(page.locator('[data-dividend-reinvest-field]')).toBeVisible();
     await expect(productionInput).not.toBeChecked();
@@ -16826,7 +16999,7 @@ test('rebinds the backtest section handle after same-page result hydration', asy
 
 test('keeps the Backtest Metrics and Transactions pill synchronized', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend-ai');
 
     const viewSegmented = page.locator('#backtest_history_view_segmented');
     const historyArticle = page.locator('#backtest_history_surface');
@@ -17280,7 +17453,7 @@ test('applies the Scrollable table style to Backtest transaction details', async
     await expect(referenceTableShell).toBeVisible();
     const referenceStyle = await readHostStyle(referenceTableShell);
 
-    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=1&ticker=TQQQ&range=3y&strategy=supertrend-ai');
     const backtestTableHost = page.locator('#backtest_history_table_wrap');
     await expect(backtestTableHost).toBeVisible();
     await expect(backtestTableHost).toHaveClass(/scrollable-data-table-shell/);
@@ -17314,7 +17487,7 @@ test('uses the global compact date format and split numeric typography in Backte
 
     await setCompactDateFormat('dd_mm_yyyy');
     try {
-        await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend_ai_gemini');
+        await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=supertrend-ai');
         const transactionHost = page.locator('#backtest_history_table_wrap');
         await expect(transactionHost).toBeVisible();
         const firstRow = transactionHost.locator('table[data-table-body] tbody tr').first();
@@ -17746,7 +17919,7 @@ test('keeps DCA strategy parameter menus above clipping and the panel compact', 
 
 test('keeps the bottom Backtest strategy parameter dropdown fully visible', async ({page}) => {
     await page.setViewportSize({width: 990, height: 1242});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend_ai_gemini&interval=1m');
+    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3d&strategy=supertrend-ai&interval=1m');
 
     await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
     const field = page.locator('[data-strategy-param-key="from_cluster"]');
@@ -18077,7 +18250,7 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
     await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
     await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
     await expect(paramsPanel).toBeVisible();
-    for (const key of ['price_floor', 'price_ceiling', 'rise', 'fall']) {
+    for (const key of ['initial_holding', 'holding_min', 'holding_max', 'rise', 'fall']) {
         await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
     }
 
@@ -18091,12 +18264,13 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
             };
         })
     ));
-    expect(numericContract).toHaveLength(4);
+    expect(numericContract).toHaveLength(5);
     expect(numericContract.every((control) => (
         control.height === '28px'
         && control.minHeight === '28px'
         && ['numeric', 'decimal'].includes(control.inputMode)
     ))).toBe(true);
+    expect(numericContract.slice(0, 3).every((control) => control.inputMode === 'numeric')).toBe(true);
     await expect(page.locator('#trade_initial_capital')).toHaveAttribute('inputmode', 'decimal');
     await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
 });
@@ -18174,21 +18348,21 @@ test('replaces Backtest controls when the strategy changes without losing the ti
     };
 
     await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
-    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(1);
+    await expect(page.locator('[data-strategy-param-key="initial_holding"]')).toHaveCount(1);
     await expect(page.locator('#backtest_interval_control')).toHaveCount(1);
     await expect(page.locator('#stop_loss')).not.toBeChecked();
 
     await chooseStrategy('dca');
     await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
     await expect(page.locator('[data-strategy-param-key="frequency"]')).toHaveCount(1);
-    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(0);
+    await expect(page.locator('[data-strategy-param-key="initial_holding"]')).toHaveCount(0);
     await expect(page.locator('#backtest_interval_control')).toHaveCount(0);
     await expect(page.locator('#stop_loss')).toHaveCount(1);
     await expect(page.locator('#stop_loss')).not.toBeChecked();
 
     await chooseStrategy('grid-trading');
     await expect(page.locator('#ticker_1')).toHaveValue('TQQQ');
-    await expect(page.locator('[data-strategy-param-key="price_floor"]')).toHaveCount(1);
+    await expect(page.locator('[data-strategy-param-key="initial_holding"]')).toHaveCount(1);
     await expect(page.locator('[data-strategy-param-key="frequency"]')).toHaveCount(0);
     await expect(page.locator('#backtest_interval_control')).toHaveCount(1);
 });

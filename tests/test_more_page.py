@@ -1,7 +1,9 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.26.1
+Code version: v0.27.0
+- Added: The IBKR Web-paste route preserves forex semantics and every native
+  cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
   capture as the current cash and position boundary.
 - Added: HSBC USD Savings settlement-only cash refreshes are accepted by
@@ -1790,6 +1792,63 @@ Total Cash (in USD) 123.45"""
             for transaction in stored["transactions"]
         ]
         self.assertEqual(sum(net_amounts), Decimal("-21.18"))
+
+    def test_ibkr_web_paste_route_persists_fx_fill_and_native_cash(self) -> None:
+        client = create_app().test_client()
+        trade_notifications_text = """Orders & Trades
+Trade Notifications
+Trades Account Action Quantity Status Price Amount
+USD.CNH
+Bot 299.58 @ 6.70920 on IDEALPRO
+U00000001 Bought 299.58
+Filled
+10:36 AM
+6.70920
+2009.942136
+Fees: 13.42"""
+        holdings_text = """Account
+U00000001
+Your Holdings
+Instrument Position Last Change %
+QQQI
+NEOS NASDAQ-100 HIGH INC ETF
+310 54.98 +0.42%
+Cash Holdings
+CNH 0.06
+USD (base currency) 1,789.85
+Total Cash (in USD) 1,789.86"""
+
+        with patch(
+            "app.web.runtime.ensure_latest_investment_daily_caches",
+            return_value=[],
+        ):
+            response = self._post_investment_import(
+                client,
+                "/api/investment/transactions",
+                data={
+                    "broker": "ibkr",
+                    "ibkr_import_mode": "web_paste",
+                    "ibkr_trade_notifications_text": trade_notifications_text,
+                    "ibkr_trade_notifications_date": "2026-09-08",
+                    "ibkr_holdings_text": holdings_text,
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        stored = load_investment_store_payload(self.investment_store_path)
+        self.assertEqual(len(stored["transactions"]), 1)
+        transaction = stored["transactions"][0]
+        self.assertEqual(transaction["type"], "forex_trade_component")
+        self.assertEqual(transaction["ticker"], "USD.CNH")
+        self.assertEqual(transaction["quantity_raw"], "299.58")
+        self.assertEqual(transaction["commission_raw"], "-2.00")
+        self.assertNotIn("net_amount_raw", transaction)
+        self.assertEqual(
+            stored["ending_cash_by_currency"],
+            {"CNH": "0.06", "USD": "1789.85"},
+        )
+        self.assertEqual(stored["position_snapshot"]["QQQI"]["quantity"], "310")
 
     def test_investment_import_rejects_cross_origin_with_valid_session_token(
         self,

@@ -1,7 +1,15 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.138.3
+ * Code version: v2.140.0
+ * - Fixed: Missing Holdings quotes and blank live-badge values remain
+ *   unavailable instead of being coerced to zero during session refreshes.
+ * - Changed: Partial account-level realized-P&L coverage withholds ticker-level
+ *   P&L totals while preserving inspectable account evidence.
+ * - Fixed: IBKR web currency conversions retain their base/quote direction
+ *   when rendered in Transaction history.
+ * - Fixed: Historical Overview P&L now uses only the hovered point's as-of replay;
+ *   current broker performance snapshots cannot rewrite earlier chart points.
  * - Fixed: Pending HSBC history cash uses its authoritative cash boundary once,
  *   independently of earlier settlement corrections and broker filters.
  * - Fixed: Missing FX and partial P&L coverage withhold aggregate valuations.
@@ -364,8 +372,9 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isHsbcSettlementActuallyPending,
     isRealtimeQuotePulseProviderEligible,
+    parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.111.2';
+} from './investment/data-utils.js?v=investment-data-utils-v1.113.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -396,7 +405,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.30.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.32.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -445,7 +454,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.138.3',
+    entry: 'v2.140.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -13596,7 +13605,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (summary?.pnlUnavailable === true) return totals;
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
             totals.realized += Number(dailyPnl.realized) || 0;
-            totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            if (dailyPnl.unrealized === null || dailyPnl.unrealized === undefined) {
+                totals.unrealized = null;
+            } else if (totals.unrealized !== null) {
+                totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            }
             return totals;
         }, { realized: 0, unrealized: 0 });
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
@@ -14234,13 +14247,15 @@ document.addEventListener('DOMContentLoaded', () => {
             ariaLabel = '',
         } = {},
     ) {
-        const numericValue = Number(value);
-        const hasNumericValue = Number.isFinite(numericValue);
+        const numericValue = parseInvestmentOptionalNumber(value);
+        const hasNumericValue = numericValue !== null;
         const isVisible = liveEligible && hasNumericValue && !(
             hideZeroValue && Math.abs(numericValue) < INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
         );
-        const displayText = hasNumericValue ? formatter(numericValue) : formatHoldingsMoney(0);
-        const toneClass = getInvestmentHoldingsDailyPnlBadgeToneClass(numericValue);
+        const displayText = hasNumericValue ? formatter(numericValue) : '-';
+        const toneClass = hasNumericValue
+            ? getInvestmentHoldingsDailyPnlBadgeToneClass(numericValue)
+            : '';
         const accessibleLabel = String(ariaLabel || '').trim();
         const accessibilityAttributes = accessibleLabel
             ? ` aria-label="${escapeHtml(accessibleLabel)}" title="${escapeHtml(accessibleLabel)}"`
@@ -14250,7 +14265,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-daily-pnl-badge-value"
                       data-investment-live-field="${escapeHtml(field)}"
                       data-investment-live-ticker="${escapeHtml(ticker)}"
-                      data-investment-live-number="${escapeHtml(String(Number.isFinite(numericValue) ? numericValue : 0))}"
+                      data-investment-live-number="${escapeHtml(String(hasNumericValue ? numericValue : ''))}"
                       data-investment-live-display="${escapeHtml(displayText)}">${renderWorkspaceMetricValueContent(displayText)}</span>
             </span>
         `;
@@ -14266,13 +14281,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } = {},
     ) {
         if (!(node instanceof HTMLElement)) return;
-        const numericValue = Number(value);
-        const hasNumericValue = Number.isFinite(numericValue);
+        const numericValue = parseInvestmentOptionalNumber(value);
+        const hasNumericValue = numericValue !== null;
         const isVisible = liveEligible && hasNumericValue && !(
             hideZeroValue && Math.abs(numericValue) < INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
         );
-        const displayText = hasNumericValue ? formatter(numericValue) : formatHoldingsMoney(0);
-        node.dataset.investmentLiveNumber = String(Number.isFinite(numericValue) ? numericValue : 0);
+        const displayText = hasNumericValue ? formatter(numericValue) : '-';
+        node.dataset.investmentLiveNumber = String(hasNumericValue ? numericValue : '');
         node.dataset.investmentLiveDisplay = displayText;
         node.innerHTML = renderWorkspaceMetricValueContent(displayText);
         const badge = node.closest('.investment-holdings-daily-pnl-badge');
@@ -14298,10 +14313,12 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const field of ['daily_last_price', 'daily_unrealized_pnl']) {
                 const node = row.querySelector(`[data-investment-live-field="${field}"]`);
                 if (!(node instanceof HTMLElement)) continue;
-                const numericValue = Number(node.dataset.investmentLiveNumber);
+                const numericValue = parseInvestmentOptionalNumber(
+                    node.dataset.investmentLiveNumber,
+                );
                 const badge = node.closest('.investment-holdings-daily-pnl-badge');
                 if (badge instanceof HTMLElement) {
-                    badge.hidden = !liveEligible || !Number.isFinite(numericValue);
+                    badge.hidden = !liveEligible || numericValue === null;
                 }
             }
         });
@@ -14310,11 +14327,13 @@ document.addEventListener('DOMContentLoaded', () => {
             '#investment_holdings_panel [data-investment-live-field="summary_daily_unrealized_pnl"]'
         );
         if (summaryUnrealizedNode instanceof HTMLElement) {
-            const numericValue = Number(summaryUnrealizedNode.dataset.investmentLiveNumber);
+            const numericValue = parseInvestmentOptionalNumber(
+                summaryUnrealizedNode.dataset.investmentLiveNumber,
+            );
             const badge = summaryUnrealizedNode.closest('.investment-holdings-daily-pnl-badge');
             if (badge instanceof HTMLElement) {
                 badge.hidden = !hasInvestmentHoldingLiveBadgeSession()
-                    || !Number.isFinite(numericValue);
+                    || numericValue === null;
             }
         }
     }
@@ -14524,15 +14543,15 @@ document.addEventListener('DOMContentLoaded', () => {
             && Object.prototype.hasOwnProperty.call(reconciliation, 'realizedPnlByDate')
         ) ? reconciliation.realizedPnlByDate : summary.realizedPnlByDate;
         const realized = Number(realizedPnlByDate?.[sessionDate]) || 0;
-        const lastPrice = Number(summary.lastPrice);
-        const shares = Number(summary.shares);
+        const lastPrice = getOptionalInvestmentNumber(summary.lastPrice);
+        const shares = getOptionalInvestmentNumber(summary.shares);
         const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
         if (
-            !Number.isFinite(lastPrice)
-            || !Number.isFinite(shares)
+            lastPrice === null
+            || shares === null
             || !Number.isFinite(previousClose)
         ) {
-            return { realized, unrealized: 0 };
+            return { realized, unrealized: null };
         }
         const dailyUnrealizedLocal = (lastPrice - previousClose) * shares;
         const fxTimeline = buildInvestmentFxRateTimeline(
@@ -14548,16 +14567,16 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         return {
             realized,
-            unrealized: Number.isFinite(unrealized) ? unrealized : 0,
+            unrealized: Number.isFinite(unrealized) ? unrealized : null,
         };
     }
 
     function resolveInvestmentHoldingDailyPriceChange(summary) {
-        if (!summary?.hasOpenPosition) return 0;
+        if (!summary?.hasOpenPosition) return null;
         const sessionDate = getInvestmentHoldingSessionDate(summary.ticker);
-        const lastPrice = Number(summary.lastPrice);
+        const lastPrice = getOptionalInvestmentNumber(summary.lastPrice);
         const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
-        if (!Number.isFinite(lastPrice) || !Number.isFinite(previousClose)) return 0;
+        if (lastPrice === null || !Number.isFinite(previousClose)) return null;
         return lastPrice - previousClose;
     }
 
@@ -14784,7 +14803,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (summary?.pnlUnavailable === true) return totals;
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
             totals.realized += Number(dailyPnl.realized) || 0;
-            totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            if (dailyPnl.unrealized === null || dailyPnl.unrealized === undefined) {
+                totals.unrealized = null;
+            } else if (totals.unrealized !== null) {
+                totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            }
             return totals;
         }, { realized: 0, unrealized: 0 });
         const cumulativePnl = hasPnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
@@ -19258,9 +19281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getOptionalInvestmentNumber(value) {
-        if (value === null || value === undefined || value === '') return null;
-        const numericValue = Number(value);
-        return Number.isFinite(numericValue) ? numericValue : null;
+        return parseInvestmentOptionalNumber(value);
     }
 
     function formatMetricLossAmount(value) {
@@ -19335,74 +19356,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return '';
     }
 
-    function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries, throughDate = '') {
+    function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
-        const canonicalSummariesByTicker = new Map(
-            (Array.isArray(investmentTickerSummariesCache) ? investmentTickerSummariesCache : [])
-                .map((summary) => [
-                    getInvestmentCanonicalTicker(summary?.ticker),
-                    summary,
-                ])
-                .filter(([ticker]) => Boolean(ticker)),
-        );
-        const canonicalReconciliations = safeTickerSummaries.map((summary) => {
-            const ticker = getInvestmentCanonicalTicker(summary?.ticker);
-            const canonicalSummary = canonicalSummariesByTicker.get(ticker);
-            const reconciliation = canonicalSummary?.realizedPnlReconciliation;
-            return {
-                ticker,
-                summary: canonicalSummary,
-                reconciliation,
-            };
-        });
-        const canUseCanonicalTimeline = (
-            canonicalReconciliations.length > 0
-            && canonicalReconciliations.every((entry) => (
-                entry.ticker
-                && entry.summary
-                && entry.reconciliation
-                && typeof entry.reconciliation === 'object'
-            ))
-        );
-        const normalizedThroughDate = normalizeLedgerDate(throughDate);
-        let canonicalHoldingsRealizedPnl = 0;
-        if (canUseCanonicalTimeline) {
-            for (const entry of canonicalReconciliations) {
-                if (
-                    entry.summary?.pnlUnavailable === true
-                    || entry.reconciliation.coverageStatus !== 'complete'
-                    || entry.reconciliation.arithmeticCheck?.valid !== true
-                    || !normalizedThroughDate
-                ) {
-                    return null;
-                }
-                Object.entries(entry.reconciliation.realizedPnlByDate || {}).forEach(
-                    ([ledgerDate, value]) => {
-                        const normalizedDate = normalizeLedgerDate(ledgerDate);
-                        const numericValue = Number(value);
-                        if (
-                            normalizedDate
-                            && normalizedDate <= normalizedThroughDate
-                            && Number.isFinite(numericValue)
-                        ) {
-                            canonicalHoldingsRealizedPnl += numericValue;
-                        }
-                    },
-                );
-            }
-        }
+        // Historical hover is an as-of replay. Current broker position/performance
+        // snapshots have no historical as-of guarantee and must never overwrite
+        // the point-in-time transaction replay assembled for the hovered date.
         const pnlUnavailableTickers = new Set(
             safeTickerSummaries
                 .filter((summary) => summary?.pnlUnavailable === true)
                 .map((summary) => getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
-        canonicalReconciliations.forEach((entry) => {
-            if (entry.summary?.pnlUnavailable === true && entry.ticker) {
-                pnlUnavailableTickers.add(entry.ticker);
-            }
-        });
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
         let brokerRewardRealizedPnl = 0;
@@ -19450,14 +19415,12 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         });
 
-        const holdingsRealizedPnl = canUseCanonicalTimeline
-            ? canonicalHoldingsRealizedPnl
-            : safeTickerSummaries.reduce(
-                (sum, summary) => sum + (
-                    Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
-                ),
-                0,
-            );
+        const holdingsRealizedPnl = safeTickerSummaries.reduce(
+            (sum, summary) => sum + (
+                Number(getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
+            ),
+            0,
+        );
         return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl;
     }
 

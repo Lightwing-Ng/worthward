@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.3.0 */
 import {expect, test} from '@playwright/test';
 
 test('Backtest defaults are off and explicit opt-ins survive reload', async ({page}) => {
@@ -18,10 +18,25 @@ test('Backtest defaults are off and explicit opt-ins survive reload', async ({pa
     await expect(page.locator('#show_trade_details')).toBeChecked();
 });
 
+test('retired duplicate strategies are absent from the Backtest selector', async ({page}) => {
+    await page.goto('/workspaces/backtest?ticker=QQQ&strategy=macd');
+    for (const strategy of [
+        'lorentzian-classification-chatgpt',
+        'lorentzian-classification-gemini',
+        'macd-gemini',
+        'knn-machine-learning-gemini',
+        'supertrend_ai_gemini',
+    ]) {
+        await expect(page.locator(`#trade_strategy option[value="${strategy}"]`)).toHaveCount(0);
+    }
+    await expect(page.locator('#trade_strategy option[value="macd"]')).toHaveCount(1);
+    await expect(page.locator('#trade_strategy option[value="knn-machine-learning"]')).toHaveCount(1);
+    await expect(page.locator('#trade_strategy option[value="lorentzian-classification"]')).toHaveCount(1);
+});
+
 test('strategy fragments reuse real market-factor sections without external-factor impostors', async ({request}) => {
-    const strategies = ['macd', 'macd-gemini', 'knn-machine-learning', 'knn-machine-learning-gemini',
-        'lorentzian-classification', 'lorentzian-classification-gemini', 'lorentzian-classification-chatgpt',
-        'supertrend-ai', 'supertrend_ai_gemini', 'bayesian-price-field', 'lstm-price-field'];
+    const strategies = ['macd', 'knn-machine-learning', 'lorentzian-classification',
+        'supertrend-ai', 'bayesian-price-field', 'lstm-price-field'];
     for (const strategy of strategies) {
         const response = await request.get(`/api/trade-strategy-fields?strategy=${strategy}`);
         expect(response.ok()).toBe(true);

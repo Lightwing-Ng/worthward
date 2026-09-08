@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.9.0`
+Documentation version: `v3.15.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -19,12 +19,12 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Simulate dollar-cost averaging from the Backtest strategy selector with configurable contribution amounts, schedules, date ranges, dividends, and transaction details
 - Run strategy-declared single-ticker and multi-ticker backtests across the dynamically discovered strategy library
 - Retain each Backtest strategy's tuning values in browser-local memory and restore them when returning to that strategy; explicit URL parameters remain authoritative
-- Use Grid Trading from the Backtest strategy selector, with trigger price bounds plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
+- Use Grid Trading from the Backtest strategy selector, with current, minimum, and maximum integer holding quantities plus asymmetric rise and fall percentages declared by `strategy_grid_trading.py`
 - Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from the shared causal Price Field pipeline and Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars
 - Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
 - Compare eight additional neural Price Fields: PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT. They share training controls and Market factors, predict 20 daily return distributions directly, and use verified Torch MPS/CUDA or CPU. [The research contract](docs/NEURAL_PRICE_FIELD_RESEARCH.md) explains their full-grid probability scores, causal factor timing, compact architecture adaptations, and held-out evaluation.
-- Start or stop exact-configuration LSTM training using the selected ticker, relative or exact range, 1d interval, and private controls. Durable runs perform at least 180 seconds of optimizer work; Auto uses confirmed MPS/CUDA, while an explicit CPU choice stays on CPU. Select a completed case to restore its actual data window and all saved settings; editing any control detaches it. History has single-open details, measured accuracy badges, stable date codes, and recoverable deletion. Compute-job state stays outside market and investment stores.
-- Rotate between a primary ticker and its leveraged companion after a configurable primary-ticker drawdown, then return to the primary ticker at a new all-time closing high
+- Start or stop exact-configuration LSTM training using the selected ticker, relative or exact range, 1d interval, and private controls. Compute backend appears at the head of LSTM training. Market-factor switches and the backend are staged for the next durable run without recalculating the current chart; each factor subgroup shows its enabled count, and selecting a completed run applies its saved configuration and then recalculates. Durable runs perform at least 180 seconds of optimizer work; Auto uses confirmed MPS/CUDA, while an explicit CPU choice stays on CPU. History has single-open details, measured accuracy badges, stable date codes, and recoverable deletion. Compute-job state stays outside market and investment stores.
+- Configure a primary/leveraged pair such as QQQ/TQQQ or DRAM/RAM, allocate Initial capital across both assets and cash with integer shares, and rebalance within independent allocation limits after configurable daily-drop and daily-rise triggers
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests only when the strategy declares that execution interval, local intraday data exists for every required ticker, and the complete ticker set shares at least one supported Period
@@ -106,7 +106,7 @@ non-browser API clients.
 ### Backtest research CLI
 
 `scripts/strategy_tune.py` v1.0.0 discovers the same enabled strategy registry as
-the dropdown (15 strategies on 4 Sep 2026). It supports genetic search and a
+the dropdown (18 strategies on 8 Sep 2026). It supports genetic search and a
 random-forest regression surrogate, reuses each strategy's production execution
 engine, ranks two chronological validation windows, and evaluates the winner on
 an untouched final holdout. Buy and hold has no tunable parameters and is evaluated
@@ -174,7 +174,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   The current implementation version is strategy v1.26.0. Its `Auto` walk-forward scheduler coordinates the shared CPU executor with an available GPU as described above; when remote market access is explicitly disabled, the strategy reads the existing local daily store and marks Longbridge-only factors unavailable instead of failing the Backtest page. The v1.26.0 executable-target, dynamic multi-step, prior-scaling, factor-evidence, and scoring contract is stated above. Factor metadata now separates provider status, latest-origin eligibility, and actual latest-origin selection. The historical v1.21.0 release note remains only as a compatibility record.
 
 - `Grid Trading`
-  Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and opens through the shared tune control with Trigger price min, Trigger price max, Rise %, and Fall %; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
+  Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and opens through the shared tune control with Current holding, Minimum holding, Maximum holding, Rise %, and Fall %. Grid trades move the position toward the configured holding boundary while preserving Initial capital as the portfolio's starting equity; the legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
 - `Trade`
   Inspect the `Investment` and `Live trading` views. The former Timing and
   investment aliases redirect to `/trade/investment` for compatibility.
@@ -436,8 +436,16 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   - Use pasted Trade Notifications as supplemental transaction evidence after
     the available file-snapshot cutoff, especially while the prior-day files are
     stale or not yet available. Unique filled trades are added to the ledger;
-    the paste is not treated as a replacement holdings or cash snapshot.
+    Trade Notifications alone are not treated as a replacement holdings or cash snapshot.
     Displayed Beijing times are converted to New York ledger times.
+  - A pasted currency-pair fill such as `USD.CNH` is retained as a provisional
+    forex component, never a stock trade. Its acquired base amount, paid quote
+    amount, quote-currency fee, and direction remain explicit; no cash delta is
+    invented before the official Transaction History row is available.
+  - An optional same-account Your Holdings capture supplies every listed native
+    cash balance and the visible position boundary. A later matching official
+    Transaction History row supersedes the provisional forex component without
+    creating a duplicate.
   - A later matching CSV or GainsKeeper row replaces the web row's rounded fee,
     net amount, and timestamp precision without creating a duplicate trade.
   - If the IBKR app supplies a user-verified post-fill cash value with the

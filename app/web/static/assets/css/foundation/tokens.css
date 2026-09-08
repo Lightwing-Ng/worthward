@@ -1,4 +1,4 @@
-/* Code version: v0.29.2 */
+/* Code version: v0.30.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -293,15 +293,15 @@
 	--strategy-stepper-button-height: 18px;
 	--strategy-stepper-font-size: 9px;
 	--workspace-modal-radius: var(--radius-panel);
-	--workspace-modal-pad-block: 18px;
-	--workspace-modal-pad-inline: 18px;
-	--workspace-modal-close-offset: 10px;
+	--workspace-modal-pad-block: 12px;
+	--workspace-modal-pad-inline: 12px;
+	--workspace-modal-close-offset: 12px;
 	--workspace-modal-close-size: 24px;
 	--workspace-modal-close-center-offset: calc(var(--workspace-modal-close-offset) + (var(--workspace-modal-close-size) / 2));
 	--workspace-modal-icon-size: 36px;
 	--workspace-modal-column-gap: 12px;
 	--workspace-modal-row-gap: 4px;
-	--workspace-modal-title-margin-end: 32px;
+	--workspace-modal-title-margin-end: 0px;
 	--live-trading-pin-dialog-width: 392px;
 	--live-trading-pin-dialog-radius: var(--workspace-modal-radius);
 	--live-trading-pin-dialog-padding: 24px;

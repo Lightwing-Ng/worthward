@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.12.2
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -817,7 +817,7 @@ class BacktestPageTests(unittest.TestCase):
         ):
             client = create_app().test_client()
             response = client.get(
-                "/workspaces/backtest?strategy=leveraged-rotation&drawdown_pct=10"
+                "/workspaces/backtest?strategy=leveraged-rotation&buy_leveraged_drop_pct=10"
                 "&period=1y&capital=10000"
             )
 
@@ -828,7 +828,9 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('id="ticker_2" name="ticker"', html)
         self.assertIn('value="QQQ"', html)
         self.assertIn('value="TQQQ"', html)
-        self.assertIn('name="drawdown_pct"', html)
+        self.assertIn('name="buy_leveraged_drop_pct"', html)
+        self.assertIn('name="sell_leveraged_rise_pct"', html)
+        self.assertIn('data-strategy-allocation-range', html)
         self.assertIn('data-markdown-export-label="Ticker">Ticker</th>', html)
         self.assertIn('"multi_asset": true', html)
 
@@ -842,7 +844,26 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(payload["default_tickers"], ["QQQ", "TQQQ"])
         self.assertTrue(payload["supports"]["multi_ticker"])
         self.assertEqual(payload["supports"]["execution_intervals"], ["1d", "1m"])
-        self.assertIn('name="drawdown_pct"', payload["html"])
+        self.assertIn('name="buy_leveraged_drop_pct"', payload["html"])
+        self.assertIn('name="initial_primary_pct"', payload["html"])
+        self.assertIn('data-strategy-allocation-range', payload["html"])
+
+    def test_knn_default_all_feature_runs_without_observed_volume(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/backtest?strategy=knn-machine-learning&period=1y"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"backtestResult": {', html)
+        self.assertNotIn("Volume features require observed", html)
 
     def test_every_enabled_strategy_starts_with_its_default_parameters(self) -> None:
         client = create_app().test_client()
@@ -1000,7 +1021,7 @@ class BacktestPageTests(unittest.TestCase):
         ):
             client = create_app().test_client()
             response = client.get(
-                "/api/export-transactions?strategy=leveraged-rotation&drawdown_pct=10&stop_loss=1"
+                "/api/export-transactions?strategy=leveraged-rotation&buy_leveraged_drop_pct=10&stop_loss=1"
                 "&period=1y&capital=10000"
             )
 

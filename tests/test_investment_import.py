@@ -1,7 +1,11 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.40.0
+Code version: v0.42.0
+- Added: Missing Schwab dividend-reinvestment basis remains explicitly unknown
+  and produces an import warning.
+- Added: IBKR web FX fills retain conversion semantics, quote-currency fees,
+  every native cash balance, and later official CSV precision without duplicates.
 - Added: Same-day file cash supersedes older web cash without stale currency
   components, and canonical CSV P&L refreshes legacy summaries.
 - Added: HSBC non-USD cash-only merges retain the existing authoritative USD
@@ -3475,6 +3479,42 @@ Fees: 0.12
         self.assertEqual(payload["summary"]["unknown_transaction_types"], [])
         self.assertEqual(payload["ending_cash"], "29.74")
         self.assertFalse(payload["datetime_policy"]["source_has_intraday_timestamp"])
+        self.assertTrue(payload["summary"]["holdings_validation"]["matched"])
+
+    def test_schwab_dividend_reinvestment_without_basis_warns_and_stays_unknown(
+        self,
+    ) -> None:
+        transactions_csv = "\n".join([
+            '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+            '"08/05/2026","Dividend Reinvestment","DRAM","ROUNDHILL MEMORY ETF","2","","",""',
+        ]) + "\n"
+        positions_csv = "\n".join([
+            '"Positions for account Individual ...001 as of 09:00 PM ET, 2026/08/05"',
+            "",
+            '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
+            '"DRAM","ROUNDHILL MEMORY ETF","2","50.00","$100.00","N/A","ETFs & Closed End Funds",',
+            '"Cash & Cash Investments","--","--","--","$0.00","--","Cash and Money Market",',
+            '"Positions Total","--","--","--","$100.00","--","",',
+        ]) + "\n"
+
+        payload = build_investment_payload_from_schwab_csv(
+            transactions_csv.encode("utf-8"),
+            positions_csv.encode("utf-8"),
+            transaction_filename="Individual_XXX001_Transactions_20260805.csv",
+            positions_filename="Individual-Positions-2026-08-05.csv",
+        )
+
+        reinvestment = payload["transactions"][0]
+        self.assertEqual(reinvestment["type"], "dividend_reinvestment")
+        self.assertEqual(
+            reinvestment["source"]["reinvestment_cost_basis_status"],
+            "unknown",
+        )
+        self.assertIn(
+            "Row 2: Schwab dividend reinvestment has no positive "
+            "quantity-and-value cost-basis evidence; P&L remains unavailable.",
+            payload["summary"]["warnings"],
+        )
         self.assertTrue(payload["summary"]["holdings_validation"]["matched"])
 
     def test_schwab_reimport_deduplicates_legacy_nra_tax_adjustment_type(self) -> None:
@@ -7418,6 +7458,204 @@ Data powered by"""
             payload["datetime_policy"]["source_timezone"],
             "Asia/Hong_Kong",
         )
+
+    def test_ibkr_web_paste_preserves_fx_fill_and_all_native_cash_balances(self) -> None:
+        trade_notifications_text = """Search
+⌘ + K
+Orders & Trades
+Trade Notifications
+Trades Account Action Quantity Status Price Amount
+USD.CNH
+Bot 299.58 @ 6.70920 on IDEALPRO
+U00000001 Bought 299.58
+Filled
+10:36 AM
+6.70920
+2009.942136
+Fees: 13.42
+DRAM
+Sold 5 @ 58.95 on ARCA
+U00000001 Sold 5
+Filled
+9/5/2026, 1:35 AM
+58.95
+294.75
+Fees: 0.35"""
+        holdings_text = """Search
+Account
+U00000001
+USD
+21,413.23
+Settled Cash
+1,789.86
+Your Holdings
+Instrument Position Last Change % Cost Basis Market Value Avg Price Daily P&L Unrealized P&L
+QQQI
+NEOS NASDAQ-100 HIGH INC ETF
+310 54.98 +0.42% 17,523 USD 17,043.80 USD 56.53 USD +71.30 USD -480.00 USD
+DRAM
+ROUNDHILL MEMORY ETF
+40 62.43 +4.59% 2,227.15 USD 2,497.20 USD 55.68 USD +110.00 USD +270.00 USD
+IBKR
+INTERACTIVE BROKERS GROUP-CL A
+3.0524 92.62 0.00% 205.19 USD 282.71 USD 67.22 USD 0.00 USD +77.50 USD
+Cash Holdings
+CNH 0.06
+USD (base currency) 1,789.85
+Total Cash (in USD) 1,789.86"""
+
+        payload = build_investment_payload_from_ibkr_web_pasted_text(
+            trade_notifications_text=trade_notifications_text,
+            trade_date="8 Sep 2026",
+            holdings_text=holdings_text,
+        )
+
+        forex = next(
+            record
+            for record in payload["transactions"]
+            if record.get("ticker") == "USD.CNH"
+        )
+        self.assertEqual(forex["date"], "2026-09-07")
+        self.assertEqual(forex["datetime"], "2026-09-07 22:36:00")
+        self.assertEqual(forex["type"], "forex_trade_component")
+        self.assertEqual(forex["currency"], "USD")
+        self.assertEqual(forex["quantity_raw"], "299.58")
+        self.assertEqual(forex["price_raw"], "6.70920")
+        self.assertEqual(forex["commission_raw"], "-2.00")
+        self.assertNotIn("gross_amount_raw", forex)
+        self.assertNotIn("net_amount_raw", forex)
+        self.assertNotIn("cash_flow_amount", forex["normalized"])
+        self.assertEqual(forex["source"]["fee_amount_raw"], "13.42")
+        self.assertEqual(forex["source"]["fee_currency"], "CNH")
+        self.assertEqual(forex["source"]["forex_pair"], "USD.CNH")
+        self.assertEqual(forex["source"]["forex_action"], "buy_base")
+        self.assertEqual(forex["source"]["quote_amount_raw"], "2009.9421360")
+        self.assertEqual(
+            payload["ending_cash_by_currency"],
+            {"CNH": "0.06", "USD": "1789.85"},
+        )
+        self.assertEqual(
+            {
+                ticker: snapshot["quantity"]
+                for ticker, snapshot in payload["position_snapshot"].items()
+            },
+            {"QQQI": "310", "DRAM": "40", "IBKR": "3.0524"},
+        )
+        self.assertNotIn("USD.CNH", payload["position_snapshot"])
+
+    def test_ibkr_official_csv_fx_row_supersedes_matching_web_fx_fill(self) -> None:
+        web_payload = build_investment_payload_from_ibkr_web_pasted_text(
+            trade_notifications_text="""Orders & Trades
+Trade Notifications
+Trades Account Action Quantity Status Price Amount
+USD.CNH
+Bot 299.58 @ 6.70920 on IDEALPRO
+U00000001 Bought 299.58
+Filled
+10:36 AM
+6.70920
+2009.942136
+Fees: 13.42""",
+            trade_date="8 Sep 2026",
+        )
+        official_record = {
+            "date": "2026-09-08",
+            "datetime": "2026-09-08 20:00:00",
+            "type": "forex_trade_component",
+            "currency": "USD",
+            "description": "Net Amount in Base from Forex Trade: 299.58 USD.CNH",
+            "ticker": "USD.CNH",
+            "quantity_raw": "299.58",
+            "quantity_abs": "299.58",
+            "price_raw": "6.70920",
+            "gross_amount_raw": "-0.00862548",
+            "commission_raw": "-2.0",
+            "commission_abs": "2.0",
+            "net_amount_raw": "-0.00862548",
+            "normalized": {
+                "position_quantity": "299.58",
+                "display_quantity": "299.58",
+                "unit_price": "6.70920",
+                "gross_amount": "-0.00862548",
+                "display_amount": "-0.00862548",
+                "commission": "-2.0",
+                "commission_display": "2.0",
+                "net_amount": "-0.00862548",
+                "is_cash_flow": True,
+                "cash_flow_amount": "-0.00862548",
+            },
+            "source": {
+                "file_kind": "transactions",
+                "row_number": 2,
+                "transaction_type_raw": "Forex Trade Component",
+                "account": "U***00001",
+            },
+            "broker": "ibkr",
+            "account": "U***00001",
+        }
+        official_payload = {
+            "schema_version": "3.0.0",
+            "broker": "ibkr",
+            "account": "U***00001",
+            "summary": {},
+            "transactions": [official_record],
+        }
+
+        for merged in (
+            merge_investment_payloads(web_payload, official_payload),
+            merge_investment_payloads(official_payload, web_payload),
+        ):
+            pair_rows = [
+                record
+                for record in merged["transactions"]
+                if record.get("ticker") == "USD.CNH"
+            ]
+            forex_rows = [
+                record
+                for record in pair_rows
+                if record.get("type") == "forex_trade_component"
+            ]
+            self.assertEqual(len(pair_rows), 1)
+            self.assertEqual(len(forex_rows), 1)
+            self.assertEqual(forex_rows[0]["source"]["file_kind"], "transactions")
+            self.assertEqual(forex_rows[0]["commission_raw"], "-2.0")
+            self.assertEqual(forex_rows[0]["net_amount_raw"], "-0.00862548")
+            self.assertNotIn(
+                "provisional_until_file_import",
+                forex_rows[0]["source"],
+            )
+            self.assertNotIn("cash_delta_status", forex_rows[0]["source"])
+
+    def test_existing_forex_component_reimport_remains_idempotent(self) -> None:
+        record = {
+            "date": "2026-09-08",
+            "datetime": "2026-09-08 16:00:00",
+            "type": "forex_trade_component",
+            "currency": "USD",
+            "description": "FX FROM CNH TO USD @ 0.149049",
+            "quantity_raw": "297.58",
+            "price_raw": "0.149049",
+            "net_amount_raw": "297.58",
+            "broker": "longbridge_sg",
+            "account": "SG00000001",
+            "source": {
+                "file_kind": "longbridge_cash_flow",
+                "row_number": 2,
+            },
+        }
+        payload = {
+            "schema_version": "3.0.0",
+            "broker": "longbridge_sg",
+            "account": "SG00000001",
+            "summary": {},
+            "transactions": [record],
+        }
+
+        first = merge_investment_payloads({}, payload)
+        second = merge_investment_payloads(first, payload)
+
+        self.assertEqual(len(first["transactions"]), 1)
+        self.assertEqual(len(second["transactions"]), 1)
 
     def test_ibkr_web_paste_rejects_holdings_from_another_account(self) -> None:
         holdings_text = """Account

@@ -1,4 +1,4 @@
-"""Tests for the two-ticker leveraged rotation strategy. Code version: v1.1.0."""
+"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.0.0."""
 
 from __future__ import annotations
 
@@ -20,14 +20,17 @@ def _asset_frame(closes: list[float]) -> pd.DataFrame:
     return frame
 
 
-def test_leveraged_rotation_declares_two_defaults_and_signals_drawdown_recovery() -> None:
+def test_leveraged_rotation_declares_allocation_controls_and_daily_move_signals() -> None:
     strategy = LeveragedRotationStrategy()
     frame = combine_backtest_datasets([
         _asset_frame([100.0, 105.0, 94.0, 95.0, 110.0, 115.0]),
         _asset_frame([50.0, 55.0, 45.0, 50.0, 60.0, 65.0]),
     ])
 
-    result = strategy.compute_signals(frame, {"drawdown_pct": 10.0})
+    result = strategy.compute_signals(frame, {
+        "buy_leveraged_drop_pct": 10.0,
+        "sell_leveraged_rise_pct": 15.0,
+    })
 
     assert strategy.get_default_tickers() == ("QQQ", "TQQQ")
     assert strategy.get_required_ticker_count() == 2
@@ -35,7 +38,11 @@ def test_leveraged_rotation_declares_two_defaults_and_signals_drawdown_recovery(
     assert bool(result.frame.loc[4, "rotation_exit_signal"])
     assert result.execution_profile == "leveraged_rotation"
     assert result.required_execution_mode == "next_open"
-    assert result.frame["rotation_target_asset"].tolist() == [1, 1, 2, 2, 1, 1]
+    assert result.frame["rotation_target_regime"].tolist() == [
+        "initial", "initial", "leveraged", "leveraged", "primary", "primary",
+    ]
+    assert result.metadata["rotation_parameters"]["initial_primary_pct"] == 70.0
+    assert result.metadata["rotation_parameters"]["initial_leveraged_pct"] == 25.0
 
 
 def test_leveraged_rotation_backtest_switches_assets_and_marks_primary_equity() -> None:
@@ -46,22 +53,32 @@ def test_leveraged_rotation_backtest_switches_assets_and_marks_primary_equity() 
     ])
     frame.loc[3, ["Open", "High", "Open_2", "Low_2"]] = [96.0, 96.0, 49.0, 49.0]
     frame.loc[5, ["Open", "Low", "Open_2", "Low_2"]] = [114.0, 114.0, 64.0, 64.0]
-    signal_result = strategy.compute_signals(frame, {"drawdown_pct": 10.0})
+    signal_result = strategy.compute_signals(frame, {
+        "buy_leveraged_drop_pct": 10.0,
+        "sell_leveraged_rise_pct": 15.0,
+    })
     signal_result.metadata["tickers"] = ["QQQ", "TQQQ"]
 
     result = run_single_ticker_backtest(signal_result, 10_000.0, execution_mode="signal_close")
     trades = result["trades"]
 
     assert result["multi_asset"] is True
-    assert [trade["ticker"] for trade in trades] == ["QQQ", "QQQ", "TQQQ", "TQQQ", "QQQ"]
-    assert [trade["side"] for trade in trades] == ["Buy", "Sell", "Buy", "Sell", "Buy"]
-    assert trades[1]["shares"] == 100.0
-    assert trades[2]["shares"] > 0
+    assert [trade["ticker"] for trade in trades] == ["QQQ", "TQQQ", "QQQ", "TQQQ", "TQQQ", "QQQ"]
+    assert [trade["side"] for trade in trades] == ["Buy", "Buy", "Sell", "Buy", "Sell", "Buy"]
+    assert [trade["shares"] for trade in trades[:2]] == [70, 50]
+    assert all(float(trade["shares"]).is_integer() for trade in trades)
     assert result["execution_mode"] == "next_open"
     assert [trade["date"] for trade in trades] == [
-        "2026/01/01", "2026/01/04", "2026/01/04", "2026/01/06", "2026/01/06",
+        "2026/01/01", "2026/01/01", "2026/01/04", "2026/01/04", "2026/01/06", "2026/01/06",
     ]
-    assert [trade["price"] for trade in trades] == [100.0, 96.0, 49.0, 64.0, 114.0]
+    assert [trade["price"] for trade in trades] == [100.0, 50.0, 96.0, 49.0, 64.0, 114.0]
+    assert result["initial_allocation"] == {
+        "primary_shares": 70,
+        "leveraged_shares": 50,
+        "primary_open": 100.0,
+        "leveraged_open": 50.0,
+        "cash": 500.0,
+    }
     assert result["summary"]["rotation_count"] == 1
     assert len(result["chart"]["equity"]) == len(frame)
 
@@ -72,7 +89,7 @@ def test_leveraged_rotation_respects_shared_stop_loss_switch() -> None:
         _asset_frame([100.0, 105.0, 94.0, 95.0, 96.0, 97.0]),
         _asset_frame([50.0, 55.0, 45.0, 50.0, 60.0, 65.0]),
     ])
-    signal_result = strategy.compute_signals(frame, {"drawdown_pct": 10.0})
+    signal_result = strategy.compute_signals(frame, {"buy_leveraged_drop_pct": 10.0})
     signal_result.metadata["tickers"] = ["QQQ", "TQQQ"]
 
     result = run_single_ticker_backtest(
@@ -81,11 +98,14 @@ def test_leveraged_rotation_respects_shared_stop_loss_switch() -> None:
         stop_loss_enabled=False,
     )
 
-    assert [trade["ticker"] for trade in result["trades"]] == ["QQQ"]
+    assert not any(
+        trade["ticker"] == "QQQ" and trade["side"] == "Sell"
+        for trade in result["trades"]
+    )
     assert result["summary"]["rotation_count"] == 0
 
 
-def test_rotation_retries_entry_and_recovery_after_blocked_open_exits() -> None:
+def test_rotation_accepts_custom_primary_and_leveraged_ticker_pair() -> None:
     frame = combine_backtest_datasets([
         _asset_frame([100.0, 130.0, 90.0, 95.0, 105.0, 132.0, 131.0, 130.0]),
         _asset_frame([50.0, 70.0, 40.0, 42.0, 44.0, 41.0, 43.0, 47.0]),
@@ -93,32 +113,25 @@ def test_rotation_retries_entry_and_recovery_after_blocked_open_exits() -> None:
     signals = LeveragedRotationStrategy().compute_signals(frame)
     signals.metadata["tickers"] = ["QQQ", "TQQQ"]
 
-    result = run_single_ticker_backtest(signals, 10_000.0, stop_loss_enabled=False)
-
-    assert [trade["date"] for trade in result["trades"]] == [
-        "2026/01/01", "2026/01/05", "2026/01/05", "2026/01/08", "2026/01/08",
-    ]
-    assert [trade["price"] for trade in result["trades"]] == [100.0, 105.0, 44.0, 47.0, 130.0]
-    assert result["summary"]["active_ticker"] == "QQQ"
-    assert result["summary"]["rotation_count"] == 1
+    signals.metadata["tickers"] = ["DRAM", "RAM"]
+    result = run_single_ticker_backtest(signals, 10_000.0)
+    assert result["tickers"] == ["DRAM", "RAM"]
+    assert {trade["ticker"] for trade in result["trades"]} == {"DRAM", "RAM"}
 
 
-def test_rotation_recovery_intent_survives_same_day_successful_pending_entry() -> None:
-    frame = combine_backtest_datasets([
-        _asset_frame([100.0, 105.0, 94.0, 95.0, 110.0, 109.0, 108.0]),
-        _asset_frame([50.0, 55.0, 45.0, 50.0, 60.0, 61.0, 62.0]),
-    ])
-    signals = LeveragedRotationStrategy().compute_signals(frame)
-    signals.metadata["tickers"] = ["QQQ", "TQQQ"]
-
-    result = run_single_ticker_backtest(signals, 10_000.0, stop_loss_enabled=False)
-
-    # A gap-up permits the previously blocked entry on day 5. The protected
-    # executor skips that day's close decision; the retained recovery retries.
-    assert [trade["date"] for trade in result["trades"]] == [
-        "2026/01/01", "2026/01/05", "2026/01/05", "2026/01/07", "2026/01/07",
-    ]
-    assert result["summary"]["active_ticker"] == "QQQ"
+def test_rotation_allocation_limits_and_initial_cash_are_normalized() -> None:
+    params = LeveragedRotationStrategy().normalize_params({
+        "primary_min_pct": 30.0,
+        "primary_max_pct": 90.0,
+        "leveraged_min_pct": 20.0,
+        "leveraged_max_pct": 90.0,
+        "initial_primary_pct": 90.0,
+        "initial_leveraged_pct": 90.0,
+    })
+    assert params["primary_max_pct"] == 80.0
+    assert params["leveraged_max_pct"] == 70.0
+    assert params["initial_primary_pct"] == 80.0
+    assert params["initial_leveraged_pct"] == 20.0
 
 
 def test_rotation_is_prefix_causal_and_does_not_mutate_input() -> None:
@@ -172,7 +185,7 @@ def test_rotation_requires_unambiguous_chronology(dates: list[object]) -> None:
 def test_rotation_rejects_nonfinite_trigger_locally(trigger: object) -> None:
     frame = combine_backtest_datasets([_asset_frame([100.0, 90.0]), _asset_frame([50.0, 45.0])])
     with pytest.raises(ValueError, match="finite number"):
-        LeveragedRotationStrategy().compute_signals(frame, {"drawdown_pct": trigger})
+        LeveragedRotationStrategy().compute_signals(frame, {"buy_leveraged_drop_pct": trigger})
 
 
 @pytest.mark.parametrize("column", ["Dividends", "Dividends_2"])

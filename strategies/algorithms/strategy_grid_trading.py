@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.3.1
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,10 @@ from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResu
 class GridTradingStrategy(BaseStrategy):
     strategy_id = "grid-trading"
     strategy_name = "Grid Trading"
-    strategy_description = "Trades price moves from the last execution with configurable trigger bounds and asymmetric rise/fall percentages."
+    strategy_description = (
+        "Trades price moves from the last execution while keeping the position "
+        "within configurable holding limits."
+    )
     strategy_category = "mean-reversion"
     strategy_display_order = 31
     strategy_supports = StrategySupportMatrix(
@@ -27,20 +30,37 @@ class GridTradingStrategy(BaseStrategy):
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
             StrategyParameterDefinition(
-                key="price_floor",
-                label="Trigger price min",
-                kind="number",
-                default=1.0,
-                step=0.01,
-                help_text="Keeps grid signals active only when the closing price is at or above this lower bound.",
+                key="initial_holding",
+                label="Current holding",
+                kind="integer",
+                default=0,
+                minimum=0,
+                maximum=1_000_000,
+                step=1,
+                unit_hint="shares",
+                help_text="Sets the shares already held when the backtest starts.",
             ),
             StrategyParameterDefinition(
-                key="price_ceiling",
-                label="Trigger price max",
-                kind="number",
-                default=1000.0,
-                step=0.01,
-                help_text="Keeps grid signals active only when the closing price is at or below this upper bound.",
+                key="holding_min",
+                label="Minimum holding",
+                kind="integer",
+                default=0,
+                minimum=0,
+                maximum=1_000_000,
+                step=1,
+                unit_hint="shares",
+                help_text="Keeps sell orders from reducing the position below this number of shares.",
+            ),
+            StrategyParameterDefinition(
+                key="holding_max",
+                label="Maximum holding",
+                kind="integer",
+                default=1_000_000,
+                minimum=0,
+                maximum=1_000_000,
+                step=1,
+                unit_hint="shares",
+                help_text="Keeps buy orders from increasing the position above this number of shares.",
             ),
             StrategyParameterDefinition(
                 key="rise",
@@ -66,11 +86,25 @@ class GridTradingStrategy(BaseStrategy):
             ),
         )
 
+    def normalize_params(self, params: dict | None = None) -> dict:
+        """Normalize holding bounds into one internally consistent range."""
+        normalized = super().normalize_params(params)
+        holding_min = int(normalized["holding_min"])
+        holding_max = max(holding_min, int(normalized["holding_max"]))
+        initial_holding = min(
+            max(int(normalized["initial_holding"]), holding_min),
+            holding_max,
+        )
+        normalized.update({
+            "initial_holding": initial_holding,
+            "holding_min": holding_min,
+            "holding_max": holding_max,
+        })
+        return normalized
+
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
         frame = dataset.copy()
         normalized_params = self.normalize_params(params)
-        price_floor = float(normalized_params["price_floor"])
-        price_ceiling = float(normalized_params["price_ceiling"])
         rise = float(normalized_params["rise"]) / 100.0
         fall = float(normalized_params["fall"]) / 100.0
 
@@ -104,17 +138,13 @@ class GridTradingStrategy(BaseStrategy):
             low_price = low_prices.loc[row_index]
             buy_price = reference_price * (1.0 - fall)
             sell_price = reference_price * (1.0 + rise)
-            in_trigger_range = (
-                pd.notna(close_price)
-                and price_floor <= float(close_price) <= price_ceiling
-            )
             sell_signal = bool(
-                in_trigger_range
+                pd.notna(close_price)
                 and pd.notna(high_price)
                 and float(high_price) >= sell_price
             )
             buy_signal = bool(
-                in_trigger_range
+                pd.notna(close_price)
                 and not sell_signal
                 and pd.notna(low_price)
                 and float(low_price) <= buy_price
@@ -139,8 +169,9 @@ class GridTradingStrategy(BaseStrategy):
             execution_profile="grid_trading",
             metadata={
                 "grid_parameters": {
-                    "price_floor": price_floor,
-                    "price_ceiling": price_ceiling,
+                    "initial_holding": int(normalized_params["initial_holding"]),
+                    "holding_min": int(normalized_params["holding_min"]),
+                    "holding_max": int(normalized_params["holding_max"]),
                     "rise": rise,
                     "fall": fall,
                 },

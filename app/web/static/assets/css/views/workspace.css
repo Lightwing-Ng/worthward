@@ -1,4 +1,5 @@
-/* Code version: v1.23.2 */
+/* Code version: v1.24.0 */
+/* Keep modal dismiss actions in a dedicated macOS-style upper-left rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -1506,12 +1507,15 @@
     isolation: isolate;
     z-index: var(--layer-modal-dialog);
     display: grid;
-    grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
+    grid-template-columns:
+        var(--workspace-modal-close-size)
+        var(--workspace-modal-icon-size)
+        minmax(0, 1fr);
     column-gap: var(--workspace-modal-column-gap);
     row-gap: var(--workspace-modal-row-gap);
     align-items: start;
     width: min(420px, calc(100vw - 32px));
-    padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline) 16px;
+    padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
     pointer-events: auto;
     opacity: 1;
     border-radius: var(--workspace-modal-radius);
@@ -1525,7 +1529,7 @@
 
 
 .workspace-modal-icon {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     --loading-spinner-size: var(--workspace-modal-icon-size);
     width: var(--workspace-modal-icon-size);
@@ -1536,13 +1540,13 @@
 .workspace-modal-close {
     position: absolute;
     top: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
-    right: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
+    left: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
 }
 
 .workspace-modal-title {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
-    margin: 0 var(--workspace-modal-title-margin-end) 0 0;
+    margin: 0;
     align-self: center;
     text-align: left;
     font-size: var(--font-ui-lg);
@@ -1552,7 +1556,7 @@
 }
 
 .workspace-modal-copy {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     margin: 0;
     text-align: left;
@@ -1592,11 +1596,14 @@
 /* v1.1.2-L1: Let the floating banner copy use the same text width as the modal dialog. */
 .notice-floating-banner {
     display: grid !important;
-    grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
+    grid-template-columns:
+        var(--workspace-modal-close-size)
+        var(--workspace-modal-icon-size)
+        minmax(0, 1fr);
     column-gap: var(--workspace-modal-column-gap);
     row-gap: 0;
     align-items: start !important;
-    padding: var(--workspace-modal-pad-block) calc(var(--workspace-modal-pad-inline) + var(--workspace-modal-title-margin-end)) var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
+    padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
     border-radius: var(--workspace-modal-radius);
     overflow: visible;
     transform: none;
@@ -1626,7 +1633,7 @@
 }
 
 .notice-floating-banner-icon {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     align-self: start;
     margin-top: 2px;
@@ -1634,7 +1641,7 @@
 }
 
 .notice-floating-banner-content {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     min-width: 0;
     margin: 0;
@@ -1695,7 +1702,7 @@
 .notice-floating-banner .notice-close {
     position: absolute;
     top: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
-    right: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
+    left: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
 }
 
 .dismiss-button {
@@ -1704,6 +1711,7 @@
     height: var(--workspace-modal-close-size);
     min-height: var(--workspace-modal-close-size);
     padding: 0;
+    border: 0;
     border-radius: 50%;
     background: transparent;
     color: var(--accent-text);
