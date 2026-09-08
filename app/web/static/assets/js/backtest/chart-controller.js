@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.7.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -658,7 +658,7 @@
 		const chartAxisStyles = getComputedStyle(tradeChartStack);
 		const chartAxisFontFamily = chartAxisStyles.getPropertyValue(
 			"--backtest-chart-axis-font-family",
-		).trim() || '"GDS Transport", "Helvetica Neue", Arial, sans-serif';
+		).trim() || getComputedStyle(document.body).fontFamily;
 		const chartAxisFontSize = readPxToken(tradeChartStack, "--backtest-chart-axis-font-size", 12);
 		const chartAxisFontWeight = chartAxisStyles.getPropertyValue(
 			"--backtest-chart-axis-font-weight",
@@ -1309,7 +1309,7 @@
 
 		const formatChartDate = (dateParts) => {
 			if (typeof formatFullDateParts === "function") {
-				return formatFullDateParts(dateParts, { includeTime: true });
+				return formatFullDateParts(dateParts, { includeTime: interval === "1m" });
 			}
 			return `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`;
 		};
@@ -1619,6 +1619,7 @@
 			probabilityDetailPanel.dataset.columnCount = String(geometry.columnCount);
 			probabilityDetailPanel.dataset.rowCount = String(geometry.rowCount);
 			probabilityDetailPanel.dataset.daysPerColumn = String(geometry.daysPerColumn);
+			probabilityDetailPanel.dataset.horizonStep = String(detailModel.horizonStep);
 			probabilityDetailPanel.dataset.cellDisplayThresholdPct = String(
 				detailModel.cellDisplayThresholdPct,
 			);
@@ -1659,6 +1660,7 @@
 			}
             probabilityDetailGrid.dataset.columnCount = String(geometry.columnCount);
             probabilityDetailGrid.dataset.daysPerColumn = String(geometry.daysPerColumn);
+            probabilityDetailGrid.dataset.horizonStep = String(detailModel.horizonStep);
             probabilityDetailGrid.dataset.rowCount = String(geometry.rowCount);
             if (!detailViewportReady) return false;
 			const finalHorizon = Math.max(...cells.map((cell) => cell.horizon));
@@ -2324,6 +2326,10 @@
 				cellSizeTargetPx,
 			});
 			if (!geometry) return null;
+			// Direct models own one learned distribution per forecast horizon. Keep
+			// that semantic axis independent from the wider square-cell spacing
+			// required to keep the overview legible on dense history charts.
+			const horizonStep = Number.isInteger(maxHorizon) ? 1 : geometry.daysPerColumn;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
 				distribution,
 				geometry,
@@ -2336,6 +2342,7 @@
 				horizonMean,
 				horizonStd,
 				maxHorizon,
+				horizonStep,
 				stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
@@ -2356,6 +2363,7 @@
 				horizonMean,
 				horizonStd,
 				maxHorizon,
+				horizonStep,
 				stepPixels,
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 			};
@@ -2421,10 +2429,10 @@
 				cellSizeTargetPx: model.geometry.cellSize,
 				limitRowsToChartArea: false,
 			});
-			// The contained field owns its forecast-day axis, so direct models
-			// can show every learned horizon even when the overview is zoomed out.
-			const geometry = nativeGeometry && model.maxHorizon
-				? {...nativeGeometry, daysPerColumn: 1} : nativeGeometry;
+			// The contained field owns its forecast-day axis. Direct models reuse
+			// the same one-horizon semantic step as the overview while retaining
+			// independent complete-row geometry.
+			const geometry = nativeGeometry;
 			if (!geometry) return null;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
 				distribution,
@@ -2438,6 +2446,7 @@
 				horizonMean: model.horizonMean,
 				horizonStd: model.horizonStd,
 				maxHorizon: model.maxHorizon,
+				horizonStep: model.horizonStep,
 				stepPixels: model.stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
@@ -2536,6 +2545,9 @@
 			if (shouldUpdateDomMirror && grid.dataset.daysPerColumn !== String(geometry.daysPerColumn)) {
 				grid.dataset.daysPerColumn = String(geometry.daysPerColumn);
 			}
+			if (shouldUpdateDomMirror && grid.dataset.horizonStep !== String(baseModel.horizonStep)) {
+				grid.dataset.horizonStep = String(baseModel.horizonStep);
+			}
 			if (shouldUpdateDomMirror && grid.dataset.rowCount !== String(geometry.rowCount)) {
 				grid.dataset.rowCount = String(geometry.rowCount);
 			}
@@ -2613,6 +2625,7 @@
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
 				thresholdHiddenCount: cells.filter((cell) => cell.isVisible === false).length,
 				daysPerColumn: geometry.daysPerColumn,
+				horizonStep: baseModel.horizonStep,
 				slotWidth: geometry.slotWidth,
 				stepPixels,
 				targetScrollLeft: probabilityScrollTarget,

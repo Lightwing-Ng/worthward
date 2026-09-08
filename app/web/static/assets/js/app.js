@@ -1,7 +1,11 @@
-/* Code version: v0.55.0 */
-(() => {
+/* Code version: v0.61.0 */
+(async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
+    // A long-running server can still render the pre-migration cached template.
+    if (!window.SHARED_SELECT) {
+        await import(new URL("select-controller.js?v=select-controller-v1.0.0", document.currentScript.src).href);
+    }
     const preferenceStorage = window.WORTHWARD_STORAGE || {
         local: window.localStorage,
         session: window.sessionStorage,
@@ -310,7 +314,7 @@
 
     const readChartFontFamily = (canvas) => {
         const computed = getComputedStyle(canvas);
-        return computed.fontFamily || '"GDS Transport", "Helvetica Neue", Arial, sans-serif';
+        return computed.fontFamily || '"Univers Next for HSBC"';
     };
 
     const readChartTickFontSize = (canvas, fallbackValue = 12) => {
@@ -2683,6 +2687,7 @@
         }
         document.title = doc.title || document.title;
         window.history.replaceState({}, "", nextUrl);
+        bootstrap.syncCompareLiveRefresh?.();
         initializeWorkspaceEnhancements();
         scheduleDockPosition();
         scheduleMobilePageBottomPaddingSync();
@@ -3468,10 +3473,12 @@
         if (!isPortfolioView) return;
         window.dispatchEvent(new CustomEvent("worthward:portfolio-preview", {
             detail: {
+                allocation: getPortfolioAllocationMode(),
                 entries: getFilledWeightEntries().map((entry) => ({
                     index: entry.index,
                     ticker: entry.ticker,
                     weight: Number.parseInt(entry.number.value, 10) || 0,
+                    shares: Number.parseInt(entry.shares?.value || "0", 10) || 0,
                 })),
             },
         }));
@@ -5127,6 +5134,7 @@
         Array.from(parts.select.options).forEach((option, optionIndex) => {
             const optionButton = document.createElement("button");
             optionButton.type = "button";
+            optionButton.disabled = option.disabled || option.parentElement?.disabled === true;
             optionButton.className = "trade-strategy-dropdown-option";
             optionButton.id = `${parts.dropdown.id || parts.select.id || "shared_select"}_option_${optionIndex}`;
             optionButton.tabIndex = -1;
@@ -5236,76 +5244,31 @@
             .filter((option) => option instanceof HTMLButtonElement);
     };
 
-    const focusSharedSelectOption = (field, targetIndex = null) => {
-        const parts = getSharedSelectParts(field);
-        const options = getSharedSelectOptionButtons(field);
-        if (!parts || !options.length) return;
-        const selectedIndex = Math.max(0, options.findIndex((option) => option.getAttribute("aria-selected") === "true"));
-        const resolvedIndex = targetIndex === null
-            ? selectedIndex
-            : Math.max(0, Math.min(options.length - 1, targetIndex));
-        options.forEach((option, index) => {
-            option.classList.toggle("is-active", index === resolvedIndex);
-        });
-        const target = options[resolvedIndex];
-        parts.trigger.setAttribute("aria-activedescendant", target.id);
-        target.focus({preventScroll: true});
-        target.scrollIntoView({block: "nearest"});
+    const sharedSelectControllers = new WeakMap();
+    const getSharedSelectController = (field) => {
+        if (!sharedSelectControllers.has(field)) {
+            sharedSelectControllers.set(field, window.SHARED_SELECT.createController({
+                getTrigger: () => getSharedSelectParts(field)?.trigger,
+                getMenu: () => getSharedSelectParts(field)?.dropdown,
+                getOptions: () => getSharedSelectOptionButtons(field),
+                open: () => {
+                    closeSharedSelectDropdowns(field);
+                    setTradeStrategyDropdownOpen(false);
+                    if (!field.closest("[data-trade-strategy-panel]")) setTradeStrategyPanelOpen(false);
+                    renderSharedSelectDropdown(field);
+                    setSharedSelectDropdownOpen(field, true);
+                },
+                close: () => setSharedSelectDropdownOpen(field, false),
+            }));
+        }
+        return sharedSelectControllers.get(field);
     };
 
-    const handleSharedSelectTriggerKeydown = (field, event) => {
-        const parts = getSharedSelectParts(field);
-        if (!parts) return;
-        if (event.key === "Escape") {
-            if (parts.dropdown.hidden) return;
-            event.preventDefault();
-            setSharedSelectDropdownOpen(field, false);
-            return;
-        }
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        closeSharedSelectDropdowns(field);
-        setTradeStrategyDropdownOpen(false);
-        if (!field.closest("[data-trade-strategy-panel]")) {
-            setTradeStrategyPanelOpen(false);
-        }
-        renderSharedSelectDropdown(field);
-        setSharedSelectDropdownOpen(field, true);
-        const options = getSharedSelectOptionButtons(field);
-        const targetIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : null;
-        focusSharedSelectOption(field, targetIndex);
-    };
+    const handleSharedSelectTriggerKeydown = (field, event) =>
+        getSharedSelectController(field).triggerKeydown(event);
 
-    const handleSharedSelectDropdownKeydown = (field, event) => {
-        const parts = getSharedSelectParts(field);
-        const options = getSharedSelectOptionButtons(field);
-        if (!parts || !options.length) return;
-        const currentIndex = Math.max(0, options.indexOf(document.activeElement));
-        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-            event.preventDefault();
-            const targetIndex = event.key === "Home"
-                ? 0
-                : event.key === "End"
-                    ? options.length - 1
-                    : currentIndex + (event.key === "ArrowDown" ? 1 : -1);
-            focusSharedSelectOption(field, targetIndex);
-            return;
-        }
-        if (event.key === "Escape") {
-            event.preventDefault();
-            setSharedSelectDropdownOpen(field, false);
-            parts.trigger.focus({preventScroll: true});
-            return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            options[currentIndex]?.click();
-            return;
-        }
-        if (event.key === "Tab") {
-            setSharedSelectDropdownOpen(field, false);
-        }
-    };
+    const handleSharedSelectDropdownKeydown = (field, event) =>
+        getSharedSelectController(field).menuKeydown(event);
 
     const brokerAlphabeticalCollator = new Intl.Collator("en-US", {sensitivity: "base", numeric: true});
 
@@ -5353,6 +5316,33 @@
         syncSharedSelectTriggerLabel(field);
     };
 
+    const syncStrategyParamFieldVisibility = (root = document) => {
+        const fields = Array.from(root.querySelectorAll?.("[data-strategy-param-key]") || [])
+            .filter((field) => field instanceof HTMLElement);
+        fields.forEach((field) => {
+            const controllerKey = String(field.dataset.strategyParamVisibleWhenKey || "").trim();
+            if (!controllerKey) return;
+            const controllerField = fields.find(
+                (candidate) => candidate.dataset.strategyParamKey === controllerKey,
+            );
+            const controller = controllerField?.querySelector("[data-strategy-param-input]");
+            const expectedValue = String(field.dataset.strategyParamVisibleWhenValue || "");
+            const shouldShow = String(controller?.value ?? "") === expectedValue;
+            if (!shouldShow) {
+                const sharedSelectField = field.querySelector("[data-shared-select-field]");
+                if (sharedSelectField instanceof HTMLElement) {
+                    setSharedSelectDropdownOpen(sharedSelectField, false);
+                }
+            }
+            field.hidden = !shouldShow;
+            if (shouldShow) {
+                field.removeAttribute("aria-hidden");
+            } else {
+                field.setAttribute("aria-hidden", "true");
+            }
+        });
+    };
+
     const initializeSharedSelectField = (field) => {
         const parts = getSharedSelectParts(field);
         if (parts && isBrokerSharedSelectKind(parts.field)) {
@@ -5384,6 +5374,8 @@
             syncNativeSelectSelection(parts.select, parts.select.value);
             refreshSharedSelectField(field);
             if (parts.field.dataset.sharedSelectKind === "strategy-param") {
+                const strategyPanel = parts.field.closest("[data-trade-strategy-panel]");
+                syncStrategyParamFieldVisibility(strategyPanel || document);
                 stageOrSubmitStrategyParam(parts.field.closest("[data-strategy-param-key]"), 80);
             }
         });
@@ -5774,7 +5766,7 @@
             const isSupported = input.value !== "1m"
                 || (strategyDeclaresBacktestInterval("1m") && has1m);
             input.disabled = !isSupported;
-            option.hidden = !isSupported;
+            option.hidden = false;
         });
         syncBacktestIntervalSegmentedControl();
     };
@@ -8041,6 +8033,38 @@
         }
     };
 
+    const allocationLabelLayouts = new WeakMap();
+    let allocationLabelResizeFrame = null;
+    window.addEventListener("resize", () => {
+        if (allocationLabelResizeFrame !== null) {
+            window.cancelAnimationFrame(allocationLabelResizeFrame);
+        }
+        allocationLabelResizeFrame = window.requestAnimationFrame(() => {
+            allocationLabelResizeFrame = null;
+            document.querySelectorAll("[data-strategy-allocation-range]").forEach((allocation) => {
+                allocationLabelLayouts.get(allocation)?.();
+            });
+        });
+    });
+
+    const readBacktestTickerName = (index) => {
+        const tickerInputs = document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]");
+        const fallback = index === 0 ? "Primary" : index === 1 ? "Leveraged" : "Asset";
+        return String(tickerInputs[index]?.value || fallback).trim().toUpperCase();
+    };
+
+    const syncStrategyTickerLabels = (root = document) => {
+        root.querySelectorAll?.("[data-strategy-param-ui-role^='ticker-label:']").forEach((field) => {
+            if (!(field instanceof HTMLElement)) return;
+            const [, rawIndex, ...suffixParts] = String(field.dataset.strategyParamUiRole || "").split(":");
+            const tickerIndex = Number.parseInt(rawIndex, 10);
+            const label = field.querySelector("[data-strategy-param-label-text]");
+            if (!Number.isInteger(tickerIndex) || !(label instanceof HTMLElement) || !suffixParts.length) return;
+            const suffix = suffixParts.join(" ").replaceAll("-", " ");
+            label.textContent = `${readBacktestTickerName(tickerIndex)} ${suffix}`;
+        });
+    };
+
     const initStrategyParamControls = (root = document) => {
         const panelGrid = root.querySelector?.("[data-trade-strategy-params-grid]");
         if (panelGrid instanceof HTMLElement) {
@@ -8153,6 +8177,8 @@
         root.querySelectorAll?.(".strategy-factor-group").forEach((group) => {
             syncStrategyFactorGroupCount(group.querySelector("[data-strategy-param-key]"));
         });
+        syncStrategyParamFieldVisibility(root);
+        syncStrategyTickerLabels(root);
 
         root.querySelectorAll?.("[data-strategy-allocation-range]").forEach((allocation) => {
             if (!(allocation instanceof HTMLElement) || allocation.dataset.allocationBound === "1") return;
@@ -8166,11 +8192,11 @@
                 || !(primaryInput instanceof HTMLInputElement)
                 || !(leveragedInput instanceof HTMLInputElement)) return;
 
-            const formatShares = (value) => Math.max(0, Math.floor(value)).toLocaleString("en-US");
             const formatCash = (value) => Math.max(0, value).toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
             });
+            const formatPercentage = (value) => `${value.toFixed(2)}%`;
             const readCapital = () => Number.parseFloat(
                 String(document.getElementById("trade_initial_capital")?.value || "0").replaceAll(",", ""),
             ) || 0;
@@ -8178,7 +8204,61 @@
             const primaryOpen = Number(initial.primary_open || 0);
             const leveragedOpen = Number(initial.leveraged_open || 0);
             const tickerInputs = Array.from(document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]"));
-            const tickerName = (index) => String(tickerInputs[index]?.value || `Ticker ${index + 1}`).trim().toUpperCase();
+            const labels = allocation.querySelector("[data-allocation-labels]");
+            const primaryLabel = allocation.querySelector("[data-allocation-primary-label]");
+            const leveragedLabel = allocation.querySelector("[data-allocation-leveraged-label]");
+            const cashLabel = allocation.querySelector("[data-allocation-cash-label]");
+
+            const positionLabels = (primary, leveraged) => {
+                if (!(labels instanceof HTMLElement)
+                    || !(primaryLabel instanceof HTMLElement)
+                    || !(leveragedLabel instanceof HTMLElement)
+                    || !(cashLabel instanceof HTMLElement)) return;
+                const nodes = [primaryLabel, leveragedLabel, cashLabel];
+                const width = labels.clientWidth;
+                if (!(width > 0)) return;
+                const gap = 6;
+                labels.classList.toggle(
+                    "is-compressed",
+                    nodes.reduce((sum, node) => sum + node.scrollWidth, 0) + (gap * 2) > width,
+                );
+                const halfWidths = nodes.map((node) => Math.min(node.offsetWidth, width) / 2);
+                const cash = Math.max(0, 100 - primary - leveraged);
+                const desired = [
+                    primary / 2,
+                    primary + (leveraged / 2),
+                    primary + leveraged + (cash / 2),
+                ].map((percentage) => width * percentage / 100);
+                const centers = desired.map((center, index) => (
+                    Math.max(halfWidths[index], Math.min(width - halfWidths[index], center))
+                ));
+                for (let index = 1; index < centers.length; index += 1) {
+                    centers[index] = Math.max(
+                        centers[index],
+                        centers[index - 1] + halfWidths[index - 1] + gap + halfWidths[index],
+                    );
+                }
+                centers[centers.length - 1] = Math.min(
+                    centers[centers.length - 1],
+                    width - halfWidths[halfWidths.length - 1],
+                );
+                for (let index = centers.length - 2; index >= 0; index -= 1) {
+                    centers[index] = Math.min(
+                        centers[index],
+                        centers[index + 1] - halfWidths[index + 1] - gap - halfWidths[index],
+                    );
+                }
+                if (centers[0] < halfWidths[0]) {
+                    const shift = halfWidths[0] - centers[0];
+                    centers.forEach((center, index) => {
+                        centers[index] = center + shift;
+                    });
+                }
+                nodes.forEach((node, index) => {
+                    node.style.left = `${centers[index].toFixed(2)}px`;
+                    node.dataset.allocationLabelPosition = (centers[index] / width * 100).toFixed(2);
+                });
+            };
 
             const sync = (source = "") => {
                 let primary = Number.parseFloat(source === "primary" ? primaryRange.value : primaryInput.value) || 0;
@@ -8187,19 +8267,31 @@
                     : primary + (Number.parseFloat(leveragedInput.value) || 0);
                 primary = Math.max(0, Math.min(100, primary));
                 invested = Math.max(primary, Math.min(100, invested));
-                primaryRange.value = primary.toFixed(1);
-                investedRange.value = invested.toFixed(1);
-                primaryInput.value = primary.toFixed(1);
-                leveragedInput.value = (invested - primary).toFixed(1);
+                const leveraged = invested - primary;
+                const cashPercentage = 100 - invested;
+                primaryRange.value = primary.toFixed(2);
+                investedRange.value = invested.toFixed(2);
+                primaryInput.value = primary.toFixed(2);
+                leveragedInput.value = leveraged.toFixed(2);
                 allocation.style.setProperty("--allocation-primary", `${primary}%`);
-                allocation.style.setProperty("--allocation-invested", `${invested}%`);
+                allocation.style.setProperty("--allocation-leveraged", `${leveraged}%`);
+                allocation.style.setProperty("--allocation-cash", `${cashPercentage}%`);
                 const capital = readCapital();
                 const primaryShares = primaryOpen > 0 ? Math.floor(capital * primary / 100 / primaryOpen) : 0;
-                const leveragedShares = leveragedOpen > 0 ? Math.floor(capital * (invested - primary) / 100 / leveragedOpen) : 0;
+                const leveragedShares = leveragedOpen > 0 ? Math.floor(capital * leveraged / 100 / leveragedOpen) : 0;
                 const cash = capital - (primaryShares * primaryOpen) - (leveragedShares * leveragedOpen);
-                allocation.querySelector("[data-allocation-primary-label]").textContent = `${tickerName(0)} ${formatShares(primaryShares)} sh · ${primary.toFixed(1)}%`;
-                allocation.querySelector("[data-allocation-leveraged-label]").textContent = `${tickerName(1)} ${formatShares(leveragedShares)} sh · ${(invested - primary).toFixed(1)}%`;
-                allocation.querySelector("[data-allocation-cash-label]").textContent = `Cash ${formatCash(cash)} · ${(100 - invested).toFixed(1)}%`;
+                allocation.dataset.allocationPrimaryShares = String(primaryShares);
+                allocation.dataset.allocationLeveragedShares = String(leveragedShares);
+                allocation.dataset.allocationCash = cash.toFixed(2);
+                allocation.querySelector("[data-allocation-primary-name]").textContent = readBacktestTickerName(0);
+                allocation.querySelector("[data-allocation-leveraged-name]").textContent = readBacktestTickerName(1);
+                allocation.querySelector("[data-allocation-primary-value]").textContent = formatPercentage(primary);
+                allocation.querySelector("[data-allocation-leveraged-value]").textContent = formatPercentage(leveraged);
+                allocation.querySelector("[data-allocation-cash-value]").textContent = formatCash(cash);
+                primaryRange.setAttribute("aria-label", `${readBacktestTickerName(0)} allocation boundary`);
+                investedRange.setAttribute("aria-label", `${readBacktestTickerName(1)} and Cash boundary`);
+                syncStrategyTickerLabels(allocation.closest("[data-trade-strategy-panel]") || root);
+                positionLabels(primary, leveraged);
             };
             primaryRange.addEventListener("input", () => sync("primary"));
             investedRange.addEventListener("input", () => sync("invested"));
@@ -8207,6 +8299,10 @@
             investedRange.addEventListener("change", () => scheduleStrategyParamSubmit(80));
             tickerInputs.forEach((input) => input.addEventListener("input", () => sync()));
             document.getElementById("trade_initial_capital")?.addEventListener("input", () => sync());
+            allocationLabelLayouts.set(allocation, () => positionLabels(
+                Number.parseFloat(primaryInput.value) || 0,
+                Number.parseFloat(leveragedInput.value) || 0,
+            ));
             sync();
         });
     };
@@ -8330,6 +8426,7 @@
             Array.from(group.querySelectorAll("option")).forEach((option) => {
                 const optionButton = document.createElement("button");
                 optionButton.type = "button";
+                optionButton.disabled = option.disabled || group.disabled;
                 optionButton.className = "trade-strategy-dropdown-option";
                 optionButton.id = `${dropdown.id || "trade_strategy_dropdown"}_option_${optionIndex}`;
                 optionButton.tabIndex = -1;
@@ -8381,71 +8478,24 @@
             .filter((option) => option instanceof HTMLButtonElement);
     };
 
-    const focusTradeStrategyOption = (targetIndex = null) => {
-        const {trigger} = getTradeStrategyRefs();
-        const options = getTradeStrategyOptionButtons();
-        if (!(trigger instanceof HTMLButtonElement) || !options.length) return;
-        const selectedIndex = Math.max(0, options.findIndex((option) => option.getAttribute("aria-selected") === "true"));
-        const resolvedIndex = targetIndex === null
-            ? selectedIndex
-            : Math.max(0, Math.min(options.length - 1, targetIndex));
-        options.forEach((option, index) => option.classList.toggle("is-active", index === resolvedIndex));
-        const target = options[resolvedIndex];
-        trigger.setAttribute("aria-activedescendant", target.id);
-        target.focus({preventScroll: true});
-        target.scrollIntoView({block: "nearest"});
-    };
+    const tradeStrategySelectController = window.SHARED_SELECT.createController({
+        getTrigger: () => getTradeStrategyRefs().trigger,
+        getMenu: () => getTradeStrategyRefs().dropdown,
+        getOptions: getTradeStrategyOptionButtons,
+        open: () => {
+            closeSharedSelectDropdowns();
+            setTradeStrategyPanelOpen(false);
+            renderTradeStrategyDropdown();
+            setTradeStrategyDropdownOpen(true);
+        },
+        close: () => setTradeStrategyDropdownOpen(false),
+    });
 
-    const handleTradeStrategyTriggerKeydown = (event) => {
-        const {dropdown} = getTradeStrategyRefs();
-        if (!(dropdown instanceof HTMLElement)) return;
-        if (event.key === "Escape") {
-            if (dropdown.hidden) return;
-            event.preventDefault();
-            setTradeStrategyDropdownOpen(false);
-            return;
-        }
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        closeSharedSelectDropdowns();
-        setTradeStrategyPanelOpen(false);
-        renderTradeStrategyDropdown();
-        setTradeStrategyDropdownOpen(true);
-        const options = getTradeStrategyOptionButtons();
-        const targetIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : null;
-        focusTradeStrategyOption(targetIndex);
-    };
+    const handleTradeStrategyTriggerKeydown = (event) =>
+        tradeStrategySelectController.triggerKeydown(event);
 
-    const handleTradeStrategyDropdownKeydown = (event) => {
-        const {trigger} = getTradeStrategyRefs();
-        const options = getTradeStrategyOptionButtons();
-        if (!(trigger instanceof HTMLButtonElement) || !options.length) return;
-        const currentIndex = Math.max(0, options.indexOf(document.activeElement));
-        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-            event.preventDefault();
-            const targetIndex = event.key === "Home"
-                ? 0
-                : event.key === "End"
-                    ? options.length - 1
-                    : currentIndex + (event.key === "ArrowDown" ? 1 : -1);
-            focusTradeStrategyOption(targetIndex);
-            return;
-        }
-        if (event.key === "Escape") {
-            event.preventDefault();
-            setTradeStrategyDropdownOpen(false);
-            trigger.focus({preventScroll: true});
-            return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            options[currentIndex]?.click();
-            return;
-        }
-        if (event.key === "Tab") {
-            setTradeStrategyDropdownOpen(false);
-        }
-    };
+    const handleTradeStrategyDropdownKeydown = (event) =>
+        tradeStrategySelectController.menuKeydown(event);
 
     const pulseStrategySwitch = () => {
         const {select, panel} = getTradeStrategyRefs();

@@ -5,7 +5,9 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.9.0
+Code version: v1.10.0
+- Changed: Price Field strategies now declare the shared Price Field catalog
+  category used by Backtest and Settings.
 - Fixed: Durable training preserves Auto's NumPy CPU semantics instead of forcing GPU.
 - Changed: Defaults use the completed DRAM probability GA robust winner.
 """
@@ -190,7 +192,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
         "point-in-time-safe Longbridge CLI factors as Bayesian Price Field, then "
         "emits the shared causal multi-step price field."
     )
-    strategy_category = "machine-learning"
+    strategy_category = "price-field"
     strategy_display_order = 43
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

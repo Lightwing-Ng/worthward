@@ -1,7 +1,21 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.98.0
+Code version: v1.2.0
+- Changed: Comparison workspaces now fail explicitly when a selected ticker has
+  no usable market history; automatic security replacement remains Portfolio-only.
+- Changed: The live-comparison API owns the current relative-range date and
+  publishes its Asia/Shanghai comparison date for exact-range clients.
+- Fixed: Missing-market-data replacement now preserves ticker/dataset slot
+  alignment and rejects duplicate replacements before portfolio calculation.
+- Changed: Portfolio bootstrap items expose the aligned opening price so the
+  browser can preview share-based allocation without approximating from weights.
+- Fixed: Exported strategy-development guidance now reads the same authoritative
+  category keys as Backtest and Settings instead of advertising retired groups.
+- Changed: Backtest and Settings now consume one strategy-owned category map,
+  including the shared Price Field group and the investment-automation group.
+- Fixed: DCA weekday request parsing now preserves Saturday and Sunday so the
+  seven-day selector reaches the recurring-schedule service unchanged.
 - Fixed: Investment daily price loading now requests a full historical
   coverage repair when an existing cache starts after the ledger's earliest
   valuation date, while preserving fail-closed gaps when no earlier evidence
@@ -370,7 +384,6 @@ from app.infrastructure.storage import (
     resolve_known_ticker_company_name,
     record_ticker_usage,
     record_strategy_usage,
-    top_used_strategies,
     update_investment_store_payload,
     verify_investment_source_artifacts,
     write_json_atomic,
@@ -417,10 +430,11 @@ from app.web.market_history import (
     slice_intraday_history_for_period,
 )
 from app.web.strategy_forms import (
+    STRATEGY_CATEGORY_KEYS,
     build_strategy_form_fields as build_strategy_form_fields_for_strategy,
     build_strategy_form_sections,
-    build_strategy_option_groups as build_strategy_option_groups_for_recent,
-    build_strategy_settings_rows as build_strategy_settings_rows_for_factory,
+    build_strategy_option_groups as build_strategy_option_groups_from_catalog,
+    build_strategy_settings_groups as build_strategy_settings_groups_for_factory,
 )
 from app.web.style_token_rows import (
     build_color_token_rows,
@@ -431,6 +445,12 @@ from app.web.style_token_rows import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+class MissingComparisonMarketDataError(ValueError):
+    """Report an unavailable selected security without changing its identity."""
+
+
 FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
     "frontend-fetch-aborts.env",
     "frontend-fetch-aborts",
@@ -1858,21 +1878,31 @@ def build_web_runtime() -> WebRuntime:
             getlist=request.args.getlist,
         )
 
-    def parse_requested_weights(slot_count: int) -> list[int]:
+    def parse_requested_weights(
+            slot_count: int,
+            *,
+            numbered_ticker_limit: int | None = None,
+    ) -> list[int]:
         return parse_requested_weights_from_args(
             request.args,
             slot_count,
             getlist=request.args.getlist,
+            numbered_ticker_limit=numbered_ticker_limit,
         )
 
     def parse_portfolio_allocation_mode() -> str:
         return parse_portfolio_allocation_mode_from_args(request.args)
 
-    def parse_requested_shares(slot_count: int) -> list[int]:
+    def parse_requested_shares(
+            slot_count: int,
+            *,
+            numbered_ticker_limit: int | None = None,
+    ) -> list[int]:
         return parse_requested_shares_from_args(
             request.args,
             slot_count,
             getlist=request.args.getlist,
+            numbered_ticker_limit=numbered_ticker_limit,
         )
 
     def parse_bool_flag(*names: str, default: bool = False) -> bool:
@@ -3240,10 +3270,7 @@ def build_web_runtime() -> WebRuntime:
         )
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
-        return build_strategy_option_groups_for_recent(
-            strategy_options,
-            top_used_strategies(limit=3),
-        )
+        return build_strategy_option_groups_from_catalog(strategy_options)
 
     def collect_strategy_form_values(strategy_id: str) -> dict[str, Any]:
         strategy = instantiate_strategy(strategy_id)
@@ -3349,8 +3376,8 @@ def build_web_runtime() -> WebRuntime:
             strategy_factory=instantiate_strategy,
         )
 
-    def build_strategy_settings_rows(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
-        return build_strategy_settings_rows_for_factory(
+    def build_strategy_settings_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
+        return build_strategy_settings_groups_for_factory(
             strategy_options,
             strategy_factory=instantiate_strategy,
         )
@@ -4120,7 +4147,7 @@ def build_web_runtime() -> WebRuntime:
                 parse_int_value(defaults.get("dca_weekday"), 0),
             ),
             0,
-        ), 4)
+        ), 6)
         dca_month_day = min(max(
             parse_int_value(
                 request.args.get(
@@ -4160,8 +4187,14 @@ def build_web_runtime() -> WebRuntime:
         dca_result = None
         backtest_market_refresh: dict[str, str | bool | None] | None = None
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
-        requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
-        requested_shares = parse_requested_shares(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
+        requested_weights = parse_requested_weights(
+            max(len(ticker_slots), MIN_TICKERS),
+            numbered_ticker_limit=view_max_tickers,
+        ) if current_view == "portfolio" else []
+        requested_shares = parse_requested_shares(
+            max(len(ticker_slots), MIN_TICKERS),
+            numbered_ticker_limit=view_max_tickers,
+        ) if current_view == "portfolio" else []
         has_weight_query = bool(request.args.getlist("weight")) or any(
             key.startswith("weight_") for key in request.args.keys()
         )
@@ -4183,7 +4216,7 @@ def build_web_runtime() -> WebRuntime:
         chart_heading = labels["chart_summary"]
         settings_title = labels["about"]
         settings_service_rows: list[dict[str, Any]] = []
-        strategy_settings_rows: list[dict[str, object]] = []
+        strategy_settings_groups: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
         color_token_rows: list[dict[str, object]] = []
         export_image_rows: list[dict[str, object]] = []
@@ -4590,6 +4623,7 @@ def build_web_runtime() -> WebRuntime:
                                     "logo_url": "",
                                     "weight": w,
                                     "shares": s,
+                                    "initial_price": None,
                                     "growth_multiple": 1.0,
                                     "color": "transparent",
                                 }
@@ -4663,7 +4697,7 @@ def build_web_runtime() -> WebRuntime:
                             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
 
                         # Try to fetch datasets, handle missing remote data by falling back to any available local data
-                        datasets: list[pd.DataFrame] = []
+                        datasets: list[pd.DataFrame | None] = []
                         failed_fetches: list[str] = []
                         completely_missing: list[str] = []
                         dividend_mode = resolve_workspace_dividend_mode(price_only, include_dividends)
@@ -4678,38 +4712,70 @@ def build_web_runtime() -> WebRuntime:
                                         failed_fetches.append(ticker)
                                     except ValueError:
                                         completely_missing.append(ticker)
+                                        datasets.append(None)
                                 else:
                                     raise
 
-                        # If any ticker is completely missing (no local + no remote), replace it with the first available local ticker from usage history
-                        if completely_missing:
-                            local_tickers = [t for t in list_local_market_tickers() if t not in completely_missing]
-                            if not local_tickers:
-                                # If no local tickers available at all, use the default tickers to guarantee something renders
-                                local_tickers = [normalize_ticker_input(t) for t in DEFAULT_TICKERS if normalize_ticker_input(t) not in completely_missing]
+                        if completely_missing and current_view != "portfolio":
+                            missing_ticker_list = ", ".join(completely_missing)
+                            missing_market_data_error = (
+                                f"No local or remote market data is available for {missing_ticker_list}. "
+                                "The selected ticker list was kept unchanged."
+                            )
+                            raise MissingComparisonMarketDataError(missing_market_data_error)
 
-                            for missing_ticker in completely_missing:
-                                # Pick the first available local ticker that has data
-                                replacement = local_tickers[0] if len(local_tickers) > 0 else DEFAULT_TICKERS[0]
-                                replacement = normalize_ticker_input(replacement)
-                                # Replace in validated_tickers
-                                idx = validated_tickers.index(missing_ticker)
+                        # Portfolio may replace each missing slot with the first successfully
+                        # loaded unique local/default candidate. Other comparison workspaces
+                        # preserve the selected security identities and fail above.
+                        if completely_missing:
+                            reserved_tickers = set(validated_tickers)
+                            replacement_candidates: list[str] = []
+                            for raw_candidate in [*list_local_market_tickers(), *DEFAULT_TICKERS]:
+                                candidate = normalize_ticker_input(raw_candidate)
+                                if (
+                                        not candidate
+                                        or candidate in reserved_tickers
+                                        or candidate in replacement_candidates
+                                ):
+                                    continue
+                                replacement_candidates.append(candidate)
+
+                            for idx, missing_ticker in enumerate(validated_tickers):
+                                if datasets[idx] is not None:
+                                    continue
+                                replacement = ""
+                                replacement_dataset: pd.DataFrame | None = None
+                                while replacement_candidates and replacement_dataset is None:
+                                    candidate = replacement_candidates.pop(0)
+                                    try:
+                                        replacement_dataset = fetch_history(
+                                            candidate,
+                                            include_dividends,
+                                            dividend_mode=dividend_mode,
+                                        )
+                                        replacement = candidate
+                                    except (ImportError, OSError, ValueError, KeyError, TypeError):
+                                        continue
+                                if replacement_dataset is None:
+                                    raise ValueError(
+                                        f"{missing_ticker} has no local or remote market data, "
+                                        "and no unique replacement dataset is available."
+                                    )
                                 validated_tickers[idx] = replacement
-                                # Fetch dataset for replacement
-                                try:
-                                    dataset = fetch_history(replacement, include_dividends, dividend_mode=dividend_mode)
-                                    # Remove the placeholder None we appended when skipping
-                                    if len(datasets) > idx:
-                                        datasets.pop(idx)
-                                    datasets.insert(idx, dataset)
-                                except (ImportError, OSError, ValueError, KeyError, TypeError):
-                                    # This should not happen since we filtered local_tickers to only include available ones
-                                    pass
-                                # Add to notice
+                                if idx < len(control_tickers):
+                                    control_tickers[idx] = replacement
+                                datasets[idx] = replacement_dataset
+                                reserved_tickers.add(replacement)
                                 if notice is None:
                                     notice = f"{missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
                                 else:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
+
+                        if len(set(validated_tickers)) != len(validated_tickers):
+                            raise ValueError("Ticker symbols must be unique after market-data replacement.")
+                        if any(dataset is None for dataset in datasets):
+                            raise ValueError("Every selected ticker must have an aligned market dataset.")
+                        datasets = [dataset for dataset in datasets if dataset is not None]
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         market_cap_split_events = {
@@ -5231,14 +5297,16 @@ def build_web_runtime() -> WebRuntime:
                                     "logo_url": profile.logo_url,
                                     "weight": weight,
                                     "shares": share_count,
+                                    "initial_price": float(dataset["Close"].iloc[0]),
                                     "growth_multiple": growth_multiple,
                                     "color": color,
                                 }
-                                for ticker, profile, weight, share_count, growth_multiple, color in zip(
+                                for ticker, profile, weight, share_count, dataset, growth_multiple, color in zip(
                                     validated_tickers,
                                     profiles[: len(validated_tickers)],
                                     portfolio_weights,
                                     portfolio_shares,
+                                    aligned_datasets,
                                     growth_multipliers,
                                     colors,
                                 )
@@ -5310,6 +5378,11 @@ def build_web_runtime() -> WebRuntime:
                             ]
                         ticker_slots = (control_tickers or validated_tickers).copy()
                         record_ticker_usage(validated_tickers)
+        except MissingComparisonMarketDataError as exc:
+            LOGGER.info("Unable to render %s workspace: %s", current_view, exc)
+            error = str(exc)
+            if should_use_modal_banner_message(error):
+                floating_banner_icon_class = modal_banner_icon_class(error)
         except Exception:  # noqa: BLE001
             LOGGER.exception("Unable to render %s workspace", current_view)
             error = "Unable to load this workspace. Check your local data and try again."
@@ -5344,8 +5417,8 @@ def build_web_runtime() -> WebRuntime:
                 service_labels=labels,
                 translate_fn=translate_ui,
             )
-            strategy_settings_rows = translate_nested_text(
-                build_strategy_settings_rows(strategy_options),
+            strategy_settings_groups = translate_nested_text(
+                build_strategy_settings_groups(strategy_options),
                 language_settings.language,
                 language_translations,
             )
@@ -5494,6 +5567,7 @@ def build_web_runtime() -> WebRuntime:
             exact_end=exact_end_value,
             format_display_date=format_display_date,
             chart_trading_date=chart_trading_date_value or exact_start_value,
+            comparison_current_date=pd.Timestamp.now(tz="Asia/Shanghai").strftime("%Y-%m-%d"),
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
@@ -5508,7 +5582,7 @@ def build_web_runtime() -> WebRuntime:
             remote_market_access=remote_market_access,
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
-            strategy_settings_rows=strategy_settings_rows,
+            strategy_settings_groups=strategy_settings_groups,
             font_token_rows=font_token_rows,
             color_token_rows=color_token_rows,
             style_token_rows=style_token_rows,
@@ -5884,7 +5958,7 @@ def build_web_runtime() -> WebRuntime:
                 "   - `strategy_id` (str): Unique snake_case identifier (e.g., \"macd\", \"rsi_reversion\").",
                 "   - `strategy_name` (str): Human-readable name for the UI.",
                 "   - `strategy_description` (str): Clear, concise description of the logic.",
-                "   - `strategy_category` (str): Must be one of: \"trend\", \"momentum\", \"mean_reversion\", \"volatility\", \"volume\", or \"machine_learning\".",
+                f"   - `strategy_category` (str): Must be one of: {', '.join(repr(key) for key in STRATEGY_CATEGORY_KEYS)}.",
                 "   - `strategy_display_order` (int): An integer (10-90) indicating UI sorting priority.",
                 "   - `strategy_supports` (StrategySupportMatrix): Usually `StrategySupportMatrix(single_ticker=True, multi_ticker=False, long_only=True, short=False)`.",
                 "",
@@ -5904,7 +5978,7 @@ def build_web_runtime() -> WebRuntime:
                 "",
                 "5. **Output Format**:",
                 "   - Provide ONLY the Python code block. No surrounding markdown explanations.",
-                "   - The code must be pristine, strictly typed (Python 3.10+), and adhere to standard Black formatting.",
+                "   - The code must be pristine, strictly typed (Python >=3.13), and adhere to standard Black formatting.",
                 "",
                 "### Gold Standard Reference (MACD Strategy)",
                 "```python",
@@ -5916,7 +5990,7 @@ def build_web_runtime() -> WebRuntime:
                 "    strategy_id = \"macd\"",
                 "    strategy_name = \"MACD\"",
                 "    strategy_description = \"MACD crossover strategy using default settings.\"",
-                "    strategy_category = \"momentum\"",
+                "    strategy_category = \"technical-analysis\"",
                 "    strategy_display_order = 20",
                 "    strategy_supports = StrategySupportMatrix(single_ticker=True, multi_ticker=False, long_only=True, short=False)",
                 "",
@@ -6961,16 +7035,19 @@ def build_web_runtime() -> WebRuntime:
                 if len(validated_tickers) > MAX_TICKERS:
                     raise ValueError(f"Overnight comparison supports at most {MAX_TICKERS} tickers.")
 
-            live_date_value = request.args.get("live_date", "").strip()
+            comparison_now = pd.Timestamp.now(tz="Asia/Shanghai")
+            axis_date_value = request.args.get("axis_date", request.args.get("trading_date", "")).strip()
+            accepts_exact_live_date = requested_period == "1d" and bool(axis_date_value)
+            live_date_value = request.args.get("live_date", "").strip() if accepts_exact_live_date else ""
             live_trading_date = (
                 pd.to_datetime(live_date_value, errors="coerce")
                 if live_date_value
-                else pd.Timestamp.now(tz="Asia/Shanghai")
+                else comparison_now
             )
             if pd.isna(live_trading_date):
                 raise ValueError(f"Invalid live trading date: {live_date_value}.")
             live_trading_date = live_trading_date.date()
-            current_live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+            current_live_session_date = comparison_now.date()
             selected_markets = {
                 infer_ticker_market(ticker)
                 for ticker in validated_tickers
@@ -7058,6 +7135,7 @@ def build_web_runtime() -> WebRuntime:
                     "series": [asdict(item) for item in series],
                     "performanceItems": performance_items,
                     "period": requested_period,
+                    "currentComparisonDate": current_live_session_date.strftime("%Y-%m-%d"),
                     "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
                     "liveSessionActive": live_session_active,
                     "displayRange": format_compare_intraday_market_local_display_range(
@@ -7072,7 +7150,6 @@ def build_web_runtime() -> WebRuntime:
                 })
                 return apply_no_store_headers(response)
 
-            axis_date_value = request.args.get("axis_date", request.args.get("trading_date", "")).strip()
             if not axis_date_value and requested_period == "1d":
                 axis_date_value = resolve_compare_axis_trading_date(
                     validated_tickers,
@@ -7175,6 +7252,7 @@ def build_web_runtime() -> WebRuntime:
                 "series": [asdict(item) for item in series],
                 "performanceItems": performance_items,
                 "axisDate": axis_trading_date.strftime("%Y-%m-%d"),
+                "currentComparisonDate": current_live_session_date.strftime("%Y-%m-%d"),
                 "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
                 "liveSessionActive": live_session_active,
                 "displayRange": format_display_date(pd.Timestamp(live_trading_date)),

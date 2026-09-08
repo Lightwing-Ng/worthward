@@ -1,4 +1,4 @@
-/* Direct probability-horizon presentation contracts. Code version: v1.0.0 */
+/* Direct probability-horizon presentation contracts. Code version: v1.2.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -37,6 +37,20 @@ test('direct probability bands reconcile to their own normal CDF', () => {
     assert.ok(Math.abs(probability - (distributions.normalCdf(1) - distributions.normalCdf(-1))) < 1e-12);
 });
 
+test('direct horizon concentration follows each learned marginal scale', () => {
+    const wideningStd = Array.from({length: 20}, (_, index) => 0.01 * Math.sqrt(index + 1));
+    const parameters = {
+        anchorPrice: 100,
+        lowerPrice: 99,
+        upperPrice: 101,
+        horizonMean: Array(20).fill(0),
+        horizonStd: wideningStd,
+    };
+    const nearMass = distributions.directGaussian.probabilityBetweenPrices({...parameters, horizon: 1});
+    const farMass = distributions.directGaussian.probabilityBetweenPrices({...parameters, horizon: 20});
+    assert.ok(nearMass > farMass);
+});
+
 test('direct presentations require complete aligned horizon arrays and matching first head', () => {
     const normalized = grid.normalizePresentation(model, model.data_keys);
     assert.deepEqual(normalized.horizon_predictive_mean, model.horizon_predictive_mean);
@@ -46,18 +60,30 @@ test('direct presentations require complete aligned horizon arrays and matching 
     assert.equal(grid.normalizePresentation({...model, horizon_predictive_std: [Array(20).fill(-1), Array(20).fill(null)]}, model.data_keys), null);
 });
 
-test('zoomed overview preserves day spacing and omits untrained horizons', () => {
+test('direct overview preserves spatial spacing while rendering every learned horizon', () => {
     const geometry = grid.computeGridGeometry({chartArea: {left: 0, right: 800, top: 0, bottom: 600},
         anchorX: 400, anchorY: 300, stepPixels: 1, limitRowsToChartArea: false});
     const cells = grid.buildProbabilityCells({geometry, distribution: distributions.directGaussian,
         anchorPrice: 100, mean: 0.01, scale: 0.02, horizonMean, horizonStd,
-        maxHorizon: 20, stepPixels: 1, valueForPixel: (pixel) => 130 - pixel * 0.1});
+        maxHorizon: 20, horizonStep: 1, stepPixels: 1,
+        valueForPixel: (pixel) => 130 - pixel * 0.1});
     assert.ok(cells.length > 0);
     assert.ok(geometry.daysPerColumn > 1);
     assert.ok(cells.every((cell) => cell.horizon <= 20 && Number.isFinite(cell.probability)));
-    assert.equal(Math.max(...cells.map((cell) => cell.column)) + 1, Math.floor(20 / geometry.daysPerColumn));
-    const detail = grid.buildProbabilityCells({geometry: {...geometry, daysPerColumn: 1},
+    assert.deepEqual([...new Set(cells.map((cell) => cell.horizon))],
+        Array.from({length: 20}, (_, index) => index + 1));
+    assert.equal(Math.max(...cells.map((cell) => cell.column)) + 1, 20);
+    assert.ok(cells.every((cell) => cell.daysPerColumn === geometry.daysPerColumn));
+    assert.ok(cells.every((cell) => cell.horizonStep === 1));
+    assert.equal(cells[1].x - cells[0].x, geometry.slotWidth);
+    const detail = grid.buildProbabilityCells({geometry,
         distribution: distributions.directGaussian, anchorPrice: 100, mean: 0.01, scale: 0.02,
-        horizonMean, horizonStd, maxHorizon: 20, stepPixels: 1, valueForPixel: (pixel) => 130 - pixel * 0.1});
+        horizonMean, horizonStd, maxHorizon: 20, horizonStep: 1, stepPixels: 1,
+        valueForPixel: (pixel) => 130 - pixel * 0.1});
     assert.equal(new Set(detail.map((cell) => cell.horizon)).size, 20);
+    assert.deepEqual(detail.map(({horizon, lowerPrice, probability, upperPrice}) => (
+        {horizon, lowerPrice, probability, upperPrice}
+    )), cells.map(({horizon, lowerPrice, probability, upperPrice}) => (
+        {horizon, lowerPrice, probability, upperPrice}
+    )));
 });

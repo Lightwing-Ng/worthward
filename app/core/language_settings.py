@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -164,6 +164,9 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Portfolio return chart", "投資組合回報圖表", "投资组合收益图表"),
         ("Add ticker weights to compute the portfolio return.", "加入股票代號權重以計算投資組合回報。", "添加股票代码权重以计算投资组合收益。"),
         ("Grid trading", "網格交易", "网格交易"),
+        ("Tune strategy parameters", "調整策略參數", "调整策略参数"),
+        ("Strategy tuning control demo", "策略調參控制項示例", "策略调参控件示例"),
+        ("Strategy parameters", "策略參數", "策略参数"),
         ("A full-screen workspace for strategy trading notifications and operator review.", "用於策略交易通知及操作員檢閱的全螢幕工作區。", "用于策略交易通知及操作员审阅的全屏工作区。"),
         ("Backtest controls", "回測控制項", "回测控件"),
         ("Configure a ticker, strategy, and isolated capital amount, then run a single-ticker backtest.", "設定股票代號、策略及獨立資金額，然後執行單一股票代號回測。", "设置股票代码、策略及独立资金金额，然后执行单一股票代码回测。"),
@@ -488,6 +491,23 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Net", "淨額", "净额"),
         ("New", "新上市", "新上市"),
         ("Review the built-in trading strategies and their reusable backtest parameters in this workspace.", "檢視此工作區內建的交易策略及其可重用回測參數。", "查看此工作区内置的交易策略及其可复用回测参数。"),
+        ("Review the authoritative strategy categories used by Backtest, then inspect each strategy and its reusable parameters.", "檢視回測使用的權威策略分類，然後查看每項策略及其可重用參數。", "查看回测使用的权威策略分类，然后检查每项策略及其可复用参数。"),
+        ("Strategy categories", "策略分類", "策略分类"),
+        ("Investment Automation", "投資自動化", "投资自动化"),
+        ("Technical Analysis", "技術分析", "技术分析"),
+        ("Portfolio Rotation", "投資組合輪動", "投资组合轮动"),
+        ("Price Field Models", "價格場模型", "价格场模型"),
+        ("Reference strategies used to compare every active approach.", "用於比較每種現行方法的參考策略。", "用于比较每种现行方法的参考策略。"),
+        ("Schedule- and holding-based rules that mirror configurable investment workflows.", "模擬可配置投資流程的排程及持倉規則。", "模拟可配置投资流程的定期及持仓规则。"),
+        ("Indicator and TradingView-derived signal strategies.", "指標及源自 TradingView 的訊號策略。", "指标及源自 TradingView 的信号策略。"),
+        ("Learned signal strategies that do not use the Price Field probability grid.", "不使用價格場概率網格的學習型訊號策略。", "不使用价格场概率网格的学习型信号策略。"),
+        ("Rules that rotate capital across multiple related securities.", "在多個相關證券之間輪動資金的規則。", "在多个相关证券之间轮动资金的规则。"),
+        ("Probabilistic forecasting strategies that share the causal Price Field grid.", "共用因果價格場網格的概率預測策略。", "共用因果价格场网格的概率预测策略。"),
+        ("strategies", "項策略", "项策略"),
+        ("capabilities", "功能", "功能"),
+        ("Price Field grid", "價格場網格", "价格场网格"),
+        ("No configurable parameters.", "沒有可配置參數。", "没有可配置参数。"),
+        ("Initial cash (USD)", "初始現金（USD）", "初始现金（USD）"),
         ("This deletes", "此操作會刪除", "此操作会删除"),
         ("When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.", "訊號出現時，將交易排程至下一柱的開市價執行。此方式較為保守，更貼近訊號柱收市後作出實際決策的情況。", "信号出现时，将交易排程至下一柱的开盘价执行。此方式较为保守，更贴近信号柱收盘后作出实际决策的情况。"),
         ("community share template", "社群分享範本", "社区分享模板"),

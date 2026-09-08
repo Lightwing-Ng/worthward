@@ -1,7 +1,7 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.5.0
+ * Code version: v1.6.0
  * - Added: Shared rounded y-axis value badges preserve the Investment chart's
  *   decimal anchor, axis-label bounds, and theme radius contract.
  * - Added: Shared stock-price y-axis labels use grouped integers at or above
@@ -143,7 +143,7 @@
         const axisTickCopy = String(visibleAxisLabelItem?.label ?? "");
         ctx.font = String(
             visibleAxisLabelItem?.font?.string
-            || "400 12px \"GDS Transport\", \"Helvetica Neue\", Arial, sans-serif"
+            || `400 12px ${getComputedStyle(document.body).fontFamily}`
         );
         ctx.textBaseline = "middle";
         const axisLabelTranslationX = Number(axisLabelOptions?.translation?.[0]);
@@ -336,7 +336,7 @@
         readThemeToken,
         readThemeTokens,
         normalizeSafeImageUrl,
-        CHART_AXIS_UTILS_VERSION: "v1.5.0",
+        CHART_AXIS_UTILS_VERSION: "v1.6.0",
     });
 
     globalScope.WORTHWARD_CHART_AXIS = api;

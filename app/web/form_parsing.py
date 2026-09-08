@@ -1,6 +1,6 @@
 """Pure form and query parsing helpers for workspace request handling.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -87,14 +87,48 @@ def parse_requested_weights_from_args(
     slot_count: int,
     *,
     getlist: Callable[[str], list[str]] | None = None,
+    numbered_ticker_limit: int | None = None,
 ) -> list[int]:
     """Parse portfolio weights clamped to 0..100 for the active slot count."""
     list_values = getlist or (lambda key: list(args.getlist(key)) if hasattr(args, "getlist") else [])  # type: ignore[attr-defined]
     repeated = list_values("weight")
-    raw_values = repeated[:slot_count] if repeated else [
-        args.get(f"weight_{index}", "")
-        for index in range(1, slot_count + 1)
-    ]
+    if repeated:
+        repeated_tickers = list_values("ticker")
+        active_indices = [
+            index
+            for index, raw_ticker in enumerate(repeated_tickers)
+            if str(raw_ticker or "").strip()
+        ]
+        if (
+                len(active_indices) < len(repeated_tickers)
+                and len(repeated) >= len(repeated_tickers)
+        ):
+            active_indices = active_indices[:slot_count]
+            raw_values = [
+                repeated[index] if index < len(repeated) else ""
+                for index in active_indices
+            ]
+        else:
+            raw_values = repeated[:slot_count]
+    else:
+        numbered_limit = max(int(numbered_ticker_limit or slot_count), slot_count)
+        has_numbered_tickers = any(
+            f"ticker_{index}" in args
+            for index in range(1, numbered_limit + 1)
+        )
+        active_numbered_slots = [
+            index
+            for index in range(1, numbered_limit + 1)
+            if str(args.get(f"ticker_{index}", "") or "").strip()
+        ][:slot_count]
+        raw_values = (
+            [args.get(f"weight_{index}", "") for index in active_numbered_slots]
+            if has_numbered_tickers
+            else [
+                args.get(f"weight_{index}", "")
+                for index in range(1, slot_count + 1)
+            ]
+        )
     weights: list[int] = []
     for raw_value in raw_values:
         if raw_value is None or str(raw_value).strip() == "":
@@ -114,14 +148,48 @@ def parse_requested_shares_from_args(
     slot_count: int,
     *,
     getlist: Callable[[str], list[str]] | None = None,
+    numbered_ticker_limit: int | None = None,
 ) -> list[int]:
     """Parse non-negative whole-share counts for the active slot count."""
     list_values = getlist or (lambda key: list(args.getlist(key)) if hasattr(args, "getlist") else [])  # type: ignore[attr-defined]
     repeated = list_values("shares")
-    raw_values = repeated[:slot_count] if repeated else [
-        args.get(f"shares_{index}", "")
-        for index in range(1, slot_count + 1)
-    ]
+    if repeated:
+        repeated_tickers = list_values("ticker")
+        active_indices = [
+            index
+            for index, raw_ticker in enumerate(repeated_tickers)
+            if str(raw_ticker or "").strip()
+        ]
+        if (
+                len(active_indices) < len(repeated_tickers)
+                and len(repeated) >= len(repeated_tickers)
+        ):
+            active_indices = active_indices[:slot_count]
+            raw_values = [
+                repeated[index] if index < len(repeated) else ""
+                for index in active_indices
+            ]
+        else:
+            raw_values = repeated[:slot_count]
+    else:
+        numbered_limit = max(int(numbered_ticker_limit or slot_count), slot_count)
+        has_numbered_tickers = any(
+            f"ticker_{index}" in args
+            for index in range(1, numbered_limit + 1)
+        )
+        active_numbered_slots = [
+            index
+            for index in range(1, numbered_limit + 1)
+            if str(args.get(f"ticker_{index}", "") or "").strip()
+        ][:slot_count]
+        raw_values = (
+            [args.get(f"shares_{index}", "") for index in active_numbered_slots]
+            if has_numbered_tickers
+            else [
+                args.get(f"shares_{index}", "")
+                for index in range(1, slot_count + 1)
+            ]
+        )
     return [max(parse_int_value(raw_value, 0), 0) for raw_value in raw_values]
 
 

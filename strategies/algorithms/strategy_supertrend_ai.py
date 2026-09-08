@@ -1,6 +1,6 @@
 """SuperTrend AI with causal trailing factor-performance clustering.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class SupertrendAiStrategy(BaseStrategy):
     strategy_id = "supertrend-ai"
     strategy_name = "SuperTrend AI"
     strategy_description = "Adaptive multi-factor SuperTrend strategy with three-cluster factor selection inspired by the LuxAlgo PineScript."
-    strategy_category = "trend"
+    strategy_category = "technical-analysis"
     strategy_display_order = 30
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

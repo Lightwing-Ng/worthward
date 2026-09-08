@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.4.0
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ class GridTradingStrategy(BaseStrategy):
         "Trades price moves from the last execution while keeping the position "
         "within configurable holding limits."
     )
-    strategy_category = "mean-reversion"
+    strategy_category = "investment-automation"
     strategy_display_order = 31
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

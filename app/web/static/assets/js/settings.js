@@ -1,4 +1,4 @@
-/* Code version: v0.22.2 */
+/* Code version: v0.24.0 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.1.0';
 import {
@@ -1134,6 +1134,21 @@ import {
         shell.dataset.bound = "1";
         shell.addEventListener("click", (event) => {
             if (!(event.target instanceof Node)) return;
+            const strategyTuneButton = event.target instanceof Element
+                ? event.target.closest("[data-style-token-strategy-tune-button]")
+                : null;
+            if (strategyTuneButton instanceof HTMLButtonElement) {
+                const panelId = strategyTuneButton.getAttribute("aria-controls") || "";
+                const panel = panelId ? document.getElementById(panelId) : null;
+                if (panel instanceof HTMLElement && shell.contains(panel)) {
+                    const nextOpen = strategyTuneButton.getAttribute("aria-pressed") !== "true";
+                    strategyTuneButton.classList.toggle("is-active", nextOpen);
+                    strategyTuneButton.setAttribute("aria-pressed", String(nextOpen));
+                    strategyTuneButton.setAttribute("aria-expanded", String(nextOpen));
+                    panel.hidden = !nextOpen;
+                }
+                return;
+            }
             const dismissButton = event.target.closest(".dismiss-button");
             if (dismissButton) {
                 const container = dismissButton.closest(".style-token-modal-demo");
@@ -1768,9 +1783,9 @@ import {
             : (cardStyles.getPropertyValue("--font-weight-semibold").trim()
                 || rootStyles.getPropertyValue("--font-weight-semibold").trim()
                 || "600");
-        const labelFontFamily = isOverviewStyleChart
-            ? '"GDS Transport", "Helvetica Neue", Arial, sans-serif'
-            : (cardStyles.fontFamily || rootStyles.fontFamily || "system-ui");
+        const labelFontFamily = cardStyles.fontFamily
+            || rootStyles.fontFamily
+            || '"Univers Next for HSBC"';
         const labelFont = `${labelFontWeight} ${labelFontSize}px ${labelFontFamily}`;
         const isStockDetailsChart = chartKind === "stock_details";
         const isTradePriceChart = chartKind === "price";

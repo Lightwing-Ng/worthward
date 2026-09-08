@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.86.0`
+Documentation version: `v1.92.0`
 
 ## Shared Backtest controls and research
 
@@ -11,7 +11,10 @@ branch. Capital and the four return/exit/detail controls live in `Backtest
 parameters`. Strategy definitions declare parameter/factor groups and optional
 private action slots through `BaseStrategy.get_parameter_sections()`; the web
 form builder and one field-grid partial render them without strategy-specific
-DOM regrouping. LSTM declares its training slot; Bayesian declares only model
+DOM regrouping. Parameter definitions may also declare a controlling field/value,
+content-sized right alignment, and user-facing choice labels that remain separate
+from stable submitted values. The generic field-grid adapter owns those behaviors;
+strategies do not add page-specific show/hide or width scripts. LSTM declares its training slot; Bayesian declares only model
 parameters and shared factors. Changing a standard collapse token updates every
 consumer; product branches do not copy the base component. Summary padding is `10px 0`,
 so disclosure triangles align with adjacent field labels at every width. The shared modal uses
@@ -23,6 +26,16 @@ uses that capability, not a hard-coded strategy-ID list. A model-neutral
 schema; the browser validates the common schema, renderer, and aligned dates.
 Old Bayesian/LSTM payloads remain read-compatible. New models can opt into the
 same grid without copying geometry, templates, colors, or hover behavior.
+
+The strategy class metadata is also the only category authority. Backtest and
+`/settings/strategies` consume the same grouped catalog, so each enabled strategy
+appears exactly once under Baseline, Investment Automation, Technical Analysis,
+Machine Learning, Portfolio Rotation, or Price Field Models. The Settings page
+adds navigation, category descriptions, capability badges, and strategy-owned
+parameter tables without maintaining a second classification list. The Price
+Field category is reserved for strategies that use the shared probability-grid
+renderer; MACD, SuperTrend AI, and the TradingView-derived Lorentzian classifier
+share Technical Analysis, while DCA and Grid Trading share Investment Automation.
 
 `strategies/tuning.py` derives search domains from the same parameter definitions.
 Display thresholds, compute backends, and the LSTM seed are not optimized;
@@ -467,6 +480,43 @@ complete matrix and removal rules live in
 to `/workspaces/prices?metric=market-cap` while preserving canonical query
 state.
 
+## Return comparison identity and live-date ownership
+
+Return comparison, Price comparison, and Market cap comparison preserve the
+security identities selected by the user. If a selected ticker has neither
+usable remote history nor a usable local cache, the workspace keeps every
+original ticker slot and reports an explicit error; it does not calculate with a
+different security. Portfolio is the sole exception under its positional
+allocation contract below.
+
+For relative `1d`, `3d`, and `1w` live refreshes, the server owns the current
+comparison date in `Asia/Shanghai`; a client-supplied `live_date` is ignored
+unless the request also carries the exact comparison axis date. Server-rendered
+state and live responses publish that current comparison date so exact one-day
+clients can decide whether polling is applicable without using the browser's
+local calendar. Same-page Return comparison hydration restarts this lifecycle
+after a live-range transition and invalidates its prior timer or response when
+the selected range changes.
+
+## Portfolio allocation correctness
+
+Portfolio keeps ticker, dataset, weight, and share values in one positional
+contract. Repeated query values follow repeated ticker positions, while legacy
+`ticker_N`, `weight_N`, and `shares_N` values retain their common numbered slot;
+empty ticker slots may be removed only after their allocation positions are
+identified. A ticker without usable remote or local history may be replaced
+only by a successfully loaded ticker that is not already selected. The
+replacement dataset occupies the missing ticker's original slot; if no unique
+dataset is available, calculation fails explicitly instead of shifting another
+ticker's data or allocation.
+
+In `allocation=shares` mode, opening allocation is each positive whole-share
+count multiplied by that ticker's aligned opening close. The server exposes the
+opening close with each Portfolio bootstrap item. The browser uses the same
+definition for the immediate donut preview and retains the last verified
+preview when a newly entered ticker has no server-provided opening price; it
+does not substitute the hidden weight control or guess a price.
+
 ## Shared Settings dimensions
 
 The Settings workspace uses the foundation layout tokens
@@ -559,7 +609,7 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. On desktop, the page-level `Backtest` title rail remains in its own row above the results grid, and the result column's `Performance` title rail begins below it; narrow layouts retain the same separation through normal page flow. On desktop, the complete Backtest controls surface owns vertical scrolling, so generic controls, Strategy, and every private parameter retain one logical reading order; the parameter grid never creates a second nested scrollbar or flips above its trigger. Narrow layouts let the complete controls surface grow in the page flow. The Backtest-wide `Show trade details` preference defaults to enabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start training and Stop training actions, while the strategy dropdown remains dedicated to strategy choices; native `<details>` sections provide the accessible collapse component for the durable history. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. On desktop, the page-level `Backtest` title rail remains in its own row above the results grid, and the result column's `Performance` title rail begins below it; narrow layouts retain the same separation through normal page flow. On desktop, the complete Backtest controls surface owns vertical scrolling, so generic controls, Strategy, and every private parameter retain one logical reading order; the parameter grid never creates a second nested scrollbar or flips above its trigger. Narrow layouts let the complete controls surface grow in the page flow. The Backtest-wide `Show trade details` preference defaults to enabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start training and Stop training actions, while the strategy dropdown remains dedicated to strategy choices; native `<details>` sections provide the accessible collapse component for the durable history. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading interprets Initial cash as spendable cash in addition to Current holding. The first marked value of that existing holding and the cash define starting equity, return denominator, and the all-in benchmark, so a real existing position is never rejected merely because its marked value exceeds the cash balance. Frequency remains a right-aligned intrinsic-width shared select. Weekly day appears only for weekly schedules and exposes Monday through Sunday; weekend intentions use the existing next-trading-day alignment. Monthly calendar day appears only for monthly schedules. Daily chart tooltips omit a meaningless midnight suffix, while minute data retains its time. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, supported execution intervals, optional execution-to-model interval overrides, causal signal bridges, and strategy-owned market-data hooks. The strategy registry carries the declared execution intervals into both the initial browser state and the strategy-fields response, so temporary data availability is never mistaken for permanent strategy capability. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. The browser requests presence for the complete ordered required-ticker snapshot, intersects each interval's Period options across that set, and exposes `1m` only when the strategy declares it and every required ticker shares a real one-minute Period. A monotonic request token plus required-count and ordered-snapshot revalidation makes availability updates latest-wins after rapid ticker or strategy edits. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. When model and execution intervals differ, the strategy must declare a bridge; the runtime never treats a daily posterior as a native minute posterior. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary and benchmark, defaults the pair to QQQ/TQQQ, and accepts any ordered primary/leveraged pair with aligned observations. Initial capital is divided among integer shares of both assets and cash. A primary daily drop creates a next-open rebalance toward the primary minimum and leveraged maximum; a leveraged daily rise creates a next-open rebalance toward the primary maximum and leveraged minimum. Percentage targets are market-value constraints before integer-share rounding, and no fee model is applied.
 
@@ -571,13 +621,14 @@ Factor metadata keeps provider `status` separate from latest-origin `eligible`,
 `selected`, and `selection_status` fields, so data availability is not
 presented as evidence that a factor entered the posterior.
 
-The v1.24.0 execution amendment supersedes the Auto portion of the preceding
-release paragraph: `Auto` probes for an available Apple MPS or CUDA device and
-coordinates independent walk-forward origins between that device and the
-bounded CPU executor. If no accelerator is available, it uses the CPU
+The current execution amendment supersedes the selectable-backend portion of
+the preceding release paragraph: Bayesian no longer exposes a compute-backend
+parameter. Its internal `Auto` policy probes for an available Apple MPS or CUDA
+device and coordinates independent walk-forward origins between that device
+and the bounded CPU executor. If no accelerator is available, it uses the CPU
 executor; if accelerator execution fails, the complete pass is recomputed on
-clean NumPy CPU results. `CPU` retains CPU-only execution, while explicit
-`GPU` remains GPU-first with the same complete-pass fallback. When the process
+clean NumPy CPU results. Legacy browser-local or URL values for
+`compute_backend` are ignored. When the process
 explicitly disables remote market access, the strategy instead reads the
 existing local daily market store for its OHLCV model input and marks
 Longbridge-only factors unavailable; it does not synthesize factor values or
@@ -606,13 +657,13 @@ The Longbridge factor provider is read-only and process-local. Aware provider ti
 
 `LSTMPriceFieldStrategy` reuses the Bayesian Longbridge factor pipeline, the executable `Open[t+1] -> Open[t+2]` target, `next_open` fills, and the shared 20-column probability-grid payload. Unavailable Longbridge factor columns are omitted rather than forcing every origin to fail closed, so the causal lag-return LSTM still emits a field when P/E or options history is missing. It trains a tiny causal LSTM at each origin on sequences that end at that origin and whose targets are already observable (`j <= origin - 2`). The NumPy LSTM uses the standard positive initialization bias on the forget-gate slice, matching the gate order used by its forward and backward passes rather than biasing the input gate. The one-step Gaussian mean and scale are converted to the same AR(1) multi-step field the renderer already understands. LSTM-only hyperparameters are namespaced (`lstm_lookback`, `lstm_hidden_size`, `lstm_epochs`, `lstm_learning_rate`, `lstm_seed`) so they cannot enter Bayesian cache keys. Compute backend `Auto` uses NumPy CPU for origin-local LSTM training. An explicit `GPU` request uses a confirmed Apple MPS or CUDA device only after a real tensor readback, then falls back to CPU. `Neural Engine` is reported only when Core ML compute-unit execution is confirmed. Torch, MLX, and coremltools are optional and are never imported at module load; a missing package falls back to CPU without crashing Backtest.
 
-Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` and `lstm-price-field/v1` both supply aligned predictive log-return means and scales plus a fixed 20-column contract to `probability-grid-v1`. The renderer preserves strategy-owned bounded rows, preferred width, requested gap, padding, opacity exponent, and opacity-tail ratio while enforcing the product-owned 20 columns and 4 px minimum cell size. It derives one stable daily step `s` from the median positive Chart.js point spacing across the complete rendered series. Each column slot is an integer multiple `k × s` of that step and at least one trading day. The requested gap is an upper bound, not a reason to add a day to every column: the renderer chooses the smallest `k` that preserves the 4 px cell floor, then applies `effectiveGap = min(requestedGap, k × s - 4)`. The cell is `k × s - effectiveGap`, so all 20 squares retain an exact one-to-one time and price mapping without scaling the lattice. The preferred field width is one quarter of the price plot, but integer-day quantization, the 20-column count, and the 4 px minimum cell size take priority when those constraints require a wider field. Rows use the live Y scale, so every 1:1 square maps to an exact future-time and price interval without a cumulative offset. The field has up to 10 independently bounded rows above and below the horizontal growth/decline boundary, uses a fixed 2 px logical gap, and places cells in a transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding.
+Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` and `lstm-price-field/v1` both supply aligned predictive log-return means and scales plus a fixed 20-column contract to `probability-grid-v1`. The renderer preserves strategy-owned bounded rows, preferred width, requested gap, padding, opacity exponent, and opacity-tail ratio while enforcing the product-owned 20 columns and 4 px minimum cell size. It derives one stable daily step `s` from the median positive Chart.js point spacing across the complete rendered series. Each column slot is an integer multiple `k × s` of that step and at least one trading day. The requested gap is an upper bound, not a reason to add a day to every column: the renderer chooses the smallest `k` that preserves the 4 px cell floor, then applies `effectiveGap = min(requestedGap, k × s - 4)`. The cell is `k × s - effectiveGap`, so all 20 squares retain stable square geometry. Autoregressive Price Fields use `k` as both the spatial and semantic forecast-horizon step, preserving exact chart-time mapping. Direct-horizon neural Price Fields instead use a semantic horizon step of one while retaining `k × s` as a presentation-only overview spacing: columns 1 through 20 therefore always consume the 20 separately learned distributions in both hover and detail, even on a dense multi-year chart. The preferred field width is one quarter of the price plot, but integer-day spatial quantization, the 20-column count, and the 4 px minimum cell size take priority when those constraints require a wider field. Rows use the live Y scale, so every square maps to the same exact price interval in hover and detail without a cumulative offset. The field has up to 10 independently bounded rows above and below the horizontal growth/decline boundary, uses a fixed 2 px logical gap, and places cells in a transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding.
 
 The probability field is not a Frosted Glass consumer. Its matrix is explicitly transparent with no background image, blur, border, or shadow; legacy 50%-transparent material values are retained only in the historical note below. Standard Frosted Glass tokens and every other material consumer remain unchanged. For one hover instant, let the finite clamped raw posterior cell masses be `p`, the maximum be `m`, and the selected absolute display threshold be `t`. Visible cells use `u = clamp((p - t) / (m - t), 0, 1)` and opacity `u ^ exponent`, with the existing default exponent 1.6 and unchanged green/magenta colors. The threshold always maps to the transparent/lightest endpoint, and the maximum always maps to full opacity. If `m = t > 0`, tied winners remain fully opaque; if `m < t` or all masses are zero, every cell is invisible. The standalone legacy contrast helper retains its relative-tail mode only when no absolute floor is supplied. The shared hover and detail renderers always pass the user-selected floor. Raw masses, geometry, titles, diagnostics, and scores are unchanged. The strategy-private Cell display threshold defaults to 5%, is bounded to 0–50%, and includes its exact boundary; below-threshold cells remain non-interactive and inaccessible. Cell opacity has no temporal CSS transition, preventing the prior hover's visible tail from leaking into the new instant. On desktop the field remains to the right of its vertical guide and retains one stable width while the pointer moves. On the narrow responsive chart-stage breakpoint, the same field is clamped in screen space to the stack's right edge when needed so all cells remain visible; this only changes the overlay offset, not the selected origin or probability-grid geometry. If its right edge exceeds the visible chart stack on a wider layout, the stack derives the exact missing floating visual distance `V` and reuses Motion Core's bouncy spring to reach it. The browser-native rail uses the sufficient integer physical offset `P = ceil(V)`; the controller applies `C = P - V` to both chart panels, the crosshair, the summary tooltip, and the probability tooltip, so their shared visual position is exactly `V` and their 1:1 curve/grid relationship is unchanged. Content-space calculations use `V`, not physical `scrollLeft`; a manual rail position may move left naturally, but its rightmost visual position clamps to the current exact target. Every Price Field hit test maps the pointer onto the visible curve and clamps that X to the first and last finite points, so the vertical guide cannot travel past the last trading day into the overflow field. The horizontal guide is the visible polyline intersection at that clamped X. Overflow pan is limited by the last curve point: the chart may shift left only until the vertical guide sits on that endpoint. Leaving the chart stack still clears both guides and the field. The native horizontal scrollbar exists only while that extent is needed and is absolutely positioned inside the existing 10 px Backtest section-resizer grid slot, without changing the measured chart-stack, Canvas, or probability-grid dimensions. The resizer remains keyboard-accessible and keeps a 2 px center hit strip above the native rail while the rail is active, so pointer drag and keyboard resizing continue to work without stealing the rail's lower hit area. The native surface never uses the accent scrollbar token. Returning to a fitting point, hiding the field, clearing the pinned state, or destroying the controller springs back to zero, removes the temporary extent, and restores the full resizer hit area.
 
 The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each hover side independently to `min(10, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`; the half-plot cap prevents edge-adjacent hover fields from consuming the entire plot. The contained Price Field detail surface uses the complete strategy-owned row counts without the hover boundary cap and scales them inside its own viewport. Grid cells use a fixed 2 px logical gap; the same 2 px inset separates the vertical guide from the first column. They map their top and bottom pixels through the live Y scale to exact price intervals and map horizontally to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It has no cell or outer radius and uses an explicitly transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding. The shared vertical resizer invokes the Backtest overlay refresh after Chart.js has resized, so a pinned or tracking field cannot retain a stale geometry frame. During native or visual probability scrolling, the pointer-defined crosshair is recomputed in the same frame as the overlay translation. Every chart layout refresh clears screen-space pointer coordinates before recalculating geometry, so viewport, sidebar, and resizer reflows cannot inherit a stale pointer anchor or overflowed field; the next real pointer event re-establishes both guides from the current chart bounds. This matrix has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
 
-The model diagnostics are independent of the viewport-quantized 20-column grid. Direction hit rate, Brier probability score, Gaussian log score, and CRPS score the single executable next-open-to-following-open outcome for each origin. None is a model feature, signal input, or cache key. Browser columns may still represent more than one trading day, but their probability masses come from the origin's fitted return-state transition rather than a frozen one-day diffusion.
+The model diagnostics are independent of the viewport-quantized 20-column grid. Direction hit rate, Brier probability score, Gaussian log score, and CRPS score the single executable next-open-to-following-open outcome for each origin. None is a model feature, signal input, or cache key. Autoregressive browser columns may represent more than one trading day, and their probability masses come from the origin's fitted return-state transition rather than a frozen one-day diffusion. Direct-horizon browser columns always represent learned horizons 1 through 20; their wider overview slots are a legibility constraint, not horizon downsampling.
 
 Durable LSTM GPU workers use `scripts/lstm_runtime.py` before starting a run.
 The worker checks the current interpreter, an explicit configured runtime, the
@@ -973,9 +1024,9 @@ sets of values.
 - `app/web/market_history.py`: read-only local-history range and date-alignment helpers used by WebRuntime.
 - `app/web/request_security.py`: local-host, same-origin, and session-CSRF
   validation for browser investment writes.
-- `app/web/strategy_forms.py`: pure strategy selector, parameter-field, and
-  Settings catalog presentation builders. WebRuntime supplies strategy usage
-  history and the strategy factory while retaining request assembly.
+- `app/web/strategy_forms.py`: pure shared-category strategy selector,
+  parameter-field, and Settings catalog presentation builders. WebRuntime
+  supplies the strategy factory while retaining request assembly.
 - `app/web/style_token_rows.py`: pure Settings design-token presentation
   builders. WebRuntime supplies translated labels, the project display URL,
   and the Light / Dark theme mappings;
@@ -1070,12 +1121,18 @@ continuing to grow the shared critical-flow file. Splitting the existing file
 requires a dedicated behavior-preserving change with an unchanged collected
 test inventory.
 
-## Shared component catalog, 5 Sep 2026
+## Shared component catalog, 8 Sep 2026
 
-Style token rows and component CSS follow Shared UI Layout Contract v1.1.0.
+Style token rows and component CSS follow Shared UI Layout Contract v1.3.0.
 Secondary button replaces the inverted-primary specimen with the intrinsic-width
-agenticContext glass-chip action. The foundation owns the 30px shared-select and
-strategy-stepper heights; the 28px general numeric-input contract is unchanged.
+agenticContext glass-chip action and has a 32px minimum height. The foundation owns
+the 30px shared-select trigger, 36px shared-select option, and 30px strategy-stepper
+heights; the 28px general numeric-input contract is unchanged. Options without media
+use only check and text columns, so an empty media slot cannot truncate their labels.
+The Settings rail uses the shared transparent monochrome icon treatment, Style tokens
+uses the sparkles symbol, and the optional Beta Dock destination uses the same local
+`sparkles.2.svg` asset in both projects. Style-token copy actions align to the global
+theme action's right anchor.
 Modal and notice dismiss controls reveal on owner hover or keyboard focus, and
 remain visible for touch input. The obsolete Workspace article catalog row and
 demo branch are removed, without deleting role-governed live page containers.

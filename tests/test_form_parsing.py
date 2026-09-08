@@ -1,6 +1,6 @@
 """Behavior tests for shared workspace form and query parsing helpers.
 
-Code version: v1.3.0
+Code version: v1.3.1
 """
 
 from __future__ import annotations
@@ -139,6 +139,52 @@ class FormParsingTests(unittest.TestCase):
         )
         self.assertTrue(
             parse_bool_flag_from_args(_Args(), "missing", default=True)
+        )
+
+    def test_numbered_allocations_follow_non_empty_ticker_slots(self) -> None:
+        args = _Args({
+            "ticker_1": "AAPL",
+            "ticker_2": "",
+            "ticker_3": "QQQ",
+            "weight_1": "40",
+            "weight_2": "99",
+            "weight_3": "60",
+            "shares_1": "2",
+            "shares_2": "99",
+            "shares_3": "7",
+        })
+
+        self.assertEqual(
+            parse_requested_tickers_from_args(args, max_tickers=5, normalize=_identity),
+            ["AAPL", "QQQ"],
+        )
+        self.assertEqual(
+            parse_requested_weights_from_args(args, 2, numbered_ticker_limit=5),
+            [40, 60],
+        )
+        self.assertEqual(
+            parse_requested_shares_from_args(args, 2, numbered_ticker_limit=5),
+            [2, 7],
+        )
+
+    def test_repeated_allocations_follow_non_empty_ticker_slots(self) -> None:
+        args = _Args(multi={
+            "ticker": ["AAPL", "", "QQQ"],
+            "weight": ["40", "99", "60"],
+            "shares": ["2", "99", "7"],
+        })
+
+        self.assertEqual(
+            parse_requested_weights_from_args(args, 2, getlist=args.getlist),
+            [40, 60],
+        )
+        self.assertEqual(
+            parse_requested_shares_from_args(args, 2, getlist=args.getlist),
+            [2, 7],
+        )
+        self.assertEqual(
+            parse_requested_weights_from_args(args, 5, getlist=args.getlist),
+            [40, 60],
         )
 
     def test_dividend_mode_and_range_args(self) -> None:

@@ -1,4 +1,4 @@
-{# Code version: v0.3.1 #}
+{# Code version: v0.4.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set weekly_label = namespace(value=labels.dca_frequency_weekly) %}
 {% if dca_weekday == 0 %}{% set weekly_label.value = "Monday" %}{% endif %}
@@ -6,6 +6,8 @@
 {% if dca_weekday == 2 %}{% set weekly_label.value = "Wednesday" %}{% endif %}
 {% if dca_weekday == 3 %}{% set weekly_label.value = "Thursday" %}{% endif %}
 {% if dca_weekday == 4 %}{% set weekly_label.value = "Friday" %}{% endif %}
+{% if dca_weekday == 5 %}{% set weekly_label.value = "Saturday" %}{% endif %}
+{% if dca_weekday == 6 %}{% set weekly_label.value = "Sunday" %}{% endif %}
 <form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}">
     <div class="field ticker-field" data-index="1">
         <div class="ticker-input-row">
@@ -78,6 +80,8 @@
                 <option value="2" {% if dca_weekday == 2 %}selected{% endif %}>Wednesday</option>
                 <option value="3" {% if dca_weekday == 3 %}selected{% endif %}>Thursday</option>
                 <option value="4" {% if dca_weekday == 4 %}selected{% endif %}>Friday</option>
+                <option value="5" {% if dca_weekday == 5 %}selected{% endif %}>Saturday</option>
+                <option value="6" {% if dca_weekday == 6 %}selected{% endif %}>Sunday</option>
             </select>
             <div class="trade-strategy-combobox backtest-shared-select-combobox">
                 <button

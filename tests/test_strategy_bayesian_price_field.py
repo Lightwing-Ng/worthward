@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.27.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.29.0."""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
 
         self.assertEqual(metadata.strategy_id, "bayesian-price-field")
         self.assertEqual(metadata.name, "Bayesian Price Field")
-        self.assertEqual(metadata.category, "machine-learning")
+        self.assertEqual(metadata.category, "price-field")
         self.assertEqual(metadata.display_order, 42)
         self.assertEqual(strategy.get_default_tickers(), ("NVDA",))
         self.assertEqual(strategy.get_supported_intervals(), ("1d", "1m"))
@@ -216,12 +216,9 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 "chip_window",
                 "prior_strength",
                 "entry_probability",
-                "compute_backend",
             },
             set(definitions),
         )
-        self.assertEqual(definitions["compute_backend"].options, ("Auto", "CPU", "GPU"))
-        self.assertEqual(definitions["compute_backend"].default, "Auto")
         factor_definitions = [
             definition
             for definition in strategy.get_parameter_definitions()
@@ -255,7 +252,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(startup_params["chip_window"], 41)
         self.assertEqual(startup_params["prior_strength"], 1.51)
         self.assertEqual(startup_params["entry_probability"], 60.0)
-        self.assertEqual(startup_params["compute_backend"], "Auto")
+        self.assertNotIn("compute_backend", startup_params)
         self.assertEqual(
             strategy.normalize_params(
                 {
@@ -287,11 +284,31 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(threshold_field["value"], "2.50")
         self.assertIn("presentation only", definitions["cell_display_threshold"].help_text)
-        self.assertIn("CPU work with an available Apple MPS or CUDA GPU", definitions["compute_backend"].help_text)
-        self.assertIn("heterogeneous walk-forward computation", definitions["compute_backend"].help_text)
-        self.assertIn("GPU explicitly requests Apple MPS or CUDA", definitions["compute_backend"].help_text)
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
-        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.10.0")
+        self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.11.0")
+
+    def test_compute_backend_is_internal_auto_and_legacy_overrides_are_ignored(self) -> None:
+        strategy = BayesianPriceFieldStrategy()
+
+        for requested in ("CPU", "GPU"):
+            with self.subTest(requested=requested):
+                normalized = strategy.normalize_params(
+                    _cpu_params(
+                        compute_backend=requested,
+                        use_pe_ratio=False,
+                        use_options=False,
+                    )
+                )
+                self.assertNotIn("compute_backend", normalized)
+
+                with patch(
+                    "strategies.algorithms.strategy_bayesian_price_field._resolve_compute_backend",
+                    return_value=_ComputeBackend(requested="Auto"),
+                ) as resolve_backend:
+                    result = strategy.compute_signals(_market_frame(80), normalized)
+
+                resolve_backend.assert_called_once_with("Auto")
+                self.assertEqual(result.presentation["device"]["requested"], "Auto")
 
     def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
         strategy = BayesianPriceFieldStrategy()
@@ -1381,12 +1398,17 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
 
     def test_runtime_gpu_failure_restarts_the_complete_walk_forward_pass_on_cpu(self) -> None:
         frame = _market_frame()
-        expected = BayesianPriceFieldStrategy().compute_signals(
-            frame,
-            _cpu_params(use_pe_ratio=False, use_options=False),
-        )
+        cpu_backend = _ComputeBackend(requested="Auto")
+        with patch(
+            "strategies.algorithms.strategy_bayesian_price_field._resolve_compute_backend",
+            return_value=cpu_backend,
+        ):
+            expected = BayesianPriceFieldStrategy().compute_signals(
+                frame,
+                _cpu_params(use_pe_ratio=False, use_options=False),
+            )
         gpu_backend = _ComputeBackend(
-            requested="GPU",
+            requested="Auto",
             resolved="mps",
             engine="torch",
             torch_module=object(),
@@ -1414,7 +1436,6 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             result = BayesianPriceFieldStrategy().compute_signals(
                 frame,
                 _cpu_params(
-                    compute_backend="GPU",
                     use_pe_ratio=False,
                     use_options=False,
                 ),
@@ -1433,7 +1454,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 atol=1e-12,
                 equal_nan=True,
             )
-        self.assertEqual(result.presentation["device"]["requested"], "GPU")
+        self.assertEqual(result.presentation["device"]["requested"], "Auto")
         self.assertEqual(result.presentation["device"]["resolved"], "cpu")
         self.assertEqual(result.presentation["device"]["engine"], "numpy-fallback")
         self.assertEqual(result.presentation["device"]["numeric_precision"], "float64")

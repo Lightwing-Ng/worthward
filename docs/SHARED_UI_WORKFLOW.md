@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.1.2`
+Documentation version: `v1.1.3`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
@@ -30,7 +30,31 @@ long-form synchronization state lives in:
   to `Pending` and include the exact sibling-sync reminder in the handoff.
 - Never declare parity from source text, one green test, or visual similarity alone.
 
-## Verification minimum
+## Shared select keyboard controller
+
+Worthward owns `app/web/static/assets/js/select-controller.js` v1.0.0;
+agenticContext vendors identical bytes at `app/web/static/select-controller.js`.
+The first migration covers Worthward shared fields and Strategy, and the sibling
+Local resources native-select adapter and source filter. Other pickers are not
+yet migrated. Existing domain CSS names remain compatibility contracts.
+Templates load the controller before adapters. If a long-running server still
+renders a cached template without that tag, each entrypoint dynamically imports
+the same versioned same-origin module before initializing its dependent controls.
+
+The controller uses DOM focus on options, without a competing
+`aria-activedescendant` on the blurred trigger. Arrow keys open at the selected
+enabled option; Home/End open at boundaries. Navigation clamps without selection,
+skips disabled/hidden options, and resolves the current option list on each event.
+Enter/Space invokes the existing selection callback once. Escape restores trigger
+focus. Tab closes and allows native traversal from the trigger, including body
+portals. Rendering, pointer selection, outside-click dismissal, submission, and
+portal positioning remain adapter-owned. Keyboard binding exposes a teardown
+callback; dynamically hydrated Worthward fields use weakly keyed adapters.
+
+Run `node --test tests/test_select_controller.mjs` and the isolated
+`tests/e2e/select-keyboard.spec.mjs` tests for this migration.
+
+## Verification evidence
 
 Preserve unrelated dirty files and record the component row, paths, versions or
 commit, invariant, focused checks, and live route evidence. Run focused tests first;

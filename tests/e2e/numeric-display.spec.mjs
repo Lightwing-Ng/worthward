@@ -1,4 +1,4 @@
-/* Browser contract for shared numeric typography. Code version: v1.1.1 */
+/* Browser contract for shared numeric typography. Code version: v1.2.0 */
 
 import {test, expect} from '@playwright/test';
 
@@ -31,11 +31,7 @@ test('Style tokens and Font tokens use the shared integer/fraction display', asy
         };
     });
 
-    expect(styleState.workspaceMetricParts).toEqual([
-        'workspace-metric-value-major',
-        'workspace-metric-value-minor',
-        'workspace-metric-value-suffix',
-    ]);
+    expect(styleState.workspaceMetricParts).toEqual(['workspace-metric-value-major']);
     expect(styleState.amountCellCount).toBeGreaterThanOrEqual(4);
     expect(styleState.tooltipParts).toEqual([
         'workspace-metric-value-major',

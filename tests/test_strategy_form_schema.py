@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.5.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -63,6 +63,77 @@ class StrategyFormSchemaTests(unittest.TestCase):
         strategy = instantiate_strategy("supertrend-ai")
         normalized = strategy.normalize_params({"from_cluster": "Invalid"})
         self.assertEqual(normalized["from_cluster"], "Best")
+
+    def test_dca_schedule_fields_are_declarative_and_frequency_scoped(self) -> None:
+        monthly_fields = {
+            field["key"]: field
+            for field in build_strategy_form_fields(
+                "dca",
+                {"frequency": "monthly"},
+                strategy_factory=instantiate_strategy,
+            )
+        }
+        weekly_fields = {
+            field["key"]: field
+            for field in build_strategy_form_fields(
+                "dca",
+                {"frequency": "weekly"},
+                strategy_factory=instantiate_strategy,
+            )
+        }
+
+        self.assertTrue(monthly_fields["frequency"]["content_sized"])
+        self.assertFalse(monthly_fields["weekday"]["is_visible"])
+        self.assertTrue(monthly_fields["month_day"]["is_visible"])
+        self.assertTrue(weekly_fields["weekday"]["is_visible"])
+        self.assertFalse(weekly_fields["month_day"]["is_visible"])
+        self.assertEqual(
+            [item["label"] for item in weekly_fields["weekday"]["option_items"]],
+            [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ],
+        )
+
+    def test_leveraged_rotation_declares_two_decimal_dynamic_ticker_fields(self) -> None:
+        fields = {
+            field["key"]: field
+            for field in build_strategy_form_fields(
+                "leveraged-rotation",
+                {"initial_primary_pct": 44.2, "initial_leveraged_pct": 36.3},
+                strategy_factory=instantiate_strategy,
+            )
+        }
+        percentage_keys = {
+            "initial_primary_pct",
+            "initial_leveraged_pct",
+            "primary_min_pct",
+            "primary_max_pct",
+            "leveraged_min_pct",
+            "leveraged_max_pct",
+            "buy_leveraged_drop_pct",
+            "sell_leveraged_rise_pct",
+        }
+
+        self.assertTrue(all(fields[key]["step"] == 0.01 for key in percentage_keys))
+        self.assertTrue(all(str(fields[key]["value"]).endswith((".00", ".20", ".30")) for key in percentage_keys))
+        self.assertEqual(fields["primary_min_pct"]["ui_role"], "ticker-label:0:minimum")
+        self.assertEqual(fields["leveraged_max_pct"]["ui_role"], "ticker-label:1:maximum")
+        self.assertEqual(fields["buy_leveraged_drop_pct"]["ui_role"], "ticker-label:0:daily-drop-trigger")
+        self.assertEqual(fields["sell_leveraged_rise_pct"]["ui_role"], "ticker-label:1:daily-rise-trigger")
+        self.assertEqual(
+            fields["primary_min_pct"]["subgroup"],
+            "Allocation limits (% of total equity)",
+        )
+        self.assertEqual(
+            fields["buy_leveraged_drop_pct"]["subgroup"],
+            "Rotation triggers (daily % change)",
+        )
 
 
 if __name__ == "__main__":

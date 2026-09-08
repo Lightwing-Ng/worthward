@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.6.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -12,11 +12,43 @@ from typing import Any
 from strategies.base import BaseStrategy, StrategyParameterDefinition
 
 
-STRATEGY_CATEGORY_LABELS = {
-    "baseline": "Baseline",
-    "recent": "Recent",
-    "all": "All",
+STRATEGY_CATEGORY_DEFINITIONS = (
+    {
+        "key": "baseline",
+        "label": "Baseline",
+        "description": "Reference strategies used to compare every active approach.",
+    },
+    {
+        "key": "investment-automation",
+        "label": "Investment Automation",
+        "description": "Schedule- and holding-based rules that mirror configurable investment workflows.",
+    },
+    {
+        "key": "technical-analysis",
+        "label": "Technical Analysis",
+        "description": "Indicator and TradingView-derived signal strategies.",
+    },
+    {
+        "key": "machine-learning",
+        "label": "Machine Learning",
+        "description": "Learned signal strategies that do not use the Price Field probability grid.",
+    },
+    {
+        "key": "portfolio-rotation",
+        "label": "Portfolio Rotation",
+        "description": "Rules that rotate capital across multiple related securities.",
+    },
+    {
+        "key": "price-field",
+        "label": "Price Field Models",
+        "description": "Probabilistic forecasting strategies that share the causal Price Field grid.",
+    },
+)
+STRATEGY_CATEGORY_BY_KEY = {
+    str(definition["key"]): definition
+    for definition in STRATEGY_CATEGORY_DEFINITIONS
 }
+STRATEGY_CATEGORY_KEYS = tuple(STRATEGY_CATEGORY_BY_KEY)
 StrategyFactory = Callable[[str], BaseStrategy]
 
 
@@ -24,75 +56,68 @@ def format_strategy_category_label(category: str) -> str:
     """Return the user-facing label for a strategy category key."""
     normalized = (category or "general").strip().lower()
     normalized = normalized.replace("_", "-")
-    return STRATEGY_CATEGORY_LABELS.get(
-        normalized,
-        normalized.replace("-", " ").title(),
-    )
+    definition = STRATEGY_CATEGORY_BY_KEY.get(normalized)
+    return str(definition["label"]) if definition else normalized.replace("-", " ").title()
+
+
+def build_strategy_category_groups(
+    items: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Group unique catalog items by their strategy-owned category metadata."""
+    unique_by_id: dict[str, dict[str, object]] = {}
+    for item in items:
+        strategy_id = str(item.get("id", "")).strip()
+        if strategy_id and strategy_id not in unique_by_id:
+            unique_by_id[strategy_id] = item
+
+    items_by_category: dict[str, list[dict[str, object]]] = {}
+    for item in unique_by_id.values():
+        category = str(item.get("category_key", item.get("category", "general")))
+        category = category.strip().lower().replace("_", "-") or "general"
+        items_by_category.setdefault(category, []).append(item)
+
+    ordered_categories = [
+        str(definition["key"])
+        for definition in STRATEGY_CATEGORY_DEFINITIONS
+        if definition["key"] in items_by_category
+    ]
+    ordered_categories.extend(sorted(
+        category
+        for category in items_by_category
+        if category not in STRATEGY_CATEGORY_BY_KEY
+    ))
+
+    groups: list[dict[str, object]] = []
+    for category in ordered_categories:
+        definition = STRATEGY_CATEGORY_BY_KEY.get(category, {})
+        category_items = sorted(
+            items_by_category[category],
+            key=lambda item: (
+                int(
+                    item.get("display_order", item.get("ui", {}).get("display_order", 9999))
+                    if isinstance(item.get("ui", {}), dict)
+                    else item.get("display_order", 9999)
+                ),
+                str(item.get("name", "")).casefold(),
+            ),
+        )
+        groups.append({
+            "key": category,
+            "label": definition.get("label", format_strategy_category_label(category)),
+            "description": definition.get("description", "Additional registered strategies."),
+            "items": category_items,
+            "count": len(category_items),
+        })
+    return groups
 
 
 def build_strategy_option_groups(
     strategy_options: list[dict[str, object]],
-    recent_strategy_ids: Sequence[str],
+    recent_strategy_ids: Sequence[str] = (),
 ) -> list[dict[str, object]]:
-    """Build mutually exclusive baseline, recent, and alphabetical groups."""
-    available_by_id: dict[str, dict[str, object]] = {}
-    for item in strategy_options:
-        strategy_id = str(item.get("id", "")).strip()
-        if strategy_id and strategy_id not in available_by_id:
-            available_by_id[strategy_id] = item
-
-    baseline_items = (
-        [available_by_id["buy-and-hold"]]
-        if "buy-and-hold" in available_by_id
-        else []
-    )
-    assigned_strategy_ids = {"buy-and-hold"} if baseline_items else set()
-
-    recent_items = []
-    for strategy_id in recent_strategy_ids:
-        normalized_strategy_id = str(strategy_id).strip()
-        if normalized_strategy_id in assigned_strategy_ids:
-            continue
-        matching = available_by_id.get(normalized_strategy_id)
-        if matching is not None:
-            recent_items.append(matching)
-            assigned_strategy_ids.add(normalized_strategy_id)
-
-    all_other_items = sorted(
-        [
-            item
-            for strategy_id, item in available_by_id.items()
-            if strategy_id not in assigned_strategy_ids
-        ],
-        key=lambda item: str(item.get("name", "")).lower(),
-    )
-
-    groups: list[dict[str, object]] = []
-    if baseline_items:
-        groups.append(
-            {
-                "key": "baseline",
-                "label": STRATEGY_CATEGORY_LABELS["baseline"],
-                "items": baseline_items,
-            }
-        )
-    if recent_items:
-        groups.append(
-            {
-                "key": "recent",
-                "label": STRATEGY_CATEGORY_LABELS["recent"],
-                "items": recent_items,
-            }
-        )
-    if all_other_items:
-        groups.append(
-            {
-                "key": "all",
-                "label": STRATEGY_CATEGORY_LABELS["all"],
-                "items": all_other_items,
-            }
-        )
-    return groups
+    """Build the selector from the same authoritative categories as Settings."""
+    _ = recent_strategy_ids
+    return build_strategy_category_groups(strategy_options)
 
 
 def build_strategy_form_field(
@@ -174,6 +199,24 @@ def build_strategy_form_field(
             switch_off_value = "Off"
             switch_checked = str(resolved_value) == "On"
 
+    option_items = [
+        {
+            "value": option,
+            "label": (
+                definition.option_labels[index]
+                if len(definition.option_labels) == len(definition.options)
+                else str(option)
+            ),
+        }
+        for index, option in enumerate(definition.options)
+    ]
+    selected_option = next(
+        (item for item in option_items if item["value"] == resolved_value),
+        None,
+    )
+    visible_when_key = definition.visible_when[0] if definition.visible_when else ""
+    visible_when_value = definition.visible_when[1] if definition.visible_when else ""
+
     return {
         "key": definition.key,
         "group": definition.group,
@@ -197,6 +240,12 @@ def build_strategy_form_field(
         "slider_max": slider_max,
         "slider_step": slider_step,
         "options": list(definition.options),
+        "option_items": option_items,
+        "selected_label": (
+            selected_option["label"]
+            if selected_option is not None
+            else str(resolved_value)
+        ),
         "editable": definition.editable,
         "help_text": definition.help_text,
         "unit_hint": definition.unit_hint,
@@ -204,6 +253,10 @@ def build_strategy_form_field(
         "switch_checked": switch_checked,
         "switch_on_value": switch_on_value,
         "switch_off_value": switch_off_value,
+        "visible_when_key": visible_when_key,
+        "visible_when_value": visible_when_value,
+        "is_visible": True,
+        "content_sized": definition.content_sized,
     }
 
 
@@ -223,13 +276,21 @@ def build_strategy_form_fields(
     )
     if values:
         normalized_values = strategy.normalize_params(values)
-    return [
+    fields = [
         build_strategy_form_field(
             definition,
             normalized_values.get(definition.key),
         )
         for definition in strategy.get_parameter_definitions()
     ]
+    for field in fields:
+        visible_when_key = str(field["visible_when_key"] or "")
+        if visible_when_key:
+            field["is_visible"] = (
+                str(normalized_values.get(visible_when_key, ""))
+                == str(field["visible_when_value"])
+            )
+    return fields
 
 
 def build_strategy_form_sections(
@@ -267,11 +328,18 @@ def build_strategy_settings_rows(
             {
                 "id": item["id"],
                 "name": item["name"],
+                "category_key": str(item.get("category", "general")),
                 "category": format_strategy_category_label(
                     str(item.get("category", "general"))
                 ),
+                "display_order": (
+                    item.get("ui", {}).get("display_order", 9999)
+                    if isinstance(item.get("ui", {}), dict)
+                    else 9999
+                ),
                 "description": item.get("description", ""),
                 "supports": item.get("supports", {}),
+                "presentation_renderer": item.get("presentation_renderer", ""),
                 "parameters": [
                     {
                         "label": definition.label,
@@ -286,26 +354,16 @@ def build_strategy_settings_rows(
                 ],
             }
         )
-
-    supertrend_ai_row = next(
-        (row for row in rows if row.get("id") == "supertrend-ai"),
-        None,
-    )
-    if supertrend_ai_row is not None:
-        raw_parameters = supertrend_ai_row.get("parameters", [])
-        copied_parameters = (
-            [
-                dict(parameter)
-                for parameter in raw_parameters
-                if isinstance(parameter, dict)
-            ]
-            if isinstance(raw_parameters, list)
-            else []
-        )
-        rows.append(
-            {
-                **supertrend_ai_row,
-                "parameters": copied_parameters,
-            }
-        )
     return rows
+
+
+def build_strategy_settings_groups(
+    strategy_options: list[dict[str, object]],
+    *,
+    strategy_factory: StrategyFactory,
+) -> list[dict[str, object]]:
+    """Build categorized Settings rows from the shared strategy catalog."""
+    return build_strategy_category_groups(build_strategy_settings_rows(
+        strategy_options,
+        strategy_factory=strategy_factory,
+    ))

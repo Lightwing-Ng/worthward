@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.13.0
+Code version: v0.17.0
 """
 
 from __future__ import annotations
@@ -262,7 +262,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn("Neural Engine", html)
         self.assertNotIn('name="prior_strength"', html)
 
-    def test_bayesian_parameter_api_formats_threshold_and_describes_auto_backend(self) -> None:
+    def test_bayesian_parameter_api_formats_threshold_without_backend_control(self) -> None:
         client = create_app().test_client()
         response = client.get(
             "/api/trade-strategy-fields?strategy=bayesian-price-field"
@@ -276,16 +276,8 @@ class BacktestPageTests(unittest.TestCase):
         )
         self.assertIn('value="5.00"', html)
         self.assertIn('step="0.01"', html)
-        self.assertIn(
-            'title="Auto coordinates bounded multi-core CPU work with an available '
-            'Apple MPS or CUDA GPU for heterogeneous walk-forward computation;',
-            html,
-        )
-        self.assertIn(
-            'data-shared-select-title="Auto coordinates bounded multi-core CPU work '
-            'with an available Apple MPS or CUDA GPU for heterogeneous walk-forward computation;',
-            html,
-        )
+        self.assertNotIn('name="compute_backend"', html)
+        self.assertNotIn('data-strategy-param-key="compute_backend"', html)
 
     def test_bayesian_direction_and_probability_scores_render_as_percentages(self) -> None:
         result = backtest_result()
@@ -783,6 +775,29 @@ class BacktestPageTests(unittest.TestCase):
             list(COMPARE_PERIODS_1D),
         )
 
+    def test_tft_keeps_the_unavailable_one_minute_interval_visible_and_disabled(self) -> None:
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("DRAM")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=DRAM&strategy=tft-price-field&show_trade_details=0"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-backtest-interval-shell', html)
+        self.assertIn('data-option-count="2"', html)
+        self.assertIn('for="backtest_interval_1m"', html)
+        self.assertIn("checked", _input_attributes_by_id(html, "backtest_interval_1d"))
+        self.assertIn("disabled", _input_attributes_by_id(html, "backtest_interval_1m"))
+
     def test_market_store_presence_uses_shared_daily_period_options(self) -> None:
         with (
             patch("app.web.runtime.build_supported_periods_for_history_store", return_value=["6mo", "1y", "max"]),
@@ -847,6 +862,17 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('name="buy_leveraged_drop_pct"', payload["html"])
         self.assertIn('name="initial_primary_pct"', payload["html"])
         self.assertIn('data-strategy-allocation-range', payload["html"])
+        self.assertIn('data-allocation-primary-segment', payload["html"])
+        self.assertIn('data-allocation-leveraged-segment', payload["html"])
+        self.assertIn('data-allocation-cash-segment', payload["html"])
+        self.assertIn('data-strategy-param-ui-role="ticker-label:0:minimum"', payload["html"])
+        self.assertIn('data-strategy-param-ui-role="ticker-label:1:daily-rise-trigger"', payload["html"])
+        self.assertIn('Allocation limits (% of total equity)', payload["html"])
+        self.assertIn('Rotation triggers (daily % change)', payload["html"])
+        self.assertIn('step="0.01"', payload["html"])
+        self.assertIn('value="20.00"', payload["html"])
+        self.assertNotIn("Ticker 1 minimum", payload["html"])
+        self.assertNotIn("Ticker 2 daily rise trigger", payload["html"])
 
     def test_knn_default_all_feature_runs_without_observed_volume(self) -> None:
         with (
@@ -945,6 +971,9 @@ class BacktestPageTests(unittest.TestCase):
         self.assertNotIn('is-dca-inline', html)
         self.assertIn('name="amount"', html)
         self.assertIn('name="frequency"', html)
+        self.assertIn('data-strategy-param-visible-when-key="frequency"', html)
+        self.assertIn('<option value="6" >Sunday</option>', html)
+        self.assertIn('data-strategy-param-content-sized="true"', html)
         self.assertIn('dca-transactions-shell', html)
         self.assertIn('Amount per period', html)
         self.assertIn('id="stop_loss" name="stop_loss" type="checkbox" value="1"', html)
@@ -952,6 +981,34 @@ class BacktestPageTests(unittest.TestCase):
             'id="stop_loss" name="stop_loss" type="checkbox" value="1" checked',
             html,
         )
+
+    def test_dca_preserves_sunday_and_renders_only_the_weekly_schedule_row(self) -> None:
+        dates = pd.date_range("2025-01-01", periods=420, freq="B")
+        dca_history = pd.DataFrame({
+            "Date": dates,
+            "Close": [100.0 + (index * 0.1) for index in range(len(dates))],
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=dca_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.list_available_market_intervals", return_value=["1d"]),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=dca&period=1y"
+                "&amount=500&frequency=weekly&weekday=6&stop_loss=0"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        weekday_row = html.split('data-strategy-param-key="weekday"', 1)[1].split(">", 1)[0]
+        month_day_row = html.split('data-strategy-param-key="month_day"', 1)[1].split(">", 1)[0]
+        self.assertNotIn("hidden", weekday_row)
+        self.assertIn('value="6" selected>Sunday', html)
+        self.assertIn("hidden", month_day_row)
+        self.assertIn("Every Sunday", html)
 
     def test_legacy_dca_route_redirects_to_backtest_strategy(self) -> None:
         client = create_app().test_client()

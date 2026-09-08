@@ -1,4 +1,4 @@
-/* Code version: v1.78.12 */
+/* Code version: v1.80.0 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -330,10 +330,11 @@
     align-items: flex-start;
     min-height: var(--trade-control-label-height);
     margin: 0;
-    font-size: var(--font-form-label);
-    line-height: 1.2;
-    font-weight: var(--font-weight-bold);
-    color: var(--text);
+    font-size: var(--field-title-font-size);
+    line-height: var(--field-title-line-height);
+    letter-spacing: var(--field-title-letter-spacing);
+    font-weight: var(--field-title-font-weight);
+    color: var(--field-title-color);
 }
 
 .live-trading-broker-row {
@@ -2107,7 +2108,7 @@
 }
 
 .investment-community-share-footer-timestamp {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-family-base);
     font-size: 23px;
     line-height: 1.12;
     font-weight: 500;
@@ -2118,7 +2119,7 @@
 
 .investment-community-share-footer-prompt {
     margin: 6px 0 0;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-family-base);
     font-size: 17px;
     line-height: 1.25;
     font-weight: 500;
@@ -2342,7 +2343,7 @@
 }
 
 .investment-equity-hover-date-label {
-    font-family: "GDS Transport", "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-family-base);
     font-size: 12px;
     font-weight: 400;
     line-height: 10px;
@@ -2521,8 +2522,8 @@
 }
 
 .investment-broker-summary-selector-shell {
-    width: min(100%, var(--settings-action-package-max-width));
-    max-width: var(--settings-action-package-max-width);
+    width: min(100%, var(--layout-control-width));
+    max-width: var(--layout-control-width);
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
@@ -3238,6 +3239,11 @@
 
 .scrollable-data-table thead th {
     border-top: 0;
+    font-size: var(--field-title-font-size);
+    line-height: var(--field-title-line-height);
+    letter-spacing: var(--field-title-letter-spacing);
+    font-weight: var(--field-title-font-weight);
+    color: var(--field-title-color);
 }
 
 .investment-holdings-table th,
@@ -4529,7 +4535,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     overflow: hidden;
     font-size: var(--font-table-body);
     line-height: 1.35;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
 }
 
@@ -4591,7 +4597,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-code-textarea {
     min-height: 196px;
-    font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: var(--font-family-mono);
     font-size: var(--font-tooltip);
     line-height: 1.45;
 }

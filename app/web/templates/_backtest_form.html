@@ -1,4 +1,4 @@
-{# Code version: v0.9.0 #}
+{# Code version: v0.11.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% from "_macros.html" import render_range_controls, render_segmented_control, render_switch with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
@@ -58,19 +58,18 @@
                     "id": "backtest_interval_1m",
                     "value": "1m",
                     "label": "1m",
-                    "hidden": "1m" not in supported_intervals,
                     "disabled": "1m" not in supported_intervals,
                     "input_attrs": 'data-backtest-interval-input',
                 },
             ],
-            'id="backtest_interval_control" data-backtest-interval-shell data-segmented-pill="measured" data-active="' ~ requested_interval ~ '" data-option-count="' ~ (supported_intervals|length) ~ '" style="--segmented-option-count: ' ~ (supported_intervals|length) ~ '; --segmented-active-index: ' ~ (1 if requested_interval == "1m" else 0) ~ ';"'
+            'id="backtest_interval_control" data-backtest-interval-shell data-segmented-pill="measured" data-active="' ~ requested_interval ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if requested_interval == "1m" else 0) ~ ';"'
         ) }}
     </div>
     {% endif %}
     {% call render_collapse("Backtest parameters", "backtest", open=true) %}
     {% if selected_strategy_id != 'dca' %}
     <div class="field trade-capital-field">
-        <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>
+        <label for="trade_initial_capital">{{ translate_ui('Initial cash (USD)') if selected_strategy_id == 'grid-trading' else labels.backtest_capital }}</label>
         <div class="trade-capital-row">
             <input id="trade_initial_capital" name="capital" class="trade-capital-input numeric-input-control" type="text"
                    value="{{ "{:,.2f}".format(backtest_initial_capital) }}" inputmode="decimal" autocomplete="off">

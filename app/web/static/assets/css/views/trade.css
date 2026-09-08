@@ -1,4 +1,4 @@
-/* Code version: v3.66.0 */
+/* Code version: v3.70.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -16,8 +16,8 @@
 	min-width: 0;
 }
 .lstm-training-history-title {
-	font-size: var(--font-form-label);
-	font-weight: var(--font-weight-medium);
+	font-size: var(--font-ui-lg);
+	font-weight: var(--font-weight-regular);
 }
 .lstm-training-progress-label,
 .lstm-training-files,
@@ -121,6 +121,13 @@
 	gap: 6px;
 	margin-top: 6px;
 	min-width: 0;
+	text-align: left;
+}
+.lstm-training-history-empty {
+	display: block;
+	margin-inline: 0;
+	padding-inline: 0;
+	text-align: left;
 }
 .lstm-training-history-entry {
 	position: relative;
@@ -252,7 +259,7 @@
 }
 .lstm-training-history-details,
 .lstm-training-history-identifier {
-	font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+	font-family: var(--font-family-mono);
 }
 .lstm-training-history-run {
 	min-width: 0;
@@ -323,7 +330,7 @@
 	gap: 8px;
 }
 .lstm-training-file-name {
-	font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+	font-family: var(--font-family-mono);
 	min-width: 0;
 }
 .lstm-training-file-size {
@@ -348,6 +355,12 @@
 
 .trade-strategy-param-select-shell .backtest-shared-select-dropdown {
     width: 100%;
+}
+
+/* Compact device options can still grow when their labels wrap. */
+#strategy_param_compute_backend_dropdown {
+    --shared-select-option-min-height: 32px;
+    --shared-select-option-padding: 7px 10px;
 }
 
 /* Keep the compute-device control centered within its value column only. */
@@ -519,7 +532,7 @@
 
 .backtest-workspace-main {
     --backtest-chart-y-axis-width: 72px;
-    --backtest-chart-axis-font-family: "GDS Transport", "Helvetica Neue", Arial, sans-serif;
+    --backtest-chart-axis-font-family: var(--font-family-base);
     --backtest-chart-axis-font-size: 12px;
     --backtest-chart-axis-font-weight: 400;
     --backtest-chart-axis-line-height: 10px;
@@ -1139,19 +1152,20 @@
 .trade-metric-card {
     --trade-metric-card-padding: 0;
     --trade-metric-card-radius: var(--workspace-metric-card-radius);
-    --trade-metric-card-label-min-height: 0px;
-    --trade-metric-card-row-gap: 0px;
+    --trade-metric-card-label-min-height: var(--workspace-metric-card-label-min-height);
+    --trade-metric-card-row-gap: var(--workspace-metric-card-row-gap);
     --trade-metric-card-align-self-local: var(--workspace-metric-card-align-self);
-    --trade-metric-label-font-size: var(--font-tooltip);
-    --trade-metric-label-line-height: 1;
-    --trade-metric-label-font-weight: var(--font-weight-bold);
-    --trade-metric-label-color: var(--muted);
+    --trade-metric-label-font-size: var(--workspace-metric-label-font-size);
+    --trade-metric-label-line-height: var(--workspace-metric-label-line-height);
+    --trade-metric-label-letter-spacing: var(--workspace-metric-label-letter-spacing);
+    --trade-metric-label-font-weight: var(--workspace-metric-label-font-weight);
+    --trade-metric-label-color: var(--workspace-metric-label-color);
     --trade-metric-value-min-height: 0;
     --trade-metric-value-padding-bottom: 4px;
     min-width: 0;
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
+    height: auto;
+    min-height: var(--workspace-metric-card-min-height);
+    max-height: none;
     overflow: visible;
     padding: var(--trade-metric-card-padding);
     border-radius: var(--trade-metric-card-radius);
@@ -1175,7 +1189,7 @@
     font-weight: var(--trade-metric-label-font-weight);
     color: var(--trade-metric-label-color);
     text-transform: none;
-    letter-spacing: 0;
+    letter-spacing: var(--trade-metric-label-letter-spacing);
 }
 
 .trade-metric-value {
@@ -1994,10 +2008,11 @@
 
 .style-token-settings-input-label {
     margin: 0;
-    font-size: var(--font-ui-lg);
-    line-height: 1.25;
-    font-weight: var(--font-weight-regular);
-    color: var(--text);
+    font-size: var(--field-title-font-size);
+    line-height: var(--field-title-line-height);
+    letter-spacing: var(--field-title-letter-spacing);
+    font-weight: var(--field-title-font-weight);
+    color: var(--field-title-color);
 }
 
 .style-token-settings-input {
@@ -2145,28 +2160,61 @@
 
 .strategy-allocation-range {
     display: grid;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
     padding: 4px 0 8px;
 }
 
 .strategy-allocation-labels {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
+    position: relative;
+    height: 34px;
+    min-width: 0;
     font-size: 11px;
-    color: var(--muted);
 }
 
-.strategy-allocation-labels > span {
+.strategy-allocation-label {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    display: grid;
+    justify-items: center;
+    gap: 1px;
+    width: max-content;
+    max-width: 44%;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.2;
+    text-align: center;
+    transform: translateX(-50%);
     white-space: nowrap;
 }
 
-.strategy-allocation-labels > span:nth-child(2) { text-align: center; }
-.strategy-allocation-labels > span:last-child { text-align: right; }
+.strategy-allocation-label-name,
+.strategy-allocation-label-value {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.strategy-allocation-label-name {
+    font-weight: var(--font-weight-medium);
+}
+
+.strategy-allocation-label-value {
+    font-variant-numeric: tabular-nums;
+}
+
+.strategy-allocation-label--primary { color: var(--theme-accent-primary); }
+.strategy-allocation-label--leveraged { color: var(--theme-accent-secondary); }
+.strategy-allocation-label--cash { color: var(--theme-accent-positive); }
+
+.strategy-allocation-labels.is-compressed {
+    font-size: 10px;
+}
+
+.strategy-allocation-labels.is-compressed .strategy-allocation-label {
+    max-width: calc((100% - 12px) / 3);
+}
 
 .strategy-allocation-track-shell {
     position: relative;
@@ -2175,13 +2223,33 @@
 
 .strategy-allocation-track {
     position: absolute;
-    inset: 9px 0 auto;
-    height: 6px;
+    inset: 10px 0 auto;
+    display: flex;
+    height: 4px;
+    overflow: hidden;
     border-radius: var(--radius-pill);
-    background: linear-gradient(to right,
-        var(--theme-accent-primary) 0 var(--allocation-primary),
-        var(--theme-accent-positive) var(--allocation-primary) var(--allocation-invested),
-        var(--theme-glass-border) var(--allocation-invested) 100%);
+    background: var(--theme-glass-border);
+}
+
+.strategy-allocation-segment {
+    display: block;
+    min-width: 0;
+    height: 100%;
+}
+
+.strategy-allocation-segment--primary {
+    flex: 0 0 var(--allocation-primary);
+    background: var(--theme-accent-primary);
+}
+
+.strategy-allocation-segment--leveraged {
+    flex: 0 0 var(--allocation-leveraged);
+    background: var(--theme-accent-secondary);
+}
+
+.strategy-allocation-segment--cash {
+    flex: 0 0 var(--allocation-cash);
+    background: var(--theme-accent-positive);
 }
 
 .strategy-allocation-handle {
@@ -2195,12 +2263,26 @@
     pointer-events: none;
 }
 
+.strategy-allocation-handle[data-allocation-boundary="primary"] {
+    z-index: 2;
+}
+
+.strategy-allocation-handle[data-allocation-boundary="invested"] {
+    z-index: 3;
+}
+
+.strategy-allocation-handle:focus-visible,
+.strategy-allocation-handle:active {
+    z-index: 4;
+    outline: none;
+}
+
 .strategy-allocation-handle::-webkit-slider-thumb {
     appearance: none;
-    width: 18px;
+    width: 12px;
     height: 18px;
     border: 2px solid var(--theme-background);
-    border-radius: 50%;
+    border-radius: 4px;
     background: var(--theme-accent-primary);
     box-shadow: var(--theme-shadow-small);
     pointer-events: auto;
@@ -2208,14 +2290,14 @@
 }
 
 .strategy-allocation-handle[data-allocation-boundary="invested"]::-webkit-slider-thumb {
-    background: var(--theme-accent-positive);
+    background: var(--theme-accent-secondary);
 }
 
 .strategy-allocation-handle::-moz-range-thumb {
-    width: 18px;
+    width: 12px;
     height: 18px;
     border: 2px solid var(--theme-background);
-    border-radius: 50%;
+    border-radius: 4px;
     background: var(--theme-accent-primary);
     box-shadow: var(--theme-shadow-small);
     pointer-events: auto;
@@ -2223,5 +2305,5 @@
 }
 
 .strategy-allocation-handle[data-allocation-boundary="invested"]::-moz-range-thumb {
-    background: var(--theme-accent-positive);
+    background: var(--theme-accent-secondary);
 }

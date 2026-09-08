@@ -6,7 +6,9 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v0.5.1
+Code version: v0.6.0
+- Changed: Catalog this learned signal strategy independently from Price Field
+  models and technical-analysis strategies.
 - Fixed: Validate real market bars, preserve indicator warmup and neutral
   neighbors, and execute close-derived decisions at the following open.
 """
@@ -232,7 +234,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
         "It supports RSI, ROC, CCI, volume, or blended feature pairs and treats "
         "bearish and clear states as exits in this app."
     )
-    strategy_category = "trend"
+    strategy_category = "machine-learning"
     strategy_display_order = 40
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

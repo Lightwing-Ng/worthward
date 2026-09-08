@@ -1,14 +1,14 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.38.0
+ * Code version: v1.39.0
  * - Added: Donut orbit logos can render token-backed identities with theme-controlled mask colors.
  * - Changed: Orbit geometry now follows the rendered donut diameter so responsive CSS sizes keep satellites on the real track.
  * - Changed: Orbit writes use compositor-friendly transform variables and the shared Motion Core scheduler.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
 
-export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.38.0';
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.39.0';
 
 const investmentDonutOrbitLayerState = new WeakMap();
 
@@ -416,7 +416,7 @@ export function registerInvestmentChartHelpers(targetWindow = window) {
                             color: resolvedTheme.muted,
                             boxWidth: 10,
                             usePointStyle: true,
-                            font: { family: "'Inter', sans-serif", size: 11, weight: '500' },
+                            font: { family: getComputedStyle(document.body).fontFamily, size: 11, weight: '500' },
                         },
                     },
                     tooltip: {

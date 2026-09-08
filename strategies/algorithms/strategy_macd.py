@@ -1,7 +1,7 @@
 """
 MACD crossover strategy.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class MacdStrategy(BaseStrategy):
     strategy_id = "macd"
     strategy_name = "MACD"
     strategy_description = "MACD crossover strategy using default daily 12, 26, and 9 settings."
-    strategy_category = "momentum"
+    strategy_category = "technical-analysis"
     strategy_display_order = 20
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

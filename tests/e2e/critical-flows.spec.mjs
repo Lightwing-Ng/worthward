@@ -1,4 +1,4 @@
-/* Code version: v1.207.0 */
+/* Code version: v1.212.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -740,7 +740,7 @@ test('keeps Settings surfaces on the shared 640px content and 384px control toke
         ['/settings/network', '.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network'],
         ['/settings/strategies', '.settings-shell-strategies > .settings-summary-card'],
         ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport > .settings-summary'],
-        ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport > .settings-strategy-card'],
+        ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport .settings-strategy-card'],
     ];
 
     for (const [url, selector] of widthCases) {
@@ -794,6 +794,56 @@ test('keeps Settings surfaces on the shared 640px content and 384px control toke
     expect(narrowGeometry.documentOverflow).toBeLessThanOrEqual(1);
     expect(narrowGeometry.contentWidth).toBeLessThanOrEqual(370);
     expect(Math.max(...narrowGeometry.controlWidths)).toBeLessThanOrEqual(370);
+});
+
+test('shares authoritative strategy categories between Settings and Backtest', async ({page}) => {
+    await page.goto('/settings/strategies');
+    const settingsGroups = await page.locator('[data-strategy-category]').evaluateAll((groups) => (
+        groups.map((group) => ({
+            key: group.dataset.strategyCategory,
+            ids: [...group.querySelectorAll('[data-strategy-id]')].map((item) => item.dataset.strategyId),
+        }))
+    ));
+    expect(settingsGroups.map((group) => group.key)).toEqual([
+        'baseline',
+        'investment-automation',
+        'technical-analysis',
+        'machine-learning',
+        'portfolio-rotation',
+        'price-field',
+    ]);
+    expect(settingsGroups.find((group) => group.key === 'baseline')?.ids).toEqual(['buy-and-hold']);
+    expect(settingsGroups.find((group) => group.key === 'investment-automation')?.ids).toEqual([
+        'grid-trading',
+        'dca',
+    ]);
+    expect(settingsGroups.find((group) => group.key === 'technical-analysis')?.ids).toEqual([
+        'macd',
+        'supertrend-ai',
+        'lorentzian-classification',
+    ]);
+    expect(settingsGroups.find((group) => group.key === 'price-field')?.ids).toEqual([
+        'bayesian-price-field',
+        'lstm-price-field',
+        'patchtst-price-field',
+        'tsmixer-price-field',
+        'nhits-price-field',
+        'timexer-price-field',
+        'itransformer-price-field',
+        'tide-price-field',
+        'moderntcn-price-field',
+        'tft-price-field',
+    ]);
+    expect(new Set(settingsGroups.flatMap((group) => group.ids)).size).toBe(18);
+
+    await page.goto('/workspaces/backtest?strategy=buy-and-hold&period=6mo');
+    const backtestGroups = await page.locator('#trade_strategy optgroup').evaluateAll((groups) => (
+        groups.map((group) => ({
+            key: group.dataset.strategyGroup,
+            ids: [...group.querySelectorAll('option')].map((option) => option.value),
+        }))
+    ));
+    expect(backtestGroups).toEqual(settingsGroups);
 });
 
 test('keeps Settings card effects visible without clipping scrollable internals', async ({page}) => {
@@ -2112,7 +2162,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
     });
-    expect(highPriceContract.helperVersion).toBe('v1.5.0');
+    expect(highPriceContract.helperVersion).toBe('v1.6.0');
     expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
     expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
 
@@ -5261,7 +5311,7 @@ test('omits pre-existing Unbound rows from a later IBKR import banner', async ({
     await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
 });
 
-test('validates HSBC cash-only paste and USD settlement refresh separately from the full snapshot', async ({page}) => {
+test('validates HSBC cash-only paste and keeps validation errors above the import modal', async ({page}) => {
     await mockInvestmentReadApis(page);
     let releaseHkdValidation;
     const holdHkdValidation = new Promise((resolve) => {
@@ -5359,6 +5409,27 @@ test('validates HSBC cash-only paste and USD settlement refresh separately from 
     await expect(page.locator('#investment_import_feedback_message')).toContainText(
         'not a recognized cash-account page',
     );
+    const invalidFeedbackBanner = page.locator('#investment_import_feedback');
+    await expect(page.locator('#transaction_form_container')).toBeVisible();
+    await expect(invalidFeedbackBanner).toBeVisible();
+    await invalidFeedbackBanner.evaluate(async (banner) => {
+        await Promise.all(banner.getAnimations().map((animation) => animation.finished));
+    });
+    const invalidFeedbackPaintState = await invalidFeedbackBanner.evaluate((banner) => {
+        const rect = banner.getBoundingClientRect();
+        const topmostNode = document.elementFromPoint(
+            rect.left + (rect.width / 2),
+            rect.top + (rect.height / 2),
+        );
+        return {
+            parentIsBody: banner.parentElement === document.body,
+            bannerOwnsTopmostNode: banner === topmostNode || banner.contains(topmostNode),
+        };
+    });
+    expect(invalidFeedbackPaintState).toEqual({
+        parentIsBody: true,
+        bannerOwnsTopmostNode: true,
+    });
     await expect(submitButton).toBeDisabled();
 });
 
@@ -5866,7 +5937,7 @@ test('shows daily price and P&L badges below open-position values', async ({page
 test('keeps unavailable daily P&L badges hidden after market-session synchronization', async ({page}) => {
     await page.addInitScript(() => {
         const RealDate = Date;
-        const fixedTimestamp = new RealDate('2026-09-08T02:00:00Z').valueOf();
+        const fixedTimestamp = new RealDate('2026-09-08T16:00:00Z').valueOf();
         class FixedDate extends RealDate {
             constructor(...args) {
                 super(...(args.length ? args : [fixedTimestamp]));
@@ -5882,20 +5953,19 @@ test('keeps unavailable daily P&L badges hidden after market-session synchroniza
         transactions: [
             {
                 ledger_no: 1,
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
                 date: '2026-09-07',
                 type: 'buy',
-                ticker: '5.HK',
-                currency: 'HKD',
+                ticker: 'TQQQ',
+                currency: 'USD',
                 quantity: 1,
                 price: 100,
                 amount: -100,
             },
         ],
         priceHistoryByTicker: {
-            '5.HK': [
-                {date: '2026-09-07', close: 100},
+            TQQQ: [
                 {date: '2026-09-08', close: 110},
             ],
         },
@@ -5913,9 +5983,9 @@ test('keeps unavailable daily P&L badges hidden after market-session synchroniza
             body: JSON.stringify({
                 success: true,
                 market: 'us_equity',
-                session: 'off',
-                is_trading_day: false,
-                is_realtime_allowed: false,
+                session: 'regular',
+                is_trading_day: true,
+                is_realtime_allowed: true,
                 session_date: '2026-09-08',
                 trading_days: [],
             }),
@@ -5925,7 +5995,7 @@ test('keeps unavailable daily P&L badges hidden after market-session synchroniza
     await page.goto('/trade/investment?view=holdings');
     const holding = page.locator(
         '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll '
-        + 'tr[data-investment-holdings-ticker="5.HK"]',
+        + 'tr[data-investment-holdings-ticker="TQQQ"]',
     );
     const dailyPrice = holding.locator('[data-investment-live-field="daily_last_price"]');
     const dailyUnrealized = holding.locator(
@@ -5935,8 +6005,9 @@ test('keeps unavailable daily P&L badges hidden after market-session synchroniza
         '#investment_holdings_panel:not([hidden]) '
         + '[data-investment-live-field="summary_daily_unrealized_pnl"]',
     );
-    await expect(dailyPrice).toHaveAttribute('data-investment-live-display', '+HKD 10.00');
-    await expect(dailyPrice.locator('..')).toBeVisible();
+    await expect(dailyPrice).toHaveAttribute('data-investment-live-number', '');
+    await expect(dailyPrice).toHaveAttribute('data-investment-live-display', '-');
+    await expect(dailyPrice.locator('..')).toBeHidden();
     await expect(dailyUnrealized).toHaveAttribute('data-investment-live-number', '');
     await expect(dailyUnrealized).toHaveAttribute('data-investment-live-display', '-');
     await expect(dailyUnrealized.locator('..')).toBeHidden();
@@ -5948,6 +6019,7 @@ test('keeps unavailable daily P&L badges hidden after market-session synchroniza
     ));
     releaseMarketSession();
     await sessionResponse;
+    await expect(dailyPrice.locator('..')).toBeHidden();
     await expect(dailyUnrealized.locator('..')).toBeHidden();
     await expect(summaryUnrealized.locator('..')).toBeHidden();
 });
@@ -8349,7 +8421,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     const currentStockDetailsVersion = await currentModuleVersion('../../app/web/static/assets/js/investment/stock-details.js');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
         entry: currentEntryVersion,
-        chartOrbit: 'v1.38.0',
+        chartOrbit: 'v1.39.0',
         dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.9.0',
         layout: 'v1.4.0',
@@ -8374,7 +8446,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.11.1');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.12.0');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -13297,13 +13369,13 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
             textAlign: style.textAlign,
         };
     })).toMatchObject({
-        axisFontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+        axisFontFamily: '"Univers Next for HSBC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
         axisFontSize: '12px',
         axisFontWeight: '400',
         axisLineHeight: '10px',
         backgroundColor: 'rgb(0, 85, 204)',
         color: 'rgb(255, 255, 255)',
-        fontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+        fontFamily: '"Univers Next for HSBC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
         fontSize: '12px',
         fontWeight: '400',
         lineHeight: '10px',
@@ -16065,7 +16137,7 @@ test('demonstrates the shared filter header contract in the standard table token
         fieldOpacity: '1',
         alignment: 'center',
     }));
-    expect(hoverState?.fontFamily).not.toBe('Arial');
+    expect(hoverState?.fontFamily).toContain('Univers Next for HSBC');
 
     await trigger.click();
     const dropdown = page.locator('[data-style-token-table-filter-dropdown]');
@@ -16430,12 +16502,12 @@ test('keeps the Bayesian Price Field axis column fixed and shares chart typograp
         0,
     );
     for (const font of [geometry.yTick, geometry.xTick]) {
-        expect(font.fontFamily).toContain('GDS Transport');
+        expect(font.fontFamily).toContain('Univers Next for HSBC');
         expect(font.fontSize).toBe('12px');
         expect(font.fontWeight).toBe('400');
         expect(font.lineHeight).toBe('10px');
     }
-    expect(geometry.chartYAxisFont.family).toContain('GDS Transport');
+    expect(geometry.chartYAxisFont.family).toContain('Univers Next for HSBC');
     expect(geometry.chartYAxisFont.size).toBe(12);
     expect(String(geometry.chartYAxisFont.weight)).toBe('400');
 });
@@ -16554,7 +16626,7 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
     ]);
     expect(badges.background).toBe('rgb(0, 85, 204)');
     expect(badges.color).toBe('rgb(255, 255, 255)');
-    expect(badges.fontFamily).toContain('GDS Transport');
+    expect(badges.fontFamily).toContain('Univers Next for HSBC');
     expect(badges.fontSize).toBe('12px');
     expect(badges.lineHeight).toBe('10px');
     expect(badges.dateCenterX).toBeCloseTo(badges.lineCenterX, 1);
@@ -17309,6 +17381,48 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
     expect(axisLabels.daily).toContain('2026');
     expect(axisLabels.daily.every((label) => !label.includes('00:00'))).toBe(true);
     expect(axisLabels.intraday).toContain('2026 09:30');
+
+    const dailyHoverPoint = await page.evaluate(() => {
+        const result = window.WORTHWARD_APP?.backtestResult;
+        if (!result?.chart) return null;
+        const rawDates = [
+            '2026-08-09 00:00',
+            '2026-08-10 00:00',
+            '2026-08-11 00:00',
+            '2026-08-12 00:00',
+        ];
+        const close = rawDates.map((_value, index) => 100 + index);
+        result.interval = '1d';
+        result.trades = [];
+        result.strategy_presentation = null;
+        result.chart = {
+            ...(result.chart || {}),
+            dates: [...rawDates],
+            raw_dates: [...rawDates],
+            open: close.map((value) => value - 1),
+            high: close.map((value) => value + 1),
+            low: close.map((value) => value - 2),
+            close,
+            equity: close.map((value) => 10_000 + value),
+            all_in_equity: close.map((value) => 10_000 + value),
+        };
+        window.WORTHWARD_BOOTSTRAP.initBacktestWorkspace();
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const point = chart?.getDatasetMeta?.(0)?.data?.[1];
+        const rect = canvas?.getBoundingClientRect();
+        if (!point || !rect || !chart?.width || !chart?.height) return null;
+        return {
+            x: rect.left + (point.x * (rect.width / chart.width)),
+            y: rect.top + (point.y * (rect.height / chart.height)),
+        };
+    });
+    expect(dailyHoverPoint).not.toBeNull();
+    await page.mouse.move(dailyHoverPoint.x, dailyHoverPoint.y);
+    const dailyTooltip = page.locator('[data-backtest-chart-tooltip="summary"]');
+    await expect(dailyTooltip).toHaveClass(/is-visible/);
+    await expect(dailyTooltip.locator('.chart-tooltip-date')).toHaveText('10 Aug 2026');
+    await expect(dailyTooltip.locator('.chart-tooltip-date')).not.toContainText('00:00');
 });
 
 test('switches an unsupported 1 year Backtest period to the available 1m maximum', async ({page}) => {
@@ -17364,7 +17478,7 @@ test('intersects 1m availability across every required Backtest ticker', async (
         window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', 'max']);
     await expect(page.locator('#backtest_interval_1m')).toBeDisabled();
-    await expect(page.locator('label[for="backtest_interval_1m"]')).toBeHidden();
+    await expect(page.locator('label[for="backtest_interval_1m"]')).toBeVisible();
 });
 
 test('keeps the latest Backtest interval state when an older presence response arrives late', async ({page}) => {
@@ -17880,7 +17994,7 @@ test('uses lighter Backtest sidebar weights for range labels and strategy select
 });
 
 test('keeps DCA strategy parameter menus above clipping and the panel compact', async ({page}) => {
-    await page.setViewportSize({width: 1033, height: 841});
+    await page.setViewportSize({width: 1023, height: 841});
     await page.goto('/workspaces/backtest?ticker=QQQI&strategy=dca&stop_loss=0');
 
     await expect(page.locator('#trade_strategy_params_panel')).toBeVisible();
@@ -17888,6 +18002,25 @@ test('keeps DCA strategy parameter menus above clipping and the panel compact', 
     const frequencyTrigger = page.locator(
         '[data-strategy-param-key="frequency"] [data-shared-select-trigger]',
     );
+    const weeklyField = page.locator('[data-strategy-param-key="weekday"]');
+    const monthlyField = page.locator('[data-strategy-param-key="month_day"]');
+    await expect(frequencyTrigger.locator('[data-shared-select-trigger-label]')).toHaveText('monthly');
+    await expect(weeklyField).toBeHidden();
+    await expect(monthlyField).toBeVisible();
+    const monthlyTriggerGeometry = await frequencyTrigger.evaluate((trigger) => {
+        const field = trigger.closest('[data-strategy-param-key]');
+        const label = trigger.querySelector('[data-shared-select-trigger-label]');
+        const triggerRect = trigger.getBoundingClientRect();
+        const fieldRect = field?.getBoundingClientRect();
+        return {
+            rightDelta: fieldRect ? Math.abs(fieldRect.right - triggerRect.right) : Number.POSITIVE_INFINITY,
+            labelOverflow: label instanceof HTMLElement ? label.scrollWidth - label.clientWidth : Number.POSITIVE_INFINITY,
+            width: triggerRect.width,
+        };
+    });
+    expect(monthlyTriggerGeometry.rightDelta).toBeLessThanOrEqual(1);
+    expect(monthlyTriggerGeometry.labelOverflow).toBeLessThanOrEqual(1);
+    expect(monthlyTriggerGeometry.width).toBeLessThan(110);
     await frequencyTrigger.click();
     const dropdown = page.locator('#strategy_param_frequency_dropdown');
     await expect(dropdown).toBeVisible();
@@ -17915,6 +18048,23 @@ test('keeps DCA strategy parameter menus above clipping and the panel compact', 
     expect(layout?.backgroundImage).not.toBe('none');
     expect(layout?.menuBottom).toBeLessThanOrEqual((layout?.viewportHeight || 0) + 1);
     expect(layout?.panelHeight).toBeLessThan(320);
+
+    await dropdown.locator('[data-value="weekly"]').click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('weekly');
+    await expect(weeklyField).toBeVisible();
+    await expect(monthlyField).toBeHidden();
+    const weekdayTrigger = weeklyField.locator('[data-shared-select-trigger]');
+    await expect(weekdayTrigger.locator('[data-shared-select-trigger-label]')).toHaveText('Monday');
+    await weekdayTrigger.click();
+    await expect(page.locator('#strategy_param_weekday_dropdown [role="option"]')).toHaveText([
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+    ]);
 });
 
 test('keeps the bottom Backtest strategy parameter dropdown fully visible', async ({page}) => {
@@ -17970,30 +18120,12 @@ test('keeps the bottom Backtest strategy parameter dropdown fully visible', asyn
     expect(layout?.options.map((option) => option.text)).toEqual(['Best', 'Average', 'Worst']);
 });
 
-test('centers Compute Backend and preserves its physical effects', async ({page}) => {
+test('keeps Bayesian compute on internal Auto and preserves parameter-panel effects', async ({page}) => {
     await page.setViewportSize({width: 974, height: 1386});
-    await page.goto('/workspaces/backtest?ticker=AAPL&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_options=0&use_pe_ratio=0&use_option_put_open_interest=1&use_option_put_call_open_interest_ratio=1&use_volume=0&cell_display_threshold=2.50&training_window=425&chip_window=62&prior_strength=10.52');
+    await page.goto('/workspaces/backtest?ticker=AAPL&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_options=0&use_pe_ratio=0&use_option_put_open_interest=1&use_option_put_call_open_interest_ratio=1&use_volume=0&cell_display_threshold=2.50&training_window=425&chip_window=62&prior_strength=10.52&compute_backend=GPU');
 
     const field = page.locator('[data-strategy-param-key="compute_backend"]');
-    const trigger = field.locator('[data-shared-select-trigger]');
-    await expect(field).toHaveCount(1);
-    await field.scrollIntoViewIfNeeded();
-    await expect(trigger).toHaveAttribute('aria-label', 'Compute Backend: Auto');
-
-    const centered = await trigger.evaluate((element) => {
-        const label = element.querySelector('[data-shared-select-trigger-label]');
-        if (!(label instanceof HTMLElement)) return null;
-        const triggerRect = element.getBoundingClientRect();
-        const labelRect = label.getBoundingClientRect();
-        return {
-            triggerCenter: triggerRect.left + (triggerRect.width / 2),
-            labelCenter: labelRect.left + (labelRect.width / 2),
-            labelWidth: labelRect.width,
-        };
-    });
-    expect(centered).not.toBeNull();
-    expect(Math.abs((centered?.triggerCenter || 0) - (centered?.labelCenter || 0))).toBeLessThanOrEqual(0.5);
-    expect(centered?.labelWidth).toBeGreaterThan(0);
+    await expect(field).toHaveCount(0);
 
     const panelEffects = await page.locator('#trade_strategy_params_panel').evaluate((panel) => {
         const style = getComputedStyle(panel);
@@ -18008,32 +18140,6 @@ test('centers Compute Backend and preserves its physical effects', async ({page}
         clipPath: 'none',
         willChange: 'transform, opacity, filter',
     });
-
-    await trigger.click();
-    const dropdown = page.locator('#strategy_param_compute_backend_dropdown');
-    await expect(dropdown).toBeVisible();
-    const menuGeometry = await page.evaluate(() => {
-        const dropdown = document.querySelector('#strategy_param_compute_backend_dropdown');
-        if (!(dropdown instanceof HTMLElement)) return null;
-        const rect = dropdown.getBoundingClientRect();
-        return {
-            parentIsOverlay: dropdown.parentElement?.matches('[data-shared-select-overlay]') || false,
-            position: getComputedStyle(dropdown).position,
-            left: rect.left,
-            right: rect.right,
-            top: rect.top,
-            bottom: rect.bottom,
-            viewportWidth: window.innerWidth,
-            viewportHeight: window.innerHeight,
-        };
-    });
-    expect(menuGeometry).not.toBeNull();
-    expect(menuGeometry?.parentIsOverlay).toBe(true);
-    expect(menuGeometry?.position).toBe('fixed');
-    expect(menuGeometry?.left).toBeGreaterThanOrEqual(0);
-    expect(menuGeometry?.right).toBeLessThanOrEqual((menuGeometry?.viewportWidth || 0) + 1);
-    expect(menuGeometry?.top).toBeGreaterThanOrEqual(0);
-    expect(menuGeometry?.bottom).toBeLessThanOrEqual((menuGeometry?.viewportHeight || 0) + 1);
 });
 
 test('shares the plain switch style between Backtest controls and strategy booleans', async ({page}) => {
@@ -18236,7 +18342,7 @@ test('removes the glass border color from the shared Backtest Period trigger', a
 
 test('keeps Grid Trading private parameters open through the shared strategy tune button', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
-    await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading');
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=2y&strategy=grid-trading&show_trade_details=1&initial_holding=100&fall=2.00');
 
     const strategyTrigger = page.locator('[data-trade-strategy-trigger]');
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
@@ -18250,6 +18356,10 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
     await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
     await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
     await expect(paramsPanel).toBeVisible();
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
+    await expect(page.getByText('Unable to load this workspace', {exact: false})).toHaveCount(0);
+    await expect(page.locator('label[for="trade_initial_capital"]')).toHaveText('Initial cash (USD)');
+    await expect(page.locator('#strategy_param_initial_holding')).toHaveValue('100');
     for (const key of ['initial_holding', 'holding_min', 'holding_max', 'rise', 'fall']) {
         await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
     }
@@ -18271,6 +18381,11 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
         && ['numeric', 'decimal'].includes(control.inputMode)
     ))).toBe(true);
     expect(numericContract.slice(0, 3).every((control) => control.inputMode === 'numeric')).toBe(true);
+    const holdingMaximumGeometry = await page.locator('#strategy_param_holding_max').evaluate((input) => ({
+        clientWidth: input.clientWidth,
+        scrollWidth: input.scrollWidth,
+    }));
+    expect(holdingMaximumGeometry.scrollWidth).toBeLessThanOrEqual(holdingMaximumGeometry.clientWidth);
     await expect(page.locator('#trade_initial_capital')).toHaveAttribute('inputmode', 'decimal');
     await expect(page.locator('#trade_initial_capital')).toHaveCSS('height', '28px');
 });
@@ -19901,7 +20016,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     ]);
     expect(contract.dateLabelBackground).toBe('rgb(0, 85, 204)');
     expect(contract.dateLabelColor).toBe('rgb(255, 255, 255)');
-    expect(contract.dateLabelFontFamily).toContain('GDS Transport');
+    expect(contract.dateLabelFontFamily).toContain('Univers Next for HSBC');
     expect(contract.dateLabelFontSize).toBe('12px');
     expect(contract.dateLabelLineHeight).toBe('10px');
     expect(contract.domXPathStable).toBe(true);

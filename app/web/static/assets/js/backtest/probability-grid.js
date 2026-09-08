@@ -5,7 +5,7 @@
  * This module owns geometry, cells, opacity, and the pure pin reducer.
  * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.31.0
+ * Code version: v0.32.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -675,6 +675,7 @@
         horizonMean,
         horizonStd,
         maxHorizon = null,
+        horizonStep = null,
         stepPixels,
         valueForPixel,
         opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
@@ -684,6 +685,8 @@
         const normalizedStepPixels = Number(stepPixels);
         const geometryStepPixels = Number(geometry?.stepPixels);
         const daysPerColumn = Number(geometry?.daysPerColumn);
+        const normalizedHorizonStep = horizonStep === null || horizonStep === undefined
+            ? daysPerColumn : Number(horizonStep);
         const slotWidth = Number(geometry?.slotWidth);
         if (!geometry || typeof distribution?.probabilityBetweenPrices !== "function"
             || typeof valueForPixel !== "function"
@@ -691,6 +694,7 @@
             || !Number.isFinite(geometryStepPixels) || !(geometryStepPixels > 0)
             || Math.abs(geometryStepPixels - normalizedStepPixels) > 1e-9
             || !Number.isInteger(daysPerColumn) || daysPerColumn < 1
+            || !Number.isInteger(normalizedHorizonStep) || normalizedHorizonStep < 1
             || !Number.isFinite(slotWidth) || !(slotWidth > geometry.gap)) return [];
         const cells = [];
         for (let row = 0; row < geometry.rowCount; row += 1) {
@@ -712,7 +716,7 @@
                     + geometry.gridPaddingInlineStart
                     + (visualColumn * slotWidth);
                 const centerX = x + (geometry.cellSize / 2);
-                const horizon = (visualColumn + 1) * daysPerColumn;
+                const horizon = (visualColumn + 1) * normalizedHorizonStep;
                 // Untrained horizons remain empty; they must never look like a
                 // zero-probability forecast or an autoregressive extension.
                 if (Number.isInteger(maxHorizon) && horizon > maxHorizon) continue;
@@ -734,6 +738,7 @@
                     centerX,
                     column: visualColumn,
                     daysPerColumn,
+                    horizonStep: normalizedHorizonStep,
                     lowerPrice,
                     horizon,
                     probability,
@@ -941,7 +946,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.31.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.32.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

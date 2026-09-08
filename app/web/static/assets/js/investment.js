@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.140.0
+ * Code version: v2.141.0
+ * - Fixed: Import validation feedback is portaled to the document root so it
+ *   remains visible above the full-screen broker-import modal.
  * - Fixed: Missing Holdings quotes and blank live-badge values remain
  *   unavailable instead of being coerced to zero during session refreshes.
  * - Changed: Partial account-level realized-P&L coverage withholds ticker-level
@@ -360,7 +362,7 @@ import {
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
     syncInvestmentDonutOrbitLogos,
-} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.38.0';
+} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.39.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     getInvestmentAggregatePnlCoverage,
@@ -405,7 +407,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.32.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.33.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -454,7 +456,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.140.0',
+    entry: 'v2.141.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -523,6 +525,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const importFeedback = document.getElementById('investment_import_feedback');
     const importFeedbackMessage = document.getElementById('investment_import_feedback_message');
     const importFeedbackIcon = document.getElementById('investment_import_feedback_icon');
+    // A fixed descendant cannot escape the report card's stacking context.
+    // Keep global import feedback at the document root so modal errors remain visible.
+    if (importFeedback && importFeedback.parentElement !== document.body) {
+        document.body.append(importFeedback);
+    }
     const workspaceModalOverlay = document.getElementById('workspace_modal_overlay');
     const workspaceModalOverlayTitle = workspaceModalOverlay?.querySelector('.workspace-modal-title');
     const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector('.workspace-modal-copy');
@@ -18378,7 +18385,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const axisMeasurementContext = scale?.ctx || canvas.getContext('2d');
             if (!axisMeasurementContext) return 52;
             axisMeasurementContext.save();
-            axisMeasurementContext.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+            axisMeasurementContext.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
             const chartValues = scale?.chart?.data?.datasets?.[0]?.data || chartState.equity;
             const widestEquityLabelWidth = chartValues.reduce((widestWidth, value) => {
                 const numericValue = Number(value);
@@ -18628,7 +18635,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fontSize = Number.parseFloat(labelOptions.fontSize) || 12;
                 const lineHeight = Number.parseFloat(labelOptions.lineHeight) || 10;
                 const fontWeight = String(labelOptions.fontWeight || '400');
-                const fontFamily = String(labelOptions.fontFamily || '"GDS Transport", "Helvetica Neue", Arial, sans-serif');
+                const fontFamily = String(labelOptions.fontFamily || getComputedStyle(document.body).fontFamily);
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
                 ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
@@ -19167,7 +19174,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 investmentXAxisLabels: {
                     fontSize: 12,
                     fontWeight: '400',
-                    fontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+                    fontFamily: getComputedStyle(document.body).fontFamily,
                     lineHeight: 10,
                 },
             },

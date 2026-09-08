@@ -1,4 +1,4 @@
-/* Code version: v0.30.0 */
+/* Code version: v0.35.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -197,6 +197,20 @@
 	--settings-round-icon-button-shadow-active: var(--frosted-glass-shadow-active);
 	--settings-round-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
 	--settings-round-icon-button-color-hover: var(--accent-text);
+	--strategy-tune-button-size: var(--shared-select-control-height);
+	--strategy-tune-button-icon-size: 14px;
+	--strategy-tune-button-radius: var(--radius-pill);
+	--strategy-tune-button-material: var(--settings-round-icon-button-background);
+	--strategy-tune-panel-material: var(--glass-popover-background);
+	--strategy-tune-panel-gap: 4px;
+	--strategy-tune-panel-padding: 10px;
+	--strategy-tune-panel-radius: var(--radius-soft);
+	--strategy-tune-panel-row-gap: 10px;
+	--strategy-tune-panel-row-height: 35px;
+	--strategy-tune-panel-label-share: 60%;
+	--strategy-tune-panel-border: 1px solid var(--theme-glass-highlight);
+	--strategy-tune-panel-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
+	--strategy-tune-panel-blur: var(--glass-popover-blur);
 	--settings-form-shell-max-width: var(--layout-content-width);
 	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: var(--layout-control-width);
@@ -332,6 +346,11 @@
 	--workspace-content-article-background: transparent;
 	--workspace-content-article-shadow: none;
 	--workspace-content-article-blur: none;
+	--workspace-metric-label-font-size: var(--font-ui-lg);
+	--workspace-metric-label-line-height: normal;
+	--workspace-metric-label-letter-spacing: normal;
+	--workspace-metric-label-font-weight: var(--font-weight-regular);
+	--workspace-metric-label-color: var(--text);
 	--workspace-metric-value-font-size: var(--font-metric-md);
 	--workspace-metric-value-line-height: 1;
 	--workspace-metric-value-letter-spacing: -0.04em;
@@ -339,9 +358,10 @@
 	--font-numeric-fraction-scale: 0.76;
 	--workspace-metric-decimal-scale: var(--font-numeric-fraction-scale);
 	--workspace-metric-card-padding: 6px 8px 8px;
-	--workspace-metric-card-row-gap: 4px;
+	--workspace-metric-card-row-gap: 2px;
 	--workspace-metric-card-radius: var(--radius-panel);
-	--workspace-metric-card-label-min-height: 24px;
+	--workspace-metric-card-label-min-height: 18px;
+	--workspace-metric-card-min-height: 48px;
 	--workspace-metric-card-align-self: start;
 	--workspace-metrics-grid-auto-rows-wide: max-content;
 	--trade-chart-y-padding-px: 2px;
@@ -377,8 +397,10 @@
 	--shared-select-dropdown-radius: var(--radius-soft);
 	--shared-select-dropdown-max-height: min(360px, 55vh);
 	--shared-select-option-padding: 9px 10px;
+	--shared-select-option-min-height: 36px;
 	--shared-select-option-radius: var(--radius-pill);
 	--shared-select-option-gap: 8px;
+	--secondary-button-min-height: 32px;
 	--investment-holdings-cell-padding: 4px 6px;
 	--investment-holdings-allocation-badge-inline-size: 52px;
 	--investment-holdings-allocation-badge-glyph-width: 0.625em;
@@ -493,7 +515,10 @@
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
 	--font-family-brand: "Univers Next for HSBC";
-	--font-family-base: var(--font-family-brand), "Helvetica Neue", Helvetica, Arial, "PingFang HK", "PingFang TC", "PingFang SC", "Microsoft JhengHei", "Microsoft YaHei", sans-serif;
+	--font-family-cjk: "PingFang SC", "PingFang TC", "PingFang HK", "Microsoft YaHei", "Microsoft JhengHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+	--font-family-base: var(--font-family-brand), var(--font-family-cjk);
+	--font-family-mono: var(--font-family-base);
+	--font-mono: var(--font-family-mono);
 	--font-ui-xs: var(--font-size-1);
 	--font-ui-sm: var(--font-size-2);
 	--font-ui-md: var(--font-size-4);
@@ -510,6 +535,11 @@
 	--font-card-title: var(--font-title-md);
 	--font-card-subtitle: var(--font-ui-lg);
 	--font-metric-value: var(--font-metric-md);
+	--field-title-font-size: var(--font-ui-lg);
+	--field-title-line-height: normal;
+	--field-title-letter-spacing: normal;
+	--field-title-font-weight: var(--font-weight-regular);
+	--field-title-color: var(--text);
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {

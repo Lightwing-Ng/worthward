@@ -1,4 +1,4 @@
-/* Code version: v0.24.3 */
+/* Code version: v0.26.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -2032,7 +2032,7 @@
 					if (!isBottomSubplot() || !marketSessionEvents.length || !chart.chartArea || !chart.scales?.x) return;
 					chart.ctx.save();
 					chart.ctx.fillStyle = theme.muted;
-					chart.ctx.font = "12px sans-serif";
+					chart.ctx.font = `12px ${getComputedStyle(document.body).fontFamily}`;
 					chart.ctx.textAlign = "center";
 					const labels = layoutMarketSessionLabels({
 						events: marketSessionEvents,
@@ -2282,7 +2282,6 @@
 		if (chipsEnabled && shouldLoadFallbackChips && !chipPayload) void loadChips();
 	};
 
-	const formatLocalIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 	const refreshLivePrices = async () => {
 		if (!isPriceComparison()) return;
 		const pageParams = new URLSearchParams(window.location.search);
@@ -2292,7 +2291,8 @@
 		if (!state.endpoints?.compareLive || !["1d", "3d", "1w"].includes(period)) return;
 		if (rangeMode === "exact" && period !== "1d") return;
 		const selectedTradingDate = workspaceState?.date || pageParams.get("trading_date") || pageParams.get("exact_trading_date") || "";
-		if (rangeMode === "exact" && selectedTradingDate !== formatLocalIsoDate()) return;
+		const currentComparisonDate = String(state.comparisonCurrentDate || "").trim();
+		if (rangeMode === "exact" && (!currentComparisonDate || selectedTradingDate !== currentComparisonDate)) return;
 		const tickers = (state.chart?.series || [])
 			.map((item) => String(item?.ticker || "").trim())
 			.filter(Boolean);
@@ -2300,8 +2300,10 @@
 		const params = new URLSearchParams();
 		tickers.forEach((ticker) => params.append("ticker", ticker));
 		params.set("period", period);
-		params.set("live_date", formatLocalIsoDate());
-		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || selectedTradingDate || "");
+		if (rangeMode === "exact") {
+			params.set("axis_date", state.chart?.tradingDate || selectedTradingDate || "");
+			params.set("live_date", selectedTradingDate);
+		}
 		if (pageParams.get("extended-hours") === "1" || pageParams.get("extended_hours") === "1") params.set("extended_hours", "1");
 		if (pageParams.get("overnight") === "1") params.set("overnight", "1");
 		params.set("refresh", "1");
@@ -2320,6 +2322,7 @@
 			const currentFingerprint = `${window.location.pathname}?${currentParams.toString()}`;
 			if (requestSerial !== liveRequestSerial || requestFingerprint !== currentFingerprint) return;
 			if (!response.ok || !payload.success || !Array.isArray(payload.series)) return;
+			state.comparisonCurrentDate = payload.currentComparisonDate || state.comparisonCurrentDate;
 			const hasLivePrice = payload.series.some((item) => (
 				Array.isArray(item?.prices)
 				&& item.prices.some((value) => finiteNumber(value) !== null)

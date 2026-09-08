@@ -6,7 +6,9 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v0.5.0
+Code version: v0.6.0
+- Changed: Catalog this TradingView-derived strategy with the technical-analysis
+  strategies used by Backtest and Settings.
 - Fixed: Train on mature forward labels, preserve indicator warmup, and track
   actual long-entry intents for next-open execution and bounded holding exits.
 """
@@ -270,7 +272,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
         "jdehorty's PineScript, with configurable feature engineering, filters, "
         "and kernel-based exit logic."
     )
-    strategy_category = "trend"
+    strategy_category = "technical-analysis"
     strategy_display_order = 50
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,

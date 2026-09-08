@@ -1,4 +1,4 @@
-/* Code version: v0.20.5 */
+/* Code version: v0.24.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -457,9 +457,22 @@ input[type="number"],
 	margin: 0;
 	min-height: var(--trade-control-label-height);
 	white-space: normal;
-	line-height: 1.2;
+	font-size: var(--field-title-font-size);
+	line-height: var(--field-title-line-height);
+	letter-spacing: var(--field-title-letter-spacing);
+	font-weight: var(--field-title-font-weight);
+	color: var(--field-title-color);
 	display: flex;
 	align-items: flex-start;
+}
+.ticker-form-controls .portfolio-allocation-field > label,
+.ticker-form-controls .range-mode-field > label,
+.ticker-form-controls .field.range-panel > label {
+	font-size: var(--field-title-font-size);
+	line-height: var(--field-title-line-height);
+	letter-spacing: var(--field-title-letter-spacing);
+	font-weight: var(--field-title-font-weight);
+	color: var(--field-title-color);
 }
 .trade-controls .trade-capital-row,
 .trade-controls .field.range-panel > select,
@@ -993,6 +1006,7 @@ input[type="number"],
 }
 .trade-strategy-dropdown-option {
 	width: 100%;
+	min-height: var(--shared-select-option-min-height);
 	padding: var(--shared-select-option-padding);
 	border: 0;
 	border-radius: var(--shared-select-option-radius);
@@ -1087,13 +1101,13 @@ input[type="number"],
 	white-space: normal;
 }
 .trade-strategy-tune-button {
-	width: var(--trade-control-input-height);
-	min-width: var(--trade-control-input-height);
-	height: var(--trade-control-input-height);
-	min-height: var(--trade-control-input-height);
+	width: var(--strategy-tune-button-size);
+	min-width: var(--strategy-tune-button-size);
+	height: var(--strategy-tune-button-size);
+	min-height: var(--strategy-tune-button-size);
 	padding: 0;
-	border-radius: 50%;
-	background: var(--settings-round-icon-button-background);
+	border-radius: var(--strategy-tune-button-radius);
+	background: var(--strategy-tune-button-material);
 	border: var(--settings-round-icon-button-border);
 	box-shadow: var(--settings-round-icon-button-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
@@ -1127,8 +1141,8 @@ input[type="number"],
 	box-shadow: var(--frosted-glass-shadow-hover);
 }
 .trade-strategy-tune-button .icon {
-	width: 14px;
-	height: 14px;
+	width: var(--strategy-tune-button-icon-size);
+	height: var(--strategy-tune-button-icon-size);
 	background-color: currentColor;
 }
 .trade-strategy-params-field {
@@ -1142,15 +1156,15 @@ input[type="number"],
 }
 .trade-strategy-params-popover {
 	position: static;
-	margin-top: 4px;
-	padding: 10px;
+	margin-top: var(--strategy-tune-panel-gap);
+	padding: var(--strategy-tune-panel-padding);
 	overflow: visible;
-	border-radius: var(--radius-soft);
-	background: var(--glass-popover-background);
-	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
-	backdrop-filter: var(--glass-popover-blur);
-	-webkit-backdrop-filter: var(--glass-popover-blur);
-	border: 1px solid var(--theme-glass-highlight);
+	border-radius: var(--strategy-tune-panel-radius);
+	background: var(--strategy-tune-panel-material);
+	box-shadow: var(--strategy-tune-panel-shadow);
+	backdrop-filter: var(--strategy-tune-panel-blur);
+	-webkit-backdrop-filter: var(--strategy-tune-panel-blur);
+	border: var(--strategy-tune-panel-border);
 }
 
 .trade-controls:has(.trade-strategy-field.is-open),
@@ -1176,10 +1190,11 @@ input[type="number"],
 	transform: translateY(2px);
 }
 .trade-strategy-params-grid {
+	--strategy-param-row-gap: var(--strategy-tune-panel-row-gap);
 	display: grid;
 	width: 100%;
 	min-width: 0;
-	gap: 10px;
+	gap: var(--strategy-param-row-gap);
 	max-height: none;
 	overflow: visible;
 	padding-right: 0;
@@ -1189,12 +1204,23 @@ input[type="number"],
 }
 .trade-strategy-param {
 	display: grid;
-	grid-template-columns: minmax(0, 65%) minmax(0, 35%);
+	grid-template-columns: minmax(0, var(--strategy-tune-panel-label-share)) minmax(0, 1fr);
 	column-gap: 12px;
 	align-items: center;
-	min-height: var(--strategy-param-field-height);
+	min-height: var(--strategy-tune-panel-row-height);
 	position: relative;
 	z-index: var(--layer-base);
+}
+.trade-strategy-param[hidden] {
+	display: none;
+}
+.trade-strategy-param[data-strategy-param-content-sized="true"] {
+	grid-template-columns: minmax(0, 1fr) max-content;
+}
+.trade-strategy-param[data-strategy-param-content-sized="true"] .trade-strategy-param-select-shell {
+	justify-self: end;
+	width: max-content;
+	max-width: 100%;
 }
 .trade-strategy-param:has(.trade-strategy-param-label-trigger:hover),
 .trade-strategy-param:has(.trade-strategy-param-label-trigger:focus),
@@ -1202,10 +1228,19 @@ input[type="number"],
 	z-index: var(--layer-inline-overlay-host);
 }
 .trade-strategy-param + .trade-strategy-param {
-	border-top: 1px solid var(--theme-glass-border);
+	border-top: 1px solid transparent;
 	padding-top: 0;
-	min-height: calc(var(--strategy-param-field-height) + 1px);
+	min-height: calc(var(--strategy-tune-panel-row-height) + 1px);
 	box-sizing: border-box;
+}
+.trade-strategy-param + .trade-strategy-param::before {
+	content: "";
+	position: absolute;
+	inset-inline: 0;
+	top: calc(var(--strategy-param-row-gap, 10px) / -2);
+	height: 1px;
+	background: var(--theme-glass-border);
+	pointer-events: none;
 }
 .trade-strategy-param > label {
 	margin: 0;
@@ -1323,6 +1358,8 @@ input[type="number"],
 	min-width: 0;
 }
 .trade-strategy-number-row {
+	display: flex;
+	align-items: center;
 	min-height: var(--strategy-param-field-height);
 }
 .trade-strategy-param-select {
@@ -1331,6 +1368,7 @@ input[type="number"],
 }
 .trade-strategy-stepper {
 	display: grid;
+	align-self: center;
 	grid-template-rows: 1fr 1fr;
 	width: var(--strategy-stepper-width);
 	height: var(--strategy-param-control-height);
@@ -1454,7 +1492,7 @@ input[type="number"],
     width: fit-content;
     max-width: 100%;
     min-width: 0;
-    min-height: 0;
+    min-height: var(--secondary-button-min-height);
     justify-self: end;
     margin-inline-start: auto;
     border: var(--glass-chip-border);
@@ -1694,22 +1732,22 @@ input[type="number"],
 }
 .range-mode-shell > .segmented-control-option input:checked + span { color: var(--theme-muted); }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
-.segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,
-.range-mode-shell[data-active="period"] > .segmented-control-option:nth-child(1) > span,
-.segmented-control[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
-.range-mode-shell[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
-.segmented-control[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
-.range-mode-shell[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
-.segmented-control[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
-.range-mode-shell[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
-.segmented-control[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
-.range-mode-shell[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
-.segmented-control[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
-.range-mode-shell[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
-.segmented-control[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
-.range-mode-shell[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
-.segmented-control[data-active="metrics"] > .segmented-control-option:nth-child(4) > span,
-.range-mode-shell[data-active="metrics"] > .segmented-control-option:nth-child(4) > span {
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="period"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell:not(:has(input))[data-active="period"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell:not(:has(input))[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell:not(:has(input))[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell:not(:has(input))[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell:not(:has(input))[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell:not(:has(input))[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
+.range-mode-shell:not(:has(input))[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
+.segmented-control:not(:has(input)):not([role="tablist"])[data-active="metrics"] > .segmented-control-option:nth-child(4) > span,
+.range-mode-shell:not(:has(input))[data-active="metrics"] > .segmented-control-option:nth-child(4) > span {
 	color: var(--color-white-adaptive);
 	font-weight: var(--font-weight-bold);
 	letter-spacing: 0;

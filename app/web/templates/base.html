@@ -1,4 +1,4 @@
-{# Code version: v0.36.0 #}
+{# Code version: v0.41.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.76.0') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.83.0') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -214,7 +214,7 @@
         </a>
         {% if beta_enabled %}
         <a href="{{ beta_url }}" data-dock-group="beta" class="sidebar-dock-item sidebar-dock-item-beta{% if current_view == 'beta' %} is-active{% endif %}"{% if current_view == 'beta' %} aria-current="page"{% endif %} aria-label="Beta" data-tooltip="Beta">
-            <span class="icon icon-settings-strategies" aria-hidden="true"></span>
+            <span class="icon" aria-hidden="true" style="mask: url('{{ url_for('static', filename='images/sparkles.2.svg') }}') center/contain no-repeat; -webkit-mask: url('{{ url_for('static', filename='images/sparkles.2.svg') }}') center/contain no-repeat"></span>
             <span class="sidebar-dock-label" aria-hidden="true">Beta</span>
         </a>
         {% endif %}
@@ -245,6 +245,7 @@
     "endpoints": endpoints,
     "constraints": {"minTickers": min_tickers, "maxTickers": max_tickers},
     "base": {"currency": base_currency, "timezone": base_timezone},
+    "comparisonCurrentDate": comparison_current_date|default(''),
     "chart": {"series": series, "profiles": profiles_json, "tradingDate": chart_trading_date},
         "comparisonMetric": comparison_metric|default('price'),
         "comparisonChips": show_chips|default(false),
@@ -363,7 +364,7 @@
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.2.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.4') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.5.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.6.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
@@ -375,24 +376,25 @@
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.4.1') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.24.3') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.26.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.12.0') }}"></script>
 {% endif %}
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.55.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.61.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
-<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.11.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.12.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/backtest/distributions.js', v=version ~ '-backtest-distributions-v1.1.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.31.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.32.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest/detail-chart.js', v=version ~ '-backtest-detail-chart-v1.2.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.4.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.7.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.41.2') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.4.0') }}"></script>
 {% if selected_strategy_id == 'dca' %}
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.2.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.3.0') }}"></script>
 {% endif %}
 {% endif %}
 </body>

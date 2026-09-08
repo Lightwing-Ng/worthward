@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.1`
 
 ## Scope and model evidence
 
@@ -201,10 +201,19 @@ The compact cores use ordinary dense, recurrent, normalization, and convolution
 operators; they do not depend on CUDA-only FlashAttention or custom kernels.
 
 The direct distribution adapter renders only trained horizons. The detail view
-can inspect all 20 daily marginals. Overview columns retain the shared
-viewport-to-day mapping; columns beyond day 20 are unavailable instead of using
-AR(1) extrapolation. Target, anchor, score, and horizon metadata describe these
-semantics explicitly. The legacy adapters retain their existing behavior.
+can inspect all 20 daily marginals. Both overview and detail columns represent
+the separately learned horizons 1 through 20. The overview may use a wider
+viewport-quantized slot for legibility on dense history charts, but that spatial
+step never subsamples or renumbers the model horizons. The renderer does not use
+AR(1) extrapolation beyond horizon 20. Target, anchor, score, semantic horizon,
+and display-only spatial metadata describe these boundaries independently. The
+legacy autoregressive adapters retain their existing behavior. Marginal standard
+deviation is the model's concentration measure. One rendered cell's mass is not
+a monotonic confidence score because the forecast mean can straddle a fixed price
+band boundary and divide a narrow distribution across adjacent cells.
+The hover/detail parity and near-versus-far concentration checks apply to every
+direct architecture, including ModernTCN; none may opt out through a
+model-specific renderer or a reduced horizon set.
 
 ## Frozen overnight experiment
 

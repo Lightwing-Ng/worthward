@@ -1,4 +1,4 @@
-{# Code version: v0.2.3 #}
+{# Code version: v0.2.4 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -56,5 +56,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/portfolio.js', v=version) }}"></script>
+<script src="{{ url_for('static', filename='assets/js/portfolio.js', v=version ~ '-portfolio-v0.4.0') }}"></script>
 {% endblock %}

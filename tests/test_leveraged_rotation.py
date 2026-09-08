@@ -1,4 +1,4 @@
-"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.0.0."""
+"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.1.0."""
 
 from __future__ import annotations
 
@@ -43,6 +43,20 @@ def test_leveraged_rotation_declares_allocation_controls_and_daily_move_signals(
     ]
     assert result.metadata["rotation_parameters"]["initial_primary_pct"] == 70.0
     assert result.metadata["rotation_parameters"]["initial_leveraged_pct"] == 25.0
+
+
+def test_leveraged_rotation_percentage_controls_use_dynamic_roles_and_hundredth_steps() -> None:
+    definitions = {
+        definition.key: definition
+        for definition in LeveragedRotationStrategy().get_parameter_definitions()
+    }
+    assert all(definition.step == 0.01 for definition in definitions.values())
+    assert definitions["primary_min_pct"].label == "Primary minimum"
+    assert definitions["primary_min_pct"].ui_role == "ticker-label:0:minimum"
+    assert definitions["leveraged_min_pct"].label == "Leveraged minimum"
+    assert definitions["leveraged_min_pct"].ui_role == "ticker-label:1:minimum"
+    assert definitions["buy_leveraged_drop_pct"].label == "Primary daily drop trigger"
+    assert definitions["sell_leveraged_rise_pct"].label == "Leveraged daily rise trigger"
 
 
 def test_leveraged_rotation_backtest_switches_assets_and_marks_primary_equity() -> None:

@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.1.2."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.2.0."""
 
 from dataclasses import replace
 import json
@@ -72,7 +72,7 @@ def test_every_strategy_uses_real_execution_engines_on_isolated_factory_data(
             }
         )
         window = next(definition for definition in strategy.get_parameter_definitions() if definition.key == "training_window")
-        params.update({"training_window": max(30, window.minimum or 0), "compute_backend": "CPU"})
+        params.update({"training_window": max(30, window.minimum or 0)})
     session = ResearchSession(
         ResearchRequest(
             entry["id"], tickers, "2025-01-02", "2026-01-02", params=params
@@ -237,7 +237,6 @@ def test_mixed_frequency_research_keeps_warmup_and_prediction_evidence(monkeypat
             if item.group == "factors"
         },
         "training_window": 30,
-        "compute_backend": "CPU",
     }
     session = ResearchSession(
         ResearchRequest(

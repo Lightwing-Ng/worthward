@@ -1,7 +1,7 @@
 """
 Dollar-cost averaging strategy metadata and parameter contract.
 
-Code version: v0.2.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ class DcaStrategy(BaseStrategy):
     strategy_id = "dca"
     strategy_name = "Dollar-cost averaging"
     strategy_description = "Invests a fixed amount on a weekly or monthly schedule and compares the result with an all-in purchase."
-    strategy_category = "baseline"
+    strategy_category = "investment-automation"
     strategy_display_order = 60
     strategy_supported_intervals = ("1d",)
     strategy_supports = StrategySupportMatrix(
@@ -50,15 +50,26 @@ class DcaStrategy(BaseStrategy):
                 default="monthly",
                 options=("weekly", "monthly"),
                 help_text="Choose a weekly or monthly contribution schedule.",
+                content_sized=True,
             ),
             StrategyParameterDefinition(
                 key="weekday",
                 label="Weekly day",
-                kind="integer",
-                default=0,
-                minimum=0,
-                maximum=4,
-                help_text="The weekday used when Frequency is weekly: 0 is Monday and 4 is Friday.",
+                kind="choice",
+                default="0",
+                options=("0", "1", "2", "3", "4", "5", "6"),
+                option_labels=(
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ),
+                help_text="The calendar weekday used for weekly contributions; non-trading days move to the next trading day.",
+                visible_when=("frequency", "weekly"),
+                content_sized=True,
             ),
             StrategyParameterDefinition(
                 key="month_day",
@@ -68,6 +79,7 @@ class DcaStrategy(BaseStrategy):
                 minimum=1,
                 maximum=28,
                 help_text="The calendar day used when Frequency is monthly.",
+                visible_when=("frequency", "monthly"),
             ),
         )
 

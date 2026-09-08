@@ -6,7 +6,12 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.30.0
+Code version: v1.32.0
+- Changed: Price Field strategies now declare the shared Price Field catalog
+  category used by Backtest and Settings.
+- Changed: Bayesian compute selection is now an internal Auto policy instead
+  of a user-facing parameter; each refresh uses the best available local CPU
+  and accelerator execution path with the existing full CPU fallback.
 - Changed: Model-neutral causal Price Field preparation now lives in the
   shared pipeline; Bayesian retains posterior inference, factor selection,
   and backend scheduling.
@@ -145,7 +150,7 @@ _AUTOREGRESSION_COLUMN = "bayesian_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "bayesian_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "bayesian_return_innovation_std"
 _MIN_TRAINING_OBSERVATIONS = 20
-_MODEL_VERSION = "bayesian-price-field-model/v1.10.0"
+_MODEL_VERSION = "bayesian-price-field-model/v1.11.0"
 _CPU_PARALLEL_MIN_ROWS = 64
 _CPU_PARALLEL_MAX_WORKERS = 8
 _FACTOR_SELECTION_PRIORITY = (
@@ -188,7 +193,6 @@ _BAYESIAN_FINGERPRINT_PARAMETER_KEYS = (
         "chip_window",
         "prior_strength",
         "entry_probability",
-        "compute_backend",
     }
 )
 
@@ -1071,7 +1075,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
         "from point-in-time-safe Longbridge CLI price, volume, options, valuation, "
         "and sentiment factors, then evolves a causal multi-step price field."
     )
-    strategy_category = "machine-learning"
+    strategy_category = "price-field"
     strategy_display_order = 42
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
@@ -1096,6 +1100,15 @@ class BayesianPriceFieldStrategy(BaseStrategy):
 
     def get_default_tickers(self) -> tuple[str, ...]:
         return ("NVDA",)
+
+    def normalize_params(
+            self,
+            params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Drop the retired public backend override from current and saved inputs."""
+        normalized = super().normalize_params(params)
+        normalized.pop("compute_backend", None)
+        return normalized
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
@@ -1175,15 +1188,6 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 unit_hint="%",
                 help_text="Enters when the posterior rise probability reaches this threshold and exits at its symmetric downside threshold.",
             ),
-            StrategyParameterDefinition(
-                key="compute_backend",
-                optimizable=False,
-                label="Compute Backend",
-                kind="choice",
-                default="Auto",
-                options=("Auto", "CPU", "GPU"),
-                help_text="Auto coordinates bounded multi-core CPU work with an available Apple MPS or CUDA GPU for heterogeneous walk-forward computation; without an accelerator it uses CPU. CPU forces bounded multi-core CPU work. GPU explicitly requests Apple MPS or CUDA, then safely falls back to CPU.",
-            ),
         )
 
     def load_market_datasets(
@@ -1262,7 +1266,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
             len(full_frame) - 1,
             float(normalized_params["prior_strength"]),
         )
-        backend = _resolve_compute_backend(str(normalized_params["compute_backend"]))
+        backend = _resolve_compute_backend("Auto")
         (
             predictive_mean,
             predictive_std,

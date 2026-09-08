@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.13.0
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -74,6 +74,9 @@ class StrategyParameterDefinition:
     optimizable: bool = True
     ui_role: str = ""
     ui_apply_mode: Literal["backtest", "training"] = "backtest"
+    visible_when: tuple[str, Any] | None = None
+    content_sized: bool = False
+    option_labels: tuple[str, ...] = field(default_factory=tuple)
 
     def display_default(self) -> str:
         if self.default is None:
@@ -93,6 +96,11 @@ class StrategyParameterDefinition:
             step_text = "" if self.step is None else str(self.step)
             decimals = len(step_text.split(".", 1)[1]) if "." in step_text else 1
             return f"{numeric_value:.{decimals}f}"
+        if self.kind == "choice" and len(self.option_labels) == len(self.options):
+            try:
+                return self.option_labels[self.options.index(self.default)]
+            except ValueError:
+                pass
         return str(self.default)
 
 

@@ -1,12 +1,35 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.4.0`
 
 This is the normative spatial contract for the sibling projects
 `/Users/example/Desktop/worthward` and
 `/Users/example/Desktop/agenticContext`. The two implementations may have
 different product surfaces, but shared shell geometry, token meanings, ownership
 boundaries, and acceptance tolerances are the same.
+
+## Western typeface contract
+
+`UniversNextforHSBC.ttc` is the sole approved source for Western interface
+glyphs in both projects. The canonical source is
+`worthward/app/web/static/assets/fonts/UniversNextforHSBC.ttc`; its SHA-256 is
+`e10a317b9da0016c24a9fce70ccbd33eb39458da15253d5abfe051d8cc33e21a`.
+The mirrored `agenticContext` collection must remain byte-identical.
+
+Chromium does not reliably select individual faces from this collection and can
+render regular text with its Bold face when the TTC is referenced directly.
+Each project therefore serves deterministic standalone TTF transport faces
+rebuilt from the approved TTC. These files preserve the original tables,
+metrics, glyphs, and PostScript names; they are not alternate typeface sources.
+The extraction scripts and tests must reject an unapproved source checksum or a
+byte-level difference from a rebuilt face.
+
+Runtime CSS and JavaScript must obtain Western text from the shared
+`--font-family-base` or `--font-family-mono` role and must not name local or
+system Western fallbacks such as Arial, Helvetica, Inter, SF Pro, Menlo, or
+GDS Transport. CJK fallback families remain allowed strictly for glyph coverage.
+Vendored KaTeX math fonts remain an explicit content-font exception and must not
+be promoted into the interface font stack.
 
 ## Canonical dimensions
 
@@ -27,6 +50,9 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
+- The strategy-tuning row reserves at most `60%` for its label track so the
+  right-aligned value track can display seven-digit holding limits without
+  clipping. This is a component token, not a Grid Trading page override.
 - Shared workspace-modal and floating-notice dismiss buttons use standard error red
   (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
   focusing within the owning modal/notice, not the entire page. Keyboard focus

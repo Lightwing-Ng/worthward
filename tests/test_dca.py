@@ -1,6 +1,6 @@
 """Behavior tests for recurring investment schedules and simulations.
 
-Code version: v1.1.2
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -52,6 +52,31 @@ class RecurringScheduleTests(unittest.TestCase):
 
         self.assertEqual(result, [pd.Timestamp("2026-01-02"), pd.Timestamp("2026-01-09")])
 
+    def test_sunday_schedule_moves_to_the_next_trading_day(self) -> None:
+        trading_dates = pd.Series(pd.to_datetime([
+            "2026-01-05",
+            "2026-01-12",
+            "2026-01-19",
+        ]))
+
+        result = build_recurring_schedule_dates(
+            trading_dates,
+            pd.Timestamp("2026-01-04"),
+            pd.Timestamp("2026-01-19"),
+            frequency="weekly",
+            weekday=6,
+            month_day=15,
+        )
+
+        self.assertEqual(
+            result,
+            [
+                pd.Timestamp("2026-01-05"),
+                pd.Timestamp("2026-01-12"),
+                pd.Timestamp("2026-01-19"),
+            ],
+        )
+
     def test_monthly_schedule_crosses_year_and_aligns_to_market_dates(self) -> None:
         trading_dates = pd.Series(pd.to_datetime([
             "2025-12-01",
@@ -87,6 +112,8 @@ class RecurringScheduleTests(unittest.TestCase):
         self.assertEqual(_normalize_frequency(" WEEKLY "), "weekly")
         self.assertEqual(_normalize_frequency("daily"), "monthly")
         self.assertEqual(_normalize_weekday("4"), 4)
+        self.assertEqual(_normalize_weekday("5"), 5)
+        self.assertEqual(_normalize_weekday("6"), 6)
         self.assertEqual(_normalize_weekday("Sunday", fallback=2), 2)
         self.assertEqual(_normalize_weekday(7, fallback=3), 3)
         self.assertEqual(_normalize_month_day("0"), 1)

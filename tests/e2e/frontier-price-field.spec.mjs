@@ -1,4 +1,4 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.0.0 */
+/* Additional neural Price Field GUI contracts. Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
 
 const models = [
@@ -7,7 +7,91 @@ const models = [
 const urlFor = (architecture) => `/workspaces/backtest?ticker=NVDA&strategy=${architecture}-price-field`
     + '&range=exact&from=2024-07-14&to=2026-07-14&period=2y&interval=1d&show_trade_details=0'
     + '&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8&training_window=64&retrain_interval=20&cell_display_threshold=0';
+const modernTcnAnnotatedUrl = '/workspaces/backtest?ticker=QQQ&range=2y&strategy=moderntcn-price-field'
+    + '&show_trade_details=1&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8'
+    + '&training_window=64&retrain_interval=20&cell_display_threshold=1';
 const trainingMenu = (page) => page.locator('[data-strategy-action-slot="price-field-training"] [data-lstm-training-menu]');
+
+async function directHoverDetailParity(page, {height = 1404} = {}) {
+    await page.setViewportSize({width: 1023, height});
+    const canvas = page.locator('#tradePriceChart');
+    await canvas.scrollIntoViewIfNeeded();
+    const target = await page.evaluate(() => {
+        const element = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(element);
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const rect = element?.getBoundingClientRect();
+        if (!chart?.chartArea || !rect || !presentation) return null;
+        const centerY = (chart.chartArea.top + chart.chartArea.bottom) / 2;
+        const candidates = chart.getDatasetMeta(0).data.map((point, index) => ({
+            index,
+            x: Number(point?.x),
+            y: Number(point?.y),
+            horizons: presentation.horizon_predictive_mean?.[index]?.length || 0,
+        })).filter((candidate) => (
+            Number.isFinite(candidate.x) && Number.isFinite(candidate.y)
+            && candidate.horizons === presentation.max_horizon
+        ));
+        if (!candidates.length) return null;
+        const selected = candidates.reduce((best, candidate) => (
+            Math.abs(candidate.y - centerY) < Math.abs(best.y - centerY) ? candidate : best
+        ));
+        return {
+            index: selected.index,
+            x: rect.left + (selected.x * rect.width / chart.width),
+            y: rect.top + (selected.y * rect.height / chart.height),
+        };
+    });
+    expect(target).not.toBeNull();
+    await page.mouse.move(target.x, target.y);
+    await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
+        .toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate(() => {
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
+        return new Set([...grid?.children || []].map((cell) => Number(cell.dataset.horizon))).size;
+    }), {timeout: 15_000}).toBe(20);
+    return page.evaluate((selectedIndex) => {
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
+        const detailGrid = document.querySelector('[data-backtest-probability-detail-grid]');
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const hoverCells = [...grid?.querySelectorAll('.backtest-probability-cell') || []];
+        const detailCells = [...detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []];
+        const detailByBand = new Map(detailCells.map((cell) => [
+            `${cell.dataset.horizon}|${cell.dataset.lowerPrice}|${cell.dataset.upperPrice}`,
+            {
+                probability: Number(cell.dataset.probability),
+                visible: cell.dataset.thresholdVisible === 'true',
+            },
+        ]));
+        const mismatches = hoverCells.filter((cell) => {
+            const key = `${cell.dataset.horizon}|${cell.dataset.lowerPrice}|${cell.dataset.upperPrice}`;
+            const detailCell = detailByBand.get(key);
+            return !Number.isFinite(detailCell?.probability)
+                || Math.abs(detailCell.probability - Number(cell.dataset.probability)) > 1e-12
+                || detailCell.visible !== (cell.dataset.thresholdVisible === 'true');
+        }).length;
+        const horizonStds = presentation?.horizon_predictive_std?.[selectedIndex] || [];
+        return {
+            daysPerColumn: Number(grid?.dataset.daysPerColumn),
+            horizonStep: Number(grid?.dataset.horizonStep),
+            hoverColumns: new Set(hoverCells.map((cell) => Number(cell.dataset.column))).size,
+            hoverVisibleColumns: new Set(hoverCells.filter(
+                (cell) => cell.dataset.thresholdVisible === 'true',
+            ).map((cell) => Number(cell.dataset.column))).size,
+            hoverHorizons: [...new Set(hoverCells.map((cell) => Number(cell.dataset.horizon)))],
+            detailHorizons: [...new Set(detailCells.map((cell) => Number(cell.dataset.horizon)))],
+            firstHorizonStd: Number(horizonStds[0]),
+            lastHorizonStd: Number(horizonStds[19]),
+            mismatches,
+            threshold: Number(
+                document.querySelector('#backtest_probability_detail_panel')
+                    ?.dataset.cellDisplayThresholdPct,
+            ),
+        };
+    }, target.index);
+}
 
 async function visibleConfiguration(page) {
     return page.evaluate(() => {
@@ -37,7 +121,14 @@ for (const width of [1024, 390]) {
             json: {success: true, protocol_version: 3, runs: []},
         }));
         for (const [architecture, label] of models) {
-            await page.goto(urlFor(architecture));
+            const parityUrl = architecture === 'moderntcn'
+                ? modernTcnAnnotatedUrl
+                : urlFor(architecture).replace('cell_display_threshold=0', 'cell_display_threshold=1');
+            await page.goto(
+                width === 1024
+                    ? parityUrl
+                    : urlFor(architecture),
+            );
             await expect(trainingMenu(page).getByRole('button', {name: 'Start training', exact: true})).toBeEnabled();
             await expect(page.getByRole('button', {name: `Strategy: ${label} Price Field`, exact: true})).toContainText(`${label} Price Field`);
             const contract = await page.evaluate(() => {
@@ -75,6 +166,27 @@ for (const width of [1024, 390]) {
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
                 (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
             )).toBe(20);
+            if (width === 1024) {
+                const parity = await directHoverDetailParity(page, {
+                    height: architecture === 'moderntcn' ? 1580 : 1404,
+                });
+                expect(parity.daysPerColumn).toBeGreaterThan(1);
+                expect(parity.horizonStep).toBe(1);
+                expect(parity.hoverColumns).toBe(20);
+                expect(parity.hoverVisibleColumns).toBeGreaterThanOrEqual(16);
+                expect(parity.hoverHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
+                expect(parity.detailHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
+                expect(parity.firstHorizonStd).toBeLessThan(parity.lastHorizonStd);
+                expect(parity.mismatches).toBe(0);
+                expect(parity.threshold).toBe(1);
+                if (architecture === 'moderntcn') {
+                    await page.screenshot({
+                        path: testInfo.outputPath('moderntcn-price-field-1023x1580.png'),
+                        fullPage: true,
+                    });
+                }
+                await page.setViewportSize({width, height: 1100});
+            }
         }
         expect(errors).toEqual([]);
         await page.screenshot({path: testInfo.outputPath(`frontier-price-field-${width}.png`), fullPage: true});

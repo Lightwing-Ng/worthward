@@ -1,7 +1,7 @@
 """
 Leveraged rotation strategy.
 
-Code version: v2.0.0
+Code version: v2.2.0
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class LeveragedRotationStrategy(BaseStrategy):
         "configured daily moves, within declared allocation bounds. "
         "Close-derived rotation decisions use subsequent opening prices."
     )
-    strategy_category = "rotation"
+    strategy_category = "portfolio-rotation"
     strategy_display_order = 40
     strategy_supports = StrategySupportMatrix(
         single_ticker=False,
@@ -45,63 +45,69 @@ class LeveragedRotationStrategy(BaseStrategy):
         return (
             StrategyParameterDefinition(
                 key="initial_primary_pct",
-                label="Initial Ticker 1 allocation",
+                label="Initial primary allocation",
                 kind="number",
                 default=70.0,
                 minimum=0.0,
                 maximum=100.0,
-                step=0.1,
+                step=0.01,
                 unit_hint="%",
                 subgroup="Initial allocation",
                 ui_role="allocation-primary",
-                help_text="Initial market-value allocation to Ticker 1; shares are rounded down to integers.",
+                help_text="Initial market-value allocation to the primary ticker; shares are rounded down to integers.",
             ),
             StrategyParameterDefinition(
                 key="initial_leveraged_pct",
-                label="Initial Ticker 2 allocation",
+                label="Initial leveraged allocation",
                 kind="number",
                 default=25.0,
                 minimum=0.0,
                 maximum=100.0,
-                step=0.1,
+                step=0.01,
                 unit_hint="%",
                 subgroup="Initial allocation",
                 ui_role="allocation-leveraged",
-                help_text="Initial market-value allocation to Ticker 2; unallocated and rounding residuals remain cash.",
+                help_text="Initial market-value allocation to the leveraged ticker; unallocated and rounding residuals remain cash.",
             ),
             StrategyParameterDefinition(
-                key="primary_min_pct", label="Ticker 1 minimum", kind="number",
-                default=20.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
-                subgroup="Allocation limits",
+                key="primary_min_pct", label="Primary minimum", kind="number",
+                default=20.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
+                subgroup="Allocation limits (% of total equity)",
+                ui_role="ticker-label:0:minimum",
             ),
             StrategyParameterDefinition(
-                key="primary_max_pct", label="Ticker 1 maximum", kind="number",
-                default=95.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
-                subgroup="Allocation limits",
+                key="primary_max_pct", label="Primary maximum", kind="number",
+                default=95.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
+                subgroup="Allocation limits (% of total equity)",
+                ui_role="ticker-label:0:maximum",
             ),
             StrategyParameterDefinition(
-                key="leveraged_min_pct", label="Ticker 2 minimum", kind="number",
-                default=0.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
-                subgroup="Allocation limits",
+                key="leveraged_min_pct", label="Leveraged minimum", kind="number",
+                default=0.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
+                subgroup="Allocation limits (% of total equity)",
+                ui_role="ticker-label:1:minimum",
             ),
             StrategyParameterDefinition(
-                key="leveraged_max_pct", label="Ticker 2 maximum", kind="number",
-                default=75.0, minimum=0.0, maximum=100.0, step=0.1, unit_hint="%",
-                subgroup="Allocation limits",
+                key="leveraged_max_pct", label="Leveraged maximum", kind="number",
+                default=75.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
+                subgroup="Allocation limits (% of total equity)",
+                ui_role="ticker-label:1:maximum",
             ),
             StrategyParameterDefinition(
                 key="buy_leveraged_drop_pct",
-                label="Ticker 1 daily drop trigger",
-                kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.1,
-                unit_hint="%", subgroup="Rotation triggers",
-                help_text="After Ticker 1 falls by this daily percentage, the next open rebalances toward Ticker 2.",
+                label="Primary daily drop trigger",
+                kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.01,
+                unit_hint="%", subgroup="Rotation triggers (daily % change)",
+                ui_role="ticker-label:0:daily-drop-trigger",
+                help_text="After the primary ticker falls by this daily percentage, the next open rebalances toward the leveraged ticker.",
             ),
             StrategyParameterDefinition(
                 key="sell_leveraged_rise_pct",
-                label="Ticker 2 daily rise trigger",
-                kind="number", default=5.0, minimum=0.1, maximum=200.0, step=0.1,
-                unit_hint="%", subgroup="Rotation triggers",
-                help_text="After Ticker 2 rises by this daily percentage, the next open rebalances toward Ticker 1.",
+                label="Leveraged daily rise trigger",
+                kind="number", default=5.0, minimum=0.1, maximum=200.0, step=0.01,
+                unit_hint="%", subgroup="Rotation triggers (daily % change)",
+                ui_role="ticker-label:1:daily-rise-trigger",
+                help_text="After the leveraged ticker rises by this daily percentage, the next open rebalances toward the primary ticker.",
             ),
         )
 

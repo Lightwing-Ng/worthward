@@ -1,6 +1,6 @@
 # Classic strategy signal and execution contract
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.4.0`
 
 The 7 Sep 2026 repair covered MACD, SuperTrend, kNN, Lorentzian, DCA, and
 Leveraged Rotation. On 8 Sep 2026, the duplicate MACD (Gemini), kNN Machine
@@ -78,7 +78,15 @@ daily percentage moves: a configured primary drop enters the leveraged regime,
 and a configured leveraged rise returns to the primary regime. Initial and
 minimum/maximum allocations are applied by market value, then rounded down to
 integer shares; residual capital remains cash. Subsequent close-derived decisions
-require opening-price execution.
+require opening-price execution. The Backtest form resolves every limit and
+trigger label from the current ordered ticker inputs rather than persisting
+`Ticker 1` or `Ticker 2` as visible names. All percentage controls use hundredth
+steps and two-decimal display. The initial-allocation band renders primary,
+leveraged, and cash segments with the standard blue, secondary-magenta, and
+positive-green tokens. Its labels show the two target percentages and the cash
+amount; integer share counts remain internal to the execution preview. Label
+centers follow their allocation segments and are packed apart when a narrow
+segment would otherwise cause a collision.
 
 ## Preserved integration boundaries
 

@@ -1,4 +1,4 @@
-/* Code version: v0.11.1 */
+/* Code version: v0.12.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -700,7 +700,7 @@
 				ctx.fillStyle = resolvedTheme.muted;
 				const axisFontSize = readPxToken(chartInstance.canvas, "--workspace-share-chart-axis-font-size", 12);
 				const lineHeight = Math.round(axisFontSize * 1.08);
-				ctx.font = `400 ${axisFontSize}px "GDS Transport", "Helvetica Neue", Arial, sans-serif`;
+				ctx.font = `400 ${axisFontSize}px ${getComputedStyle(document.body).fontFamily}`;
 				ctx.textBaseline = "top";
 				if (isCompareOneDayRange) {
 					const sessionTicks = buildOneDaySessionTickDefinitions();
@@ -1346,7 +1346,7 @@
 							padding: 10,
 							...(marketCapScaleType === "logarithmic" ? { maxTicksLimit: 7 } : {}),
 							font: {
-								family: 'GDS Transport, Helvetica Neue, Arial, sans-serif',
+								family: getComputedStyle(document.body).fontFamily,
 								size: readPxToken(canvas, '--workspace-share-chart-axis-font-size', 12),
 							},
 							callback(value, index, ticks) {

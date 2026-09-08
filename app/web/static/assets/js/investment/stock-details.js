@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.32.0
+ * Code version: v0.33.0
  * - Changed: Stock details loads the partial realized-P&L and missing
  *   reinvestment-basis fail-closed aggregation revision.
  * - Changed: Stock details loads the forex-direction display revision.
@@ -126,7 +126,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.32.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.33.0';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -2285,7 +2285,7 @@ export function createInvestmentStockDetailsUtils({
                     const lineHeight = 10;
                     ctx.save();
                     ctx.fillStyle = resolvedTheme.muted;
-                    ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                    ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
                     ctx.textBaseline = 'top';
                     ctx.textAlign = 'center';
                     intradayCenteredTicks.forEach((tick) => {
@@ -2310,7 +2310,7 @@ export function createInvestmentStockDetailsUtils({
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
-                ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
                 ctx.textBaseline = 'top';
                 tickIndexes.forEach((index, tickIndex) => {
                     const parsedDate = parseRawDate(labels[index]);

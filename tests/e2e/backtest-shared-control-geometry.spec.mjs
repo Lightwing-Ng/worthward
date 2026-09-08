@@ -1,4 +1,4 @@
-/* Backtest shared control geometry regression. Code version: v1.0.0 */
+/* Backtest shared control geometry regression. Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 
 const backtestUrl = (
@@ -87,10 +87,11 @@ test('shared Backtest controls keep the sampled compact geometry', async ({page}
         expect(date.minHeight).toBe('30px');
         expect(date.rectHeight).toBe(30);
     }
-    for (const row of [geometry.trainingWindow, geometry.computeBackend, geometry.capitalFlow]) {
-        expect(row.height).toBe('36px');
-        expect(row.minHeight).toBe('36px');
-        expect(row.rectHeight).toBe(36);
+    // Only subsequent parameter rows reserve a one-pixel separator border.
+    for (const [row, height] of [[geometry.trainingWindow, 36], [geometry.computeBackend, 35], [geometry.capitalFlow, 36]]) {
+        expect(row.height).toBe(`${height}px`);
+        expect(row.minHeight).toBe(`${height}px`);
+        expect(row.rectHeight).toBe(height);
     }
     expect(geometry.trainingWindow.paddingTop).toBe('0px');
     expect(geometry.history.borderRadius).toBe('999px');

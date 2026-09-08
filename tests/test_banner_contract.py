@@ -1,4 +1,4 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.4."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.5."""
 
 from pathlib import Path
 
@@ -72,3 +72,10 @@ def test_investment_import_progress_uses_the_workspace_modal_contract() -> None:
     assert "title: 'Import in progress'" in investment_javascript
     assert "showInvestmentImportProgressModal(resolvedMessage);" in investment_javascript
     assert "if (isLoading) {" in investment_javascript
+
+
+def test_investment_import_feedback_escapes_the_report_card_stacking_context() -> None:
+    investment_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
+
+    assert "importFeedback.parentElement !== document.body" in investment_javascript
+    assert "document.body.append(importFeedback);" in investment_javascript

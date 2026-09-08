@@ -1,13 +1,20 @@
-{# Code version: v0.5.0 #}
+{# Code version: v0.7.0 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
     {% for field in strategy_form_fields %}
-    <div class="trade-strategy-param" data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="{{ field.kind }}" data-strategy-param-apply-mode="{{ field.ui_apply_mode }}">
+    <div class="trade-strategy-param"
+         data-strategy-param-key="{{ field.key }}"
+         data-strategy-param-kind="{{ field.kind }}"
+         data-strategy-param-apply-mode="{{ field.ui_apply_mode }}"
+         {% if field.ui_role %}data-strategy-param-ui-role="{{ field.ui_role }}"{% endif %}
+         {% if field.visible_when_key %}data-strategy-param-visible-when-key="{{ field.visible_when_key }}" data-strategy-param-visible-when-value="{{ field.visible_when_value }}"{% endif %}
+         {% if field.content_sized %}data-strategy-param-content-sized="true"{% endif %}
+         {% if not field.is_visible %}hidden aria-hidden="true"{% endif %}>
         {% if field.field_type == "number" %}
         <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
             <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
-                <span>{{ field.label }}</span>
+                <span data-strategy-param-label-text>{{ field.label }}</span>
                 {% if field.help_text %}
                 <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
                 {% endif %}
@@ -44,7 +51,7 @@
             input_attrs=('data-strategy-param-switch' ~ (' title="' ~ field.help_text ~ '"' if field.help_text else '')),
             checked=field.switch_checked
         ) %}
-                <span>{{ field.label }}</span>
+                <span data-strategy-param-label-text>{{ field.label }}</span>
                 {% if field.help_text %}
                 <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
                 {% endif %}
@@ -62,7 +69,7 @@
         {% elif field.field_type == "text" %}
         <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
             <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
-                <span>{{ field.label }}</span>
+                <span data-strategy-param-label-text>{{ field.label }}</span>
                 {% if field.help_text %}
                 <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
                 {% endif %}
@@ -87,7 +94,7 @@
         {% else %}
         <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
             <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
-                <span>{{ field.label }}</span>
+                <span data-strategy-param-label-text>{{ field.label }}</span>
                 {% if field.help_text %}
                 <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
                 {% endif %}
@@ -108,8 +115,8 @@
                     {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.value }}"{% endif %}
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
             >
-                {% for option in field.options %}
-                <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                {% for option in field.option_items %}
+                <option value="{{ option.value }}" {% if option.value == field.value %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
             </select>
             <div class="trade-strategy-combobox">
@@ -120,11 +127,11 @@
                         aria-haspopup="listbox"
                         aria-expanded="false"
                         aria-controls="strategy_param_{{ field.key }}_dropdown"
-                        aria-label="{{ field.label }}: {{ field.value }}"
-                        data-shared-select-title="{{ field.help_text or field.value }}"
-                        title="{{ field.help_text or field.value }}"
+                        aria-label="{{ field.label }}: {{ field.selected_label }}"
+                        data-shared-select-title="{{ field.help_text or field.selected_label }}"
+                        title="{{ field.help_text or field.selected_label }}"
                 >
-                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ field.value }}">{{ field.value }}</span>
+                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ field.selected_label }}">{{ field.selected_label }}</span>
                 </button>
             </div>
             <div

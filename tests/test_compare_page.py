@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.14.9
+Code version: v0.15.0
 """
 
 from __future__ import annotations
@@ -34,6 +34,50 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_comparison_workspaces_keep_missing_ticker_identity_and_fail_explicitly(self) -> None:
+        requested_tickers = ["QQQ", "MISS", "AAPL"]
+        comparison_routes = (
+            "/workspaces/compare?ticker=QQQ&ticker=MISS&ticker=AAPL&period=1y",
+            "/workspaces/prices?ticker=QQQ&ticker=MISS&ticker=AAPL&period=1y",
+            "/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=MISS&ticker=AAPL&period=1y",
+        )
+
+        for route in comparison_routes:
+            with self.subTest(route=route):
+                fetched_tickers: list[str] = []
+
+                def _fetch_history(ticker: str, _include_dividends: bool, **_kwargs: object) -> pd.DataFrame:
+                    fetched_tickers.append(ticker)
+                    if ticker == "MISS":
+                        raise ValueError("No market data returned for MISS.")
+                    return close_frame_for_ticker(ticker)
+
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_root = Path(temp_dir)
+                    with (
+                        patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+                        patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                        patch(
+                            "app.web.runtime.history_store_path_for",
+                            side_effect=lambda ticker: temp_root / f"{ticker}.parquet",
+                        ),
+                        patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                        patch("app.web.runtime.record_ticker_usage"),
+                    ):
+                        response = create_app().test_client().get(route)
+
+                html = response.get_data(as_text=True)
+                ticker_inputs = re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(
+                    "No local or remote market data is available for MISS. "
+                    "The selected ticker list was kept unchanged.",
+                    html,
+                )
+                self.assertEqual(ticker_inputs, requested_tickers)
+                self.assertEqual(fetched_tickers, requested_tickers)
+                self.assertNotIn("automatically replaced", html)
+
     def test_one_day_date_constraints_keep_current_korean_session_with_pending_us_market(self) -> None:
         intraday_frames = {
             "000660.KS": ohlc_frame_for_dates(
@@ -740,6 +784,51 @@ class ComparePageTests(unittest.TestCase):
             {"000660.KS", "7709.HK"},
         )
         broker_overnight_mock.assert_not_called()
+
+    def test_relative_live_compare_ignores_client_date_and_publishes_server_date(self) -> None:
+        intraday_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                [
+                    "2026-08-25 09:30",
+                    "2026-08-25 15:59",
+                    "2026-08-26 09:30",
+                    "2026-08-26 15:59",
+                    "2026-08-27 09:30",
+                    "2026-08-27 15:59",
+                ],
+            )
+            for ticker in ("QQQ", "AAPL")
+        }
+
+        def _fetch_history(ticker: str, *_args: object, **_kwargs: object) -> pd.DataFrame:
+            return intraday_frames[ticker]
+
+        with _write_intraday_stores(intraday_frames) as temp_dir:
+            with (
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-08-27 12:00", tz="Asia/Shanghai"),
+                ),
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(temp_dir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.refresh_one_minute_store") as refresh_mock,
+            ):
+                response = create_app().test_client().get(
+                    "/api/compare/live?ticker=QQQ&ticker=AAPL&period=3d"
+                    "&axis_date=2026-08-25&live_date=not-a-date&refresh=0"
+                )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["liveDate"], "2026-08-27")
+        self.assertEqual(payload["currentComparisonDate"], "2026-08-27")
+        refresh_mock.assert_not_called()
 
     def test_live_compare_api_uses_exact_yahoo_fallback_for_missing_korean_current_day(self) -> None:
         reference_frames = {

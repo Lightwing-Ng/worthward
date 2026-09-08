@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -642,6 +642,7 @@ def run_single_ticker_backtest(
 
     trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
     cash = float(initial_capital)
+    starting_equity = float(initial_capital)
     shares = 0.0
     entry_price = None
     equity_points: list[float] = []
@@ -678,12 +679,7 @@ def run_single_ticker_backtest(
         if not isfinite(grid_initial_unit_cost) or grid_initial_unit_cost <= 0:
             raise ValueError("Grid Trading requires a finite positive initial price.")
         shares = grid_initial_holding
-        cash -= shares * grid_initial_unit_cost
-        if cash < -1e-9:
-            raise ValueError(
-                "Current holding exceeds the shares supported by Initial capital."
-            )
-        cash = max(0.0, cash)
+        starting_equity = cash + (shares * grid_initial_unit_cost)
         entry_price = grid_initial_unit_cost if shares > 0 else None
 
     def record_grid_execution(execution_price: float) -> None:
@@ -987,7 +983,7 @@ def run_single_ticker_backtest(
     frame["Equity"] = equity_points
     bh_equity_series, bh_final_equity = _build_buy_hold_equity_series(
         frame,
-        initial_capital,
+        starting_equity,
         reinvest_cash_dividends=reinvest_cash_dividends,
         include_cash_dividends=include_cash_dividends,
     )
@@ -1001,7 +997,7 @@ def run_single_ticker_backtest(
     win_rate_pct = _calculate_win_rate_pct(trade_pairs, wins, total_trades)
     buy_markers, sell_markers = _build_trade_markers(frame, trades, interval)
     final_equity = float(frame["Equity"].iloc[-1])
-    total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
+    total_return = ((final_equity / starting_equity) - 1.0) * 100.0
 
     # Advanced Metrics    # 1. Benchmark P&L (Buy and Hold at first open)
     benchmark_alpha = final_equity - bh_final_equity
@@ -1044,7 +1040,8 @@ def run_single_ticker_backtest(
         "interval": interval,
         "execution_mode": normalized_execution_mode,
         "summary": {
-            "initial_capital": round(float(initial_capital), 2),
+            "initial_capital": round(starting_equity, 2),
+            "initial_cash": round(float(initial_capital), 2),
             "final_equity": round(final_equity, 2),
             "net_return_pct": round(total_return, 2),
             "beat_bh_pct": round(float(beat_bh_pct), 2),

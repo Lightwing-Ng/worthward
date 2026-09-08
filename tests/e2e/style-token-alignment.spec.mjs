@@ -1,5 +1,13 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.5.0 */
 import {expect, test} from '@playwright/test';
+
+async function expectFieldTitle(locator) {
+    await expect(locator).toHaveCSS('font-size', '15px');
+    await expect(locator).toHaveCSS('font-weight', '400');
+    await expect(locator).toHaveCSS('line-height', 'normal');
+    await expect(locator).toHaveCSS('letter-spacing', 'normal');
+    await expect(locator).toHaveCSS('color', 'rgb(11, 12, 12)');
+}
 
 for (const width of [1024, 800, 390]) {
     test(`shared component annotations at ${width}px`, async ({page}) => {
@@ -14,8 +22,39 @@ for (const width of [1024, 800, 390]) {
         await expect(secondary).toHaveClass('secondary-button');
         await expect(secondary).toHaveCSS('font-size', '13px');
         expect(await secondary.evaluate(e => Math.abs(e.getBoundingClientRect().right - e.parentElement.getBoundingClientRect().right))).toBeLessThanOrEqual(1);
-        await expect(secondary).toHaveCSS('height', '31px');
+        await expect(secondary).toHaveCSS('height', '32px');
         expect(await secondary.evaluate(e => e.getBoundingClientRect().width < e.parentElement.getBoundingClientRect().width)).toBe(true);
+        const periodTrigger = page.locator('[data-style-token-card="shared-select-dropdown"] [data-shared-select-trigger]');
+        await periodTrigger.click();
+        const periodOption = page.locator('[data-style-token-card="shared-select-dropdown"] [role="option"][data-value="1y"]');
+        await expect(periodOption).toHaveCSS('height', '36px');
+        await expect(periodOption.locator('.trade-strategy-dropdown-text')).toHaveText('1 year');
+        expect(await periodOption.locator('.trade-strategy-dropdown-text').evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+        const tuneButton = page.locator('[data-style-token-strategy-tune-button]');
+        const tunePanel = page.locator('[data-style-token-strategy-tuning-panel]');
+        await expect(tuneButton).toHaveAttribute('aria-pressed', 'true');
+        await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
+        await expect(tuneButton).toHaveCSS('width', '30px');
+        await expect(tuneButton.locator('.icon')).toHaveCSS('width', '14px');
+        await expect(tunePanel).toHaveCSS('padding', '10px');
+        await expect(tunePanel).toBeVisible();
+        await page.locator('.style-token-strategy-tuning-label').click();
+        await expect(tunePanel).toBeVisible();
+        await tuneButton.click();
+        await expect(tuneButton).toHaveAttribute('aria-pressed', 'false');
+        await expect(tuneButton).toHaveAttribute('aria-expanded', 'false');
+        await expect(tunePanel).toBeHidden();
+        await tuneButton.click();
+        await expect(tunePanel).toBeVisible();
+        expect(await page.locator('[data-style-token-strategy-tuning]').evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+        const metricLabel = page.locator('[data-style-token-card="workspace-metric-value"] .trade-metric-label');
+        await expect(metricLabel).toHaveText('Total trades');
+        await expect(metricLabel).toHaveCSS('font-size', '15px');
+        await expect(metricLabel).toHaveCSS('font-weight', '400');
+        await expect(metricLabel).toHaveCSS('line-height', 'normal');
+        await expect(metricLabel).toHaveCSS('color', 'rgb(11, 12, 12)');
+        await expectFieldTitle(page.locator('.style-token-scrollable-table thead th:nth-child(2)'));
+        await expectFieldTitle(page.locator('.style-token-settings-input-label'));
         for (const id of ['modal-dialog', 'modal-dialog-banner-message']) {
             const surface = page.locator(`#${id} .style-token-modal-demo`);
             const close = page.locator(`#${id} .dismiss-button`);

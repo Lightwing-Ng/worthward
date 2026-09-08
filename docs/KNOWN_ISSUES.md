@@ -1,5 +1,35 @@
 # Known issues and operating constraints
 
+Bayesian automatic compute, 8 Sep 2026: Bayesian Price Field no longer exposes
+a compute-backend selector. Every refresh uses an internal `Auto` policy that
+coordinates the bounded local CPU executor with an available Apple MPS or CUDA
+device, ignores retired browser or URL overrides, and recomputes the complete
+walk-forward pass on CPU after an accelerator failure. LSTM and neural Price
+Fields retain their own training backend controls.
+
+Backtest schedule and interval controls, 8 Sep 2026: interval pills retain both
+`1d` and `1m` slots after availability resolution; unavailable `1m` remains
+visible and disabled through the shared segmented-control state instead of being
+removed. Daily chart hover dates omit `00:00`, while one-minute hover dates keep
+their time. Registry-driven DCA parameters use generic conditional visibility
+and content-sized select metadata: weekly and monthly schedule details are
+mutually exclusive, weekday labels run from Monday through Sunday, and weekend
+contributions continue to align to the next trading day.
+
+Backtest annotation geometry, 8 Sep 2026: radio-backed segmented labels derive
+emphasis only from their checked input; positional skeleton fallbacks do not
+override radio or ARIA-tab state. Compute-backend options use a local 32px
+minimum with wrapping allowed, without changing the shared 36px menu default.
+Training history uses the regular 15px UI label and flush-left empty copy.
+Parameter separators paint halfway through the existing 10px row gap; numeric
+controls and labels are vertically centered without changing row sizing or
+responsive breakpoints. Regression: `tests/e2e/backtest-annotation-geometry.spec.mjs`.
+
+Investment import feedback layer, 8 Sep 2026: validation and clipboard error
+banners are portaled to the document root before display. They remain above the
+full-screen broker-import modal instead of being trapped inside the earlier
+Investment report-card stacking context.
+
 Investment P&L audit, 8 Sep 2026: dividend-reinvestment shares now retain their
 actual reinvestment cost basis instead of opening zero-cost lots. A reinvestment
 without positive quantity-and-value evidence remains explicitly unknown and
@@ -127,7 +157,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.246.0`
+Documentation version: `v1.248.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

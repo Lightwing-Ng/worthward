@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.2.0 */
 .beta-workspace { min-width: 0; }
 .beta-content { width: min(100%, var(--layout-content-width)); display: flex; flex-direction: column; gap: var(--layout-edge-gap); padding-bottom: var(--layout-edge-gap); }
 .beta-content > *, .beta-content [data-beta-results] > * { flex-shrink: 0; }
@@ -48,7 +48,7 @@
 .beta-content [data-beta-thesis] .beta-thesis-wide { grid-column: 1 / -1; }
 .beta-content [data-beta-thesis] .beta-thesis-panel { display: grid; gap: 12px; padding: 16px; min-width: 0; }
 .beta-content [data-beta-thesis] .beta-thesis-input { box-sizing: border-box; width: 100%; resize: vertical; font: inherit; }
-.beta-content [data-beta-thesis] .beta-thesis-brief { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-family: var(--font-mono, monospace); font-size: var(--font-size-3); }
+.beta-content [data-beta-thesis] .beta-thesis-brief { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-family: var(--font-family-base); font-size: var(--font-size-3); }
 .beta-content [data-beta-thesis] .beta-thesis-status { font-size: var(--font-size-3); color: var(--muted); }
 .beta-content [data-beta-thesis] .beta-thesis-status[data-state="error"] { color: var(--theme-error); }
 .beta-content [data-beta-thesis] .settings-form-actions { flex-wrap: wrap; }

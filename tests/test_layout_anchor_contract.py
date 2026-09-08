@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.11.4
+Code version: v0.14.0
 """
 
 from pathlib import Path
@@ -257,7 +257,7 @@ def test_backtest_shared_controls_use_the_sampled_geometry_contract() -> None:
     parameter_start = forms_css.index(".trade-strategy-param + .trade-strategy-param {")
     parameter_rule = forms_css[parameter_start : forms_css.index("\n}", parameter_start)]
     assert "padding-top: 0;" in parameter_rule
-    assert "min-height: calc(var(--strategy-param-field-height) + 1px);" in parameter_rule
+    assert "min-height: calc(var(--strategy-tune-panel-row-height) + 1px);" in parameter_rule
     assert "box-sizing: border-box;" in parameter_rule
 
     date_start = forms_css.index(".date-picker-trigger-value {")
@@ -380,7 +380,7 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
     ) in trade_css
     for fragment in (
         "--backtest-chart-y-axis-width: 72px;",
-        "--backtest-chart-axis-font-family: \"GDS Transport\", \"Helvetica Neue\", Arial, sans-serif;",
+        "--backtest-chart-axis-font-family: var(--font-family-base);",
         "--backtest-chart-axis-font-size: 12px;",
         "--backtest-chart-axis-font-weight: 400;",
         "--backtest-chart-axis-line-height: 10px;",
@@ -601,7 +601,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "chartAreaMinimumHeight: 2 * halfHeight,",
         "const requestedCellSize = finiteOrNull(maxCellPx);",
         "requestedGap,",
-        "const horizon = (visualColumn + 1) * daysPerColumn;",
+        "const horizon = (visualColumn + 1) * normalizedHorizonStep;",
+        "horizonStep: normalizedHorizonStep,",
         "const opacityProfile = computeInstantOpacityProfile(",
         "const minimumProbabilityRatio = minimumProbability / maximumProbability;",
         "const baselineRatio = displayFloor !== null",
@@ -708,7 +709,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.31.0",
+        "-backtest-probability-grid-v0.32.0",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
         "-backtest-layout-v0.4.0",
     ):
@@ -974,6 +975,19 @@ def test_period_controls_use_the_shared_dropdown_width_token() -> None:
     assert "width: min(100%, 384px);" not in investment_css
 
 
+def test_investment_broker_selector_uses_the_standard_control_width_token() -> None:
+    investment_css = _read(ASSET_ROOT / "css/views/investment.css")
+    selector_start = investment_css.index(".investment-broker-summary-selector-shell {")
+    selector_rule = investment_css[
+        selector_start:investment_css.index("\n}", selector_start)
+    ]
+
+    assert "width: min(100%, var(--layout-control-width));" in selector_rule
+    assert "max-width: var(--layout-control-width);" in selector_rule
+    assert "--settings-action-package-max-width" not in selector_rule
+    assert "384px" not in selector_rule
+
+
 def test_shared_segmented_controls_shrink_wrap_without_disabling_true_overflow_tracks() -> None:
     forms_css = _read(ASSET_ROOT / "css/components/forms.css")
     investment_css = _read(ASSET_ROOT / "css/views/investment.css")
@@ -1031,7 +1045,7 @@ def test_strategy_parameters_reveal_downward_without_crossing_the_strategy_row()
         forms_css.index(".trade-controls:has(.trade-strategy-field.is-open)")
     ]
     assert "position: static;" in popover_rule
-    assert "margin-top: 4px;" in popover_rule
+    assert "margin-top: var(--strategy-tune-panel-gap);" in popover_rule
     assert "overflow: visible;" in popover_rule
     assert "overflow-x: clip;" not in popover_rule
 

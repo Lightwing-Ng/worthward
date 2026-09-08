@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.14.0
+ * Code version: v1.15.0
  * - Changed: Intraday stock-price y-axis labels now reuse the shared
  *   three-digit integer and sub-100 two-decimal contract.
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
@@ -1694,7 +1694,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = theme.muted;
-                ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
                 ctx.textBaseline = "top";
                 tickIndexes.forEach((index, tickIndex) => {
                     const [firstLine, secondLine] = formatAxisLabel(labels[index]);

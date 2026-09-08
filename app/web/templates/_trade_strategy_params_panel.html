@@ -1,4 +1,4 @@
-{# Code version: v0.8.0 #}
+{# Code version: v0.9.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% set has_actions = strategy_form_sections|selectattr("kind", "equalto", "action")|list|length > 0 %}
 {% for section in strategy_form_sections %}
@@ -19,20 +19,33 @@
                         {% if allocation_primary and allocation_leveraged %}
                         <div class="strategy-allocation-range"
                              data-strategy-allocation-range
-                             style="--allocation-primary: {{ allocation_primary[0].value }}%; --allocation-invested: {{ allocation_primary[0].value|float + allocation_leveraged[0].value|float }}%;">
-                            <div class="strategy-allocation-labels" aria-live="polite">
-                                <span data-allocation-primary-label>Ticker 1</span>
-                                <span data-allocation-leveraged-label>Ticker 2</span>
-                                <span data-allocation-cash-label>Cash</span>
+                             style="--allocation-primary: {{ allocation_primary[0].value }}%; --allocation-leveraged: {{ allocation_leveraged[0].value }}%; --allocation-cash: {{ 100 - allocation_primary[0].value|float - allocation_leveraged[0].value|float }}%;">
+                            <div class="strategy-allocation-labels" data-allocation-labels aria-live="polite">
+                                <span class="strategy-allocation-label strategy-allocation-label--primary" data-allocation-primary-label>
+                                    <span class="strategy-allocation-label-name" data-allocation-primary-name>Primary</span>
+                                    <span class="strategy-allocation-label-value" data-allocation-primary-value>{{ allocation_primary[0].value }}%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--leveraged" data-allocation-leveraged-label>
+                                    <span class="strategy-allocation-label-name" data-allocation-leveraged-name>Leveraged</span>
+                                    <span class="strategy-allocation-label-value" data-allocation-leveraged-value>{{ allocation_leveraged[0].value }}%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--cash" data-allocation-cash-label>
+                                    <span class="strategy-allocation-label-name">Cash</span>
+                                    <span class="strategy-allocation-label-value" data-allocation-cash-value>0.00</span>
+                                </span>
                             </div>
                             <div class="strategy-allocation-track-shell">
-                                <div class="strategy-allocation-track" aria-hidden="true"></div>
-                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.1"
+                                <div class="strategy-allocation-track" aria-hidden="true">
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--primary" data-allocation-primary-segment></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--leveraged" data-allocation-leveraged-segment></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--cash" data-allocation-cash-segment></span>
+                                </div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.01"
                                        value="{{ allocation_primary[0].value }}" data-allocation-boundary="primary"
-                                       aria-label="Ticker 1 allocation boundary">
-                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.1"
+                                       aria-label="Primary allocation boundary">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.01"
                                        value="{{ allocation_primary[0].value|float + allocation_leveraged[0].value|float }}"
-                                       data-allocation-boundary="invested" aria-label="Ticker 2 and cash boundary">
+                                       data-allocation-boundary="invested" aria-label="Leveraged and cash boundary">
                             </div>
                             <div class="trade-strategy-param" data-strategy-param-key="{{ allocation_primary[0].key }}" data-strategy-param-kind="number" hidden>
                                 <input type="hidden" name="{{ allocation_primary[0].key }}" value="{{ allocation_primary[0].value }}"

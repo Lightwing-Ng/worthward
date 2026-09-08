@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.10.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.0."""
 
 from __future__ import annotations
 
@@ -83,10 +83,50 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert response.status_code == 200
     assert 'id="shared-select-filter"' in html
     assert "--shared-select-option-padding" in html
+    assert "--shared-select-option-min-height" in html
     assert "--shared-select-option-radius" in html
     assert "--scrollable-data-table-header-height" in html
     assert "--scrollable-data-table-summary-background" in html
     assert 'data-summary-scope="both"' in html
+
+
+def test_field_titles_use_the_shared_agent_reference_role() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    forms_css = (
+        project_root / "app/web/static/assets/css/components/forms.css"
+    ).read_text(encoding="utf-8")
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+    style_token_rows = (
+        project_root / "app/web/style_token_rows.py"
+    ).read_text(encoding="utf-8")
+
+    for declaration in (
+        "--field-title-font-size: var(--font-ui-lg);",
+        "--field-title-line-height: normal;",
+        "--field-title-letter-spacing: normal;",
+        "--field-title-font-weight: var(--font-weight-regular);",
+        "--field-title-color: var(--text);",
+    ):
+        assert declaration in tokens_css
+    for stylesheet in (forms_css, investment_css, settings_css):
+        assert "font-size: var(--field-title-font-size);" in stylesheet
+        assert "font-weight: var(--field-title-font-weight);" in stylesheet
+    for token_name in (
+        "--field-title-font-size",
+        "--field-title-line-height",
+        "--field-title-letter-spacing",
+        "--field-title-font-weight",
+        "--field-title-color",
+    ):
+        assert style_token_rows.count(token_name) >= 3
 
 
 def test_style_tokens_render_examples_inside_the_collapse_specimen() -> None:
@@ -152,6 +192,76 @@ def test_style_token_period_dropdown_demo_uses_the_standard_period_options() -> 
     assert 'href="/settings/material-tokens#frosted-glass"' in card_html
 
 
+def test_style_tokens_expose_the_optional_strategy_tuning_control() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    forms_css = (
+        project_root / "app/web/static/assets/css/components/forms.css"
+    ).read_text(encoding="utf-8")
+    settings_js = (
+        project_root / "app/web/static/assets/js/settings.js"
+    ).read_text(encoding="utf-8")
+    html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
+
+    for token in (
+        "--strategy-tune-button-size: var(--shared-select-control-height);",
+        "--strategy-tune-button-icon-size: 14px;",
+        "--strategy-tune-panel-gap: 4px;",
+        "--strategy-tune-panel-padding: 10px;",
+        "--strategy-tune-panel-row-gap: 10px;",
+        "--strategy-tune-panel-row-height: 35px;",
+        "--strategy-tune-panel-label-share: 60%;",
+    ):
+        assert token in tokens_css
+    assert "width: var(--strategy-tune-button-size);" in forms_css
+    assert "padding: var(--strategy-tune-panel-padding);" in forms_css
+    assert 'data-style-token-card="strategy-tuning-control"' in html
+    assert "data-style-token-strategy-tune-button" in html
+    assert "data-style-token-strategy-tuning-panel" in html
+    assert 'aria-label="Tune strategy parameters"' in html
+    assert "Strategy parameters" in html
+    assert 'event.target.closest("[data-style-token-strategy-tune-button]")' in settings_js
+    assert "panel.hidden = !nextOpen;" in settings_js
+
+
+def test_workspace_metric_label_reuses_the_agent_field_typography_contract() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    trade_css = (
+        project_root / "app/web/static/assets/css/views/trade.css"
+    ).read_text(encoding="utf-8")
+    html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
+
+    for token in (
+        "--workspace-metric-label-font-size: var(--font-ui-lg);",
+        "--workspace-metric-label-line-height: normal;",
+        "--workspace-metric-label-letter-spacing: normal;",
+        "--workspace-metric-label-font-weight: var(--font-weight-regular);",
+        "--workspace-metric-label-color: var(--text);",
+        "--workspace-metric-card-label-min-height: 18px;",
+        "--workspace-metric-card-min-height: 48px;",
+        "--workspace-metric-card-row-gap: 2px;",
+    ):
+        assert token in tokens_css
+    for token in (
+        "--trade-metric-label-font-size: var(--workspace-metric-label-font-size);",
+        "--trade-metric-label-line-height: var(--workspace-metric-label-line-height);",
+        "--trade-metric-label-font-weight: var(--workspace-metric-label-font-weight);",
+        "--trade-metric-label-color: var(--workspace-metric-label-color);",
+        "min-height: var(--workspace-metric-card-min-height);",
+    ):
+        assert token in trade_css
+    card_start = html.index('data-style-token-card="workspace-metric-value"')
+    card_end = html.find('data-style-token-card="', card_start + 1)
+    card_html = html[card_start:card_end if card_end >= 0 else None]
+    assert ">Total trades</span>" in card_html
+    assert ">2</span>" in card_html
+
+
 def test_requested_style_token_components_link_to_frosted_glass() -> None:
     client = create_app().test_client()
 
@@ -166,6 +276,7 @@ def test_requested_style_token_components_link_to_frosted_glass() -> None:
         "settings-action-package",
         "shared-select-filter",
         "shared-select-dropdown",
+        "strategy-tuning-control",
     )
 
     assert response.status_code == 200

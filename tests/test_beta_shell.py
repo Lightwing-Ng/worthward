@@ -1,4 +1,4 @@
-"""Render the real Beta shell without market or strategy execution. Code version: v0.1.0."""
+"""Render the real Beta shell without market or strategy execution. Code version: v0.2.0."""
 
 from app.beta.registry import EXPERIMENTS
 
@@ -9,6 +9,7 @@ def test_real_beta_pages_reuse_shell_with_scoped_assets(client):
         assert response.status_code == 200
         html = response.get_data(as_text=True)
         assert 'data-dock-group="beta"' in html
+        assert '/static/images/sparkles.2.svg' in html
         assert html.index('data-dock-group="trade"') < html.index('data-dock-group="beta"') < html.index('data-dock-group="settings"')
         assert 'aria-label="Beta experiments"' in html
         assert 'assets/js/beta.js' in html

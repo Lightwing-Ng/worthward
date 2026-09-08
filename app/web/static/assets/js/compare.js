@@ -1,4 +1,4 @@
-/* Code version: v0.5.2 */
+/* Code version: v0.6.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const appState = () => window.WORTHWARD_APP || {};
@@ -212,12 +212,7 @@
 		return (params.get("range") || params.get("range_mode") || "").trim().toLowerCase();
 	};
 
-	const formatLocalIsoDate = (date = new Date()) => {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, "0");
-		const day = String(date.getDate()).padStart(2, "0");
-		return `${year}-${month}-${day}`;
-	};
+	const getCompareCurrentDate = () => String(appState().comparisonCurrentDate || "").trim();
 
 	const isExactOneDayComparePage = () => {
 		const state = appState();
@@ -254,7 +249,10 @@
 	};
 
 	const shouldRefreshCompareLiveChart = () => {
-		if (isExactOneDayComparePage()) return getCompareSelectedDate() === formatLocalIsoDate();
+		if (isExactOneDayComparePage()) {
+			const currentDate = getCompareCurrentDate();
+			return Boolean(currentDate) && getCompareSelectedDate() === currentDate;
+		}
 		return isRelativeMultiDayLiveComparePage();
 	};
 
@@ -269,7 +267,6 @@
 		if (tickers.length < 2) return null;
 		if (isRelativeMultiDayLiveComparePage()) {
 			params.set("period", getComparePeriod());
-			params.set("live_date", formatLocalIsoDate());
 		} else {
 			const axisDate = getCompareAxisDate();
 			const liveDate = getCompareSelectedDate();
@@ -386,6 +383,7 @@
 		}
 		state.chart.series = liveSeries;
 		state.chart.tradingDate = payload.axisDate || state.chart.tradingDate;
+		state.comparisonCurrentDate = payload.currentComparisonDate || state.comparisonCurrentDate;
 		state.chart.liveComparison = {
 			active: payload.liveSessionActive === true,
 			axisDate: payload.axisDate || "",
@@ -430,12 +428,18 @@
 	};
 
 	const scheduleCompareLiveRefresh = (delay = COMPARE_LIVE_INITIAL_DELAY_MS) => {
-		if (!shouldRefreshCompareLiveChart()) return;
 		if (compareLiveRefreshTimer) window.clearTimeout(compareLiveRefreshTimer);
+		compareLiveRefreshTimer = 0;
+		if (!shouldRefreshCompareLiveChart()) return;
 		compareLiveRefreshTimer = window.setTimeout(() => {
 			compareLiveRefreshTimer = 0;
 			void refreshCompareLiveChart();
 		}, delay);
+	};
+
+	bootstrap.syncCompareLiveRefresh = (delay = COMPARE_LIVE_INITIAL_DELAY_MS) => {
+		compareLiveRequestSerial += 1;
+		scheduleCompareLiveRefresh(delay);
 	};
 
 	bootstrap.registerWorkspaceShareProvider?.("tickers", {
@@ -451,7 +455,7 @@
 		},
 	});
 	removeCompareAxisNotice();
-	scheduleCompareLiveRefresh();
+	bootstrap.syncCompareLiveRefresh();
 	document.addEventListener("visibilitychange", () => {
 		if (!document.hidden) scheduleCompareLiveRefresh(500);
 	});

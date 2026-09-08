@@ -1,4 +1,4 @@
-{# Code version: v0.15.2 #}
+{# Code version: v0.17.1 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -97,7 +97,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.22.2') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.24.0') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -542,13 +542,43 @@
             </div>
     </section>
     {% elif settings_section == "strategies" %}
-    <p class="settings-summary">{{ translate_ui('Review the built-in trading strategies and their reusable backtest parameters in this workspace.') }}</p>
-    {% for row in strategy_settings_rows %}
-    <details class="ui-collapse settings-strategy-card"{% if loop.first %} open{% endif %}>
+    <p class="settings-summary">{{ translate_ui('Review the authoritative strategy categories used by Backtest, then inspect each strategy and its reusable parameters.') }}</p>
+    <nav class="settings-strategy-category-index" aria-label="{{ translate_ui('Strategy categories') }}">
+        {% for group in strategy_settings_groups %}
+        <a class="settings-strategy-category-link" href="#strategy_category_{{ group.key }}">
+            <span>{{ group.label }}</span>
+            <span class="settings-strategy-category-link-count">{{ group.count }}</span>
+        </a>
+        {% endfor %}
+    </nav>
+    {% set strategy_ns = namespace(opened=false) %}
+    {% for group in strategy_settings_groups %}
+    <section id="strategy_category_{{ group.key }}" class="settings-strategy-category" data-strategy-category="{{ group.key }}" aria-labelledby="strategy_category_{{ group.key }}_title">
+        <header class="settings-strategy-category-header">
+            <div class="settings-strategy-category-copy">
+                <h2 id="strategy_category_{{ group.key }}_title" class="settings-strategy-category-title">{{ group.label }}</h2>
+                <p class="settings-strategy-category-description">{{ group.description }}</p>
+            </div>
+            <span class="settings-strategy-category-count">{{ group.count }} {{ translate_ui('strategies') }}</span>
+        </header>
+        <div class="settings-strategy-list">
+        {% for row in group['items'] %}
+        {% set initially_open = not strategy_ns.opened %}
+        {% if initially_open %}{% set strategy_ns.opened = true %}{% endif %}
+        <details class="ui-collapse settings-strategy-card" data-strategy-id="{{ row.id }}"{% if initially_open %} open{% endif %}>
                 <summary class="settings-strategy-summary">
                     <div class="settings-service-main settings-strategy-main">
                         <p class="settings-service-name">{{ row.name }}</p>
-                        <p class="settings-service-note">{{ row.category }} · {{ row.description }}</p>
+                        <p class="settings-service-note">{{ row.description }}</p>
+                        <div class="settings-strategy-meta" aria-label="{{ row.name }} {{ translate_ui('capabilities') }}">
+                            {% if row.supports.execution_intervals %}
+                            <span>{{ row.supports.execution_intervals|join(' · ') }}</span>
+                            {% endif %}
+                            <span>{{ row.parameters|length }} {{ translate_ui('parameters') }}</span>
+                            {% if row.presentation_renderer == 'probability-grid-v1' %}
+                            <span>{{ translate_ui('Price Field grid') }}</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </summary>
                 {% if row.parameters %}
@@ -588,8 +618,13 @@
                         </div>
                     </div>
                 </div>
+                {% else %}
+                <p class="settings-strategy-empty">{{ translate_ui('No configurable parameters.') }}</p>
                 {% endif %}
-    </details>
+        </details>
+        {% endfor %}
+        </div>
+    </section>
     {% endfor %}
     {% elif settings_section == "email-smtp" %}
     <section class="settings-action-package settings-callout-card-warning">
@@ -1527,6 +1562,44 @@
                             </div>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "strategy-tuning-control" %}
+                    <section class="style-token-strategy-tuning-demo" data-style-token-strategy-tuning aria-label="{{ translate_ui('Strategy tuning control demo') }}">
+                        <span class="style-token-strategy-tuning-label">{{ translate_ui(row.sample_title) }}</span>
+                        <div class="style-token-strategy-tuning-row">
+                            <button type="button"
+                                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger style-token-strategy-tuning-trigger"
+                                    aria-label="{{ translate_ui(row.sample_title) }}: {{ translate_ui(row.sample_button) }}">
+                                <span class="trade-strategy-trigger-label">{{ translate_ui(row.sample_button) }}</span>
+                            </button>
+                            <button type="button"
+                                    class="trade-strategy-tune-button is-active"
+                                    data-style-token-strategy-tune-button
+                                    aria-label="{{ translate_ui('Tune strategy parameters') }}"
+                                    aria-pressed="true"
+                                    aria-expanded="true"
+                                    aria-controls="style_token_strategy_tuning_panel">
+                                <span class="icon icon-strategy-tune" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                        <section id="style_token_strategy_tuning_panel"
+                                 class="trade-strategy-params-popover style-token-strategy-tuning-panel"
+                                 data-style-token-strategy-tuning-panel
+                                 role="region"
+                                 aria-label="{{ translate_ui('Strategy parameters') }}">
+                            <div class="style-token-strategy-tuning-heading">
+                                <span>{{ translate_ui('Strategy parameters') }}</span>
+                                <span class="style-token-strategy-tuning-chevron" aria-hidden="true"></span>
+                            </div>
+                            <div class="style-token-strategy-tuning-grid">
+                                {% for field in row.sample_fields %}
+                                <div class="style-token-strategy-tuning-param">
+                                    <span>{{ translate_ui(field.label) }}</span>
+                                    <output>{{ field.value }}</output>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    </section>
                     {% elif row.sample_kind == "trade-strategy-stepper" %}
                     <div class="style-token-stepper-shell">
                         <div class="style-token-stepper-preview">

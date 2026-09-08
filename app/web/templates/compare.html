@@ -1,4 +1,4 @@
-{# Code version: v0.3.2 #}
+{# Code version: v0.4.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -16,24 +16,24 @@
 {% endblock %}
 
 {% block workspace_content %}
-<section class="workspace-mode-shell">
-    <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
+<section class="workspace-mode-shell" aria-labelledby="return_comparison_heading">
+    <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
         <div class="report-heading-row" data-layout-role="title-heading">
-            <p class="report-heading">{{ labels.dock_tickers }}</p>
+            <h2 class="report-heading" id="return_comparison_heading">{{ labels.dock_tickers }}</h2>
         </div>
-    </article>
+    </header>
     <div class="workspace-mode-layout">
-        <article class="chart-surface workspace-mode-controls-surface">
+        <aside class="chart-surface workspace-mode-controls-surface" aria-labelledby="return_comparison_heading">
             {% include "_compare_portfolio_sidebar.html" %}
-        </article>
-        <article class="workspace-mode-main">
+        </aside>
+        <section class="workspace-mode-main" aria-labelledby="return_performance_heading">
             {% if series %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                <header class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
                     <div class="report-heading-row" data-layout-role="result-heading">
-                        <p class="report-heading">{{ report_heading }}</p>
+                        <h2 class="report-heading" id="return_performance_heading">{{ report_heading }}</h2>
                     </div>
-                </article>
+                </header>
 
                 <article class="report-card workspace-content-card compare-summary-content-card" data-layout-role="result-container">
                     <div id="compare_summary_panel">
@@ -76,11 +76,11 @@
             </article>
             {% else %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
-                <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
+                <header class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
                     <div class="report-heading-row" data-layout-role="result-heading">
-                        <p class="report-heading">{{ report_heading }}</p>
+                        <h2 class="report-heading" id="return_performance_heading">{{ report_heading }}</h2>
                     </div>
-                </article>
+                </header>
                 <article class="report-card workspace-content-card compare-summary-content-card" data-layout-role="result-container">
                     <div class="placeholder-copy chart-placeholder-copy">
                         <p>Please configure at least two tickers to compare.</p>
@@ -89,11 +89,11 @@
                 {{ render_chart_surface(chart_heading, False, "Please configure at least two tickers to compare.", "compare_chart_region") }}
             </article>
             {% endif %}
-        </article>
+        </section>
     </div>
 </section>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/compare.js', v=version ~ '-compare-v0.5.2') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/compare.js', v=version ~ '-compare-v0.6.0') }}"></script>
 {% endblock %}

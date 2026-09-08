@@ -1,6 +1,32 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.4.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
+	const normalizeShareAllocationEntries = (entries, resolveInitialPrice = () => null) => {
+		if (!Array.isArray(entries) || !entries.length) return [];
+		const valuedEntries = entries.map((entry) => {
+			const shares = Math.max(0, Number.parseInt(String(entry?.shares || 0), 10) || 0);
+			const rawInitialPrice = entry?.initialPrice
+				?? entry?.initial_price
+				?? resolveInitialPrice(entry?.ticker);
+			const initialPrice = Number.parseFloat(String(rawInitialPrice ?? ""));
+			return {
+				...entry,
+				shares,
+				initialValue: shares * initialPrice,
+				isValid: shares > 0 && Number.isFinite(initialPrice) && initialPrice > 0,
+			};
+		});
+		if (valuedEntries.some((entry) => !entry.isValid)) return null;
+		const totalInitialValue = valuedEntries.reduce((sum, entry) => sum + entry.initialValue, 0);
+		if (!(totalInitialValue > 0)) return null;
+		return valuedEntries.map(({isValid: _isValid, initialValue, ...entry}) => ({
+			...entry,
+			weight: (initialValue / totalInitialValue) * 100,
+		}));
+	};
+	window.WORTHWARD_PORTFOLIO_PREVIEW = Object.freeze({
+		normalizeShareAllocationEntries,
+	});
 
 	const initPortfolioWorkspace = () => {
 		const state = window.WORTHWARD_APP;
@@ -46,16 +72,24 @@
 
 		const getPortfolioItem = (ticker) => state.portfolio?.items?.find((item) => item.ticker === ticker) || null;
 		const getPortfolioLogoUrl = (ticker) => getPortfolioItem(ticker)?.logo_url || "";
+		const getPortfolioInitialPrice = (ticker) => getPortfolioItem(ticker)?.initial_price ?? null;
+		const getPortfolioAllocationModeFromDom = () => {
+			const selected = Array.from(document.querySelectorAll("[data-portfolio-allocation-input]"))
+				.find((input) => input instanceof HTMLInputElement && input.checked);
+			return selected?.value === "shares" ? "shares" : "weight";
+		};
 		const getPortfolioEntriesFromDom = () => Array.from(document.querySelectorAll(".ticker-field"))
 			.map((field, index) => {
 				const tickerInput = field.querySelector('[data-ticker-input]') || field.querySelector('input[name="ticker"]');
 				const weightInput = field.querySelector(".portfolio-weight-input");
+				const sharesInput = field.querySelector(".portfolio-share-input");
 				const ticker = tickerInput?.value?.trim()?.toUpperCase() || "";
 				if (!ticker || !weightInput) return null;
 				return {
 					index,
 					ticker,
 					weight: Number.parseInt(weightInput.value, 10) || 0,
+					shares: Number.parseInt(sharesInput?.value || "0", 10) || 0,
 				};
 			})
 			.filter(Boolean);
@@ -63,6 +97,7 @@
 			const search = new URLSearchParams(window.location.search);
 			const tickers = search.getAll("ticker");
 			const weights = search.getAll("weight");
+			const shares = search.getAll("shares");
 			return tickers
 				.map((ticker, index) => {
 					const normalizedTicker = String(ticker || "").trim().toUpperCase();
@@ -71,6 +106,7 @@
 						index,
 						ticker: normalizedTicker,
 						weight: Number.parseInt(weights[index] || "0", 10) || 0,
+						shares: Number.parseInt(shares[index] || "0", 10) || 0,
 					};
 				})
 				.filter(Boolean);
@@ -218,26 +254,30 @@
 		};
 
 		let lastResolvedEntries = [];
-		const resolvePreviewEntries = (entries) => {
-			if (Array.isArray(entries) && entries.length) {
-				lastResolvedEntries = entries;
-				return entries;
+		const resolvePreviewEntries = (entries, allocationMode = getPortfolioAllocationModeFromDom()) => {
+			let sourceEntries = Array.isArray(entries) && entries.length ? entries : null;
+			if (!sourceEntries) {
+				const domEntries = getPortfolioEntriesFromDom();
+				if (domEntries.length) sourceEntries = domEntries;
 			}
-			const domEntries = getPortfolioEntriesFromDom();
-			if (domEntries.length) {
-				lastResolvedEntries = domEntries;
-				return domEntries;
+			if (!sourceEntries) {
+				const urlEntries = getPortfolioEntriesFromUrl();
+				if (urlEntries.length) sourceEntries = urlEntries;
 			}
-			const urlEntries = getPortfolioEntriesFromUrl();
-			if (urlEntries.length) {
-				lastResolvedEntries = urlEntries;
-				return urlEntries;
-			}
-			return Array.isArray(entries) ? entries : lastResolvedEntries;
+			if (!sourceEntries) return Array.isArray(entries) ? entries : lastResolvedEntries;
+			const resolvedEntries = allocationMode === "shares"
+				? normalizeShareAllocationEntries(sourceEntries, getPortfolioInitialPrice)
+				: sourceEntries;
+			if (!resolvedEntries) return lastResolvedEntries;
+			lastResolvedEntries = resolvedEntries;
+			return resolvedEntries;
 		};
 
-		const renderPortfolioPreview = (entries = getPortfolioEntriesFromDom()) => {
-			const resolvedEntries = resolvePreviewEntries(entries);
+		const renderPortfolioPreview = (
+			entries = getPortfolioEntriesFromDom(),
+			allocationMode = getPortfolioAllocationModeFromDom(),
+		) => {
+			const resolvedEntries = resolvePreviewEntries(entries, allocationMode);
 			renderDonut({ donut: startDonut, orbit: startOrbit, logoLayer: startLogoLayer, entries: resolvedEntries });
 			renderDonut({ donut: endDonut, orbit: endOrbit, logoLayer: endLogoLayer, entries: buildEndingEntries(resolvedEntries) });
 		};
@@ -246,7 +286,7 @@
 			window.removeEventListener("worthward:portfolio-preview", window.__worthwardPortfolioPreviewHandler);
 		}
 		window.__worthwardPortfolioPreviewHandler = (event) => {
-			renderPortfolioPreview(resolvePreviewEntries(event.detail?.entries));
+			renderPortfolioPreview(event.detail?.entries, event.detail?.allocation);
 		};
 		window.addEventListener("worthward:portfolio-preview", window.__worthwardPortfolioPreviewHandler);
 

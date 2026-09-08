@@ -1,4 +1,4 @@
-"""One strategy adapter for four direct probability engines. Code version: v1.0.0."""
+"""One strategy adapter for four direct probability engines. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class NeuralPriceFieldStrategy(BaseStrategy):
 
     architecture = ""
     strategy_training_family = "neural-price-field-v1"
-    strategy_category = "machine-learning"
+    strategy_category = "price-field"
     strategy_supports = StrategySupportMatrix(single_ticker=True, multi_ticker=False, long_only=True, short=False)
     strategy_supported_intervals = ("1d",)
     strategy_market_data_source = "longbridge-cli"
@@ -195,8 +195,9 @@ class NeuralPriceFieldStrategy(BaseStrategy):
                                    },
                                    "render_lattice": {
                                        "columns": 20, "rows_above": 10, "rows_below": 10,
-                                       "horizon_unit": "integer-trading-days-per-viewport-column",
-                                       "horizon_mapping": "viewport-quantized", "max_horizon": 20,
+                                       "horizon_unit": "close-to-future-close-session",
+                                       "horizon_mapping": "direct-learned-1-through-20",
+                                       "spatial_mapping": "viewport-quantized-display-only", "max_horizon": 20,
                                        "detail_horizons": list(range(1, 21)), "beyond_max_horizon": "unavailable",
                                    },
                                }},

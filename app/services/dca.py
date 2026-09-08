@@ -1,7 +1,7 @@
 """
 Recurring investment simulator.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ WEEKDAY_LABELS = {
     2: "Wednesday",
     3: "Thursday",
     4: "Friday",
+    5: "Saturday",
+    6: "Sunday",
 }
 
 

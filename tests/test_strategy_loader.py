@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ class StrategyLoaderTests(unittest.TestCase):
 
         macd = next(item for item in strategies if item["id"] == "macd")
         self.assertEqual(macd["name"], "MACD")
-        self.assertEqual(macd["category"], "momentum")
+        self.assertEqual(macd["category"], "technical-analysis")
         self.assertEqual(macd["ui"]["display_order"], 20)
         self.assertEqual(macd["default_params"]["fast_span"], 12)
         self.assertTrue(macd["supports"]["single_ticker"])
@@ -55,10 +55,19 @@ class StrategyLoaderTests(unittest.TestCase):
     def test_enabled_strategy_list_exposes_categories_for_grouped_ui(self) -> None:
         categories = {item["id"]: item["category"] for item in list_enabled_strategies()}
         self.assertEqual(categories["buy-and-hold"], "baseline")
-        self.assertEqual(categories["macd"], "momentum")
-        self.assertEqual(categories["supertrend-ai"], "trend")
-        self.assertEqual(categories["lstm-price-field"], "machine-learning")
-        self.assertEqual(categories["bayesian-price-field"], "machine-learning")
+        self.assertEqual(categories["dca"], "investment-automation")
+        self.assertEqual(categories["grid-trading"], "investment-automation")
+        self.assertEqual(categories["macd"], "technical-analysis")
+        self.assertEqual(categories["supertrend-ai"], "technical-analysis")
+        self.assertEqual(categories["lorentzian-classification"], "technical-analysis")
+        self.assertEqual(categories["knn-machine-learning"], "machine-learning")
+        self.assertEqual(categories["leveraged-rotation"], "portfolio-rotation")
+        self.assertEqual(categories["lstm-price-field"], "price-field")
+        self.assertEqual(categories["bayesian-price-field"], "price-field")
+
+        for item in list_enabled_strategies():
+            if item.get("presentation_renderer") == "probability-grid-v1":
+                self.assertEqual(item["category"], "price-field")
 
     def test_catalog_class_resolution_matches_instantiation(self) -> None:
         catalog_item = next(item for item in list_enabled_strategies() if item["id"] == "supertrend-ai")

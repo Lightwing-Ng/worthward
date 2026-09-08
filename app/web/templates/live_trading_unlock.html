@@ -1,4 +1,4 @@
-{# Code version: v1.6.1 #}
+{# Code version: v1.9.0 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -115,7 +115,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.76.0') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.83.0') }}">
     <style>
         html,
         body {
@@ -149,7 +149,7 @@
                 inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 82%, transparent);
             backdrop-filter: blur(32px) saturate(1.28);
             -webkit-backdrop-filter: blur(32px) saturate(1.28);
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+            font-family: var(--font-family-base);
         }
 
         .live-trading-pin-dialog::after {
@@ -296,7 +296,7 @@
             background: var(--accent-fill);
             color: var(--accent-contrast);
             box-shadow: 0 8px 18px -12px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent);
-            font: 600 14px / 1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            font: 600 14px / 1 var(--font-family-base);
             line-height: 1;
             cursor: pointer;
         }

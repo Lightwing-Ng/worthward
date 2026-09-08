@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.31.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.32.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,7 +50,7 @@ test('new models reuse the versioned renderer contract without a model allowlist
 });
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.31.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.32.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -636,6 +636,7 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
     )));
     assert.ok(cells.every((cell) => Number.isInteger(cell.horizon)));
     assert.ok(cells.every((cell) => Number.isInteger(cell.daysPerColumn)));
+    assert.ok(cells.every((cell) => cell.horizonStep === geometry.daysPerColumn));
     assert.ok(cells.every((cell) => cell.slotWidth === geometry.slotWidth));
     assert.equal(cells[0].x, geometry.anchorX + geometry.gridPaddingInlineStart);
     assert.equal(geometry.gridPaddingInlineStart, 2);

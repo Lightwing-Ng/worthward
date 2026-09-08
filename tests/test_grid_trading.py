@@ -1,4 +1,4 @@
-"""Tests for the grid trading strategy and workspace. Code version: v1.5.0."""
+"""Tests for the grid trading strategy and workspace. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -152,9 +152,40 @@ def test_grid_trading_moves_between_holding_limits() -> None:
         ("Buy", 2.0),
         ("Sell", 4.0),
     ]
-    assert result["trades"][0]["cash"] == 404.0
-    assert result["trades"][1]["cash"] == 804.0
-    assert result["summary"]["final_equity"] == 1_004.0
+    assert result["trades"][0]["cash"] == 804.0
+    assert result["trades"][1]["cash"] == 1_204.0
+    assert result["summary"]["initial_cash"] == 1_000.0
+    assert result["summary"]["initial_capital"] == 1_400.0
+    assert result["summary"]["final_equity"] == 1_404.0
+
+
+def test_grid_current_holding_is_existing_equity_in_addition_to_initial_cash() -> None:
+    strategy = instantiate_strategy("grid-trading")
+    signal_result = strategy.compute_signals(pd.DataFrame({
+        "Date": pd.date_range("2026-01-01", periods=2),
+        "Open": [450.0, 450.0],
+        "High": [450.0, 450.0],
+        "Low": [450.0, 450.0],
+        "Close": [450.0, 450.0],
+    }), {
+        "initial_holding": 100,
+        "holding_min": 100,
+        "holding_max": 100,
+        "rise": 2.0,
+        "fall": 2.0,
+    })
+
+    result = run_single_ticker_backtest(
+        signal_result,
+        initial_capital=10_000.0,
+        execution_mode="signal_close",
+    )
+
+    assert result["summary"]["initial_cash"] == 10_000.0
+    assert result["summary"]["initial_capital"] == 55_000.0
+    assert result["summary"]["final_equity"] == 55_000.0
+    assert result["summary"]["net_return_pct"] == 0.0
+    assert result["trades"] == []
 
 
 def test_legacy_grid_trading_workspace_redirects_to_generic_backtest() -> None:
@@ -240,6 +271,7 @@ def test_backtest_workspace_exposes_grid_parameters_from_the_strategy_catalog() 
     assert 'name="fall"' in html
     assert 'value="0.50"' in html
     assert 'name="workspace"' not in html
+    assert 'Initial cash (USD)' in html
 
 
 def test_backtest_results_match_investment_surface_layout() -> None:

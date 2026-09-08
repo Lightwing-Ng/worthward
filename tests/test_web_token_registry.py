@@ -1,14 +1,16 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.9.1
+Code version: v0.11.0
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
+from hashlib import sha256
 import re
+import struct
 import unittest
 from pathlib import Path
 
@@ -21,6 +23,7 @@ from app.web.style_token_rows import (
     build_material_token_rows,
     build_style_token_rows,
 )
+from scripts.build_web_fonts import FACE_NAMES, SOURCE_SHA256, extract_face
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -143,27 +146,52 @@ class WebTokenRegistryTests(unittest.TestCase):
         fonts_css = read_text(WEB_CSS_ROOT / "foundation" / "fonts.css")
         tokens_css = read_text(FOUNDATION_TOKENS_CSS_PATH)
         collection_path = WEB_FONTS_ROOT / "UniversNextforHSBC.ttc"
+        collection = collection_path.read_bytes()
 
         self.assertTrue(collection_path.is_file())
-        self.assertEqual(collection_path.read_bytes()[:4], b"ttcf")
+        self.assertEqual(collection[:4], b"ttcf")
+        self.assertEqual(sha256(collection).hexdigest(), SOURCE_SHA256)
         self.assertIn('font-family: "Univers Next for HSBC";', fonts_css)
-        self.assertIn('format("truetype-collection")', fonts_css)
+        self.assertNotIn('format("truetype-collection")', fonts_css)
         self.assertNotIn("hsbc-compatible/", fonts_css)
         self.assertIn('--font-family-brand: "Univers Next for HSBC";', tokens_css)
+        self.assertIn(
+            "--font-family-base: var(--font-family-brand), var(--font-family-cjk);",
+            tokens_css,
+        )
+        self.assertIn("--font-family-mono: var(--font-family-base);", tokens_css)
         self.assertIn("font-synthesis: none", tokens_css)
 
-        for postscript_name in (
-            "UniversNextforHSBC-UltraLight",
-            "UniversNextforHSBC-UltraLightItalic",
-            "UniversNextforHSBC-Thin",
-            "UniversNextforHSBC-ThinItalic",
-            "UniversNextforHSBC-Light",
-            "UniversNextforHSBC-LightItalic",
-            "UniversNextforHSBC-Regular",
-            "UniversNextforHSBC-Medium",
-            "UniversNextforHSBC-Bold",
-        ):
-            self.assertIn(f"#{postscript_name}", fonts_css)
+        for index, face_name in enumerate(FACE_NAMES):
+            target = WEB_FONTS_ROOT / f"UniversNextforHSBC-{face_name}.ttf"
+            offset = struct.unpack_from(">I", collection, 12 + 4 * index)[0]
+            self.assertTrue(target.is_file())
+            self.assertEqual(target.read_bytes(), extract_face(collection, offset))
+            self.assertIn(
+                f'url("../../fonts/UniversNextforHSBC-{face_name}.ttf") format("truetype")',
+                fonts_css,
+            )
+
+    def test_production_runtime_has_no_unapproved_western_font_family(self) -> None:
+        forbidden = re.compile(
+            r"GDS Transport|Helvetica(?: Neue)?|Arial|Georgia|SF Pro|SFMono|Menlo|Monaco|"
+            r"Consolas|Liberation Mono|Courier New|Times New Roman|system-ui|"
+            r"(?:^|[^A-Za-z])Inter(?:[^A-Za-z]|$)|monospace",
+        )
+        runtime_roots = (
+            REPO_ROOT / "app" / "web" / "static" / "assets" / "css",
+            REPO_ROOT / "app" / "web" / "static" / "assets" / "js",
+            REPO_ROOT / "app" / "web" / "templates",
+        )
+        violations: list[str] = []
+        for runtime_root in runtime_roots:
+            for path in runtime_root.rglob("*"):
+                if path.suffix not in {".css", ".html", ".js"} or "vendor" in path.parts:
+                    continue
+                if forbidden.search(read_text(path)):
+                    violations.append(str(path.relative_to(REPO_ROOT)))
+
+        self.assertEqual(violations, [])
 
     def test_style_token_registry_names_are_unique(self) -> None:
         token_names = collect_literal_runtime_token_names("build_style_token_rows")
@@ -311,6 +339,16 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(
             workspace_metric_tokens["--workspace-metric-decimal-scale"],
             "var(--font-numeric-fraction-scale)",
+        )
+        self.assertEqual(workspace_metric["sample_title"], "Total trades")
+        self.assertEqual(workspace_metric["sample_value"], "2")
+        self.assertEqual(
+            workspace_metric_tokens["--workspace-metric-label-font-size"],
+            "var(--font-ui-lg)",
+        )
+        self.assertEqual(
+            workspace_metric_tokens["--workspace-metric-label-font-weight"],
+            "var(--font-weight-regular)",
         )
         self.assertGreaterEqual(len(font_metric_samples), 6)
 
