@@ -1,4 +1,4 @@
-{# Code version: v0.17.1 #}
+{# Code version: v0.18.0 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -1212,7 +1212,56 @@
             {% for row in style_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
-                    {% if row.sample_kind == "collapse" %}
+                    {% if row.sample_kind == "allocation-range" %}
+                    <div class="style-token-allocation-demo" aria-label="Allocation range variants">
+                        <div class="strategy-allocation-range style-token-allocation-distribution"
+                             style="--allocation-primary: 44%; --allocation-leveraged: 31%; --allocation-cash: 25%;">
+                            <div class="strategy-allocation-labels">
+                                <span class="strategy-allocation-label strategy-allocation-label--primary" style="left: 22%;">
+                                    <span class="strategy-allocation-label-name">QQQ</span>
+                                    <span class="strategy-allocation-label-value">44.00%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--leveraged" style="left: 59.5%;">
+                                    <span class="strategy-allocation-label-name">TQQQ</span>
+                                    <span class="strategy-allocation-label-value">31.00%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--cash" style="left: 87.5%;">
+                                    <span class="strategy-allocation-label-name">Cash</span>
+                                    <span class="strategy-allocation-label-value">2,500.00</span>
+                                </span>
+                            </div>
+                            <div class="strategy-allocation-track-shell">
+                                <div class="strategy-allocation-track" aria-hidden="true">
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--primary"></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--leveraged"></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--cash"></span>
+                                </div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="44" tabindex="-1" aria-label="QQQ allocation boundary">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="75" tabindex="-1" data-allocation-boundary="invested" aria-label="TQQQ and Cash boundary">
+                            </div>
+                        </div>
+                        {% for asset, ticker, minimum, maximum in [('primary', 'QQQ', 25, 100), ('leveraged', 'TQQQ', 0, 75)] %}
+                        <div class="strategy-limit-range strategy-limit-range--{{ asset }}">
+                            <div class="strategy-limit-ticker">{{ ticker }}</div>
+                            <div class="strategy-limit-labels">
+                                <label class="{{ 'is-range-start' if minimum == 0 else '' }}" style="left: {{ minimum }}%;">
+                                    <span class="strategy-limit-value">{{ minimum }}%</span>
+                                    <span class="strategy-limit-caption">Minimum</span>
+                                </label>
+                                <label class="{{ 'is-range-end' if maximum == 100 else '' }}" style="left: {{ maximum }}%;">
+                                    <span class="strategy-limit-value">{{ maximum }}%</span>
+                                    <span class="strategy-limit-caption">Maximum</span>
+                                </label>
+                            </div>
+                            <div class="strategy-allocation-track-shell">
+                                <div class="strategy-allocation-track" aria-hidden="true"></div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="{{ minimum }}" tabindex="-1" aria-label="{{ ticker }} minimum">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="{{ maximum }}" tabindex="-1" aria-label="{{ ticker }} maximum">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% elif row.sample_kind == "collapse" %}
                         {% call render_collapse(row.sample_title, "style-token-collapse") %}
                         <div class="style-token-collapse-example" data-style-token-collapse-example>
                             <div class="style-token-collapse-example-header">

@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.23.0
+Code version: v1.24.0
 """
 
 from __future__ import annotations
@@ -157,6 +157,27 @@ def build_style_token_rows(
         return str(getattr(definition, "value", definition))
 
     rows = [
+        {
+            "id": style_token_id("Allocation range"),
+            "name": "Allocation range",
+            "sample_kind": "allocation-range",
+            "sample_title": "Allocation range",
+            "sample_copy": "The distribution and limit variants share one compact range geometry.",
+            "tokens": [
+                raw_token("--strategy-range-gap", "var(--sidebar-form-gap)"),
+                raw_token("--strategy-range-label-block-size", "calc(var(--strategy-param-control-height) + var(--strategy-range-gap))"),
+                raw_token("--strategy-range-track-shell-block-size", "var(--strategy-param-control-height)"),
+                raw_token("--strategy-range-track-thickness", "var(--strategy-tune-panel-gap)"),
+                raw_token("--strategy-range-hit-block-size", "calc(var(--strategy-param-control-height) - (var(--strategy-range-gap) * 3))"),
+                raw_token("--strategy-range-thumb-inline-size", "calc(var(--collapse-icon-size) - var(--strategy-range-gap))"),
+                raw_token("--strategy-range-thumb-block-size", "calc(var(--strategy-param-control-height) - (var(--strategy-range-gap) * 6))"),
+                raw_token("--strategy-range-close-offset", "calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2)"),
+                raw_token("--strategy-range-title-font-size", "var(--font-ui-lg)"),
+                raw_token("--strategy-range-detail-font-size", "var(--font-ui-xs)"),
+                raw_token("--strategy-range-limit-thumb-background", "var(--color-white-adaptive)"),
+            ],
+            "related_styles": [],
+        },
         {
             "id": "collapse",
             "name": "Collapse",
@@ -370,7 +391,7 @@ def build_style_token_rows(
                 raw_token("--strategy-tune-panel-radius", "var(--radius-soft)"),
                 px_token("--strategy-tune-panel-row-gap", 10, 0),
                 px_token("--strategy-tune-panel-row-height", 35, 1),
-                raw_token("--strategy-tune-panel-label-share", "65%"),
+                raw_token("--strategy-tune-panel-label-share", "60%"),
                 raw_token("--strategy-tune-panel-border", "1px solid var(--theme-glass-highlight)"),
                 raw_token("--strategy-tune-panel-shadow", "var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient)"),
                 raw_token("--strategy-tune-panel-blur", "var(--glass-popover-blur)"),
@@ -546,11 +567,6 @@ def build_style_token_rows(
                 raw_token("--scrollable-data-table-summary-border", "var(--frosted-glass-border)"),
                 raw_token("--scrollable-data-table-summary-shadow", "var(--frosted-glass-shadow)"),
                 raw_token("--scrollable-data-table-summary-blur", "var(--frosted-glass-blur)"),
-                raw_token("--field-title-font-size", "var(--font-ui-lg)"),
-                raw_token("--field-title-line-height", "normal"),
-                raw_token("--field-title-letter-spacing", "normal"),
-                raw_token("--field-title-font-weight", "var(--font-weight-regular)"),
-                raw_token("--field-title-color", "var(--text)"),
                 raw_token("--investment-holdings-cell-padding", "4px 6px"),
             ],
             "related_styles": [],

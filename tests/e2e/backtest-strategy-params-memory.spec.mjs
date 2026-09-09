@@ -1,4 +1,4 @@
-/* Code version: v0.5.3 */
+/* Code version: v0.6.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -104,8 +104,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     await expect(page.getByRole('slider', {name: 'TQQQ minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'TQQQ maximum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByText('Return window', {exact: true})).toBeAttached();
-    await expect(page.getByText('QQQ drop trigger', {exact: true})).toBeAttached();
-    await expect(page.getByText('TQQQ rise trigger', {exact: true})).toBeAttached();
+    await expect(page.getByText('Buy TQQQ: QQQ decline', {exact: true})).toBeAttached();
+    await expect(page.getByText('Buy QQQ: TQQQ rise', {exact: true})).toBeAttached();
     await expect(page.locator('#strategy_param_primary_min_pct')).toHaveValue('20');
     await expect(page.locator('#strategy_param_primary_max_pct')).toHaveValue('95');
     await expect(page.locator('#strategy_param_buy_leveraged_drop_pct')).toHaveValue('3.00');
@@ -201,8 +201,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     });
     await expect(page.getByRole('slider', {name: 'SPY minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'UPRO maximum', exact: true, includeHidden: true})).toBeAttached();
-    await expect(page.getByText('SPY drop trigger', {exact: true})).toBeAttached();
-    await expect(page.getByText('UPRO rise trigger', {exact: true})).toBeAttached();
+    await expect(page.getByText('Buy UPRO: SPY decline', {exact: true})).toBeAttached();
+    await expect(page.getByText('Buy SPY: UPRO rise', {exact: true})).toBeAttached();
     await expect(allocation.locator('[data-allocation-primary-name]')).toHaveText('SPY');
     await expect(allocation.locator('[data-allocation-leveraged-name]')).toHaveText('UPRO');
 
@@ -272,6 +272,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
         expect(geometry.trackBottom).toBeLessThanOrEqual(geometry.bottom);
         expect(geometry.interactiveHandles).toBe(true);
     }
+    const primaryLimitLabels = limits.locator('.strategy-limit-range--primary .strategy-limit-labels label');
+    await expect(primaryLimitLabels.first()).toHaveCSS('text-align', 'center');
     await page.setViewportSize({width: 1017, height: 1346});
     await page.locator('[data-trade-strategy-panel]').screenshot({path: '/tmp/worthward-allocation-limits.png', animations: 'disabled'});
     expect(await allocation.locator('input[type="range"]').evaluateAll((inputs) => inputs.map((input) => getComputedStyle(input).padding))).toEqual(['0px', '0px']);
@@ -281,13 +283,39 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     await expect(limits.locator('[name="leveraged_min_pct"]')).toHaveValue('0');
     await expect(limits.locator('[name="leveraged_max_pct"]')).toHaveValue('0');
     await expect(limits.locator('[name="primary_max_pct"]')).toHaveValue('100');
+    await expect(primaryLimitLabels.first()).toHaveCSS('text-align', 'right');
+    await expect(primaryLimitLabels.last()).toHaveCSS('text-align', 'right');
     await limits.locator('[name="primary_max_pct"]').evaluate((input) => {
         input.value = '0'; input.dispatchEvent(new Event('input', {bubbles: true}));
     });
     await expect(limits.locator('[name="primary_min_pct"]')).toHaveValue('0');
+    await expect(primaryLimitLabels.first()).toHaveCSS('text-align', 'left');
+    await expect(primaryLimitLabels.last()).toHaveCSS('text-align', 'left');
     await expect(limits.locator('.has-close-handles')).toHaveCount(2);
     await limits.locator('[name="primary_max_pct"]').dispatchEvent('change');
     await expect(page).toHaveURL(/primary_max_pct=0(?:\.00)?(?:&|$)/);
     await expect(page.locator('[name="primary_max_pct"]')).toHaveValue('0');
     await expect(page.locator('#tradePriceChart')).toBeVisible();
+});
+
+test('Style tokens catalogs both allocation range variants from foundation tokens', async ({page}) => {
+    await page.setViewportSize({width: 1_024, height: 900});
+    await page.goto('/settings/style-tokens#allocation-range');
+    const card = page.locator('[data-style-token-card="allocation-range"]');
+    await expect(card).toBeVisible();
+    await expect(card.locator('.strategy-allocation-range')).toHaveCount(1);
+    await expect(card.locator('.strategy-limit-range')).toHaveCount(2);
+    await expect(card.locator('.strategy-allocation-track-shell')).toHaveCount(3);
+    await expect(card.locator('.strategy-limit-labels label.is-range-start')).toHaveCSS('text-align', 'left');
+    await expect(card.locator('.strategy-limit-labels label.is-range-end')).toHaveCSS('text-align', 'right');
+    const tokenGeometry = await card.locator('.strategy-allocation-range').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            labelBlock: style.getPropertyValue('--strategy-range-label-block-size').trim(),
+            trackShell: style.getPropertyValue('--strategy-range-track-shell-block-size').trim(),
+            titleSize: style.getPropertyValue('--strategy-range-title-font-size').trim(),
+            detailSize: style.getPropertyValue('--strategy-range-detail-font-size').trim(),
+        };
+    });
+    expect(tokenGeometry).toEqual({labelBlock: 'calc(30px + 2px)', trackShell: '30px', titleSize: '15px', detailSize: '11px'});
 });

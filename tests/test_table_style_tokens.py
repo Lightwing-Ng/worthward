@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.2."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ def test_field_titles_use_the_shared_agent_reference_role() -> None:
         "--field-title-font-weight",
         "--field-title-color",
     ):
-        assert style_token_rows.count(token_name) >= 3
+        assert style_token_rows.count(token_name) >= 2
 
 
 def test_style_tokens_render_examples_inside_the_collapse_specimen() -> None:

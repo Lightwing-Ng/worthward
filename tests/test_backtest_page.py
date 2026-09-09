@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.19.2
+Code version: v0.20.0
 """
 
 from __future__ import annotations
@@ -869,7 +869,8 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('data-allocation-cash-segment', payload["html"])
         self.assertIn('data-strategy-allocation-limits', payload["html"])
         self.assertEqual(payload["html"].count('strategy-factor-group--allocation-visual'), 2)
-        self.assertIn('data-strategy-param-ui-role="ticker-label:1:rise-trigger"', payload["html"])
+        self.assertIn('data-strategy-param-ui-role="rotation-trigger:buy-leveraged"', payload["html"])
+        self.assertIn('data-strategy-param-ui-role="rotation-trigger:buy-primary"', payload["html"])
         self.assertIn('Allocation limits (%, equity)', payload["html"])
         self.assertIn('Rotation triggers (%, change)', payload["html"])
         self.assertIn('Return window', payload["html"])

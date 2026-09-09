@@ -1,4 +1,4 @@
-{# Code version: v0.43.5 #}
+{# Code version: v0.44.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.85.5') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.86.0') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -382,7 +382,7 @@
     <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.12.2') }}"></script>
 {% endif %}
     <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.63.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.64.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.12.0') }}"></script>
 {% endif %}

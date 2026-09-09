@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.8.1
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -129,8 +129,8 @@ class StrategyFormSchemaTests(unittest.TestCase):
             [item["label"] for item in fields["rotation_window"]["option_items"]],
             ["Single day", "1 week", "1 month", "3 months"],
         )
-        self.assertEqual(fields["buy_leveraged_drop_pct"]["ui_role"], "ticker-label:0:drop-trigger")
-        self.assertEqual(fields["sell_leveraged_rise_pct"]["ui_role"], "ticker-label:1:rise-trigger")
+        self.assertEqual(fields["buy_leveraged_drop_pct"]["ui_role"], "rotation-trigger:buy-leveraged")
+        self.assertEqual(fields["sell_leveraged_rise_pct"]["ui_role"], "rotation-trigger:buy-primary")
         self.assertEqual(
             fields["primary_min_pct"]["subgroup"],
             "Allocation limits (%, equity)",

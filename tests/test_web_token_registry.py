@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.11.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -254,6 +254,7 @@ class WebTokenRegistryTests(unittest.TestCase):
         )
 
         action_package = next(row for row in style_rows if row["name"] == "Settings action package")
+        allocation_range = next(row for row in style_rows if row["name"] == "Allocation range")
         primary_button = next(row for row in style_rows if row["name"] == "Primary button")
         secondary_button = next(row for row in style_rows if row["name"] == "Secondary button")
         self.assertNotIn("Settings action button", {row["name"] for row in style_rows})
@@ -288,6 +289,23 @@ class WebTokenRegistryTests(unittest.TestCase):
             [{"name": "Settings execution option", "target_id": "settings-execution-option"}],
         )
         self.assertEqual(action_package["sample_title"], labels["local_store_maintain_title"])
+        self.assertEqual(allocation_range["sample_kind"], "allocation-range")
+        self.assertEqual(
+            {token["name"] for token in allocation_range["tokens"]},
+            {
+                "--strategy-range-gap",
+                "--strategy-range-label-block-size",
+                "--strategy-range-track-shell-block-size",
+                "--strategy-range-track-thickness",
+                "--strategy-range-hit-block-size",
+                "--strategy-range-thumb-inline-size",
+                "--strategy-range-thumb-block-size",
+                "--strategy-range-close-offset",
+                "--strategy-range-title-font-size",
+                "--strategy-range-detail-font-size",
+                "--strategy-range-limit-thumb-background",
+            },
+        )
         self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
         self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
         self.assertEqual(material_rows[0]["name"], "Frosted glass")

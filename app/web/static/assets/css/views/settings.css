@@ -1,4 +1,31 @@
-/* Code version: v0.31.0 */
+/* Code version: v0.32.0 */
+
+.style-token-allocation-demo {
+    display: grid;
+    gap: var(--collapse-section-gap);
+    width: min(100%, var(--layout-control-width));
+    min-width: 0;
+}
+
+.style-token-allocation-demo .strategy-allocation-range,
+.style-token-allocation-demo .strategy-limit-range {
+    width: 100%;
+    margin: 0;
+}
+
+.style-token-allocation-demo .strategy-allocation-handle {
+    pointer-events: none;
+}
+
+.style-token-allocation-demo .strategy-limit-labels label.is-range-start {
+    left: 0 !important;
+    transform: none;
+}
+
+.style-token-allocation-demo .strategy-limit-labels label.is-range-end {
+    left: 100% !important;
+    transform: translateX(-100%);
+}
 
 .style-token-collapse-example {
     display: grid;
