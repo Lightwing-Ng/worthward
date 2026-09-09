@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.4.1."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.5.0."""
 
 from __future__ import annotations
 
@@ -69,6 +69,47 @@ def _cpu_params(**overrides: object) -> dict[str, object]:
 
 
 class LSTMPriceFieldStrategyTests(unittest.TestCase):
+    def test_aapl_grid_ga_profile_is_the_startup_default(self) -> None:
+        strategy = LSTMPriceFieldStrategy()
+        defaults = strategy.get_startup_params()
+        factor_keys = {
+            definition.key
+            for definition in strategy.get_parameter_definitions()
+            if definition.group == "factors" and defaults[definition.key]
+        }
+
+        self.assertEqual(
+            {
+                key: defaults[key]
+                for key in (
+                    "cell_display_threshold", "training_window", "chip_window",
+                    "lstm_lookback", "lstm_hidden_size", "lstm_epochs",
+                    "lstm_learning_rate", "lstm_seed", "entry_probability",
+                    "compute_backend",
+                )
+            },
+            {
+                "cell_display_threshold": 1.0,
+                "training_window": 466,
+                "chip_window": 232,
+                "lstm_lookback": 16,
+                "lstm_hidden_size": 23,
+                "lstm_epochs": 19,
+                "lstm_learning_rate": 0.005,
+                "lstm_seed": 42,
+                "entry_probability": 60.0,
+                "compute_backend": "CPU",
+            },
+        )
+        self.assertEqual(
+            factor_keys,
+            {
+                "use_close_location", "use_illiquidity_20d",
+                "use_momentum_5d", "use_overnight_gap",
+                "use_volatility_20d", "use_volume_at_price",
+            },
+        )
+
     def test_disabled_vap_skips_kernel_and_chip_window_warmup(self):
         from strategies.price_field_pipeline import load_price_field_market_bundle
 

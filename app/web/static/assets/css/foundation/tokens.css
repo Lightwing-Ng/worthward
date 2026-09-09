@@ -1,4 +1,4 @@
-/* Code version: v0.35.0 */
+/* Code version: v0.36.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -211,6 +211,17 @@
 	--strategy-tune-panel-border: 1px solid var(--theme-glass-highlight);
 	--strategy-tune-panel-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
 	--strategy-tune-panel-blur: var(--glass-popover-blur);
+	--strategy-range-gap: var(--sidebar-form-gap);
+	--strategy-range-label-block-size: calc(var(--strategy-param-control-height) + var(--strategy-range-gap));
+	--strategy-range-track-shell-block-size: var(--strategy-param-control-height);
+	--strategy-range-track-thickness: var(--strategy-tune-panel-gap);
+	--strategy-range-hit-block-size: calc(var(--strategy-param-control-height) - (var(--strategy-range-gap) * 3));
+	--strategy-range-thumb-inline-size: calc(var(--collapse-icon-size) - var(--strategy-range-gap));
+	--strategy-range-thumb-block-size: calc(var(--strategy-param-control-height) - (var(--strategy-range-gap) * 6));
+	--strategy-range-close-offset: calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2);
+	--strategy-range-title-font-size: var(--font-ui-lg);
+	--strategy-range-detail-font-size: var(--font-ui-xs);
+	--strategy-range-limit-thumb-background: var(--color-white-adaptive);
 	--settings-form-shell-max-width: var(--layout-content-width);
 	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: var(--layout-control-width);

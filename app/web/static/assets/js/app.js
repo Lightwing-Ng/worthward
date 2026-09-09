@@ -1,4 +1,4 @@
-/* Code version: v0.61.1 */
+/* Code version: v0.64.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -8034,6 +8034,14 @@
     };
 
     const allocationLabelLayouts = new WeakMap();
+    const separateAllocationHandles = (container, low, high) => {
+        const track = container.querySelector('.strategy-allocation-track-shell');
+        if (track) {
+            const close = (high - low) * track.clientWidth / 100 < 14;
+            track.classList.toggle('has-close-handles', close);
+            track.title = close ? 'Nearby boundaries use separate rows; percentages are unchanged.' : '';
+        }
+    };
     let allocationLabelResizeFrame = null;
     window.addEventListener("resize", () => {
         if (allocationLabelResizeFrame !== null) {
@@ -8062,6 +8070,17 @@
             if (!Number.isInteger(tickerIndex) || !(label instanceof HTMLElement) || !suffixParts.length) return;
             const suffix = suffixParts.join(" ").replaceAll("-", " ");
             label.textContent = `${readBacktestTickerName(tickerIndex)} ${suffix}`;
+        });
+        root.querySelectorAll?.("[data-strategy-param-ui-role^='rotation-trigger:']").forEach((field) => {
+            if (!(field instanceof HTMLElement)) return;
+            const label = field.querySelector("[data-strategy-param-label-text]");
+            if (!(label instanceof HTMLElement)) return;
+            const action = String(field.dataset.strategyParamUiRole || "").split(":")[1];
+            if (action === "buy-leveraged") {
+                label.textContent = `Buy ${readBacktestTickerName(1)}: ${readBacktestTickerName(0)} decline`;
+            } else if (action === "buy-primary") {
+                label.textContent = `Buy ${readBacktestTickerName(0)}: ${readBacktestTickerName(1)} rise`;
+            }
         });
     };
 
@@ -8180,6 +8199,58 @@
         syncStrategyParamFieldVisibility(root);
         syncStrategyTickerLabels(root);
 
+        root.querySelectorAll('[data-strategy-allocation-limits]').forEach((limits) => {
+            if (limits.dataset.bound === '1') return;
+            limits.dataset.bound = '1';
+            const read = (key) => limits.querySelector(`[name="${key}_pct"]`);
+            const syncLimits = (source = '') => {
+                const values = Object.fromEntries(['primary_min', 'primary_max', 'leveraged_min', 'leveraged_max']
+                    .map((key) => [key, Math.max(0, Math.min(100, Number(read(key).value) || 0))]));
+                values.leveraged_min = Math.min(values.leveraged_min, 100 - values.primary_min);
+                values.primary_max = Math.min(100 - values.leveraged_min, Math.max(values.primary_min, values.primary_max));
+                values.leveraged_max = Math.min(100 - values.primary_min, Math.max(values.leveraged_min, values.leveraged_max));
+                if (source.endsWith('_max')) {
+                    const asset = source.split('_')[0];
+                    values[`${asset}_min`] = Math.min(values[`${asset}_min`], Number(read(source).value));
+                    values[source] = Math.min(Number(read(source).value), 100 - values[`${asset === 'primary' ? 'leveraged' : 'primary'}_min`]);
+                }
+                Object.entries(values).forEach(([key, value]) => { read(key).value = String(value); });
+                limits.querySelectorAll('[data-limit-range]').forEach((bar) => {
+                    const asset = bar.dataset.limitRange;
+                    const ticker = readBacktestTickerName(Number(bar.dataset.tickerIndex));
+                    bar.querySelector('[data-limit-ticker]').textContent = ticker;
+                    ['min', 'max'].forEach((boundary) => {
+                        const value = values[`${asset}_${boundary}`];
+                        bar.querySelector(`[data-limit-value="${boundary}"]`).textContent = `${Math.round(value)}%`;
+                        read(`${asset}_${boundary}`).setAttribute('aria-label', `${ticker} ${boundary === 'min' ? 'minimum' : 'maximum'}`);
+                    });
+                    const labelNodes = [...bar.querySelectorAll('.strategy-limit-labels label')];
+                    const width = bar.clientWidth;
+                    const centers = labelNodes.map((label, index) => Math.max(label.offsetWidth / 2,
+                        Math.min(width - label.offsetWidth / 2, width * values[`${asset}_${index ? 'max' : 'min'}`] / 100)));
+                    const spacing = (labelNodes[0].offsetWidth + labelNodes[1].offsetWidth) / 2 + 8;
+                    if (centers[1] - centers[0] < spacing) {
+                        centers[1] = Math.min(width - labelNodes[1].offsetWidth / 2, centers[0] + spacing);
+                        centers[0] = Math.max(labelNodes[0].offsetWidth / 2, centers[1] - spacing);
+                    }
+                    labelNodes.forEach((label, index) => {
+                        const value = values[`${asset}_${index ? 'max' : 'min'}`];
+                        label.style.left = `${centers[index]}px`;
+                        label.classList.toggle('is-range-start', value === 0);
+                        label.classList.toggle('is-range-end', value === 100);
+                    });
+                    separateAllocationHandles(bar, values[`${asset}_min`], values[`${asset}_max`]);
+                });
+            };
+            limits.querySelectorAll('input[type="range"]').forEach((input) => {
+                input.addEventListener('input', () => syncLimits(input.name.replace('_pct', '')));
+                input.addEventListener('change', () => scheduleStrategyParamSubmit(80));
+            });
+            document.querySelectorAll('[data-backtest-ticker-fields] [data-ticker-input]').forEach((input) => input.addEventListener('input', () => syncLimits()));
+            new ResizeObserver(() => syncLimits()).observe(limits);
+            syncLimits();
+        });
+
         root.querySelectorAll?.("[data-strategy-allocation-range]").forEach((allocation) => {
             if (!(allocation instanceof HTMLElement) || allocation.dataset.allocationBound === "1") return;
             allocation.dataset.allocationBound = "1";
@@ -8210,6 +8281,7 @@
             const cashLabel = allocation.querySelector("[data-allocation-cash-label]");
 
             const positionLabels = (primary, leveraged) => {
+                separateAllocationHandles(allocation, primary, primary + leveraged);
                 if (!(labels instanceof HTMLElement)
                     || !(primaryLabel instanceof HTMLElement)
                     || !(leveragedLabel instanceof HTMLElement)
@@ -8262,14 +8334,25 @@
 
             const sync = (source = "") => {
                 let primary = Number.parseFloat(source === "primary" ? primaryRange.value : primaryInput.value) || 0;
-                let invested = source === "invested"
-                    ? Number.parseFloat(investedRange.value) || 0
-                    : primary + (Number.parseFloat(leveragedInput.value) || 0);
-                primary = Math.max(0, Math.min(100, primary));
-                invested = Math.max(primary, Math.min(100, invested));
+                let invested;
+                if (source === "primary") {
+                    invested = Number.parseFloat(investedRange.value) || 0;
+                    invested = Math.max(0, Math.min(100, invested));
+                    primary = Math.max(0, Math.min(invested, primary));
+                } else if (source === "invested") {
+                    primary = Math.max(0, Math.min(100, primary));
+                    invested = Number.parseFloat(investedRange.value) || 0;
+                    invested = Math.max(primary, Math.min(100, invested));
+                } else {
+                    primary = Math.max(0, Math.min(100, primary));
+                    invested = primary + (Number.parseFloat(leveragedInput.value) || 0);
+                    invested = Math.max(primary, Math.min(100, invested));
+                }
                 const leveraged = invested - primary;
                 const cashPercentage = 100 - invested;
+                primaryRange.max = '100';
                 primaryRange.value = primary.toFixed(2);
+                investedRange.min = '0';
                 investedRange.value = invested.toFixed(2);
                 primaryInput.value = primary.toFixed(2);
                 leveragedInput.value = leveraged.toFixed(2);
@@ -8290,6 +8373,9 @@
                 allocation.querySelector("[data-allocation-cash-value]").textContent = formatCash(cash);
                 primaryRange.setAttribute("aria-label", `${readBacktestTickerName(0)} allocation boundary`);
                 investedRange.setAttribute("aria-label", `${readBacktestTickerName(1)} and Cash boundary`);
+                const allocationText = `${readBacktestTickerName(0)} ${formatPercentage(primary)}, ${readBacktestTickerName(1)} ${formatPercentage(leveraged)}, Cash ${formatPercentage(cashPercentage)}`;
+                primaryRange.setAttribute("aria-valuetext", allocationText);
+                investedRange.setAttribute("aria-valuetext", allocationText);
                 syncStrategyTickerLabels(allocation.closest("[data-trade-strategy-panel]") || root);
                 positionLabels(primary, leveraged);
             };
@@ -8303,6 +8389,7 @@
                 Number.parseFloat(primaryInput.value) || 0,
                 Number.parseFloat(leveragedInput.value) || 0,
             ));
+            new ResizeObserver(() => allocationLabelLayouts.get(allocation)?.()).observe(allocation);
             sync();
         });
     };

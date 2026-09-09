@@ -6,7 +6,9 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.32.0
+Code version: v1.33.0
+- Changed: Startup defaults use the validation-selected AAPL Price Field
+  cohort profile, while the display threshold remains presentation-only.
 - Changed: Price Field strategies now declare the shared Price Field catalog
   category used by Backtest and Settings.
 - Changed: Bayesian compute selection is now an internal Auto policy instead
@@ -182,7 +184,7 @@ _FACTOR_SELECTION_PRIORITY_INDEX = {
 }
 _FACTOR_VALIDATION_POINTS = 6
 _MIN_FACTOR_VALIDATION_POINTS = 4
-_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 5.0
+_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 1.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
 _PRESENTATION_ONLY_PARAMETER_KEYS = frozenset({"cell_display_threshold"})
@@ -199,15 +201,13 @@ _BAYESIAN_FINGERPRINT_PARAMETER_KEYS = (
 _BayesianFactorDefinition = PriceFieldFactorDefinition
 _BAYESIAN_FACTOR_DEFINITIONS = PRICE_FIELD_FACTOR_DEFINITIONS
 
-# Selected default profile from the DRAM Bayesian Price Field GA run. These
+# Selected default profile from the AAPL Bayesian Price Field GA cohort. These
 # factors are enabled only when their historical observations are available
 # and pass the model's causal factor-selection gate.
 _BAYESIAN_DEFAULT_ON_FACTOR_KEYS = frozenset({
-    "use_options",
-    "use_option_call_volume",
-    "use_option_put_call_open_interest_ratio",
-    "use_option_put_call_volume_ratio",
-    "use_volume",
+    "use_close_location",
+    "use_intraday_return",
+    "use_volume_change",
     "use_volume_at_price",
 })
 
@@ -1144,7 +1144,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="training_window",
                 label="Training Window",
                 kind="integer",
-                default=30,
+                default=434,
                 minimum=30,
                 maximum=504,
                 step=1,
@@ -1155,7 +1155,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="chip_window",
                 label="Volume-at-price Window",
                 kind="integer",
-                default=41,
+                default=118,
                 minimum=5,
                 maximum=252,
                 step=1,
@@ -1166,7 +1166,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="prior_strength",
                 label="Prior Strength",
                 kind="number",
-                default=1.51,
+                default=14.16,
                 minimum=0.01,
                 maximum=100.0,
                 step=0.01,

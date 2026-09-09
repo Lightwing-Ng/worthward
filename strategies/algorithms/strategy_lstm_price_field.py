@@ -5,11 +5,13 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.10.0
+Code version: v1.11.0
+- Changed: Startup defaults use the robust validation-selected AAPL grid GA
+  cohort profile and its CPU execution semantics.
 - Changed: Price Field strategies now declare the shared Price Field catalog
   category used by Backtest and Settings.
 - Fixed: Durable training preserves Auto's NumPy CPU semantics instead of forcing GPU.
-- Changed: Defaults use the completed DRAM probability GA robust winner.
+- Changed: This supersedes the completed DRAM probability GA robust winner.
 """
 
 from __future__ import annotations
@@ -68,7 +70,7 @@ _AUTOREGRESSION_COLUMN = "lstm_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "lstm_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "lstm_return_innovation_std"
 _MODEL_VERSION = "lstm-price-field-model/v1.2.0"
-_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 2.0
+_CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 1.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
 _CELL_DISPLAY_THRESHOLD_MAX_PCT = 50.0
 _PRESENTATION_ONLY_PARAMETER_KEYS = frozenset({"cell_display_threshold"})
@@ -236,12 +238,12 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                     group="factors",
                     ui_apply_mode="training",
                     default=definition.parameter_key in {
-                        "use_options",
-                        "use_option_call_open_interest",
-                        "use_option_call_volume",
-                        "use_option_put_call_volume_ratio",
-                        "use_option_put_volume",
-                        "use_volume",
+                        "use_close_location",
+                        "use_illiquidity_20d",
+                        "use_momentum_5d",
+                        "use_overnight_gap",
+                        "use_volatility_20d",
+                        "use_volume_at_price",
                     },
                     help_text=definition.help_text,
                     subgroup=definition.category,
@@ -268,7 +270,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="training_window",
                 label="Training window",
                 kind="integer",
-                default=60,
+                default=466,
                 minimum=30,
                 maximum=504,
                 step=1,
@@ -283,7 +285,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="chip_window",
                 label="Volume-at-price window",
                 kind="integer",
-                default=83,
+                default=232,
                 minimum=5,
                 maximum=252,
                 step=1,
@@ -294,7 +296,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_lookback",
                 label="LSTM lookback",
                 kind="integer",
-                default=4,
+                default=16,
                 minimum=4,
                 maximum=16,
                 step=1,
@@ -305,7 +307,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_hidden_size",
                 label="LSTM hidden size",
                 kind="integer",
-                default=9,
+                default=23,
                 minimum=4,
                 maximum=32,
                 step=1,
@@ -315,7 +317,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_epochs",
                 label="LSTM epochs",
                 kind="integer",
-                default=7,
+                default=19,
                 minimum=1,
                 maximum=20,
                 step=1,
@@ -325,7 +327,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_learning_rate",
                 label="LSTM learning rate",
                 kind="number",
-                default=0.003,
+                default=0.005,
                 minimum=0.001,
                 maximum=0.5,
                 step=0.001,
@@ -360,7 +362,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 kind="choice",
                 group="training",
                 ui_apply_mode="training",
-                default="GPU",
+                default="CPU",
                 options=("Auto", "CPU", "GPU", "Neural Engine"),
                 help_text=(
                     "Auto uses NumPy CPU for origin-local LSTM training on unified "

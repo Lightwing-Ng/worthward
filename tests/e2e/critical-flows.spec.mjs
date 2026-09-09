@@ -1,4 +1,4 @@
-/* Code version: v1.212.0 */
+/* Code version: v1.212.3 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -5417,6 +5417,7 @@ test('validates HSBC cash-only paste and keeps validation errors above the impor
     });
     const invalidFeedbackPaintState = await invalidFeedbackBanner.evaluate((banner) => {
         const rect = banner.getBoundingClientRect();
+        const modal = document.querySelector('#transaction_form_container');
         const topmostNode = document.elementFromPoint(
             rect.left + (rect.width / 2),
             rect.top + (rect.height / 2),
@@ -5424,12 +5425,22 @@ test('validates HSBC cash-only paste and keeps validation errors above the impor
         return {
             parentIsBody: banner.parentElement === document.body,
             bannerOwnsTopmostNode: banner === topmostNode || banner.contains(topmostNode),
+            bannerZIndex: Number.parseInt(getComputedStyle(banner).zIndex, 10),
+            modalZIndex: Number.parseInt(getComputedStyle(modal).zIndex, 10),
+            withinViewport: (
+                rect.left >= 0
+                && rect.top >= 0
+                && rect.right <= window.innerWidth
+                && rect.bottom <= window.innerHeight
+            ),
         };
     });
-    expect(invalidFeedbackPaintState).toEqual({
-        parentIsBody: true,
-        bannerOwnsTopmostNode: true,
-    });
+    expect(invalidFeedbackPaintState.parentIsBody).toBe(true);
+    expect(invalidFeedbackPaintState.bannerOwnsTopmostNode).toBe(true);
+    expect(invalidFeedbackPaintState.withinViewport).toBe(true);
+    expect(invalidFeedbackPaintState.bannerZIndex).toBeGreaterThan(
+        invalidFeedbackPaintState.modalZIndex,
+    );
     await expect(submitButton).toBeDisabled();
 });
 
@@ -8822,7 +8833,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.78.12';
+            && url.searchParams.get('v') === '1.80.2';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');

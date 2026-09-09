@@ -1,11 +1,21 @@
 # Offline LSTM probability tuning
 
-Documentation version: v1.2.0
+Documentation version: v1.3.0
 
 Runner version: v0.11.0. Model version: `lstm-price-field-model/v1.2.0`.
 Exact-configuration web training remains separate.
 All GA objectives now rank multi-seed finalists by validation fitness; the legacy
 direction mode no longer ranks or rejects finalists using holdout results.
+
+The production startup profile is the robust validation-selected AAPL grid-GA
+cohort winner frozen on 8 Sep 2026: training window 466, volume-at-price window
+232, lookback 16, hidden size 23, 19 epochs, learning rate 0.005, seed 42,
+entry threshold 60%, and CPU. Enabled factors are close location,
+20-session illiquidity, 5-session momentum, overnight gap, 20-session
+volatility, and volume at price. Its three final holdout reports each cover all
+20 horizons and 4,810 eligible pairs at 100% coverage. CPU was fixed by this
+cohort rather than searched. The 1% cell display threshold is a separate
+presentation default and does not enter the GA objective.
 
 ## Causal target normalization
 

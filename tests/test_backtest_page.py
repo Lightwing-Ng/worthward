@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.17.0
+Code version: v0.19.2
 """
 
 from __future__ import annotations
@@ -274,7 +274,7 @@ class BacktestPageTests(unittest.TestCase):
             'name="cell_display_threshold"',
             html,
         )
-        self.assertIn('value="5.00"', html)
+        self.assertIn('value="1.00"', html)
         self.assertIn('step="0.01"', html)
         self.assertNotIn('name="compute_backend"', html)
         self.assertNotIn('data-strategy-param-key="compute_backend"', html)
@@ -845,6 +845,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('value="TQQQ"', html)
         self.assertIn('name="buy_leveraged_drop_pct"', html)
         self.assertIn('name="sell_leveraged_rise_pct"', html)
+        self.assertIn('name="rotation_window"', html)
         self.assertIn('data-strategy-allocation-range', html)
         self.assertIn('data-markdown-export-label="Ticker">Ticker</th>', html)
         self.assertIn('"multi_asset": true', html)
@@ -860,19 +861,26 @@ class BacktestPageTests(unittest.TestCase):
         self.assertTrue(payload["supports"]["multi_ticker"])
         self.assertEqual(payload["supports"]["execution_intervals"], ["1d", "1m"])
         self.assertIn('name="buy_leveraged_drop_pct"', payload["html"])
+        self.assertIn('name="rotation_window"', payload["html"])
         self.assertIn('name="initial_primary_pct"', payload["html"])
         self.assertIn('data-strategy-allocation-range', payload["html"])
         self.assertIn('data-allocation-primary-segment', payload["html"])
         self.assertIn('data-allocation-leveraged-segment', payload["html"])
         self.assertIn('data-allocation-cash-segment', payload["html"])
-        self.assertIn('data-strategy-param-ui-role="ticker-label:0:minimum"', payload["html"])
-        self.assertIn('data-strategy-param-ui-role="ticker-label:1:daily-rise-trigger"', payload["html"])
-        self.assertIn('Allocation limits (% of total equity)', payload["html"])
-        self.assertIn('Rotation triggers (daily % change)', payload["html"])
+        self.assertIn('data-strategy-allocation-limits', payload["html"])
+        self.assertEqual(payload["html"].count('strategy-factor-group--allocation-visual'), 2)
+        self.assertIn('data-strategy-param-ui-role="ticker-label:1:rise-trigger"', payload["html"])
+        self.assertIn('Allocation limits (%, equity)', payload["html"])
+        self.assertIn('Rotation triggers (%, change)', payload["html"])
+        self.assertIn('Return window', payload["html"])
+        self.assertIn('Single day', payload["html"])
+        self.assertIn('1 week', payload["html"])
+        self.assertIn('1 month', payload["html"])
+        self.assertIn('3 months', payload["html"])
         self.assertIn('step="0.01"', payload["html"])
         self.assertIn('value="20.00"', payload["html"])
         self.assertNotIn("Ticker 1 minimum", payload["html"])
-        self.assertNotIn("Ticker 2 daily rise trigger", payload["html"])
+        self.assertNotIn("daily rise trigger", payload["html"])
 
     def test_knn_default_all_feature_runs_without_observed_volume(self) -> None:
         with (

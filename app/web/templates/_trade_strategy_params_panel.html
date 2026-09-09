@@ -1,4 +1,4 @@
-{# Code version: v0.9.0 #}
+{# Code version: v0.11.1 #}
 {% from "_collapse.html" import render_collapse %}
 {% set has_actions = strategy_form_sections|selectattr("kind", "equalto", "action")|list|length > 0 %}
 {% for section in strategy_form_sections %}
@@ -13,9 +13,11 @@
                 {% if subgroup.title %}
                     {% set subgroup_enabled_count = subgroup.fields|selectattr("switch_checked")|list|length %}
                     {% set subgroup_summary = subgroup.title ~ (" (" ~ subgroup_enabled_count ~ ")" if subgroup_enabled_count else "") %}
-                    {% call render_collapse(subgroup_summary, section.key ~ "-" ~ loop.index, "", false, "strategy-factor-group") %}
-                        {% set allocation_primary = subgroup.fields|selectattr("ui_role", "equalto", "allocation-primary")|list %}
-                        {% set allocation_leveraged = subgroup.fields|selectattr("ui_role", "equalto", "allocation-leveraged")|list %}
+                    {% set allocation_primary = subgroup.fields|selectattr("ui_role", "equalto", "allocation-primary")|list %}
+                    {% set allocation_leveraged = subgroup.fields|selectattr("ui_role", "equalto", "allocation-leveraged")|list %}
+                    {% set allocation_limits = subgroup.fields|selectattr('key', 'equalto', 'primary_min_pct')|list %}
+                    {% set subgroup_class = "strategy-factor-group" ~ (" strategy-factor-group--allocation-visual" if (allocation_primary and allocation_leveraged) else "") ~ (" strategy-factor-group--allocation-visual strategy-factor-group--allocation-limits" if allocation_limits else "") %}
+                    {% call render_collapse(subgroup_summary, section.key ~ "-" ~ loop.index, "", false, subgroup_class) %}
                         {% if allocation_primary and allocation_leveraged %}
                         <div class="strategy-allocation-range"
                              data-strategy-allocation-range
@@ -42,10 +44,12 @@
                                 </div>
                                 <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.01"
                                        value="{{ allocation_primary[0].value }}" data-allocation-boundary="primary"
+                                       data-allocation-neighbor="leveraged"
                                        aria-label="Primary allocation boundary">
                                 <input class="strategy-allocation-handle" type="range" min="0" max="100" step="0.01"
                                        value="{{ allocation_primary[0].value|float + allocation_leveraged[0].value|float }}"
-                                       data-allocation-boundary="invested" aria-label="Leveraged and cash boundary">
+                                       data-allocation-boundary="invested" data-allocation-neighbor="cash"
+                                       aria-label="Leveraged and cash boundary">
                             </div>
                             <div class="trade-strategy-param" data-strategy-param-key="{{ allocation_primary[0].key }}" data-strategy-param-kind="number" hidden>
                                 <input type="hidden" name="{{ allocation_primary[0].key }}" value="{{ allocation_primary[0].value }}"
@@ -55,6 +59,35 @@
                                 <input type="hidden" name="{{ allocation_leveraged[0].key }}" value="{{ allocation_leveraged[0].value }}"
                                        data-strategy-param-input="number" data-default="{{ allocation_leveraged[0].default }}">
                             </div>
+                        </div>
+                        {% elif allocation_limits %}
+                        <div data-strategy-allocation-limits>
+                            {% for asset, ticker_index in [('primary', 0), ('leveraged', 1)] %}
+                            <div class="strategy-limit-range strategy-limit-range--{{ asset }}" data-limit-range="{{ asset }}" data-ticker-index="{{ ticker_index }}">
+                                <div class="strategy-limit-ticker" data-limit-ticker>{{ asset|capitalize }}</div>
+                                <div class="strategy-limit-labels">
+                                    {% for boundary, caption in [('min', 'Minimum'), ('max', 'Maximum')] %}
+                                    {% set field = (subgroup.fields|selectattr('key', 'equalto', asset ~ '_' ~ boundary ~ '_pct')|list)[0] %}
+                                    <label for="strategy_param_{{ field.key }}">
+                                        <span class="strategy-limit-value" data-limit-value="{{ boundary }}">{{ field.value|float|round|int }}%</span>
+                                        <span class="strategy-limit-caption">{{ caption }}</span>
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                                <div class="strategy-allocation-track-shell">
+                                    <div class="strategy-allocation-track" aria-hidden="true"></div>
+                                    {% for boundary in ['min', 'max'] %}
+                                    {% set field = (subgroup.fields|selectattr('key', 'equalto', asset ~ '_' ~ boundary ~ '_pct')|list)[0] %}
+                                    <div data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="number">
+                                        <input class="strategy-allocation-handle" type="range" min="0" max="100" step="1"
+                                               id="strategy_param_{{ field.key }}" name="{{ field.key }}" value="{{ field.value }}"
+                                               data-limit-boundary="{{ boundary }}" data-strategy-param-input="range"
+                                               data-default="{{ field.default }}" aria-label="{{ field.label }}">
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
                         </div>
                         {% else %}
                         {% with strategy_form_fields=subgroup.fields %}

@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.1."""
 
 from __future__ import annotations
 
@@ -828,6 +828,49 @@ def test_interactive_table_header_retains_standard_frosted_material() -> None:
     assert "backdrop-filter: var(--frosted-glass-blur);" in header_rule
     assert "border: var(--frosted-glass-border);" in header_rule
     assert "[data-table-header], table[aria-hidden=\"true\"]" in investment_js
+
+
+def test_scrollable_table_headers_allow_standard_line_wrapping() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    trade_css = (
+        project_root / "app/web/static/assets/css/views/trade.css"
+    ).read_text(encoding="utf-8")
+
+    shared_header_rule = investment_css.split(
+        ".scrollable-data-table thead th {",
+        1,
+    )[1].split("}", 1)[0]
+    backtest_header_rule = trade_css.split(
+        ".backtest-history-table-shell .backtest-history-table thead th {",
+        1,
+    )[1].split("}", 1)[0]
+
+    for rule in (shared_header_rule, backtest_header_rule):
+        assert "white-space: normal" in rule
+        assert "overflow-wrap: break-word" in rule
+        assert "word-break: normal" in rule
+
+
+def test_transaction_date_time_and_backtest_ticker_alignment_contracts() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    trade_css = (
+        project_root / "app/web/static/assets/css/views/trade.css"
+    ).read_text(encoding="utf-8")
+
+    date_time_rule = trade_css.split(
+        ".trade-transactions-date {",
+        1,
+    )[1].split("}", 1)[0]
+    backtest_ticker_rule = trade_css.split(
+        ".backtest-history-table tbody .trade-transactions-ticker {",
+        1,
+    )[1].split("}", 1)[0]
+
+    assert "text-align: center !important;" in date_time_rule
+    assert "text-align: center !important;" in backtest_ticker_rule
 
 
 def test_investment_holdings_body_omits_vertical_cell_borders() -> None:

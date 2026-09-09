@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.18.0`
+Documentation version: `v3.19.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -25,7 +25,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
 - Compare eight additional neural Price Fields: PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT. They share training controls and Market factors, predict 20 daily return distributions directly, and use verified Torch MPS/CUDA or CPU. [The research contract](docs/NEURAL_PRICE_FIELD_RESEARCH.md) explains their full-grid probability scores, causal factor timing, compact architecture adaptations, and held-out evaluation.
 - Start or stop exact-configuration LSTM training using the selected ticker, relative or exact range, 1d interval, and private controls. Compute backend appears at the head of LSTM training. Market-factor switches and the backend are staged for the next durable run without recalculating the current chart; each factor subgroup shows its enabled count, and selecting a completed run applies its saved configuration and then recalculates. Durable runs perform at least 180 seconds of optimizer work; Auto uses confirmed MPS/CUDA, while an explicit CPU choice stays on CPU. History has single-open details, measured accuracy badges, stable date codes, and recoverable deletion. Compute-job state stays outside market and investment stores.
-- Configure a primary/leveraged pair such as QQQ/TQQQ or DRAM/RAM, allocate Initial capital across both assets and cash with integer shares, and rebalance within independent allocation limits after configurable daily-drop and daily-rise triggers
+- Configure a primary/leveraged pair such as QQQ/TQQQ or DRAM/RAM, allocate Initial capital across both assets and cash with integer shares, and rebalance within independent allocation limits after primary-drop and leveraged-rise triggers measured across a selectable single-day, one-week, one-month, or three-month return window
 - Switch between relative periods and exact date ranges
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests only when the strategy declares that execution interval, local intraday data exists for every required ticker, and the complete ticker set shares at least one supported Period

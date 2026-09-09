@@ -1,7 +1,11 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.42.0
+Code version: v0.43.0
+- Added: Partially overlapping IBKR CSV performance reports reconcile exact
+  stock and Forex components, advance latest marks, and remain idempotent.
+- Added: Newer date-only IBKR cash evidence clears stale intraday boundaries,
+  while statement total rows remain silent.
 - Added: Missing Schwab dividend-reinvestment basis remains explicitly unknown
   and produces an import warning.
 - Added: IBKR web FX fills retain conversion semantics, quote-currency fees,
@@ -3303,6 +3307,75 @@ Fees: 0.12
             len({record["source"]["closed_lot_id"] for record in dram_sells}),
             4,
         )
+
+    def test_ibkr_forex_pnl_details_attach_exact_realized_component(self) -> None:
+        transactions_csv = "\n".join([
+            "Statement,Header,Field Name,Field Value",
+            "Statement,Data,Title,Transaction History",
+            'Statement,Data,Period,"August 1, 2026 - August 8, 2026"',
+            "Summary,Header,Field Name,Field Value",
+            "Summary,Data,Starting Cash,0",
+            "Summary,Data,Ending Cash,8",
+            "Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,Quantity,Price,Price Currency,Gross Amount ,Commission,Net Amount",
+            "Transaction History,Data,2026-08-08,U***00001,Net Amount in Base from Forex Trade: 10 USD.CNH,Forex Trade Component,USD.CNH,10,7,CNH,-70,-2,-0.5",
+        ]) + "\n"
+        positions_csv = "\n".join([
+            "Statement,Header,Field Name,Field Value",
+            "Statement,Data,Title,Realized Summary",
+            'Statement,Data,Period,"August 1, 2026 - August 8, 2026"',
+            "Account Information,Header,Field Name,Field Value",
+            "Account Information,Data,Account,U00000001",
+            "Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount",
+            "Deposits & Withdrawals,Data,Total in USD,,,8",
+            "Forex P/L Details,Header,Asset Category,Currency,Description,Date/Time,FX Currency,Quantity,Proceeds in USD,Basis in USD,Realized P/L in USD,Code",
+            'Forex P/L Details,Data,Forex,USD,Forex 10 USD.CNH,"2026-08-07, 22:36:27",CNH,-70,8,-8.5,-0.5,C',
+            "Forex P/L Details,Data,Total,,,,,,8,-8.5,-0.5,",
+            "Realized & Unrealized Performance Summary,Header,Asset Category,Symbol,Cost Adj.,Realized S/T Profit,Realized S/T Loss,Realized L/T Profit,Realized L/T Loss,Realized Total,Unrealized S/T Profit,Unrealized S/T Loss,Unrealized L/T Profit,Unrealized L/T Loss,Unrealized Total,Total,Code",
+            "Realized & Unrealized Performance Summary,Data,Forex,CNH,0,0,-0.5,0,0,-0.5,0,0,0,0,0,-0.5,",
+            "Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Open,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code",
+            "Open Positions,Total,,Stocks,USD,,,,,,0,,0,0,",
+        ]) + "\n"
+
+        payload = build_investment_payload_from_ibkr_csvs(
+            transactions_csv.encode("utf-8"),
+            positions_csv.encode("utf-8"),
+        )
+
+        forex = next(
+            record
+            for record in payload["transactions"]
+            if record.get("type") == "forex_trade_component"
+        )
+        self.assertEqual(forex["broker_realized_pnl_raw"], "-0.5")
+        self.assertEqual(forex["normalized"]["broker_realized_pnl"], "-0.5")
+        self.assertEqual(forex["source"]["broker_realized_pnl_ticker"], "CNH")
+        self.assertEqual(forex["source"]["broker_realized_pnl_currency"], "USD")
+        self.assertEqual(forex["source"]["broker_realized_pnl_date"], "2026-08-07")
+        self.assertFalse(any(
+            "unsupported IBKR cash currency" in warning
+            or "incomplete IBKR Forex P/L detail" in warning
+            for warning in payload["summary"]["warnings"]
+        ))
+
+        legacy_total_warning = (
+            "Row 99: unsupported IBKR cash currency 'TOTAL IN USD' was skipped."
+        )
+        retained_warning = "Retain this unrelated historical warning."
+        merged = merge_investment_payloads(
+            {
+                "schema_version": "3.0.0",
+                "broker": "ibkr",
+                "account": "U00000001",
+                "summary": {
+                    "warnings": [legacy_total_warning, retained_warning],
+                    "unknown_transaction_types": [],
+                },
+                "transactions": [],
+            },
+            deepcopy(payload),
+        )
+        self.assertNotIn(legacy_total_warning, merged["summary"]["warnings"])
+        self.assertIn(retained_warning, merged["summary"]["warnings"])
 
     def test_same_dram_trade_shape_at_two_brokers_is_not_deduplicated(self) -> None:
         def payload_for(broker: str, account: str) -> dict[str, object]:
@@ -8005,6 +8078,58 @@ Fees: 0.0""",
                 repeated = merge_investment_payloads(merged, deepcopy(web))
                 self.assertEqual(repeated["broker_summaries"]["ibkr"]["ending_cash"], "312.45")
 
+    def test_newer_ibkr_date_only_cash_clears_stale_file_datetime(self) -> None:
+        older = {
+            "schema_version": "3.0.0",
+            "generator": {"generated_at": "2026-08-04T13:35:26"},
+            "broker": "ibkr",
+            "account": "U00000001",
+            "ending_cash": "100",
+            "ending_cash_by_currency": {"USD": "100"},
+            "summary": {
+                "ending_cash_raw": "100",
+                "ending_cash_by_currency": {"USD": "100"},
+                "cash_snapshot_source": "ibkr_gainskeeper_balances",
+                "cash_snapshot_authoritative": True,
+                "ending_cash_as_of": "2026-08-04",
+                "ending_cash_replay_as_of": "2026-08-04",
+                "ending_cash_as_of_datetime": "2026-08-04 13:35:26",
+                "ending_cash_replay_as_of_datetime": "2026-08-04 13:35:26",
+            },
+            "transactions": [],
+        }
+        newer = {
+            "schema_version": "3.0.0",
+            "generator": {"generated_at": "2026-08-08T23:59:59"},
+            "broker": "ibkr",
+            "account": "U00000001",
+            "ending_cash": "200",
+            "ending_cash_by_currency": {"USD": "200"},
+            "summary": {
+                "ending_cash_raw": "200",
+                "ending_cash_by_currency": {"USD": "200"},
+                "cash_snapshot_source": "ibkr_csv_summary",
+                "cash_snapshot_authoritative": True,
+                "ending_cash_as_of": "2026-08-08",
+                "ending_cash_replay_as_of": "2026-08-08",
+            },
+            "transactions": [],
+        }
+
+        for first, second in ((older, newer), (newer, older)):
+            with self.subTest(first=first["summary"]["cash_snapshot_source"]):
+                merged = merge_investment_payloads(
+                    deepcopy(first),
+                    deepcopy(second),
+                )
+                summary = merged["broker_summaries"]["ibkr"]
+                self.assertEqual(summary["ending_cash"], "200")
+                self.assertEqual(summary["ending_cash_by_currency"], {"USD": "200"})
+                self.assertEqual(summary["ending_cash_as_of"], "2026-08-08")
+                self.assertEqual(summary["ending_cash_replay_as_of"], "2026-08-08")
+                self.assertNotIn("ending_cash_as_of_datetime", summary)
+                self.assertNotIn("ending_cash_replay_as_of_datetime", summary)
+
     def test_ibkr_gainskeeper_other_transactions_preserve_source_identity(self) -> None:
         payload = build_investment_payload_from_ibkr_gainskeeper_files([
             (
@@ -9145,6 +9270,211 @@ Fees: 0.0"""
         refreshed_summary = refreshed["broker_summaries"]["ibkr"]
         self.assertEqual(refreshed_summary["performance_snapshot"]["DRAM"], dram)
         self.assertEqual(refreshed_summary["performance_snapshot_as_of"], "2026-08-14")
+
+    def test_ibkr_csv_performance_adds_only_verified_tail_of_overlapping_period(self) -> None:
+        def payload(
+            *,
+            artifact_sha256: str,
+            period_start: str,
+            period_end: str,
+            performance_snapshot: dict[str, dict[str, str]],
+            transactions: list[dict[str, object]] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "schema_version": "3.0.0",
+                "broker": "ibkr",
+                "account": "U00000001",
+                "summary": {
+                    "performance_snapshot_authoritative": True,
+                    "performance_snapshot_source": "ibkr_csv_realized_summary",
+                },
+                "performance_snapshot": performance_snapshot,
+                "source_artifacts": [{
+                    "sha256": artifact_sha256,
+                    "byte_count": 1,
+                    "storage_key": artifact_sha256,
+                    "filenames": [f"{period_start}_{period_end}.csv"],
+                    "source_kind": "ibkr_realized_summary_csv",
+                    "statement_period_start": period_start,
+                    "statement_period_end": period_end,
+                }],
+                "transactions": transactions or [],
+            }
+
+        historical = payload(
+            artifact_sha256="c" * 64,
+            period_start="2026-01-01",
+            period_end="2026-08-04",
+            performance_snapshot={
+                "DRAM": {
+                    "asset_category": "Stocks",
+                    "realized_total": "100",
+                    "unrealized_total": "10",
+                    "total": "110",
+                },
+                "IBKR": {
+                    "asset_category": "Stocks",
+                    "realized_total": "0",
+                    "unrealized_total": "2",
+                    "total": "2",
+                },
+                "QQQI": {
+                    "asset_category": "Stocks",
+                    "realized_total": "0",
+                    "unrealized_total": "-1",
+                    "total": "-1",
+                },
+                "CNH": {
+                    "asset_category": "Forex",
+                    "realized_total": "-5",
+                    "unrealized_total": "0",
+                    "total": "-5",
+                },
+                "CLOSED": {
+                    "asset_category": "Stocks",
+                    "realized_total": "3",
+                    "unrealized_total": "4",
+                    "total": "7",
+                },
+            },
+        )
+        current = payload(
+            artifact_sha256="d" * 64,
+            period_start="2026-08-01",
+            period_end="2026-08-08",
+            performance_snapshot={
+                "DRAM": {
+                    "asset_category": "Stocks",
+                    "currency": "USD",
+                    "realized_total": "-2",
+                    "unrealized_total": "20",
+                    "total": "18",
+                    "realized_total_source": "ibkr_closed_trades",
+                },
+                "IBKR": {
+                    "asset_category": "Stocks",
+                    "realized_total": "0",
+                    "unrealized_total": "1.5",
+                    "total": "1.5",
+                },
+                "QQQI": {
+                    "asset_category": "Stocks",
+                    "realized_total": "0",
+                    "unrealized_total": "-3",
+                    "total": "-3",
+                },
+                "CNH": {
+                    "asset_category": "Forex",
+                    "realized_total": "-0.5",
+                    "unrealized_total": "0",
+                    "total": "-0.5",
+                },
+            },
+            transactions=[
+                {
+                    "date": "2026-08-04",
+                    "datetime": "2026-08-04 12:00:00",
+                    "type": "sell",
+                    "broker": "ibkr",
+                    "account": "U00000001",
+                    "currency": "USD",
+                    "ticker": "DRAM",
+                    "quantity_raw": "-1",
+                    "price_raw": "10",
+                    "broker_realized_pnl_raw": "-2",
+                    "normalized": {"broker_realized_pnl": "-2"},
+                    "source": {
+                        "closed_lot_trade_datetime": "2026-08-04, 12:00:00",
+                    },
+                },
+                {
+                    "date": "2026-08-08",
+                    "datetime": "2026-08-08 23:00:00",
+                    "type": "forex_trade_component",
+                    "broker": "ibkr",
+                    "account": "U00000001",
+                    "currency": "USD",
+                    "ticker": "USD.CNH",
+                    "quantity_raw": "10",
+                    "price_raw": "7",
+                    "broker_realized_pnl_raw": "-0.5",
+                    "normalized": {"broker_realized_pnl": "-0.5"},
+                    "source": {
+                        "broker_realized_pnl_ticker": "CNH",
+                        "broker_realized_pnl_currency": "USD",
+                        "broker_realized_pnl_date": "2026-08-07",
+                    },
+                },
+            ],
+        )
+
+        historical_template = deepcopy(historical)
+        current_template = deepcopy(current)
+        results = []
+        for first, second in (
+            (historical_template, current_template),
+            (current_template, historical_template),
+        ):
+            merged = merge_investment_payloads(deepcopy(first), deepcopy(second))
+            repeated = merge_investment_payloads(
+                deepcopy(merged),
+                deepcopy(current_template),
+            )
+            self.assertEqual(
+                merged["broker_snapshots"],
+                repeated["broker_snapshots"],
+            )
+            results.append(merged)
+
+        self.assertEqual(results[0]["broker_snapshots"], results[1]["broker_snapshots"])
+        snapshot = results[0]["broker_snapshots"]["ibkr:U00000001"]
+        performance = snapshot["performance_snapshot"]
+        self.assertEqual(snapshot["performance_snapshot_as_of"], "2026-08-08")
+        self.assertEqual(performance["DRAM"]["realized_total"], "100")
+        self.assertEqual(performance["DRAM"]["unrealized_total"], "20")
+        self.assertEqual(performance["DRAM"]["total"], "120")
+        self.assertEqual(performance["CNH"]["realized_total"], "-5.5")
+        self.assertEqual(performance["CNH"]["total"], "-5.5")
+        self.assertEqual(performance["IBKR"]["total"], "1.5")
+        self.assertEqual(performance["QQQI"]["total"], "-3")
+        self.assertEqual(performance["CLOSED"]["unrealized_total"], "0")
+        self.assertEqual(performance["CLOSED"]["total"], "3")
+        self.assertEqual(
+            snapshot["performance_snapshot_evidence_id"],
+            next(
+                evidence["evidence_id"]
+                for evidence in snapshot["evidence"]
+                if evidence["performance_snapshot_as_of"] == "2026-08-08"
+            ),
+        )
+        self.assertEqual(
+            len(snapshot["performance_snapshot_realized_evidence_ids"]),
+            2,
+        )
+        self.assertEqual(
+            results[0]["broker_summaries"]["ibkr"]["performance_snapshot"],
+            performance,
+        )
+        for ticker in ("DRAM", "IBKR", "QQQI", "CNH"):
+            reconciliation = snapshot["realized_pnl_reconciliation"][ticker]
+            self.assertEqual(reconciliation["coverage_status"], "complete")
+            self.assertFalse(reconciliation["replay"]["required"])
+
+        incomplete_current = deepcopy(current_template)
+        incomplete_current["transactions"][1].pop("broker_realized_pnl_raw")
+        incomplete_current["transactions"][1]["normalized"].pop(
+            "broker_realized_pnl"
+        )
+        fail_closed = merge_investment_payloads(historical, incomplete_current)
+        fail_closed_snapshot = fail_closed["broker_snapshots"]["ibkr:U00000001"]
+        self.assertEqual(
+            fail_closed_snapshot["performance_snapshot_as_of"],
+            "2026-08-04",
+        )
+        self.assertEqual(
+            fail_closed_snapshot["performance_snapshot"]["CNH"]["realized_total"],
+            "-5",
+        )
 
     def test_newer_ibkr_gainskeeper_marks_preserve_existing_csv_cost_basis(self) -> None:
         transactions_csv, positions_csv = InvestmentImportTests._ibkr_csv_evidence_pair()

@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.29.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.30.0."""
 
 from __future__ import annotations
 
@@ -230,11 +230,9 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             sorted(factor_labels, key=str.casefold),
         )
         expected_on_factors = {
-            "use_options",
-            "use_option_call_volume",
-            "use_option_put_call_open_interest_ratio",
-            "use_option_put_call_volume_ratio",
-            "use_volume",
+            "use_close_location",
+            "use_intraday_return",
+            "use_volume_change",
             "use_volume_at_price",
         }
         self.assertEqual(
@@ -248,9 +246,9 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             },
         )
         startup_params = strategy.get_startup_params()
-        self.assertEqual(startup_params["training_window"], 30)
-        self.assertEqual(startup_params["chip_window"], 41)
-        self.assertEqual(startup_params["prior_strength"], 1.51)
+        self.assertEqual(startup_params["training_window"], 434)
+        self.assertEqual(startup_params["chip_window"], 118)
+        self.assertEqual(startup_params["prior_strength"], 14.16)
         self.assertEqual(startup_params["entry_probability"], 60.0)
         self.assertNotIn("compute_backend", startup_params)
         self.assertEqual(
@@ -273,7 +271,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertFalse(definitions["use_dynamic_pe_ratio"].default)
         self.assertEqual(definitions["cell_display_threshold"].kind, "number")
         self.assertEqual(definitions["cell_display_threshold"].label, "Cell Display Threshold (%)")
-        self.assertEqual(definitions["cell_display_threshold"].default, 5.0)
+        self.assertEqual(definitions["cell_display_threshold"].default, 1.0)
         self.assertEqual(definitions["cell_display_threshold"].minimum, 0.0)
         self.assertEqual(definitions["cell_display_threshold"].maximum, 50.0)
         self.assertEqual(definitions["cell_display_threshold"].step, 0.01)
@@ -871,7 +869,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         stale_strategy._warmup_bundle = stale_bundle
         stale_result = stale_strategy.compute_signals(
             frame,
-            _cpu_params(use_pe_ratio=True),
+            _cpu_params(use_pe_ratio=True, use_options=True),
         )
         stale_factors = {
             factor["key"]: factor
@@ -1112,7 +1110,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertEqual(presentation["cell_opacity_exponent"], 1.6)
         self.assertEqual(presentation["cell_opacity_tail_ratio"], 0.02)
-        self.assertEqual(presentation["cell_display_threshold_pct"], 5.0)
+        self.assertEqual(presentation["cell_display_threshold_pct"], 1.0)
         self.assertEqual(presentation["time_quantization"], "integer-trading-days")
         self.assertEqual(
             presentation["target_interval"],
@@ -1191,7 +1189,12 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
     def test_missing_pe_and_options_are_reported_without_blocking_prediction(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
             _market_frame(),
-            _cpu_params(use_pe_ratio=True, use_options=True),
+            _cpu_params(
+                use_pe_ratio=True,
+                use_options=True,
+                use_volume=True,
+                use_volume_at_price=True,
+            ),
         )
         statuses = {
             factor["key"]: factor["status"]

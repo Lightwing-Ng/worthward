@@ -1,4 +1,4 @@
-"""One strategy adapter for four direct probability engines. Code version: v1.2.0."""
+"""One strategy adapter for eight direct probability engines. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from strategies.neural_price_field_inputs import (
     factor_values_for_neural, plain_market_bundle, prepare_neural_price_field_inputs,
 )
 from strategies.neural_price_field_scoring import score_neural_price_field
+from strategies.neural_price_field_registry import neural_architecture_spec
 from strategies.price_field_contract import build_probability_grid_presentation
 from strategies.price_field_pipeline import (
     PRICE_FIELD_FACTOR_DEFINITIONS, build_price_field_factor_status,
@@ -50,23 +51,24 @@ class NeuralPriceFieldStrategy(BaseStrategy):
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         parameter = StrategyParameterDefinition
+        profile = neural_architecture_spec(self.architecture).startup_profile
         return (
-            parameter("cell_display_threshold", "Cell display threshold (%)", kind="number", default=2.0,
+            parameter("cell_display_threshold", "Cell display threshold (%)", kind="number", default=1.0,
                       minimum=0.0, maximum=50.0, step=0.01, optimizable=False,
                       help_text="Visibility only; all cells and tails still contribute to probability scoring."),
-            parameter("training_window", "Training window", default=252, minimum=64, maximum=756, step=1,
+            parameter("training_window", "Training window", default=profile.training_window, minimum=64, maximum=756, step=1,
                       help_text="Maximum mature historical training sequences at each causal refit."),
-            parameter("chip_window", "Volume-at-price window", default=30, minimum=5, maximum=252, step=1),
-            parameter("lookback", "Lookback", default=32, minimum=8, maximum=64, step=1),
-            parameter("hidden_size", "Hidden size", default=32, minimum=8, maximum=64, step=1),
-            parameter("epochs", "Epochs", default=8, minimum=1, maximum=64, step=1),
-            parameter("learning_rate", "Learning rate", kind="number", default=0.001,
+            parameter("chip_window", "Volume-at-price window", default=profile.chip_window, minimum=5, maximum=252, step=1),
+            parameter("lookback", "Lookback", default=profile.lookback, minimum=8, maximum=64, step=1),
+            parameter("hidden_size", "Hidden size", default=profile.hidden_size, minimum=8, maximum=64, step=1),
+            parameter("epochs", "Epochs", default=profile.epochs, minimum=1, maximum=64, step=1),
+            parameter("learning_rate", "Learning rate", kind="number", default=profile.learning_rate,
                       minimum=0.0001, maximum=0.02, step=0.0001),
-            parameter("retrain_interval", "Refit interval", default=20, minimum=1, maximum=63, step=1,
+            parameter("retrain_interval", "Refit interval", default=profile.retrain_interval, minimum=1, maximum=63, step=1,
                       help_text="Trading sessions between causal refits; intervening forecasts use frozen weights."),
-            parameter("weight_decay", "Weight decay", kind="number", default=0.001,
+            parameter("weight_decay", "Weight decay", kind="number", default=profile.weight_decay,
                       minimum=0.0, maximum=0.1, step=0.0001),
-            parameter("dropout", "Dropout", kind="number", default=0.1, minimum=0.0, maximum=0.5, step=0.01),
+            parameter("dropout", "Dropout", kind="number", default=profile.dropout, minimum=0.0, maximum=0.5, step=0.01),
             parameter("seed", "Seed", default=42, minimum=0, maximum=1_000_000, step=1, optimizable=False),
             parameter("entry_probability", "Entry probability (%)", kind="number", default=60.0,
                       minimum=50.0, maximum=95.0, step=0.1, optimizable=False,
@@ -75,7 +77,7 @@ class NeuralPriceFieldStrategy(BaseStrategy):
                       options=("Auto", "CPU", "GPU"), optimizable=False,
                       help_text="Auto uses verified MPS/CUDA when available, otherwise Torch CPU. GPU fails closed."),
             *(parameter(d.parameter_key, d.label, kind="boolean", group="factors", subgroup=d.category,
-                        default=d.key in {"volume", "volatility_20d", "momentum_5d"}, help_text=d.help_text)
+                        default=d.parameter_key in profile.enabled_factor_parameters, help_text=d.help_text)
               for d in PRICE_FIELD_FACTOR_DEFINITIONS),
             *(parameter(f"use_{key}", f"{symbol} {'daily return' if horizon == 1 else '20-day momentum'}",
                         kind="boolean", default=False, group="factors", subgroup="Market context",

@@ -1,7 +1,13 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.109.0
+Code version: v0.110.0
+- Fixed: Partially overlapping IBKR CSV performance windows now reconcile
+  broker-native realized components, add only the uncovered tail, and adopt
+  the latest marks without double-counting the closed boundary date.
+- Fixed: A newer date-only IBKR cash boundary clears an older precise cash
+  timestamp, and Realized Summary total rows no longer produce false currency
+  warnings.
 - Added: Schwab dividend reinvestments without a positive price or cash amount
   retain an explicit unknown-basis marker and import warning.
 - Fixed: IBKR web FX fills retain currency-conversion semantics, quote-currency
@@ -2834,7 +2840,7 @@ def _build_ibkr_realized_summary_cash_record(
         return None
 
     raw_currency = _normalize_text(row[2]).upper()
-    if raw_currency in {"", "TOTAL"}:
+    if not raw_currency or raw_currency.startswith("TOTAL"):
         return None
     currency = HSBC_CURRENCY_ALIASES.get(raw_currency, raw_currency)
     if currency == "USD":
@@ -3473,6 +3479,141 @@ def _extract_ibkr_closed_trade_details(
             "row_number": str(row_number),
         })
     return details
+
+
+def _extract_ibkr_forex_pnl_details(
+    rows: list[list[str]],
+    warnings: list[str],
+) -> list[dict[str, str]]:
+    """Extract dated realized FX components from IBKR Forex P/L Details rows."""
+    details: list[dict[str, str]] = []
+    description_pattern = re.compile(
+        r"^Forex\s+(?P<base_quantity>[+-]?[\d,]+(?:\.\d+)?)\s+"
+        r"(?P<pair>[A-Z]{3}\.[A-Z]{3})$",
+        re.IGNORECASE,
+    )
+    for row_number, row in enumerate(rows, start=1):
+        if len(row) < 12 or row[0] != "Forex P/L Details" or row[1] != "Data":
+            continue
+        if _normalize_text(row[2]).upper().startswith("TOTAL"):
+            continue
+        realized_pnl = _parse_decimal(
+            row[10],
+            "forex_realized_pnl",
+            row_number,
+            warnings,
+        )
+        if realized_pnl in {None, ZERO}:
+            continue
+        description = _normalize_text(row[4])
+        description_match = description_pattern.fullmatch(description)
+        trade_datetime = _normalize_text(row[5])
+        pnl_ticker = normalize_ticker(_normalize_text(row[6]))
+        if description_match is None or not trade_datetime or not pnl_ticker:
+            warnings.append(
+                f"Row {row_number}: incomplete IBKR Forex P/L detail was retained "
+                "only in the source artifact."
+            )
+            continue
+        trade_date = trade_datetime.split(",", 1)[0].strip()
+        try:
+            date.fromisoformat(trade_date)
+        except ValueError:
+            warnings.append(
+                f"Row {row_number}: IBKR Forex P/L detail has an invalid trade date."
+            )
+            continue
+        base_quantity = _parse_decimal(
+            description_match.group("base_quantity"),
+            "forex_base_quantity",
+            row_number,
+            warnings,
+        )
+        if base_quantity is None or base_quantity == ZERO:
+            continue
+        details.append({
+            "pair": normalize_ticker(description_match.group("pair")),
+            "pnl_ticker": pnl_ticker,
+            "pnl_currency": _normalize_text(row[3]).upper() or "USD",
+            "trade_datetime": trade_datetime,
+            "trade_date": trade_date,
+            "base_quantity": _decimal_to_str(abs(base_quantity)) or "0",
+            "quantity": _decimal_to_str(
+                _parse_decimal(row[7], "forex_pnl_quantity", row_number, warnings)
+            ) or "0",
+            "proceeds": _decimal_to_str(
+                _parse_decimal(row[8], "forex_pnl_proceeds", row_number, warnings)
+            ) or "0",
+            "basis": _decimal_to_str(
+                _parse_decimal(row[9], "forex_pnl_basis", row_number, warnings)
+            ) or "0",
+            "realized_pnl": _decimal_to_str(realized_pnl) or "0",
+            "code": _normalize_text(row[11]),
+            "row_number": str(row_number),
+        })
+    return details
+
+
+def _attach_ibkr_forex_pnl_details(
+    transactions: list[dict[str, Any]],
+    forex_pnl_details: list[dict[str, str]],
+    warnings: list[str],
+) -> None:
+    """Attach each broker-reported FX result to one exact Transaction History fill."""
+    used_transaction_indexes: set[int] = set()
+    for detail in forex_pnl_details:
+        candidate_indexes: list[int] = []
+        for index, record in enumerate(transactions):
+            if index in used_transaction_indexes:
+                continue
+            if _normalize_text(record.get("type")).lower() != "forex_trade_component":
+                continue
+            if normalize_ticker(_normalize_text(record.get("ticker"))) != detail["pair"]:
+                continue
+            if not _decimal_identity_abs_values_match(
+                record.get("quantity_abs") or record.get("quantity_raw"),
+                detail["base_quantity"],
+            ):
+                continue
+            try:
+                record_day = date.fromisoformat(_normalize_text(record.get("date")))
+                detail_day = date.fromisoformat(detail["trade_date"])
+            except ValueError:
+                continue
+            if (record_day - detail_day).days not in {0, 1}:
+                continue
+            candidate_indexes.append(index)
+        if len(candidate_indexes) != 1:
+            warnings.append(
+                "An IBKR Forex P/L detail could not be matched uniquely to its "
+                "Transaction History fill; overlapping performance reports will "
+                "remain fail-closed."
+            )
+            continue
+
+        matched_index = candidate_indexes[0]
+        used_transaction_indexes.add(matched_index)
+        record = transactions[matched_index]
+        record["broker_realized_pnl_raw"] = detail["realized_pnl"]
+        normalized = record.get("normalized") if isinstance(record.get("normalized"), dict) else {}
+        normalized = dict(normalized)
+        normalized["broker_realized_pnl"] = detail["realized_pnl"]
+        record["normalized"] = normalized
+        source = record.get("source") if isinstance(record.get("source"), dict) else {}
+        source = dict(source)
+        source.update({
+            "broker_realized_pnl_source": "ibkr_forex_pnl_details",
+            "broker_realized_pnl_ticker": detail["pnl_ticker"],
+            "broker_realized_pnl_currency": detail["pnl_currency"],
+            "broker_realized_pnl_datetime": detail["trade_datetime"],
+            "broker_realized_pnl_date": detail["trade_date"],
+            "broker_realized_pnl_row_number": detail["row_number"],
+            "broker_forex_pnl_quantity_raw": detail["quantity"],
+            "broker_forex_pnl_proceeds_raw": detail["proceeds"],
+            "broker_forex_pnl_basis_raw": detail["basis"],
+            "broker_forex_pnl_code": detail["code"],
+        })
+        record["source"] = source
 
 
 def _attach_ibkr_closed_trade_details(
@@ -7171,6 +7312,21 @@ def _suppress_obsolete_hsbc_snapshot_warnings(
     ]
 
 
+def _suppress_obsolete_ibkr_total_currency_warnings(
+    warnings: list[str],
+) -> list[str]:
+    """Remove legacy warnings emitted for IBKR cash-section total rows."""
+    obsolete_pattern = re.compile(
+        r"^Row \d+: unsupported IBKR cash currency 'TOTAL[^']*' was skipped\.$",
+        re.IGNORECASE,
+    )
+    return [
+        warning
+        for warning in warnings
+        if obsolete_pattern.fullmatch(warning) is None
+    ]
+
+
 def _hsbc_matched_order_cash_references(
     transactions: list[dict[str, Any]],
 ) -> set[tuple[str, str, str]]:
@@ -8522,7 +8678,41 @@ def _merge_ibkr_cash_snapshot_fields(
     incoming_is_user_verified = (
         incoming_source == IBKR_USER_VERIFIED_CASH_SNAPSHOT_SOURCE
     )
-    if not existing_is_user_verified or incoming_is_user_verified:
+    cash_snapshot_fields = (
+        "ending_cash_by_currency",
+        "ending_cash_base_currency",
+        "ending_cash",
+        "ending_cash_raw",
+        "cash_snapshot_source",
+        "cash_snapshot_authoritative",
+        "calibration_source",
+        "cash_snapshot_verification",
+        "current_moment_source",
+        "ending_cash_as_of",
+        "ending_cash_replay_as_of",
+        "ending_cash_as_of_datetime",
+        "ending_cash_replay_as_of_datetime",
+    )
+    if not existing_is_user_verified and not incoming_is_user_verified:
+        merged = {**existing_summary, **incoming_summary}
+        existing_boundary = _ibkr_cash_snapshot_datetime_from_summary(
+            existing_summary
+        )
+        incoming_boundary = _ibkr_cash_snapshot_datetime_from_summary(
+            incoming_summary
+        )
+        preferred = incoming_summary
+        if existing_boundary and (
+            not incoming_boundary or existing_boundary > incoming_boundary
+        ):
+            preferred = existing_summary
+        for field_name in cash_snapshot_fields:
+            if field_name in preferred:
+                merged[field_name] = preferred[field_name]
+            else:
+                merged.pop(field_name, None)
+        return merged
+    if incoming_is_user_verified:
         return {**existing_summary, **incoming_summary}
 
     existing_datetime = _ibkr_cash_snapshot_datetime_from_summary(existing_summary)
@@ -8547,22 +8737,7 @@ def _merge_ibkr_cash_snapshot_fields(
         return merged
 
     merged = {**existing_summary, **incoming_summary}
-    protected_fields = (
-        "ending_cash_by_currency",
-        "ending_cash_base_currency",
-        "ending_cash",
-        "ending_cash_raw",
-        "cash_snapshot_source",
-        "cash_snapshot_authoritative",
-        "calibration_source",
-        "cash_snapshot_verification",
-        "current_moment_source",
-        "ending_cash_as_of",
-        "ending_cash_replay_as_of",
-        "ending_cash_as_of_datetime",
-        "ending_cash_replay_as_of_datetime",
-    )
-    for field_name in protected_fields:
+    for field_name in cash_snapshot_fields:
         if field_name in existing_summary:
             merged[field_name] = existing_summary[field_name]
     return merged
@@ -9382,6 +9557,7 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
             "performance_snapshot_source",
             "performance_snapshot_as_of",
             "performance_snapshot_evidence_id",
+            "performance_snapshot_realized_evidence_ids",
             "realized_pnl_reconciliation",
         }
         for field_name in (
@@ -9395,6 +9571,7 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
             "performance_snapshot_source",
             "performance_snapshot_as_of",
             "performance_snapshot_evidence_id",
+            "performance_snapshot_realized_evidence_ids",
             "holdings_validation",
             "realized_pnl_reconciliation",
         ):
@@ -9429,6 +9606,10 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
                 "performance_snapshot_evidence_id": snapshot.get(
                     "performance_snapshot_evidence_id",
                     "",
+                ),
+                "performance_snapshot_realized_evidence_ids": snapshot.get(
+                    "performance_snapshot_realized_evidence_ids",
+                    [],
                 ),
             })
 
@@ -10662,11 +10843,138 @@ def _ibkr_csv_performance_snapshot_candidates(
     return candidates
 
 
+def _ibkr_realized_component_from_transaction(
+    transaction: dict[str, Any],
+) -> tuple[str, str, Decimal | None] | None:
+    """Return one dated broker-native realized component, including missing values."""
+    transaction_type = _normalize_text(transaction.get("type")).lower()
+    source = transaction.get("source") if isinstance(transaction.get("source"), dict) else {}
+    if transaction_type == "sell":
+        ticker = normalize_ticker(_normalize_text(transaction.get("ticker")))
+        component_date = _normalize_reconciliation_date(
+            source.get("closed_lot_trade_datetime") or transaction.get("date")
+        )
+    elif transaction_type == "forex_trade_component":
+        ticker = normalize_ticker(
+            _normalize_text(source.get("broker_realized_pnl_ticker"))
+        )
+        if not ticker:
+            pair = normalize_ticker(_normalize_text(transaction.get("ticker")))
+            ticker = pair.split(".", 1)[1] if "." in pair else ""
+        component_date = _normalize_reconciliation_date(
+            source.get("broker_realized_pnl_date")
+            or source.get("broker_realized_pnl_datetime")
+            or transaction.get("date")
+        )
+    else:
+        return None
+    if not ticker:
+        return None
+    normalized = (
+        transaction.get("normalized")
+        if isinstance(transaction.get("normalized"), dict)
+        else {}
+    )
+    realized_pnl = _parse_decimal_text_or_none(
+        transaction.get("broker_realized_pnl_raw")
+        or transaction.get("broker_realized_pnl")
+        or normalized.get("broker_realized_pnl")
+    )
+    return ticker, component_date, realized_pnl
+
+
+def _verified_ibkr_overlapping_realized_tail(
+    candidate: dict[str, Any],
+    *,
+    covered_through: str,
+    transactions: list[dict[str, Any]],
+    broker: str,
+    account: str,
+) -> dict[str, Decimal] | None:
+    """Reconcile a whole overlapping report before returning its uncovered tail."""
+    raw_snapshot = candidate["evidence"].get("performance_snapshot", {})
+    if not isinstance(raw_snapshot, dict):
+        return None
+    report_totals: dict[str, Decimal] = {}
+    for raw_ticker, raw_entry in raw_snapshot.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        realized_total = _parse_decimal_text_or_none(raw_entry.get("realized_total"))
+        ticker = normalize_ticker(_normalize_text(raw_ticker))
+        if not ticker or realized_total is None:
+            return None
+        report_totals[ticker] = realized_total
+    if not report_totals:
+        return None
+
+    try:
+        window_start = date.fromisoformat(candidate["window_start"])
+        window_end = date.fromisoformat(candidate["window_end"])
+        coverage_end = date.fromisoformat(covered_through)
+    except (TypeError, ValueError):
+        return None
+
+    component_totals = {ticker: ZERO for ticker in report_totals}
+    tail_totals = {ticker: ZERO for ticker in report_totals}
+    component_counts = {ticker: 0 for ticker in report_totals}
+    incomplete_tickers: set[str] = set()
+    for transaction in transactions:
+        if not isinstance(transaction, dict):
+            continue
+        transaction_broker, transaction_account, _ticker, _currency = (
+            _reconciliation_transaction_scope(
+                transaction,
+                broker=broker,
+                account=account,
+            )
+        )
+        if (
+            transaction_broker != broker
+            or not _accounts_are_compatible(broker, account, transaction_account)
+        ):
+            continue
+        component = _ibkr_realized_component_from_transaction(transaction)
+        if component is None:
+            continue
+        ticker, component_date_text, realized_pnl = component
+        if ticker not in report_totals:
+            continue
+        try:
+            component_date = date.fromisoformat(component_date_text)
+        except ValueError:
+            incomplete_tickers.add(ticker)
+            continue
+        if component_date < window_start or component_date > window_end:
+            continue
+        component_counts[ticker] += 1
+        if realized_pnl is None:
+            incomplete_tickers.add(ticker)
+            continue
+        component_totals[ticker] += realized_pnl
+        if component_date > coverage_end:
+            tail_totals[ticker] += realized_pnl
+
+    for ticker, report_total in report_totals.items():
+        tolerance = max(
+            Decimal("0.000001"),
+            Decimal(component_counts[ticker]) * Decimal("0.0000005"),
+        )
+        if (
+            ticker in incomplete_tickers
+            or abs(component_totals[ticker] - report_total) > tolerance
+        ):
+            return None
+    return tail_totals
+
+
 def _aggregate_ibkr_csv_performance_snapshot(
     evidence_records: list[dict[str, Any]],
     *,
     source_artifacts: list[dict[str, Any]],
-) -> tuple[dict[str, Any], str] | None:
+    transactions: list[dict[str, Any]],
+    broker: str,
+    account: str,
+) -> tuple[dict[str, Any], str, str, list[str]] | None:
     candidates = _ibkr_csv_performance_snapshot_candidates(
         evidence_records,
         source_artifacts=source_artifacts,
@@ -10674,8 +10982,9 @@ def _aggregate_ibkr_csv_performance_snapshot(
     if not candidates:
         return None
 
-    # A YTD report and a later MTD report may overlap at the boundary. Keep
-    # the longest report for one start date, then add only adjacent windows.
+    # Keep the longest report for one start date. Adjacent reports contribute
+    # their full realized totals. A partially overlapping report contributes
+    # only its broker-native, fully reconciled tail after the closed boundary.
     candidates.sort(
         key=lambda item: (
             item["window_start"],
@@ -10728,22 +11037,62 @@ def _aggregate_ibkr_csv_performance_snapshot(
     selected: list[dict[str, Any]] = []
     while remaining:
         if not selected:
-            selected.append(remaining.pop(0))
+            baseline = remaining.pop(0)
+            baseline["realized_increment"] = {
+                normalize_ticker(_normalize_text(ticker)): realized_total
+                for ticker, raw_entry in baseline["evidence"].get(
+                    "performance_snapshot",
+                    {},
+                ).items()
+                if isinstance(raw_entry, dict)
+                and (
+                    realized_total := _parse_decimal_text_or_none(
+                        raw_entry.get("realized_total")
+                    )
+                ) is not None
+            }
+            selected.append(baseline)
             continue
         cursor = selected[-1]["window_end"]
-        adjacent_candidates = [
-            item
-            for item in remaining
-            if item["window_start"]
-            and (
+        extension_candidates: list[dict[str, Any]] = []
+        for item in remaining:
+            if not cursor or not item["window_start"] or item["window_end"] <= cursor:
+                continue
+            day_gap = (
                 date.fromisoformat(item["window_start"])
                 - date.fromisoformat(cursor)
-            ).days in {0, 1, 2, 3}
-        ] if cursor else []
-        if not adjacent_candidates:
+            ).days
+            if day_gap in {1, 2, 3}:
+                item["realized_increment"] = {
+                    normalize_ticker(_normalize_text(ticker)): realized_total
+                    for ticker, raw_entry in item["evidence"].get(
+                        "performance_snapshot",
+                        {},
+                    ).items()
+                    if isinstance(raw_entry, dict)
+                    and (
+                        realized_total := _parse_decimal_text_or_none(
+                            raw_entry.get("realized_total")
+                        )
+                    ) is not None
+                }
+                extension_candidates.append(item)
+                continue
+            if day_gap <= 0:
+                tail = _verified_ibkr_overlapping_realized_tail(
+                    item,
+                    covered_through=cursor,
+                    transactions=transactions,
+                    broker=broker,
+                    account=account,
+                )
+                if tail is not None:
+                    item["realized_increment"] = tail
+                    extension_candidates.append(item)
+        if not extension_candidates:
             break
         next_candidate = max(
-            adjacent_candidates,
+            extension_candidates,
             key=lambda item: (item["window_end"], item["window_start"]),
         )
         selected.append(next_candidate)
@@ -10765,7 +11114,9 @@ def _aggregate_ibkr_csv_performance_snapshot(
         for ticker, raw_entry in candidate["evidence"].get("performance_snapshot", {}).items():
             if not isinstance(raw_entry, dict):
                 continue
-            realized_total = _parse_decimal_text_or_none(raw_entry.get("realized_total"))
+            realized_total = candidate.get("realized_increment", {}).get(
+                normalize_ticker(_normalize_text(ticker))
+            )
             if realized_total is None:
                 continue
             entry = cumulative_snapshot.setdefault(
@@ -10792,9 +11143,29 @@ def _aggregate_ibkr_csv_performance_snapshot(
             realized_total = _parse_decimal_text_or_none(entry.get("realized_total"))
             if unrealized_total is not None and realized_total is not None:
                 entry["total"] = _decimal_to_str(realized_total + unrealized_total) or "0"
+        else:
+            entry["unrealized_total"] = "0"
+            entry["total"] = _normalize_text(entry.get("realized_total")) or "0"
         entry["realized_total_source"] = "ibkr_csv_cumulative_non_overlapping_periods"
 
-    return cumulative_snapshot, latest_candidate["window_end"]
+    latest_evidence_id = _normalize_text(
+        latest_candidate["evidence"].get("evidence_id")
+    )
+    contributor_ids = [
+        evidence_id
+        for candidate in selected
+        if (
+            evidence_id := _normalize_text(
+                candidate["evidence"].get("evidence_id")
+            )
+        )
+    ]
+    return (
+        cumulative_snapshot,
+        latest_candidate["window_end"],
+        latest_evidence_id,
+        contributor_ids,
+    )
 
 
 _REALIZED_PNL_REPLAY_TRANSACTION_TYPES = frozenset({
@@ -11053,16 +11424,34 @@ def _build_broker_snapshot_entry(
             cumulative_result = _aggregate_ibkr_csv_performance_snapshot(
                 evidence,
                 source_artifacts=source_artifacts,
+                transactions=transactions,
+                broker=broker,
+                account=account,
             )
             if cumulative_result is not None:
-                performance_snapshot, performance_snapshot_as_of = cumulative_result
+                (
+                    performance_snapshot,
+                    performance_snapshot_as_of,
+                    performance_snapshot_evidence_id,
+                    performance_snapshot_realized_evidence_ids,
+                ) = cumulative_result
+            else:
+                performance_snapshot_evidence_id = selected["evidence_id"]
+                performance_snapshot_realized_evidence_ids = []
+        else:
+            performance_snapshot_evidence_id = selected["evidence_id"]
+            performance_snapshot_realized_evidence_ids = []
         entry.update({
             "performance_snapshot": performance_snapshot,
             "performance_snapshot_authoritative": selected["performance_snapshot_authoritative"],
             "performance_snapshot_source": selected["performance_snapshot_source"],
             "performance_snapshot_as_of": performance_snapshot_as_of,
-            "performance_snapshot_evidence_id": selected["evidence_id"],
+            "performance_snapshot_evidence_id": performance_snapshot_evidence_id,
         })
+        if performance_snapshot_realized_evidence_ids:
+            entry["performance_snapshot_realized_evidence_ids"] = (
+                performance_snapshot_realized_evidence_ids
+            )
     reconciliation = _build_broker_realized_pnl_reconciliation(
         broker,
         account,
@@ -12659,7 +13048,9 @@ def build_investment_payload_from_ibkr_csvs(
     open_position_snapshots = _extract_open_position_summaries(positions_rows, warnings)
     performance_snapshots = _extract_performance_summaries(positions_rows, warnings)
     closed_trade_details = _extract_ibkr_closed_trade_details(positions_rows, warnings)
+    forex_pnl_details = _extract_ibkr_forex_pnl_details(positions_rows, warnings)
     _attach_ibkr_closed_trade_details(transactions, closed_trade_details)
+    _attach_ibkr_forex_pnl_details(transactions, forex_pnl_details, warnings)
     _prefer_ibkr_closed_trade_realized_totals(
         performance_snapshots,
         closed_trade_details,
@@ -25572,6 +25963,7 @@ def merge_investment_payloads(
         warnings,
         incoming_summary,
     )
+    warnings = _suppress_obsolete_ibkr_total_currency_warnings(warnings)
     hsbc_cash_settlement_merge_warnings: list[str] = []
     if incoming_broker == "hsbc" and incoming_hsbc_cash_settlement_evidence:
         merged_hsbc_order_records = [

@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.3.1."""
+"""Shared Price Field contract tests. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -65,8 +65,6 @@ class PriceFieldContractTests(unittest.TestCase):
             self.assertCountEqual([field["key"] for field in flattened], list(pipeline_module.PRICE_FIELD_FACTOR_PARAMETER_KEYS))
             self.assertEqual(len(flattened), len({field["key"] for field in flattened}))
             self.assertIn("Price and volume", [group["title"] for group in factors["subgroups"]])
-            for key, _, _ in pipeline_module._PRICE_VOLUME_FACTORS:
-                self.assertFalse(strategy.get_default_params()[f"use_{key}"])
 
     def test_model_neutral_pipeline_is_the_runtime_owner(self) -> None:
         for name in (

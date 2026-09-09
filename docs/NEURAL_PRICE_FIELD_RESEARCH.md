@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.2.1`
+Documentation version: `v1.3.0`
 
 ## Scope and model evidence
 
@@ -170,6 +170,34 @@ and `price-field-training` action slot. Architecture identity is distinct from
 the shared payload version. The existing controller discovers the slot
 and uses `/api/price-field-training` with strategy-scoped history; the server
 validates the family metadata.
+Startup defaults use the validation-selected profiles from the AAPL neural
+cohort whose result and terminal status completed internally on 8 Sep 2026. It
+completed 1,104 evaluations with no failures, froze selection before holdout
+reporting, and reported three seeds for each selected and prior-default profile.
+The outer family supervisor nevertheless exited 1, so this is cohort evidence,
+not a formally completed family suite. Every selected profile improved its own
+prior-default mean holdout probability score, by 0.0295 to 0.3228 percentage
+points. All eight selected profiles nevertheless remained slightly below the
+causal random-walk reference on Brier skill, so these are AAPL-derived defaults,
+not evidence of cross-ticker superiority.
+
+All eight profiles use a 252-session training window, seed 42, a 60% transaction
+entry threshold, and portable `Auto` compute selection. The cohort's final GPU
+reporting policy was not a GA gene and therefore is not a product default. The
+shared cell display threshold is 1%; it is an independent presentation-only
+default and never enters model fitting, selection, or probability scoring.
+
+| Strategy | Chip | Lookback | Hidden | Epochs | Learning rate | Refit | Weight decay | Dropout | Enabled causal factors |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| PatchTST | 84 | 32 | 32 | 8 | 0.0003 | 20 | 0.001 | 0 | `illiquidity_20d`, `close_location`, `amplitude` |
+| TSMixer | 63 | 16 | 16 | 8 | 0.0003 | 10 | 0.001 | 0.1 | `illiquidity_20d`, `momentum_20d`, `relative_volume_20d`, `momentum_5d`, `close_location`, `amplitude`, `intraday_return`, `overnight_gap`, `volume_change` |
+| N-HiTS | 21 | 32 | 16 | 4 | 0.0003 | 20 | 0.001 | 0 | `momentum_20d`, `relative_volume_20d`, `momentum_5d`, `momentum_60d`, `amplitude`, `turnover` |
+| TimeXer | 21 | 32 | 16 | 4 | 0.0003 | 10 | 0.001 | 0.1 | `illiquidity_20d`, `momentum_5d`, `turnover`, `volume` |
+| iTransformer | 63 | 32 | 16 | 8 | 0.0003 | 10 | 0.001 | 0.1 | `momentum_20d`, `volatility_20d`, `amplitude`, `intraday_return`, `overnight_gap`, `volume_change` |
+| TiDE | 21 | 16 | 16 | 4 | 0.001 | 10 | 0.01 | 0 | `illiquidity_20d`, `relative_volume_20d`, `volatility_20d`, `close_location`, `amplitude`, `intraday_return`, `overnight_gap`, `turnover` |
+| ModernTCN | 42 | 16 | 8 | 4 | 0.0006 | 10 | 0.01 | 0 | `turnover` |
+| TFT | 42 | 16 | 8 | 4 | 0.001 | 10 | 0.001 | 0 | `momentum_20d`, `volatility_20d`, `intraday_return`, `overnight_gap` |
+
 Start snapshots the selected daily ticker, range, and exact parameters. It does
 not silently mutate hyperparameters through GA. Stop is asynchronous and scoped
 to the owned job. Completed records require a complete result, matching saved

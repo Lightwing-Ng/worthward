@@ -1,4 +1,4 @@
-"""Research chronology, selection, and lifecycle contracts. Code version: v1.1.0."""
+"""Research chronology, selection, and lifecycle contracts. Code version: v1.1.1."""
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -385,15 +385,23 @@ def test_repeated_ga_collisions_do_not_exhaust_an_unseen_candidate(tmp_path, mon
                                          "--seconds", "120", "--cpu-only", "--strategy-id", "tft-price-field"])
     run = research.ResearchRun(args)
     first = run.unseen_candidate("tft-price-field", "CPU")
+    alternative_hidden = next(
+        value
+        for value in run.domains["tft-price-field"]["hidden_size"]
+        if value != first["hidden_size"]
+    )
     attempts = []
 
     def draw(*_args):
         attempts.append(1)
-        return dict(first, hidden_size=8 if len(attempts) > 3 else first["hidden_size"])
+        return dict(
+            first,
+            hidden_size=alternative_hidden if len(attempts) > 3 else first["hidden_size"],
+        )
 
     monkeypatch.setattr(research, "_new_params", draw)
     second = run.unseen_candidate("tft-price-field", "CPU")
-    assert second["hidden_size"] == 8
+    assert second["hidden_size"] == alternative_hidden
     assert len(attempts) == 4
     assert run.candidate_collisions == 4
     monkeypatch.setattr(research, "_new_params", lambda *_args: dict(first))

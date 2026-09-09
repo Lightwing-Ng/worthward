@@ -1,4 +1,4 @@
-"""Shared neural strategy and causal input contracts. Code version: v1.2.0."""
+"""Shared neural strategy and causal input contracts. Code version: v1.3.0."""
 
 from copy import deepcopy
 import subprocess
@@ -15,10 +15,84 @@ from strategies.neural_price_field_inputs import (
     causal_neural_market_bundle, factor_values_for_neural,
     plain_market_bundle, prepare_neural_price_field_inputs,
 )
-from strategies.neural_price_field_registry import NEURAL_ARCHITECTURES
+from strategies.neural_price_field_registry import NEURAL_ARCHITECTURES, NEURAL_SPECS
 from tests.factories.market import ohlc_frame_for_dates
 
 ARCHITECTURES = NEURAL_ARCHITECTURES
+EXPECTED_AAPL_DEFAULTS = {
+    "patchtst-price-field": {
+        "chip_window": 84, "lookback": 32, "hidden_size": 32, "epochs": 8,
+        "learning_rate": 0.0003, "retrain_interval": 20,
+        "weight_decay": 0.001, "dropout": 0.0,
+        "enabled_factors": {
+            "use_illiquidity_20d", "use_close_location", "use_amplitude",
+        },
+    },
+    "tsmixer-price-field": {
+        "chip_window": 63, "lookback": 16, "hidden_size": 16, "epochs": 8,
+        "learning_rate": 0.0003, "retrain_interval": 10,
+        "weight_decay": 0.001, "dropout": 0.1,
+        "enabled_factors": {
+            "use_illiquidity_20d", "use_momentum_20d",
+            "use_relative_volume_20d", "use_momentum_5d",
+            "use_close_location", "use_amplitude", "use_intraday_return",
+            "use_overnight_gap", "use_volume_change",
+        },
+    },
+    "nhits-price-field": {
+        "chip_window": 21, "lookback": 32, "hidden_size": 16, "epochs": 4,
+        "learning_rate": 0.0003, "retrain_interval": 20,
+        "weight_decay": 0.001, "dropout": 0.0,
+        "enabled_factors": {
+            "use_momentum_20d", "use_relative_volume_20d",
+            "use_momentum_5d", "use_momentum_60d", "use_amplitude",
+            "use_turnover",
+        },
+    },
+    "timexer-price-field": {
+        "chip_window": 21, "lookback": 32, "hidden_size": 16, "epochs": 4,
+        "learning_rate": 0.0003, "retrain_interval": 10,
+        "weight_decay": 0.001, "dropout": 0.1,
+        "enabled_factors": {
+            "use_illiquidity_20d", "use_momentum_5d", "use_turnover",
+            "use_volume",
+        },
+    },
+    "itransformer-price-field": {
+        "chip_window": 63, "lookback": 32, "hidden_size": 16, "epochs": 8,
+        "learning_rate": 0.0003, "retrain_interval": 10,
+        "weight_decay": 0.001, "dropout": 0.1,
+        "enabled_factors": {
+            "use_momentum_20d", "use_volatility_20d", "use_amplitude",
+            "use_intraday_return", "use_overnight_gap", "use_volume_change",
+        },
+    },
+    "tide-price-field": {
+        "chip_window": 21, "lookback": 16, "hidden_size": 16, "epochs": 4,
+        "learning_rate": 0.001, "retrain_interval": 10,
+        "weight_decay": 0.01, "dropout": 0.0,
+        "enabled_factors": {
+            "use_illiquidity_20d", "use_relative_volume_20d",
+            "use_volatility_20d", "use_close_location", "use_amplitude",
+            "use_intraday_return", "use_overnight_gap", "use_turnover",
+        },
+    },
+    "moderntcn-price-field": {
+        "chip_window": 42, "lookback": 16, "hidden_size": 8, "epochs": 4,
+        "learning_rate": 0.0006, "retrain_interval": 10,
+        "weight_decay": 0.01, "dropout": 0.0,
+        "enabled_factors": {"use_turnover"},
+    },
+    "tft-price-field": {
+        "chip_window": 42, "lookback": 16, "hidden_size": 8, "epochs": 4,
+        "learning_rate": 0.001, "retrain_interval": 10,
+        "weight_decay": 0.001, "dropout": 0.0,
+        "enabled_factors": {
+            "use_momentum_20d", "use_volatility_20d",
+            "use_intraday_return", "use_overnight_gap",
+        },
+    },
+}
 
 
 def test_model_import_does_not_initialize_the_web_application():
@@ -57,6 +131,44 @@ def test_eight_discovered_strategies_share_factors_and_training():
         assert len([d for d in strategy.get_parameter_definitions() if d.group == "factors"]) == 42
         assert strategy.get_parameter_sections()[1]["slot"] == "price-field-training"
         assert strategy.get_supported_intervals() == ("1d",)
+
+
+@pytest.mark.parametrize("spec", NEURAL_SPECS, ids=lambda spec: spec.architecture)
+def test_current_neural_tuning_profile_is_the_startup_default(spec):
+    strategy = instantiate_strategy(spec.strategy_id)
+    definitions = strategy.get_parameter_definitions()
+    defaults = strategy.get_startup_params()
+    expected = EXPECTED_AAPL_DEFAULTS[spec.strategy_id]
+    assert {
+        key: defaults[key]
+        for key in (
+            "cell_display_threshold", "training_window", "chip_window", "lookback",
+            "hidden_size", "epochs", "learning_rate", "retrain_interval",
+            "weight_decay", "dropout", "seed", "entry_probability", "compute_backend",
+        )
+    } == {
+        "cell_display_threshold": 1.0,
+        "training_window": 252,
+        "chip_window": expected["chip_window"],
+        "lookback": expected["lookback"],
+        "hidden_size": expected["hidden_size"],
+        "epochs": expected["epochs"],
+        "learning_rate": expected["learning_rate"],
+        "retrain_interval": expected["retrain_interval"],
+        "weight_decay": expected["weight_decay"],
+        "dropout": expected["dropout"],
+        "seed": 42,
+        "entry_probability": 60.0,
+        "compute_backend": "Auto",
+    }
+    assert {
+        definition.key
+        for definition in definitions
+        if definition.group == "factors" and defaults[definition.key]
+    } == expected["enabled_factors"]
+    assert spec.startup_profile.hidden_size == expected["hidden_size"]
+    assert spec.startup_profile.enabled_factor_parameters == expected["enabled_factors"]
+    assert defaults["hidden_size"] <= spec.hidden_maximum
 
 
 @pytest.mark.parametrize("architecture", ARCHITECTURES)

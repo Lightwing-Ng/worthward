@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.7.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -124,15 +124,20 @@ class StrategyFormSchemaTests(unittest.TestCase):
         self.assertTrue(all(str(fields[key]["value"]).endswith((".00", ".20", ".30")) for key in percentage_keys))
         self.assertEqual(fields["primary_min_pct"]["ui_role"], "ticker-label:0:minimum")
         self.assertEqual(fields["leveraged_max_pct"]["ui_role"], "ticker-label:1:maximum")
-        self.assertEqual(fields["buy_leveraged_drop_pct"]["ui_role"], "ticker-label:0:daily-drop-trigger")
-        self.assertEqual(fields["sell_leveraged_rise_pct"]["ui_role"], "ticker-label:1:daily-rise-trigger")
+        self.assertEqual(fields["rotation_window"]["value"], "1d")
+        self.assertEqual(
+            [item["label"] for item in fields["rotation_window"]["option_items"]],
+            ["Single day", "1 week", "1 month", "3 months"],
+        )
+        self.assertEqual(fields["buy_leveraged_drop_pct"]["ui_role"], "ticker-label:0:drop-trigger")
+        self.assertEqual(fields["sell_leveraged_rise_pct"]["ui_role"], "ticker-label:1:rise-trigger")
         self.assertEqual(
             fields["primary_min_pct"]["subgroup"],
-            "Allocation limits (% of total equity)",
+            "Allocation limits (%, equity)",
         )
         self.assertEqual(
             fields["buy_leveraged_drop_pct"]["subgroup"],
-            "Rotation triggers (daily % change)",
+            "Rotation triggers (%, change)",
         )
 
 

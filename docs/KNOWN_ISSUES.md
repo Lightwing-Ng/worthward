@@ -28,7 +28,18 @@ responsive breakpoints. Regression: `tests/e2e/backtest-annotation-geometry.spec
 Investment import feedback layer, 8 Sep 2026: validation and clipboard error
 banners are portaled to the document root before display. They remain above the
 full-screen broker-import modal instead of being trapped inside the earlier
-Investment report-card stacking context.
+Investment report-card stacking context. While the modal is open, the feedback
+banner owns one layer above the global popover token; browser regression also
+checks viewport containment and center-point paint ownership.
+
+IBKR CSV interval reconciliation, 9 Sep 2026: partially overlapping Realized
+Summary windows no longer add the complete newer period. The importer first
+reconciles broker-native stock and Forex detail, adds only realized components
+strictly after the prior closed boundary, and adopts the latest unrealized marks.
+The USD 2 conversion fee remains included once in the broker-reported Forex P&L.
+A newer date-only CSV cash boundary clears an older GainsKeeper timestamp, and
+`Total in USD` cash-section rows are treated as summaries; matching legacy false
+warnings are removed during the next incremental merge.
 
 Investment P&L audit, 8 Sep 2026: dividend-reinvestment shares now retain their
 actual reinvestment cost basis instead of opening zero-cost lots. A reinvestment
@@ -165,7 +176,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.248.2`
+Documentation version: `v1.250.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed
@@ -184,14 +195,24 @@ chart-edge lattice regression selects an origin with a valid forecast; warmup
 points with null predictions correctly have no probability tooltip. The full
 20-by-20 detail lattice and edge-capped hover assertions remain enforced.
 
-LSTM defaults, 6 Sep 2026: the completed DRAM probability GA robust winner
-is now the strategy default: training window 60, chip window 83, lookback 4,
-hidden size 9, epochs 7, learning rate 0.003, seed 42, GPU, entry probability
-60%, and cell display threshold 2%. Enabled factors are options, call open
-interest, call volume, put volume, put/call volume ratio, and volume. Other
-factors default off. Explicit request parameters still override defaults.
-The winner was rescored with seeds 42/43/44; seed 42 is the default member,
-not an ensemble. Historical scores require reevaluation after model changes.
+AAPL Price Field defaults, 9 Sep 2026: Bayesian, LSTM, and the eight direct
+neural strategies use the validation-selected startup profiles from their
+8 Sep 2026 AAPL family cohorts. Bayesian uses its deterministic winner. LSTM
+uses the robust three-seed grid winner with CPU execution. The neural models
+use independent architecture profiles with portable `Auto` execution; the
+cohort's final GPU reporting policy was not a searched parameter. The shared
+cell display threshold is 1% and remains presentation-only. Exact URL values
+and browser-local per-strategy preferences still override source defaults and
+are not cleared by this change.
+
+The outer family supervisor exited 1 and did not produce a suite aggregate.
+LSTM and neural cohort result and status files are internally complete.
+Bayesian wrote a complete result and completed status, but its frozen wrapper
+then caught the normal `SystemExit(0)` and overwrote only the status as failed.
+The promoted profiles are therefore documented as AAPL-derived cohort winners,
+not as a formally completed family suite or evidence of cross-ticker advantage.
+The neural holdout profiles improve their respective old defaults but remain
+slightly below the causal random-walk reference on Brier skill.
 
 LSTM backend audit correction, 6 Sep 2026: model `v1.1.0` standardizes each
 origin's inputs using only its causal training sequences before NumPy/Torch
@@ -427,8 +448,10 @@ is claimed and concurrent layout work remains preserved.
 - IBKR cash boundaries with explicit intraday times are compared
   chronologically. Reapplying an older same-day web capture cannot overwrite
   newer file cash, and obsolete currency components are removed with the old
-  boundary. A canonical cumulative CSV performance snapshot also refreshes
-  the compatibility broker summary, including its independent as-of date.
+  boundary. A newer date-only file boundary also removes an older precise
+  timestamp. A canonical verified interval-union CSV performance snapshot
+  refreshes the compatibility broker summary, including its independent as-of
+  date, without double-counting a shared report boundary.
 
 - Import-complete `Transfer review` feedback is scoped to source rows that
   became actionable during that import. Pre-existing `Unbound` rows remain

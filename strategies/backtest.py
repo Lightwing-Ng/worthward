@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.13.0
+Code version: v0.13.1
 """
 
 from __future__ import annotations
@@ -526,8 +526,11 @@ def run_leveraged_rotation_backtest(
                         ) / holdings[asset - 1]
 
         if index == 0:
-            if not rebalance(row, "initial", "Open"):
+            opening_prices = [row_value(row, "Open", asset) for asset in (1, 2)]
+            if any(not isfinite(price) or price <= 0 for price in opening_prices):
                 raise ValueError("The selected tickers have no usable opening allocation.")
+            # Zero target shares are a valid cash allocation, not missing market data.
+            rebalance(row, "initial", "Open")
             initial_allocation = {
                 "primary_shares": holdings[0],
                 "leveraged_shares": holdings[1],

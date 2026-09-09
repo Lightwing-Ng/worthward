@@ -1,7 +1,7 @@
 """
 Leveraged rotation strategy.
 
-Code version: v2.2.0
+Code version: v2.4.0
 """
 
 from __future__ import annotations
@@ -18,6 +18,15 @@ from ..base import (
     StrategySignalResult,
     StrategySupportMatrix,
 )
+from ..interval_bridge import DAILY_CLOSE_TO_NEXT_SESSION_OPEN
+
+
+_ROTATION_WINDOW_SESSIONS = {
+    "1d": 1,
+    "1w": 5,
+    "1m": 21,
+    "3m": 63,
+}
 
 
 class LeveragedRotationStrategy(BaseStrategy):
@@ -25,7 +34,7 @@ class LeveragedRotationStrategy(BaseStrategy):
     strategy_name = "Leveraged Rotation"
     strategy_description = (
         "Rebalances integer shares between a primary ticker and its leveraged companion after "
-        "configured daily moves, within declared allocation bounds. "
+        "configured return-window moves, within declared allocation bounds. "
         "Close-derived rotation decisions use subsequent opening prices."
     )
     strategy_category = "portfolio-rotation"
@@ -37,6 +46,12 @@ class LeveragedRotationStrategy(BaseStrategy):
         short=False,
         required_tickers=2,
     )
+    strategy_supported_intervals = ("1d", "1m")
+    strategy_model_interval_overrides = {"1m": "1d"}
+    strategy_signal_bridges = {"1m": DAILY_CLOSE_TO_NEXT_SESSION_OPEN}
+    strategy_interval_notices = {
+        "1m": "Return-window signals use daily closes and execute at the next session open.",
+    }
 
     def get_default_tickers(self) -> tuple[str, ...]:
         return ("QQQ", "TQQQ")
@@ -72,42 +87,53 @@ class LeveragedRotationStrategy(BaseStrategy):
             StrategyParameterDefinition(
                 key="primary_min_pct", label="Primary minimum", kind="number",
                 default=20.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
-                subgroup="Allocation limits (% of total equity)",
+                subgroup="Allocation limits (%, equity)",
                 ui_role="ticker-label:0:minimum",
             ),
             StrategyParameterDefinition(
                 key="primary_max_pct", label="Primary maximum", kind="number",
                 default=95.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
-                subgroup="Allocation limits (% of total equity)",
+                subgroup="Allocation limits (%, equity)",
                 ui_role="ticker-label:0:maximum",
             ),
             StrategyParameterDefinition(
                 key="leveraged_min_pct", label="Leveraged minimum", kind="number",
                 default=0.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
-                subgroup="Allocation limits (% of total equity)",
+                subgroup="Allocation limits (%, equity)",
                 ui_role="ticker-label:1:minimum",
             ),
             StrategyParameterDefinition(
                 key="leveraged_max_pct", label="Leveraged maximum", kind="number",
                 default=75.0, minimum=0.0, maximum=100.0, step=0.01, unit_hint="%",
-                subgroup="Allocation limits (% of total equity)",
+                subgroup="Allocation limits (%, equity)",
                 ui_role="ticker-label:1:maximum",
             ),
             StrategyParameterDefinition(
+                key="rotation_window",
+                label="Return window",
+                kind="choice",
+                default="1d",
+                options=tuple(_ROTATION_WINDOW_SESSIONS),
+                option_labels=("Single day", "1 week", "1 month", "3 months"),
+                subgroup="Rotation triggers (%, change)",
+                content_sized=True,
+                help_text="Measures each trigger return across 1, 5, 21, or 63 completed trading sessions.",
+            ),
+            StrategyParameterDefinition(
                 key="buy_leveraged_drop_pct",
-                label="Primary daily drop trigger",
+                label="Buy leveraged: primary decline",
                 kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.01,
-                unit_hint="%", subgroup="Rotation triggers (daily % change)",
-                ui_role="ticker-label:0:daily-drop-trigger",
-                help_text="After the primary ticker falls by this daily percentage, the next open rebalances toward the leveraged ticker.",
+                unit_hint="%", subgroup="Rotation triggers (%, change)",
+                ui_role="rotation-trigger:buy-leveraged",
+                help_text="After the primary ticker falls by this percentage across the selected Return window, the next open rebalances toward the leveraged ticker.",
             ),
             StrategyParameterDefinition(
                 key="sell_leveraged_rise_pct",
-                label="Leveraged daily rise trigger",
+                label="Buy primary: leveraged rise",
                 kind="number", default=5.0, minimum=0.1, maximum=200.0, step=0.01,
-                unit_hint="%", subgroup="Rotation triggers (daily % change)",
-                ui_role="ticker-label:1:daily-rise-trigger",
-                help_text="After the leveraged ticker rises by this daily percentage, the next open rebalances toward the primary ticker.",
+                unit_hint="%", subgroup="Rotation triggers (%, change)",
+                ui_role="rotation-trigger:buy-primary",
+                help_text="After the leveraged ticker rises by this percentage across the selected Return window, the next open rebalances toward the primary ticker.",
             ),
         )
 
@@ -174,24 +200,34 @@ class LeveragedRotationStrategy(BaseStrategy):
                     raise ValueError("Leveraged Rotation requires finite, nonnegative dividends when supplied.")
                 frame[column] = dividends
 
-        for key in self.get_default_params():
-            raw_value = (params or {}).get(key, self.get_default_params()[key])
+        for definition in self.get_parameter_definitions():
+            if definition.kind not in {"integer", "number"}:
+                continue
+            raw_value = (params or {}).get(definition.key, definition.default)
             try:
                 finite_value = isfinite(float(raw_value))
             except (TypeError, ValueError, OverflowError):
                 finite_value = False
             if not finite_value:
-                raise ValueError(f"{key} must be a finite number.")
+                raise ValueError(f"{definition.key} must be a finite number.")
         normalized_params = self.normalize_params(params)
         primary_close = frame["Close"]
         leveraged_close = frame["Close_2"]
-        primary_daily_pct = primary_close.pct_change(fill_method=None) * 100.0
-        leveraged_daily_pct = leveraged_close.pct_change(fill_method=None) * 100.0
+        rotation_window = str(normalized_params["rotation_window"])
+        window_sessions = _ROTATION_WINDOW_SESSIONS[rotation_window]
+        primary_window_pct = primary_close.pct_change(
+            periods=window_sessions,
+            fill_method=None,
+        ) * 100.0
+        leveraged_window_pct = leveraged_close.pct_change(
+            periods=window_sessions,
+            fill_method=None,
+        ) * 100.0
         target_regimes: list[str] = []
         enter_intents: list[bool] = []
         exit_intents: list[bool] = []
         regime = "initial"
-        for primary_move, leveraged_move in zip(primary_daily_pct, leveraged_daily_pct, strict=True):
+        for primary_move, leveraged_move in zip(primary_window_pct, leveraged_window_pct, strict=True):
             enter = bool(
                 regime != "leveraged"
                 and pd.notna(primary_move)
@@ -210,8 +246,8 @@ class LeveragedRotationStrategy(BaseStrategy):
             enter_intents.append(enter)
             exit_intents.append(exit_)
 
-        frame["rotation_primary_daily_pct"] = primary_daily_pct.to_numpy()
-        frame["rotation_leveraged_daily_pct"] = leveraged_daily_pct.to_numpy()
+        frame["rotation_primary_window_pct"] = primary_window_pct.to_numpy()
+        frame["rotation_leveraged_window_pct"] = leveraged_window_pct.to_numpy()
         frame["rotation_target_regime"] = target_regimes
         frame["rotation_enter_signal"] = enter_intents
         frame["rotation_exit_signal"] = exit_intents
@@ -226,5 +262,7 @@ class LeveragedRotationStrategy(BaseStrategy):
                 "primary_close_column": "Close",
                 "secondary_close_column": "Close_2",
                 "rotation_parameters": normalized_params,
+                "rotation_window": rotation_window,
+                "rotation_window_sessions": window_sessions,
             },
         )

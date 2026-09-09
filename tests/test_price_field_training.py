@@ -1,4 +1,4 @@
-"""Isolated generic probability training contracts. Code version: v1.2.0."""
+"""Isolated generic probability training contracts. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import pandas as pd
 
 from app.services import price_field_training as training
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
+from strategies.loader import instantiate_strategy
 from tests.factories.market import ohlc_frame_for_dates
 
 FRONTIER_STRATEGIES = (
@@ -48,6 +49,7 @@ def test_each_strategy_launches_exact_configuration_and_owns_its_state(prepared_
     assert request["strategy"] == strategy_id
     assert request["interval"] == "1d"
     assert request["configuration"]["from"] == "2024-09-04"
+    assert request["params"] == instantiate_strategy(strategy_id).get_startup_params()
     assert request["params"]["compute_backend"] == "Auto"
     assert "seed" in request["params"] and "lstm_seed" not in request["params"]
     assert commands[0][1]["start_new_session"] is True
