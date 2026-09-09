@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.1.2 */
+/* Neural Price Field UI integration. Code version: v1.2.0 */
 import {expect, test} from '@playwright/test';
 
 const architectures = ['patchtst', 'tsmixer', 'nhits', 'timexer'];
@@ -62,7 +62,7 @@ test('completed probability history is model-scoped and restores its exact saved
         queries.push(new URL(route.request().url()).searchParams.get('strategy'));
         await route.fulfill({json: {success: true, protocol_version: 3, runs}});
     });
-    await page.goto(urlFor('nhits'));
+    await page.goto(urlFor('nhits').replace('show_trade_details=0', 'show_trade_details=1'));
     const configuration = await page.evaluate(() => {
         const form = document.querySelector('[data-backtest-parameter-form]');
         const field = (name) => form.querySelector(`[name="${name}"]:checked`) || form.querySelector(`[name="${name}"]`);
@@ -85,14 +85,21 @@ test('completed probability history is model-scoped and restores its exact saved
     await expect(menu.locator('.lstm-training-history-select')).toHaveCount(1, {timeout: 10_000});
     await expect(menu.locator('.lstm-training-accuracy')).toHaveText('55.21%');
     await expect(menu.locator('.lstm-training-accuracy')).toHaveAttribute('title', 'Complete-grid probability score');
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'transactions');
+    await expect(page.locator('#backtest_history_transactions')).toBeChecked();
     await page.evaluate(() => { window.__savedConfigurationDocument = true; });
     await menu.locator('.lstm-training-history-select').click();
     await expect(page).toHaveURL(/price_field_training_run=price-field-bbbbbbbbbbbbbbbbbbbbbbbb/);
     await expect.poll(() => page.evaluate(() => Boolean(window.__savedConfigurationDocument))).toBe(false);
     await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('label[for="backtest_history_probability"] span')).toHaveText('Price field');
-    await page.locator('label[for="backtest_history_probability"]').click();
-    await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').count()).toBeGreaterThan(0);
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'probability');
+    await expect(page.locator('#backtest_history_probability')).toBeChecked();
+    await expect(page.locator('#backtest_history_transactions')).not.toBeChecked();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
+        (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
+    )).toBe(20);
     await menu.locator('.lstm-training-history-select').click();
     await expect(menu.locator('.lstm-training-history-details')).toContainText('Backend mps · 1,200 optimizer steps · 1.25 s training · 0.24 s inference');
     expect(queries.every((strategy) => strategy === 'nhits-price-field')).toBe(true);
@@ -100,6 +107,59 @@ test('completed probability history is model-scoped and restores its exact saved
     await expect(menu.locator('.lstm-training-history-select')).toHaveCount(1);
     await expect(menu.locator('.lstm-training-history-run')).toHaveText('QQQ');
     await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('a newly completed training run automatically restores its probability grid', async ({page}) => {
+    test.setTimeout(120_000);
+    let runs = [];
+    let startRequests = 0;
+    const runId = 'price-field-dddddddddddddddddddddddd';
+    await page.route('**/api/price-field-training?*', (route) => route.fulfill({
+        json: {success: true, protocol_version: 3, runs},
+    }));
+    await page.route('**/api/price-field-training/start', async (route) => {
+        startRequests += 1;
+        const request = route.request().postDataJSON();
+        const running = {
+            id: runId, strategy: request.strategy, ticker: request.ticker,
+            period: request.period, interval: request.interval,
+            started_at: '2026-09-09T00:00:00Z', status: 'running', active: true,
+            progress: {percent: 50}, files: [],
+        };
+        runs = [{
+            ...running,
+            status: 'completed',
+            active: false,
+            probability_score_pct: 56.25,
+            probability_score_label: 'Complete-grid probability score',
+            configuration: {
+                ...request.configuration,
+                strategy: request.strategy,
+                ticker: request.ticker,
+                period: request.period,
+                interval: request.interval,
+                params: request.params,
+            },
+        }];
+        await route.fulfill({status: 202, json: {success: true, run: running}});
+    });
+
+    await page.goto(urlFor('nhits'));
+    const menu = page.locator('[data-lstm-training-menu]');
+    const action = menu.getByRole('button', {name: 'Start training', exact: true});
+    await expect(action).toBeEnabled();
+    await page.evaluate(() => { window.__beforeAutomaticTrainingApply = true; });
+    await action.click();
+    await expect(page).toHaveURL(new RegExp(`price_field_training_run=${runId}`));
+    await expect.poll(() => page.evaluate(() => Boolean(window.__beforeAutomaticTrainingApply))).toBe(false);
+    await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'probability');
+    await expect(page.locator('#backtest_history_probability')).toBeChecked();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
+        (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
+    )).toBe(20);
+    expect(startRequests).toBe(1);
 });
 
 for (const width of [1024, 390]) {

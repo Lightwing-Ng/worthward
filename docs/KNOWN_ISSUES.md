@@ -65,7 +65,7 @@ the existing Collapse and field primitives. Snapshot-only and undisclosed
 research data remain unavailable to causal training. See the factor audit for
 formulas, source checks, and eligibility boundaries.
 
-Backtest disclosures and training history, 8 Sep 2026: strategy parameter,
+Backtest disclosures and training history, 9 Sep 2026: strategy parameter,
 training, and market-factor sections no longer share a native details name, so
 all can remain open independently. LSTM training owns Compute backend at its
 head and uses 4px inline and zero bottom body padding. Training history entries
@@ -76,7 +76,13 @@ do not recalculate the current backtest; selecting a completed case always
 navigates through its saved configuration and recalculates the probability
 field, including when the displayed controls already match that case. Expanded
 details retain natural height. The selection focus ring aligns with the Training
-history heading.
+history heading. A run started on the current page is applied automatically when
+it first completes, provided that the strategy and training inputs have not been
+edited in the meantime. Failed, stopped, historical, and context-detached runs
+remain available for explicit review without causing an unexpected navigation.
+Loading a completed training run opens the Price field view directly, including
+when transaction details are enabled, so the recomputed probability grid is not
+hidden behind the default Metrics or Transactions view.
 See [Longbridge factor audit](LONGBRIDGE_FACTOR_AUDIT.md) for current CLI gaps.
 
 Overview tooltip coverage, 7 Sep 2026: historical realized P&L requires complete
@@ -159,7 +165,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.248.1`
+Documentation version: `v1.248.2`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

@@ -1,4 +1,4 @@
-/* Code version: v0.12.1 */
+/* Code version: v0.12.2 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -16,6 +16,8 @@
     let requestedSelectionId = new URL(window.location.href).searchParams.get("price_field_training_run")
         || new URL(window.location.href).searchParams.get("lstm_training_run") || "";
     let applyingRunId = "";
+    let pendingAutoApply = null;
+    let trainingEditRevision = 0;
     let selectionValidationFrame = null;
     let selection = null;
     try { selection = JSON.parse(window.sessionStorage.getItem(selectionKey) || "null"); } catch { /* Storage is optional. */ }
@@ -85,6 +87,15 @@
         };
     };
 
+    const currentTrainingConfiguration = () => ({
+        ...currentConfiguration(),
+        strategy: currentStrategy(),
+        ticker: currentTicker(),
+        period: currentPeriod(),
+        interval: currentInterval(),
+        params: currentParameters(),
+    });
+
     const saveSelection = (value) => {
         selection = value;
         if (value) requestedSelectionId = value.id;
@@ -101,15 +112,14 @@
         } catch { /* Selection still works for this page when storage is unavailable. */ }
     };
 
-    const configurationMatches = (config) => {
-        if (document.querySelector("#trade_strategy_params_panel [data-strategy-param-draft='1']")) return false;
-        const current = {...currentConfiguration(), ticker: currentTicker(), period: currentPeriod(), interval: currentInterval()};
-        const params = currentParameters();
+    const configurationMatches = (config, {allowDrafts = false} = {}) => {
+        if (!allowDrafts && document.querySelector("#trade_strategy_params_panel [data-strategy-param-draft='1']")) return false;
+        const current = currentTrainingConfiguration();
         const same = (left, right) => typeof right === "number" ? Number(left) === right
             : typeof right === "boolean" ? [true, "true", "1", 1].includes(left) === right : left === right;
         return isLstmStrategySelected() && Object.entries(config).every(([key, value]) => {
             if (key === "strategy") return value === currentStrategy();
-            if (key === "params") return Object.entries(value).every(([name, saved]) => same(params[name], saved));
+            if (key === "params") return Object.entries(value).every(([name, saved]) => same(current.params[name], saved));
             return same(current[key], value);
         });
     };
@@ -149,6 +159,19 @@
         return true;
     };
 
+    const applyNewlyCompletedRun = () => {
+        if (!pendingAutoApply) return false;
+        const run = cachedRuns.find((candidate) => candidate.id === pendingAutoApply.runId);
+        if (!run || run.active || ["starting", "running", "stopping"].includes(run.status)) return false;
+        const pending = pendingAutoApply;
+        pendingAutoApply = null;
+        if (run.status !== "completed" || !run.configuration
+            || pending.strategy !== currentStrategy()
+            || pending.editRevision !== trainingEditRevision
+            || !configurationMatches(pending.configuration, {allowDrafts: true})) return false;
+        return applyConfiguration(run);
+    };
+
     // Any explicit form edit detaches the saved case, even if the user later changes it back.
     const detachSelection = (event) => {
         if (!selection || !event.target.closest("[data-backtest-parameter-form]")
@@ -170,6 +193,13 @@
     };
     document.addEventListener("input", detachSelection, true);
     document.addEventListener("change", detachSelection, true);
+    const recordTrainingEdit = (event) => {
+        if (!event.isTrusted || !event.target.closest("[data-backtest-parameter-form]")
+            || !event.target.matches("input, select, textarea")) return;
+        trainingEditRevision += 1;
+    };
+    document.addEventListener("input", recordTrainingEdit, true);
+    document.addEventListener("change", recordTrainingEdit, true);
 
     const formatDate = (rawValue) => {
         const date = new Date(String(rawValue || ""));
@@ -289,6 +319,7 @@
         summary.addEventListener("click", () => {
             const selecting = run.configuration && run.status === "completed" && selection?.id !== run.id;
             expandedRunId = selecting || expandedRunId !== run.id ? run.id : "";
+            if (selecting) pendingAutoApply = null;
             if (selecting && applyConfiguration(run)) return;
             updateMenu(activeMenu);
         });
@@ -473,6 +504,7 @@
                 fetchInFlight = null;
             });
         await fetchInFlight;
+        if (applyNewlyCompletedRun()) return;
         updateMenu(menu);
     };
 
@@ -487,8 +519,12 @@
         actionError = "";
         updateMenu(menu);
         const csrfToken = String(state.security?.investmentCsrfToken || "");
+        const requestedConfiguration = action === "start" ? currentTrainingConfiguration() : null;
+        const requestedEditRevision = trainingEditRevision;
         const payload = action === "start"
-            ? {strategy: currentStrategy(), ticker: currentTicker(), period: currentPeriod(), interval: currentInterval(), params: currentParameters(), configuration: currentConfiguration()}
+            ? {strategy: requestedConfiguration.strategy, ticker: requestedConfiguration.ticker,
+                period: requestedConfiguration.period, interval: requestedConfiguration.interval,
+                params: requestedConfiguration.params, configuration: currentConfiguration()}
             : {run_id: runId};
         const url = trainingEndpoint(action);
         const selectedStrategy = currentStrategy();
@@ -508,8 +544,20 @@
             }
             if (selectedStrategy !== currentStrategy()) return;
             if (result.run?.id) cachedRuns = [result.run, ...cachedRuns.filter((run) => run.id !== result.run.id)];
+            if (action === "start" && result.run?.id
+                && requestedEditRevision === trainingEditRevision
+                && configurationMatches(requestedConfiguration, {allowDrafts: true})) {
+                pendingAutoApply = {
+                    runId: result.run.id,
+                    strategy: selectedStrategy,
+                    configuration: requestedConfiguration,
+                    editRevision: requestedEditRevision,
+                };
+            }
+            if (action === "stop" && pendingAutoApply?.runId === runId) pendingAutoApply = null;
             if (action === "stop" && result.run?.active) stoppingRunIds.add(runId);
             if (action === "delete") {
+                if (pendingAutoApply?.runId === runId) pendingAutoApply = null;
                 cachedRuns = cachedRuns.filter((run) => run.id !== runId);
                 if (selection?.id === runId) saveSelection(null);
                 if (expandedRunId === runId) expandedRunId = "";
@@ -547,6 +595,7 @@
     const renderMenu = () => {
         if (cachedStrategy !== currentStrategy()) {
             cachedStrategy = currentStrategy();
+            if (pendingAutoApply?.strategy !== cachedStrategy) pendingAutoApply = null;
             cachedRuns = [];
             lastFetchedAt = 0;
             protocolVersion = 0;

@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.15.8 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.16.0 */
 import {expect, test} from '@playwright/test';
 
 const lstmUrl = (
@@ -267,7 +267,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.32.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.41.2');
+    expect(desktop.backtestScript).toContain('backtest-v0.41.3');
     expect(desktop.appScript).toContain('app-v0.61.1');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
@@ -599,6 +599,12 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(menu.locator('.lstm-training-selected-icon').first()).toBeVisible();
     await expect(rows.first()).toHaveAttribute('aria-busy', 'false');
     await expect(page.locator('[data-backtest-load-status]')).toBeHidden();
+    await expect(page.locator('#backtest_history_surface')).toHaveAttribute('data-active-view', 'probability');
+    await expect(page.locator('#backtest_history_probability')).toBeChecked();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
+        (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
+    )).toBe(20);
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
     expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('Univers Next for HSBC');
     await page.reload();

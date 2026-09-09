@@ -1,7 +1,11 @@
-/* Code version: v0.41.2 */
+/* Code version: v0.41.3 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "worthward:backtest-history-view-change";
+	const hasRequestedTrainingRun = () => {
+		const params = new URL(window.location.href).searchParams;
+		return Boolean(params.get("price_field_training_run") || params.get("lstm_training_run"));
+	};
 
 	const getBacktestTradeDetailsInput = () => document.getElementById("show_trade_details");
 	const isBacktestTradeDetailsEnabled = () => {
@@ -68,11 +72,19 @@
 		const viewSurface = document.getElementById("backtest_history_surface");
 		if (!segmentedControl || !viewSurface) return;
 		const panels = Array.from(viewSurface.querySelectorAll("[data-backtest-history-view-panel]"));
+		const probabilityInput = segmentedControl.querySelector(
+			'input[name="backtest_history_view_tab"][value="probability"]',
+		);
+		if (segmentedControl.dataset.initialViewApplied !== "1") {
+			segmentedControl.dataset.initialViewApplied = "1";
+			if (probabilityInput instanceof HTMLInputElement && hasRequestedTrainingRun()) {
+				probabilityInput.checked = true;
+			}
+		}
 		const syncPanels = () => {
 			const previousActive = viewSurface.dataset.activeView;
 			const showTradeDetails = isBacktestTradeDetailsEnabled();
 			const metricsInput = segmentedControl.querySelector('input[name="backtest_history_view_tab"][value="metrics"]');
-			const probabilityInput = segmentedControl.querySelector('input[name="backtest_history_view_tab"][value="probability"]');
 			const transactionsInput = segmentedControl.querySelector("[data-backtest-history-transactions]");
 			const transactionsOption = segmentedControl.querySelector(
 				"[data-backtest-history-transactions-option]",

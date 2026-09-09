@@ -1,4 +1,4 @@
-{# Code version: v0.41.1 #}
+{# Code version: v0.41.2 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -379,7 +379,7 @@
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.26.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
-    <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.12.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.12.2') }}"></script>
 {% endif %}
     <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.61.1') }}"></script>
@@ -391,7 +391,7 @@
     <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.32.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest/detail-chart.js', v=version ~ '-backtest-detail-chart-v1.2.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.7.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.41.2') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.41.3') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.4.0') }}"></script>
 {% if selected_strategy_id == 'dca' %}
     <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.3.0') }}"></script>
