@@ -1,4 +1,4 @@
-/* Code version: v1.212.4 */
+/* Code version: v1.212.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8434,7 +8434,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         entry: currentEntryVersion,
         chartOrbit: 'v1.39.0',
         dataUtils: currentDataUtilsVersion,
-        importFeedback: 'v1.9.0',
+        importFeedback: 'v1.10.0',
         layout: 'v1.4.0',
         pagination: 'v1.4.1',
         realtime: 'v1.3.2',
@@ -8452,7 +8452,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/investment/import-feedback.js')
-            && url.searchParams.get('v') === 'investment-import-feedback-v1.9.0';
+            && url.searchParams.get('v') === 'investment-import-feedback-v1.10.0';
     }))).toBe(true);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);

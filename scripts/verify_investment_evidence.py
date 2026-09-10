@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Verify or safely restore local investment source evidence.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Added: Explicit dry-run and partial-recovery modes restore every exact
+  SHA-256 match without fabricating artifacts that are absent from the archive.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from app.infrastructure.storage import (  # noqa: E402
 )
 
 
-SCRIPT_VERSION = "0.2.0"
+SCRIPT_VERSION = "0.3.0"
 
 
 def _sha256_file(path: Path) -> str:
@@ -103,6 +105,8 @@ def _find_exact_source_bytes(
 def restore_missing_investment_evidence(
     store_path: Path,
     source_dir: Path,
+    *,
+    require_complete: bool = True,
 ) -> int:
     """Restore only missing artifacts whose exact bytes match the ledger manifest."""
     payload = load_investment_store_payload(store_path)
@@ -112,7 +116,7 @@ def restore_missing_investment_evidence(
 
     matched = _find_exact_source_bytes(source_dir, missing)
     unmatched = sorted(set(missing) - set(matched))
-    if unmatched:
+    if unmatched and require_complete:
         raise RuntimeError(
             "Recovery source does not contain exact bytes for missing SHA-256 artifact(s): "
             + ", ".join(unmatched)
@@ -132,8 +136,23 @@ def restore_missing_investment_evidence(
         artifact["content_encoding"] = "base64"
         artifact["content_base64"] = base64.b64encode(source_bytes).decode("ascii")
 
-    materialize_investment_source_artifacts(recovery_payload, store_path)
+    materialize_investment_source_artifacts(
+        recovery_payload,
+        store_path,
+        allow_missing_storage_keys=set(unmatched),
+    )
     return len(matched)
+
+
+def plan_missing_investment_evidence_recovery(
+    store_path: Path,
+    source_dir: Path,
+) -> tuple[int, int, int]:
+    """Return missing, exact-match, and unmatched counts without writing files."""
+    payload = load_investment_store_payload(store_path)
+    missing = _required_missing_artifacts(payload, store_path)
+    matched = _find_exact_source_bytes(source_dir, missing)
+    return len(missing), len(matched), len(set(missing) - set(matched))
 
 
 def main() -> int:
@@ -155,18 +174,59 @@ def main() -> int:
             "Only exact SHA-256 and byte-count matches are restored."
         ),
     )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help=(
+            "Restore exact matches even when the recovery directory does not contain every "
+            "missing artifact. Remaining gaps stay explicit and strict verification still fails."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report recovery counts without writing evidence files.",
+    )
     args = parser.parse_args()
     store_path = Path(args.store).expanduser()
     evidence_dir = investment_evidence_dir_for(store_path)
 
     try:
+        if args.dry_run:
+            if args.restore_from is None:
+                raise RuntimeError("--dry-run requires --restore-from.")
+            missing_count, matched_count, unmatched_count = (
+                plan_missing_investment_evidence_recovery(
+                    store_path,
+                    args.restore_from.expanduser(),
+                )
+            )
+            print(
+                "Investment evidence recovery plan: "
+                f"{missing_count} missing, {matched_count} exact match(es), "
+                f"{unmatched_count} unmatched."
+            )
+            return 0
+
         restored_count = 0
         if args.restore_from is not None:
             restored_count = restore_missing_investment_evidence(
                 store_path,
                 args.restore_from.expanduser(),
+                require_complete=not args.allow_partial,
             )
-        verified_count = verify_persisted_investment_source_artifacts(store_path)
+        remaining = _required_missing_artifacts(
+            load_investment_store_payload(store_path),
+            store_path,
+        )
+        if remaining:
+            if not args.allow_partial:
+                verified_count = verify_persisted_investment_source_artifacts(store_path)
+            raw_artifacts = load_investment_store_payload(store_path).get("source_artifacts")
+            manifest_count = len(raw_artifacts) if isinstance(raw_artifacts, list) else 0
+            verified_count = manifest_count - len(remaining)
+        else:
+            verified_count = verify_persisted_investment_source_artifacts(store_path)
     except RuntimeError as exc:
         print(f"Investment evidence verification failed: {exc}", file=sys.stderr)
         print(f"Ledger path: {store_path}", file=sys.stderr)
@@ -181,6 +241,11 @@ def main() -> int:
 
     if args.restore_from is not None:
         print(f"Investment evidence restored: {restored_count} missing artifact(s).")
+    if remaining:
+        print(
+            f"Investment evidence remains incomplete: {len(remaining)} artifact(s) "
+            "still require their exact original bytes."
+        )
     print(
         f"Investment evidence verified: {verified_count} artifact(s) for {store_path} "
         f"(evidence directory: {evidence_dir})."

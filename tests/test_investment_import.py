@@ -1,7 +1,12 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.43.0
+Code version: v0.44.0
+- Added: HSBC paste imports retain their exact accepted UTF-8 text as one
+  immutable evidence bundle, preserve exact position valuation, and label
+  visible-order replay mismatches as partial-history comparisons.
+- Added: Investment evidence recovery can plan and restore a verified subset
+  while leaving unmatched historical gaps explicit.
 - Added: Partially overlapping IBKR CSV performance reports reconcile exact
   stock and Forex components, advance latest marks, and remain idempotent.
 - Added: Newer date-only IBKR cash evidence clears stale intraday boundaries,
@@ -171,7 +176,10 @@ from app.services.investment_import import (
     validate_investment_internal_transfer_binding,
     validate_investment_security_transfer_attribution,
 )
-from scripts.verify_investment_evidence import restore_missing_investment_evidence
+from scripts.verify_investment_evidence import (
+    plan_missing_investment_evidence_recovery,
+    restore_missing_investment_evidence,
+)
 
 
 SYNTHETIC_PRIVATE_INVESTMENT_EVIDENCE = {
@@ -1598,6 +1606,54 @@ Fees: 0.12
         self.assertEqual(hsbc_summary["position_snapshot_source"], "hsbc_portfolio_text")
         self.assertEqual(hsbc_summary["position_snapshot"]["DRAM"]["quantity"], "1")
         self.assertEqual(hsbc_summary["holdings_validation"]["matched"], False)
+        self.assertEqual(
+            hsbc_summary["holdings_validation"]["status"],
+            "snapshot_authoritative_partial_history",
+        )
+        self.assertEqual(
+            hsbc_summary["holdings_validation"]["comparison_scope"],
+            "visible_explicit_order_status_date_ranges",
+        )
+        self.assertFalse(hsbc_summary["holdings_validation"]["history_complete"])
+        self.assertEqual(len(payload["source_artifacts"]), 3)
+        artifacts_by_role = {
+            artifact["bundle_role"]: artifact
+            for artifact in payload["source_artifacts"]
+        }
+        self.assertEqual(set(artifacts_by_role), {"cash_account", "portfolio", "order_status"})
+        self.assertEqual(
+            base64.b64decode(artifacts_by_role["portfolio"]["content_base64"]),
+            portfolio_text.encode("utf-8"),
+        )
+        self.assertEqual(
+            {artifact["bundle_id"] for artifact in payload["source_artifacts"]},
+            {snapshot["fingerprint"]},
+        )
+
+    def test_hsbc_pasted_snapshot_uses_exact_quantity_times_last_price_market_value(self) -> None:
+        portfolio_text, order_status_text, cash_account_text = (
+            self._synthetic_hsbc_paste_snapshot()
+        )
+        portfolio_text = portfolio_text.replace(
+            "0.00%1USD 61.000",
+            "0.00%1USD 60.00",
+        )
+
+        payload = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text=portfolio_text,
+            order_status_text=order_status_text,
+            cash_account_text=cash_account_text,
+        )
+
+        position = payload["position_snapshot"]["DRAM"]
+        self.assertEqual(position["market_value"], "61.000")
+        self.assertEqual(position["reported_market_value"], "60.00")
+        self.assertEqual(position["market_value_source"], "quantity_times_last_price")
+        self.assertEqual(payload["summary"]["position_snapshot_market_value"], "61.000")
+        self.assertEqual(payload["summary"]["hsbc_portfolio_reported_market_value"], "61.000")
+        self.assertTrue(
+            payload["summary"]["hsbc_position_market_value_reconciliation"]["matched"]
+        )
 
     def test_hsbc_incremental_order_status_advances_verified_tax_lot_boundary(self) -> None:
         def order_record(*, transaction_type: str, date_text: str, quantity: str, price: str, order_id: str) -> dict[str, object]:
@@ -1892,6 +1948,12 @@ Fees: 0.12
         )
         self.assertEqual(payload["summary"]["hsbc_paste_import_scope"], "cash_only_non_usd")
         self.assertEqual(payload["position_snapshot"], {})
+        self.assertEqual(len(payload["source_artifacts"]), 1)
+        self.assertEqual(payload["source_artifacts"][0]["bundle_role"], "cash_account")
+        self.assertEqual(
+            base64.b64decode(payload["source_artifacts"][0]["content_base64"]),
+            cash_account_text.encode("utf-8"),
+        )
         self.assertEqual(
             {transaction["currency"] for transaction in payload["transactions"]},
             {"HKD", "CNH"},
@@ -7080,6 +7142,64 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             self.assertEqual(restored_count, 1)
             self.assertEqual(evidence_path.read_bytes(), source_bytes)
             self.assertEqual(verify_persisted_investment_source_artifacts(ledger_path), 1)
+
+    def test_missing_source_evidence_can_restore_only_exact_archive_matches(self) -> None:
+        matched_bytes = b"header,amount\r\nQQQ,100\r\n"
+        unmatched_bytes = b"header,amount\r\nDRAM,200\r\n"
+        artifacts = []
+        for source_bytes in (matched_bytes, unmatched_bytes):
+            source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+            artifacts.append({
+                "source_kind": "unit_test_csv",
+                "sha256": source_sha256,
+                "byte_count": len(source_bytes),
+                "content_encoding": "base64",
+                "content_base64": base64.b64encode(source_bytes).decode("ascii"),
+            })
+
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            ledger_path = root / "store" / "investment.parquet"
+            source_dir = root / "originals"
+            ledger_path.parent.mkdir()
+            source_dir.mkdir()
+            materialized = materialize_investment_source_artifacts(
+                {"source_artifacts": artifacts},
+                ledger_path,
+            )
+            save_investment_store_payload(materialized, ledger_path)
+            evidence_dir = investment_evidence_dir_for(ledger_path)
+            for artifact in artifacts:
+                (evidence_dir / f"{artifact['sha256']}.bin").unlink()
+            (source_dir / "broker-export.csv").write_bytes(matched_bytes)
+
+            self.assertEqual(
+                plan_missing_investment_evidence_recovery(ledger_path, source_dir),
+                (2, 1, 1),
+            )
+            with self.assertRaisesRegex(RuntimeError, "does not contain exact bytes"):
+                restore_missing_investment_evidence(ledger_path, source_dir)
+            self.assertTrue(all(
+                not (evidence_dir / f"{artifact['sha256']}.bin").exists()
+                for artifact in artifacts
+            ))
+
+            restored_count = restore_missing_investment_evidence(
+                ledger_path,
+                source_dir,
+                require_complete=False,
+            )
+
+            self.assertEqual(restored_count, 1)
+            matched_sha256 = hashlib.sha256(matched_bytes).hexdigest()
+            unmatched_sha256 = hashlib.sha256(unmatched_bytes).hexdigest()
+            self.assertEqual(
+                (evidence_dir / f"{matched_sha256}.bin").read_bytes(),
+                matched_bytes,
+            )
+            self.assertFalse((evidence_dir / f"{unmatched_sha256}.bin").exists())
+            with self.assertRaisesRegex(RuntimeError, "file is missing"):
+                verify_persisted_investment_source_artifacts(ledger_path)
 
     def test_source_artifact_normalization_rejects_forged_storage_key_and_byte_count(self) -> None:
         transactions_csv, positions_csv = InvestmentImportTests._ibkr_csv_evidence_pair()

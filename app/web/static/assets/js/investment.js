@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.142.0
+ * Code version: v2.143.0
+ * - Fixed: HSBC provisional-cash copy distinguishes the captured Available
+ *   balance from the posted Ledger boundary used by the display projection.
  * - Fixed: HSBC settlement replay preserves the balance-continuity order
  *   recovered by the boundary planner instead of re-sorting same-day
  *   boundaries by drifted incremental paste row numbers.
@@ -388,7 +390,7 @@ import {
     countNewInvestmentPendingTransferRows,
     getInvestmentPendingTransferSourceKeys,
     resolveInvestmentImportFeedbackSummary,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.9.0';
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.10.0';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     animateLocalStorePaginationIndicator,
@@ -459,7 +461,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.142.0',
+    entry: 'v2.143.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -10360,7 +10362,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const equityIsProvisional = includeProvisionalMarker
             && txn?.history_equity_is_provisional === true;
         const balanceSourceNote = txn?.broker_balance_source === 'hsbc_authoritative_position_snapshot_pending_projection'
-            ? 'Current HSBC Portfolio market value; Cash is a provisional projection of authoritative transferable USD Savings cash plus the signed net of visible unsettled buy/sell orders. Unposted clearing-fee evidence remains unapplied until a settled cash posting confirms it.'
+            ? "Current HSBC Portfolio market value; Cash is a provisional projection of the posted USD Savings Ledger balance plus the signed net of visible unsettled buy/sell orders. The bank's Available balance remains separate audit evidence and may differ. Unposted clearing-fee evidence remains unapplied until a settled cash posting confirms it."
             : '';
         const provisionalBalanceNote = String(txn?.history_balance_provisional_reason || '').trim();
         const balanceNote = [balanceSourceNote, provisionalBalanceNote].filter(Boolean).join(' ');

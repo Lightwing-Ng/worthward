@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.66.0`
+Documentation version: `v1.67.0`
 
 ## Current workflow
 
@@ -218,6 +218,11 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   authoritative GainsKeeper correction,
   provisional-source pruning, GKX statement metadata, same-origin and CSRF
   rejection, route persistence, and immutable evidence materialization.
+  HSBC coverage also verifies that all accepted pasted pages materialize as
+  one immutable source bundle, compact row values do not replace exact
+  quantity-times-price valuation, visible-order mismatches retain explicit
+  partial-history scope, and a broker-export archive can restore only its exact
+  SHA-256 subset without concealing the remaining gaps.
 - `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
   template structure, standard-export archive health, exact named ranges and
   validation ranges through the full selected scope, stable Reference ID and

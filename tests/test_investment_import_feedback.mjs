@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.9.0 */
+/* Tests for Investment import-feedback markup. Code version: v1.10.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +23,7 @@ function escapeHtml(value) {
 }
 
 test('module exposes a semantic cache-busting version', () => {
-    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.9.0');
+    assert.equal(INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION, 'v1.10.0');
 });
 
 test('pending transfer source keys include only actionable Unbound rows', () => {
@@ -276,12 +276,16 @@ test('HSBC feedback distinguishes transferable cash from pending-sell display ca
         importSummary: {
             hsbc_pending_settlement_cash: '481.200',
             hsbc_broker_cash_estimate: '20926.170',
+            hsbc_bank_available_cash: '20445.47',
+            cash_ledger_balance: '20444.970',
             holdings_validation: {mismatch_count: 3},
         },
     }, {escapeHtml});
 
-    assert.match(message, /transferable cash remains <strong>\$20,444\.97<\/strong>/);
-    assert.match(message, /show <strong>\$20,926\.17<\/strong>/);
+    assert.match(message, /Available balance<\/strong> is <strong>\$20,445\.47<\/strong>/);
+    assert.match(message, /Ledger balance<\/strong> of <strong>\$20,444\.97<\/strong>/);
+    assert.match(message, /provisional display <strong>\$20,926\.17<\/strong>/);
+    assert.match(message, /partial-history coverage diagnostic/);
     assert.match(message, /incomplete replay as a historical balance/);
 });
 
@@ -290,11 +294,14 @@ test('HSBC feedback renders the signed net pending-order estimate without unpost
         importSummary: {
             hsbc_pending_settlement_cash: '1576.750',
             hsbc_broker_cash_estimate: '22685.810',
+            hsbc_bank_available_cash: '21109.06',
+            cash_ledger_balance: '21109.060',
         },
     }, {escapeHtml});
 
-    assert.match(message, /transferable cash remains <strong>\$21,109\.06<\/strong>/);
-    assert.match(message, /show <strong>\$22,685\.81<\/strong>/);
+    assert.match(message, /Available balance<\/strong> is <strong>\$21,109\.06<\/strong>/);
+    assert.match(message, /Ledger balance<\/strong> of <strong>\$21,109\.06<\/strong>/);
+    assert.match(message, /provisional display <strong>\$22,685\.81<\/strong>/);
     assert.match(message, /signed net unsettled buy\/sell amount <strong>\$\+1,576\.75<\/strong>/);
     assert.match(message, /Unposted sell clearing fees and other settlement adjustments are not included/);
 });
@@ -310,8 +317,8 @@ test('HSBC feedback omits transferable-cash copy without a provisional marker', 
 
     assert.match(message, /authoritative position source/);
     assert.match(message, /<strong>11<\/strong> execution prices were finalized/);
-    assert.doesNotMatch(message, /transferable cash remains/);
-    assert.equal((message.match(/<li>/g) || []).length, 2);
+    assert.doesNotMatch(message, /provisional display/);
+    assert.equal((message.match(/<li>/g) || []).length, 3);
 });
 
 test('HSBC feedback explains when settled cash finalizes execution price', () => {

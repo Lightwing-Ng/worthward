@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.101.0`
+Documentation version: `v1.102.0`
 
 ## Shared Backtest controls and research
 
@@ -978,6 +978,10 @@ sets of values.
   sidecar when evidence validation or a later import is required. A ledger
   manifest must never retain raw uploaded Base64 bytes.
 - Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
+- Historical sidecars may be recovered from an explicit broker-export archive
+  only when both SHA-256 and byte count match the ledger manifest. The recovery
+  command is all-or-nothing by default; its explicit partial mode writes only
+  exact matches and leaves every unmatched digest visible to strict verification.
 - `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.
 - Evidence materialization, persisted-manifest verification, and `clear_investment_store` evidence-directory removal all hold the same reentrant `market_store_file_lock(parquet_path)`. A per-artifact file lock is supplementary and must never replace the ledger lock for an operation that changes or validates the manifest-to-directory relationship.
 - Manually confirmed internal-transfer bindings are durable ledger facts. Import
@@ -1005,6 +1009,14 @@ sets of values.
   equity balance displayed by Holdings.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
+- Every accepted HSBC pasted page is retained as exact UTF-8 parser-input bytes
+  in one fingerprint-addressed immutable evidence bundle. The Portfolio
+  snapshot stores `market_value` as exact `quantity * last_price`, preserves the
+  broker's compact rounded row value separately as `reported_market_value`, and
+  reconciles the calculated position total to the exact Portfolio total when
+  that total is present. A holdings mismatch against visible Order Status rows
+  is labelled as a partial-history comparison; it does not invalidate the
+  authoritative current Portfolio snapshot.
 - HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
 - BOCHK imports accept one or more full Consolidated Statement PDFs per batch.
   The customer number is the parent account, while full deposit-account numbers

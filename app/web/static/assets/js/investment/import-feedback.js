@@ -1,7 +1,11 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.9.0
+ * Code version: v1.10.0
+ * - Fixed: HSBC cash feedback reads the captured Available and posted Ledger
+ *   balances directly instead of deriving a false transferable-cash figure.
+ * - Added: HSBC feedback discloses immutable pasted-text retention and labels
+ *   visible-order holdings mismatches as partial-history diagnostics.
  * - Fixed: Import-complete transfer review is scoped to rows that became
  *   actionable during the completed import, so pre-existing Unbound rows from
  *   an older frontend cache cannot reappear as a new import warning.
@@ -22,7 +26,7 @@
  * - Added: HSBC feedback states the authoritative transferable cash and the net pending-order display estimate when current order rows are not yet settled.
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.9.0';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.10.0';
 
 export function getInvestmentPendingTransferSourceKeys(processedTransactions = []) {
     return new Set(
@@ -223,6 +227,7 @@ export function buildHsbcImportFeedbackMessage({
         : {};
     const items = [
         'Current holdings use the HSBC <strong>Portfolio</strong> snapshot as the authoritative position source.',
+        'The accepted HSBC page text is retained locally as <strong>SHA-256-verified immutable evidence</strong>.',
     ];
     if (coverage.mode === 'rolling_recent_window') {
         const calendarDays = escapeHtml(coverage.calendar_days || 'recent');
@@ -263,25 +268,32 @@ export function buildHsbcImportFeedbackMessage({
     }
     const pendingSettlementCash = Number(summary.hsbc_pending_settlement_cash);
     const brokerCashEstimate = Number(summary.hsbc_broker_cash_estimate);
+    const bankAvailableCash = Number(summary.hsbc_bank_available_cash);
+    const postedLedgerCash = Number(summary.cash_ledger_balance ?? summary.ending_cash_base_currency);
     if (
         Number.isFinite(pendingSettlementCash)
         && Math.abs(pendingSettlementCash) > 1e-9
         && Number.isFinite(brokerCashEstimate)
     ) {
-        const bankAvailableCash = brokerCashEstimate - pendingSettlementCash;
         const signedPendingCash = pendingSettlementCash.toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
             signDisplay: 'always',
         });
+        const availableCashCopy = Number.isFinite(bankAvailableCash)
+            ? `The captured HSBC <strong>Available balance</strong> is <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>. `
+            : '';
+        const ledgerCashCopy = Number.isFinite(postedLedgerCash)
+            ? `The table projection starts from the posted <strong>Ledger balance</strong> of <strong>$${postedLedgerCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> and `
+            : 'The table projection ';
         items.push(
-            `HSBC transferable cash remains <strong>$${bankAvailableCash.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>; the transaction table may show <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong> after applying the signed net unsettled buy/sell amount <strong>$${signedPendingCash}</strong>. Unposted sell clearing fees and other settlement adjustments are not included.`,
+            `${availableCashCopy}${ledgerCashCopy}applies the signed net unsettled buy/sell amount <strong>$${signedPendingCash}</strong>, producing the provisional display <strong>$${brokerCashEstimate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>. Available and Ledger balances remain separate bank evidence. Unposted sell clearing fees and other settlement adjustments are not included.`,
         );
     }
     const holdingsMismatchCount = Number(summary.holdings_validation?.mismatch_count);
     if (Number.isFinite(holdingsMismatchCount) && holdingsMismatchCount > 0) {
         items.push(
-            `The visible Order Status history does not independently replay to the current Portfolio snapshot. Pending-order rows use current HSBC Portfolio market value and a cash projection, rather than presenting incomplete replay as a historical balance.`,
+            `The visible Order Status history does not independently replay to the current Portfolio snapshot. This is a <strong>partial-history coverage diagnostic</strong>, not a current-holdings failure: pending-order rows use the authoritative Portfolio market value and a cash projection rather than presenting incomplete replay as a historical balance.`,
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();

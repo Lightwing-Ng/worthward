@@ -1,7 +1,10 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.110.0
+Code version: v0.111.0
+- Added: HSBC paste imports retain the exact accepted UTF-8 page text as
+  immutable source artifacts, preserve exact quantity-times-price valuation,
+  and label visible-order mismatches as partial-history comparisons.
 - Fixed: Partially overlapping IBKR CSV performance windows now reconcile
   broker-native realized components, add only the uncovered tail, and adopt
   the latest marks without double-counting the closed boundary date.
@@ -16877,13 +16880,25 @@ def _build_hsbc_position_snapshot(
             required=False,
         )
         currency = _normalize_text(row.get("currency")).upper() or capture_currency or "USD"
+        exact_market_value_dec = (
+            abs(quantity_dec) * last_price_dec
+            if last_price_dec is not None and last_price_dec > ZERO
+            else market_value_dec
+        )
         snapshots[symbol] = {
             "asset_category": "Stock",
             "currency": currency,
             "quantity": _decimal_to_str(quantity_dec) or "0",
             "cost_price": _decimal_to_str(average_price_dec) or "0",
             "cost_basis": _decimal_to_str(abs(quantity_dec) * average_price_dec) or "0",
-            "market_value": _decimal_to_str(market_value_dec) or "0",
+            "market_value": _decimal_to_str(exact_market_value_dec) or "0",
+            "reported_market_value": _decimal_to_str(market_value_dec) or "0",
+            "market_value_source": (
+                "quantity_times_last_price"
+                if last_price_dec is not None and last_price_dec > ZERO
+                else "hsbc_compact_display_value"
+            ),
+            "reported_market_value_precision": "hsbc_compact_display_rounded",
             "market": "US",
             "full_name": _normalize_text(row.get("full_name")),
         }
@@ -17399,6 +17414,109 @@ def _build_hsbc_pasted_snapshot_fingerprint(
     return hashlib.sha256("\n".join(canonical_parts).encode("utf-8")).hexdigest()
 
 
+def _build_hsbc_pasted_text_source_artifact(
+    *,
+    raw_text: str,
+    role: str,
+    account: str,
+    bundle_id: str,
+    statement_period_start: str = "",
+    statement_period_end: str = "",
+    statement_generated_at: str = "",
+) -> dict[str, Any]:
+    """Build one immutable artifact from the exact UTF-8 parser input."""
+    source_bytes = raw_text.encode("utf-8")
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    normalized_role = _normalize_text(role).lower().replace("-", "_")
+    title_by_role = {
+        "cash_account": "HSBC cash-account pasted text",
+        "portfolio": "HSBC Portfolio pasted text",
+        "order_status": "HSBC Order Status pasted text",
+    }
+    period = "/".join(
+        value
+        for value in (statement_period_start, statement_period_end)
+        if value
+    )
+    return {
+        "evidence_schema_version": "1.0",
+        "sha256": digest,
+        "byte_count": len(source_bytes),
+        "filename": f"hsbc-{normalized_role.replace('_', '-')}-{bundle_id[:12]}.txt",
+        "filenames": [f"hsbc-{normalized_role.replace('_', '-')}-{bundle_id[:12]}.txt"],
+        "broker": "hsbc",
+        "account": account,
+        "source_kind": f"hsbc_{normalized_role}_pasted_text",
+        "bundle_id": bundle_id,
+        "bundle_ids": [bundle_id],
+        "bundle_role": normalized_role,
+        "statement_title": title_by_role.get(
+            normalized_role,
+            "HSBC pasted text",
+        ),
+        "statement_period": period,
+        "statement_period_start": statement_period_start,
+        "statement_period_end": statement_period_end,
+        "statement_generated_at": statement_generated_at,
+        "content_encoding": "base64",
+        "content_base64": base64.b64encode(source_bytes).decode("ascii"),
+    }
+
+
+def _build_hsbc_pasted_text_source_artifacts(
+    *,
+    cash_account_text: str,
+    portfolio_text: str,
+    order_status_text: str,
+    account: str,
+    snapshot_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Keep every supplied HSBC page in one fingerprint-addressed bundle."""
+    bundle_id = _normalize_text(snapshot_report.get("fingerprint"))
+    coverage = snapshot_report.get("order_status_coverage")
+    windows = coverage.get("windows") if isinstance(coverage, dict) else None
+    starts = sorted({
+        _normalize_text(window.get("start_date"))
+        for window in windows or []
+        if isinstance(window, dict) and _normalize_text(window.get("start_date"))
+    })
+    ends = sorted({
+        _normalize_text(window.get("end_date"))
+        for window in windows or []
+        if isinstance(window, dict) and _normalize_text(window.get("end_date"))
+    })
+    statement_period_start = starts[0] if starts else ""
+    statement_period_end = ends[-1] if ends else _normalize_text(
+        snapshot_report.get("cash_latest_post_date")
+    )
+    if not statement_period_start and not portfolio_text and not order_status_text:
+        statement_period_start = statement_period_end
+    market_data = snapshot_report.get("portfolio_market_data_updated_at")
+    statement_generated_at = (
+        _normalize_text(market_data.get("raw"))
+        if isinstance(market_data, dict)
+        else ""
+    )
+    artifacts = []
+    for role, raw_text in (
+        ("cash_account", cash_account_text),
+        ("portfolio", portfolio_text),
+        ("order_status", order_status_text),
+    ):
+        if not raw_text:
+            continue
+        artifacts.append(_build_hsbc_pasted_text_source_artifact(
+            raw_text=raw_text,
+            role=role,
+            account=account,
+            bundle_id=bundle_id,
+            statement_period_start=statement_period_start,
+            statement_period_end=statement_period_end,
+            statement_generated_at=statement_generated_at,
+        ))
+    return artifacts
+
+
 def _parse_hsbc_order_status_plain_text_single(raw_text: str) -> tuple[str, list[dict[str, str]]]:
     text = _normalize_text(raw_text)
     if not text:
@@ -17560,6 +17678,19 @@ def _parse_hsbc_portfolio_plain_text_single(raw_text: str) -> tuple[str, dict[st
     if not table_lines:
         raise ValueError("The pasted HSBC Portfolio text does not contain any holdings rows.")
 
+    portfolio_header_text = "\n".join(lines[:header_index])
+    total_market_value_match = re.search(
+        r"(?:^|\n)Market value\s*\nUSD\s*\n(?P<value>[\d,]+\.\d{2,4})(?:\n|$)",
+        portfolio_header_text,
+        re.IGNORECASE,
+    )
+    if total_market_value_match is None:
+        total_market_value_match = re.search(
+            r"PortfolioMarket valueUSD\s*(?P<value>[\d,]+\.\d{2,4}[KM]?)",
+            portfolio_header_text,
+            re.IGNORECASE,
+        )
+
     symbol_pattern = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
     price_pattern = re.compile(r"^\d[\d,]*\.\d{2,4}$")
     skip_symbols = {
@@ -17664,6 +17795,11 @@ def _parse_hsbc_portfolio_plain_text_single(raw_text: str) -> tuple[str, dict[st
         },
         "holdings": holdings,
     }
+    if total_market_value_match is not None:
+        total_market_value_text = total_market_value_match.group("value")
+        capture["reported_total_market_value"] = _decimal_to_str(
+            parse_hsbc_amount(total_market_value_text)
+        ) or "0"
     market_data_updated_at = _extract_hsbc_portfolio_market_data_updated_at(raw_text)
     if market_data_updated_at:
         capture["snapshot_metadata"] = {
@@ -19574,6 +19710,21 @@ def _build_hsbc_cash_only_pasted_payload(
         else "hsbc_multi_currency_cash_account_text"
     )
     paste_scope = "cash_only_usd" if has_usd else "cash_only_non_usd"
+    cash_only_snapshot_report = {
+        "status": "cash_only",
+        "fingerprint": snapshot_fingerprint,
+        "account_number": account,
+        "cash_currencies": cash_currencies,
+        "cash_latest_post_date": latest_cash_post_date,
+        "order_status_coverage": {
+            "mode": "not_provided",
+            "reason": "No HSBC Portfolio or Order Status page was supplied for this cash-only sync.",
+        },
+        "checks": {
+            "account_match": True,
+            "cash_only_non_usd": not has_usd,
+        },
+    }
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generator": {
@@ -19615,6 +19766,13 @@ def _build_hsbc_cash_only_pasted_payload(
         "position_snapshot": {},
         "performance_snapshot": {},
         "transactions": transactions,
+        "source_artifacts": _build_hsbc_pasted_text_source_artifacts(
+            cash_account_text=cash_account_text,
+            portfolio_text="",
+            order_status_text="",
+            account=account,
+            snapshot_report=cash_only_snapshot_report,
+        ),
         "hsbc_cash_settlement_evidence": cash_settlement_evidence,
     }
     payload["summary"].update({
@@ -19663,17 +19821,7 @@ def _build_hsbc_cash_only_pasted_payload(
         },
         "hsbc_paste_import_scope": paste_scope,
         "account_expected": HSBC_EXPECTED_ACCOUNT_NUMBER,
-        "hsbc_snapshot": {
-            "status": "cash_only",
-            "fingerprint": snapshot_fingerprint,
-            "account_number": account,
-            "cash_currencies": cash_currencies,
-            "cash_latest_post_date": latest_cash_post_date,
-            "checks": {
-                "account_match": True,
-                "cash_only_non_usd": not has_usd,
-            },
-        },
+        "hsbc_snapshot": cash_only_snapshot_report,
     })
     for transaction in payload["transactions"]:
         transaction["broker"] = "hsbc"
@@ -19901,17 +20049,26 @@ def build_investment_payload_from_hsbc_pasted_text(
     )
     holdings_mismatches = _validate_holdings(order_records, position_snapshot)
     if holdings_mismatches:
-        if snapshot_report["order_status_coverage"].get("mode") == "rolling_recent_window":
-            snapshot_report["position_reconciliation"] = {
-                "status": "not_expected_to_match",
-                "scope": "visible_rolling_order_status_window",
-                "mismatches": holdings_mismatches,
-                "explanation": (
-                    "The HSBC Portfolio is the authoritative current position snapshot; "
-                    "the visible rolling Order Status page is only a recent-history supplement."
-                ),
-            }
-        else:
+        coverage_mode = snapshot_report["order_status_coverage"].get("mode")
+        comparison_scope = (
+            "visible_rolling_order_status_window"
+            if coverage_mode == "rolling_recent_window"
+            else "visible_explicit_order_status_date_ranges"
+            if coverage_mode == "explicit_date_ranges"
+            else "visible_order_status_window"
+        )
+        snapshot_report["position_reconciliation"] = {
+            "status": "not_expected_to_match",
+            "scope": comparison_scope,
+            "history_complete": False,
+            "mismatches": holdings_mismatches,
+            "explanation": (
+                "The HSBC Portfolio is the authoritative current position snapshot; "
+                "the visible Order Status rows are a partial-history supplement and "
+                "cannot independently reconstruct older holdings."
+            ),
+        }
+        if coverage_mode != "rolling_recent_window":
             warnings.append(HSBC_PARTIAL_ORDER_STATUS_WARNING)
     visible_cash_records = [
         record
@@ -19998,6 +20155,13 @@ def build_investment_payload_from_hsbc_pasted_text(
         "ending_cash_base_currency": _decimal_to_str(resolved_usd_balance),
         "position_snapshot": position_snapshot,
         "performance_snapshot": {},
+        "source_artifacts": _build_hsbc_pasted_text_source_artifacts(
+            cash_account_text=cash_account_text,
+            portfolio_text=portfolio_text,
+            order_status_text=order_status_text,
+            account=account,
+            snapshot_report=snapshot_report,
+        ),
         "transactions": transactions,
     }
     payload["summary"]["position_snapshot_authoritative"] = True
@@ -20035,9 +20199,38 @@ def build_investment_payload_from_hsbc_pasted_text(
     payload["summary"]["hsbc_final_settled_execution_order_ids"] = settled_execution_order_ids
     payload["summary"]["account_expected"] = HSBC_EXPECTED_ACCOUNT_NUMBER
     payload["summary"]["hsbc_snapshot"] = snapshot_report
-    if holdings_mismatches and snapshot_report["order_status_coverage"].get("mode") == "rolling_recent_window":
-        payload["summary"]["holdings_validation"]["status"] = "snapshot_authoritative_partial_history"
-        payload["summary"]["holdings_validation"]["comparison_scope"] = "visible_rolling_order_status_window"
+    if holdings_mismatches:
+        position_reconciliation = snapshot_report["position_reconciliation"]
+        payload["summary"]["holdings_validation"].update({
+            "status": "snapshot_authoritative_partial_history",
+            "comparison_scope": position_reconciliation["scope"],
+            "history_complete": False,
+            "position_snapshot_authoritative": True,
+            "interpretation": position_reconciliation["explanation"],
+        })
+    position_market_value = sum(
+        _parse_decimal_text_or_none(position.get("market_value")) or ZERO
+        for position in position_snapshot.values()
+        if isinstance(position, dict)
+    )
+    reported_total_market_value = _parse_decimal_text_or_none(
+        portfolio_capture.get("reported_total_market_value")
+    )
+    payload["summary"]["position_snapshot_market_value"] = (
+        _decimal_to_str(position_market_value) or "0"
+    )
+    if reported_total_market_value is not None:
+        market_value_difference = position_market_value - reported_total_market_value
+        payload["summary"]["hsbc_portfolio_reported_market_value"] = (
+            _decimal_to_str(reported_total_market_value) or "0"
+        )
+        payload["summary"]["hsbc_position_market_value_reconciliation"] = {
+            "matched": abs(market_value_difference) <= Decimal("0.02"),
+            "calculated_market_value": _decimal_to_str(position_market_value) or "0",
+            "reported_market_value": _decimal_to_str(reported_total_market_value) or "0",
+            "difference": _decimal_to_str(market_value_difference) or "0",
+            "calculation": "sum(quantity * last_price)",
+        }
     payload["summary"].update(
         _summarize_hsbc_pending_settlement_cash(
             payload["transactions"],
