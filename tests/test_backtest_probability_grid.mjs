@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.32.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.33.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,7 +50,7 @@ test('new models reuse the versioned renderer contract without a model allowlist
 });
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.32.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.33.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -651,6 +651,36 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
     const winnerProbability = Math.max(...cells.map((cell) => cell.probability));
     assert.ok(cells.filter((cell) => cell.probability === winnerProbability)
         .every((cell) => cell.opacity === 1));
+});
+
+test('detail price domains allocate all twenty rows independently of the overview Y scale', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 200,
+        anchorY: 90,
+        stepPixels: 2,
+        limitRowsToChartArea: false,
+    });
+    const cells = grid.buildProbabilityCells({
+        geometry,
+        anchorPrice: 100,
+        mean: 0,
+        scale: 0.02,
+        stepPixels: 2,
+        priceDomain: {lowerPrice: 80, upperPrice: 120},
+        valueForPixel: () => {
+            throw new Error('detail bins must not read the overview Y scale');
+        },
+        cellDisplayThresholdPct: 0,
+    });
+    assert.equal(cells.length, 20 * 20);
+    assert.equal(new Set(cells.map((cell) => cell.row)).size, 20);
+    assert.equal(cells[0].lowerPrice, 118);
+    assert.equal(cells[0].upperPrice, 120);
+    assert.equal(cells.at(-1).lowerPrice, 80);
+    assert.equal(cells.at(-1).upperPrice, 82);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
 });
 
 test('threshold-relative contrast keeps the same endpoints and nonlinear palette', () => {

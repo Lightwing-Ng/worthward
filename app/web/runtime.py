@@ -1,9 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v1.3.0
-- Changed: Declarative strategy forms distinguish omitted optional numeric
-  defaults from explicitly submitted values.
+Code version: v1.4.0
+- Fixed: Date-bounded chip requests, including a single historical day, use
+  Longbridge daily OHLCV instead of current trade statistics.
+- Changed: Chip comparison no longer requests circulating-share metadata while
+  the visible distribution model intentionally disables turnover survival.
 - Changed: Comparison workspaces now fail explicitly when a selected ticker has
   no usable market history; automatic security replacement remains Portfolio-only.
 - Changed: The live-comparison API owns the current relative-range date and
@@ -187,7 +189,6 @@ from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
     fetch_longbridge_daily_history,
-    fetch_longbridge_circulating_shares,
     fetch_longbridge_trade_stats,
     has_longbridge_market_data_source,
     has_recent_one_minute_store,
@@ -6899,19 +6900,10 @@ def build_web_runtime() -> WebRuntime:
             requested_end = pd.to_datetime(request.args.get("to", ""), errors="coerce")
             if pd.notna(requested_start) and pd.notna(requested_end) and requested_start > requested_end:
                 raise ValueError("Chip comparison start date must not be after its end date.")
-            prefers_range_aligned_ohlcv = (
+            has_bounded_ohlcv_range = (
                 pd.notna(requested_start)
                 and pd.notna(requested_end)
-                and requested_start.normalize() != requested_end.normalize()
             )
-            try:
-                circulating_shares_by_ticker = fetch_longbridge_circulating_shares(
-                    validated_tickers,
-                    broker_settings,
-                )
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.info("No Longbridge circulating-share metadata returned for chip comparison: %s", exc)
-                circulating_shares_by_ticker = {}
 
             def run_with_rate_limit_retry(loader: Callable[[], Any]) -> Any:
                 for attempt in range(3):
@@ -6950,14 +6942,10 @@ def build_web_runtime() -> WebRuntime:
                     "source": "longbridge-daily-ohlcv",
                     "ohlcv": ohlcv,
                 }
-                circulating_shares = circulating_shares_by_ticker.get(normalize_ticker(ticker))
-                if circulating_shares:
-                    payload["circulatingShares"] = circulating_shares
-                    payload["shareBasis"] = "longbridge-static-circulating-shares"
                 return payload
 
             def fetch_one(ticker: str) -> tuple[str, dict[str, Any] | None, str | None]:
-                if prefers_range_aligned_ohlcv:
+                if has_bounded_ohlcv_range:
                     try:
                         return ticker, fetch_longbridge_ohlcv(ticker), None
                     except Exception as ohlcv_exc:  # noqa: BLE001

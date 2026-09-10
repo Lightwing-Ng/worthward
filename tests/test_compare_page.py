@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.15.0
+Code version: v0.16.0
 """
 
 from __future__ import annotations
@@ -588,10 +588,6 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
-            patch(
-                "app.web.runtime.fetch_longbridge_circulating_shares",
-                return_value={"AAPL": 10_000.0, "NVDA": 20_000.0},
-            ),
             patch("app.web.runtime.fetch_longbridge_daily_history", side_effect=fetch_daily),
             patch("app.web.runtime.fetch_longbridge_trade_stats") as fetch_stats,
             patch("app.web.runtime.time.sleep") as sleep,
@@ -613,8 +609,8 @@ class ComparePageTests(unittest.TestCase):
             "2026-01-05 00:00",
         ])
         self.assertEqual(payload["series"][0]["ohlcv"][1]["v"], 1_200.0)
-        self.assertEqual(payload["series"][0]["circulatingShares"], 10_000.0)
-        self.assertEqual(payload["series"][0]["shareBasis"], "longbridge-static-circulating-shares")
+        self.assertNotIn("circulatingShares", payload["series"][0])
+        self.assertNotIn("shareBasis", payload["series"][0])
         self.assertEqual([ticker for ticker, _since in fetch_calls], ["AAPL", "NVDA"])
         self.assertTrue(all(str(since).startswith("2026-01-02") for _ticker, since in fetch_calls))
         fetch_stats.assert_not_called()
@@ -625,7 +621,6 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
-            patch("app.web.runtime.fetch_longbridge_circulating_shares", return_value={}),
             patch(
                 "app.web.runtime.fetch_longbridge_daily_history",
                 side_effect=ValueError("Daily history is unavailable."),
@@ -643,6 +638,40 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(set(payload["errors"]), {"AAPL", "NVDA"})
         fetch_stats.assert_not_called()
 
+    def test_chips_api_prefers_bounded_daily_ohlcv_for_one_historical_day(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+        daily = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-05"]),
+            "Open": [100.0],
+            "High": [103.0],
+            "Low": [99.0],
+            "Close": [102.0],
+            "Volume": [1_200.0],
+        })
+        with (
+            patch("app.web.runtime.load_broker_settings", return_value=settings),
+            patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
+            patch("app.web.runtime.fetch_longbridge_daily_history", return_value=daily) as fetch_daily,
+            patch("app.web.runtime.fetch_longbridge_trade_stats") as fetch_stats,
+            patch("app.web.runtime.time.sleep"),
+        ):
+            response = create_app().test_client().get(
+                "/api/compare/chips?ticker=AAPL&ticker=NVDA&from=2026-01-05&to=2026-01-05"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertEqual(
+            [item["source"] for item in payload["series"]],
+            ["longbridge-daily-ohlcv", "longbridge-daily-ohlcv"],
+        )
+        self.assertEqual(
+            [item["ohlcv"][0]["t"] for item in payload["series"]],
+            ["2026-01-05 00:00", "2026-01-05 00:00"],
+        )
+        self.assertEqual(fetch_daily.call_count, 2)
+        fetch_stats.assert_not_called()
+
     def test_chips_api_prefers_ordered_longbridge_trade_stats(self) -> None:
         settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
 
@@ -656,7 +685,6 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch("app.web.runtime.load_broker_settings", return_value=settings),
             patch("app.web.runtime.has_longbridge_market_data_source", return_value=True),
-            patch("app.web.runtime.fetch_longbridge_circulating_shares", return_value={}),
             patch("app.web.runtime.fetch_longbridge_daily_history") as fetch_daily,
             patch("app.web.runtime.fetch_longbridge_trade_stats", side_effect=fetch_stats),
             patch("app.web.runtime.time.sleep"),

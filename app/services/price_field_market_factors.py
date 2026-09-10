@@ -1,7 +1,9 @@
 """
 Read-only Longbridge CLI factor data for Price Field models.
 
-Code version: v1.10.0
+Code version: v1.10.1
+- Fixed: Price Field factor requests now reuse the canonical Longbridge symbol
+  adapter before applying provider-format validation.
 - Changed: The canonical provider module is model-neutral and serves both
   Bayesian Price Field and LSTM Price Field.
 - Changed: Public bundle, loader, and cache names use Price Field terminology;
@@ -56,6 +58,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from app.core.broker_settings import BrokerSettings, load_broker_settings
+from app.infrastructure.broker_market_data import normalize_longbridge_symbol
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
 
 
@@ -407,9 +410,7 @@ def _store_bundle_cache_locked(
 
 
 def _normalize_symbol(symbol: str) -> str:
-    normalized = str(symbol or "").strip().upper()
-    if normalized and "." not in normalized:
-        normalized = f"{normalized}.US"
+    normalized = normalize_longbridge_symbol(symbol)
     if not _SUPPORTED_SYMBOL.fullmatch(normalized):
         raise ValueError("Longbridge symbols must use the <CODE>.<MARKET> format.")
     return normalized

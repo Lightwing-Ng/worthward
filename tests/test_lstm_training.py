@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.7.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.7.1."""
 
 from __future__ import annotations
 
@@ -42,6 +42,12 @@ def _completed_case(manager, tmp_path, seed=42, started="2026-09-04T00:00:00Z"):
         "params": params, "holdout": {"direction_scored_points": 20, "direction_hit_rate_pct": 65.0},
     }})
     return paths
+
+
+def test_training_ticker_normalization_reuses_canonical_storage_contract(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    assert manager._normalize_ticker("BRK.B") == "BRK-B"
+    assert manager._normalize_ticker("META.US") == "META"
 
 
 def test_history_exposes_complete_exact_configuration_and_measured_score(tmp_path):

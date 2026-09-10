@@ -5,7 +5,7 @@
  * This module owns geometry, cells, opacity, and the pure pin reducer.
  * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.32.0
+ * Code version: v0.33.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -678,6 +678,7 @@
         horizonStep = null,
         stepPixels,
         valueForPixel,
+        priceDomain = null,
         opacityExponent = DEFAULT_CELL_OPACITY_EXPONENT,
         opacityTailRatio = DEFAULT_CELL_OPACITY_TAIL_RATIO,
         cellDisplayThresholdPct = DEFAULT_CELL_DISPLAY_THRESHOLD_PCT,
@@ -688,8 +689,15 @@
         const normalizedHorizonStep = horizonStep === null || horizonStep === undefined
             ? daysPerColumn : Number(horizonStep);
         const slotWidth = Number(geometry?.slotWidth);
+        const domainLower = finiteOrNull(priceDomain?.lowerPrice);
+        const domainUpper = finiteOrNull(priceDomain?.upperPrice);
+        const hasPriceDomain = domainLower !== null && domainUpper !== null
+            && domainLower > 0 && domainUpper > domainLower;
+        const domainPriceStep = hasPriceDomain
+            ? (domainUpper - domainLower) / Number(geometry?.rowCount)
+            : null;
         if (!geometry || typeof distribution?.probabilityBetweenPrices !== "function"
-            || typeof valueForPixel !== "function"
+            || (!hasPriceDomain && typeof valueForPixel !== "function")
             || !Number.isFinite(normalizedStepPixels) || !(normalizedStepPixels > 0)
             || !Number.isFinite(geometryStepPixels) || !(geometryStepPixels > 0)
             || Math.abs(geometryStepPixels - normalizedStepPixels) > 1e-9
@@ -701,8 +709,12 @@
             const cellTop = geometry.top + geometry.gridPaddingTop
                 + (row * (geometry.cellSize + geometry.gap));
             const cellBottom = cellTop + geometry.cellSize;
-            const firstValue = Number(valueForPixel(cellTop));
-            const secondValue = Number(valueForPixel(cellBottom));
+            const firstValue = hasPriceDomain
+                ? domainUpper - (row * domainPriceStep)
+                : Number(valueForPixel(cellTop));
+            const secondValue = hasPriceDomain
+                ? domainUpper - ((row + 1) * domainPriceStep)
+                : Number(valueForPixel(cellBottom));
             const lowerPrice = Math.min(firstValue, secondValue);
             const upperPrice = Math.max(firstValue, secondValue);
             const normalizedAnchorPrice = Number(anchorPrice);
@@ -946,7 +958,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.32.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.33.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

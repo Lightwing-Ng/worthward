@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.6.0
+Code version: v0.6.1
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -23,6 +23,7 @@ import sys
 from typing import Any, Mapping
 
 from app.core.config import PERIOD_OFFSETS
+from app.infrastructure.storage import normalize_ticker
 from scripts import lstm_ga_tune as ga_runner
 
 
@@ -448,7 +449,7 @@ class LstmTrainingManager:
 
     @staticmethod
     def _normalize_ticker(ticker: str) -> str:
-        normalized = str(ticker or "").strip().upper()
+        normalized = normalize_ticker(ticker)
         if not TICKER_PATTERN.fullmatch(normalized):
             raise ValueError("Enter a valid ticker before starting LSTM training.")
         return normalized

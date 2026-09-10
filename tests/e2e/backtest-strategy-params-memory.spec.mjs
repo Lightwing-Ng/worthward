@@ -1,4 +1,4 @@
-/* Code version: v0.11.0 */
+/* Code version: v0.12.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -64,6 +64,10 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(toggle).toHaveAttribute('aria-controls', 'backtest_parameter_panel');
+    await expect(toggle.locator('.icon-backtest-parameters')).toHaveCSS(
+        'mask-image',
+        /arrowtriangle\.forward\.inset\.filled\.trailingthird\.rectangle\.svg/,
+    );
     await expect(panel).toHaveAttribute('aria-hidden', 'true');
     await expect(panel).toBeHidden();
     await expect(backdrop).toBeHidden();
@@ -138,6 +142,10 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
 
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle.locator('.icon-backtest-parameters')).toHaveCSS(
+        'mask-image',
+        /arrowtriangle\.backward\.inset\.filled\.trailingthird\.rectangle\.svg/,
+    );
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
     await expect(panel).toBeVisible();
     await expect(backdrop).toBeVisible();

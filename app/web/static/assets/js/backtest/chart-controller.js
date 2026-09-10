@@ -1,4 +1,4 @@
-/* Code version: v1.9.0 */
+/* Code version: v1.10.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -19,7 +19,7 @@
 		if (window.WORTHWARD_PRICE_FIELD_DETAIL_CHART) return Promise.resolve();
 		if (!detailModulePromise) detailModulePromise = new Promise((resolve, reject) => {
 			const script = document.createElement("script");
-			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.2.0";
+			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.3.0";
 			script.onload = () => window.WORTHWARD_PRICE_FIELD_DETAIL_CHART
 				? resolve() : reject(new Error("Price Field detail module is unavailable."));
 			script.onerror = () => reject(new Error("Price Field detail module could not be loaded."));
@@ -1708,6 +1708,15 @@
 			probabilityDetailPanel.dataset.thresholdHiddenCount = String(
 				cells.filter((cell) => cell.isVisible === false).length,
 			);
+			probabilityDetailPanel.dataset.priceDomain = detailModel.priceDomain
+				? "direct-forecast-adaptive" : "overview-y-scale";
+			if (detailModel.priceDomain) {
+				probabilityDetailPanel.dataset.priceDomainLower = String(detailModel.priceDomain.lowerPrice);
+				probabilityDetailPanel.dataset.priceDomainUpper = String(detailModel.priceDomain.upperPrice);
+			} else {
+				delete probabilityDetailPanel.dataset.priceDomainLower;
+				delete probabilityDetailPanel.dataset.priceDomainUpper;
+			}
 			probabilityDetailGrid.setAttribute(
 				"aria-label",
 				`Future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`,
@@ -2516,6 +2525,15 @@
 			// independent complete-row geometry.
 			const geometry = nativeGeometry;
 			if (!geometry) return null;
+			const historyStart = Math.max(0, index - Number(model.maxHorizon || 0));
+			const detailPriceDomain = Number.isInteger(model.maxHorizon)
+				? window.WORTHWARD_PRICE_FIELD_DETAIL_CHART?.computeDirectForecastPriceDomain?.({
+					anchorPrice: model.anchorPrice,
+					history: close.slice(historyStart, index + 1),
+					horizonMean: model.horizonMean,
+					horizonStd: model.horizonStd,
+				})
+				: null;
 			const cells = probabilityGridApi.buildProbabilityCells?.({
 				distribution,
 				geometry,
@@ -2531,6 +2549,7 @@
 				horizonStep: model.horizonStep,
 				stepPixels: model.stepPixels,
 				valueForPixel: (pixel) => priceChart.scales.y.getValueForPixel(pixel),
+				priceDomain: detailPriceDomain,
 				opacityExponent: strategyPresentation.cell_opacity_exponent,
 				opacityTailRatio: strategyPresentation.cell_opacity_tail_ratio,
 				cellDisplayThresholdPct: strategyPresentation.cell_display_threshold_pct,
@@ -2538,9 +2557,11 @@
 			if (!cells.length) return null;
 			return {
 				...model,
-				cacheKey: `${model.cacheKey}|detail|${geometry.rowsAbove}|${geometry.rowsBelow}`,
+				cacheKey: `${model.cacheKey}|detail|${geometry.rowsAbove}|${geometry.rowsBelow}`
+					+ `|${detailPriceDomain?.lowerPrice || "live"}|${detailPriceDomain?.upperPrice || "live"}`,
 				cells,
 				geometry,
+				priceDomain: detailPriceDomain,
 			};
 		};
 

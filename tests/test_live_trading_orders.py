@@ -1,7 +1,7 @@
 """
 Tests for Longbridge live trading order flows.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -127,6 +127,28 @@ class LongbridgeLiveTradingServiceTests(unittest.TestCase):
         self.assertEqual(order.time_in_force, "Day")
         self.assertEqual(order.status, "submitted")
         self.assertTrue(_FakeTradeContext.instances[0].closed)
+
+    def test_submit_longbridge_limit_order_reuses_canonical_market_symbol_adapter(self) -> None:
+        with patch(
+            "app.services.live_trading._load_longbridge_trade_api",
+            return_value=(
+                _FakeConfig,
+                _FakeTradeContext,
+                SimpleNamespace(LO="LO"),
+                SimpleNamespace(Buy="BUY", Sell="SELL"),
+                SimpleNamespace(Day="DAY"),
+            ),
+        ):
+            order = submit_longbridge_limit_order(
+                self.settings,
+                ticker="BRK-B",
+                side="buy",
+                price="500.00",
+                quantity="1",
+            )
+
+        self.assertEqual(_FakeTradeContext.last_submit_kwargs["symbol"], "BRK.B.US")
+        self.assertEqual(order.symbol, "BRK.B.US")
 
     def test_submit_longbridge_limit_order_matches_sell_example_from_docs(self) -> None:
         with patch(

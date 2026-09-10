@@ -1,7 +1,61 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 /** Shared square-cell layout with equal historical and forecast time spans. */
 (function bootstrapPriceFieldDetailChart(scope) {
     "use strict";
+    const computeDirectForecastPriceDomain = ({
+        anchorPrice,
+        history = [],
+        horizonMean = [],
+        horizonStd = [],
+        standardDeviationRadius = 2.576,
+        paddingRatio = 0.06,
+        minimumHalfSpanRatio = 0.005,
+    } = {}) => {
+        const anchor = Number(anchorPrice);
+        const radius = Number(standardDeviationRadius);
+        const padding = Number(paddingRatio);
+        const minimumRatio = Number(minimumHalfSpanRatio);
+        if (!(anchor > 0) || !(radius > 0) || !(padding >= 0) || !(minimumRatio > 0)
+            || !Array.isArray(horizonMean) || !Array.isArray(horizonStd)
+            || horizonMean.length === 0 || horizonMean.length !== horizonStd.length) return null;
+        const historyPrices = [];
+        history.forEach((value) => {
+            const price = Number(value);
+            if (Number.isFinite(price) && price > 0) historyPrices.push(price);
+        });
+        const forecastPrices = [];
+        for (let index = 0; index < horizonMean.length; index += 1) {
+            const mean = Number(horizonMean[index]);
+            const standardDeviation = Number(horizonStd[index]);
+            if (!Number.isFinite(mean) || !(standardDeviation > 0)) return null;
+            const lowerReturn = Math.max(-20, Math.min(20, mean - (radius * standardDeviation)));
+            const upperReturn = Math.max(-20, Math.min(20, mean + (radius * standardDeviation)));
+            const lowerPrice = anchor * Math.exp(lowerReturn);
+            const upperPrice = anchor * Math.exp(upperReturn);
+            if (!(lowerPrice > 0) || !Number.isFinite(upperPrice)) return null;
+            forecastPrices.push(lowerPrice, upperPrice);
+        }
+        const forecastHalfSpan = Math.max(
+            ...forecastPrices.map((price) => Math.abs(price - anchor)),
+        );
+        const historyHalfSpan = Math.max(
+            0,
+            ...historyPrices.map((price) => Math.abs(price - anchor)),
+        );
+        // The observed suffix supplies context but cannot consume the lattice's
+        // forecast resolution after one exceptional historical move.
+        const halfSpan = Math.max(
+            anchor * minimumRatio,
+            forecastHalfSpan,
+            Math.min(historyHalfSpan, forecastHalfSpan * 1.5),
+        ) * (1 + padding);
+        if (!(halfSpan > 0) || !Number.isFinite(halfSpan)) return null;
+        return Object.freeze({
+            lowerPrice: Math.max(Number.MIN_VALUE, anchor - halfSpan),
+            upperPrice: anchor + halfSpan,
+            standardDeviationRadius: radius,
+        });
+    };
     const computeLayout = ({width, height, anchorPrice, lowerPrice, upperPrice,
         rowsAbove, rowsBelow, columns, history = [], horizon = history.length - 1,
         gap = 2, padding = 2}) => {
@@ -55,6 +109,10 @@
         }
         return {up: paths.up.join(" "), down: paths.down.join(" ")};
     };
-    scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART = Object.freeze({computeLayout, buildObservedPaths});
+    scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART = Object.freeze({
+        computeDirectForecastPriceDomain,
+        computeLayout,
+        buildObservedPaths,
+    });
     if (typeof module !== "undefined" && module.exports) module.exports = scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
 })(typeof globalThis !== "undefined" ? globalThis : window);

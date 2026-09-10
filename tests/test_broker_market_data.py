@@ -1,7 +1,7 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.12.1
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -422,7 +422,7 @@ class BrokerMarketDataTests(unittest.TestCase):
         self.assertEqual(cli_frame["Date"].tolist(), [pd.Timestamp("2026-07-14 09:30")])
         self.assertEqual(cli_frame.iloc[0]["Close"], 100.5)
 
-        cli_daily_frame = _cli_daily_candlestick_rows_to_frame([cli_candle])
+        cli_daily_frame = _cli_daily_candlestick_rows_to_frame([cli_candle], "AAPL")
         self.assertEqual(cli_daily_frame["Date"].tolist(), [pd.Timestamp("2026-07-14")])
 
         cli_extended_frame = _cli_extended_candlestick_rows_to_frame([longbridge_candlestick_rows()[0]])
@@ -437,8 +437,36 @@ class BrokerMarketDataTests(unittest.TestCase):
             volume=1_000,
             turnover=100_500,
         )
-        sdk_daily_frame = _daily_candlestick_rows_to_frame([sdk_candle])
+        sdk_daily_frame = _daily_candlestick_rows_to_frame([sdk_candle], "AAPL")
         self.assertEqual(sdk_daily_frame["Date"].tolist(), [pd.Timestamp("2026-07-14")])
+
+    def test_daily_candlestick_adapters_use_the_ticker_market_date(self) -> None:
+        hong_kong_candle = {
+            "time": "2026-09-07T16:00:00Z",
+            "open": "100",
+            "high": "101",
+            "low": "99",
+            "close": "100.5",
+            "volume": "1000",
+            "turnover": "100500",
+        }
+        hong_kong_frame = _cli_daily_candlestick_rows_to_frame(
+            [hong_kong_candle],
+            "7709.HK",
+        )
+        self.assertEqual(hong_kong_frame["Date"].tolist(), [pd.Timestamp("2026-09-08")])
+
+        korean_candle = SimpleNamespace(
+            timestamp="2026-09-07T15:00:00Z",
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            volume=1_000,
+            turnover=100_500,
+        )
+        korean_frame = _daily_candlestick_rows_to_frame([korean_candle], "000660.KS")
+        self.assertEqual(korean_frame["Date"].tolist(), [pd.Timestamp("2026-09-08")])
 
     def test_cli_one_minute_history_is_offline_and_uses_normalized_arguments(self) -> None:
         settings = self._longbridge_settings()
@@ -486,6 +514,29 @@ class BrokerMarketDataTests(unittest.TestCase):
         self.assertEqual(arguments[:5], ["kline", "history", "AAPL.US", "--period", "day"])
         self.assertEqual(arguments[arguments.index("--adjust") + 1], "none")
         self.assertEqual(frame["Date"].tolist(), [pd.Timestamp("2026-07-14")])
+
+    def test_cli_daily_history_preserves_hong_kong_market_dates(self) -> None:
+        settings = self._longbridge_settings()
+        payload = [{
+            "time": "2026-09-07T16:00:00Z",
+            "open": "100",
+            "high": "101",
+            "low": "99",
+            "close": "100.5",
+            "volume": "1000",
+            "turnover": "100500",
+        }]
+        with patch(
+            "app.infrastructure.broker_market_data.run_longbridge_cli_json",
+            return_value=payload,
+        ):
+            frame = fetch_longbridge_daily_history(
+                "7709.HK",
+                settings,
+                since=datetime(2026, 9, 8),
+            )
+
+        self.assertEqual(frame["Date"].tolist(), [pd.Timestamp("2026-09-08")])
 
     def test_daily_history_uses_raw_longbridge_adjustment(self) -> None:
         adjustment = SimpleNamespace(NoAdjust="none", ForwardAdjust="forward")

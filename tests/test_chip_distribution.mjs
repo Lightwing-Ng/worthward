@@ -1,4 +1,4 @@
-/* Tests for chip distribution calculations. Code version: v0.4.1 */
+/* Tests for chip distribution calculations. Code version: v0.5.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -170,6 +170,51 @@ test('keeps hover snapshots on the full-range price domain without future volume
     assert.ok(snapshot.pocPrice < 120);
     assert.ok(fullDistribution.pocPrice > 180);
     assert.equal(snapshot.bins.filter((bin) => bin.price > 180 && bin.weight > 0).length, 0);
+});
+
+test('prepares cumulative hover snapshots without recomputing historical candles', () => {
+    const rows = [
+        {t: '2026-08-20', o: 98, h: 104, l: 96, c: 102, v: 1_000},
+        {t: '2026-08-21', o: 101, h: 108, l: 99, c: 106, v: 1_200},
+        {t: '2026-08-22', o: 198, h: 206, l: 194, c: 202, v: 20_000},
+    ];
+    const fullDistribution = calculator.calculateChipDistribution(rows, {
+        binCount: 100,
+        turnoverSurvival: false,
+    });
+    const prepared = calculator.prepareChipDistributionSnapshots(rows, {
+        binCount: 100,
+        turnoverSurvival: false,
+        priceMin: fullDistribution.minPrice,
+        priceMax: fullDistribution.maxPrice,
+    });
+    const expected = calculator.calculateChipDistribution(rows.slice(0, 2), {
+        binCount: 100,
+        turnoverSurvival: false,
+        priceMin: fullDistribution.minPrice,
+        priceMax: fullDistribution.maxPrice,
+    });
+
+    rows[0].v = 999_999;
+    const snapshot = prepared.distributionAt(2);
+    assert.equal(prepared.rowCount, 3);
+    assert.equal(snapshot.priceDomainFixed, true);
+    assert.ok(Math.abs(snapshot.totalWeight - expected.totalWeight) < 1e-8);
+    snapshot.bins.forEach((bin, index) => {
+        assert.ok(Math.abs(bin.weight - expected.bins[index].weight) < 1e-8);
+    });
+});
+
+test('keeps source-row cutoffs stable when a prepared row is unusable', () => {
+    const rows = [
+        {t: '2026-08-20', o: 98, h: 104, l: 96, c: 102, v: 1_000},
+        {t: '2026-08-21', o: 102, h: 108, l: 100, c: 106, v: 2_000, synthetic: true},
+        {t: '2026-08-22', o: 108, h: 114, l: 106, c: 112, v: 3_000},
+    ];
+    const prepared = calculator.prepareChipDistributionSnapshots(rows, {turnoverSurvival: false});
+
+    assert.ok(Math.abs(prepared.distributionAt(2).totalWeight - 1_000) < 1e-8);
+    assert.ok(Math.abs(prepared.distributionAt(3).totalWeight - 4_000) < 1e-8);
 });
 
 test('uses the shortest contiguous high-density intervals for cost ranges', () => {

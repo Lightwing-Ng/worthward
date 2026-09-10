@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.3.1 */
+/* Neural Price Field UI integration. Code version: v1.4.0 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -54,6 +54,19 @@ for (const width of [1024, 390]) {
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
                 (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
             )).toBe(20);
+            const detailDomain = await page.locator('#backtest_probability_detail_panel').evaluate((panel) => ({
+                kind: panel.dataset.priceDomain,
+                lower: Number(panel.dataset.priceDomainLower),
+                upper: Number(panel.dataset.priceDomainUpper),
+                anchor: Number(panel.querySelector('[data-backtest-probability-detail-anchor]')?.dataset.price),
+            }));
+            expect(detailDomain.kind).toBe('direct-forecast-adaptive');
+            expect(detailDomain.lower).toBeLessThan(detailDomain.anchor);
+            expect(detailDomain.upper).toBeGreaterThan(detailDomain.anchor);
+            expect(Math.abs(
+                (detailDomain.anchor - detailDomain.lower)
+                - (detailDomain.upper - detailDomain.anchor),
+            )).toBeLessThan(1e-6);
             if (architecture === 'timexer') await page.screenshot({path: testInfo.outputPath(`neural-price-field-${width}.png`), fullPage: true});
         }
         expect(errors).toEqual([]);

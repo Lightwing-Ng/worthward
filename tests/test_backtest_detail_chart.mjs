@@ -1,10 +1,51 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 require('../app/web/static/assets/js/backtest/detail-chart.js');
-const {computeLayout} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+const {computeDirectForecastPriceDomain, computeLayout} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+
+test('direct forecasts receive a local symmetric price domain instead of the multi-year chart scale', () => {
+    const domain = computeDirectForecastPriceDomain({
+        anchorPrice: 469,
+        history: [448, 452, 460, 469],
+        horizonMean: Array.from({length: 20}, (_, index) => 0.0015 * (index + 1)),
+        horizonStd: Array.from({length: 20}, (_, index) => 0.008 + (0.0004 * index)),
+    });
+    assert.ok(domain);
+    assert.ok(domain.lowerPrice < 448);
+    assert.ok(domain.upperPrice > 469 * Math.exp(0.03 + (2.576 * 0.0156)));
+    assert.ok(Math.abs((469 - domain.lowerPrice) - (domain.upperPrice - 469)) < 1e-9);
+    assert.ok((domain.upperPrice - domain.lowerPrice) / 20 < 10);
+    assert.equal(domain.standardDeviationRadius, 2.576);
+});
+
+test('direct forecast domain rejects incomplete distributions and keeps a nondegenerate floor', () => {
+    assert.equal(computeDirectForecastPriceDomain({
+        anchorPrice: 100,
+        horizonMean: [0],
+        horizonStd: [],
+    }), null);
+    const domain = computeDirectForecastPriceDomain({
+        anchorPrice: 100,
+        horizonMean: [0],
+        horizonStd: [Number.EPSILON],
+    });
+    assert.ok(domain.upperPrice - domain.lowerPrice >= 1);
+});
+
+test('an exceptional history point cannot collapse direct forecasts into a thin band', () => {
+    const domain = computeDirectForecastPriceDomain({
+        anchorPrice: 100,
+        history: [20, 99, 100],
+        horizonMean: [0],
+        horizonStd: [0.02],
+    });
+    const forecastHalfSpan = 100 * (Math.exp(2.576 * 0.02) - 1);
+    assert.ok(domain.upperPrice - 100 <= forecastHalfSpan * 1.5 * 1.06 + 1e-9);
+    assert.ok(domain.upperPrice - 100 >= forecastHalfSpan * 1.06 - 1e-9);
+});
 
 for (const width of [230, 710]) {
     test(`detail chart preserves square cells, symmetric time, and shared price mapping at ${width}px`, () => {

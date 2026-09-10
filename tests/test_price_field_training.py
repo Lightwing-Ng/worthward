@@ -1,4 +1,4 @@
-"""Isolated generic probability training contracts. Code version: v1.3.0."""
+"""Isolated generic probability training contracts. Code version: v1.3.1."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
 """
 Broker-backed market data services.
 
-Code version: v0.15.1
-- Fixed: Canonical US share-class tickers such as BRK-B map back to the
-  dot-delimited Longbridge symbol form at the provider boundary.
+Code version: v0.16.0
+- Fixed: Daily candles now resolve their trading dates in each ticker's native
+  market timezone instead of applying New York dates to every market.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import replace
 import logging
 import math
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version as package_version
 import json
@@ -797,6 +797,44 @@ def _infer_market_from_ticker(ticker: str | None) -> str:
     return "US"
 
 
+MARKET_TIMEZONES = {
+    "US": NEW_YORK_TIMEZONE,
+    "HK": HONG_KONG_TIMEZONE,
+    "KR": "Asia/Seoul",
+    "JP": "Asia/Tokyo",
+    "CN": "Asia/Shanghai",
+    "UK": "Europe/London",
+    "SG": "Asia/Singapore",
+    "AU": "Australia/Sydney",
+    "CA": "America/Toronto",
+    "EU": "Europe/Paris",
+    "FI": "Europe/Helsinki",
+    "IN": "Asia/Kolkata",
+    "TW": "Asia/Taipei",
+    "MY": "Asia/Kuala_Lumpur",
+    "TH": "Asia/Bangkok",
+    "ID": "Asia/Jakarta",
+    "NZ": "Pacific/Auckland",
+    "BR": "America/Sao_Paulo",
+    "LATAM": "America/Mexico_City",
+    "IL": "Asia/Jerusalem",
+    "SA": "Asia/Riyadh",
+    "ZA": "Africa/Johannesburg",
+    "QA": "Asia/Qatar",
+}
+
+
+def _market_timezone_for_ticker(ticker: str | None) -> str:
+    return MARKET_TIMEZONES.get(_infer_market_from_ticker(ticker), NEW_YORK_TIMEZONE)
+
+
+def _market_local_date(value: object, ticker: str | None) -> date:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert(_market_timezone_for_ticker(ticker))
+    return timestamp.date()
+
+
 def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = None) -> bool:
     market = _infer_market_from_ticker(ticker)
     if market == "HK":
@@ -835,24 +873,6 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
             return False
         total_minutes = (int(localized.hour) * 60) + int(localized.minute)
         return (9 * 60 <= total_minutes < 12 * 60) or (13 * 60 <= total_minutes < 17 * 60)
-    market_timezones = {
-        "AU": "Australia/Sydney",
-        "CA": "America/Toronto",
-        "EU": "Europe/Paris",
-        "FI": "Europe/Helsinki",
-        "IN": "Asia/Kolkata",
-        "TW": "Asia/Taipei",
-        "MY": "Asia/Kuala_Lumpur",
-        "TH": "Asia/Bangkok",
-        "ID": "Asia/Jakarta",
-        "NZ": "Pacific/Auckland",
-        "BR": "America/Sao_Paulo",
-        "LATAM": "America/Mexico_City",
-        "IL": "Asia/Jerusalem",
-        "SA": "Asia/Riyadh",
-        "ZA": "Africa/Johannesburg",
-        "QA": "Asia/Qatar",
-    }
     market_sessions = {
         "AU": (10 * 60, 16 * 60),
         "CA": ((9 * 60) + 30, 16 * 60),
@@ -871,8 +891,8 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
         "ZA": (9 * 60, 17 * 60),
         "QA": ((9 * 60) + 30, (13 * 60) + 10),
     }
-    if market in market_timezones and market in market_sessions:
-        localized = timestamp.tz_convert(market_timezones[market])
+    if market in MARKET_TIMEZONES and market in market_sessions:
+        localized = timestamp.tz_convert(MARKET_TIMEZONES[market])
         if localized.weekday() >= 5:
             return False
         total_minutes = (int(localized.hour) * 60) + int(localized.minute)
@@ -897,32 +917,7 @@ def _regular_market_session_mask(values: pd.Series, ticker: str | None = None) -
         timestamps = timestamps.dt.tz_convert(NEW_YORK_TIMEZONE)
 
     market = _infer_market_from_ticker(ticker)
-    market_timezones = {
-        "US": NEW_YORK_TIMEZONE,
-        "HK": HONG_KONG_TIMEZONE,
-        "KR": "Asia/Seoul",
-        "JP": "Asia/Tokyo",
-        "CN": "Asia/Shanghai",
-        "UK": "Europe/London",
-        "SG": "Asia/Singapore",
-        "AU": "Australia/Sydney",
-        "CA": "America/Toronto",
-        "EU": "Europe/Paris",
-        "FI": "Europe/Helsinki",
-        "IN": "Asia/Kolkata",
-        "TW": "Asia/Taipei",
-        "MY": "Asia/Kuala_Lumpur",
-        "TH": "Asia/Bangkok",
-        "ID": "Asia/Jakarta",
-        "NZ": "Pacific/Auckland",
-        "BR": "America/Sao_Paulo",
-        "LATAM": "America/Mexico_City",
-        "IL": "Asia/Jerusalem",
-        "SA": "Asia/Riyadh",
-        "ZA": "Africa/Johannesburg",
-        "QA": "Asia/Qatar",
-    }
-    localized = timestamps.dt.tz_convert(market_timezones.get(market, NEW_YORK_TIMEZONE))
+    localized = timestamps.dt.tz_convert(MARKET_TIMEZONES.get(market, NEW_YORK_TIMEZONE))
     total_minutes = (localized.dt.hour * 60) + localized.dt.minute
     weekday_mask = localized.notna() & (localized.dt.dayofweek < 5)
 
@@ -1049,14 +1044,19 @@ def _candlestick_rows_to_frame(candlesticks: list[Any], ticker: str | None = Non
     return pd.DataFrame(rows)
 
 
-def _daily_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
+def _daily_candlestick_rows_to_frame(
+        candlesticks: list[Any],
+        ticker: str | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
         raw_ts = getattr(candle, "timestamp")
-        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        trading_date = _parse_longbridge_timestamp(raw_ts).tz_convert(
+            _market_timezone_for_ticker(ticker)
+        ).date()
         rows.append(
             {
-                "Date": pd.Timestamp(ts_nyt.date()),
+                "Date": pd.Timestamp(trading_date),
                 "Open": float(getattr(candle, "open")),
                 "High": float(getattr(candle, "high")),
                 "Low": float(getattr(candle, "low")),
@@ -1157,16 +1157,21 @@ def _cli_extended_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) 
     return pd.DataFrame(rows)
 
 
-def _cli_daily_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
+def _cli_daily_candlestick_rows_to_frame(
+        candlesticks: list[dict[str, Any]],
+        ticker: str | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
         raw_ts = candle.get("time")
         if raw_ts is None:
             continue
-        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        trading_date = _parse_longbridge_timestamp(raw_ts).tz_convert(
+            _market_timezone_for_ticker(ticker)
+        ).date()
         rows.append(
             {
-                "Date": pd.Timestamp(ts_nyt.date()),
+                "Date": pd.Timestamp(trading_date),
                 "Open": float(candle.get("open", 0)),
                 "High": float(candle.get("high", 0)),
                 "Low": float(candle.get("low", 0)),
@@ -1402,16 +1407,18 @@ def fetch_longbridge_daily_history(
         )
 
     symbol = normalize_longbridge_symbol(ticker)
-    effective_start_nyt: pd.Timestamp | None = None
+    effective_start_date: date | None = None
     if since is not None:
-        effective_start_nyt = _normalize_to_new_york_naive(since) - timedelta(days=2)
+        effective_start_date = _market_local_date(since, ticker) - timedelta(days=2)
 
     if uses_longbridge_cli_oauth(settings):
-        now_nyt = pd.Timestamp.now(tz=UTC_TIMEZONE).tz_convert(NEW_YORK_TIMEZONE)
+        current_market_date = pd.Timestamp.now(tz=UTC_TIMEZONE).tz_convert(
+            _market_timezone_for_ticker(ticker)
+        ).date()
         start_date = (
-            effective_start_nyt.date().isoformat()
-            if effective_start_nyt is not None
-            else (now_nyt - timedelta(days=400)).date().isoformat()
+            effective_start_date.isoformat()
+            if effective_start_date is not None
+            else (current_market_date - timedelta(days=400)).isoformat()
         )
         payload = run_longbridge_cli_json(
             settings,
@@ -1426,18 +1433,21 @@ def fetch_longbridge_daily_history(
                 "--start",
                 start_date,
                 "--end",
-                now_nyt.date().isoformat(),
+                current_market_date.isoformat(),
                 "--format",
                 "json",
             ],
             timeout_seconds=60,
         )
-        frame = _cli_daily_candlestick_rows_to_frame(payload if isinstance(payload, list) else [])
+        frame = _cli_daily_candlestick_rows_to_frame(
+            payload if isinstance(payload, list) else [],
+            ticker,
+        )
         if frame.empty:
             raise ValueError(f"No daily market data returned for {ticker}.")
         dataset = frame.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
-        if effective_start_nyt is not None:
-            start_filter = pd.Timestamp(effective_start_nyt.date())
+        if effective_start_date is not None:
+            start_filter = pd.Timestamp(effective_start_date)
             dataset = dataset.loc[dataset["Date"] >= start_filter].copy()
         if dataset.empty:
             raise ValueError(f"No daily market data returned for {ticker}.")
@@ -1480,17 +1490,20 @@ def fetch_longbridge_daily_history(
         if not batch:
             break
 
-        frame = _daily_candlestick_rows_to_frame(list(batch))
+        frame = _daily_candlestick_rows_to_frame(list(batch), ticker)
         if frame.empty:
             break
         frames.append(frame)
 
         batch_min_date = pd.Timestamp(frame["Date"].min())
-        oldest_ts_naive = _normalize_to_new_york_naive(batch_min_date)
-        if effective_start_nyt is not None and oldest_ts_naive <= effective_start_nyt:
+        if effective_start_date is not None and batch_min_date.date() <= effective_start_date:
             break
 
-        next_cursor_utc = (_localize_new_york(batch_min_date).tz_convert(UTC_TIMEZONE) - pd.Timedelta(seconds=1)).to_pydatetime()
+        next_cursor_utc = (
+            batch_min_date.tz_localize(_market_timezone_for_ticker(ticker))
+            .tz_convert(UTC_TIMEZONE)
+            - pd.Timedelta(seconds=1)
+        ).to_pydatetime()
         if previous_oldest is not None and next_cursor_utc >= previous_oldest:
             break
         previous_oldest = next_cursor_utc
@@ -1502,8 +1515,8 @@ def fetch_longbridge_daily_history(
 
     dataset = pd.concat(frames, ignore_index=True)
     dataset = dataset.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
-    if effective_start_nyt is not None:
-        start_date = pd.Timestamp(effective_start_nyt.date())
+    if effective_start_date is not None:
+        start_date = pd.Timestamp(effective_start_date)
         dataset = dataset.loc[dataset["Date"] >= start_date].copy()
 
     if dataset.empty:

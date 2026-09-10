@@ -1,4 +1,4 @@
-/* Code version: v0.1.3 */
+/* Code version: v0.2.0 */
 import {expect, test} from '@playwright/test';
 
 test('accepts SMH as a selectable ETF ticker', async ({page}) => {
@@ -140,4 +140,53 @@ test('uses the primary-blue token for Price curves while preserving the Market c
         marketCapState.primary,
         marketCapState.secondary,
     ]);
+});
+
+test('retries a transient per-ticker chip error without discarding successful profiles', async ({page}) => {
+    const requests = [];
+    const buildOhlcv = (tickerIndex) => Array.from({length: 12}, (_, rowIndex) => {
+        const close = 100 + (tickerIndex * 50) + rowIndex;
+        return {
+            t: `2026-08-${String(rowIndex + 1).padStart(2, '0')} 00:00`,
+            o: close - 1,
+            h: close + 2,
+            l: close - 2,
+            c: close,
+            v: 100_000 + (rowIndex * 1_000),
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        const tickers = new URL(route.request().url()).searchParams.getAll('ticker');
+        requests.push(tickers);
+        const recovered = requests.length > 1;
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers
+                    .filter((ticker) => recovered || ticker !== 'NVDA')
+                    .map((ticker) => ({
+                        ticker,
+                        source: 'longbridge-daily-ohlcv',
+                        ohlcv: buildOhlcv(ticker === 'NVDA' ? 1 : 0),
+                    })),
+                errors: recovered ? {} : {NVDA: 'Temporary Longbridge failure.'},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&range=1y');
+    await page.evaluate(() => {
+        window.WORTHWARD_APP.chart.series.forEach((item) => {
+            item.ohlcv = [];
+        });
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
+    });
+    await page.locator('label[for="show_chips"]').click();
+
+    await expect.poll(() => requests.length).toBeGreaterThanOrEqual(2);
+    expect(requests[0]).toEqual(['AAPL', 'NVDA']);
+    expect(requests[1]).toEqual(['NVDA', 'AAPL']);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(2);
+    await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
 });

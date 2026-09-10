@@ -1,4 +1,4 @@
-/* Code version: v1.26.0 */
+/* Code version: v1.27.0 */
 /* Keep modal dismiss actions in a dedicated macOS-style upper-left rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -127,8 +127,13 @@
     width: 20px;
     height: 20px;
     background-color: currentColor;
-    mask: url("/static/images/slider.horizontal.2.square.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/slider.horizontal.2.square.svg") center/contain no-repeat;
+    mask: url("/static/images/arrowtriangle.forward.inset.filled.trailingthird.rectangle.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/arrowtriangle.forward.inset.filled.trailingthird.rectangle.svg") center/contain no-repeat;
+}
+
+.backtest-parameter-toggle[aria-expanded="true"] .icon-backtest-parameters {
+    mask-image: url("/static/images/arrowtriangle.backward.inset.filled.trailingthird.rectangle.svg");
+    -webkit-mask-image: url("/static/images/arrowtriangle.backward.inset.filled.trailingthird.rectangle.svg");
 }
 
 @media (min-width: 768px) {

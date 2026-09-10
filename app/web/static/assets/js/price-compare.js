@@ -1,4 +1,4 @@
-/* Code version: v0.26.0 */
+/* Code version: v0.27.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -23,6 +23,8 @@
 	const CHIP_DISTRIBUTION_CACHE_LIMIT = 64;
 	const CHIP_SNAPSHOT_CACHE_LIMIT = 48;
 	const CHIPS_PAYLOAD_CACHE_LIMIT = 64;
+	const CHIPS_RETRY_BASE_DELAY_MS = 1000;
+	const CHIPS_RETRY_MAX_ATTEMPTS = 3;
 	const PRICE_LEVEL_MINIMUM_HISTORICAL_RANGE_COVERAGE = 0.35;
 	const CHIP_REVEAL_MOTION_KEY = "price-compare-chip-reveal";
 	const CHIP_REVEAL_MOTION_NAME = "shared-bouncy-spring";
@@ -51,12 +53,16 @@
 	let chipsRequestSerial = 0;
 	let chipsRequestController = null;
 	let chipsRequestKeyInFlight = "";
+	let chipsRetryTimer = 0;
+	let chipsRetryRequestKey = "";
+	let chipsRetryAttempt = 0;
 	let sharedHoverIndex = -1;
+	let sharedHoverSourceChart = null;
+	let pendingSharedHover = null;
+	let sharedHoverFrame = 0;
 	let chipHoverState = null;
 	let activeChipSnapshotIndex = -1;
 	let activeChipSnapshotDate = "";
-	let pendingChipSnapshot = null;
-	let chipSnapshotFrame = 0;
 	let cancelChipRevealMotion = null;
 	let chipRevealLogoOrigins = new Map();
 	const chipRevealMotion = {
@@ -392,6 +398,9 @@
 	};
 
 	const destroyPriceCharts = () => {
+		if (sharedHoverFrame) window.cancelAnimationFrame(sharedHoverFrame);
+		sharedHoverFrame = 0;
+		pendingSharedHover = null;
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			canvas.onmouseleave = null;
 			canvas.onpointermove = null;
@@ -399,6 +408,7 @@
 		});
 		priceCharts.clear();
 		sharedHoverIndex = -1;
+		sharedHoverSourceChart = null;
 		chipHoverState = null;
 	};
 
@@ -584,21 +594,21 @@
 
 	const cacheChipsPayload = (requestKey, payload) => {
 		if (!payload || typeof payload !== "object") return null;
-		chipsPayloadCache.set(requestKey, payload);
+		const reusableSeries = Array.isArray(payload.series) ? payload.series : [];
+		if (!reusableSeries.length) return null;
+		const reusablePayload = {...payload, series: reusableSeries, errors: {}};
+		chipsPayloadCache.set(requestKey, reusablePayload);
 		while (chipsPayloadCache.size > CHIPS_PAYLOAD_CACHE_LIMIT) {
 			chipsPayloadCache.delete(chipsPayloadCache.keys().next().value);
 		}
-		return payload;
+		return reusablePayload;
 	};
 
 	const chipPayloadIncludesTickers = (payload, requestedTickers) => {
 		const seriesTickers = new Set((Array.isArray(payload?.series) ? payload.series : [])
 			.map((item) => String(item?.ticker || "").trim().toUpperCase())
 			.filter(Boolean));
-		const errorTickers = new Set(Object.keys(payload?.errors && typeof payload.errors === "object" ? payload.errors : {})
-			.map((ticker) => String(ticker || "").trim().toUpperCase())
-			.filter(Boolean));
-		return requestedTickers.every((ticker) => seriesTickers.has(ticker) || errorTickers.has(ticker));
+		return requestedTickers.every((ticker) => seriesTickers.has(ticker));
 	};
 
 	const subsetCachedChipsPayload = (payload, requestedTickers) => {
@@ -608,17 +618,12 @@
 			String(item?.ticker || "").trim().toUpperCase(),
 			item,
 		]));
-		const cachedErrors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
-		const hasAllRequestedTickers = requestedTickers.every((ticker) => (
-			seriesByTicker.has(ticker) || Object.prototype.hasOwnProperty.call(cachedErrors, ticker)
-		));
+		const hasAllRequestedTickers = requestedTickers.every((ticker) => seriesByTicker.has(ticker));
 		if (!hasAllRequestedTickers) return null;
 		return {
 			...payload,
 			series: series.filter((item) => requestedSet.has(String(item?.ticker || "").trim().toUpperCase())),
-			errors: Object.fromEntries(Object.entries(cachedErrors).filter(([ticker]) => (
-			requestedSet.has(String(ticker || "").trim().toUpperCase())
-		))),
+			errors: {},
 		};
 	};
 
@@ -628,7 +633,6 @@
 		if (!isIsoDate(from) || !isIsoDate(to) || from > to) return null;
 		const subset = subsetCachedChipsPayload(payload, requestedTickers);
 		if (!subset) return null;
-		const errors = subset.errors && typeof subset.errors === "object" ? subset.errors : {};
 		const series = subset.series.map((item) => {
 			if (!Array.isArray(item?.ohlcv)) return null;
 			const ohlcv = item.ohlcv.filter((row) => {
@@ -642,7 +646,6 @@
 			item,
 		]));
 		const canReuseRange = requestedTickers.every((ticker) => {
-			if (Object.prototype.hasOwnProperty.call(errors, ticker)) return true;
 			const item = seriesByTicker.get(ticker);
 			return item && hasUsableOhlcv(item);
 		});
@@ -688,15 +691,8 @@
 			if (!cached || cached.period !== requested.period || cached.from !== requested.from || cached.to !== requested.to) return;
 			const seriesByTicker = new Map((Array.isArray(payload?.series) ? payload.series : [])
 				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]));
-			const errors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
 			seriesByTicker.forEach((item, ticker) => {
 				if (requestedSet.has(ticker)) reusable.set(ticker, {item});
-			});
-			Object.entries(errors).forEach(([ticker, error]) => {
-				const normalizedTicker = String(ticker || "").trim().toUpperCase();
-				if (requestedSet.has(normalizedTicker) && !reusable.has(normalizedTicker)) {
-					reusable.set(normalizedTicker, {error});
-				}
 			});
 		});
 		return reusable;
@@ -717,9 +713,7 @@
 				return;
 			}
 			const incomingErrorKey = Object.keys(incomingErrors).find((key) => String(key || "").trim().toUpperCase() === ticker);
-			const cachedError = reusable.get(ticker)?.error;
 			if (incomingErrorKey) mergedErrors[ticker] = incomingErrors[incomingErrorKey];
-			else if (cachedError !== undefined) mergedErrors[ticker] = cachedError;
 		});
 		return {
 			...payload,
@@ -785,11 +779,7 @@
 		.sort((left, right) => usableOhlcvRowCount(right) - usableOhlcvRowCount(left))[0] || null;
 
 	const resolveChipModelInputs = (ohlcvSource, item, fallbackItem) => {
-		const metadataSource = [ohlcvSource, item, fallbackItem]
-			.find((candidate) => finiteNumber(candidate?.circulatingShares) !== null) || {};
 		return {
-			circulatingShares: finiteNumber(metadataSource.circulatingShares),
-			shareBasis: metadataSource.shareBasis || "",
 			// The visible panel is a cumulative selected-range volume profile. Automatic
 			// turnover decay can erase older traversed prices from the rendered profile.
 			turnoverSurvival: false,
@@ -847,12 +837,12 @@
 		return `${match[1]}-${match[2]}-${match[3]} ${match[4] || "00"}:${match[5] || "00"}`;
 	};
 
-	const findSnapshotCurrentPrice = (prices, dataIndex, rows) => {
+	const findSnapshotCurrentPrice = (prices, dataIndex, lastRow) => {
 		for (let index = Math.min(dataIndex, prices.length - 1); index >= 0; index -= 1) {
 			const value = finiteNumber(prices[index]);
 			if (value !== null) return value;
 		}
-		return finiteNumber(rows[rows.length - 1]?.c ?? rows[rows.length - 1]?.close);
+		return finiteNumber(lastRow?.c ?? lastRow?.close);
 	};
 
 	const createChipSnapshotContext = ({
@@ -870,15 +860,38 @@
 			.filter(({timestamp}) => timestamp)
 			.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
 		if (!datedRows.length) return null;
+		const modelInputs = resolveChipModelInputs(ohlcvSource, item, fallbackItem);
+		const preparedSnapshots = window.WORTHWARD_CHIP_DISTRIBUTION
+			?.prepareChipDistributionSnapshots?.(
+				datedRows.map(({row}) => row),
+				{
+					binCount: CHIP_DISTRIBUTION_BIN_COUNT,
+					...modelInputs,
+					priceMin: historicalDistribution.minPrice,
+					priceMax: historicalDistribution.maxPrice,
+				},
+			);
 		return {
 			datedRows,
 			prices,
-			modelInputs: resolveChipModelInputs(ohlcvSource, item, fallbackItem),
+			modelInputs,
+			preparedSnapshots,
 			priceMin: historicalDistribution.minPrice,
 			priceMax: historicalDistribution.maxPrice,
 			fullState,
 			snapshots: new Map(),
 		};
+	};
+
+	const chipSnapshotRowCount = (datedRows, cutoffTimestamp) => {
+		let low = 0;
+		let high = datedRows.length;
+		while (low < high) {
+			const middle = Math.floor((low + high) / 2);
+			if (datedRows[middle].timestamp <= cutoffTimestamp) low = middle + 1;
+			else high = middle;
+		}
+		return low;
 	};
 
 	const getChipSnapshotState = (context, dataIndex, cutoffDate) => {
@@ -892,18 +905,21 @@
 			context.snapshots.set(cacheKey, cached);
 			return cached;
 		}
-		const rows = context.datedRows
-			.filter(({timestamp}) => timestamp <= cutoffTimestamp)
-			.map(({row}) => row);
-		const distribution = rows.length
-			? calculator.calculateChipDistribution(rows, {
+		const rowCount = chipSnapshotRowCount(context.datedRows, cutoffTimestamp);
+		const rows = context.preparedSnapshots || !rowCount
+			? null
+			: context.datedRows.slice(0, rowCount).map(({row}) => row);
+		const distribution = rowCount
+			? context.preparedSnapshots?.distributionAt(rowCount)
+				|| calculator.calculateChipDistribution(rows, {
 				binCount: CHIP_DISTRIBUTION_BIN_COUNT,
 				...context.modelInputs,
 				priceMin: context.priceMin,
 				priceMax: context.priceMax,
 			})
 			: null;
-		const currentPrice = findSnapshotCurrentPrice(context.prices, dataIndex, rows);
+		const lastRow = rowCount ? context.datedRows[rowCount - 1]?.row : null;
+		const currentPrice = findSnapshotCurrentPrice(context.prices, dataIndex, lastRow);
 		const snapshot = {
 			distribution,
 			statistics: calculator.calculateChipStatistics(distribution, currentPrice),
@@ -911,7 +927,7 @@
 			snapshotMode: "cumulative-hover",
 			snapshotIndex: dataIndex,
 			snapshotDate: cutoffTimestamp,
-			snapshotRows: rows.length,
+			snapshotRows: rowCount,
 		};
 		context.snapshots.set(cacheKey, snapshot);
 		while (context.snapshots.size > CHIP_SNAPSHOT_CACHE_LIMIT) {
@@ -960,25 +976,9 @@
 			chart.$costDistribution = withChipPriceMapping(chart, snapshot);
 			syncChipDistributionDataset(chart.canvas, snapshot);
 		});
-		drawSharedHoverGuides();
-	};
-
-	const scheduleChipSnapshot = (dataIndex, cutoffDate) => {
-		if (activeChipSnapshotIndex === dataIndex && activeChipSnapshotDate === cutoffDate) return;
-		pendingChipSnapshot = {dataIndex, cutoffDate};
-		if (chipSnapshotFrame) return;
-		chipSnapshotFrame = window.requestAnimationFrame(() => {
-			chipSnapshotFrame = 0;
-			const pending = pendingChipSnapshot;
-			pendingChipSnapshot = null;
-			if (pending) applyChipSnapshot(pending.dataIndex, pending.cutoffDate);
-		});
 	};
 
 	const restoreFullChipDistributions = () => {
-		if (chipSnapshotFrame) window.cancelAnimationFrame(chipSnapshotFrame);
-		chipSnapshotFrame = 0;
-		pendingChipSnapshot = null;
 		activeChipSnapshotIndex = -1;
 		activeChipSnapshotDate = "";
 		priceCharts.forEach((chart) => {
@@ -1048,6 +1048,31 @@
 		};
 	};
 
+	const resetChipsRetry = () => {
+		if (chipsRetryTimer) window.clearTimeout(chipsRetryTimer);
+		chipsRetryTimer = 0;
+		chipsRetryRequestKey = "";
+		chipsRetryAttempt = 0;
+	};
+
+	const prepareChipsRetry = (requestKey) => {
+		if (chipsRetryRequestKey === requestKey) return;
+		resetChipsRetry();
+		chipsRetryRequestKey = requestKey;
+	};
+
+	const scheduleChipsRetry = (requestKey) => {
+		if (requestKey !== chipsRetryRequestKey || chipsRetryTimer) return;
+		if (chipsRetryAttempt >= CHIPS_RETRY_MAX_ATTEMPTS) return;
+		const delay = CHIPS_RETRY_BASE_DELAY_MS * (2 ** chipsRetryAttempt);
+		chipsRetryAttempt += 1;
+		chipsRetryTimer = window.setTimeout(() => {
+			chipsRetryTimer = 0;
+			if (!isChipsEnabled() || requestKey !== chipsRequestKey()) return;
+			void loadChips();
+		}, delay);
+	};
+
 	const loadChips = async () => {
 		if (!isChipsEnabled() || !state.endpoints?.compareChips) return;
 		const requestKey = chipsRequestKey();
@@ -1055,8 +1080,10 @@
 			.map((item) => String(item?.ticker || "").trim().toUpperCase())
 			.filter(Boolean);
 		if (!requestedTickers.length) return;
+		prepareChipsRetry(requestKey);
 		const cached = getCachedChipsPayload(requestKey);
 		if (cached) {
+			resetChipsRetry();
 			applyChipsPayload(cached, requestKey);
 			return;
 		}
@@ -1091,15 +1118,25 @@
 			if (requestSerial !== chipsRequestSerial || requestKey !== chipsRequestKey() || !isChipsEnabled()) return;
 			if (!response.ok || !payload.success || !Array.isArray(payload.series)) {
 				setChipsStatus(payload.error || "Chip distribution is unavailable.", "error");
+				scheduleChipsRetry(requestKey);
 				return;
 			}
 			const mergedPayload = mergeCachedChipPayload(requestKey, requestedTickers, payload);
 			cacheChipsPayload(requestKey, mergedPayload);
 			applyChipsPayload(mergedPayload, requestKey);
+			const hasTransientTickerErrors = Object.keys(
+				mergedPayload.errors && typeof mergedPayload.errors === "object" ? mergedPayload.errors : {},
+			).length > 0;
+			if (chipPayloadIncludesTickers(mergedPayload, requestedTickers) || !hasTransientTickerErrors) {
+				resetChipsRetry();
+			} else {
+				scheduleChipsRetry(requestKey);
+			}
 		} catch (error) {
 			if (error?.name === "AbortError") return;
 			if (requestSerial !== chipsRequestSerial || !isChipsEnabled()) return;
 			setChipsStatus("Chip distribution is unavailable.", "error");
+			scheduleChipsRetry(requestKey);
 		} finally {
 			if (chipsRequestController === requestController) {
 				chipsRequestController = null;
@@ -1171,52 +1208,72 @@
 		});
 	};
 
+	const cancelPendingSharedHover = () => {
+		const hadPendingHover = Boolean(pendingSharedHover) || sharedHoverFrame > 0;
+		if (sharedHoverFrame) window.cancelAnimationFrame(sharedHoverFrame);
+		sharedHoverFrame = 0;
+		pendingSharedHover = null;
+		return hadPendingHover;
+	};
+
 	const hideSharedHover = () => {
-		const hasChipSnapshot = activeChipSnapshotIndex >= 0 || Boolean(pendingChipSnapshot) || chipSnapshotFrame > 0;
-		if (sharedHoverIndex < 0 && !chipHoverState && !hasChipSnapshot && !document.querySelector(".price-shared-tooltip.is-visible")) return;
+		const hadPendingHover = cancelPendingSharedHover();
+		const hasChipSnapshot = activeChipSnapshotIndex >= 0;
+		if (!hadPendingHover && sharedHoverIndex < 0 && !chipHoverState && !hasChipSnapshot && !document.querySelector(".price-shared-tooltip.is-visible")) return;
 		sharedHoverIndex = -1;
+		sharedHoverSourceChart = null;
 		chipHoverState = null;
 		restoreFullChipDistributions();
 		document.querySelector(".price-shared-tooltip")?.classList.remove("is-visible");
 		drawSharedHoverGuides();
 	};
 
-	const updateSharedHover = (dataIndex, sourceChart, event, {series, profiles, showCurrency, period}) => {
+	const commitSharedHover = (dataIndex, sourceChart, pointerY, {series, profiles, showCurrency, period}) => {
 		if (!Number.isInteger(dataIndex) || dataIndex < 0 || !(sourceChart?.canvas instanceof HTMLCanvasElement)) {
 			hideSharedHover();
 			return;
 		}
+		if (!sourceChart.canvas.isConnected || window.Chart?.getChart?.(sourceChart.canvas) !== sourceChart) return;
+		const contentChanged = sharedHoverIndex !== dataIndex
+			|| chipHoverState !== null
+			|| document.querySelector(".price-shared-tooltip")?.dataset.tooltipKind !== "shared";
+		const sourceChanged = sharedHoverSourceChart !== sourceChart;
+		if (!contentChanged && !sourceChanged) return;
 		sharedHoverIndex = dataIndex;
+		sharedHoverSourceChart = sourceChart;
 		chipHoverState = null;
 		const tooltip = getOrCreateSharedTooltip();
 		const surface = tooltip?.parentElement;
 		if (!(tooltip instanceof HTMLElement) || !(surface instanceof HTMLElement)) return;
 		tooltip.dataset.tooltipKind = "shared";
+		delete tooltip.dataset.tooltipPlacement;
 		const rawDates = Array.isArray(series[0]?.raw_dates) ? series[0].raw_dates : [];
 		const fallbackDates = Array.isArray(series[0]?.dates) ? series[0].dates : [];
 		const rawDate = rawDates[dataIndex] || fallbackDates[dataIndex] || "";
-		if (rawDate) scheduleChipSnapshot(dataIndex, rawDate);
-		const dateElement = tooltip.querySelector(".chart-tooltip-date");
-		const listElement = tooltip.querySelector(".chart-tooltip-list");
-		if (dateElement) dateElement.innerHTML = formatSharedTooltipDate(
-			rawDate,
-			series.map((item) => item.ticker),
-			{period},
-		);
-		if (listElement) {
-			listElement.innerHTML = series.map((item) => {
-				const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
-				const price = Array.isArray(item.prices) ? item.prices[dataIndex] : null;
-				const value = finiteNumber(price);
-				return `
-					<div class="chart-tooltip-row">
-						<span class="chart-tooltip-dot" style="background:${escapeTooltipHtml(item.color || "currentColor")}"></span>
-						${profile.logo_url ? `<img class="chart-tooltip-logo" src="${escapeTooltipHtml(profile.logo_url)}" alt="">` : "<span></span>"}
-						<span class="chart-tooltip-label">${escapeTooltipHtml(item.ticker)}</span>
-						<span class="chart-tooltip-value">${value === null ? "—" : escapeTooltipHtml(formatPrice(value, currencyForTicker(item.ticker), showCurrency))}</span>
-					</div>
-				`;
-			}).join("");
+		if (contentChanged) {
+			if (rawDate) applyChipSnapshot(dataIndex, rawDate);
+			const dateElement = tooltip.querySelector(".chart-tooltip-date");
+			const listElement = tooltip.querySelector(".chart-tooltip-list");
+			if (dateElement) dateElement.innerHTML = formatSharedTooltipDate(
+				rawDate,
+				series.map((item) => item.ticker),
+				{period},
+			);
+			if (listElement) {
+				listElement.innerHTML = series.map((item) => {
+					const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
+					const price = Array.isArray(item.prices) ? item.prices[dataIndex] : null;
+					const value = finiteNumber(price);
+					return `
+						<div class="chart-tooltip-row">
+							<span class="chart-tooltip-dot" style="background:${escapeTooltipHtml(item.color || "currentColor")}"></span>
+							${profile.logo_url ? `<img class="chart-tooltip-logo" src="${escapeTooltipHtml(profile.logo_url)}" alt="">` : "<span></span>"}
+							<span class="chart-tooltip-label">${escapeTooltipHtml(item.ticker)}</span>
+							<span class="chart-tooltip-value">${value === null ? "—" : escapeTooltipHtml(formatPrice(value, currencyForTicker(item.ticker), showCurrency))}</span>
+						</div>
+					`;
+				}).join("");
+			}
 		}
 
 		tooltip.classList.add("is-visible");
@@ -1224,8 +1281,8 @@
 		const canvasRect = sourceChart.canvas.getBoundingClientRect();
 		const tooltipRect = tooltip.getBoundingClientRect();
 		const anchorX = canvasRect.left - surfaceRect.left + sourceChart.scales.x.getPixelForValue(dataIndex);
-		const pointerY = Number.isFinite(event?.y) ? event.y : sourceChart.chartArea.top;
-		const anchorY = canvasRect.top - surfaceRect.top + pointerY;
+		const resolvedPointerY = Number.isFinite(pointerY) ? pointerY : sourceChart.chartArea.top;
+		const anchorY = canvasRect.top - surfaceRect.top + resolvedPointerY;
 		const padding = 12;
 		const gap = 14;
 		const roomRight = surfaceRect.width - anchorX - padding;
@@ -1237,6 +1294,32 @@
 		tooltip.style.left = `${Math.round(left)}px`;
 		tooltip.style.top = `${Math.round(top)}px`;
 		drawSharedHoverGuides();
+	};
+
+	const updateSharedHover = (dataIndex, sourceChart, event, context) => {
+		if (!Number.isInteger(dataIndex) || dataIndex < 0 || !(sourceChart?.canvas instanceof HTMLCanvasElement)) {
+			hideSharedHover();
+			return;
+		}
+		if (sharedHoverIndex === dataIndex && sharedHoverSourceChart === sourceChart && !chipHoverState) return;
+		pendingSharedHover = {
+			dataIndex,
+			sourceChart,
+			pointerY: finiteNumber(event?.y),
+			context,
+		};
+		if (sharedHoverFrame) return;
+		sharedHoverFrame = window.requestAnimationFrame(() => {
+			sharedHoverFrame = 0;
+			const pending = pendingSharedHover;
+			pendingSharedHover = null;
+			if (pending) commitSharedHover(
+				pending.dataIndex,
+				pending.sourceChart,
+				pending.pointerY,
+				pending.context,
+			);
+		});
 	};
 
 	const getChipBinIndexAtPoint = (chart, distribution, event) => {
@@ -1278,9 +1361,11 @@
 		const tooltip = getOrCreateSharedTooltip();
 		const surface = tooltip?.parentElement;
 		if (!(tooltip instanceof HTMLElement) || !(surface instanceof HTMLElement)) return;
+		cancelPendingSharedHover();
 		tooltip.dataset.tooltipKind = "chip";
 		delete tooltip.dataset.tooltipPlacement;
 		sharedHoverIndex = -1;
+		sharedHoverSourceChart = null;
 		chipHoverState = {chart, binIndex};
 		const theme = readTheme();
 		const dateElement = tooltip.querySelector(".chart-tooltip-date");
@@ -1619,15 +1704,10 @@
 			(Array.isArray(chipPayload?.series) ? chipPayload.series : [])
 				.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]),
 		);
-		const chipErrorsByTicker = new Set(Object.keys(chipPayload?.errors && typeof chipPayload.errors === "object" ? chipPayload.errors : {})
-			.map((ticker) => String(ticker || "").trim().toUpperCase()));
 		cachedChipEntries.forEach((entry, ticker) => {
 			if (entry?.item && !chipSeriesByTicker.has(ticker)) chipSeriesByTicker.set(ticker, entry.item);
-			if (entry?.error !== undefined && !chipSeriesByTicker.has(ticker)) chipErrorsByTicker.add(ticker);
 		});
-		const hasCompleteChipPayload = requestedTickers.every((ticker) => (
-			chipSeriesByTicker.has(ticker) || chipErrorsByTicker.has(ticker)
-		));
+		const hasCompleteChipPayload = requestedTickers.every((ticker) => chipSeriesByTicker.has(ticker));
 		let shouldLoadFallbackChips = chipsEnabled && !hasCompleteChipPayload;
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
@@ -2345,6 +2425,7 @@
 		if (!(input instanceof HTMLInputElement) || input.dataset.bound === "1") return;
 		input.dataset.bound = "1";
 		input.addEventListener("change", () => {
+			resetChipsRetry();
 			const shouldStartChipReveal = input.checked ? prepareChipRevealMotion() : false;
 			if (!input.checked) settleChipRevealMotion();
 			state.comparisonChips = input.checked;
@@ -2367,6 +2448,7 @@
 	};
 
 	bootstrap.initPriceCompareWorkspace = () => {
+		resetChipsRetry();
 		bindChipsToggle();
 		teardownPriceSubplotOrdering();
 		teardownPriceSubplotOrdering = () => {};
@@ -2395,6 +2477,7 @@
 	bootstrap.buildPriceMarketSessionEvents = buildMarketSessionEvents;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);
+		resetChipsRetry();
 		chipsRequestController?.abort();
 		settleChipRevealMotion();
 		teardownPriceSubplotOrdering();

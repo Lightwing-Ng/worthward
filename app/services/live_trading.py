@@ -1,7 +1,9 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.5.3
+Code version: v0.5.4
+- Fixed: Order submission now reuses the canonical Longbridge market-symbol
+  adapter, including share classes and provider suffix normalization.
 - Removed: The unused Bearer-token REST asset transport. Account assets use
   the Longbridge CLI, while order operations use the supported SDK boundary.
 """
@@ -19,6 +21,7 @@ from app.core.broker_settings import (
     normalize_longbridge_access_token,
     uses_longbridge_cli_oauth,
 )
+from app.infrastructure.broker_market_data import normalize_longbridge_symbol
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
 
 
@@ -245,15 +248,6 @@ def _load_longbridge_stock_positions_via_cli(settings: BrokerSettings) -> list[L
 
     positions.sort(key=lambda item: item.symbol)
     return positions
-
-
-def normalize_longbridge_symbol(ticker: str) -> str:
-    normalized_ticker = str(ticker or "").strip().upper()
-    if not normalized_ticker:
-        raise ValueError("Ticker is required.")
-    if "." in normalized_ticker:
-        return normalized_ticker
-    return f"{normalized_ticker}.US"
 
 
 def normalize_order_side(raw_side: str) -> str:

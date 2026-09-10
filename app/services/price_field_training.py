@@ -1,4 +1,4 @@
-"""Strategy-neutral local probability-model training jobs. Code version: v1.1.0."""
+"""Strategy-neutral local probability-model training jobs. Code version: v1.1.1."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from app.core.config import PERIOD_OFFSETS
+from app.infrastructure.storage import normalize_ticker
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TRAINING_FAMILY = "neural-price-field-v1"
@@ -195,7 +196,7 @@ class PriceFieldTrainingManager:
 
         strategy = training_strategy(strategy_id)
         selected = validate_parameters(strategy, params)
-        ticker = str(ticker).strip().upper()
+        ticker = normalize_ticker(ticker)
         period = str(period).strip().lower()
         if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", ticker):
             raise ValueError("Enter a valid ticker before starting training.")

@@ -1,6 +1,6 @@
 # SF Symbols asset catalog
 
-Catalog version: `v1.1.0`
+Catalog version: `v1.2.0`
 
 The asset source audited on 12 Aug 2026 is the official SF Symbols `7.2` app,
 build `119`. Project SVGs retain Apple's CoreSVG geometry and are consumed as
@@ -37,6 +37,10 @@ monochrome CSS masks.
 - The legacy standalone Grid Trading icon asset `square.grid.3x3.topleft.filled`
   remains reserved; the canonical Backtest workspace uses
   `square.stack.3d.down.forward.fill` for the shared strategy surface.
+- The narrow-screen Backtest parameter toggle uses
+  `arrowtriangle.forward.inset.filled.trailingthird.rectangle` while closed
+  and `arrowtriangle.backward.inset.filled.trailingthird.rectangle` while open,
+  matching the overlay's expand and collapse directions.
 
 ## Reserved trading assets
 

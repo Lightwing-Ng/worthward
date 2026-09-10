@@ -1,4 +1,4 @@
-/* Code version: v0.4.1 */
+/* Code version: v0.5.0 */
 (() => {
 	const DEFAULT_BIN_COUNT = 100;
 	const MIN_BIN_COUNT = 80;
@@ -109,44 +109,109 @@
 		return Math.max(0, Math.min(1, ratio));
 	};
 
-	const normalizeOhlcvRows = (rows, {
+	const normalizeOhlcvRow = (row, {
 		circulatingShares = null,
 		floatShares = null,
 		turnoverRateUnit = "ratio",
 	} = {}) => {
 		const defaultShares = finiteNumber(circulatingShares ?? floatShares);
-		return (Array.isArray(rows) ? rows : [])
-			.map((row) => {
-				const volume = finiteNumber(row?.v ?? row?.volume);
-				const rowShares = finiteNumber(
-					row?.circulatingShares
-					?? row?.circulating_shares
-					?? defaultShares,
-				);
-				const explicitTurnoverRate = row?.turnoverRate ?? row?.turnover_rate;
-				const turnoverRate = explicitTurnoverRate !== undefined
-					? normalizeTurnoverRate(explicitTurnoverRate, turnoverRateUnit)
-					: rowShares !== null && rowShares > 0 && volume !== null
-						? normalizeTurnoverRate(volume / rowShares)
-						: null;
-				return {
-					timestamp: row?.t ?? row?.timestamp ?? row?.date ?? null,
-					open: finiteNumber(row?.o ?? row?.open),
-					high: finiteNumber(row?.h ?? row?.high),
-					low: finiteNumber(row?.l ?? row?.low),
-					close: finiteNumber(row?.c ?? row?.close),
-					volume,
-					turnoverRate,
-					synthetic: row?.synthetic === true,
-				};
-			})
-		.filter((row) => (
-			!row.synthetic
-			&& [row.open, row.high, row.low, row.close, row.volume].every((value) => value !== null)
-			&& row.volume > 0
-			&& row.low > 0
-			&& row.high >= row.low
-		));
+		const volume = finiteNumber(row?.v ?? row?.volume);
+		const rowShares = finiteNumber(
+			row?.circulatingShares
+			?? row?.circulating_shares
+			?? defaultShares,
+		);
+		const explicitTurnoverRate = row?.turnoverRate ?? row?.turnover_rate;
+		const turnoverRate = explicitTurnoverRate !== undefined
+			? normalizeTurnoverRate(explicitTurnoverRate, turnoverRateUnit)
+			: rowShares !== null && rowShares > 0 && volume !== null
+				? normalizeTurnoverRate(volume / rowShares)
+				: null;
+		const normalized = {
+			timestamp: row?.t ?? row?.timestamp ?? row?.date ?? null,
+			open: finiteNumber(row?.o ?? row?.open),
+			high: finiteNumber(row?.h ?? row?.high),
+			low: finiteNumber(row?.l ?? row?.low),
+			close: finiteNumber(row?.c ?? row?.close),
+			volume,
+			turnoverRate,
+			synthetic: row?.synthetic === true,
+		};
+		return !normalized.synthetic
+			&& [normalized.open, normalized.high, normalized.low, normalized.close, normalized.volume]
+				.every((value) => value !== null)
+			&& normalized.volume > 0
+			&& normalized.low > 0
+			&& normalized.high >= normalized.low
+			? normalized
+			: null;
+	};
+
+	const normalizeOhlcvRows = (rows, options = {}) => (
+		(Array.isArray(rows) ? rows : [])
+			.map((row) => normalizeOhlcvRow(row, options))
+			.filter(Boolean)
+	);
+
+	const resolveOhlcvPriceDomain = (candles, binCount, priceMin, priceMax) => {
+		const observedMinPrice = Math.min(...candles.map((row) => row.low));
+		const observedMaxPrice = Math.max(...candles.map((row) => row.high));
+		const requestedMinPrice = finiteNumber(priceMin);
+		const requestedMaxPrice = finiteNumber(priceMax);
+		const priceDomainFixed = requestedMinPrice !== null
+			&& requestedMaxPrice !== null
+			&& requestedMaxPrice > requestedMinPrice
+			&& requestedMinPrice <= observedMinPrice
+			&& requestedMaxPrice >= observedMaxPrice;
+		const minPrice = priceDomainFixed ? requestedMinPrice : observedMinPrice;
+		const maxPrice = priceDomainFixed ? requestedMaxPrice : observedMaxPrice;
+		const priceSpan = Math.max(maxPrice - minPrice, Math.abs(minPrice) * 1e-6, 1e-6);
+		return {
+			minPrice,
+			maxPrice,
+			binSize: priceSpan / binCount,
+			priceDomainFixed,
+		};
+	};
+
+	const addCandleContribution = (weights, candle, {minPrice, maxPrice, binSize}) => {
+		const typicalPrice = (candle.high + candle.low + candle.close) / 3;
+		const candleRange = Math.max(candle.high - candle.low, binSize);
+		const sigma = Math.max(candleRange / 3, binSize * MIN_SIGMA_BINS);
+		const firstBin = Math.max(0, Math.floor((candle.low - minPrice) / binSize));
+		const lastBin = Math.min(
+			weights.length - 1,
+			Math.floor((candle.high - minPrice) / binSize),
+		);
+		const contributions = [];
+		let contributionTotal = 0;
+		for (let index = firstBin; index <= lastBin; index += 1) {
+			const binLow = minPrice + (index * binSize);
+			const binHigh = index === weights.length - 1 ? maxPrice : binLow + binSize;
+			const overlap = candle.high === candle.low
+				? (index === firstBin ? binSize : 0)
+				: Math.max(0, Math.min(candle.high, binHigh) - Math.max(candle.low, binLow));
+			if (overlap <= 0) continue;
+			const overlapMidpoint = (
+				Math.max(candle.low, binLow) + Math.min(candle.high, binHigh)
+			) / 2;
+			const distance = (overlapMidpoint - typicalPrice) / sigma;
+			const contribution = overlap * Math.exp(-0.5 * distance * distance);
+			if (contribution <= 0) continue;
+			contributions.push({index, contribution});
+			contributionTotal += contribution;
+		}
+		if (contributionTotal <= 0) {
+			const nearestBin = Math.max(
+				0,
+				Math.min(weights.length - 1, Math.floor((typicalPrice - minPrice) / binSize)),
+			);
+			weights[nearestBin] += candle.volume;
+			return;
+		}
+		contributions.forEach(({index, contribution}) => {
+			weights[index] += candle.volume * (contribution / contributionTotal);
+		});
 	};
 
 	const calculateChipDistribution = (rows, {
@@ -166,19 +231,12 @@
 		});
 		if (!candles.length) return null;
 		const resolvedBinCount = clampBinCount(binCount);
-		const observedMinPrice = Math.min(...candles.map((row) => row.low));
-		const observedMaxPrice = Math.max(...candles.map((row) => row.high));
-		const requestedMinPrice = finiteNumber(priceMin);
-		const requestedMaxPrice = finiteNumber(priceMax);
-		const usesFixedPriceDomain = requestedMinPrice !== null
-			&& requestedMaxPrice !== null
-			&& requestedMaxPrice > requestedMinPrice
-			&& requestedMinPrice <= observedMinPrice
-			&& requestedMaxPrice >= observedMaxPrice;
-		const minPrice = usesFixedPriceDomain ? requestedMinPrice : observedMinPrice;
-		const maxPrice = usesFixedPriceDomain ? requestedMaxPrice : observedMaxPrice;
-		const priceSpan = Math.max(maxPrice - minPrice, Math.abs(minPrice) * 1e-6, 1e-6);
-		const binSize = priceSpan / resolvedBinCount;
+		const priceDomain = resolveOhlcvPriceDomain(
+			candles,
+			resolvedBinCount,
+			priceMin,
+			priceMax,
+		);
 		const weights = Array(resolvedBinCount).fill(0);
 		const survivalReady = candles.every((candle) => candle.turnoverRate !== null);
 		const hasSaturatedTurnoverRate = survivalReady
@@ -198,47 +256,13 @@
 				turnoverRateTotal += candle.turnoverRate;
 			}
 			totalInputVolume += candle.volume;
-			const typicalPrice = (candle.high + candle.low + candle.close) / 3;
-			const candleRange = Math.max(candle.high - candle.low, binSize);
-			const sigma = Math.max(candleRange / 3, binSize * MIN_SIGMA_BINS);
-			const firstBin = Math.max(0, Math.floor((candle.low - minPrice) / binSize));
-			const lastBin = Math.min(
-				resolvedBinCount - 1,
-				Math.floor((candle.high - minPrice) / binSize),
-			);
-			const contributions = [];
-			let contributionTotal = 0;
-			for (let index = firstBin; index <= lastBin; index += 1) {
-				const binLow = minPrice + (index * binSize);
-				const binHigh = index === resolvedBinCount - 1 ? maxPrice : binLow + binSize;
-				const overlap = candle.high === candle.low
-					? (index === firstBin ? binSize : 0)
-					: Math.max(0, Math.min(candle.high, binHigh) - Math.max(candle.low, binLow));
-				if (overlap <= 0) continue;
-				const overlapMidpoint = (Math.max(candle.low, binLow) + Math.min(candle.high, binHigh)) / 2;
-				const distance = (overlapMidpoint - typicalPrice) / sigma;
-				const contribution = overlap * Math.exp(-0.5 * distance * distance);
-				if (contribution <= 0) continue;
-				contributions.push({index, contribution});
-				contributionTotal += contribution;
-			}
-			if (contributionTotal <= 0) {
-				const nearestBin = Math.max(
-					0,
-					Math.min(resolvedBinCount - 1, Math.floor((typicalPrice - minPrice) / binSize)),
-				);
-				weights[nearestBin] += candle.volume;
-				return;
-			}
-			contributions.forEach(({index, contribution}) => {
-				weights[index] += candle.volume * (contribution / contributionTotal);
-			});
+			addCandleContribution(weights, candle, priceDomain);
 		});
 
 		const resolvedShares = finiteNumber(circulatingShares ?? floatShares);
 		return createDistribution({
-			minPrice,
-			maxPrice,
+			minPrice: priceDomain.minPrice,
+			maxPrice: priceDomain.maxPrice,
 			binCount: resolvedBinCount,
 			weights,
 			categoryWeights: {
@@ -251,11 +275,85 @@
 			metadata: {
 				model: applyTurnoverSurvival ? "turnover-survival" : "ohlcv-estimate",
 				decayApplied: applyTurnoverSurvival,
-				priceDomainFixed: usesFixedPriceDomain,
+				priceDomainFixed: priceDomain.priceDomainFixed,
 				shareBasis: applyTurnoverSurvival ? (shareBasis || (resolvedShares ? "circulating-shares" : "turnover-rate")) : "",
 				circulatingShares: resolvedShares,
 				totalInputVolume,
 				averageTurnoverRate: applyTurnoverSurvival ? turnoverRateTotal / candles.length : null,
+			},
+		});
+	};
+
+	const prepareChipDistributionSnapshots = (rows, {
+		binCount = DEFAULT_BIN_COUNT,
+		circulatingShares = null,
+		floatShares = null,
+		turnoverRateUnit = "ratio",
+		turnoverSurvival = false,
+		priceMin = null,
+		priceMax = null,
+	} = {}) => {
+		const sourceRows = Array.isArray(rows) ? rows : [];
+		if (turnoverSurvival !== false) return null;
+		const normalizationOptions = {circulatingShares, floatShares, turnoverRateUnit};
+		const normalizedRows = sourceRows.map((row) => normalizeOhlcvRow(row, normalizationOptions));
+		const candles = normalizedRows.filter(Boolean);
+		if (!candles.length) return null;
+		const resolvedBinCount = clampBinCount(binCount);
+		const priceDomain = resolveOhlcvPriceDomain(
+			candles,
+			resolvedBinCount,
+			priceMin,
+			priceMax,
+		);
+		const prefixWeights = [];
+		const prefixInputVolumes = new Float64Array(sourceRows.length);
+		const prefixCandleCounts = new Uint32Array(sourceRows.length);
+		const weights = new Float64Array(resolvedBinCount);
+		let totalInputVolume = 0;
+		let candleCount = 0;
+		normalizedRows.forEach((candle, rowIndex) => {
+			if (candle) {
+				totalInputVolume += candle.volume;
+				candleCount += 1;
+				addCandleContribution(weights, candle, priceDomain);
+			}
+			prefixWeights.push(new Float64Array(weights));
+			prefixInputVolumes[rowIndex] = totalInputVolume;
+			prefixCandleCounts[rowIndex] = candleCount;
+		});
+		const resolvedShares = finiteNumber(circulatingShares ?? floatShares);
+		return Object.freeze({
+			rowCount: sourceRows.length,
+			distributionAt(requestedRowCount) {
+				const rowCount = Math.max(
+					0,
+					Math.min(sourceRows.length, Number.parseInt(requestedRowCount, 10) || 0),
+				);
+				if (rowCount <= 0 || prefixCandleCounts[rowCount - 1] <= 0) return null;
+				const snapshotWeights = Array.from(prefixWeights[rowCount - 1]);
+				return createDistribution({
+					minPrice: priceDomain.minPrice,
+					maxPrice: priceDomain.maxPrice,
+					binCount: resolvedBinCount,
+					weights: snapshotWeights,
+					categoryWeights: {
+						buy: Array(resolvedBinCount).fill(0),
+						neutral: snapshotWeights,
+						sell: Array(resolvedBinCount).fill(0),
+					},
+					source: "ohlcv-estimate",
+					estimated: true,
+					metadata: {
+						model: "ohlcv-estimate",
+						decayApplied: false,
+						priceDomainFixed: priceDomain.priceDomainFixed,
+						shareBasis: "",
+						circulatingShares: resolvedShares,
+						totalInputVolume: prefixInputVolumes[rowCount - 1],
+						averageTurnoverRate: null,
+					},
+				});
 			},
 		});
 	};
@@ -365,6 +463,7 @@
 		calculateChipDistribution,
 		calculateChipStatistics,
 		calculatePriceLevelDistribution,
+		prepareChipDistributionSnapshots,
 		constants: Object.freeze({DEFAULT_BIN_COUNT, MIN_BIN_COUNT, MAX_BIN_COUNT}),
 	});
 })();

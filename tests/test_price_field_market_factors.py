@@ -1,6 +1,6 @@
 """Focused tests for the read-only Price Field Longbridge factor provider.
 
-Code version: v1.10.0
+Code version: v1.10.1
 """
 
 from __future__ import annotations
@@ -42,6 +42,10 @@ class PriceFieldMarketFactorProviderTests(unittest.TestCase):
             selected_broker="longbridge",
             longbridge_auth_mode="cli_oauth",
         )
+
+    def test_provider_symbol_normalization_reuses_canonical_longbridge_adapter(self) -> None:
+        self.assertEqual(factors._normalize_symbol("BRK-B"), "BRK.B.US")
+        self.assertEqual(factors._normalize_symbol("600519.SS"), "600519.SH")
 
     def test_historical_bayesian_module_is_a_live_compatibility_alias(self) -> None:
         legacy = importlib.import_module("app.services.bayesian_market_factors")
