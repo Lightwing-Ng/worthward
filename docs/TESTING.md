@@ -1,10 +1,10 @@
 # Testing guide
 
-Documentation version: `v1.71.0`
+Documentation version: `v1.71.2`
 
 ## Current workflow
 
-Price comparison coverage verifies HK and KR Longbridge daily timestamps against each ticker's market-local trading date, exact one-day chip requests against bounded daily OHLCV, the absence of unused circulating-share metadata requests, prepared cumulative hover-prefix equivalence, and automatic recovery from a transient per-ticker chip error without discarding successful cached profiles.
+Price comparison coverage verifies HK and KR Longbridge daily timestamps against each ticker's market-local trading date, exact one-day chip requests against bounded daily OHLCV, the absence of unused circulating-share metadata requests, prepared cumulative hover-prefix equivalence, automatic recovery from a transient per-ticker chip error without discarding successful cached profiles, exclusion of locally covered tickers such as `000660.KS` from unnecessary Longbridge fallback requests, and currency-free mixed-market Y-axis labels with currency-preserving shared tooltips.
 
 Leveraged Rotation browser coverage includes integer-step allocation-limit bars, cross-asset bounds, centered interior and edge-aligned endpoint labels, foundation-token ownership, both Style tokens variants, generic causal trigger labels, untruncated Return window labels, collision-free zero/full-allocation handles, a single primary price curve with exact-time cross-asset trade-marker projection, and two muted-gray all-in equity references with matching one-pixel widths. Python coverage verifies that the primary decline uses the selected Return window, the leveraged exit gain starts at the actual next-open entry price, and a same-day post-entry exit signal remains executable at the following open. Research coverage also proves that pre-fold observations remain available for rolling warmup without permitting a trade before the scored fold begins. Both benchmarks use their own first open, aligned closes, residual cash, and dividend columns. The isolated CLI smoke run on 9 Sep 2026 completed two genetic-search trials using local QQQ/TQQQ history with separate validation and holdout evaluation. Objective coverage proves that `net-return` maps each fold's score directly to net return while the existing risk-adjusted default remains backward compatible. This is an integration check, not a recommended parameter set.
 

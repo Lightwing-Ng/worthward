@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.106.0`
+Documentation version: `v1.106.2`
 
 ## Shared Backtest controls and research
 
@@ -610,6 +610,10 @@ with exactly two decimals, such as `12.50` or `5.50`. Price comparison,
 Backtest and DCA price subplots, Live trading candlesticks, Investment Stock
 details, and their Settings share previews use this contract. Equity, return,
 market-cap, volume, and share-count axes retain their domain-specific formats.
+Price comparison suppresses three-letter currency prefixes on its left Y axes,
+including mixed-market views, so its dynamically shared gutter is based on the
+numeric labels alone. The shared hover tooltip retains the currency of every
+price value.
 The Investment filled hover badge is also the shared
 `WORTHWARD_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
 Backtest overlays call that primitive instead of maintaining a second badge
@@ -626,6 +630,8 @@ the hover overlay.
 ## Price comparison cost-distribution snapshots
 
 The Price comparison Canvas owns both the price series and the optional right-side estimated Cost Distribution. The idle profile represents the complete selected OHLCV range. While the shared price crosshair is active, every subplot switches to a cumulative snapshot containing only OHLCV rows at or before the crosshair timestamp. Snapshot distributions retain the complete range's price-bin domain, so the shared Y-axis and bar-price positions never move while the cursor scrubs horizontally.
+
+Selected-range local OHLCV with sufficiently complete positive volume is authoritative for fallback coverage. Those tickers are omitted from remote chip requests and satisfy payload completeness even when Longbridge does not support their market. If the remote API's two-ticker minimum requires an otherwise complete ticker as an anchor, any provider error for that anchor is ignored because it does not affect the locally rendered profile.
 
 Snapshot calculation remains separate from rendering. The calculator accepts an optional enclosing price domain and prepares cumulative bin-weight prefixes once per subplot; selecting a new hover date uses binary search plus the prepared prefix instead of filtering and replaying the historical rows. `price-compare.js` owns timestamp truncation, per-subplot bounded LRU caches, one animation-frame commit for tooltip DOM, layout measurement, snapshot selection, and chart redraw, plus restoration of the complete profile on pointer exit. Repeated callbacks for an unchanged hover index and source chart short-circuit before DOM or Canvas work. Canvas plugins read the chart's active distribution state instead of capturing one immutable initial profile. The active snapshot's last known price controls the established magenta underwater and green profitable chip colors. Date-bounded Longbridge requests, including exact one-day ranges, use market-local daily OHLCV and never substitute current `trade-stats`; `trade-stats` remains only an unbounded recent-price-level fallback. Successful ticker payloads retain bounded LRU reuse, while transient per-ticker errors are not cached and receive bounded exponential retries.
 

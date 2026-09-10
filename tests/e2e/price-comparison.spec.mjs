@@ -1,4 +1,4 @@
-/* Code version: v0.2.0 */
+/* Code version: v0.2.2 */
 import {expect, test} from '@playwright/test';
 
 test('accepts SMH as a selectable ETF ticker', async ({page}) => {
@@ -142,6 +142,70 @@ test('uses the primary-blue token for Price curves while preserving the Market c
     ]);
 });
 
+test('keeps mixed-market Price Y axes currency-free while retaining tooltip currencies', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MSFT&range=1y');
+    await page.waitForFunction(() => (
+        document.querySelectorAll('[data-price-subplot-canvas]').length === 3
+        && [...document.querySelectorAll('[data-price-subplot-canvas]')]
+            .every((canvas) => Boolean(window.Chart?.getChart?.(canvas)))
+    ));
+
+    const axisState = await page.evaluate(() => {
+        const tickers = ['000660.KS', '7709.HK', 'DRAM'];
+        window.WORTHWARD_APP.chart.series.forEach((item, index) => {
+            item.ticker = tickers[index];
+        });
+        window.WORTHWARD_APP.chart.profiles.forEach((profile, index) => {
+            profile.ticker = tickers[index];
+        });
+        document.querySelectorAll('[data-price-subplot]').forEach((section, index) => {
+            section.dataset.ticker = tickers[index];
+        });
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
+
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        const axes = canvases.map((canvas) => {
+            const chart = window.Chart.getChart(canvas);
+            const ticks = chart.scales.y.ticks;
+            const callback = chart.options.scales.y.ticks.callback;
+            return {
+                width: Number(canvas.dataset.sharedYAxisWidth),
+                labels: ticks.map((tick, index) => String(
+                    callback.call(chart.scales.y, tick.value, index, ticks),
+                )),
+            };
+        });
+        const sourceCanvas = canvases[0];
+        const sourceChart = window.Chart.getChart(sourceCanvas);
+        const dataIndex = window.WORTHWARD_APP.chart.series[0].prices.findLastIndex((_price, index) => (
+            window.WORTHWARD_APP.chart.series.every((item) => Number.isFinite(Number(item.prices[index])))
+        ));
+        const point = sourceChart.getDatasetMeta(0).data[dataIndex];
+        const rect = sourceCanvas.getBoundingClientRect();
+        return {
+            axes,
+            pointer: {
+                x: rect.left + ((point.x / sourceChart.width) * rect.width),
+                y: rect.top + ((point.y / sourceChart.height) * rect.height),
+            },
+        };
+    });
+
+    expect(axisState.axes.every((axis) => axis.labels.length > 0)).toBe(true);
+    expect(axisState.axes.flatMap((axis) => axis.labels)).not.toContainEqual(
+        expect.stringMatching(/^(?:KRW|HKD|USD)\s/),
+    );
+    expect(new Set(axisState.axes.map((axis) => axis.width)).size).toBe(1);
+
+    await page.mouse.move(axisState.pointer.x, axisState.pointer.y);
+    await expect(page.locator('.price-shared-tooltip')).toHaveClass(/is-visible/);
+    await expect(page.locator('.price-shared-tooltip .chart-tooltip-value')).toHaveText([
+        /^KRW\s/,
+        /^HKD\s/,
+        /^USD\s/,
+    ]);
+});
+
 test('retries a transient per-ticker chip error without discarding successful profiles', async ({page}) => {
     const requests = [];
     const buildOhlcv = (tickerIndex) => Array.from({length: 12}, (_, rowIndex) => {
@@ -188,5 +252,58 @@ test('retries a transient per-ticker chip error without discarding successful pr
     expect(requests[0]).toEqual(['AAPL', 'NVDA']);
     expect(requests[1]).toEqual(['NVDA', 'AAPL']);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(2);
+    await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
+});
+
+test('does not request a Longbridge fallback for a ticker with usable local OHLCV', async ({page}) => {
+    const requests = [];
+    const buildOhlcv = (basePrice) => Array.from({length: 12}, (_, rowIndex) => {
+        const close = basePrice + rowIndex;
+        return {
+            t: `2026-08-${String(rowIndex + 1).padStart(2, '0')} 00:00`,
+            o: close - 1,
+            h: close + 2,
+            l: close - 2,
+            c: close,
+            v: 100_000 + (rowIndex * 1_000),
+        };
+    });
+    await page.route('**/api/compare/chips**', async (route) => {
+        const tickers = new URL(route.request().url()).searchParams.getAll('ticker');
+        requests.push(tickers);
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                series: tickers.map((ticker, index) => ({
+                    ticker,
+                    source: 'longbridge-daily-ohlcv',
+                    ohlcv: buildOhlcv(100 + (index * 50)),
+                })),
+                errors: {},
+            }),
+        });
+    });
+
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=MSFT&range=1y');
+    await page.evaluate((localOhlcv) => {
+        const tickers = ['000660.KS', '7709.HK', 'DRAM'];
+        window.WORTHWARD_APP.chart.series.forEach((item, index) => {
+            item.ticker = tickers[index];
+            item.ohlcv = index === 0 ? localOhlcv : [];
+        });
+        window.WORTHWARD_APP.chart.profiles.forEach((profile, index) => {
+            profile.ticker = tickers[index];
+        });
+        document.querySelectorAll('[data-price-subplot]').forEach((section, index) => {
+            section.dataset.ticker = tickers[index];
+        });
+        window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
+    }, buildOhlcv(280_000));
+    await page.locator('label[for="show_chips"]').click();
+
+    await expect.poll(() => requests.length).toBe(1);
+    expect(requests[0]).toEqual(['7709.HK', 'DRAM']);
+    await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
     await expect(page.locator('[data-chips-chart-status]')).toBeEmpty();
 });

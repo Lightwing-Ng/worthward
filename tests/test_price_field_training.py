@@ -40,6 +40,13 @@ def prepared_manager(tmp_path, monkeypatch):
     return manager, commands
 
 
+def test_training_ticker_normalization_reuses_canonical_storage_contract(prepared_manager):
+    manager, _commands = prepared_manager
+    run = manager.start("patchtst-price-field", "BRK.B", "2y", {}, interval="1d")
+    request = training.read_json(manager._path(run["id"]) / "request.json")
+    assert request["ticker"] == "BRK-B"
+
+
 @pytest.mark.parametrize("strategy_id", STRATEGIES)
 def test_each_strategy_launches_exact_configuration_and_owns_its_state(prepared_manager, strategy_id):
     manager, commands = prepared_manager

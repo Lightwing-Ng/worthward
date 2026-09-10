@@ -1,4 +1,4 @@
-/* Code version: v0.27.0 */
+/* Code version: v0.27.2 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -700,6 +700,7 @@
 
 	const mergeCachedChipPayload = (requestKey, requestedTickers, payload) => {
 		const reusable = getCachedChipEntriesForRequest(requestKey, requestedTickers);
+		const locallyCoveredTickers = locallyCoveredChipTickers();
 		const incomingSeriesByTicker = new Map((Array.isArray(payload?.series) ? payload.series : [])
 			.map((item) => [String(item?.ticker || "").trim().toUpperCase(), item]));
 		const incomingErrors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
@@ -712,6 +713,7 @@
 				mergedSeries.push(incomingItem || cachedItem);
 				return;
 			}
+			if (locallyCoveredTickers.has(ticker)) return;
 			const incomingErrorKey = Object.keys(incomingErrors).find((key) => String(key || "").trim().toUpperCase() === ticker);
 			if (incomingErrorKey) mergedErrors[ticker] = incomingErrors[incomingErrorKey];
 		});
@@ -725,7 +727,10 @@
 	const applyChipsPayload = (payload, requestKey) => {
 		if (!isChipsEnabled() || requestKey !== chipsRequestKey()) return;
 		const errors = payload?.errors && typeof payload.errors === "object" ? payload.errors : {};
-		const errorTickers = Object.keys(errors);
+		const locallyCoveredTickers = locallyCoveredChipTickers();
+		const errorTickers = Object.keys(errors)
+			.map((ticker) => String(ticker || "").trim().toUpperCase())
+			.filter((ticker) => ticker && !locallyCoveredTickers.has(ticker));
 		setChipsStatus(
 			errorTickers.length
 				? `Chip data is unavailable for ${errorTickers.join(", ")}.`
@@ -752,6 +757,13 @@
 		if (totalRows <= 5) return usableRows === totalRows;
 		return usableRows >= Math.ceil(totalRows * 0.8);
 	};
+
+	const locallyCoveredChipTickers = () => new Set(
+		(Array.isArray(state.chart?.series) ? state.chart.series : [])
+			.filter((item) => hasUsableOhlcv(item))
+			.map((item) => String(item?.ticker || "").trim().toUpperCase())
+			.filter(Boolean),
+	);
 
 	const chipDistributionSignature = (ticker, period, source, rows, modelInputs = {}) => [
 		String(ticker || "").trim().toUpperCase(),
@@ -1088,7 +1100,10 @@
 			return;
 		}
 		const cachedEntries = getCachedChipEntriesForRequest(requestKey, requestedTickers);
-		const missingTickers = requestedTickers.filter((ticker) => !cachedEntries.has(ticker));
+		const locallyCoveredTickers = locallyCoveredChipTickers();
+		const missingTickers = requestedTickers.filter((ticker) => (
+			!cachedEntries.has(ticker) && !locallyCoveredTickers.has(ticker)
+		));
 		if (!missingTickers.length) return;
 		if (chipsRequestController && chipsRequestKeyInFlight === requestKey) return;
 		const requestSerial = ++chipsRequestSerial;
@@ -1100,7 +1115,7 @@
 		const params = new URLSearchParams();
 		const requestTickers = [...missingTickers];
 		if (requestTickers.length === 1) {
-			const anchorTicker = requestedTickers.find((ticker) => cachedEntries.has(ticker));
+			const anchorTicker = requestedTickers.find((ticker) => !requestTickers.includes(ticker));
 			if (anchorTicker) requestTickers.push(anchorTicker);
 		}
 		requestTickers.forEach((ticker) => params.append("ticker", ticker));
@@ -1707,7 +1722,10 @@
 		cachedChipEntries.forEach((entry, ticker) => {
 			if (entry?.item && !chipSeriesByTicker.has(ticker)) chipSeriesByTicker.set(ticker, entry.item);
 		});
-		const hasCompleteChipPayload = requestedTickers.every((ticker) => chipSeriesByTicker.has(ticker));
+		const locallyCoveredTickers = locallyCoveredChipTickers();
+		const hasCompleteChipPayload = requestedTickers.every((ticker) => (
+			chipSeriesByTicker.has(ticker) || locallyCoveredTickers.has(ticker)
+		));
 		let shouldLoadFallbackChips = chipsEnabled && !hasCompleteChipPayload;
 		const currencies = series.map((item) => currencyForTicker(item.ticker));
 		const showCurrency = new Set(currencies).size > 1;
@@ -2313,7 +2331,7 @@
 							ticks: {
 								color: theme.muted,
 								padding: 8,
-								callback: (value, tickIndex, ticks) => formatPriceAxis(value, currency, showCurrency && tickIndex === (ticks?.length || 0) - 1),
+								callback: (value) => formatPriceAxis(value, currency, false),
 							},
 						},
 					},
