@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.5.0
+Code version: v1.6.0
 """
 
 from __future__ import annotations
@@ -41,6 +41,21 @@ class GridTradingStrategy(BaseStrategy):
                 help_text="Sets the shares already held when the backtest starts.",
             ),
             StrategyParameterDefinition(
+                key="quantity",
+                label="Shares per grid trade",
+                kind="integer",
+                default=0,
+                minimum=0,
+                maximum=1_000_000,
+                step=1,
+                unit_hint="shares",
+                help_text=(
+                    "Sets the shares bought or sold at each grid execution. "
+                    "The default uses initial cash divided by ten times the initial price."
+                ),
+                derived_default="initial-cash-per-ten-shares",
+            ),
+            StrategyParameterDefinition(
                 key="holding_min",
                 label="Minimum holding",
                 kind="integer",
@@ -50,6 +65,8 @@ class GridTradingStrategy(BaseStrategy):
                 step=1,
                 unit_hint="shares",
                 help_text="Keeps sell orders from reducing the position below this number of shares.",
+                placeholder="0",
+                empty_default=True,
             ),
             StrategyParameterDefinition(
                 key="holding_max",
@@ -61,6 +78,8 @@ class GridTradingStrategy(BaseStrategy):
                 step=1,
                 unit_hint="shares",
                 help_text="Keeps buy orders from increasing the position above this number of shares.",
+                empty_default=True,
+                number_format="grouped-integer",
             ),
             StrategyParameterDefinition(
                 key="rise",
@@ -88,7 +107,12 @@ class GridTradingStrategy(BaseStrategy):
 
     def normalize_params(self, params: dict | None = None) -> dict:
         """Normalize holding bounds into one internally consistent range."""
-        normalized = super().normalize_params(params)
+        cleaned_params = dict(params or {})
+        for key in ("initial_holding", "quantity", "holding_min", "holding_max"):
+            value = cleaned_params.get(key)
+            if isinstance(value, str):
+                cleaned_params[key] = value.replace(",", "").strip()
+        normalized = super().normalize_params(cleaned_params)
         holding_min = int(normalized["holding_min"])
         holding_max = max(holding_min, int(normalized["holding_max"]))
         initial_holding = min(
@@ -97,6 +121,7 @@ class GridTradingStrategy(BaseStrategy):
         )
         normalized.update({
             "initial_holding": initial_holding,
+            "quantity": max(0, int(normalized["quantity"])),
             "holding_min": holding_min,
             "holding_max": holding_max,
         })
@@ -170,6 +195,7 @@ class GridTradingStrategy(BaseStrategy):
             metadata={
                 "grid_parameters": {
                     "initial_holding": int(normalized_params["initial_holding"]),
+                    "quantity": int(normalized_params["quantity"]),
                     "holding_min": int(normalized_params["holding_min"]),
                     "holding_max": int(normalized_params["holding_max"]),
                     "rise": rise,

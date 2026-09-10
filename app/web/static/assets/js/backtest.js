@@ -1,7 +1,31 @@
-/* Code version: v0.41.3 */
+/* Code version: v0.42.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "worthward:backtest-history-view-change";
+	const BACKTEST_HISTORY_VIEW_MEMORY_KEY = "worthward:backtest-history-view:v1";
+	const BACKTEST_HISTORY_VIEW_VALUES = new Set(["metrics", "probability", "transactions"]);
+	const preferenceStorage = window.WORTHWARD_STORAGE || {
+		local: window.localStorage,
+		session: window.sessionStorage,
+	};
+	const readBacktestHistoryViewPreference = () => {
+		try {
+			const storedValue = String(
+				preferenceStorage.local.getItem(BACKTEST_HISTORY_VIEW_MEMORY_KEY) || "",
+			).trim().toLowerCase();
+			return BACKTEST_HISTORY_VIEW_VALUES.has(storedValue) ? storedValue : "";
+		} catch (_error) {
+			return "";
+		}
+	};
+	const persistBacktestHistoryViewPreference = (value) => {
+		const normalizedValue = String(value || "").trim().toLowerCase();
+		if (!BACKTEST_HISTORY_VIEW_VALUES.has(normalizedValue)) return;
+		try {
+			preferenceStorage.local.setItem(BACKTEST_HISTORY_VIEW_MEMORY_KEY, normalizedValue);
+		} catch (_error) {
+		}
+	};
 	const hasRequestedTrainingRun = () => {
 		const params = new URL(window.location.href).searchParams;
 		return Boolean(params.get("price_field_training_run") || params.get("lstm_training_run"));
@@ -45,7 +69,7 @@
 			historySurface.dataset.tradeDetailsVisible = String(showTradeDetails);
 		}
 		if (persist) persistBacktestTradeDetailsPreference(showTradeDetails);
-		initBacktestHistoryTabs();
+		initBacktestHistoryTabs({restoreRemembered: showTradeDetails});
 		window.dispatchEvent(new CustomEvent("worthward:backtest-trade-details-change", {
 			detail: {enabled: showTradeDetails},
 		}));
@@ -67,7 +91,7 @@
 		applyBacktestTradeDetailsPreference(input.checked);
 	};
 
-	const initBacktestHistoryTabs = () => {
+	const initBacktestHistoryTabs = ({restoreRemembered = false} = {}) => {
 		const segmentedControl = document.getElementById("backtest_history_view_segmented");
 		const viewSurface = document.getElementById("backtest_history_surface");
 		if (!segmentedControl || !viewSurface) return;
@@ -79,6 +103,20 @@
 			segmentedControl.dataset.initialViewApplied = "1";
 			if (probabilityInput instanceof HTMLInputElement && hasRequestedTrainingRun()) {
 				probabilityInput.checked = true;
+			} else {
+				const rememberedInput = segmentedControl.querySelector(
+					`input[name="backtest_history_view_tab"][value="${readBacktestHistoryViewPreference()}"]`,
+				);
+				if (rememberedInput instanceof HTMLInputElement && !rememberedInput.disabled) {
+					rememberedInput.checked = true;
+				}
+			}
+		} else if (restoreRemembered) {
+			const rememberedInput = segmentedControl.querySelector(
+				`input[name="backtest_history_view_tab"][value="${readBacktestHistoryViewPreference()}"]`,
+			);
+			if (rememberedInput instanceof HTMLInputElement && !rememberedInput.disabled) {
+				rememberedInput.checked = true;
 			}
 		}
 		const syncPanels = () => {
@@ -122,7 +160,12 @@
 		if (segmentedControl.dataset.bound !== "1") {
 			segmentedControl.dataset.bound = "1";
 			segmentedControl.querySelectorAll('input[name="backtest_history_view_tab"]').forEach((input) => {
-				input.addEventListener("change", syncPanels);
+				input.addEventListener("change", () => {
+					if (input instanceof HTMLInputElement && input.checked && !input.disabled) {
+						persistBacktestHistoryViewPreference(input.value);
+					}
+					syncPanels();
+				});
 			});
 		}
 		syncPanels();

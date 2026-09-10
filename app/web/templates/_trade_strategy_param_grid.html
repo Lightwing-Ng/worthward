@@ -1,4 +1,4 @@
-{# Code version: v0.7.0 #}
+{# Code version: v0.8.0 #}
 {% from "_macros.html" import render_switch with context %}
 {% if strategy_form_fields %}
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
@@ -28,10 +28,14 @@
                     class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
                     data-strategy-param-input="number"
                     data-default="{{ field.default }}"
+                    {% if field.empty_default %}data-strategy-param-empty-default="1"{% endif %}
+                    {% if field.number_format != 'plain' %}data-strategy-number-format="{{ field.number_format }}"{% endif %}
+                    {% if field.derived_default %}data-strategy-derived-default="{{ field.derived_default }}"{% endif %}
                     {% if field.ui_apply_mode == 'training' %}data-strategy-param-active-value="{{ field.value }}"{% endif %}
-                    type="number"
+                    type="{{ field.html_input_type }}"
                     inputmode="{{ field.input_mode }}"
                     value="{{ field.value }}"
+                    {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
                     {% if field.minimum is not none %}min="{{ field.minimum }}"{% endif %}
                     {% if field.maximum is not none %}max="{{ field.maximum }}"{% endif %}
                     {% if field.step is not none %}step="{{ field.step }}"{% endif %}

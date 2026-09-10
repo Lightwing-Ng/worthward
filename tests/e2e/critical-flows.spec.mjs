@@ -1,7 +1,8 @@
-/* Code version: v1.212.6 */
+/* Code version: v1.213.1 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 const fixturePath = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -1319,7 +1320,7 @@ test('keeps shared shell anchors on the ten-pixel spatial grid across desktop an
             }
             return shell.classList.contains('is-sidebar-collapsed')
                 && Number.parseFloat(getComputedStyle(sidebar).opacity) < 0.01
-                && Math.abs(toggle.getBoundingClientRect().left - (window.innerWidth <= 900 ? 10 : 20)) <= 1;
+                && Math.abs(toggle.getBoundingClientRect().left - (window.innerWidth <= 600 ? 10 : 20)) <= 1;
         });
         const collapsedGeometry = await page.evaluate(() => {
             const toggle = document.querySelector('#sidebar_toggle')?.getBoundingClientRect();
@@ -17799,6 +17800,14 @@ test('starts every backtest strategy with its starter parameters from the dropdo
                 const value = String(control.value || '').trim();
                 const defaultValue = String(control.dataset.default || '').trim();
                 if (value === defaultValue) return true;
+                if (control.dataset.strategyParamEmptyDefault === '1' && value === '') return true;
+                const derivedValue = String(control.dataset.strategyParamDerivedValue || '').trim();
+                if (
+                    derivedValue !== ''
+                    && Number(value.replaceAll(',', '')) === Number(derivedValue.replaceAll(',', ''))
+                ) {
+                    return true;
+                }
                 if (control.dataset.strategyParamInput === 'boolean') {
                     const normalizedDefault = defaultValue.toLowerCase();
                     const isDefaultOn = ['1', 'true', 'on'].includes(normalizedDefault);
@@ -18467,7 +18476,7 @@ test('keeps Grid Trading private parameters open through the shared strategy tun
     await expect(page.getByText('Unable to load this workspace', {exact: false})).toHaveCount(0);
     await expect(page.locator('label[for="trade_initial_capital"]')).toHaveText('Initial cash (USD)');
     await expect(page.locator('#strategy_param_initial_holding')).toHaveValue('100');
-    for (const key of ['initial_holding', 'holding_min', 'holding_max', 'rise', 'fall']) {
+    for (const key of ['initial_holding', 'quantity', 'holding_min', 'holding_max', 'rise', 'fall']) {
         await expect(page.locator(`[data-strategy-param-key="${key}"]`)).toBeVisible();
     }
 
@@ -18668,12 +18677,7 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
         surface.scrollTop = 0;
     });
     await page.setViewportSize({width: 390, height: 844});
-    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
-        notices.forEach((notice) => {
-            notice.hidden = true;
-        });
-    });
-    await page.locator('[data-backtest-parameter-toggle]').click();
+    await openBacktestParameterOverlay(page);
     await expect(controlsSurface).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect.poll(() => page.evaluate(() => {
@@ -18742,8 +18746,7 @@ test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state
         const shell = document.querySelector('#backtest_history_table_wrap');
         const resizerElement = document.getElementById('backtest_section_resizer');
         const overview = document.querySelector('.backtest-trade-performance-card');
-        const appShell = document.querySelector('.app-shell');
-        if (!scroll || !bodyTable || !shell || !resizerElement || !overview || !appShell) return null;
+        if (!scroll || !bodyTable || !shell || !resizerElement || !overview) return null;
         const valueNow = Number(resizerElement.getAttribute('aria-valuenow'));
         const valueMin = Number(resizerElement.getAttribute('aria-valuemin'));
         const valueMax = Number(resizerElement.getAttribute('aria-valuemax'));
@@ -18756,7 +18759,7 @@ test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state
             paginationInsideShell: shell.contains(document.getElementById('tradeTransactionsPagination')),
             ariaMatchesOverview: valueNow === Math.round(overview.getBoundingClientRect().height),
             ariaInRange: valueNow >= valueMin && valueNow <= valueMax,
-            appShellScrollable: appShell.scrollHeight > appShell.clientHeight,
+            historyVerticallyScrollable: scroll.scrollHeight > scroll.clientHeight,
         };
     })).toEqual(expect.objectContaining({
         bodyWidth: expect.any(Number),
@@ -18766,7 +18769,7 @@ test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state
         paginationInsideShell: true,
         ariaMatchesOverview: true,
         ariaInRange: true,
-        appShellScrollable: true,
+        historyVerticallyScrollable: true,
     }));
 
     const tableMetrics = await historyScroll.evaluate((scroll) => ({
@@ -18787,14 +18790,12 @@ test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state
     await expect.poll(() => headerTable.evaluate((header) => Number.parseFloat(header.style.translate || '0')))
         .toBe(-horizontalOffset);
 
-    const nestedScrollMoved = await page.evaluate(() => {
-        const appShell = document.querySelector('.app-shell');
-        if (!appShell) return false;
-        const before = appShell.scrollTop;
-        appShell.scrollTop = Math.min(appShell.scrollHeight - appShell.clientHeight, before + 120);
-        return appShell.scrollTop > before;
+    const historyScrollMoved = await historyScroll.evaluate((scroll) => {
+        const before = scroll.scrollTop;
+        scroll.scrollTop = Math.min(scroll.scrollHeight - scroll.clientHeight, before + 120);
+        return scroll.scrollTop > before;
     });
-    expect(nestedScrollMoved).toBe(true);
+    expect(historyScrollMoved).toBe(true);
 });
 
 test('uses the shared 28px numeric control and iPad keyboard contract in Portfolio', async ({page}) => {

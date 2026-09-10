@@ -1,7 +1,7 @@
 """
 Tests for pure strategy form and catalog presentation builders.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -121,6 +121,29 @@ class WebStrategyFormTests(unittest.TestCase):
         self.assertEqual(number_field["input_mode"], "decimal")
         self.assertEqual(number_field["value"], "1.20")
         self.assertEqual(number_field["slider_max"], 5.0)
+
+    def test_optional_grouped_integer_fields_expose_declarative_browser_metadata(self) -> None:
+        definition = StrategyParameterDefinition(
+            key="maximum",
+            label="Maximum",
+            kind="integer",
+            default=1_000_000,
+            empty_default=True,
+            number_format="grouped-integer",
+            derived_default="example-derived-default",
+        )
+
+        field = build_strategy_form_field(
+            definition,
+            definition.default,
+            use_empty_default=True,
+        )
+
+        self.assertEqual(field["value"], "")
+        self.assertTrue(field["empty_default"])
+        self.assertEqual(field["number_format"], "grouped-integer")
+        self.assertEqual(field["derived_default"], "example-derived-default")
+        self.assertEqual(field["html_input_type"], "text")
 
     def test_boolean_and_off_on_choice_fields_use_switch_contract(self) -> None:
         boolean_field = build_strategy_form_field(

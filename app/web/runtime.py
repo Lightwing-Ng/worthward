@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v1.2.0
+Code version: v1.3.0
+- Changed: Declarative strategy forms distinguish omitted optional numeric
+  defaults from explicitly submitted values.
 - Changed: Comparison workspaces now fail explicitly when a selected ticker has
   no usable market history; automatic security replacement remains Portfolio-only.
 - Changed: The live-comparison API owns the current relative-range date and
@@ -4117,7 +4119,16 @@ def build_web_runtime() -> WebRuntime:
                     selected_strategy_id,
                 )
         selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
-        strategy_form_fields = build_strategy_form_fields(selected_strategy_id, selected_strategy_params) if selected_strategy_id else []
+        explicit_strategy_form_values = {
+            key: value
+            for key, value in selected_strategy_params.items()
+            if request.args.get(key) is not None
+            and str(request.args.get(key)).strip() != ""
+        }
+        strategy_form_fields = build_strategy_form_fields(
+            selected_strategy_id,
+            explicit_strategy_form_values,
+        ) if selected_strategy_id else []
         selected_strategy_runtime = instantiate_strategy(selected_strategy_id) if selected_strategy_id else None
         backtest_initial_capital = max(
             parse_float_value(

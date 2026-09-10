@@ -5,7 +5,11 @@ breakpoint and below, the Backtest controls surface is a default-collapsed fixed
 overlay instead of a full-width block above Performance. The result column keeps
 the workspace width. The dedicated parameter toggle, backdrop, Escape behavior,
 session memory, inert closed state, and global-sidebar mutual exclusion are covered
-at the annotated 751 by 912 viewport; desktop retains the existing two-column layout.
+at the annotated 751 by 912 viewport. The global navigation state hides the parameter
+toggle, the global dismissal layer is a transparent zero-radius viewport rectangle,
+and workspace destinations use the shared 36 px compact-row token. The collapsed
+global toggle uses equal top and left global-anchor distances; desktop retains the
+existing two-column layout.
 
 Bayesian automatic compute, 8 Sep 2026: Bayesian Price Field no longer exposes
 a compute-backend selector. Every refresh uses an internal `Auto` policy that
@@ -183,7 +187,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.251.0`
+Documentation version: `v1.252.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

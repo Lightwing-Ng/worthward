@@ -1,7 +1,7 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.5.0
+ * Code version: v0.6.0
  */
 
 import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.4.0';
@@ -33,6 +33,11 @@ const bindBacktestParameterOverlay = () => {
     const storageKey = 'worthward:backtest-parameters-open';
     let isOpen = false;
 
+    const isGlobalSidebarOpen = () => (
+        globalSidebarToggle instanceof HTMLButtonElement
+        && globalSidebarToggle.getAttribute('aria-expanded') === 'true'
+    );
+
     const readRememberedState = () => {
         try {
             return storage.getItem(storageKey) === 'true';
@@ -50,9 +55,11 @@ const bindBacktestParameterOverlay = () => {
 
     const applyState = (requestedOpen, {remember = false, returnFocus = false} = {}) => {
         const isOverlay = overlayMedia.matches;
-        isOpen = isOverlay && Boolean(requestedOpen);
+        const isToggleAvailable = isOverlay && !isGlobalSidebarOpen();
+        isOpen = isToggleAvailable && Boolean(requestedOpen);
         shell.classList.toggle('is-parameter-overlay-open', isOpen);
-        toggle.hidden = !isOverlay;
+        toggle.hidden = !isToggleAvailable;
+        toggle.setAttribute('aria-hidden', String(!isToggleAvailable));
         toggle.setAttribute('aria-expanded', String(isOpen));
         panel.setAttribute('aria-hidden', String(isOverlay && !isOpen));
         if ('inert' in panel) panel.inert = isOverlay && !isOpen;
@@ -61,7 +68,7 @@ const bindBacktestParameterOverlay = () => {
         backdrop.tabIndex = isOpen ? 0 : -1;
         if ('inert' in backdrop) backdrop.inert = !isOpen;
         if (remember && isOverlay) rememberState(isOpen);
-        if (returnFocus && isOverlay) toggle.focus({preventScroll: true});
+        if (returnFocus && isToggleAvailable) toggle.focus({preventScroll: true});
     };
 
     const onToggle = () => {
@@ -76,10 +83,9 @@ const bindBacktestParameterOverlay = () => {
         applyState(nextOpen, {remember: true});
     };
     const onBackdrop = () => applyState(false, {remember: true, returnFocus: true});
-    const onGlobalSidebarToggle = () => {
-        if (globalSidebarToggle?.getAttribute('aria-expanded') === 'true' && isOpen) {
-            applyState(false, {remember: true});
-        }
+    const onGlobalSidebarStateChange = () => {
+        const wasOpen = isOpen;
+        applyState(false, {remember: wasOpen});
     };
     const onKeydown = (event) => {
         if (event.key !== 'Escape' || !isOpen) return;
@@ -90,7 +96,13 @@ const bindBacktestParameterOverlay = () => {
 
     toggle.addEventListener('click', onToggle);
     backdrop.addEventListener('click', onBackdrop);
-    globalSidebarToggle?.addEventListener('click', onGlobalSidebarToggle);
+    const globalSidebarObserver = globalSidebarToggle instanceof HTMLButtonElement
+        ? new MutationObserver(onGlobalSidebarStateChange)
+        : null;
+    globalSidebarObserver?.observe(globalSidebarToggle, {
+        attributes: true,
+        attributeFilter: ['aria-expanded'],
+    });
     document.addEventListener('keydown', onKeydown);
     if (typeof overlayMedia.addEventListener === 'function') {
         overlayMedia.addEventListener('change', onMediaChange);
@@ -102,7 +114,7 @@ const bindBacktestParameterOverlay = () => {
     return () => {
         toggle.removeEventListener('click', onToggle);
         backdrop.removeEventListener('click', onBackdrop);
-        globalSidebarToggle?.removeEventListener('click', onGlobalSidebarToggle);
+        globalSidebarObserver?.disconnect();
         document.removeEventListener('keydown', onKeydown);
         if (typeof overlayMedia.removeEventListener === 'function') {
             overlayMedia.removeEventListener('change', onMediaChange);

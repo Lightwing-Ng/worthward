@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.1.3`
+Documentation version: `v1.1.4`
 
 This is the short entrypoint for shared visual and interaction work. The only
 long-form synchronization state lives in:
@@ -32,8 +32,10 @@ long-form synchronization state lives in:
 
 ## Shared select keyboard controller
 
-Worthward owns `app/web/static/assets/js/select-controller.js` v1.0.0;
-agenticContext vendors identical bytes at `app/web/static/select-controller.js`.
+Worthward owns `app/web/static/assets/js/select-controller.js` v1.0.1;
+agenticContext still vendors v1.0.0 at
+`app/web/static/select-controller.js`, pending the propagation fix described in
+the central ledger.
 The first migration covers Worthward shared fields and Strategy, and the sibling
 Local resources native-select adapter and source filter. Other pickers are not
 yet migrated. Existing domain CSS names remain compatibility contracts.
@@ -46,7 +48,8 @@ The controller uses DOM focus on options, without a competing
 enabled option; Home/End open at boundaries. Navigation clamps without selection,
 skips disabled/hidden options, and resolves the current option list on each event.
 Enter/Space invokes the existing selection callback once. Escape restores trigger
-focus. Tab closes and allows native traversal from the trigger, including body
+focus and stops the handled key event from leaking into an enclosing overlay.
+Tab closes and allows native traversal from the trigger, including body
 portals. Rendering, pointer selection, outside-click dismissal, submission, and
 portal positioning remain adapter-owned. Keyboard binding exposes a teardown
 callback; dynamically hydrated Worthward fields use weakly keyed adapters.

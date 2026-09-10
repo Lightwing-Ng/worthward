@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.4.0`
+Documentation version: `v1.5.0`
 
 This is the normative spatial contract for the sibling projects
 `/Users/example/Desktop/worthward` and
@@ -50,6 +50,10 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
+- Workspace navigation items use the shared `--settings-nav-item-block-size`,
+  `--settings-nav-item-padding-block`, and `--settings-nav-item-gap` tokens. Their
+  default block size is `48px`; the sidebar-overlay state uses `36px` for workspace
+  destinations while leaving full Settings navigation density unchanged.
 - The strategy-tuning row reserves at most `60%` for its label track so the
   right-aligned value track can display seven-digit holding limits without
   clipping. This is a component token, not a Grid Trading page override.
@@ -117,6 +121,11 @@ has the same vertical centerline and a horizontal offset of `G` from the sidebar
 right edge. Collapsing or opening an overlay preserves the vertical coordinate and
 changes only the horizontal translation. No state may move the toggle along its
 vertical axis.
+
+The collapsed overlay toggle uses `A_top` and `A_left`, so its top and left viewport
+distances are equal when the safe-area insets are equal. The full-viewport sidebar
+dismissal target is a transparent rectangular hit layer with zero border radius and
+no shadow; it is not a visual card or container.
 
 The dock is centered by the owning sidebar or overlay, not by a viewport-specific
 constant:

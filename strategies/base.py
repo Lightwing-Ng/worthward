@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v0.14.0
+Code version: v0.15.0
 """
 
 from __future__ import annotations
@@ -77,6 +77,9 @@ class StrategyParameterDefinition:
     visible_when: tuple[str, Any] | None = None
     content_sized: bool = False
     option_labels: tuple[str, ...] = field(default_factory=tuple)
+    empty_default: bool = False
+    number_format: Literal["plain", "grouped-integer"] = "plain"
+    derived_default: str = ""
 
     def display_default(self) -> str:
         if self.default is None:

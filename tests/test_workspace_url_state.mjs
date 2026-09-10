@@ -1,4 +1,4 @@
-/* Tests for the canonical Workspace URL state contract. Code version: v1.6.1 */
+/* Tests for the canonical Workspace URL state contract. Code version: v1.7.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -271,6 +271,7 @@ test("compares numeric strategy defaults by value instead of display precision",
                 defaultInterval: "1d",
                 strategyParams: [
                     ["initial_holding", "0"],
+                    ["quantity", "1"],
                     ["holding_min", "0"],
                     ["holding_max", "1000000"],
                     ["rise", "2.00"],
@@ -278,6 +279,7 @@ test("compares numeric strategy defaults by value instead of display precision",
                 ],
                 strategyParamDefaults: {
                     initial_holding: "0",
+                    quantity: "1",
                     holding_min: "0",
                     holding_max: "1000000",
                     rise: "2.0",

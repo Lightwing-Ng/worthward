@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.15.0
+Code version: v0.16.0
 """
 
 from __future__ import annotations
@@ -685,6 +685,8 @@ def run_single_ticker_backtest(
     raw_grid_params = grid_metadata.get("grid_parameters", {})
     grid_params = raw_grid_params if isinstance(raw_grid_params, dict) else {}
     grid_initial_holding = float(max(0, int(grid_params.get("initial_holding", 0))))
+    grid_configured_quantity = max(0, int(grid_params.get("quantity", 0)))
+    grid_trade_quantity = 0.0
     grid_holding_min = float(max(0, int(grid_params.get("holding_min", 0))))
     grid_holding_max = float(max(grid_holding_min, int(grid_params.get("holding_max", 1_000_000))))
     grid_rise_value = grid_params.get("rise", 0.0)
@@ -706,6 +708,11 @@ def run_single_ticker_backtest(
         if not isfinite(grid_initial_unit_cost) or grid_initial_unit_cost <= 0:
             raise ValueError("Grid Trading requires a finite positive initial price.")
         shares = grid_initial_holding
+        grid_trade_quantity = float(
+            grid_configured_quantity
+            if grid_configured_quantity > 0
+            else floor(float(initial_capital) / (grid_initial_unit_cost * 10.0))
+        )
         starting_equity = cash + (shares * grid_initial_unit_cost)
         entry_price = grid_initial_unit_cost if shares > 0 else None
 
@@ -728,7 +735,11 @@ def run_single_ticker_backtest(
         """Buy toward Grid's maximum holding without exceeding available cash."""
         nonlocal cash, shares, entry_price
         available_capacity = max(0.0, grid_holding_max - shares)
-        quantity = min(available_capacity, float(floor(cash / execution_price)))
+        quantity = min(
+            grid_trade_quantity,
+            available_capacity,
+            float(floor(cash / execution_price)),
+        )
         if quantity <= 0:
             return False
         previous_holding = shares
@@ -761,7 +772,10 @@ def run_single_ticker_backtest(
     ) -> bool:
         """Sell toward Grid's minimum holding without crossing its floor."""
         nonlocal cash, shares, entry_price
-        quantity = max(0.0, shares - grid_holding_min)
+        quantity = min(
+            grid_trade_quantity,
+            max(0.0, shares - grid_holding_min),
+        )
         if quantity <= 0 or not stop_loss_allows_exit(execution_price):
             return False
         pnl = (execution_price - float(entry_price or execution_price)) * quantity
@@ -1069,6 +1083,11 @@ def run_single_ticker_backtest(
         "summary": {
             "initial_capital": round(starting_equity, 2),
             "initial_cash": round(float(initial_capital), 2),
+            **(
+                {"grid_trade_quantity": int(grid_trade_quantity)}
+                if is_grid_execution
+                else {}
+            ),
             "final_equity": round(final_equity, 2),
             "net_return_pct": round(total_return, 2),
             "beat_bh_pct": round(float(beat_bh_pct), 2),

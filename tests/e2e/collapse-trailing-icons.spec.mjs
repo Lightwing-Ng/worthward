@@ -1,5 +1,6 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 for (const colorScheme of ['light', 'dark']) {
     for (const width of [1138, 390]) {
@@ -7,12 +8,7 @@ for (const colorScheme of ['light', 'dark']) {
             await page.setViewportSize({width, height: 959});
             await page.emulateMedia({colorScheme});
             await page.goto('/workspaces/backtest?ticker=QQQ&range=1y&strategy=lstm-price-field&show_trade_details=0&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40&cell_display_threshold=2.00&use_option_total_open_interest=1&use_option_total_volume=1');
-            if (width <= 900) {
-                await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
-                    notices.forEach((notice) => { notice.hidden = true; });
-                });
-                await page.locator('[data-backtest-parameter-toggle]').click();
-            }
+            await openBacktestParameterOverlay(page);
             const summary = page.locator('[data-collapse="backtest"] > summary');
             const read = () => summary.evaluate(el => {
                 const text = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());

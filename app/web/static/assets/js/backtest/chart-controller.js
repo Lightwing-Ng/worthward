@@ -1,4 +1,4 @@
-/* Code version: v1.8.1 */
+/* Code version: v1.9.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -131,30 +131,6 @@
 		const shares = Math.floor(initialCapital / openingPrice);
 		const cash = initialCapital - (shares * openingPrice);
 		return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
-	};
-
-	const resolveColorWithAlpha = (color, alpha) => {
-		const normalizedColor = String(color || "").trim();
-		const normalizedAlpha = Number(alpha);
-		if (!normalizedColor || !Number.isFinite(normalizedAlpha)) return normalizedColor;
-		const clampedAlpha = Math.min(1, Math.max(0, normalizedAlpha));
-		const hexMatch = normalizedColor.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
-		if (hexMatch) {
-			const rawHex = hexMatch[1];
-			const expandedHex = rawHex.length === 3
-				? rawHex.split("").map((character) => `${character}${character}`).join("")
-				: rawHex;
-			const red = Number.parseInt(expandedHex.slice(0, 2), 16);
-			const green = Number.parseInt(expandedHex.slice(2, 4), 16);
-			const blue = Number.parseInt(expandedHex.slice(4, 6), 16);
-			return `rgba(${red}, ${green}, ${blue}, ${clampedAlpha})`;
-		}
-		const rgbMatch = normalizedColor.match(/^rgba?\(([^)]+)\)$/i);
-		if (rgbMatch) {
-			const channels = rgbMatch[1].split(",").slice(0, 3).map((value) => value.trim());
-			if (channels.length === 3) return `rgba(${channels.join(", ")}, ${clampedAlpha})`;
-		}
-		return normalizedColor;
 	};
 
 	const readPxToken = (element, tokenName, fallbackValue) => {
@@ -641,14 +617,8 @@
 			: [];
 		const hasLeveragedBenchmark = isLeveragedRotationChart
 			&& rawLeveragedAllInEquity.length === labels.length;
-		const allInReferenceOpacity = 0.5;
-		const allInPrimaryReferenceColor = hasLeveragedBenchmark
-			? resolveColorWithAlpha(resolvedTheme.accentPrimary, allInReferenceOpacity)
-			: resolvedTheme.muted;
-		const allInLeveragedReferenceColor = resolveColorWithAlpha(
-			resolvedTheme.accentSecondary,
-			allInReferenceOpacity,
-		);
+		const allInPrimaryReferenceColor = resolvedTheme.muted;
+		const allInLeveragedReferenceColor = resolvedTheme.muted;
 		const formatFullDateParts = bootstrap.dateDisplay?.formatFullDateParts;
 		const formatFullDateLines = bootstrap.dateDisplay?.formatFullDateLines;
 		const svgMarkerViewBox = { width: 20.3027, height: 20.5176 };
@@ -2919,17 +2889,9 @@
 					: resolvedTheme.accentSecondary,
 			);
 			setTooltipDotColor("equity", resolvedTheme.text);
-			setTooltipDotColor(
-				"all-in-primary",
-				hasLeveragedBenchmark
-					? resolveColorWithAlpha(resolvedTheme.accentPrimary, allInReferenceOpacity)
-					: resolvedTheme.muted,
-			);
+			setTooltipDotColor("all-in-primary", resolvedTheme.muted);
 			if (hasLeveragedBenchmark) {
-				setTooltipDotColor(
-					"all-in-leveraged",
-					resolveColorWithAlpha(resolvedTheme.accentSecondary, allInReferenceOpacity),
-				);
+				setTooltipDotColor("all-in-leveraged", resolvedTheme.muted);
 			}
 			setTooltipDotColor(
 				"vs-all-in",
@@ -4082,13 +4044,8 @@
 			if (controllerDestroyed || !priceChart?.ctx || !equityChart?.ctx) return;
 			const nextTheme = readThemeTokens();
 			Object.assign(resolvedTheme, nextTheme);
-			const nextAllInPrimaryReferenceColor = hasLeveragedBenchmark
-				? resolveColorWithAlpha(nextTheme.accentPrimary, allInReferenceOpacity)
-				: nextTheme.muted;
-			const nextAllInLeveragedReferenceColor = resolveColorWithAlpha(
-				nextTheme.accentSecondary,
-				allInReferenceOpacity,
-			);
+			const nextAllInPrimaryReferenceColor = nextTheme.muted;
+			const nextAllInLeveragedReferenceColor = nextTheme.muted;
 			priceChart.options.scales.y.ticks.color = nextTheme.muted;
 			equityChart.options.scales.y.ticks.color = nextTheme.muted;
 			priceChart.data.datasets[0].borderColor = isCandlestick ? "transparent" : nextTheme.accentPrimary;

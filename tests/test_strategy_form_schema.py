@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v0.9.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -13,6 +13,19 @@ from app.web.strategy_forms import build_strategy_form_fields, build_strategy_fo
 
 
 class StrategyFormSchemaTests(unittest.TestCase):
+    def test_every_strategy_dropdown_uses_the_compact_shared_menu_contract(self) -> None:
+        dropdown_fields = []
+        for entry in list_enabled_strategies():
+            fields = build_strategy_form_fields(
+                entry["id"],
+                None,
+                strategy_factory=instantiate_strategy,
+            )
+            dropdown_fields.extend(field for field in fields if field["field_type"] == "select")
+
+        self.assertTrue(dropdown_fields)
+        self.assertTrue(all(field["content_sized"] for field in dropdown_fields))
+
     def test_lstm_training_section_owns_backend_and_staged_factors(self) -> None:
         strategy_id = "lstm-price-field"
         fields = build_strategy_form_fields(strategy_id, None, strategy_factory=instantiate_strategy)
@@ -99,6 +112,26 @@ class StrategyFormSchemaTests(unittest.TestCase):
                 "Sunday",
             ],
         )
+
+    def test_grid_fields_declare_derived_and_optional_number_presentation(self) -> None:
+        fields = {
+            field["key"]: field
+            for field in build_strategy_form_fields(
+                "grid-trading",
+                None,
+                strategy_factory=instantiate_strategy,
+            )
+        }
+
+        self.assertEqual(
+            list(fields),
+            ["initial_holding", "quantity", "holding_min", "holding_max", "rise", "fall"],
+        )
+        self.assertEqual(fields["quantity"]["derived_default"], "initial-cash-per-ten-shares")
+        self.assertEqual(fields["holding_min"]["value"], "")
+        self.assertEqual(fields["holding_min"]["placeholder"], "0")
+        self.assertEqual(fields["holding_max"]["value"], "")
+        self.assertEqual(fields["holding_max"]["html_input_type"], "text")
 
     def test_leveraged_rotation_declares_two_decimal_dynamic_ticker_fields(self) -> None:
         fields = {

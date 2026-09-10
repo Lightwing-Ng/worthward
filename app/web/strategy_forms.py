@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.8.1
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -123,6 +123,8 @@ def build_strategy_option_groups(
 def build_strategy_form_field(
     definition: StrategyParameterDefinition,
     value: Any,
+    *,
+    use_empty_default: bool = False,
 ) -> dict[str, object]:
     """Translate one strategy parameter definition into template field data."""
 
@@ -217,6 +219,12 @@ def build_strategy_form_field(
     visible_when_key = definition.visible_when[0] if definition.visible_when else ""
     visible_when_value = definition.visible_when[1] if definition.visible_when else ""
 
+    display_value = "" if use_empty_default else format_numeric_value(
+        resolved_value,
+        kind=definition.kind,
+        step=definition.step,
+    )
+
     return {
         "key": definition.key,
         "group": definition.group,
@@ -227,11 +235,7 @@ def build_strategy_form_field(
         "kind": definition.kind,
         "field_type": field_type,
         "input_mode": input_mode,
-        "value": format_numeric_value(
-            resolved_value,
-            kind=definition.kind,
-            step=definition.step,
-        ),
+        "value": display_value,
         "default": definition.default,
         "minimum": definition.minimum,
         "maximum": definition.maximum,
@@ -256,7 +260,15 @@ def build_strategy_form_field(
         "visible_when_key": visible_when_key,
         "visible_when_value": visible_when_value,
         "is_visible": True,
-        "content_sized": definition.content_sized,
+        "content_sized": field_type == "select" or definition.content_sized,
+        "empty_default": definition.empty_default,
+        "number_format": definition.number_format,
+        "derived_default": definition.derived_default,
+        "html_input_type": (
+            "text"
+            if definition.number_format == "grouped-integer"
+            else "number"
+        ),
     }
 
 
@@ -268,6 +280,7 @@ def build_strategy_form_fields(
 ) -> list[dict[str, object]]:
     """Build every template field for one strategy using an injected factory."""
     strategy = strategy_factory(strategy_id)
+    provided_keys = set(values or {})
     get_startup_params = getattr(strategy, "get_startup_params", None)
     normalized_values = (
         get_startup_params()
@@ -280,6 +293,10 @@ def build_strategy_form_fields(
         build_strategy_form_field(
             definition,
             normalized_values.get(definition.key),
+            use_empty_default=(
+                definition.empty_default
+                and definition.key not in provided_keys
+            ),
         )
         for definition in strategy.get_parameter_definitions()
     ]

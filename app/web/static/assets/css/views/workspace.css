@@ -1,4 +1,4 @@
-/* Code version: v1.25.0 */
+/* Code version: v1.26.0 */
 /* Keep modal dismiss actions in a dedicated macOS-style upper-left rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -2150,7 +2150,7 @@ footer {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--settings-nav-item-gap);
     margin-top: 0;
     padding-top: 2px;
     isolation: isolate;
@@ -2162,10 +2162,13 @@ footer {
     left: 0;
     right: 0;
     top: 2px;
-    height: 48px;
+    height: var(--settings-nav-item-block-size);
     border-radius: var(--radius-pill);
     background: var(--accent-surface-muted);
-    transform: translateY(calc(var(--settings-active-index, 0) * 56px)) scale(1.01);
+    transform: translateY(calc(
+        var(--settings-active-index, 0)
+        * (var(--settings-nav-item-block-size) + var(--settings-nav-item-gap))
+    )) scale(1.01);
     transition: transform var(--motion-duration-spatial) var(--motion-bouncy);
     pointer-events: none;
     z-index: var(--layer-decorative-backdrop);
@@ -2215,8 +2218,8 @@ footer {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
-    min-height: 48px;
+    padding: var(--settings-nav-item-padding-block) 12px;
+    min-height: var(--settings-nav-item-block-size);
     border-radius: var(--radius-pill);
     background: transparent;
     color: var(--text);

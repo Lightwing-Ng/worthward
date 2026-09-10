@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.15.0
+Code version: v0.16.0
 """
 
 from pathlib import Path
@@ -26,6 +26,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
     tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
     shell = _read(ASSET_ROOT / "css/layout/shell.css")
     trade = _read(ASSET_ROOT / "css/views/trade.css")
+    workspace = _read(ASSET_ROOT / "css/views/workspace.css")
     responsive = _read(ASSET_ROOT / "css/utilities/responsive.css")
 
     for fragment in (
@@ -45,6 +46,9 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--sidebar-dock-bottom-gap: var(--layout-sidebar-dock-bottom-gap);",
         "--layout-sidebar-dock-block-size: calc(",
         "--layout-sidebar-overlay-inline-size: min(",
+        "--settings-nav-item-block-size: 48px;",
+        "--settings-nav-item-padding-block: 10px;",
+        "--settings-nav-item-gap: 8px;",
     ):
         assert fragment in tokens
 
@@ -62,6 +66,15 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         assert fragment in trade
 
     for fragment in (
+        "gap: var(--settings-nav-item-gap);",
+        "height: var(--settings-nav-item-block-size);",
+        "* (var(--settings-nav-item-block-size) + var(--settings-nav-item-gap))",
+        "padding: var(--settings-nav-item-padding-block) 12px;",
+        "min-height: var(--settings-nav-item-block-size);",
+    ):
+        assert fragment in workspace
+
+    for fragment in (
         "--settings-round-icon-button-size: 44px;",
         "--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));",
         "--layout-global-action-inline-size: calc(",
@@ -69,6 +82,10 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--sidebar-toggle-x: calc(",
         "top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));",
         "top: var(--global-quick-actions-top);",
+        "left: var(--layout-global-anchor-left);",
+        "--settings-nav-item-block-size: 36px;",
+        "border-radius: 0;",
+        "appearance: none;",
         "left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;",
         "--layout-sidebar-dock-block-size: calc(",
     ):
@@ -711,7 +728,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
         "-backtest-probability-grid-v0.32.0",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.5.0",
+        "-backtest-layout-v0.6.0",
     ):
         assert fragment in base_template
 
@@ -1194,6 +1211,8 @@ def test_backtest_parameters_use_the_registered_sidebar_overlay_breakpoint() -> 
         "panel.inert = isOverlay && !isOpen",
         "event.key !== 'Escape'",
         "globalSidebarToggle.getAttribute('aria-expanded') === 'true'",
+        "toggle.hidden = !isToggleAvailable",
+        "new MutationObserver(onGlobalSidebarStateChange)",
     ):
         assert fragment in layout
 

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 (function (globalScope) {
     "use strict";
 
@@ -47,6 +47,7 @@
             }
             if (event.key === "Escape" && !menu.hidden) {
                 event.preventDefault();
+                event.stopPropagation();
                 dismiss(true);
                 return;
             }
@@ -70,6 +71,7 @@
                         : current + (event.key === "ArrowDown" ? 1 : -1));
             } else if (event.key === "Escape") {
                 event.preventDefault();
+                event.stopPropagation();
                 dismiss(true);
             } else if (event.key === "Enter" || event.key === " ") {
                 if (currentIndex < 0) return;

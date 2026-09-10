@@ -1,5 +1,6 @@
-/* Backtest annotation regression. Code version: v1.2.0 */
+/* Backtest annotation regression. Code version: v1.3.0 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 for (const width of [1023, 390]) {
     test(`Backtest annotated controls at ${width}px`, async ({page}) => {
@@ -8,12 +9,6 @@ for (const width of [1023, 390]) {
             success: true, protocol_version: 2, runs: [],
         }}));
         await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=1&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
-        if (width <= 900) {
-            await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
-                notices.forEach((notice) => { notice.hidden = true; });
-            });
-            await page.locator('[data-backtest-parameter-toggle]').click();
-        }
         const segments = page.locator('#backtest_history_view_segmented');
         for (const value of ['transactions', 'metrics', 'probability', 'transactions']) {
             await segments.locator(`label[for="backtest_history_${value}"]`).click();
@@ -24,6 +19,7 @@ for (const width of [1023, 390]) {
             expect(weights.filter(item => item.checked)).toHaveLength(1);
             for (const item of weights) expect(item.weight).toBe(item.checked ? '700' : '400');
         }
+        await openBacktestParameterOverlay(page);
         const parameters = page.locator('[data-collapse="parameters"]');
         if (!await parameters.evaluate(node => node.open)) await parameters.locator(':scope > summary').click();
         const row = parameters.locator('[data-strategy-param-key="chip_window"]');

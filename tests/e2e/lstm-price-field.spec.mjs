@@ -1,5 +1,6 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.18.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.2 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -267,8 +268,8 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.32.0');
-    expect(desktop.backtestScript).toContain('backtest-v0.41.3');
-    expect(desktop.appScript).toContain('app-v0.67.0');
+    expect(desktop.backtestScript).toContain('backtest-v0.42.0');
+    expect(desktop.appScript).toContain('app-v0.69.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -417,6 +418,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await expect(privateMenu).toBeVisible();
 
     await page.setViewportSize({width: 390, height: 844});
+    await openBacktestParameterOverlay(page);
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-size', '15px');
     await expect(trainingSection.locator(':scope > summary')).toHaveCSS('font-weight', '500');
     await expect(privateMenu).toBeVisible();
@@ -492,9 +494,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await expect(button).toHaveText('Start training');
     await expect(menu.locator('.lstm-training-files')).toBeHidden();
     await page.setViewportSize({width: 390, height: 844});
-    if (await page.locator('#sidebar_toggle').getAttribute('aria-expanded') === 'true') {
-        await page.locator('#sidebar_toggle').click();
-    }
+    await openBacktestParameterOverlay(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
     runs = [{...run, status: 'starting', progress: {percent: null}}];
@@ -645,7 +645,7 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(menu.locator('.lstm-training-history-details').first()).toBeHidden();
 
     await page.setViewportSize({width: 390, height: 844});
-    if (await page.locator('#sidebar_toggle').getAttribute('aria-expanded') === 'true') await page.locator('#sidebar_toggle').click();
+    await openBacktestParameterOverlay(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     // A narrow desktop viewport still uses a mouse: reveal the hover-only action first.
     await rows.nth(1).hover();

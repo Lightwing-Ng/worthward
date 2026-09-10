@@ -1,4 +1,4 @@
-/* Code version: v3.74.0 */
+/* Code version: v3.75.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -148,10 +148,10 @@
 }
 .lstm-training-history-select {
 	display: grid;
-	grid-template-columns: 12px minmax(0, 1fr) max-content max-content;
+	grid-template-columns: 12px minmax(5ch, 1fr) max-content max-content;
 	align-items: center;
 	justify-content: space-between;
-	gap: 4px;
+	gap: 2px;
 	min-width: 0;
 	width: 100%;
 	min-height: 32px;
@@ -2348,15 +2348,15 @@
 .strategy-limit-range .strategy-allocation-handle::-webkit-slider-thumb { background: var(--strategy-range-limit-thumb-background); border-color: currentColor; }
 .strategy-limit-range .strategy-allocation-handle::-moz-range-thumb { background: var(--strategy-range-limit-thumb-background); border-color: currentColor; }
 .strategy-limit-range .strategy-allocation-handle { color: inherit; }
-.trade-strategy-param[data-strategy-param-key="rotation_window"] .trade-strategy-param-select-shell {
+.trade-strategy-param[data-strategy-param-content-sized="true"] .trade-strategy-param-select-shell {
     min-width: 0;
 }
-.trade-strategy-param[data-strategy-param-key="rotation_window"] .trade-strategy-trigger {
+.trade-strategy-param[data-strategy-param-content-sized="true"] .trade-strategy-trigger {
     padding-left: var(--sidebar-form-control-padding-inline);
     padding-right: calc(var(--sidebar-form-control-padding-inline) + var(--collapse-icon-size) + var(--collapse-icon-gap));
     background-position: calc(100% - var(--sidebar-form-control-padding-inline)) 50%;
 }
-.trade-strategy-param[data-strategy-param-key="rotation_window"] .trade-strategy-trigger-label {
+.trade-strategy-param[data-strategy-param-content-sized="true"] .trade-strategy-trigger-label {
     min-width: max-content;
     overflow: visible;
     text-overflow: clip;

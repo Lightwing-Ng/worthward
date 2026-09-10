@@ -1,4 +1,4 @@
-/* Code version: v0.10.0 */
+/* Code version: v0.11.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -56,6 +56,10 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     const toggle = page.locator('[data-backtest-parameter-toggle]');
     const backdrop = page.locator('[data-backtest-parameter-backdrop]');
     const globalToggle = page.locator('#sidebar_toggle');
+    const globalBackdrop = page.locator('#sidebar_backdrop');
+    const backtestNavItem = page.locator(
+        'aside#app_sidebar .workspace-mode-nav .workspace-nav-item-backtest',
+    );
 
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -69,16 +73,24 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
         const mainElement = layoutElement.querySelector(':scope > .workspace-mode-main');
         const panelElement = document.querySelector('[data-backtest-parameter-panel]');
         const toggleElement = document.querySelector('[data-backtest-parameter-toggle]');
+        const globalToggleElement = document.querySelector('#sidebar_toggle');
         const layoutBox = layoutElement.getBoundingClientRect();
         const mainBox = mainElement.getBoundingClientRect();
         const panelBox = panelElement.getBoundingClientRect();
         const toggleBox = toggleElement.getBoundingClientRect();
+        const globalToggleBox = globalToggleElement.getBoundingClientRect();
         return {
             columns: getComputedStyle(layoutElement).gridTemplateColumns,
             layout: {left: layoutBox.left, right: layoutBox.right, width: layoutBox.width},
             main: {left: mainBox.left, right: mainBox.right, width: mainBox.width},
             panel: {left: panelBox.left, right: panelBox.right, position: getComputedStyle(panelElement).position},
             toggle: {width: toggleBox.width, height: toggleBox.height},
+            globalToggle: {
+                left: globalToggleBox.left,
+                top: globalToggleBox.top,
+                width: globalToggleBox.width,
+                height: globalToggleBox.height,
+            },
             horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
         };
     });
@@ -88,7 +100,41 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     expect(collapsedGeometry.panel.position).toBe('fixed');
     expect(collapsedGeometry.panel.right).toBeLessThanOrEqual(0);
     expect(collapsedGeometry.toggle).toEqual({width: 44, height: 44});
+    expect(Math.abs(
+        collapsedGeometry.globalToggle.left - collapsedGeometry.globalToggle.top,
+    )).toBeLessThanOrEqual(1);
+    expect(collapsedGeometry.globalToggle.width).toBe(44);
+    expect(collapsedGeometry.globalToggle.height).toBe(44);
     expect(collapsedGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
+
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeHidden();
+    await expect(globalBackdrop).toBeVisible();
+    await expect(backtestNavItem).toHaveCSS('height', '36px');
+    await expect.poll(() => globalBackdrop.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return Math.max(
+            Math.abs(box.left),
+            Math.abs(box.top),
+            Math.abs(box.right - window.innerWidth),
+            Math.abs(box.bottom - window.innerHeight),
+        );
+    })).toBeLessThanOrEqual(0.1);
+    const globalOverlayGeometry = await globalBackdrop.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+            borderRadius: style.borderRadius,
+            boxShadow: style.boxShadow,
+            backgroundColor: style.backgroundColor,
+        };
+    });
+    expect(globalOverlayGeometry.borderRadius).toBe('0px');
+    expect(globalOverlayGeometry.boxShadow).toBe('none');
+    expect(globalOverlayGeometry.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeVisible();
 
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -124,10 +170,12 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
 
     await globalToggle.click();
     await expect(globalToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeHidden();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(panel).toBeHidden();
     await globalToggle.click();
     await expect(globalToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeVisible();
 
     await toggle.click();
     await expect(panel).toBeVisible();
@@ -144,7 +192,7 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     expect(desktopColumns.split(' ')[0]).toBe('312px');
 });
 
-test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allocation band', async ({page}) => {
+test('Leveraged Rotation exposes generic triggers and a collision-safe allocation band', async ({page}) => {
     await page.setViewportSize({width: 1023, height: 1404});
     await page.goto('/workspaces/backtest?range=2y&strategy=leveraged-rotation&capital=10000&stop_loss=1'
         + '&initial_primary_pct=44.2&initial_leveraged_pct=36.3');
@@ -210,8 +258,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     await expect(page.getByRole('slider', {name: 'TQQQ minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'TQQQ maximum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByText('Return window', {exact: true})).toBeAttached();
-    await expect(page.getByText('Enter TQQQ: QQQ drop', {exact: true})).toBeAttached();
-    await expect(page.getByText('Rotate back to QQQ: TQQQ gain since entry', {exact: true})).toBeAttached();
+    await expect(page.getByText('Enter leveraged: primary drop', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate back to primary: leveraged gain since entry', {exact: true})).toBeAttached();
     const entryTrigger = page.locator('[data-strategy-param-key="buy_leveraged_drop_pct"]');
     const exitTrigger = page.locator('[data-strategy-param-key="sell_leveraged_rise_pct"]');
     expect(await entryTrigger.evaluate((field) => getComputedStyle(field, '::before').content)).toBe('none');
@@ -311,8 +359,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     });
     await expect(page.getByRole('slider', {name: 'SPY minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'UPRO maximum', exact: true, includeHidden: true})).toBeAttached();
-    await expect(page.getByText('Enter UPRO: SPY drop', {exact: true})).toBeAttached();
-    await expect(page.getByText('Rotate back to SPY: UPRO gain since entry', {exact: true})).toBeAttached();
+    await expect(page.getByText('Enter leveraged: primary drop', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate back to primary: leveraged gain since entry', {exact: true})).toBeAttached();
     await expect(allocation.locator('[data-allocation-primary-name]')).toHaveText('SPY');
     await expect(allocation.locator('[data-allocation-leveraged-name]')).toHaveText('UPRO');
 
@@ -322,6 +370,12 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
             notice.hidden = true;
         });
     });
+    const compactGlobalToggle = page.locator('#sidebar_toggle');
+    if (await compactGlobalToggle.getAttribute('aria-expanded') === 'true') {
+        await compactGlobalToggle.click();
+        await expect(compactGlobalToggle).toHaveAttribute('aria-expanded', 'false');
+    }
+    await expect(page.locator('[data-backtest-parameter-toggle]')).toBeVisible();
     await page.locator('[data-backtest-parameter-toggle]').click();
     await expect(allocation).toBeVisible();
     await expectAlignedBoundaries();
@@ -484,8 +538,7 @@ test('Leveraged Rotation projects both assets trades onto QQQ and compares both 
             datasetLabels: equityChart.data.datasets.map((dataset) => dataset.label),
             benchmarkWidths: equityChart.data.datasets.slice(1).map((dataset) => dataset.borderWidth),
             benchmarkColors: equityChart.data.datasets.slice(1).map((dataset) => dataset.borderColor),
-            primaryToken: getComputedStyle(document.body).getPropertyValue('--theme-accent-primary').trim(),
-            leveragedToken: getComputedStyle(document.body).getPropertyValue('--theme-accent-secondary').trim(),
+            mutedToken: getComputedStyle(document.body).getPropertyValue('--theme-muted').trim(),
             primarySeriesMatches: JSON.stringify(equityChart.data.datasets[1].data)
                 === JSON.stringify(result.chart.all_in_primary_equity),
             leveragedSeriesMatches: JSON.stringify(equityChart.data.datasets[2].data)
@@ -520,13 +573,10 @@ test('Leveraged Rotation projects both assets trades onto QQQ and compares both 
     expect(chartContract.priceDatasetCount).toBe(1);
     expect(chartContract.datasetLabels).toEqual(['Equity', 'All in QQQ', 'All in TQQQ']);
     expect(chartContract.benchmarkWidths).toEqual([1, 1]);
-    const tokenWithAlpha = (token, alpha) => {
-        const channels = token.slice(1).match(/.{2}/g)
-            .map((channel) => Number.parseInt(channel, 16));
-        return `rgba(${channels.join(', ')}, ${alpha})`;
-    };
-    expect(chartContract.benchmarkColors[0]).toBe(tokenWithAlpha(chartContract.primaryToken, 0.5));
-    expect(chartContract.benchmarkColors[1]).toBe(tokenWithAlpha(chartContract.leveragedToken, 0.5));
+    expect(chartContract.benchmarkColors).toEqual([
+        chartContract.mutedToken,
+        chartContract.mutedToken,
+    ]);
     expect(chartContract.primarySeriesMatches).toBe(true);
     expect(chartContract.leveragedSeriesMatches).toBe(true);
     expect(chartContract.markerCount).toBe(chartContract.tradeCount);

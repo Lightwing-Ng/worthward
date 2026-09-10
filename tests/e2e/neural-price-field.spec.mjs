@@ -1,5 +1,9 @@
-/* Neural Price Field UI integration. Code version: v1.2.0 */
+/* Neural Price Field UI integration. Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
+import {
+    closeBacktestParameterOverlay,
+    openBacktestParameterOverlay,
+} from './backtest-parameter-overlay-helper.mjs';
 
 const architectures = ['patchtst', 'tsmixer', 'nhits', 'timexer'];
 const architectureNames = {patchtst: 'PatchTST', tsmixer: 'TSMixer', nhits: 'N-HiTS', timexer: 'TimeXer'};
@@ -16,6 +20,7 @@ for (const width of [1024, 390]) {
         await page.route('**/api/price-field-training?*', (route) => route.fulfill({json: {success: true, protocol_version: 3, runs: []}}));
         for (const architecture of architectures) {
             await page.goto(urlFor(architecture));
+            await openBacktestParameterOverlay(page);
             const menu = page.locator('[data-strategy-action-slot="price-field-training"] [data-lstm-training-menu]');
             await expect(menu.getByRole('button', {name: 'Start training', exact: true})).toBeEnabled();
             const contract = await page.evaluate(() => {
@@ -43,6 +48,7 @@ for (const width of [1024, 390]) {
             await expect(direction.locator('.trade-metric-label')).toHaveText(`${architectureNames[architecture]} direction hit rate`);
             await expect(direction).toHaveAttribute('data-probability-field-metric', 'next-close-direction-hit-rate');
             await expect(direction).toHaveAttribute('title', /signal-close-to-next-close/);
+            await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
@@ -190,6 +196,7 @@ for (const width of [1024, 390]) {
             await route.fulfill({json: {success: true, run: runs[0]}});
         });
         await page.goto(urlFor('tsmixer'));
+        await openBacktestParameterOverlay(page);
         const menu = page.locator('[data-lstm-training-menu]');
         const action = menu.locator('[data-lstm-training-action]');
         await expect(action).toBeEnabled();

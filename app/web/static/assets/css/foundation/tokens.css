@@ -1,4 +1,4 @@
-/* Code version: v0.36.0 */
+/* Code version: v0.37.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -132,6 +132,9 @@
 	--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
 	--sidebar-bottom-pad: 96px;
 	--sidebar-dock-hit-size: 56px;
+	--settings-nav-item-block-size: 48px;
+	--settings-nav-item-padding-block: 10px;
+	--settings-nav-item-gap: 8px;
 	--layout-sidebar-dock-item-block-size: 44px;
 	--layout-sidebar-dock-padding-block: 6px;
 	--layout-sidebar-dock-border-block-size: calc(var(--layout-glass-border-width) * 2);

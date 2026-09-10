@@ -1,10 +1,10 @@
-/* Code version: v0.67.0 */
+/* Code version: v0.69.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
     // A long-running server can still render the pre-migration cached template.
     if (!window.SHARED_SELECT) {
-        await import(new URL("select-controller.js?v=select-controller-v1.0.0", document.currentScript.src).href);
+        await import(new URL("select-controller.js?v=select-controller-v1.0.1", document.currentScript.src).href);
     }
     const preferenceStorage = window.WORTHWARD_STORAGE || {
         local: window.localStorage,
@@ -7084,7 +7084,13 @@
                         ? control.dataset.switchOnValue
                         : control.dataset.switchOffValue;
                 } else {
-                    strategyParamDefaults[key] = control.dataset.default;
+                    const derivedValue = control.dataset.strategyParamDerivedValue;
+                    strategyParamDefaults[key] = (
+                        derivedValue !== undefined
+                        && strategyNumericValuesMatch(control.value, derivedValue)
+                    )
+                        ? derivedValue
+                        : control.dataset.default;
                 }
             }
         });
@@ -7870,6 +7876,54 @@
         }
     };
 
+    const normalizeStrategyNumberText = (value) => String(value ?? "")
+        .replaceAll(",", "")
+        .trim();
+
+    const strategyNumericValuesMatch = (left, right) => {
+        const leftNumber = Number(normalizeStrategyNumberText(left));
+        const rightNumber = Number(normalizeStrategyNumberText(right));
+        return Number.isFinite(leftNumber)
+            && Number.isFinite(rightNumber)
+            && leftNumber === rightNumber;
+    };
+
+    const resolveDerivedStrategyParamDefault = (control) => {
+        if (!(control instanceof HTMLInputElement)) return null;
+        if (control.dataset.strategyDerivedDefault !== "initial-cash-per-ten-shares") return null;
+        const result = window.WORTHWARD_APP?.backtestResult;
+        const summaryQuantity = Number(result?.summary?.grid_trade_quantity);
+        if (Number.isFinite(summaryQuantity) && summaryQuantity >= 0) {
+            return Math.floor(summaryQuantity);
+        }
+        const capitalInput = document.getElementById("trade_initial_capital");
+        const initialCash = Number(
+            result?.summary?.initial_cash
+            ?? normalizeStrategyNumberText(capitalInput?.value),
+        );
+        const initialPrice = Number(result?.chart?.open?.[0] ?? result?.chart?.close?.[0]);
+        if (!Number.isFinite(initialCash) || !Number.isFinite(initialPrice) || initialPrice <= 0) {
+            return null;
+        }
+        return Math.max(0, Math.floor(initialCash / (initialPrice * 10)));
+    };
+
+    const applyDerivedStrategyParamDefault = (control) => {
+        const derivedValue = resolveDerivedStrategyParamDefault(control);
+        if (derivedValue === null) return;
+        const currentValue = normalizeStrategyNumberText(control.value);
+        const declaredDefault = normalizeStrategyNumberText(control.dataset.default);
+        const hasExplicitValue = new URL(window.location.href).searchParams.has(control.name);
+        if (
+            (hasExplicitValue && currentValue !== declaredDefault)
+            || (currentValue !== "" && currentValue !== declaredDefault)
+        ) {
+            return;
+        }
+        control.value = String(derivedValue);
+        control.dataset.strategyParamDerivedValue = String(derivedValue);
+    };
+
     const restoreBacktestStrategyParams = (
         root,
         strategyId,
@@ -7895,6 +7949,12 @@
             if (explicitParams?.has(control.name)) return;
             const normalizedValue = String(value || "").trim();
             if (!normalizedValue) return;
+            if (
+                control.dataset.strategyParamEmptyDefault === "1"
+                && strategyNumericValuesMatch(normalizedValue, control.dataset.default)
+            ) {
+                return;
+            }
             let changed = false;
             if (control.dataset.strategyParamInput === "select") {
                 if (!Array.from(control.options).some((option) => option.value === normalizedValue)) return;
@@ -7938,7 +7998,7 @@
             strategyId || document.getElementById("trade_strategy")?.value || state.selectedStrategyId || "",
         ).trim();
         if (!normalizedStrategyId) return;
-        const entries = collectStrategyParamEntries();
+        const entries = collectStrategyParamEntries({forMemory: true});
         if (!entries.length) return;
         const memory = readBacktestStrategyParamMemory();
         memory[normalizedStrategyId] = Object.fromEntries(entries);
@@ -7951,7 +8011,7 @@
         scheduleAutoSubmit(delay);
     };
 
-    const collectStrategyParamEntries = ({forBacktest = false} = {}) => {
+    const collectStrategyParamEntries = ({forBacktest = false, forMemory = false} = {}) => {
         const {field} = getTradeStrategyRefs();
         if (!(field instanceof HTMLElement)) return [];
         const controls = Array.from(field.querySelectorAll("[data-strategy-param-input][name]"));
@@ -7961,9 +8021,19 @@
             }
             const key = control.name?.trim();
             if (!key) return [];
-            const value = forBacktest && control.dataset.strategyParamDraft === "1"
+            let value = forBacktest && control.dataset.strategyParamDraft === "1"
                 ? control.dataset.strategyParamActiveValue ?? control.value ?? ""
                 : control.value ?? "";
+            if (control.dataset.strategyNumberFormat === "grouped-integer") {
+                value = normalizeStrategyNumberText(value);
+            }
+            if (
+                forMemory
+                && control.dataset.strategyParamDerivedValue !== undefined
+                && strategyNumericValuesMatch(value, control.dataset.strategyParamDerivedValue)
+            ) {
+                value = control.dataset.default ?? value;
+            }
             return value === "" ? [] : [[key, value]];
         });
     };
@@ -8075,17 +8145,6 @@
             const suffix = suffixParts.join(" ").replaceAll("-", " ");
             label.textContent = `${readBacktestTickerName(tickerIndex)} ${suffix}`;
         });
-        root.querySelectorAll?.("[data-strategy-param-ui-role^='rotation-trigger:']").forEach((field) => {
-            if (!(field instanceof HTMLElement)) return;
-            const label = field.querySelector("[data-strategy-param-label-text]");
-            if (!(label instanceof HTMLElement)) return;
-            const action = String(field.dataset.strategyParamUiRole || "").split(":")[1];
-            if (action === "buy-leveraged") {
-                label.textContent = `Enter ${readBacktestTickerName(1)}: ${readBacktestTickerName(0)} drop`;
-            } else if (action === "buy-primary") {
-                label.textContent = `Rotate back to ${readBacktestTickerName(0)}: ${readBacktestTickerName(1)} gain since entry`;
-            }
-        });
     };
 
     const initStrategyParamControls = (root = document) => {
@@ -8117,8 +8176,13 @@
             const numberInput = field.querySelector("[data-strategy-param-input='number']");
             if (numberInput instanceof HTMLInputElement) {
                 const isIntegerField = field.dataset.strategyParamKind === "integer";
+                const allowsEmptyDefault = numberInput.dataset.strategyParamEmptyDefault === "1";
+                const usesGroupedInteger = numberInput.dataset.strategyNumberFormat === "grouped-integer";
+                applyDerivedStrategyParamDefault(numberInput);
                 const normalizeStandaloneNumber = (value) => {
-                    const parsed = Number.parseFloat(String(value));
+                    const normalizedText = normalizeStrategyNumberText(value);
+                    if (allowsEmptyDefault && normalizedText === "") return null;
+                    const parsed = Number.parseFloat(normalizedText);
                     if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || "0") || 0;
                     const min = Number.parseFloat(numberInput.min || "");
                     const max = Number.parseFloat(numberInput.max || "");
@@ -8134,8 +8198,12 @@
                     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.1;
                 };
                 const formatStandaloneNumber = (value) => {
+                    if (value === null) return "";
                     if (isIntegerField) {
-                        return String(Math.round(value));
+                        const integerValue = Math.round(value);
+                        return usesGroupedInteger
+                            ? integerValue.toLocaleString("en-US")
+                            : String(integerValue);
                     }
                     const stepText = String(numberInput.step || "");
                     const decimals = stepText.includes(".") ? stepText.split(".")[1].length : 0;
@@ -8150,7 +8218,10 @@
                     if (!(button instanceof HTMLButtonElement)) return;
                     button.addEventListener("click", () => {
                         const delta = button.dataset.strategyStepper === "down" ? -stepValue() : stepValue();
-                        const currentValue = Number.parseFloat(numberInput.value || "0") || 0;
+                        const currentValue = Number.parseFloat(
+                            normalizeStrategyNumberText(numberInput.value || "0"),
+                        ) || 0;
+                        delete numberInput.dataset.strategyParamDerivedValue;
                         syncStandaloneNumber(currentValue + delta);
                         stageOrSubmitStrategyParam(field, 80);
                     });
@@ -8159,9 +8230,11 @@
                 numberInput.addEventListener("click", () => field.classList.add("is-open"));
                 numberInput.addEventListener("input", () => {
                     numberInput.dataset.strategyParamDirty = "1";
+                    delete numberInput.dataset.strategyParamDerivedValue;
                 });
                 numberInput.addEventListener("change", () => {
                     numberInput.dataset.strategyParamDirty = "1";
+                    delete numberInput.dataset.strategyParamDerivedValue;
                 });
                 numberInput.addEventListener("blur", () => {
                     const hasDraft = numberInput.dataset.strategyParamDirty === "1";

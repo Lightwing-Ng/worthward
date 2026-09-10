@@ -1,5 +1,6 @@
-/* Code version: v0.1.2 */
+/* Code version: v0.2.0 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 const backtestUrl = '/workspaces/backtest?ticker=MU&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_pe_ratio=0&use_market_temperature=1&use_capital_flow=1&use_short_interest=1&use_short_volume=1&training_window=200&compute_backend=GPU';
 const backtestIntervalXPath = '/html/body/main/div/section/section/div/article[1]/form/div[5]/div';
@@ -93,6 +94,7 @@ test('keeps the supplied Backtest interval pill content-sized at desktop and nar
 
     await page.setViewportSize({width: 390, height: 844});
     await page.reload();
+    await openBacktestParameterOverlay(page);
     await expect(intervalControl).toBeVisible();
     expectCompactGeometry(await readCompactGeometry(intervalControl));
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

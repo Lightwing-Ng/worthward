@@ -1,5 +1,6 @@
-/* Shared Backtest control primitives. Code version: v1.2.0 */
+/* Shared Backtest control primitives. Code version: v1.3.0 */
 import {test, expect} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 for (const colorScheme of ['light', 'dark']) {
     for (const width of [1024, 390]) {
@@ -13,6 +14,7 @@ for (const colorScheme of ['light', 'dark']) {
                     accuracy_pct: 65, started_at: '2026-09-04T00:00:00Z'}],
             }}));
             await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=0&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
+            await openBacktestParameterOverlay(page);
             const common = page.locator('[data-collapse="backtest"]');
             const training = page.locator('[data-collapse="training"]');
             const summary = common.locator(':scope > summary');

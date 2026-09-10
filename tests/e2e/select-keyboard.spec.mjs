@@ -1,5 +1,6 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 for (const width of [1024, 390]) {
   for (const cachedTemplate of [false, true]) {
@@ -15,6 +16,7 @@ for (const width of [1024, 390]) {
         }
         await page.setViewportSize({width, height: 900});
         await page.goto('/workspaces/backtest?strategy=grid-trading&interval=1d');
+        await openBacktestParameterOverlay(page);
         for (const fieldSelector of ['#period_panel', '[data-shared-select-kind="strategy"]']) {
             const trigger = page.locator(fieldSelector).locator('[data-shared-select-trigger]');
             const menu = page.locator('#' + await trigger.getAttribute('aria-controls'));

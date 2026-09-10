@@ -1,5 +1,9 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.3.1 */
+/* Additional neural Price Field GUI contracts. Code version: v1.4.1 */
 import {expect, test} from '@playwright/test';
+import {
+    closeBacktestParameterOverlay,
+    openBacktestParameterOverlay,
+} from './backtest-parameter-overlay-helper.mjs';
 
 const models = [
     ['itransformer', 'iTransformer'], ['tide', 'TiDE'], ['moderntcn', 'ModernTCN'], ['tft', 'TFT'],
@@ -129,6 +133,7 @@ for (const width of [1024, 390]) {
                     ? parityUrl
                     : urlFor(architecture),
             );
+            await openBacktestParameterOverlay(page);
             await expect(trainingMenu(page).getByRole('button', {name: 'Start training', exact: true})).toBeEnabled();
             await expect(page.getByRole('button', {name: `Strategy: ${label} Price Field`, exact: true})).toContainText(`${label} Price Field`);
             const contract = await page.evaluate(() => {
@@ -161,6 +166,7 @@ for (const width of [1024, 390]) {
             await expect(probability).not.toHaveAttribute('title', /next-open|75%/);
             await expect(direction.locator('.trade-metric-label')).toHaveText(`${label} direction hit rate`);
             await expect(direction).toHaveAttribute('title', /signal-close-to-next-close/);
+            await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
@@ -202,6 +208,7 @@ for (const width of [1024, 390]) {
             return route.fulfill({json: {success: true, protocol_version: 3, runs}});
         });
         await page.goto(urlFor('itransformer'));
+        await openBacktestParameterOverlay(page);
         const original = await visibleConfiguration(page);
         runs = models.map(([architecture], index) => ({
             id: `price-field-${'abcd'[index].repeat(24)}`, strategy: `${architecture}-price-field`, ticker: 'NVDA',
@@ -214,6 +221,7 @@ for (const width of [1024, 390]) {
         runs.push({...runs[0], id: `price-field-${'e'.repeat(24)}`, strategy: 'patchtst-price-field', ticker: 'QQQ'});
         for (const [architecture] of models) {
             await page.goto(urlFor(architecture));
+            await openBacktestParameterOverlay(page);
             const menu = trainingMenu(page);
             const selection = menu.locator('.lstm-training-history-select');
             await expect(selection).toHaveCount(1);
@@ -266,6 +274,7 @@ for (const [index, [architecture]] of models.entries()) {
             await route.fulfill({json: {success: true, run: runs[0]}});
         });
         await page.goto(urlFor(architecture));
+        await openBacktestParameterOverlay(page);
         const menu = trainingMenu(page);
         const action = menu.locator('[data-lstm-training-action]');
         await expect(action).toBeEnabled();
