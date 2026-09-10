@@ -561,6 +561,61 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
     assert.ok(boundaries.every((boundary) => !('ledger_no' in boundary)));
 });
 
+test('HSBC settlement balance continuity overrides drifted incremental row sequences', () => {
+    const boundaries = buildHsbcCashSettlementBoundaryPlan([
+        {
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            date: '2026-09-01',
+            type: 'buy',
+            ticker: 'EUV',
+            currency: 'USD',
+            source: {
+                cash_settlement_postings: [{
+                    date: '2026-09-02',
+                    amount_raw: '-230.00',
+                    balance_after_raw: '32992.32',
+                    row_number: 47,
+                    ledger_sequence: 47,
+                    currency: 'USD',
+                    role: 'principal',
+                }],
+            },
+        },
+        {
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            date: '2026-09-01',
+            type: 'buy',
+            ticker: 'BOXX',
+            currency: 'USD',
+            source: {
+                cash_settlement_postings: [{
+                    date: '2026-09-02',
+                    amount_raw: '-11807.00',
+                    balance_after_raw: '21185.32',
+                    row_number: 43,
+                    ledger_sequence: 43,
+                    currency: 'USD',
+                    role: 'principal',
+                }],
+            },
+        },
+    ]);
+
+    assert.deepEqual(
+        boundaries.map((boundary) => [
+            boundary.reference,
+            boundary.settlementBalanceAfter,
+            boundary.sourceRowSequence,
+        ]),
+        [
+            ['', 32992.32, 47],
+            ['', 21185.32, 43],
+        ],
+    );
+});
+
 test('missing broker starting boundaries remain absent instead of becoming USD zero', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {

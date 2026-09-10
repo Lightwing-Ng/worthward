@@ -1,4 +1,4 @@
-/* Code version: v0.7.1 */
+/* Code version: v0.8.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -104,8 +104,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     await expect(page.getByRole('slider', {name: 'TQQQ minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'TQQQ maximum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByText('Return window', {exact: true})).toBeAttached();
-    await expect(page.getByText('Buy TQQQ: QQQ decline', {exact: true})).toBeAttached();
-    await expect(page.getByText('Buy QQQ: TQQQ rise', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate to TQQQ: QQQ window decline', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate back to QQQ: TQQQ gain since entry', {exact: true})).toBeAttached();
     await expect(page.locator('#strategy_param_primary_min_pct')).toHaveValue('20');
     await expect(page.locator('#strategy_param_primary_max_pct')).toHaveValue('95');
     await expect(page.locator('#strategy_param_buy_leveraged_drop_pct')).toHaveValue('3.00');
@@ -201,8 +201,8 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     });
     await expect(page.getByRole('slider', {name: 'SPY minimum', exact: true, includeHidden: true})).toBeAttached();
     await expect(page.getByRole('slider', {name: 'UPRO maximum', exact: true, includeHidden: true})).toBeAttached();
-    await expect(page.getByText('Buy UPRO: SPY decline', {exact: true})).toBeAttached();
-    await expect(page.getByText('Buy SPY: UPRO rise', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate to UPRO: SPY window decline', {exact: true})).toBeAttached();
+    await expect(page.getByText('Rotate back to SPY: UPRO gain since entry', {exact: true})).toBeAttached();
     await expect(allocation.locator('[data-allocation-primary-name]')).toHaveText('SPY');
     await expect(allocation.locator('[data-allocation-leveraged-name]')).toHaveText('UPRO');
 

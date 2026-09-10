@@ -1,10 +1,10 @@
 # Testing guide
 
-Documentation version: `v1.65.0`
+Documentation version: `v1.66.0`
 
 ## Current workflow
 
-Leveraged Rotation browser coverage includes integer-step allocation-limit bars, cross-asset bounds, centered interior and edge-aligned endpoint labels, foundation-token ownership, both Style tokens variants, causal dynamic trigger labels, untruncated Return window labels, collision-free zero/full-allocation handles, a single primary price curve with exact-time cross-asset trade-marker projection, and separate primary-blue and leveraged-magenta all-in equity references at 50% opacity with matching one-pixel widths. Python coverage verifies that both benchmarks use their own first open, aligned closes, residual cash, and dividend columns. The isolated CLI smoke run on 9 Sep 2026 completed two genetic-search trials using local QQQ/TQQQ history with separate validation and holdout evaluation. Objective coverage proves that `net-return` maps each fold's score directly to net return while the existing risk-adjusted default remains backward compatible. This is an integration check, not a recommended parameter set.
+Leveraged Rotation browser coverage includes integer-step allocation-limit bars, cross-asset bounds, centered interior and edge-aligned endpoint labels, foundation-token ownership, both Style tokens variants, causal dynamic trigger labels, untruncated Return window labels, collision-free zero/full-allocation handles, a single primary price curve with exact-time cross-asset trade-marker projection, and separate primary-blue and leveraged-magenta all-in equity references at 50% opacity with matching one-pixel widths. Python coverage verifies that the primary decline uses the selected Return window, the leveraged exit gain starts at the actual next-open entry price, and a same-day post-entry exit signal remains executable at the following open. Both benchmarks use their own first open, aligned closes, residual cash, and dividend columns. The isolated CLI smoke run on 9 Sep 2026 completed two genetic-search trials using local QQQ/TQQQ history with separate validation and holdout evaluation. Objective coverage proves that `net-return` maps each fold's score directly to net return while the existing risk-adjusted default remains backward compatible. This is an integration check, not a recommended parameter set.
 
 Use Python 3.13 or newer. The shell wrappers support macOS and Linux;
 Windows Python commands are supported, but the Bash/fcntl quality gate requires

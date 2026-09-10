@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.14.0
+Code version: v0.15.0
 """
 
 from __future__ import annotations
@@ -546,19 +546,18 @@ def run_leveraged_rotation_backtest(
                 "cash": round(cash, 2),
             }
 
-        executed_pending = False
         if pending_regime is not None and index > 0:
-            executed_pending = rebalance(row, pending_regime, "Open")
+            rebalance(row, pending_regime, "Open")
             pending_regime = None
 
         enter_signal = bool(getattr(row, signal_result.buy_signal_column, False))
         exit_signal = bool(getattr(row, signal_result.sell_signal_column, False))
-        if enter_signal and not executed_pending:
+        if enter_signal:
             if normalized_execution_mode == "next_open":
                 pending_regime = "leveraged"
             else:
                 rebalance(row, "leveraged", "Close")
-        elif exit_signal and not executed_pending:
+        elif exit_signal:
             if normalized_execution_mode == "next_open":
                 pending_regime = "primary"
             else:

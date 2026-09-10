@@ -1,7 +1,7 @@
 """
 Leveraged rotation strategy.
 
-Code version: v2.4.0
+Code version: v2.6.0
 """
 
 from __future__ import annotations
@@ -34,7 +34,8 @@ class LeveragedRotationStrategy(BaseStrategy):
     strategy_name = "Leveraged Rotation"
     strategy_description = (
         "Rebalances integer shares between a primary ticker and its leveraged companion after "
-        "configured return-window moves, within declared allocation bounds. "
+        "a configured primary return-window decline, then rotates back after the leveraged "
+        "ticker gains from its actual entry open, within declared allocation bounds. "
         "Close-derived rotation decisions use subsequent opening prices."
     )
     strategy_category = "portfolio-rotation"
@@ -117,23 +118,23 @@ class LeveragedRotationStrategy(BaseStrategy):
                 option_labels=("Single day", "1 week", "1 month", "3 months"),
                 subgroup="Rotation triggers (%, change)",
                 content_sized=True,
-                help_text="Measures each trigger return across 1, 5, 21, or 63 completed trading sessions.",
+                help_text="Measures the primary ticker's entry decline across 1, 5, 21, or 63 completed trading sessions.",
             ),
             StrategyParameterDefinition(
                 key="buy_leveraged_drop_pct",
-                label="Buy leveraged: primary decline",
+                label="Rotate to leveraged: primary window decline",
                 kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.01,
                 unit_hint="%", subgroup="Rotation triggers (%, change)",
                 ui_role="rotation-trigger:buy-leveraged",
-                help_text="After the primary ticker falls by this percentage across the selected Return window, the next open rebalances toward the leveraged ticker.",
+                help_text="After the primary ticker falls by this percentage across the selected Return window, the next open sells it toward its minimum and uses available cash to buy the leveraged ticker toward its maximum.",
             ),
             StrategyParameterDefinition(
                 key="sell_leveraged_rise_pct",
-                label="Buy primary: leveraged rise",
+                label="Rotate back to primary: leveraged gain since entry",
                 kind="number", default=5.0, minimum=0.1, maximum=200.0, step=0.01,
                 unit_hint="%", subgroup="Rotation triggers (%, change)",
                 ui_role="rotation-trigger:buy-primary",
-                help_text="After the leveraged ticker rises by this percentage across the selected Return window, the next open rebalances toward the primary ticker.",
+                help_text="After the leveraged ticker gains this percentage from the open where the last leveraged rotation executed, the next open sells it toward its minimum and buys the primary ticker toward its maximum.",
             ),
         )
 
@@ -170,6 +171,7 @@ class LeveragedRotationStrategy(BaseStrategy):
             params: dict | None = None,
     ) -> StrategySignalResult:
         frame = dataset.copy()
+        decision_start_raw = frame.attrs.get("research_decision_start")
         price_columns = [f"{field}{suffix}" for suffix in ("", "_2") for field in ("Open", "High", "Low", "Close")]
         if "Date" not in frame or any(column not in frame for column in price_columns):
             raise ValueError(
@@ -184,6 +186,16 @@ class LeveragedRotationStrategy(BaseStrategy):
         if dates.isna().any() or dates.duplicated().any() or not dates.is_monotonic_increasing:
             raise ValueError("Leveraged Rotation requires valid ordered, unique dates.")
         frame["Date"] = dates.dt.tz_localize(None)
+        decision_start = None
+        if decision_start_raw is not None:
+            decision_start = pd.to_datetime(
+                decision_start_raw,
+                errors="coerce",
+                utc=True,
+            )
+            if pd.isna(decision_start):
+                raise ValueError("Leveraged Rotation requires a valid research decision start.")
+            decision_start = decision_start.tz_localize(None)
         prices = frame[price_columns].apply(pd.to_numeric, errors="coerce")
         if not np.isfinite(prices.to_numpy(dtype=float)).all() or (prices <= 0).any().any():
             raise ValueError("Leveraged Rotation requires finite, positive OHLC prices for both tickers.")
@@ -226,28 +238,67 @@ class LeveragedRotationStrategy(BaseStrategy):
         target_regimes: list[str] = []
         enter_intents: list[bool] = []
         exit_intents: list[bool] = []
+        leveraged_entry_prices: list[float] = []
+        leveraged_since_entry_pct: list[float] = []
         regime = "initial"
-        for primary_move, leveraged_move in zip(primary_window_pct, leveraged_window_pct, strict=True):
+        pending_entry_execution = False
+        pending_exit_execution = False
+        leveraged_entry_price: float | None = None
+        for index, primary_move in enumerate(primary_window_pct):
+            if pending_entry_execution:
+                leveraged_entry_price = float(frame["Open_2"].iloc[index])
+                regime = "leveraged"
+                pending_entry_execution = False
+            elif pending_exit_execution:
+                leveraged_entry_price = None
+                regime = "primary"
+                pending_exit_execution = False
+
+            leveraged_gain = (
+                ((float(leveraged_close.iloc[index]) / leveraged_entry_price) - 1.0) * 100.0
+                if regime == "leveraged" and leveraged_entry_price is not None
+                else np.nan
+            )
+            decisions_enabled = (
+                decision_start is None
+                or frame["Date"].iloc[index] >= decision_start
+            )
             enter = bool(
-                regime != "leveraged"
+                decisions_enabled
+                and
+                regime in {"initial", "primary"}
                 and pd.notna(primary_move)
                 and primary_move <= -float(normalized_params["buy_leveraged_drop_pct"])
             )
             exit_ = bool(
+                decisions_enabled
+                and
                 regime == "leveraged"
-                and pd.notna(leveraged_move)
-                and leveraged_move >= float(normalized_params["sell_leveraged_rise_pct"])
+                and pd.notna(leveraged_gain)
+                and leveraged_gain >= float(normalized_params["sell_leveraged_rise_pct"])
             )
             if enter:
-                regime = "leveraged"
+                regime = "leveraged_pending"
+                pending_entry_execution = True
             elif exit_:
-                regime = "primary"
-            target_regimes.append(regime)
+                regime = "primary_pending"
+                pending_exit_execution = True
+            target_regimes.append(
+                "leveraged" if regime == "leveraged_pending"
+                else "primary" if regime == "primary_pending"
+                else regime
+            )
             enter_intents.append(enter)
             exit_intents.append(exit_)
+            leveraged_entry_prices.append(
+                leveraged_entry_price if leveraged_entry_price is not None else np.nan
+            )
+            leveraged_since_entry_pct.append(leveraged_gain)
 
         frame["rotation_primary_window_pct"] = primary_window_pct.to_numpy()
         frame["rotation_leveraged_window_pct"] = leveraged_window_pct.to_numpy()
+        frame["rotation_leveraged_entry_price"] = leveraged_entry_prices
+        frame["rotation_leveraged_since_entry_pct"] = leveraged_since_entry_pct
         frame["rotation_target_regime"] = target_regimes
         frame["rotation_enter_signal"] = enter_intents
         frame["rotation_exit_signal"] = exit_intents

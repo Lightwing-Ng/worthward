@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.141.0
+ * Code version: v2.142.0
+ * - Fixed: HSBC settlement replay preserves the balance-continuity order
+ *   recovered by the boundary planner instead of re-sorting same-day
+ *   boundaries by drifted incremental paste row numbers.
  * - Fixed: Import validation feedback is portaled to the document root so it
  *   remains visible above the full-screen broker-import modal.
  * - Fixed: Missing Holdings quotes and blank live-badge values remain
@@ -376,7 +379,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.113.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.114.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -407,7 +410,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.33.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.34.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -456,7 +459,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.141.0',
+    entry: 'v2.142.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -17115,6 +17118,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 })),
             ].filter((event) => event.date).sort((left, right) => {
                 if (left.date !== right.date) return left.date.localeCompare(right.date);
+                if (left.kind === 'boundary' && right.kind === 'boundary') {
+                    const leftBoundary = left.boundary || {};
+                    const rightBoundary = right.boundary || {};
+                    const sameSettlementScope = (
+                        normalizeInvestmentBroker(leftBoundary.broker || 'hsbc')
+                            === normalizeInvestmentBroker(rightBoundary.broker || 'hsbc')
+                        && String(leftBoundary.account || '').trim()
+                            === String(rightBoundary.account || '').trim()
+                        && String(leftBoundary.currency || baseCurrency).trim().toUpperCase()
+                            === String(rightBoundary.currency || baseCurrency).trim().toUpperCase()
+                    );
+                    if (sameSettlementScope && left.index !== right.index) {
+                        return left.index - right.index;
+                    }
+                }
                 const getCashEvidenceSequence = (event) => {
                     if (event.kind === 'boundary') {
                         const boundary = event.boundary || {};

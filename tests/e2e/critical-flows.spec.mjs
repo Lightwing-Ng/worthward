@@ -9303,6 +9303,102 @@ test('keeps same-day HSBC USD settlement proceeds after earlier buys', async ({p
     expect(chartValues.find((point) => point.date === '2026-07-02')?.value).toBeCloseTo(20_000, 8);
 });
 
+test('recovers same-day HSBC settlement order from authoritative balance continuity', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc'],
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-08-31',
+                datetime: '2026-08-31 20:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 33_222.32,
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-01',
+                datetime: '2026-09-01 20:00:00',
+                type: 'buy',
+                ticker: 'EUV',
+                currency: 'USD',
+                quantity: 10,
+                price: 23,
+                amount: -230,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'P-776356',
+                    cash_settlement_date: '2026-09-02',
+                    cash_settlement_amount_raw: '-230.00',
+                    cash_settlement_balance_after_raw: '32992.32',
+                    cash_settlement_postings: [{
+                        date: '2026-09-02',
+                        amount_raw: '-230.00',
+                        balance_after_raw: '32992.32',
+                        source_file_kind: 'hsbc_usd_account_text',
+                        ledger_sequence: 47,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-01',
+                datetime: '2026-09-01 20:00:01',
+                type: 'buy',
+                ticker: 'BOXX',
+                currency: 'USD',
+                quantity: 100,
+                price: 118.07,
+                amount: -11_807,
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    statement_order_id: 'P-396348',
+                    cash_settlement_date: '2026-09-02',
+                    cash_settlement_amount_raw: '-11807.00',
+                    cash_settlement_balance_after_raw: '21185.32',
+                    cash_settlement_postings: [{
+                        date: '2026-09-02',
+                        amount_raw: '-11807.00',
+                        balance_after_raw: '21185.32',
+                        source_file_kind: 'hsbc_usd_account_text',
+                        ledger_sequence: 43,
+                        currency: 'USD',
+                        role: 'principal',
+                    }],
+                },
+            },
+        ],
+        priceHistoryByTicker: {
+            EUV: [
+                {date: '2026-09-01', close: 23},
+                {date: '2026-09-02', close: 23},
+            ],
+            BOXX: [
+                {date: '2026-09-01', close: 118.07},
+                {date: '2026-09-02', close: 118.07},
+            ],
+        },
+    });
+    await page.goto('/trade/investment?range=max');
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+
+    const chartValues = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            value: Number(chart.data.datasets?.[0]?.data?.[index]),
+        }));
+    });
+    expect(chartValues.find((point) => point.date === '2026-09-02')?.value).toBeCloseTo(33_222.32, 8);
+});
+
 test('replays future HSBC settlement cash on the settlement date without a derived transaction', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc'],

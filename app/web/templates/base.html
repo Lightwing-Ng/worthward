@@ -1,4 +1,4 @@
-{# Code version: v0.45.1 #}
+{# Code version: v0.46.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -382,7 +382,7 @@
     <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.12.2') }}"></script>
 {% endif %}
     <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.65.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.66.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.12.0') }}"></script>
 {% endif %}

@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.113.0
+ * Code version: v1.114.0
+ * - Fixed: Same-day HSBC settlement boundaries recover their chronological
+ *   order from authoritative balance continuity when incremental paste row
+ *   sequences drift across imports.
  * - Fixed: Missing dividend-reinvestment basis remains unknown instead of
  *   opening a fabricated zero-cost lot for P&L.
  * - Fixed: Partial account-level realized-P&L coverage now withholds every
@@ -4641,6 +4644,128 @@ export function createInvestmentDataUtils({
         return match ? match[1] : '';
     }
 
+    function compareHsbcCashSettlementBoundaries(left, right) {
+        return (
+            left.date.localeCompare(right.date)
+            || left.sourceRowSequence - right.sourceRowSequence
+            || left.sourceRowNumber - right.sourceRowNumber
+            || left.sourceIndex - right.sourceIndex
+            || left.postingIndex - right.postingIndex
+        );
+    }
+
+    function getHsbcCashSettlementBoundaryScopeKey(boundary) {
+        return [
+            boundary.date,
+            String(boundary.broker || '').trim().toLowerCase(),
+            String(boundary.account || '').trim(),
+            String(boundary.currency || '').trim().toUpperCase(),
+        ].join('|');
+    }
+
+    function areHsbcCashSettlementBalancesContinuous(leftBalance, rightBalance) {
+        return (
+            Number.isFinite(leftBalance)
+            && Number.isFinite(rightBalance)
+            && Math.abs(leftBalance - rightBalance) <= 0.011
+        );
+    }
+
+    function orderHsbcCashSettlementBoundaryScope(boundaries) {
+        const fallbackOrder = [...boundaries].sort(compareHsbcCashSettlementBoundaries);
+        if (fallbackOrder.length < 2) return fallbackOrder;
+
+        const outgoingByBoundary = new Map(fallbackOrder.map((boundary) => [boundary, []]));
+        const incomingByBoundary = new Map(fallbackOrder.map((boundary) => [boundary, []]));
+        fallbackOrder.forEach((left) => {
+            const leftBalanceAfter = left.settlementBalanceAfter === null
+                ? Number.NaN
+                : Number(left.settlementBalanceAfter);
+            fallbackOrder.forEach((right) => {
+                if (left === right) return;
+                const rightBalanceAfter = right.settlementBalanceAfter === null
+                    ? Number.NaN
+                    : Number(right.settlementBalanceAfter);
+                const rightAmount = right.settlementAmount === null
+                    ? Number.NaN
+                    : Number(right.settlementAmount);
+                const rightBalanceBefore = rightBalanceAfter - rightAmount;
+                if (!areHsbcCashSettlementBalancesContinuous(leftBalanceAfter, rightBalanceBefore)) return;
+                outgoingByBoundary.get(left).push(right);
+                incomingByBoundary.get(right).push(left);
+            });
+        });
+
+        const connectedByBoundary = new Map(fallbackOrder.map((boundary) => [boundary, new Set([
+            ...outgoingByBoundary.get(boundary),
+            ...incomingByBoundary.get(boundary),
+        ])]));
+        const visited = new Set();
+        const reordered = [...fallbackOrder];
+        fallbackOrder.forEach((candidate) => {
+            if (visited.has(candidate)) return;
+            const component = [];
+            const pending = [candidate];
+            while (pending.length) {
+                const boundary = pending.pop();
+                if (visited.has(boundary)) continue;
+                visited.add(boundary);
+                component.push(boundary);
+                connectedByBoundary.get(boundary).forEach((neighbor) => {
+                    if (!visited.has(neighbor)) pending.push(neighbor);
+                });
+            }
+            if (component.length < 2) return;
+            if (component.some((boundary) => (
+                outgoingByBoundary.get(boundary).length > 1
+                || incomingByBoundary.get(boundary).length > 1
+            ))) return;
+            const starts = component.filter((boundary) => incomingByBoundary.get(boundary).length === 0);
+            if (starts.length !== 1) return;
+
+            const chronologicalOrder = [];
+            const seen = new Set();
+            let cursor = starts[0];
+            while (cursor && !seen.has(cursor)) {
+                chronologicalOrder.push(cursor);
+                seen.add(cursor);
+                cursor = outgoingByBoundary.get(cursor)[0] || null;
+            }
+            if (chronologicalOrder.length !== component.length) return;
+
+            const occupiedIndexes = component
+                .map((boundary) => fallbackOrder.indexOf(boundary))
+                .sort((left, right) => left - right);
+            occupiedIndexes.forEach((targetIndex, index) => {
+                reordered[targetIndex] = chronologicalOrder[index];
+            });
+        });
+        return reordered;
+    }
+
+    function orderHsbcCashSettlementBoundaries(boundaries) {
+        const fallbackOrder = [...boundaries].sort(compareHsbcCashSettlementBoundaries);
+        const groupedByScope = new Map();
+        fallbackOrder.forEach((boundary) => {
+            const scopeKey = getHsbcCashSettlementBoundaryScopeKey(boundary);
+            if (!groupedByScope.has(scopeKey)) groupedByScope.set(scopeKey, []);
+            groupedByScope.get(scopeKey).push(boundary);
+        });
+        const rankByBoundary = new Map();
+        groupedByScope.forEach((scopeBoundaries) => {
+            orderHsbcCashSettlementBoundaryScope(scopeBoundaries).forEach((boundary, index) => {
+                rankByBoundary.set(boundary, index);
+            });
+        });
+        return fallbackOrder.sort((left, right) => {
+            const fallbackComparison = compareHsbcCashSettlementBoundaries(left, right);
+            if (getHsbcCashSettlementBoundaryScopeKey(left) !== getHsbcCashSettlementBoundaryScopeKey(right)) {
+                return fallbackComparison;
+            }
+            return (rankByBoundary.get(left) - rankByBoundary.get(right)) || fallbackComparison;
+        });
+    }
+
     function buildHsbcCashSettlementBoundaryPlan(transactions = []) {
         const boundaries = [];
         (Array.isArray(transactions) ? transactions : []).forEach((txn, ownerTransactionIndex) => {
@@ -4713,13 +4838,7 @@ export function createInvestmentDataUtils({
                 });
             });
         });
-        return boundaries.sort((left, right) => (
-            left.date.localeCompare(right.date)
-            || left.sourceRowSequence - right.sourceRowSequence
-            || left.sourceRowNumber - right.sourceRowNumber
-            || left.sourceIndex - right.sourceIndex
-            || left.postingIndex - right.postingIndex
-        ));
+        return orderHsbcCashSettlementBoundaries(boundaries);
     }
 
     function parseInvestmentChartDate(value) {
@@ -6425,7 +6544,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.113.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.114.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

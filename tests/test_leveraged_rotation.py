@@ -1,4 +1,4 @@
-"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.4.0."""
+"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.6.0."""
 
 from __future__ import annotations
 
@@ -76,9 +76,9 @@ def test_leveraged_rotation_percentage_controls_use_dynamic_roles_and_hundredth_
     assert definitions["primary_min_pct"].ui_role == "ticker-label:0:minimum"
     assert definitions["leveraged_min_pct"].label == "Leveraged minimum"
     assert definitions["leveraged_min_pct"].ui_role == "ticker-label:1:minimum"
-    assert definitions["buy_leveraged_drop_pct"].label == "Buy leveraged: primary decline"
+    assert definitions["buy_leveraged_drop_pct"].label == "Rotate to leveraged: primary window decline"
     assert definitions["buy_leveraged_drop_pct"].ui_role == "rotation-trigger:buy-leveraged"
-    assert definitions["sell_leveraged_rise_pct"].label == "Buy primary: leveraged rise"
+    assert definitions["sell_leveraged_rise_pct"].label == "Rotate back to primary: leveraged gain since entry"
     assert definitions["sell_leveraged_rise_pct"].ui_role == "rotation-trigger:buy-primary"
 
 
@@ -88,6 +88,7 @@ def test_leveraged_rotation_uses_the_selected_trading_session_window() -> None:
         _asset_frame([100.0, 99.0, 98.0, 97.0, 96.0, 95.0, 95.0, 95.0, 95.0, 95.0, 95.0]),
         _asset_frame([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0]),
     ])
+    frame.loc[6, ["Open_2", "Low_2"]] = [50.0, 50.0]
 
     daily = strategy.compute_signals(frame, {
         "rotation_window": "1d",
@@ -108,6 +109,82 @@ def test_leveraged_rotation_uses_the_selected_trading_session_window() -> None:
     assert weekly.metadata["rotation_window_sessions"] == 5
     assert weekly.frame.loc[5, "rotation_primary_window_pct"] == pytest.approx(-5.0)
     assert weekly.frame.loc[10, "rotation_leveraged_window_pct"] == pytest.approx(10.0)
+    assert weekly.frame.loc[10, "rotation_leveraged_since_entry_pct"] == pytest.approx(10.0)
+
+
+def test_leveraged_rotation_exit_uses_actual_entry_open_instead_of_return_window() -> None:
+    strategy = LeveragedRotationStrategy()
+    frame = combine_backtest_datasets([
+        _asset_frame([100.0, 95.0, 95.0, 95.0, 95.0]),
+        _asset_frame([80.0, 80.0, 105.0, 111.0, 110.0]),
+    ])
+    frame.loc[2, ["Open_2", "Low_2"]] = [100.0, 100.0]
+
+    result = strategy.compute_signals(frame, {
+        "rotation_window": "1d",
+        "buy_leveraged_drop_pct": 5.0,
+        "sell_leveraged_rise_pct": 10.0,
+    })
+
+    assert bool(result.frame.loc[1, "rotation_enter_signal"])
+    assert not bool(result.frame.loc[2, "rotation_exit_signal"])
+    assert result.frame.loc[2, "rotation_leveraged_window_pct"] == pytest.approx(31.25)
+    assert result.frame.loc[2, "rotation_leveraged_entry_price"] == pytest.approx(100.0)
+    assert result.frame.loc[2, "rotation_leveraged_since_entry_pct"] == pytest.approx(5.0)
+    assert bool(result.frame.loc[3, "rotation_exit_signal"])
+    assert result.frame.loc[3, "rotation_leveraged_window_pct"] == pytest.approx(
+        100.0 * ((111.0 / 105.0) - 1.0)
+    )
+    assert result.frame.loc[3, "rotation_leveraged_since_entry_pct"] == pytest.approx(11.0)
+    assert result.frame["rotation_target_regime"].tolist() == [
+        "initial", "leveraged", "leveraged", "primary", "primary",
+    ]
+
+
+def test_leveraged_rotation_can_exit_after_the_entry_execution_day_close() -> None:
+    strategy = LeveragedRotationStrategy()
+    frame = combine_backtest_datasets([
+        _asset_frame([100.0, 95.0, 95.0, 95.0]),
+        _asset_frame([80.0, 80.0, 105.0, 105.0]),
+    ])
+    frame.loc[2, ["Open_2", "Low_2"]] = [100.0, 100.0]
+    signal_result = strategy.compute_signals(frame, {
+        "rotation_window": "1d",
+        "buy_leveraged_drop_pct": 5.0,
+        "sell_leveraged_rise_pct": 5.0,
+    })
+    signal_result.metadata["tickers"] = ["QQQ", "TQQQ"]
+
+    result = run_single_ticker_backtest(signal_result, 10_000.0)
+
+    assert bool(signal_result.frame.loc[2, "rotation_exit_signal"])
+    assert any(
+        trade["ticker"] == "TQQQ"
+        and trade["side"] == "Sell"
+        and trade["date"] == "2026/01/04"
+        for trade in result["trades"]
+    )
+
+
+def test_leveraged_rotation_warmup_does_not_enter_before_research_window() -> None:
+    strategy = LeveragedRotationStrategy()
+    frame = combine_backtest_datasets([
+        _asset_frame([100.0, 95.0, 90.0, 85.0, 85.0, 85.0]),
+        _asset_frame([80.0, 80.0, 80.0, 80.0, 84.0, 85.0]),
+    ])
+    frame.attrs["research_decision_start"] = frame.loc[3, "Date"]
+
+    result = strategy.compute_signals(frame, {
+        "rotation_window": "1d",
+        "buy_leveraged_drop_pct": 5.0,
+        "sell_leveraged_rise_pct": 5.0,
+    })
+
+    assert not result.frame.loc[:2, "rotation_enter_signal"].any()
+    assert bool(result.frame.loc[3, "rotation_enter_signal"])
+    assert result.frame.loc[4, "rotation_leveraged_entry_price"] == pytest.approx(
+        frame.loc[4, "Open_2"]
+    )
 
 
 def test_leveraged_rotation_backtest_switches_assets_and_marks_primary_equity() -> None:
@@ -195,7 +272,11 @@ def test_leveraged_rotation_respects_shared_stop_loss_switch() -> None:
         trade["ticker"] == "QQQ" and trade["side"] == "Sell"
         for trade in result["trades"]
     )
-    assert result["summary"]["rotation_count"] == 0
+    assert result["summary"]["rotation_count"] == 1
+    assert any(
+        trade["ticker"] == "TQQQ" and trade["side"] == "Sell" and trade["pnl"] > 0
+        for trade in result["trades"]
+    )
 
 
 @pytest.mark.parametrize("maximum", [0.0, 100.0])

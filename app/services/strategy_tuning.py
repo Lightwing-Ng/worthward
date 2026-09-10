@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.2.0."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -218,6 +218,7 @@ class ResearchSession:
                 self.model_frame, request.tickers[0]
             )
             model = self.model_frame.loc[model_dates <= last].copy()
+            model.attrs["research_decision_start"] = pd.Timestamp(first)
             signals = self.strategy.compute_signals(model, params)
             signal_dates = market_trading_dates_for_history(
                 signals.frame, request.tickers[0]

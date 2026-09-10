@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.3.0."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.0."""
 
 from dataclasses import replace
 import json
@@ -174,9 +174,11 @@ def test_research_retains_prior_history_without_exposing_future_rows():
     )
     compute = session.strategy.compute_signals
     windows = []
+    decision_starts = []
 
     def inspect_history(data, params):
         windows.append((data.Date.min(), data.Date.max()))
+        decision_starts.append(data.attrs.get("research_decision_start"))
         return compute(data, params)
 
     session.strategy.compute_signals = inspect_history
@@ -184,6 +186,7 @@ def test_research_retains_prior_history_without_exposing_future_rows():
     assert windows == [
         (frame.Date.iloc[0], last) for _first, last in session.validation_windows
     ]
+    assert decision_starts == [first for first, _last in session.validation_windows]
     assert [fold["from"] for fold in metrics["validation"]] == [
         str(pd.Timestamp(first).date()) for first, _last in session.validation_windows
     ]
