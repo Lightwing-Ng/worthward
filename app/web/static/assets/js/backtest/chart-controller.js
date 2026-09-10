@@ -1,4 +1,4 @@
-/* Code version: v1.7.0 */
+/* Code version: v1.8.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -133,6 +133,30 @@
 		return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
 	};
 
+	const resolveColorWithAlpha = (color, alpha) => {
+		const normalizedColor = String(color || "").trim();
+		const normalizedAlpha = Number(alpha);
+		if (!normalizedColor || !Number.isFinite(normalizedAlpha)) return normalizedColor;
+		const clampedAlpha = Math.min(1, Math.max(0, normalizedAlpha));
+		const hexMatch = normalizedColor.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+		if (hexMatch) {
+			const rawHex = hexMatch[1];
+			const expandedHex = rawHex.length === 3
+				? rawHex.split("").map((character) => `${character}${character}`).join("")
+				: rawHex;
+			const red = Number.parseInt(expandedHex.slice(0, 2), 16);
+			const green = Number.parseInt(expandedHex.slice(2, 4), 16);
+			const blue = Number.parseInt(expandedHex.slice(4, 6), 16);
+			return `rgba(${red}, ${green}, ${blue}, ${clampedAlpha})`;
+		}
+		const rgbMatch = normalizedColor.match(/^rgba?\(([^)]+)\)$/i);
+		if (rgbMatch) {
+			const channels = rgbMatch[1].split(",").slice(0, 3).map((value) => value.trim());
+			if (channels.length === 3) return `rgba(${channels.join(", ")}, ${clampedAlpha})`;
+		}
+		return normalizedColor;
+	};
+
 	const readPxToken = (element, tokenName, fallbackValue) => {
 		if (typeof chartAxis.readPxToken === "function") {
 			return chartAxis.readPxToken(element, tokenName, fallbackValue);
@@ -230,6 +254,7 @@
 		nextClose,
 		nextEquity,
 		nextAllIn,
+		nextAllInLeveraged,
 		getPriceYPadding,
 		getEquityYPadding,
 	) => {
@@ -246,12 +271,31 @@
 			nextRawLabels,
 			nextAllIn,
 		);
+		const hasLeveragedBenchmark = Boolean(
+			equityChart.data.datasets[2]
+			&& Array.isArray(nextAllInLeveraged)
+			&& nextAllInLeveraged.length,
+		);
+		const fromAllInLeveraged = hasLeveragedBenchmark
+			? buildAlignedSeries(
+				transition.rawLabels,
+				transition.allInLeveraged,
+				nextRawLabels,
+				nextAllInLeveraged,
+			)
+			: null;
 
 		priceChart.data.datasets[0].data = fromClose;
 		equityChart.data.datasets[0].data = fromEquity;
 		equityChart.data.datasets[1].data = fromAllIn;
+		if (hasLeveragedBenchmark) equityChart.data.datasets[2].data = fromAllInLeveraged;
 		applyBacktestYAxisScale(priceChart, priceChart.canvas, [fromClose], resolvePadding(getPriceYPadding));
-		applyBacktestYAxisScale(equityChart, equityChart.canvas, [fromEquity, fromAllIn], resolvePadding(getEquityYPadding));
+		applyBacktestYAxisScale(
+			equityChart,
+			equityChart.canvas,
+			[fromEquity, fromAllIn, ...(hasLeveragedBenchmark ? [fromAllInLeveraged] : [])],
+			resolvePadding(getEquityYPadding),
+		);
 		priceChart.update("none");
 		equityChart.update("none");
 
@@ -259,8 +303,14 @@
 			priceChart.data.datasets[0].data.slice(),
 			equityChart.data.datasets[0].data.slice(),
 			equityChart.data.datasets[1].data.slice(),
+			...(hasLeveragedBenchmark ? [equityChart.data.datasets[2].data.slice()] : []),
 		];
-		const targetSeries = [nextClose, nextEquity, nextAllIn];
+		const targetSeries = [
+			nextClose,
+			nextEquity,
+			nextAllIn,
+			...(hasLeveragedBenchmark ? [nextAllInLeveraged] : []),
+		];
 		const applyProgress = (progress) => {
 			const interpolate = (series, index) => series.map((targetValue, valueIndex) => {
 				const startValue = Number(startSeries[index][valueIndex]);
@@ -271,6 +321,9 @@
 			priceChart.data.datasets[0].data = interpolate(targetSeries[0], 0);
 			equityChart.data.datasets[0].data = interpolate(targetSeries[1], 1);
 			equityChart.data.datasets[1].data = interpolate(targetSeries[2], 2);
+			if (hasLeveragedBenchmark) {
+				equityChart.data.datasets[2].data = interpolate(targetSeries[3], 3);
+			}
 			applyBacktestYAxisScale(
 				priceChart,
 				priceChart.canvas,
@@ -280,7 +333,11 @@
 			applyBacktestYAxisScale(
 				equityChart,
 				equityChart.canvas,
-				[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+				[
+					equityChart.data.datasets[0].data,
+					equityChart.data.datasets[1].data,
+					...(hasLeveragedBenchmark ? [equityChart.data.datasets[2].data] : []),
+				],
 				resolvePadding(getEquityYPadding),
 			);
 			priceChart.update("none");
@@ -490,6 +547,12 @@
 		const high = backtestResult.chart.high || [];
 		const low = backtestResult.chart.low || [];
 		const equity = backtestResult.chart.equity;
+		const chartTickers = Array.isArray(backtestResult.tickers)
+			? backtestResult.tickers.map((ticker) => String(ticker || "").trim()).filter(Boolean)
+			: [];
+		const primaryTicker = chartTickers[0] || "Ticker 1";
+		const leveragedTicker = chartTickers[1] || "Ticker 2";
+		const isLeveragedRotationChart = backtestResult.multi_asset === true && chartTickers.length >= 2;
 		let strategyPresentation = typeof probabilityGridApi.normalizePresentation === "function"
 			? probabilityGridApi.normalizePresentation(
 				backtestResult.strategy_presentation,
@@ -573,7 +636,19 @@
 		const isCandlestick = interval === "1m" && tradingDaysCount <= 1 && open.length > 0 && high.length > 0 && low.length > 0;
 		
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
-		const allInReferenceColor = resolvedTheme.muted;
+		const rawLeveragedAllInEquity = Array.isArray(backtestResult.chart?.all_in_leveraged_equity)
+			? backtestResult.chart.all_in_leveraged_equity.map((value) => Number(value || 0))
+			: [];
+		const hasLeveragedBenchmark = isLeveragedRotationChart
+			&& rawLeveragedAllInEquity.length === labels.length;
+		const allInReferenceOpacity = 0.5;
+		const allInPrimaryReferenceColor = hasLeveragedBenchmark
+			? resolveColorWithAlpha(resolvedTheme.accentPrimary, allInReferenceOpacity)
+			: resolvedTheme.muted;
+		const allInLeveragedReferenceColor = resolveColorWithAlpha(
+			resolvedTheme.accentSecondary,
+			allInReferenceOpacity,
+		);
 		const formatFullDateParts = bootstrap.dateDisplay?.formatFullDateParts;
 		const formatFullDateLines = bootstrap.dateDisplay?.formatFullDateLines;
 		const svgMarkerViewBox = { width: 20.3027, height: 20.5176 };
@@ -596,7 +671,12 @@
 			const minutes = `${parsed.getMinutes()}`.padStart(2, "0");
 			return `${year}/${month}/${day} ${hours}:${minutes}`;
 		};
-		const buildTradeMarkerPoints = (trades, dates, tradeInterval) => {
+		const buildTradeMarkerPoints = (
+			trades,
+			dates,
+			tradeInterval,
+			primaryCurveValues,
+		) => {
 			if (!Array.isArray(trades) || !trades.length || !Array.isArray(dates) || !dates.length) {
 				return { buy: [], sell: [] };
 			}
@@ -609,19 +689,37 @@
 			return trades.reduce((accumulator, trade) => {
 				if (trade?._virtual_close) return accumulator;
 				const index = indexByDate.get(String(trade?.date || ""));
-				const price = Number(trade?.price);
+				const ticker = String(trade?.ticker || "").trim();
+				const isLeveragedTrade = isLeveragedRotationChart && ticker === leveragedTicker;
+				const executionPrice = Number(trade?.price);
+				const projectedPrice = Number(primaryCurveValues?.[index]);
+				const price = isLeveragedTrade ? projectedPrice : executionPrice;
 				if (!Number.isInteger(index) || !Number.isFinite(price)) return accumulator;
 				const side = String(trade?.side || "");
-				const marker = { index, price };
+				const marker = {
+					index,
+					price,
+					ticker,
+					projectedToPrimaryCurve: isLeveragedTrade,
+				};
 				if (side === "Buy") accumulator.buy.push(marker);
 				if (side === "Sell") accumulator.sell.push(marker);
 				return accumulator;
 			}, { buy: [], sell: [] });
 		};
-		const tradeMarkerPoints = buildTradeMarkerPoints(backtestResult.trades, rawDates, interval);
-		const allInEquity = Array.isArray(backtestResult.chart?.all_in_equity) && backtestResult.chart.all_in_equity.length
-			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
+		const tradeMarkerPoints = buildTradeMarkerPoints(
+			backtestResult.trades,
+			rawDates,
+			interval,
+			close,
+		);
+		const allInEquity = Array.isArray(backtestResult.chart?.all_in_primary_equity)
+			&& backtestResult.chart.all_in_primary_equity.length
+			? backtestResult.chart.all_in_primary_equity.map((value) => Number(value || 0))
+			: Array.isArray(backtestResult.chart?.all_in_equity) && backtestResult.chart.all_in_equity.length
+				? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
 			: buildAllInSeries(open, close, initialCapital);
+		const allInLeveragedEquity = hasLeveragedBenchmark ? rawLeveragedAllInEquity : [];
 
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) {
@@ -709,37 +807,51 @@
 			<p class="chart-tooltip-date"></p>
 			<div class="chart-tooltip-list">
 				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot"></span>
+					<span class="chart-tooltip-dot" data-dot-role="close"></span>
 					<span></span>
-					<span class="chart-tooltip-label">Close</span>
+					<span class="chart-tooltip-label" data-tooltip-label="close">Close</span>
 					<span class="chart-tooltip-value" data-role="close"></span>
 				</div>
 				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot"></span>
+					<span class="chart-tooltip-dot" data-dot-role="return"></span>
 					<span></span>
 					<span class="chart-tooltip-label">Net return</span>
 					<span class="chart-tooltip-value" data-role="return"></span>
 				</div>
 				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot"></span>
+					<span class="chart-tooltip-dot" data-dot-role="equity"></span>
 					<span></span>
 					<span class="chart-tooltip-label">Equity</span>
 					<span class="chart-tooltip-value" data-role="equity"></span>
 				</div>
 				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot"></span>
+					<span class="chart-tooltip-dot" data-dot-role="all-in-primary"></span>
 					<span></span>
-					<span class="chart-tooltip-label">If all in</span>
+					<span class="chart-tooltip-label" data-tooltip-label="all-in-primary">If all in</span>
 					<span class="chart-tooltip-value" data-role="all-in"></span>
 				</div>
+				${hasLeveragedBenchmark ? `
 				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot"></span>
+					<span class="chart-tooltip-dot" data-dot-role="all-in-leveraged"></span>
 					<span></span>
-					<span class="chart-tooltip-label">vs all in</span>
+					<span class="chart-tooltip-label" data-tooltip-label="all-in-leveraged"></span>
+					<span class="chart-tooltip-value" data-role="all-in-leveraged"></span>
+				</div>
+				` : ""}
+				<div class="chart-tooltip-row">
+					<span class="chart-tooltip-dot" data-dot-role="vs-all-in"></span>
+					<span></span>
+					<span class="chart-tooltip-label" data-tooltip-label="vs-all-in">vs all in</span>
 					<span class="chart-tooltip-value" data-role="vs-all-in"></span>
 				</div>
 			</div>
 		`;
+		if (hasLeveragedBenchmark) {
+			tooltip.querySelector('[data-tooltip-label="close"]').textContent = `${primaryTicker} close`;
+			tooltip.querySelector('[data-tooltip-label="all-in-primary"]').textContent = `All in ${primaryTicker}`;
+			tooltip.querySelector('[data-tooltip-label="all-in-leveraged"]').textContent = `All in ${leveragedTicker}`;
+			tooltip.querySelector('[data-tooltip-label="vs-all-in"]').textContent = `vs all in ${primaryTicker}`;
+		}
 		tradeChartStack.appendChild(tooltip);
 		const probabilityTooltip = strategyPresentation ? document.createElement("div") : null;
 		const probabilityScrollSpacer = strategyPresentation ? document.createElement("span") : null;
@@ -2778,6 +2890,7 @@
 			const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
 			const allInValue = Number(allInEquity[index] || 0);
+			const allInLeveragedValue = Number(allInLeveragedEquity[index] || 0);
 			const netReturn = initialCapital > 0 ? ((equityValue / initialCapital) - 1) * 100 : 0;
 			const versusAllIn = equityValue - allInValue;
 			const parsedLabelDate = parseRawDate(rawDates[index]);
@@ -2786,15 +2899,42 @@
 			tooltip.querySelector('[data-role="return"]').textContent = formatReturn(netReturn);
 			tooltip.querySelector('[data-role="equity"]').textContent = formatMoney(equityValue);
 			tooltip.querySelector('[data-role="all-in"]').textContent = formatMoney(allInValue);
+			if (hasLeveragedBenchmark) {
+				tooltip.querySelector('[data-role="all-in-leveraged"]').textContent = formatMoney(
+					allInLeveragedValue,
+				);
+			}
 			const vsAllInValue = tooltip.querySelector('[data-role="vs-all-in"]');
 			vsAllInValue.textContent = `${versusAllIn >= 0 ? "+" : "-"}${formatMoney(Math.abs(versusAllIn))}`;
 			vsAllInValue.style.color = versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
-			const dots = tooltip.querySelectorAll(".chart-tooltip-dot");
-			if (dots[0]) dots[0].style.backgroundColor = resolvedTheme.accentPrimary;
-			if (dots[1]) dots[1].style.backgroundColor = equityValue >= initialCapital ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
-			if (dots[2]) dots[2].style.backgroundColor = resolvedTheme.text;
-			if (dots[3]) dots[3].style.backgroundColor = allInReferenceColor;
-			if (dots[4]) dots[4].style.backgroundColor = versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
+			const setTooltipDotColor = (role, color) => {
+				const dot = tooltip.querySelector(`[data-dot-role="${role}"]`);
+				if (dot) dot.style.backgroundColor = color;
+			};
+			setTooltipDotColor("close", resolvedTheme.accentPrimary);
+			setTooltipDotColor(
+				"return",
+				equityValue >= initialCapital
+					? resolvedTheme.accentPositive
+					: resolvedTheme.accentSecondary,
+			);
+			setTooltipDotColor("equity", resolvedTheme.text);
+			setTooltipDotColor(
+				"all-in-primary",
+				hasLeveragedBenchmark
+					? resolveColorWithAlpha(resolvedTheme.accentPrimary, allInReferenceOpacity)
+					: resolvedTheme.muted,
+			);
+			if (hasLeveragedBenchmark) {
+				setTooltipDotColor(
+					"all-in-leveraged",
+					resolveColorWithAlpha(resolvedTheme.accentSecondary, allInReferenceOpacity),
+				);
+			}
+			setTooltipDotColor(
+				"vs-all-in",
+				versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary,
+			);
 			const tooltipWidth = tooltip.offsetWidth || 220;
 			const rightSpace = stackRect.width - visualRelativeX;
 			const visualLeft = rightSpace >= tooltipWidth + 20
@@ -3390,8 +3530,26 @@
 		const allInSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.allIn, rawDates, allInEquity)
 			: allInEquity;
+		const allInLeveragedSeriesStart = hasLeveragedBenchmark
+			? refreshTransition
+				? buildAlignedSeries(
+					refreshTransition.rawLabels,
+					refreshTransition.allInLeveraged,
+					rawDates,
+					allInLeveragedEquity,
+				)
+				: allInLeveragedEquity
+			: [];
 		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], priceChartYPadding);
-		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInSeriesStart], chartYPaddingPx);
+		const equityYScale = buildPixelPaddedYScale(
+			equityCanvas,
+			[
+				equitySeriesStart,
+				allInSeriesStart,
+				...(hasLeveragedBenchmark ? [allInLeveragedSeriesStart] : []),
+			],
+			chartYPaddingPx,
+		);
 		const markBacktestChartReady = (canvas) => {
 			if (!canvas || canvas.dataset.tradeChartReady === "1") return;
 			canvas.dataset.tradeChartReady = "1";
@@ -3467,7 +3625,9 @@
 				xAxisLabelPlugin,
 			],
 		});
+		priceChart.$backtestTradeMarkerPoints = tradeMarkerPoints;
 
+		const benchmarkLineWidth = 1.0;
 		equityChart = new Chart(equityCanvas, {
 			type: "line",
 			data: {
@@ -3494,10 +3654,10 @@
 						},
 					},
 					{
-						label: "If all in",
+						label: hasLeveragedBenchmark ? `All in ${primaryTicker}` : "If all in",
 						data: allInSeriesStart,
-						borderColor: allInReferenceColor,
-						borderWidth: 1.0,
+						borderColor: allInPrimaryReferenceColor,
+						borderWidth: benchmarkLineWidth,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",
@@ -3506,10 +3666,27 @@
 							borderColor: (context) => (
 								isSessionGap(context.p0DataIndex, context.p1DataIndex)
 									? "rgba(0, 0, 0, 0)"
-									: allInReferenceColor
+									: allInPrimaryReferenceColor
 							),
 						},
 					},
+					...(hasLeveragedBenchmark ? [{
+						label: `All in ${leveragedTicker}`,
+						data: allInLeveragedSeriesStart,
+						borderColor: allInLeveragedReferenceColor,
+						borderWidth: benchmarkLineWidth,
+						pointRadius: 0,
+						tension: 0,
+						borderJoinStyle: "round",
+						borderCapStyle: "round",
+						segment: {
+							borderColor: (context) => (
+								isSessionGap(context.p0DataIndex, context.p1DataIndex)
+									? "rgba(0, 0, 0, 0)"
+									: allInLeveragedReferenceColor
+							),
+						},
+					}] : []),
 				],
 			},
 			options: {
@@ -3765,7 +3942,11 @@
 				applyBacktestYAxisScale(
 					equityChart,
 					equityCanvas,
-					[equityChart.data.datasets[0].data, equityChart.data.datasets[1].data],
+					[
+						equityChart.data.datasets[0].data,
+						equityChart.data.datasets[1].data,
+						...(hasLeveragedBenchmark ? [equityChart.data.datasets[2].data] : []),
+					],
 					chartYPaddingPx,
 				);
 			}
@@ -3901,7 +4082,13 @@
 			if (controllerDestroyed || !priceChart?.ctx || !equityChart?.ctx) return;
 			const nextTheme = readThemeTokens();
 			Object.assign(resolvedTheme, nextTheme);
-			const nextAllInReferenceColor = nextTheme.muted;
+			const nextAllInPrimaryReferenceColor = hasLeveragedBenchmark
+				? resolveColorWithAlpha(nextTheme.accentPrimary, allInReferenceOpacity)
+				: nextTheme.muted;
+			const nextAllInLeveragedReferenceColor = resolveColorWithAlpha(
+				nextTheme.accentSecondary,
+				allInReferenceOpacity,
+			);
 			priceChart.options.scales.y.ticks.color = nextTheme.muted;
 			equityChart.options.scales.y.ticks.color = nextTheme.muted;
 			priceChart.data.datasets[0].borderColor = isCandlestick ? "transparent" : nextTheme.accentPrimary;
@@ -3910,12 +4097,20 @@
 					? "rgba(0, 0, 0, 0)"
 					: nextTheme.accentPrimary
 			);
-			equityChart.data.datasets[1].borderColor = nextAllInReferenceColor;
+			equityChart.data.datasets[1].borderColor = nextAllInPrimaryReferenceColor;
 			equityChart.data.datasets[1].segment.borderColor = (context) => (
 				isSessionGap(context.p0DataIndex, context.p1DataIndex)
 					? "rgba(0, 0, 0, 0)"
-					: nextAllInReferenceColor
+					: nextAllInPrimaryReferenceColor
 			);
+			if (hasLeveragedBenchmark && equityChart.data.datasets[2]) {
+				equityChart.data.datasets[2].borderColor = nextAllInLeveragedReferenceColor;
+				equityChart.data.datasets[2].segment.borderColor = (context) => (
+					isSessionGap(context.p0DataIndex, context.p1DataIndex)
+						? "rgba(0, 0, 0, 0)"
+						: nextAllInLeveragedReferenceColor
+				);
+			}
 			priceChart.update("none");
 			equityChart.update("none");
 		});
@@ -3928,6 +4123,7 @@
 				close,
 				equity,
 				allInEquity,
+				allInLeveragedEquity,
 				() => priceChartYPadding,
 				() => chartYPaddingPx,
 			);

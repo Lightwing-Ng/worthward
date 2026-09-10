@@ -1,12 +1,12 @@
 # Architecture guide
 
-Documentation version: `v1.98.0`
+Documentation version: `v1.100.0`
 
 ## Shared Backtest controls and research
 
-Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and white vertical handles. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the limit-thumb surface; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Rotation labels state both the target purchase and the causal source move, for example `Buy TQQQ: QQQ decline` and `Buy QQQ: TQQQ rise`.
+Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and white vertical handles. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the limit-thumb surface; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Rotation labels state both the target purchase and the causal source move, for example `Buy TQQQ: QQQ decline` and `Buy QQQ: TQQQ rise`. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. The primary reference uses the standard blue token at 50% opacity, the leveraged reference uses the standard magenta token at 50% opacity, and both reuse the original one-pixel all-in reference width so the strategy equity remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
 
-The same strategy is available through `scripts/strategy_tune.py --strategy leveraged-rotation --ticker QQQ --ticker TQQQ`, including JSON fixed parameters, numeric bounds, categorical Return window search, genetic search, and random-forest search. Runs read existing local history and write explicit research outputs, with validation ranking and a separate final holdout. The result records normalized parameters for reuse in Backtest URLs or subsequent CLI requests.
+The same strategy is available through `scripts/strategy_tune.py --strategy leveraged-rotation --ticker QQQ --ticker TQQQ`, including JSON fixed parameters, numeric bounds, categorical Return window search, genetic search, and random-forest search. Runs read existing local history and write explicit research outputs, with validation ranking and a separate final holdout. The default ranking is risk-adjusted; `--objective net-return` ranks the two validation folds by their mean net return percentage without changing the disclosed drawdown or allowing holdout data into selection. The result records normalized parameters for reuse in Backtest URLs or subsequent CLI requests.
 
 An all-cash initial allocation is valid when the declared minima permit it. The execution engine requires finite positive opening prices, not an initial purchase; it retains cash until a later permitted signal creates a position, or throughout the backtest when both maxima are zero.
 
@@ -58,10 +58,12 @@ strategy-declared provider once, reserves candidate warmup/factors, and reuses
 the canonical single/multi-ticker, grid, rotation, DCA, and interval-bridge engines.
 It requires 40 distinct trading dates, uses the first half for warmup, scores
 50–65% and 65–80% as chronological expanding validation folds, then evaluates
-only the chosen configuration on the last 20%. The objective is mean validation
-return percentage minus half the maximum drawdown percentage. Final holdout data
-never ranks candidates. Price-frame fingerprints, provider/model provenance,
-fixed configuration, and every evaluation are recorded outside production stores.
+only the chosen configuration on the last 20%. The default objective is mean
+validation return percentage minus half the maximum drawdown percentage; the
+explicit net-return objective instead uses mean validation net return percentage.
+Final holdout data never ranks candidates. Price-frame fingerprints,
+provider/model provenance, fixed configuration, and every evaluation are
+recorded outside production stores.
 `scripts/strategy_tune.py` persists holdout errors alongside the successful
 validation evidence and returns a failing exit code rather than claiming success.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tune any Backtest registry entry without writing production stores. Code version: v1.0.0."""
+"""Tune any Backtest registry entry without writing production stores. Code version: v1.1.0."""
 # ruff: noqa: E402
 
 from __future__ import annotations
@@ -51,6 +51,12 @@ def main(argv=None):
     parser.add_argument("--no-stop-loss", action="store_true")
     parser.add_argument(
         "--method", choices=("genetic", "random-forest"), default="genetic"
+    )
+    parser.add_argument(
+        "--objective",
+        choices=("risk-adjusted-return", "net-return"),
+        default="risk-adjusted-return",
+        help="Rank validation folds by risk-adjusted return or net return percentage.",
     )
     parser.add_argument("--trials", type=int, default=16)
     parser.add_argument(
@@ -123,17 +129,22 @@ def main(argv=None):
             else end - PERIOD_OFFSETS[args.period]
         )
         request = ResearchRequest(
-            args.strategy,
-            tuple(ticker.strip().upper() for ticker in args.ticker),
-            str(start.date()),
-            str(end.date()),
-            args.interval,
-            args.capital,
-            args.execution_mode,
-            not args.price_only,
-            args.reinvest_dividends and not args.price_only,
-            not args.no_stop_loss,
-            fixed,
+            strategy_id=args.strategy,
+            tickers=tuple(ticker.strip().upper() for ticker in args.ticker),
+            start=str(start.date()),
+            end=str(end.date()),
+            interval=args.interval,
+            initial_capital=args.capital,
+            execution_mode=args.execution_mode,
+            include_cash_dividends=not args.price_only,
+            reinvest_cash_dividends=args.reinvest_dividends and not args.price_only,
+            stop_loss_enabled=not args.no_stop_loss,
+            params=fixed,
+            objective=(
+                "net_return_pct"
+                if args.objective == "net-return"
+                else "risk_adjusted_return"
+            ),
         )
         session = ResearchSession(request, bounds=bounds)
         output.mkdir(parents=True, exist_ok=False)
@@ -163,7 +174,11 @@ def main(argv=None):
                 "period": args.period,
                 "data_fingerprint": session.data_fingerprint,
                 "sources": session.provenance,
-                "objective": "mean validation return pct minus 0.5 times max drawdown pct",
+                "objective": (
+                    "mean validation net return pct"
+                    if args.objective == "net-return"
+                    else "mean validation return pct minus 0.5 times max drawdown pct"
+                ),
                 "holdout_used_for_selection": False,
             }
         )

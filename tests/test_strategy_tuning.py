@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.2.0."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.3.0."""
 
 from dataclasses import replace
 import json
@@ -278,6 +278,30 @@ def test_holdout_price_changes_do_not_change_validation_scores():
     with pytest.raises(ValueError, match="distinct ticker"):
         ResearchSession(
             replace(request, tickers=("NVDA", "NVDA")),
+            history_loader=lambda *_args: frame,
+        )
+
+
+def test_net_return_objective_ranks_validation_without_drawdown_penalty():
+    frame = ohlc_frame_for_dates(
+        "NVDA", pd.bdate_range("2025-01-02", periods=100).strftime("%Y-%m-%d").tolist()
+    )
+    request = ResearchRequest(
+        "macd",
+        ("NVDA",),
+        "2025-01-02",
+        "2026-01-02",
+        objective="net_return_pct",
+    )
+    session = ResearchSession(request, history_loader=lambda *_args: frame)
+    metrics = session.evaluate_window(
+        session.strategy.get_startup_params(), session.validation_windows[0]
+    )
+    assert metrics["score"] == metrics["net_return_pct"]
+
+    with pytest.raises(ValueError, match="objective"):
+        ResearchSession(
+            replace(request, objective="holdout_return"),
             history_loader=lambda *_args: frame,
         )
 

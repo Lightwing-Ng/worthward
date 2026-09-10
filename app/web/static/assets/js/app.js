@@ -1,4 +1,4 @@
-/* Code version: v0.64.0 */
+/* Code version: v0.65.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -1291,6 +1291,9 @@
             : typeof chartAxis.buildAllInEquitySeries === "function"
                 ? chartAxis.buildAllInEquitySeries(openSeries, closeSeries, initialCapital)
                 : [];
+        const allInLeveragedSeries = Array.isArray(chartState.all_in_leveraged_equity)
+            ? chartState.all_in_leveraged_equity.map((value) => Number(value || 0))
+            : [];
         bootstrap.backtestRefreshTransition = {
             capturedAt: performance.now(),
             rawLabels: Array.isArray(chartState.raw_dates) && chartState.raw_dates.length
@@ -1299,6 +1302,7 @@
             close: closeSeries,
             equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
             allIn: allInSeries,
+            allInLeveraged: allInLeveragedSeries,
             initialCapital,
         };
     };

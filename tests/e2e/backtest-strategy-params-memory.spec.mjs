@@ -1,4 +1,4 @@
-/* Code version: v0.6.0 */
+/* Code version: v0.7.1 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -318,4 +318,133 @@ test('Style tokens catalogs both allocation range variants from foundation token
         };
     });
     expect(tokenGeometry).toEqual({labelBlock: 'calc(30px + 2px)', trackShell: '30px', titleSize: '15px', detailSize: '11px'});
+});
+
+test('Leveraged Rotation projects both assets trades onto QQQ and compares both all-in paths', async ({page}) => {
+    await page.setViewportSize({width: 1_014, height: 1_388});
+    await page.goto('/workspaces/backtest?range=3y&strategy=leveraged-rotation&show_trade_details=1'
+        + '&initial_primary_pct=12.67&initial_leveraged_pct=35.94&primary_min_pct=25'
+        + '&primary_max_pct=100&rotation_window=1w&sell_leveraged_rise_pct=10.00');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradeEquityChart')),
+    ))).toBe(true);
+
+    const readChartContract = () => page.evaluate(() => {
+        const result = window.WORTHWARD_APP?.backtestResult;
+        const priceChart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+        const equityChart = window.Chart?.getChart?.(document.querySelector('#tradeEquityChart'));
+        if (!result?.chart || !priceChart || !equityChart) return null;
+        const markerPoints = priceChart.$backtestTradeMarkerPoints;
+        if (!markerPoints) return null;
+        const rawDates = result.chart.raw_dates || [];
+        const dateKey = (index) => String(rawDates[index] || '').slice(0, 10).replaceAll('-', '/');
+        const markers = [
+            ...markerPoints.buy.map((marker) => ({...marker, side: 'Buy'})),
+            ...markerPoints.sell.map((marker) => ({...marker, side: 'Sell'})),
+        ];
+        const realTrades = (result.trades || []).filter((trade) => !trade._virtual_close);
+        const primaryTicker = result.tickers?.[0];
+        const leveragedTicker = result.tickers?.[1];
+        const primaryMarkersPreserved = realTrades
+            .filter((trade) => trade.ticker === primaryTicker)
+            .every((trade) => markers.some((marker) => (
+                marker.ticker === primaryTicker
+                && marker.side === trade.side
+                && dateKey(marker.index) === trade.date
+                && marker.price === Number(trade.price)
+                && marker.projectedToPrimaryCurve === false
+            )));
+        const leveragedMarkersProjected = realTrades
+            .filter((trade) => trade.ticker === leveragedTicker)
+            .every((trade) => markers.some((marker) => (
+                marker.ticker === leveragedTicker
+                && marker.side === trade.side
+                && dateKey(marker.index) === trade.date
+                && marker.price === Number(result.chart.close?.[marker.index])
+                && marker.projectedToPrimaryCurve === true
+            )));
+        return {
+            priceDatasetCount: priceChart.data.datasets.length,
+            datasetLabels: equityChart.data.datasets.map((dataset) => dataset.label),
+            benchmarkWidths: equityChart.data.datasets.slice(1).map((dataset) => dataset.borderWidth),
+            benchmarkColors: equityChart.data.datasets.slice(1).map((dataset) => dataset.borderColor),
+            primaryToken: getComputedStyle(document.body).getPropertyValue('--theme-accent-primary').trim(),
+            leveragedToken: getComputedStyle(document.body).getPropertyValue('--theme-accent-secondary').trim(),
+            primarySeriesMatches: JSON.stringify(equityChart.data.datasets[1].data)
+                === JSON.stringify(result.chart.all_in_primary_equity),
+            leveragedSeriesMatches: JSON.stringify(equityChart.data.datasets[2].data)
+                === JSON.stringify(result.chart.all_in_leveraged_equity),
+            markerCount: markers.length,
+            tradeCount: realTrades.length,
+            hasBothMarkerTickers: new Set(markers.map((marker) => marker.ticker)).size === 2,
+            primaryMarkersPreserved,
+            leveragedMarkersProjected,
+            hasNonNativeProjection: realTrades.some((trade) => {
+                if (trade.ticker !== leveragedTicker) return false;
+                const marker = markers.find((candidate) => (
+                    candidate.ticker === leveragedTicker
+                    && candidate.side === trade.side
+                    && dateKey(candidate.index) === trade.date
+                ));
+                return marker && Math.abs(marker.price - Number(trade.price)) > 1;
+            }),
+        };
+    });
+    await expect.poll(async () => {
+        const contract = await readChartContract();
+        return Boolean(
+            contract
+            && contract.primarySeriesMatches
+            && contract.leveragedSeriesMatches
+            && contract.markerCount === contract.tradeCount,
+        );
+    }, {timeout: 10_000}).toBe(true);
+    const chartContract = await readChartContract();
+
+    expect(chartContract.priceDatasetCount).toBe(1);
+    expect(chartContract.datasetLabels).toEqual(['Equity', 'All in QQQ', 'All in TQQQ']);
+    expect(chartContract.benchmarkWidths).toEqual([1, 1]);
+    const tokenWithAlpha = (token, alpha) => {
+        const channels = token.slice(1).match(/.{2}/g)
+            .map((channel) => Number.parseInt(channel, 16));
+        return `rgba(${channels.join(', ')}, ${alpha})`;
+    };
+    expect(chartContract.benchmarkColors[0]).toBe(tokenWithAlpha(chartContract.primaryToken, 0.5));
+    expect(chartContract.benchmarkColors[1]).toBe(tokenWithAlpha(chartContract.leveragedToken, 0.5));
+    expect(chartContract.primarySeriesMatches).toBe(true);
+    expect(chartContract.leveragedSeriesMatches).toBe(true);
+    expect(chartContract.markerCount).toBe(chartContract.tradeCount);
+    expect(chartContract.hasBothMarkerTickers).toBe(true);
+    expect(chartContract.primaryMarkersPreserved).toBe(true);
+    expect(chartContract.leveragedMarkersProjected).toBe(true);
+    expect(chartContract.hasNonNativeProjection).toBe(true);
+
+    const hoverPoint = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradeEquityChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const index = Math.floor((chart?.data?.labels?.length || 1) / 2);
+        const point = chart?.getDatasetMeta?.(0)?.data?.[index];
+        const rect = canvas?.getBoundingClientRect();
+        if (!point || !rect || !chart?.width || !chart?.height) return null;
+        return {
+            x: rect.left + (point.x * (rect.width / chart.width)),
+            y: rect.top + (point.y * (rect.height / chart.height)),
+        };
+    });
+    expect(hoverPoint).not.toBeNull();
+    await page.mouse.move(hoverPoint.x, hoverPoint.y);
+    const tooltip = page.locator('[data-backtest-chart-tooltip="summary"]');
+    await expect(tooltip).toHaveClass(/is-visible/);
+    await expect(tooltip.locator('.chart-tooltip-label')).toHaveText([
+        'QQQ close',
+        'Net return',
+        'Equity',
+        'All in QQQ',
+        'All in TQQQ',
+        'vs all in QQQ',
+    ]);
+    await page.locator('#backtest_overview_panel').screenshot({
+        path: '/tmp/worthward-leveraged-rotation-chart.png',
+        animations: 'disabled',
+    });
 });

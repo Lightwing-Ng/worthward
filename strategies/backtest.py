@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.13.1
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -349,14 +349,21 @@ def _build_buy_hold_equity_series(
         *,
         reinvest_cash_dividends: bool,
         include_cash_dividends: bool,
+        open_column: str = "Open",
+        close_column: str = "Close",
+        dividend_column: str = "Dividends",
 ) -> tuple[pd.Series, float]:
-    first_price = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
+    first_price = float(
+        frame[open_column].iloc[0]
+        if open_column in frame.columns
+        else frame[close_column].iloc[0]
+    )
     shares = float(floor(initial_capital / first_price)) if first_price > 0 else 0.0
     cash = float(initial_capital) - (shares * first_price)
     equity_values: list[float] = []
     for index, row in enumerate(frame.itertuples(index=False)):
-        close_price = float(row.Close)
-        dividend_per_share = float(getattr(row, "Dividends", 0.0) or 0.0)
+        close_price = float(getattr(row, close_column))
+        dividend_per_share = float(getattr(row, dividend_column, 0.0) or 0.0)
         if include_cash_dividends and index > 0:
             cash, shares = _apply_dividend_cash_flow(
                 cash=cash,
@@ -566,6 +573,17 @@ def run_leveraged_rotation_backtest(
         reinvest_cash_dividends=reinvest_cash_dividends,
         include_cash_dividends=include_cash_dividends,
     )
+    leveraged_bh_equity_series, _leveraged_bh_final_equity = (
+        _build_buy_hold_equity_series(
+            frame,
+            initial_capital,
+            reinvest_cash_dividends=reinvest_cash_dividends,
+            include_cash_dividends=include_cash_dividends,
+            open_column="Open_2",
+            close_column="Close_2",
+            dividend_column="Dividends_2",
+        )
+    )
     beat_bh_mask = frame["Equity"] > bh_equity_series
     beat_bh_pct = (beat_bh_mask.sum() / len(frame)) * 100.0 if len(frame) > 0 else 0.0
     total_trades = len(trades)
@@ -612,6 +630,13 @@ def run_leveraged_rotation_backtest(
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
             "all_in_equity": [round(float(value), 4) for value in bh_equity_series.tolist()],
+            "all_in_primary_equity": [
+                round(float(value), 4) for value in bh_equity_series.tolist()
+            ],
+            "all_in_leveraged_equity": [
+                round(float(value), 4)
+                for value in leveraged_bh_equity_series.tolist()
+            ],
             "buy_markers": buy_markers,
             "sell_markers": sell_markers,
         },

@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.19.0`
+Documentation version: `v3.20.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -106,12 +106,15 @@ non-browser API clients.
 
 ### Backtest research CLI
 
-`scripts/strategy_tune.py` v1.0.0 discovers the same enabled strategy registry as
+`scripts/strategy_tune.py` v1.1.0 discovers the same enabled strategy registry as
 the dropdown (18 strategies on 8 Sep 2026). It supports genetic search and a
 random-forest regression surrogate, reuses each strategy's production execution
 engine, ranks two chronological validation windows, and evaluates the winner on
 an untouched final holdout. Buy and hold has no tunable parameters and is evaluated
 once as a baseline. Research results are not recommendations or promised returns.
+The default objective subtracts half the maximum drawdown percentage from net
+return; `--objective net-return` instead ranks candidates by mean validation net
+return while continuing to disclose drawdown and keeping holdout out of selection.
 
 ```bash
 python3 scripts/strategy_tune.py --catalog

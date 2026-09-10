@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.1.0."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ class ResearchRequest:
     reinvest_cash_dividends: bool = False
     stop_loss_enabled: bool = True
     params: dict = field(default_factory=dict)
+    objective: str = "risk_adjusted_return"
 
 
 def load_research_history(ticker: str, interval: str) -> pd.DataFrame:
@@ -79,6 +80,8 @@ class ResearchSession:
             raise ValueError("Initial capital must be positive and finite.")
         if request.execution_mode not in {"next_open", "signal_close"}:
             raise ValueError("Invalid execution mode.")
+        if request.objective not in {"risk_adjusted_return", "net_return_pct"}:
+            raise ValueError("Invalid research objective.")
         start, end = pd.Timestamp(request.start), pd.Timestamp(request.end)
         if pd.isna(start) or pd.isna(end) or start > end:
             raise ValueError("Invalid research dates.")
@@ -281,12 +284,17 @@ class ResearchSession:
             raise ValueError("No finite positive equity path was produced.")
         drawdown = float(np.max(1 - equity / np.maximum.accumulate(equity)) * 100)
         net_return = float(result["summary"]["net_return_pct"])
+        score = (
+            net_return
+            if request.objective == "net_return_pct"
+            else net_return - 0.5 * drawdown
+        )
         return {
             "from": str(pd.Timestamp(first).date()),
             "to": str(pd.Timestamp(last).date()),
             "net_return_pct": net_return,
             "max_drawdown_pct": round(drawdown, 6),
-            "score": net_return - 0.5 * drawdown,
+            "score": score,
             "model_evidence": model_evidence,
         }
 

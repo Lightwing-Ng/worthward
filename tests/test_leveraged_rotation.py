@@ -1,4 +1,4 @@
-"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.3.0."""
+"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.4.0."""
 
 from __future__ import annotations
 
@@ -146,6 +146,34 @@ def test_leveraged_rotation_backtest_switches_assets_and_marks_primary_equity() 
     }
     assert result["summary"]["rotation_count"] == 1
     assert len(result["chart"]["equity"]) == len(frame)
+    assert result["chart"]["all_in_equity"] == [
+        10_000.0, 10_500.0, 9_400.0, 9_500.0, 11_000.0, 11_500.0,
+    ]
+    assert result["chart"]["all_in_primary_equity"] == result["chart"]["all_in_equity"]
+    assert result["chart"]["all_in_leveraged_equity"] == [
+        10_000.0, 11_000.0, 9_000.0, 10_000.0, 12_000.0, 13_000.0,
+    ]
+
+
+def test_leveraged_all_in_reference_uses_its_own_dividend_column() -> None:
+    primary = _asset_frame([100.0, 100.0, 100.0])
+    leveraged = _asset_frame([50.0, 50.0, 50.0])
+    leveraged.loc[1, "Dividends"] = 1.0
+    frame = combine_backtest_datasets([primary, leveraged])
+    signals = LeveragedRotationStrategy().compute_signals(frame)
+    signals.metadata["tickers"] = ["QQQ", "TQQQ"]
+
+    result = run_single_ticker_backtest(
+        signals,
+        10_000.0,
+        include_cash_dividends=True,
+        reinvest_cash_dividends=False,
+    )
+
+    assert result["chart"]["all_in_primary_equity"] == [10_000.0] * 3
+    assert result["chart"]["all_in_leveraged_equity"] == [
+        10_000.0, 10_200.0, 10_200.0,
+    ]
 
 
 def test_leveraged_rotation_respects_shared_stop_loss_switch() -> None:
