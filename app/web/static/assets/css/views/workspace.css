@@ -1,4 +1,4 @@
-/* Code version: v1.24.0 */
+/* Code version: v1.25.0 */
 /* Keep modal dismiss actions in a dedicated macOS-style upper-left rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -116,6 +116,19 @@
 
 .workspace-mode-title-card {
     margin-bottom: 0;
+}
+
+.backtest-parameter-toggle,
+.backtest-parameter-backdrop {
+    display: none;
+}
+
+.icon-backtest-parameters {
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    mask: url("/static/images/slider.horizontal.2.square.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/slider.horizontal.2.square.svg") center/contain no-repeat;
 }
 
 @media (min-width: 768px) {
@@ -305,6 +318,118 @@
     .app-shell.is-sidebar-open .workspace-mobile-summary-shell > .workspace-summary-card .report-heading-row {
         opacity: 0;
         transform: translateY(12px);
+    }
+}
+
+@media (max-width: 900px) {
+    .backtest-workspace-shell {
+        --backtest-parameter-overlay-content-start: calc(
+            var(--global-quick-actions-top)
+            - var(--sidebar-overlay-inset-top)
+            + var(--settings-round-icon-button-size)
+            + var(--layout-edge-gap)
+        );
+    }
+
+    .backtest-workspace-shell > .workspace-mode-title-card > .report-heading-row {
+        width: 100%;
+    }
+
+    .backtest-parameter-toggle {
+        position: fixed;
+        top: var(--global-quick-actions-top);
+        left: calc(
+            var(--sidebar-overlay-inset-left)
+            + var(--settings-round-icon-button-size)
+            + var(--layout-edge-gap)
+        );
+        z-index: var(--layer-sidebar-toggle);
+        display: inline-flex;
+        width: var(--settings-round-icon-button-size);
+        min-width: var(--settings-round-icon-button-size);
+        height: var(--settings-round-icon-button-size);
+        min-height: var(--settings-round-icon-button-size);
+        margin: 0;
+        touch-action: manipulation;
+    }
+
+    .backtest-parameter-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: calc(var(--layer-modal-overlay) - 2);
+        display: none;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        cursor: pointer;
+        touch-action: none;
+    }
+
+    .backtest-parameter-backdrop:not([hidden]) {
+        display: block;
+    }
+
+    .backtest-workspace-shell > .workspace-mode-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .backtest-workspace-shell > .workspace-mode-layout > .workspace-mode-main {
+        height: 100%;
+        transform: none;
+    }
+
+    .backtest-workspace-shell > .workspace-mode-layout > [data-backtest-parameter-panel] {
+        position: fixed;
+        top: var(--sidebar-overlay-inset-top);
+        right: auto;
+        bottom: var(--sidebar-overlay-inset-bottom);
+        left: var(--sidebar-overlay-inset-left);
+        z-index: calc(var(--layer-modal-overlay) - 1);
+        box-sizing: border-box;
+        width: var(--layout-sidebar-overlay-inline-size);
+        max-width: var(--layout-sidebar-overlay-inline-size);
+        height: auto;
+        min-height: 0;
+        padding: var(--backtest-parameter-overlay-content-start) 14px 14px;
+        align-self: auto;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        background: var(--glass-surface-background-strong);
+        box-shadow: 0 18px 44px var(--theme-shadow-ambient);
+        backdrop-filter: var(--frosted-glass-blur);
+        -webkit-backdrop-filter: var(--frosted-glass-blur);
+        transform: translate3d(-120%, 0, 0);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition:
+            transform var(--workspace-article-sidebar-morph-duration) var(--workspace-article-sidebar-morph-easing),
+            opacity var(--motion-duration-emphasized) var(--motion-standard),
+            visibility var(--workspace-article-sidebar-morph-duration) step-end;
+    }
+
+    .backtest-workspace-shell.is-parameter-overlay-open > .workspace-mode-layout > [data-backtest-parameter-panel] {
+        transform: translate3d(0, 0, 0);
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition:
+            transform var(--workspace-article-sidebar-morph-duration) var(--workspace-article-sidebar-morph-easing),
+            opacity var(--motion-duration-emphasized) var(--motion-standard),
+            visibility var(--workspace-article-sidebar-morph-duration) step-start;
+    }
+}
+
+@media (max-width: 600px) {
+    .backtest-parameter-toggle {
+        top: var(--sidebar-overlay-inset-top);
     }
 }
 

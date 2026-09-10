@@ -1,4 +1,4 @@
-/* Code version: v1.212.5 */
+/* Code version: v1.212.6 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -18668,6 +18668,13 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
         surface.scrollTop = 0;
     });
     await page.setViewportSize({width: 390, height: 844});
+    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+        notices.forEach((notice) => {
+            notice.hidden = true;
+        });
+    });
+    await page.locator('[data-backtest-parameter-toggle]').click();
+    await expect(controlsSurface).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect.poll(() => page.evaluate(() => {
         const panel = document.getElementById('trade_strategy_params_panel');
@@ -18699,7 +18706,7 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
         belowStrategy: true,
         hasVerticalScrollPath: true,
         horizontalFits: true,
-        surfaceOverflowY: 'visible',
+        surfaceOverflowY: 'auto',
     });
 
     await lastParameter.scrollIntoViewIfNeeded();

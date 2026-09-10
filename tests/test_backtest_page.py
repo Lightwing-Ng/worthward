@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.20.0
+Code version: v0.21.0
 """
 
 from __future__ import annotations
@@ -101,6 +101,11 @@ class BacktestPageTests(unittest.TestCase):
             '<article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card" data-layout-role="result-container">',
             html,
         )
+        self.assertIn('data-backtest-workspace-shell', html)
+        self.assertIn('id="backtest_parameter_toggle"', html)
+        self.assertIn('aria-controls="backtest_parameter_panel"', html)
+        self.assertIn('data-backtest-parameter-backdrop', html)
+        self.assertIn('id="backtest_parameter_panel"', html)
         self.assertIn('data-share-drawer="backtest"', html)
         self.assertIn('data-share-placement="summary-panel"', html)
         self.assertIn('id="export_transactions_button"', html)

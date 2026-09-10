@@ -1,4 +1,4 @@
-/* Backtest annotation regression. Code version: v1.1.0 */
+/* Backtest annotation regression. Code version: v1.2.0 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1023, 390]) {
@@ -8,6 +8,12 @@ for (const width of [1023, 390]) {
             success: true, protocol_version: 2, runs: [],
         }}));
         await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=1&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
+        if (width <= 900) {
+            await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+                notices.forEach((notice) => { notice.hidden = true; });
+            });
+            await page.locator('[data-backtest-parameter-toggle]').click();
+        }
         const segments = page.locator('#backtest_history_view_segmented');
         for (const value of ['transactions', 'metrics', 'probability', 'transactions']) {
             await segments.locator(`label[for="backtest_history_${value}"]`).click();

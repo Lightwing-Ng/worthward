@@ -1,7 +1,7 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.4.0
+ * Code version: v0.5.0
  */
 
 import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.4.0';
@@ -11,8 +11,112 @@ const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-hei
 const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';
 let cleanupBacktestLayout = () => {};
 
+const bindBacktestParameterOverlay = () => {
+    const shell = document.querySelector('[data-backtest-workspace-shell]');
+    const panel = document.querySelector('[data-backtest-parameter-panel]');
+    const toggle = document.querySelector('[data-backtest-parameter-toggle]');
+    const backdrop = document.querySelector('[data-backtest-parameter-backdrop]');
+    const globalSidebarToggle = document.getElementById('sidebar_toggle');
+    const responsive = window.WORTHWARD_RESPONSIVE;
+    if (
+        !(shell instanceof HTMLElement)
+        || !(panel instanceof HTMLElement)
+        || !(toggle instanceof HTMLButtonElement)
+        || !(backdrop instanceof HTMLButtonElement)
+        || typeof responsive?.media !== 'function'
+    ) {
+        return () => {};
+    }
+
+    const overlayMedia = responsive.media('sidebarOverlayMax');
+    const storage = window.WORTHWARD_STORAGE?.session || window.sessionStorage;
+    const storageKey = 'worthward:backtest-parameters-open';
+    let isOpen = false;
+
+    const readRememberedState = () => {
+        try {
+            return storage.getItem(storageKey) === 'true';
+        } catch (_error) {
+            return false;
+        }
+    };
+
+    const rememberState = (value) => {
+        try {
+            storage.setItem(storageKey, String(Boolean(value)));
+        } catch (_error) {
+        }
+    };
+
+    const applyState = (requestedOpen, {remember = false, returnFocus = false} = {}) => {
+        const isOverlay = overlayMedia.matches;
+        isOpen = isOverlay && Boolean(requestedOpen);
+        shell.classList.toggle('is-parameter-overlay-open', isOpen);
+        toggle.hidden = !isOverlay;
+        toggle.setAttribute('aria-expanded', String(isOpen));
+        panel.setAttribute('aria-hidden', String(isOverlay && !isOpen));
+        if ('inert' in panel) panel.inert = isOverlay && !isOpen;
+        backdrop.hidden = !isOpen;
+        backdrop.setAttribute('aria-hidden', String(!isOpen));
+        backdrop.tabIndex = isOpen ? 0 : -1;
+        if ('inert' in backdrop) backdrop.inert = !isOpen;
+        if (remember && isOverlay) rememberState(isOpen);
+        if (returnFocus && isOverlay) toggle.focus({preventScroll: true});
+    };
+
+    const onToggle = () => {
+        const nextOpen = !isOpen;
+        if (
+            nextOpen
+            && globalSidebarToggle instanceof HTMLButtonElement
+            && globalSidebarToggle.getAttribute('aria-expanded') === 'true'
+        ) {
+            globalSidebarToggle.click();
+        }
+        applyState(nextOpen, {remember: true});
+    };
+    const onBackdrop = () => applyState(false, {remember: true, returnFocus: true});
+    const onGlobalSidebarToggle = () => {
+        if (globalSidebarToggle?.getAttribute('aria-expanded') === 'true' && isOpen) {
+            applyState(false, {remember: true});
+        }
+    };
+    const onKeydown = (event) => {
+        if (event.key !== 'Escape' || !isOpen) return;
+        event.preventDefault();
+        applyState(false, {remember: true, returnFocus: true});
+    };
+    const onMediaChange = () => applyState(overlayMedia.matches && readRememberedState());
+
+    toggle.addEventListener('click', onToggle);
+    backdrop.addEventListener('click', onBackdrop);
+    globalSidebarToggle?.addEventListener('click', onGlobalSidebarToggle);
+    document.addEventListener('keydown', onKeydown);
+    if (typeof overlayMedia.addEventListener === 'function') {
+        overlayMedia.addEventListener('change', onMediaChange);
+    } else if (typeof overlayMedia.addListener === 'function') {
+        overlayMedia.addListener(onMediaChange);
+    }
+    applyState(overlayMedia.matches && readRememberedState());
+
+    return () => {
+        toggle.removeEventListener('click', onToggle);
+        backdrop.removeEventListener('click', onBackdrop);
+        globalSidebarToggle?.removeEventListener('click', onGlobalSidebarToggle);
+        document.removeEventListener('keydown', onKeydown);
+        if (typeof overlayMedia.removeEventListener === 'function') {
+            overlayMedia.removeEventListener('change', onMediaChange);
+        } else if (typeof overlayMedia.removeListener === 'function') {
+            overlayMedia.removeListener(onMediaChange);
+        }
+        applyState(false);
+    };
+};
+
 export function initBacktestLayout() {
     cleanupBacktestLayout();
+
+    const cleanupParameterOverlay = bindBacktestParameterOverlay();
 
     const workspaceHeader = document.querySelector(
         '.backtest-results-stack.investment-workspace-header',
@@ -80,7 +184,7 @@ export function initBacktestLayout() {
             + readBlockMargin(detailStyles);
     };
 
-    cleanupBacktestLayout = bindInvestmentSectionResizer({
+    const cleanupSectionResizer = bindInvestmentSectionResizer({
         workspaceHeader,
         reportCard,
         historySurface,
@@ -97,6 +201,10 @@ export function initBacktestLayout() {
         observeHistorySurfaceResize: false,
         onChartsResized: () => bootstrap.backtestChartLayoutRefresh?.(),
     });
+    cleanupBacktestLayout = () => {
+        cleanupParameterOverlay();
+        cleanupSectionResizer?.();
+    };
     return cleanupBacktestLayout;
 }
 

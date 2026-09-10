@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.14.1
+Code version: v0.15.0
 """
 
 from pathlib import Path
@@ -711,7 +711,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
         "-backtest-probability-grid-v0.32.0",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.4.0",
+        "-backtest-layout-v0.5.0",
     ):
         assert fragment in base_template
 
@@ -1163,6 +1163,39 @@ def test_backtest_result_rail_reuses_shared_desktop_title_alignment() -> None:
     assert ".workspace-mode-main.backtest-workspace-main {" not in workspace
     assert "height: calc(100% + var(--workspace-mode-result-heading-lift));" in workspace
     assert "transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));" in workspace
+
+
+def test_backtest_parameters_use_the_registered_sidebar_overlay_breakpoint() -> None:
+    template = _read(TEMPLATE_ROOT / "backtest.html")
+    workspace = _read(ASSET_ROOT / "css/views/workspace.css")
+    layout = _read(ASSET_ROOT / "js/backtest/layout.js")
+
+    for fragment in (
+        'data-backtest-workspace-shell',
+        'data-backtest-parameter-toggle',
+        'aria-controls="backtest_parameter_panel"',
+        'data-backtest-parameter-backdrop',
+        'id="backtest_parameter_panel"',
+    ):
+        assert fragment in template
+    for fragment in (
+        "@media (max-width: 900px)",
+        ".backtest-workspace-shell > .workspace-mode-layout {",
+        "grid-template-columns: minmax(0, 1fr);",
+        "width: var(--layout-sidebar-overlay-inline-size);",
+        "top: var(--sidebar-overlay-inset-top);",
+        "bottom: var(--sidebar-overlay-inset-bottom);",
+        ".backtest-workspace-shell.is-parameter-overlay-open",
+    ):
+        assert fragment in workspace
+    for fragment in (
+        "responsive.media('sidebarOverlayMax')",
+        "worthward:backtest-parameters-open",
+        "panel.inert = isOverlay && !isOpen",
+        "event.key !== 'Escape'",
+        "globalSidebarToggle.getAttribute('aria-expanded') === 'true'",
+    ):
+        assert fragment in layout
 
 
 def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:

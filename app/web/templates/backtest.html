@@ -1,4 +1,4 @@
-{# Code version: v0.9.1 #}
+{# Code version: v0.10.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -7,15 +7,36 @@
 {% include "_workspace_mode_nav.html" %}
 {% endblock %}
 
+{% block page_overlay_controls %}
+    <button type="button"
+            class="sidebar-icon-button sidebar-secondary-button backtest-parameter-toggle"
+            id="backtest_parameter_toggle"
+            data-backtest-parameter-toggle
+            aria-label="Toggle Backtest parameters"
+            aria-controls="backtest_parameter_panel"
+            aria-expanded="false"
+            hidden>
+        <span class="icon icon-backtest-parameters" aria-hidden="true"></span>
+    </button>
+{% endblock %}
+
 {% block workspace_content %}
-    <section class="workspace-mode-shell">
+    <section class="workspace-mode-shell backtest-workspace-shell" data-backtest-workspace-shell>
         <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
             <div class="report-heading-row" data-layout-role="title-heading">
                 <p class="report-heading">{{ labels.dock_backtest }}</p>
             </div>
         </article>
+        <button type="button"
+                class="backtest-parameter-backdrop"
+                data-backtest-parameter-backdrop
+                aria-label="Close Backtest parameters"
+                aria-hidden="true"
+                tabindex="-1"
+                hidden></button>
         <div class="workspace-mode-layout">
             <article class="chart-surface workspace-mode-controls-surface"
+                     id="backtest_parameter_panel"
                      data-backtest-parameter-panel
                      aria-label="Backtest parameters">
                 {% include "_backtest_form.html" %}

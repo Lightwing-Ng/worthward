@@ -1,4 +1,4 @@
-/* Code version: v0.9.0 */
+/* Code version: v0.10.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -36,6 +36,112 @@ test('remembers Backtest parameters per strategy and gives explicit URLs precede
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0&holding_max=789');
     await expect(page.locator('#strategy_param_holding_max')).toHaveValue('789');
     await expect.poll(() => readRememberedValue(page, 'grid-trading', 'holding_max')).toBe('500');
+});
+
+test('Backtest parameters become a non-consuming overlay at iPad widths', async ({page}) => {
+    await page.setViewportSize({width: 751, height: 912});
+    await page.goto('/workspaces/backtest?range=3y&strategy=leveraged-rotation&show_trade_details=1'
+        + '&initial_primary_pct=25.00&initial_leveraged_pct=12.49&primary_min_pct=15'
+        + '&primary_max_pct=100&leveraged_max_pct=85&rotation_window=1w'
+        + '&buy_leveraged_drop_pct=5.00&sell_leveraged_rise_pct=15.00');
+    await expect(page.locator('#tradePriceChart')).toBeVisible();
+    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+        notices.forEach((notice) => { notice.hidden = true; });
+    });
+
+    const shell = page.locator('[data-backtest-workspace-shell]');
+    const layout = shell.locator(':scope > .workspace-mode-layout');
+    const main = layout.locator(':scope > .workspace-mode-main');
+    const panel = page.locator('[data-backtest-parameter-panel]');
+    const toggle = page.locator('[data-backtest-parameter-toggle]');
+    const backdrop = page.locator('[data-backtest-parameter-backdrop]');
+    const globalToggle = page.locator('#sidebar_toggle');
+
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveAttribute('aria-controls', 'backtest_parameter_panel');
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+    await expect(panel).toBeHidden();
+    await expect(backdrop).toBeHidden();
+
+    const collapsedGeometry = await page.evaluate(() => {
+        const layoutElement = document.querySelector('[data-backtest-workspace-shell] > .workspace-mode-layout');
+        const mainElement = layoutElement.querySelector(':scope > .workspace-mode-main');
+        const panelElement = document.querySelector('[data-backtest-parameter-panel]');
+        const toggleElement = document.querySelector('[data-backtest-parameter-toggle]');
+        const layoutBox = layoutElement.getBoundingClientRect();
+        const mainBox = mainElement.getBoundingClientRect();
+        const panelBox = panelElement.getBoundingClientRect();
+        const toggleBox = toggleElement.getBoundingClientRect();
+        return {
+            columns: getComputedStyle(layoutElement).gridTemplateColumns,
+            layout: {left: layoutBox.left, right: layoutBox.right, width: layoutBox.width},
+            main: {left: mainBox.left, right: mainBox.right, width: mainBox.width},
+            panel: {left: panelBox.left, right: panelBox.right, position: getComputedStyle(panelElement).position},
+            toggle: {width: toggleBox.width, height: toggleBox.height},
+            horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+    });
+    expect(collapsedGeometry.columns).toBe(`${collapsedGeometry.layout.width}px`);
+    expect(Math.abs(collapsedGeometry.main.left - collapsedGeometry.layout.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(collapsedGeometry.main.right - collapsedGeometry.layout.right)).toBeLessThanOrEqual(1);
+    expect(collapsedGeometry.panel.position).toBe('fixed');
+    expect(collapsedGeometry.panel.right).toBeLessThanOrEqual(0);
+    expect(collapsedGeometry.toggle).toEqual({width: 44, height: 44});
+    expect(collapsedGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect(panel).toBeVisible();
+    await expect(backdrop).toBeVisible();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'false');
+    await panel.evaluate((element) => Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+    ));
+    const openGeometry = await panel.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const mainBox = document.querySelector(
+            '[data-backtest-workspace-shell] > .workspace-mode-layout > .workspace-mode-main',
+        ).getBoundingClientRect();
+        return {
+            panel: {left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width},
+            main: {left: mainBox.left, right: mainBox.right},
+            viewport: {width: window.innerWidth, height: window.innerHeight},
+            overflowY: getComputedStyle(element).overflowY,
+        };
+    });
+    expect(openGeometry.panel.left).toBeGreaterThanOrEqual(10);
+    expect(openGeometry.panel.top).toBeGreaterThanOrEqual(10);
+    expect(openGeometry.panel.right).toBeLessThanOrEqual(openGeometry.viewport.width - 10);
+    expect(openGeometry.panel.bottom).toBeLessThanOrEqual(openGeometry.viewport.height - 10);
+    expect(openGeometry.panel.width).toBeLessThanOrEqual(312);
+    expect(openGeometry.main).toEqual({
+        left: collapsedGeometry.main.left,
+        right: collapsedGeometry.main.right,
+    });
+    expect(openGeometry.overflowY).toBe('auto');
+
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(panel).toBeHidden();
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'false');
+
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(toggle).toBeFocused();
+
+    await page.setViewportSize({width: 1_024, height: 900});
+    await expect(toggle).toBeHidden();
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect(panel).not.toHaveCSS('position', 'fixed');
+    const desktopColumns = await layout.evaluate((element) => getComputedStyle(element).gridTemplateColumns);
+    expect(desktopColumns.split(' ')[0]).toBe('312px');
 });
 
 test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allocation band', async ({page}) => {
@@ -211,6 +317,12 @@ test('Leveraged Rotation exposes dynamic ticker labels and a collision-safe allo
     await expect(allocation.locator('[data-allocation-leveraged-name]')).toHaveText('UPRO');
 
     await page.setViewportSize({width: 390, height: 844});
+    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+        notices.forEach((notice) => {
+            notice.hidden = true;
+        });
+    });
+    await page.locator('[data-backtest-parameter-toggle]').click();
     await expect(allocation).toBeVisible();
     await expectAlignedBoundaries();
     await expect.poll(() => allocation.locator('[data-allocation-cash-label]')
