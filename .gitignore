@@ -76,3 +76,6 @@ test-results/
 /outputs/
 /tmp/
 /.codex_tmp/
+
+# Interrupted patch-operation backups.
+.*.agent-backup-*.tmp
