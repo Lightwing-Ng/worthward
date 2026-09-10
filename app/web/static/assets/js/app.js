@@ -1,4 +1,4 @@
-/* Code version: v0.66.0 */
+/* Code version: v0.67.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -8081,7 +8081,7 @@
             if (!(label instanceof HTMLElement)) return;
             const action = String(field.dataset.strategyParamUiRole || "").split(":")[1];
             if (action === "buy-leveraged") {
-                label.textContent = `Rotate to ${readBacktestTickerName(1)}: ${readBacktestTickerName(0)} window decline`;
+                label.textContent = `Enter ${readBacktestTickerName(1)}: ${readBacktestTickerName(0)} drop`;
             } else if (action === "buy-primary") {
                 label.textContent = `Rotate back to ${readBacktestTickerName(0)}: ${readBacktestTickerName(1)} gain since entry`;
             }

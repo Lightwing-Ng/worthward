@@ -1,4 +1,4 @@
-"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.6.0."""
+"""Tests for the two-ticker leveraged rotation strategy. Code version: v2.7.0."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def test_leveraged_rotation_percentage_controls_use_dynamic_roles_and_hundredth_
     assert definitions["primary_min_pct"].ui_role == "ticker-label:0:minimum"
     assert definitions["leveraged_min_pct"].label == "Leveraged minimum"
     assert definitions["leveraged_min_pct"].ui_role == "ticker-label:1:minimum"
-    assert definitions["buy_leveraged_drop_pct"].label == "Rotate to leveraged: primary window decline"
+    assert definitions["buy_leveraged_drop_pct"].label == "Enter leveraged: primary drop"
     assert definitions["buy_leveraged_drop_pct"].ui_role == "rotation-trigger:buy-leveraged"
     assert definitions["sell_leveraged_rise_pct"].label == "Rotate back to primary: leveraged gain since entry"
     assert definitions["sell_leveraged_rise_pct"].ui_role == "rotation-trigger:buy-primary"

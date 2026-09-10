@@ -1,7 +1,7 @@
 """
 Leveraged rotation strategy.
 
-Code version: v2.6.0
+Code version: v2.7.0
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ class LeveragedRotationStrategy(BaseStrategy):
             ),
             StrategyParameterDefinition(
                 key="buy_leveraged_drop_pct",
-                label="Rotate to leveraged: primary window decline",
+                label="Enter leveraged: primary drop",
                 kind="number", default=3.0, minimum=0.1, maximum=90.0, step=0.01,
                 unit_hint="%", subgroup="Rotation triggers (%, change)",
                 ui_role="rotation-trigger:buy-leveraged",

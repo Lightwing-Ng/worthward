@@ -1,4 +1,4 @@
-/* Code version: v3.73.0 */
+/* Code version: v3.74.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -2360,4 +2360,8 @@
     min-width: max-content;
     overflow: visible;
     text-overflow: clip;
+}
+.trade-strategy-param[data-strategy-param-key="rotation_window"]
+    + .trade-strategy-param[data-strategy-param-key="buy_leveraged_drop_pct"]::before {
+    content: none;
 }
