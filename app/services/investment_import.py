@@ -1,7 +1,9 @@
 """
 Investment import service for all supported brokers.
 
-Code version: v0.111.0
+Code version: v0.111.1
+- Fixed: A clipped HSBC cash page now keeps an explicitly labelled mobile
+  withdrawal negative even when no earlier balance row is visible.
 - Added: HSBC paste imports retain the exact accepted UTF-8 page text as
   immutable source artifacts, preserve exact quantity-times-price valuation,
   and label visible-order mismatches as partial-history comparisons.
@@ -18064,6 +18066,8 @@ def _infer_hsbc_cash_account_direction_from_description(description: str) -> int
     if upper_description.startswith("NET- "):
         return -1
     if upper_description.startswith("MDC P "):
+        return -1
+    if upper_description.startswith("MOBILE WITHDRAWAL"):
         return -1
     if re.fullmatch(r"\d+\s+R\d+", normalized_description):
         return 1

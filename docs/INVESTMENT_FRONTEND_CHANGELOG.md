@@ -1,12 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.3`
+Documentation version: `v1.51.4`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: A clipped HSBC cash-account page now preserves an explicitly labelled
+  mobile withdrawal as an outflow even when the preceding balance row is not
+  visible, preventing a re-import from adding an opposite-sign duplicate.
 
 - Fixed: Stock-details live quote updates no longer retain a stale full-panel
   minimum width inside responsive metric cards, so every populated field stays

@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.44.3
+Code version: v0.44.4
+- Added: A terminal HSBC `MOBILE WITHDRAWAL` row remains a withdrawal when
+  the clipped cash page has no earlier balance row for direction inference.
 - Changed: Replaced production-derived account, transaction, and source-file
   identifiers with deterministic synthetic fixtures.
 - Added: HSBC paste imports retain their exact accepted UTF-8 text as one
@@ -5904,6 +5906,48 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
         self.assertEqual(pending_broker_deposit["net_amount_raw"], "21496.88")
         self.assertFalse(pending_broker_deposit.get("presentation_hidden", False))
         self.assertFalse(pending_broker_deposit.get("exclude_from_holdings_replay", False))
+
+    def test_hsbc_terminal_mobile_withdrawal_uses_description_direction(self) -> None:
+        cash_only_payload = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text="",
+            order_status_text="",
+            cash_account_text="\n".join([
+                "Skip to the main content for this pageHSBC Logo-this will redirect to My accounts",
+                "HKD Savings",
+                "Account number:",
+                "000-999999-999",
+                "Ledger balance:",
+                "17.45",
+                "HKD",
+                "Available balance:",
+                "17.45 HKD",
+                "Post date Description Amount in Amount out Balance Additional options",
+                "23 Mar 2026",
+                "MOBILE WITHDRAWAL (22MAR26)",
+                "100.00",
+                "17.45",
+                "Download",
+            ]),
+        )
+
+        self.assertEqual(len(cash_only_payload["transactions"]), 1)
+        withdrawal = cash_only_payload["transactions"][0]
+        self.assertEqual(withdrawal["type"], "withdrawal")
+        self.assertEqual(withdrawal["net_amount_raw"], "-100.00")
+
+        repeated = merge_investment_payloads(
+            deepcopy(cash_only_payload),
+            deepcopy(cash_only_payload),
+        )
+        self.assertEqual(len(repeated["transactions"]), 1)
+        self.assertEqual(
+            repeated["summary"]["incremental_import"]["added_record_count"],
+            0,
+        )
+        self.assertEqual(
+            repeated["summary"]["incremental_import"]["duplicate_record_count"],
+            1,
+        )
 
     def test_hsbc_cash_account_sort_keeps_same_day_ledger_sequence(self) -> None:
         cash_account_text = "\n".join([
