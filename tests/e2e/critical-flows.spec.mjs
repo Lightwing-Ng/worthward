@@ -1,4 +1,4 @@
-/* Code version: v1.213.2 */
+/* Code version: v1.213.3 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -6677,7 +6677,7 @@ test('shows Zircon (HK) cut losses from a lower sell price in Metrics', async ({
         transactions: [
             {
                 broker: 'zircon_hk',
-                account: '57812160',
+                account: '47601705',
                 date: '2026-07-10',
                 type: 'buy',
                 ticker: 'SPYM',
@@ -6688,7 +6688,7 @@ test('shows Zircon (HK) cut losses from a lower sell price in Metrics', async ({
             },
             {
                 broker: 'zircon_hk',
-                account: '57812160',
+                account: '47601705',
                 date: '2026-07-11',
                 type: 'sell',
                 ticker: 'SPYM',
@@ -15240,13 +15240,13 @@ test('keeps same-day same-amount transfer rows independently selectable', async 
             {
                 ledger_no: 10_100,
                 broker: 'usmart_hk',
-                account: '94412536',
+                account: '07723146',
                 date: '2023-02-20',
                 type: 'deposit',
                 currency: 'HKD',
                 amount: 100,
                 description: 'eDDA Cash Deposit',
-                source: {file_kind: 'usmart_hk_statement_pdf', source_filename: '20230301-94412536.pdf', row_number: 29},
+                source: {file_kind: 'usmart_hk_statement_pdf', source_filename: '20230301-07723146.pdf', row_number: 29},
             },
             ...duplicateHsbcRows,
         ],

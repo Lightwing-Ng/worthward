@@ -1,6 +1,6 @@
 """Regression tests for uSMART (HK) statement descriptions.
 
-Code version: v0.2.0
+Code version: v0.2.1
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ def test_fractional_share_descriptions_disclose_missing_statement_symbols() -> N
             "買碎股  USD  -100.00  2026-08-01",
             "卖碎股  USD  101.00  2026-08-02",
         ]),
-        account="94412536",
-        source_filename="20260831-94412536.pdf",
+        account="07723146",
+        source_filename="20260831-07723146.pdf",
     )
 
     assert [record["description"] for record in records] == [

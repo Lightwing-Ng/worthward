@@ -1,7 +1,7 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.44.1
+Code version: v0.44.3
 - Changed: Replaced production-derived account, transaction, and source-file
   identifiers with deterministic synthetic fixtures.
 - Added: HSBC paste imports retain their exact accepted UTF-8 text as one
@@ -294,7 +294,7 @@ class InvestmentImportTests(unittest.TestCase):
 <SELLOTHER><INVSELL><INVTRAN><FITID>OTHER-SELL-1</FITID><DTTRADE>20251013202912.000[-4:EDT]</DTTRADE></INVTRAN><SECID><UNIQUEID>OTHER-ID</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID><UNITS>-100</UNITS><UNITPRICE>9.81</UNITPRICE><TOTAL>981</TOTAL><COMMISSION>0</COMMISSION><TAXES>0</TAXES><CURRENCY><CURSYM>USD</CURSYM></CURRENCY></INVSELL></SELLOTHER>
 </INVTRANLIST><INVBAL><BALLIST><BAL><NAME>Cash</NAME><VALUE>879.44224649</VALUE></BAL></BALLIST></INVBAL>
 </INVSTMTRS></INVSTMTTRNRS></INVSTMTMSGSRSV1>
-<SECLIST><OTHERINFO><SECINFO><SECID><UNIQUEID>OTHER-ID</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID><SECNAME>Franklin U.S. Dollar Short-Term Money Market Fund</SECNAME><TICKER>005276756</TICKER><FIID>303141751</FIID></SECINFO></OTHERINFO></SECLIST>
+<SECLIST><OTHERINFO><SECINFO><SECID><UNIQUEID>OTHER-ID</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID><SECNAME>Franklin U.S. Dollar Short-Term Money Market Fund</SECNAME><TICKER>005276756</TICKER><FIID>431251014</FIID></SECINFO></OTHERINFO></SECLIST>
 </OFX>"""
 
     @staticmethod
@@ -3259,7 +3259,7 @@ Fees: 0.12
                 "2025-01-07  Fund Subscription  -1,500.00  USD",
                 "2025-01-08  Fund Subscription Returned  1,500.00  USD",
             ]),
-            account="4556114",
+            account="1544722",
             source_filename="statement.pdf",
             transaction_type_for_description={
                 "Fund Subscription": "adjustment",
@@ -5212,7 +5212,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
                     "net_amount_raw": "-24.600",
                     "source": {
                         "cash_replay_pending_settlement": True,
-                        "statement_order_id": "P-292231",
+                        "statement_order_id": "P-740362",
                     },
                 },
             ],
@@ -10017,7 +10017,7 @@ Fees: 0.0"""
                 }
                 record["source"] = {
                     **record["source"],
-                    "closed_lot_id": "ibkr-realized-summary-row-335",
+                    "closed_lot_id": "ibkr-realized-summary-row-274",
                 }
             return record
 
@@ -10052,7 +10052,7 @@ Fees: 0.0"""
             )
             self.assertEqual(
                 dram_sell["source"]["closed_lot_id"],
-                "ibkr-realized-summary-row-335",
+                "ibkr-realized-summary-row-274",
             )
 
     def test_ibkr_import_attaches_broker_summary_with_ending_cash(self) -> None:
@@ -11148,18 +11148,18 @@ Transaction Date              Summary                                           
             "source_sheet": "Transactions",
             "source_row": 9,
             "broker": "cmb_cn",
-            "account": "3645 1536 0174 9792",
+            "account": "3361 3734 3361 3734",
         }
         existing_payload = {
             "schema_version": "3.0.0",
             "broker": "cmb_cn",
-            "account": "3645 1536 0174 9792",
+            "account": "3361 3734 3361 3734",
             "transactions": [{
                 "date": "2024-04-01",
                 "datetime": "2024-04-01 11:00:00",
                 "type": "virtual_balance_reset",
                 "broker": "cmb_cn",
-                "account": "3645 1536 0174 9792",
+                "account": "3361 3734 3361 3734",
                 "currency": "CNY",
                 "gross_amount_raw": "-21511.9",
                 "net_amount_raw": "-21511.9",
@@ -11173,13 +11173,13 @@ Transaction Date              Summary                                           
         incoming_payload = {
             "schema_version": "3.0.0",
             "broker": "cmb_cn",
-            "account": "3645 1536 0174 9792",
+            "account": "3361 3734 3361 3734",
             "transactions": [{
                 "date": "2024-04-01",
                 "datetime": "2024-04-01 11:00:00",
                 "type": "withdrawal",
                 "broker": "cmb_cn",
-                "account": "3645 1536 0174 9792",
+                "account": "3361 3734 3361 3734",
                 "currency": "CNY",
                 "gross_amount_raw": "-21511.9",
                 "net_amount_raw": "-21511.9",
@@ -11323,13 +11323,13 @@ Transaction Date              Summary                                           
             "date": "2023-02-20",
             "type": "deposit",
             "broker": "usmart_hk",
-            "account": "94412536",
+            "account": "07723146",
             "currency": "HKD",
             "net_amount_raw": "100.00",
             "description": "eDDA Cash Deposit",
             "source": {
                 "file_kind": "usmart_hk_statement_pdf",
-                "source_filename": "20230301-94412536.pdf",
+                "source_filename": "20230301-07723146.pdf",
                 "row_number": 29,
             },
         }

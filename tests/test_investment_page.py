@@ -1,7 +1,7 @@
 """
 Investment page regression tests.
 
-Code version: v1.8.2
+Code version: v1.8.3
 - Changed: Replaced production-derived transaction references with synthetic
   identifiers while preserving transfer-binding coverage.
 - Added: Investment transaction payloads repair an existing daily history
@@ -410,7 +410,7 @@ def test_internal_transfer_endpoint_rejects_ambiguous_old_key_and_accepts_row_ke
         "date": "2023-02-20",
         "type": "deposit",
         "broker": "usmart_hk",
-        "account": "94412536",
+        "account": "07723146",
         "currency": "HKD",
         "net_amount_raw": "100.00",
         "description": "eDDA Cash Deposit",

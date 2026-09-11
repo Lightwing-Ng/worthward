@@ -1,4 +1,4 @@
-/* Code version: v1.48.1 */
+/* Code version: v1.48.3 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -1925,7 +1925,7 @@ test('HSBC trade descriptions use compact order references and mark unresolved s
         price: '24.50',
         source: {
             statement_order_id: 'P-140025',
-            cash_settlement_reference: 'REF P344496153 SEC',
+            cash_settlement_reference: 'REF P016711450 SEC',
             cash_replay_pending_settlement: true,
         },
     };
@@ -2499,12 +2499,12 @@ test('USD money-market currency overrides take precedence over a Hong Kong ticke
     try {
         const summaries = buildTickerSummaries([
             {
-                broker: 'zircon_hk', account: '57812160', date: '2025-01-17', type: 'buy', ticker: sourceTicker,
+                broker: 'zircon_hk', account: '47601705', date: '2025-01-17', type: 'buy', ticker: sourceTicker,
                 currency: 'USD', quantity_raw: '1', quantity_abs: '1', price_raw: '78.99',
                 normalized: { position_quantity: '1', unit_price: '78.99', net_amount: '-78.99' },
             },
             {
-                broker: 'zircon_hk', account: '57812160', date: '2025-01-20', type: 'sell', ticker: sourceTicker,
+                broker: 'zircon_hk', account: '47601705', date: '2025-01-20', type: 'sell', ticker: sourceTicker,
                 currency: 'USD', quantity_raw: '-1', quantity_abs: '1', price_raw: '79.01',
                 normalized: { position_quantity: '-1', unit_price: '79.01', net_amount: '79.01' },
             },
@@ -2566,7 +2566,7 @@ test('Hong Kong money-market fund ISINs stay canonical across USD and HKD classe
     };
     try {
         const summaries = buildTickerSummaries([{
-            broker: 'tigertrade', account: '4556114', date: '2025-01-27', type: 'buy', ticker: sourceTicker,
+            broker: 'tigertrade', account: '1544722', date: '2025-01-27', type: 'buy', ticker: sourceTicker,
             currency: 'USD', quantity_raw: '8.209', quantity_abs: '8.209', price_raw: '102.301',
             normalized: { position_quantity: '8.209', unit_price: '102.301', net_amount: '-839.78' },
         }], {}, 0, {});
@@ -3511,19 +3511,19 @@ test('authoritative Longbridge HK signs aggregate with independently evidenced a
         ...['AAPL', 'JPM', 'MSFT', 'QQQ', 'SPLG', 'SQQQ', 'TSM'].map(longbridgeAnchor),
         trade({broker: 'cmbwl', account: '688-2-XXXX3-2', ticker: 'AAPL', type: 'buy', date: '2023-02-07', quantity: 2, netAmount: -301.32}),
         trade({broker: 'cmbwl', account: '688-2-XXXX3-2', ticker: 'AAPL', type: 'sell', date: '2023-03-03', quantity: 2, netAmount: 300}),
-        trade({broker: 'tigertrade', account: '4556114', ticker: 'AAPL', type: 'buy', date: '2025-01-24', quantity: 2, netAmount: -448.98}),
-        trade({broker: 'tigertrade', account: '4556114', ticker: 'AAPL', type: 'sell', date: '2025-01-27', quantity: 2, netAmount: 459.01}),
+        trade({broker: 'tigertrade', account: '1544722', ticker: 'AAPL', type: 'buy', date: '2025-01-24', quantity: 2, netAmount: -448.98}),
+        trade({broker: 'tigertrade', account: '1544722', ticker: 'AAPL', type: 'sell', date: '2025-01-27', quantity: 2, netAmount: 459.01}),
         trade({broker: 'futuhk', account: 'FUTU-TEST-ACCOUNT', ticker: 'MSFT', type: 'buy', date: '2023-02-16', quantity: 4, netAmount: -1062}),
         trade({broker: 'futuhk', account: 'FUTU-TEST-ACCOUNT', ticker: 'MSFT', type: 'sell', date: '2023-03-22', quantity: 4, netAmount: 1091.98}),
         trade({broker: 'ibkr', account: 'U00000001', ticker: 'MSFT', type: 'dividend', date: '2026-03-12', netAmount: 13.10}),
         trade({broker: 'ibkr', account: 'U00000001', ticker: 'MSFT', type: 'dividend', date: '2026-06-11', netAmount: 4.09}),
         trade({broker: 'cmbwl', account: '688-2-XXXX3-2', ticker: 'TSM', type: 'sell', date: '2023-02-28', quantity: 29, netAmount: 2553.45, brokerRealizedPnl: 98.74}),
-        trade({broker: 'usmart_hk', account: '94412536', ticker: 'TSM', type: 'sell', date: '2023-02-18', quantity: 2, netAmount: 177.30, brokerRealizedPnl: -2.59}),
+        trade({broker: 'usmart_hk', account: '07723146', ticker: 'TSM', type: 'sell', date: '2023-02-18', quantity: 2, netAmount: 177.30, brokerRealizedPnl: -2.59}),
         trade({broker: 'futuhk', account: 'FUTU-TEST-ACCOUNT', ticker: 'TSM', type: 'sell', date: '2023-03-22', quantity: 1, netAmount: 92.49, brokerRealizedPnl: 2.50}),
-        trade({broker: 'tigertrade', account: '4556114', ticker: 'TSM', type: 'sell', date: '2024-12-23', quantity: 2, netAmount: 412.21, brokerRealizedPnl: 4.55}),
+        trade({broker: 'tigertrade', account: '1544722', ticker: 'TSM', type: 'sell', date: '2024-12-23', quantity: 2, netAmount: 412.21, brokerRealizedPnl: 4.55}),
         trade({broker: 'cmbwl', account: '688-2-XXXX3-2', ticker: 'SPYM', type: 'sell', date: '2023-02-16', quantity: 1, netAmount: 1, brokerRealizedPnl: 67.21}),
         trade({broker: 'futuhk', account: 'FUTU-TEST-ACCOUNT', ticker: 'SPYM', type: 'sell', date: '2023-03-20', quantity: 1, netAmount: 1, brokerRealizedPnl: -25.48}),
-        trade({broker: 'zircon_hk', account: '57812160', ticker: 'SPYM', type: 'sell', date: '2025-01-15', quantity: 1, netAmount: 1, brokerRealizedPnl: -4.23}),
+        trade({broker: 'zircon_hk', account: '47601705', ticker: 'SPYM', type: 'sell', date: '2025-01-15', quantity: 1, netAmount: 1, brokerRealizedPnl: -4.23}),
     ];
 
     const summaries = buildTickerSummaries(transactions, {}, 0, {});
@@ -3581,14 +3581,14 @@ test('tax-lot replay uses broker execution chronology instead of same-time cash 
             source: {history_order_datetime: '2023-03-02 07:32:03', row_number: 6812},
         },
         {
-            broker: 'usmart_hk', account: '94412536', type: 'sell', ticker: 'HIBS',
+            broker: 'usmart_hk', account: '07723146', type: 'sell', ticker: 'HIBS',
             date: '2023-02-18', datetime: '2023-02-18 20:00:00', currency: 'USD',
             quantity_abs: '1', price_raw: '4.5600',
             normalized: {position_quantity: '1', unit_price: '4.5600', net_amount: '2.65'},
             source: {row_number: 89},
         },
         {
-            broker: 'usmart_hk', account: '94412536', type: 'buy', ticker: 'HIBS',
+            broker: 'usmart_hk', account: '07723146', type: 'buy', ticker: 'HIBS',
             date: '2023-02-18', datetime: '2023-02-18 20:00:00', currency: 'USD',
             quantity_abs: '1', price_raw: '4.5700',
             normalized: {position_quantity: '1', unit_price: '4.5700', net_amount: '-6.46'},
