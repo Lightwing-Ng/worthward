@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.10.1
+Code version: v0.10.2
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from app.infrastructure.storage import (
     is_ticker_fallback_company_name,
     known_ticker_company_names_payload,
     market_ticker_store_aliases,
-    has_valid_ticker_format,
     normalize_ticker,
     propagate_investment_lineage_identity_profiles,
     resolve_known_ticker_company_name,
