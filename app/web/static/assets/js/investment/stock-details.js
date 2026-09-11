@@ -1,7 +1,10 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.34.0
+ * Code version: v0.34.1
+ * - Fixed: The latest Average price chart point remains on the configured
+ *   transaction replay instead of switching to a separate FIFO-reconstructed
+ *   current-position basis.
  * - Changed: Stock details loads the balance-continuity-aware HSBC settlement
  *   boundary ordering revision.
  * - Changed: Stock details loads the partial realized-P&L and missing
@@ -19,9 +22,6 @@
  *   integer and sub-100 two-decimal display contract.
  * - Changed: Stock details imports the browser replay and linked-distribution
  *   display contract used by the Investment transaction history.
- * - Fixed: Average-price chart points and tooltip snapshots now use the
- *   configured cost-basis replay, with the latest point aligned to the
- *   authoritative ticker-summary cost basis when available.
  * - Changed: The shared investment data-utils dependency now uses the current
  *   cash-resolver cache key.
  * - Changed: Buy and sell trades now render as volume-scaled glowing zones;
@@ -128,7 +128,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.1';
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
 export const INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX = 44;
@@ -1588,11 +1588,6 @@ export function createInvestmentStockDetailsUtils({
         }
 
         const pnlSummary = getInvestmentStockDetailsPnlSummary(normalizedTicker) || {};
-        const currentSummaryAveragePrice = Number(pnlSummary.averagePrice);
-        const hasCurrentSummaryAveragePrice = (
-            Number.isFinite(currentSummaryAveragePrice)
-            && currentSummaryAveragePrice > 0
-        );
         const baseCurrency = getInvestmentBaseCurrency();
         const quoteCurrency = String(
             pnlSummary.quoteCurrency || getTickerQuoteCurrency(normalizedTicker) || baseCurrency,
@@ -2105,13 +2100,7 @@ export function createInvestmentStockDetailsUtils({
                 getTickerQuoteCurrency,
             );
             const close = Number(closeValues[index]);
-            const replayAveragePrice = Number(aggregateState.averagePrice);
-            const averagePrice = (
-                index === labels.length - 1
-                && hasCurrentSummaryAveragePrice
-            )
-                ? currentSummaryAveragePrice
-                : replayAveragePrice;
+            const averagePrice = Number(aggregateState.averagePrice);
             averagePriceSeries.push(
                 Number.isFinite(averagePrice) && averagePrice > 0
                     ? averagePrice

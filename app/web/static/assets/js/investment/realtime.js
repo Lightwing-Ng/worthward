@@ -1,7 +1,9 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.2
+ * Code version: v1.3.3
+ * - Fixed: Stock-details live metrics retain their card-owned responsive
+ *   geometry instead of reserving a stale full-panel width after quote updates.
  * - Fixed: Holdings live values retain their CSS-owned geometry instead of
  *   adding content-measured minimum dimensions during quote updates.
  * - Changed: Every quote poll now awaits the market-session refresh before
@@ -13,7 +15,7 @@
 
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.1.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.2';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.3';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -415,6 +417,9 @@ export function createInvestmentLiveValueAnimator({
     function reserveValueLayout(node, previousDisplay, nextDisplay, useSplit) {
         if (!isElement(node)) return;
         if (node.closest('#investment_holdings_panel')) return;
+        const usesCardOwnedWidth = Boolean(
+            node.closest('.investment-stock-details-metrics'),
+        );
         const currentRect = node.getBoundingClientRect();
         const previousSize = measureStaticContent(node, previousDisplay, useSplit);
         const nextSize = measureStaticContent(node, nextDisplay, useSplit);
@@ -430,7 +435,10 @@ export function createInvestmentLiveValueAnimator({
             previousSize.height,
             nextSize.height,
         ));
-        if (reserveWidth > 0) {
+        if (usesCardOwnedWidth) {
+            delete node.dataset.investmentLiveReserveWidth;
+            node.style.removeProperty('min-width');
+        } else if (reserveWidth > 0) {
             node.dataset.investmentLiveReserveWidth = String(reserveWidth);
             node.style.minWidth = `${reserveWidth}px`;
         }

@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.143.0
+ * Code version: v2.143.1
+ * - Fixed: Stock-details live values keep their responsive metric-card bounds,
+ *   and the cost curve retains its configured replay through the latest point.
  * - Fixed: HSBC provisional-cash copy distinguishes the captured Available
  *   balance from the posted Ledger boundary used by the display projection.
  * - Fixed: HSBC settlement replay preserves the balance-continuity order
@@ -412,12 +414,12 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.34.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.34.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.2';
+} from './investment/realtime.js?v=investment-realtime-v1.3.3';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -461,7 +463,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.143.0',
+    entry: 'v2.143.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

@@ -1,12 +1,21 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.2`
+Documentation version: `v1.51.3`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Stock-details live quote updates no longer retain a stale full-panel
+  minimum width inside responsive metric cards, so every populated field stays
+  visibly inside its card.
+
+- Fixed: The Stock-details Average price curve keeps the configured
+  transaction-replay method through its latest point. A separate
+  FIFO-reconstructed current-position basis can no longer create a false final
+  cost jump in that historical series.
 
 - Fixed: Overview equity hover now draws the horizontal guide from the
   vertical guide's curve intersection across the complete plot area, keeping

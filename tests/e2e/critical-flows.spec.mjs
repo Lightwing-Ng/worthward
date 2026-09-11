@@ -1,4 +1,4 @@
-/* Code version: v1.213.3 */
+/* Code version: v1.213.4 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -8438,7 +8438,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         importFeedback: 'v1.10.0',
         layout: 'v1.4.0',
         pagination: 'v1.4.1',
-        realtime: 'v1.3.2',
+        realtime: 'v1.3.3',
         numericDisplay: 'v1.1.0',
         stockDetails: currentStockDetailsVersion,
         transactionFilters: 'v1.3.0',
@@ -8689,29 +8689,32 @@ test('keeps QQQI Stock details cost labels out of metrics and tooltip', async ({
     expect(chartDatasetLabels).toContain('QQQI Average price');
 });
 
-test('aligns the latest average-price chart point with the authoritative ticker cost basis', async ({page}) => {
+test('keeps the latest average-price chart point on the configured transaction replay', async ({page}) => {
     const ticker = 'DRAM';
     await mockInvestmentReadApis(page, {
         transactions: [
-            {ledger_no: 1, broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker, currency: 'USD', quantity: 1, price: 60, amount: -60},
+            {ledger_no: 1, broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker, currency: 'USD', quantity: 5, price: 100, amount: -500},
+            {ledger_no: 2, broker: 'ibkr', date: '2026-07-11', type: 'buy', ticker, currency: 'USD', quantity: 1, price: 50, amount: -50},
+            {ledger_no: 3, broker: 'ibkr', date: '2026-07-12', type: 'sell', ticker, currency: 'USD', quantity: 1, price: 120, amount: 120},
         ],
         summary: {
             position_snapshot_authoritative: true,
-            position_snapshot_as_of: '2026-07-11',
+            position_snapshot_as_of: '2026-07-12',
         },
         positionSnapshot: {
             [ticker]: {
-                quantity: '1',
+                quantity: '5',
                 cost_basis_status: 'known',
-                cost_price: '50',
-                market_value: '55',
-                last_price: '55',
+                cost_price: '90',
+                market_value: '600',
+                last_price: '120',
             },
         },
         priceHistoryByTicker: {
             [ticker]: [
-                {date: '2026-07-10', close: 55},
-                {date: '2026-07-11', close: 55},
+                {date: '2026-07-10', close: 100},
+                {date: '2026-07-11', close: 50},
+                {date: '2026-07-12', close: 120},
             ],
         },
         tickerProfiles: {
@@ -8748,8 +8751,8 @@ test('aligns the latest average-price chart point with the authoritative ticker 
             latestAveragePrice: Number(averageDataset?.data?.at(-1)),
         };
     });
-    expect(parity.metric).toBe(50);
-    expect(parity.latestAveragePrice).toBeCloseTo(parity.metric, 8);
+    expect(parity.metric).toBe(90);
+    expect(parity.latestAveragePrice).toBeCloseTo(100, 8);
 });
 
 test('shows date-scoped realized and unrealized P&L in the Stock details tooltip', async ({page}) => {
@@ -11246,6 +11249,15 @@ test('uses Longbridge extended-hours quotes for the Stock details live position 
     await expect(lastPrice).toHaveAttribute('data-investment-live-number', '55.54');
     await expect(lastPrice).toHaveAttribute('data-investment-live-display', '55.54');
     await expect(lastPrice).not.toHaveAttribute('data-investment-live-animation-token', /.+/);
+    const liveMetricOverflow = await metricGrid.locator('[data-investment-live-field]').evaluateAll((nodes) => (
+        nodes.map((node) => {
+            const cardRect = node.closest('.investment-stock-details-metric-card')?.getBoundingClientRect();
+            const valueRect = node.getBoundingClientRect();
+            return cardRect ? Math.max(0, valueRect.right - cardRect.right) : Number.POSITIVE_INFINITY;
+        })
+    ));
+    expect(Math.max(...liveMetricOverflow)).toBeLessThanOrEqual(1);
+    await expect(lastPrice).not.toHaveAttribute('data-investment-live-reserve-width', /.+/);
     await expect.poll(() => page.evaluate(() => (
         window.matchMedia('(prefers-reduced-motion: reduce)').matches
     ))).toBe(false);
