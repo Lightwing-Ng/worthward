@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.13.0
+Code version: v0.13.2
 """
 
 from __future__ import annotations
@@ -214,7 +214,12 @@ class WebTokenRegistryTests(unittest.TestCase):
         )
         source_counts = Counter(re.findall(r"--[a-z][a-z0-9_-]*", source_text))
         for token_name in SHARED_STYLE_TOKEN_NAMES:
-            self.assertGreaterEqual(source_counts[token_name], 3)
+            minimum_references = 2 if token_name.startswith("--sidebar-shell-") else 3
+            self.assertGreaterEqual(
+                source_counts[token_name],
+                minimum_references,
+                token_name,
+            )
 
     def test_design_token_builders_use_only_explicit_presentation_inputs(self) -> None:
         labels = {

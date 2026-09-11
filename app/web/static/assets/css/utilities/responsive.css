@@ -1,4 +1,4 @@
-/* Code version: v3.34.0 */
+/* Code version: v3.35.0 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -74,8 +74,8 @@
 		max-width: var(--layout-sidebar-overlay-inline-size);
 		bottom: var(--sidebar-overlay-inset-bottom);
 		flex-basis: auto;
-		padding-bottom: calc(16px + var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
-		scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size) + 8px);
+		padding: var(--sidebar-shell-overlay-padding);
+		scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);
 		margin: 0;
 		z-index: calc(var(--layer-fixed-dock) - 2);
 		transform: translate3d(0, 0, 0);
@@ -270,19 +270,20 @@
 		max-width: var(--sidebar-overlay-available-inline-size);
 		bottom: var(--sidebar-overlay-inset-bottom);
 		flex-basis: auto;
-		padding: 16px 16px calc(16px + var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
-		scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size) + 8px);
-		border-radius: var(--radius-panel);
+		padding: var(--sidebar-shell-overlay-padding);
+		scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);
+		border: var(--sidebar-shell-border);
+		border-radius: var(--sidebar-shell-radius);
 		margin: 0;
 		z-index: calc(var(--layer-fixed-dock) - 2);
 		transform: translate3d(0, 0, 0);
 		opacity: 1;
 		transition: transform var(--workspace-article-sidebar-morph-duration) var(--workspace-article-sidebar-morph-easing), opacity var(--motion-duration-emphasized) var(--motion-standard), visibility var(--workspace-article-sidebar-morph-duration) step-start;
 		visibility: visible;
-		box-shadow: 0 18px 44px var(--theme-shadow-ambient);
-		background: var(--glass-surface-background-strong);
-		backdrop-filter: var(--frosted-glass-blur);
-		-webkit-backdrop-filter: var(--frosted-glass-blur);
+		box-shadow: var(--sidebar-shell-shadow);
+		background: var(--sidebar-shell-background);
+		backdrop-filter: var(--sidebar-shell-blur);
+		-webkit-backdrop-filter: var(--sidebar-shell-blur);
 		overflow-y: auto;
 		max-height: none;
 	}

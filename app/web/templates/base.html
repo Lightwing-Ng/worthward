@@ -1,4 +1,4 @@
-{# Code version: v0.49.3 #}
+{# Code version: v0.50.1 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.91.0') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.92.1') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -194,7 +194,7 @@
             tabindex="-1"
             hidden
         ></button>
-        <aside class="panel sidebar" id="app_sidebar">
+        <aside class="panel sidebar" id="app_sidebar" data-layout-role="sidebar-shell">
             <section class="hero" data-layout-role="sidebar-title">
                 <h1>{{ sidebar_title or page_title }}</h1>
             </section>

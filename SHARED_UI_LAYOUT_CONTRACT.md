@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.6.0`
+Documentation version: `v1.7.0`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -37,6 +37,9 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - Shared select dropdown and filter triggers use
   `--shared-select-control-height: 30px` at all existing breakpoints. This does not
   change the separate 36px Agent session-control rail.
+- On the Style tokens page, the owning sidebar consumes the same
+  `--sidebar-shell-*` contract as every other application sidebar; it has no
+  page-local material or padding override.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
@@ -84,6 +87,30 @@ Each project publishes `--layout-content-width: 640px`,
 `--layout-physical-effect-bleed: 48px`. Feature aliases must reference these tokens.
 The effective width of an owned element is `min(parent inline size, W)` or
 `min(parent inline size, C)`, never a new intermediate pixel constant.
+
+### Sidebar shell tokens
+
+The current agenticContext Agent sidebar is the measured shared-shell reference.
+Both projects expose the outer `<aside>` as `data-layout-role="sidebar-shell"` and
+consume one semantic `--sidebar-shell-*` token family instead of restating the
+material on individual pages.
+
+| Token | Contract |
+| --- | --- |
+| `--sidebar-shell-width` | `312px` maximum shell width; `--sidebar-width` is a compatibility alias |
+| `--sidebar-shell-radius` | `var(--radius-panel)` (`10px`) |
+| `--sidebar-shell-padding` | Desktop: `9px 10px 96px`, expressed from `G`, the 1px shell border, and Dock clearance tokens |
+| `--sidebar-shell-overlay-padding` | Overlay: `9px 18px 84px`, expressed from the same border and Dock-clearance tokens |
+| `--sidebar-shell-background` | Light and Dark gradients measured from the Agent sidebar |
+| `--sidebar-shell-border` | Light `rgba(255,255,255,0.30)`; Dark `rgba(210,224,244,0.225)` at the shared 1px border width |
+| `--sidebar-shell-shadow` | Light `0 18px 40px rgba(10,14,25,0.12)`; Dark `0 18px 40px rgba(0,0,0,0.22)`, plus the shared inset highlight |
+| `--sidebar-shell-blur` | `saturate(160%) blur(18px)` |
+
+The `<=900px` overlay breakpoint changes positioning and consumes the overlay
+padding token. The `<=600px` compact breakpoint must not introduce another
+sidebar material. A product may reduce the effective width below `312px` when an
+external global-action rail owns required horizontal space; that constraint uses
+the existing available-width equation and does not redefine the shell token.
 
 ## Edge and anchor equations
 
@@ -168,6 +195,7 @@ The implementation exposes these roles through `data-layout-role`:
 
 | Role | Owner or purpose |
 | --- | --- |
+| `sidebar-shell` | Outer reusable application sidebar surface |
 | `sidebar-toggle` | Root sidebar button |
 | `sidebar-title` | Sidebar title anchor |
 | `global-action-column` | Global action rail |

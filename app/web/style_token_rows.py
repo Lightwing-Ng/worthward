@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.24.0
+Code version: v1.25.0
 """
 
 from __future__ import annotations
@@ -75,6 +75,16 @@ SHARED_STYLE_TOKEN_NAMES = (
     "--sidebar-overlay-inset-bottom",
     "--sidebar-overlay-inset-left",
     "--sidebar-overlay-inset-top",
+    "--sidebar-shell-background",
+    "--sidebar-shell-blur",
+    "--sidebar-shell-border",
+    "--sidebar-shell-overlay-inline-pad",
+    "--sidebar-shell-overlay-padding",
+    "--sidebar-shell-padding",
+    "--sidebar-shell-radius",
+    "--sidebar-shell-scroll-padding-bottom",
+    "--sidebar-shell-shadow",
+    "--sidebar-shell-width",
     "--sidebar-toggle-center-offset",
     "--sidebar-toggle-left",
     "--sidebar-toggle-top",

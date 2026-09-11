@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.16.1
+Code version: v0.17.0
 """
 
 from pathlib import Path
@@ -46,6 +46,14 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--sidebar-dock-bottom-gap: var(--layout-sidebar-dock-bottom-gap);",
         "--layout-sidebar-dock-block-size: calc(",
         "--layout-sidebar-overlay-inline-size: min(",
+        "--sidebar-shell-width: 312px;",
+        "--sidebar-width: var(--sidebar-shell-width);",
+        "--sidebar-shell-padding:",
+        "--sidebar-shell-overlay-padding:",
+        "--sidebar-shell-background:",
+        "--sidebar-shell-border:",
+        "--sidebar-shell-shadow:",
+        "--sidebar-shell-blur: saturate(160%) blur(18px);",
         "--settings-nav-item-block-size: 48px;",
         "--settings-nav-item-padding-block: 10px;",
         "--settings-nav-item-gap: 8px;",
@@ -53,7 +61,13 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         assert fragment in tokens
 
     for fragment in (
-        "padding: var(--layout-edge-gap) var(--layout-edge-gap) var(--sidebar-bottom-pad);",
+        "width: var(--sidebar-shell-width);",
+        "padding: var(--sidebar-shell-padding);",
+        "border: var(--sidebar-shell-border);",
+        "border-radius: var(--sidebar-shell-radius);",
+        "background: var(--sidebar-shell-background);",
+        "box-shadow: var(--sidebar-shell-shadow);",
+        "backdrop-filter: var(--sidebar-shell-blur);",
         "top: var(--global-quick-actions-top);",
         "--global-quick-action-gap: var(--layout-global-action-gap);",
     ):
@@ -88,6 +102,8 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "appearance: none;",
         "left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;",
         "--layout-sidebar-dock-block-size: calc(",
+        "padding: var(--sidebar-shell-overlay-padding);",
+        "scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);",
     ):
         assert fragment in responsive
 
@@ -1130,6 +1146,7 @@ def test_production_templates_publish_the_shared_layout_role_registry() -> None:
 
     for fragment in (
         'data-layout-role="sidebar-toggle"',
+        'data-layout-role="sidebar-shell"',
         'data-layout-role="global-action-column"',
         'data-layout-role="global-theme-anchor"',
         'data-layout-role="sidebar-title"',

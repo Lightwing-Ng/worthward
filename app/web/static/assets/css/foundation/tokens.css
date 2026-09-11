@@ -1,4 +1,4 @@
-/* Code version: v0.38.0 */
+/* Code version: v0.39.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -107,7 +107,26 @@
 	--sidebar-overlay-available-inline-size: calc(100vw - var(--sidebar-overlay-inset-left) - var(--sidebar-overlay-inset-right));
 	--global-quick-actions-top: var(--layout-global-anchor-top);
 	--global-quick-actions-right: var(--layout-global-anchor-right);
-	--sidebar-width: 312px;
+	--sidebar-shell-width: 312px;
+	--sidebar-width: var(--sidebar-shell-width);
+	--sidebar-shell-radius: var(--radius-panel);
+	--sidebar-shell-padding:
+		calc(var(--layout-edge-gap) - var(--layout-glass-border-width))
+		var(--layout-edge-gap)
+		var(--sidebar-bottom-pad);
+	--sidebar-shell-overlay-inline-pad: 18px;
+	--sidebar-shell-overlay-padding:
+		calc(var(--layout-edge-gap) - var(--layout-glass-border-width))
+		var(--sidebar-shell-overlay-inline-pad)
+		calc(var(--sidebar-shell-overlay-inline-pad) + var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
+	--sidebar-shell-scroll-padding-bottom:
+		calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size) + 8px);
+	--sidebar-shell-background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
+		rgba(255, 255, 255, 0.08);
+	--sidebar-shell-border: var(--layout-glass-border-width) solid rgba(255, 255, 255, 0.30);
+	--sidebar-shell-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
+	--sidebar-shell-blur: saturate(160%) blur(18px);
 	--layout-sidebar-overlay-inline-size: min(
 		var(--sidebar-width),
 		max(
@@ -557,6 +576,11 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {
+		--sidebar-shell-background:
+			linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
+			rgba(10, 14, 20, 0.06);
+		--sidebar-shell-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.225);
+		--sidebar-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 		--frosted-glass-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.125);
 		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 		--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
@@ -564,6 +588,11 @@
 	}
 }
 :root[data-theme-override="dark"] {
+	--sidebar-shell-background:
+		linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
+		rgba(10, 14, 20, 0.06);
+	--sidebar-shell-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.225);
+	--sidebar-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 	--frosted-glass-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.125);
 	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);

@@ -1,10 +1,47 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
     test(`Settings annotation ownership and geometry at ${width}px`, async ({page}) => {
         await page.setViewportSize({width, height: 959});
+        await page.emulateMedia({colorScheme: 'light'});
         await page.goto('/settings/style-tokens');
+        if (width <= 900) {
+            const shell = page.locator('.app-shell');
+            await expect(shell).toHaveClass(/is-sidebar-(?:open|collapsed)/);
+            if (await shell.evaluate(element => element.classList.contains('is-sidebar-collapsed'))) {
+                await page.locator('#sidebar_toggle').click();
+            }
+            await expect(shell).toHaveClass(/is-sidebar-open/);
+        }
+        const sidebarShell = page.locator('[data-layout-role="sidebar-shell"]');
+        await expect(sidebarShell).toHaveCount(1);
+        const sidebarMaterial = await sidebarShell.evaluate(element => {
+            const style = getComputedStyle(element);
+            return {
+                width: element.getBoundingClientRect().width,
+                padding: style.padding,
+                backgroundColor: style.backgroundColor,
+                backgroundImage: style.backgroundImage,
+                borderRadius: style.borderRadius,
+                borderTopWidth: style.borderTopWidth,
+                boxShadow: style.boxShadow,
+                backdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+            };
+        });
+        expect(sidebarMaterial.width).toBeLessThanOrEqual(312);
+        expect(sidebarMaterial.width).toBe(width === 390 ? 252 : 312);
+        expect(sidebarMaterial.padding).toBe(width > 900 ? '9px 10px 96px' : '9px 18px 84px');
+        expect(sidebarMaterial.backgroundColor).toBe('rgba(255, 255, 255, 0.08)');
+        expect(sidebarMaterial.backgroundImage).toContain('rgba(255, 255, 255, 0.24)');
+        expect(sidebarMaterial.borderRadius).toBe('10px');
+        expect(sidebarMaterial.borderTopWidth).toBe('1px');
+        expect(sidebarMaterial.boxShadow).toContain('rgba(10, 14, 25, 0.12)');
+        expect(sidebarMaterial.backdropFilter).toContain('blur(18px)');
+        if (width <= 900) {
+            await page.locator('#sidebar_toggle').click();
+            await expect(page.locator('.app-shell')).toHaveClass(/is-sidebar-collapsed/);
+        }
         const primary = page.locator('#primary-button .style-token-demo > button');
         const packaged = page.locator('#settings-action-package .settings-action-package-form > button');
         for (const button of [primary, packaged]) {
