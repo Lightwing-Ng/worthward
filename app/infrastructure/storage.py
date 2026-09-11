@@ -1,7 +1,8 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.18.4
+Code version: v0.18.5
+- Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
 
@@ -61,6 +62,7 @@ _PROFILE_COLUMNS = [
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
 _INVESTMENT_STORE_COLUMNS = ["section", "row_index", "value_json", "updated_at"]
 _SHARE_CLASS_TICKER_PATTERN = re.compile(r"^([A-Z0-9]{1,4})[.\-\s]+([ABC])$")
+_CANONICAL_TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 _INTRADAY_STORE_SUFFIX_PATTERN = re.compile(
     r"_[0-9]+[a-z]+(?:[-.].*)?$",
     re.IGNORECASE,
@@ -175,6 +177,11 @@ def normalize_ticker(ticker: str) -> str:
     if normalized.endswith(".US"):
         normalized = normalized[:-3].rstrip(".")
     return normalized
+
+
+def has_valid_ticker_format(ticker: str) -> bool:
+    """Return whether a normalized ticker satisfies the canonical visible/storage format."""
+    return bool(_CANONICAL_TICKER_PATTERN.fullmatch(str(ticker or "")))
 
 
 def canonicalize_investment_ticker(ticker: str) -> str:

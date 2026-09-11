@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.10.1
+Code version: v0.10.2
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from app.infrastructure.storage import (
     ensure_market_store_dir,
     has_logo_asset,
     has_profile_record,
+    has_valid_ticker_format as has_valid_canonical_ticker_format,
     history_store_path_for,
     investment_ticker_store_aliases,
     is_ticker_fallback_company_name,
@@ -53,7 +54,6 @@ from app.infrastructure.storage import (
     upsert_profile_record,
 )
 
-TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 YFINANCE_SEARCH_TIMEOUT_SECONDS = 6
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
@@ -180,7 +180,7 @@ def normalize_ticker_input(raw_ticker: str) -> str:
 
 
 def has_valid_ticker_format(ticker: str) -> bool:
-    return bool(TICKER_PATTERN.fullmatch(ticker))
+    return has_valid_canonical_ticker_format(ticker)
 
 
 def _record_is_fresh(updated_at: str | None) -> bool:
