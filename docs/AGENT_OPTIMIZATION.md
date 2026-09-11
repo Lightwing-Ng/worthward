@@ -1,11 +1,11 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.2.3`
+Documentation version: `v1.2.4`
 
-This project implements the shared Agent Optimization contract at
-`/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`. That file owns the cross-project naming,
-schema, result, security, lifecycle, evaluation, and promotion rules. This document owns only the
-Worthward adapter and its verification evidence.
+This document is the complete public contract for Worthward's Agent Optimization
+adapter. Maintainer checkouts may also use a private sibling contract for
+cross-project synchronization, but it is not required to build, run, test, or
+contribute to this repository.
 
 ## Runtime adapter
 

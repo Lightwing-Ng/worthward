@@ -1,4 +1,4 @@
-/* Code version: v0.69.0 */
+/* Code version: v0.69.1 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -314,7 +314,7 @@
 
     const readChartFontFamily = (canvas) => {
         const computed = getComputedStyle(canvas);
-        return computed.fontFamily || '"Univers Next for HSBC"';
+        return computed.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     };
 
     const readChartTickFontSize = (canvas, fallbackValue = 12) => {

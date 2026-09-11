@@ -1,13 +1,13 @@
 # Settings annotation validation
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.1`
 Reviewed: 5 Sep 2026
 
 ## Outcome and scope
 
 All 16 requested annotations are implemented in the owning Settings templates,
 shared control styles, and semantic tokens. Changes remain uncommitted on `main`
-at `ecb5004e` in `/Users/example/Desktop/worthward`. The initial worktree was
+at `ecb5004e` in the Worthward repository. The initial worktree was
 clean. No sibling source, broker configuration, production market or investment
 store, or live-order authorization was intentionally changed. No subagents were
 used. The application release metadata remains v2.60.0 / 2 Sep 2026 because this
@@ -112,7 +112,7 @@ external synchronization ledger.
 ## Runtime and recovery
 
 The user-owned 8688 listener was initially PID 80226 and subsequently PID 97785,
-with cwd `/Users/example/Desktop/worthward`. Neither process was restarted or
+from the Worthward repository root. Neither process was restarted or
 stopped by this task. Repeated live browser reloads still returned the old
 app.css v0.70.4 template key and old navigation/reset markup; CSS serving alone
 was newer. Full new-template evidence is from isolated 8699, not the stale

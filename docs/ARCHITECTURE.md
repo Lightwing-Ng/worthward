@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.106.2`
+Documentation version: `v1.106.3`
 
 ## Shared Backtest controls and research
 
@@ -460,7 +460,7 @@ a no-op and the human interface remains complete.
 Normal navigation may execute the destination page's existing market-data flow, so the navigation
 tool declares a visible page change and normal page load. It does not claim that navigation is
 network-free. The cross-project naming, schema, result, effects, security, evaluation, and promotion
-rules live in `/Users/example/Desktop/SHARED_AGENT_OPTIMIZATION.md`; project-specific routes and
+rules may also be maintained in a private sibling contract; project-specific routes and
 evidence live in [AGENT_OPTIMIZATION.md](AGENT_OPTIMIZATION.md).
 
 ## Beta module boundary

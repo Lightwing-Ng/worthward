@@ -1,4 +1,4 @@
-/* Code version: v1.48.0 */
+/* Code version: v1.48.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -1924,14 +1924,14 @@ test('HSBC trade descriptions use compact order references and mark unresolved s
         quantity_abs: '3',
         price: '24.50',
         source: {
-            statement_order_id: 'P-590134',
+            statement_order_id: 'P-140025',
             cash_settlement_reference: 'REF P344496153 SEC',
             cash_replay_pending_settlement: true,
         },
     };
     assert.equal(
         formatTransactionDescription(pendingOrder),
-        'EUV @ 24.50 × 3 · P-590134*',
+        'EUV @ 24.50 × 3 · P-140025*',
     );
 
     const settledOrder = {
@@ -1943,7 +1943,7 @@ test('HSBC trade descriptions use compact order references and mark unresolved s
     };
     assert.equal(
         formatTransactionDescription(settledOrder),
-        'EUV @ 24.50 × 3 · P-590134',
+        'EUV @ 24.50 × 3 · P-140025',
     );
 });
 

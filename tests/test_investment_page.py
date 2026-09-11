@@ -1,7 +1,9 @@
 """
 Investment page regression tests.
 
-Code version: v1.8.1
+Code version: v1.8.2
+- Changed: Replaced production-derived transaction references with synthetic
+  identifiers while preserving transfer-binding coverage.
 - Added: Investment transaction payloads repair an existing daily history
   cache that starts after the earliest ledger valuation date.
 - Added: Investment API cache reads reapply HSBC current-cash boundary
@@ -422,7 +424,7 @@ def test_internal_transfer_endpoint_rejects_ambiguous_old_key_and_accepts_row_ke
             "account": "000-999999-999",
             "currency": "HKD",
             "net_amount_raw": "-100.00",
-            "description": "TO USMART T453910QU272(09FEB02)",
+            "description": "TO USMART T548125QU155(48FEB12)",
             "source": {"file_kind": "hsbc_statement_cash", "row_number": 31},
         },
         {
@@ -525,7 +527,7 @@ def test_internal_transfer_endpoint_accepts_july_2025_bochk_bridge_for_longbridg
         "account": "000-999999-999",
         "currency": "USD",
         "net_amount_raw": "-4.93",
-        "description": "HK526893PI145183",
+        "description": "HK531169PI465311",
         "source": {"file_kind": "hsbc_usd_savings_csv", "row_number": 147},
     }
     bochk_deposit = {
@@ -535,7 +537,7 @@ def test_internal_transfer_endpoint_accepts_july_2025_bochk_bridge_for_longbridg
         "account": "65640001",
         "currency": "USD",
         "net_amount_raw": "4.93",
-        "description": "Transfer CHATS73609393BKRB5019",
+        "description": "Transfer CHATS58029429BKRB5802",
         "source": {"file_kind": "boc_hk_statement_pdf", "row_number": 7},
     }
     bochk_withdrawal = {

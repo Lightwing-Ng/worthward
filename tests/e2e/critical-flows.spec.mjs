@@ -1,4 +1,4 @@
-/* Code version: v1.213.1 */
+/* Code version: v1.213.2 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -9330,7 +9330,7 @@ test('recovers same-day HSBC settlement order from authoritative balance continu
                 amount: -230,
                 source: {
                     file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-776356',
+                    statement_order_id: 'P-119045',
                     cash_settlement_date: '2026-09-02',
                     cash_settlement_amount_raw: '-230.00',
                     cash_settlement_balance_after_raw: '32992.32',
@@ -9358,7 +9358,7 @@ test('recovers same-day HSBC settlement order from authoritative balance continu
                 amount: -11_807,
                 source: {
                     file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-396348',
+                    statement_order_id: 'P-742284',
                     cash_settlement_date: '2026-09-02',
                     cash_settlement_amount_raw: '-11807.00',
                     cash_settlement_balance_after_raw: '21185.32',
@@ -13477,13 +13477,13 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
             textAlign: style.textAlign,
         };
     })).toMatchObject({
-        axisFontFamily: '"Univers Next for HSBC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+        axisFontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
         axisFontSize: '12px',
         axisFontWeight: '400',
         axisLineHeight: '10px',
         backgroundColor: 'rgb(0, 85, 204)',
         color: 'rgb(255, 255, 255)',
-        fontFamily: '"Univers Next for HSBC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
         fontSize: '12px',
         fontWeight: '400',
         lineHeight: '10px',
@@ -14277,8 +14277,8 @@ test('preserves history filters, page, and scroll while binding an internal tran
         type: 'deposit',
         currency: 'USD',
         amount: 3_400,
-        description: '9285883 R00460',
-        source: {reference_id: '9285883 R00460'},
+        description: '5475364 R45475',
+        source: {reference_id: '5475364 R45475'},
     };
     const transferTarget = {
         ledger_no: 7_999,
@@ -14584,7 +14584,7 @@ test('binds the July 2025 Longbridge HK USD deposit to the BOCHK withdrawal', as
         type: 'withdrawal',
         currency: 'USD',
         amount: -4.93,
-        description: 'HK526893PI145183',
+        description: 'HK531169PI465311',
     };
     const bochkDeposit = {
         ledger_no: 5_402,
@@ -14594,7 +14594,7 @@ test('binds the July 2025 Longbridge HK USD deposit to the BOCHK withdrawal', as
         type: 'deposit',
         currency: 'USD',
         amount: 4.93,
-        description: 'Transfer CHATS73609393BKRB5019',
+        description: 'Transfer CHATS58029429BKRB5802',
     };
     const bochkWithdrawal = {
         ledger_no: 5_403,
@@ -14969,7 +14969,7 @@ test('offers the matching Longbridge HK withdrawal for a BOCHK deposit', async (
         type: 'deposit',
         currency: 'HKD',
         amount: 500,
-        description: 'Transfer Transaction CBS TRANSFER(2915450572044)',
+        description: 'Transfer Transaction CBS TRANSFER(3000971530009)',
     };
     const longbridgeWithdrawal = {
         ledger_no: 5_304,
@@ -15219,8 +15219,8 @@ test('keeps same-day same-amount transfer rows independently selectable', async 
             type: 'withdrawal',
             currency: 'HKD',
             amount: -100,
-            description: 'TO USMART T453910QU272(09FEB02)',
-            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_723330.pdf', row_number: 31},
+            description: 'TO USMART T548125QU155(48FEB12)',
+            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_649434.pdf', row_number: 31},
         },
         {
             ledger_no: 10_102,
@@ -15231,7 +15231,7 @@ test('keeps same-day same-amount transfer rows independently selectable', async 
             currency: 'HKD',
             amount: -100,
             description: 'DEMO ACCOUNT HOLDER REF00000000000000 18FEB',
-            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_723330.pdf', row_number: 33},
+            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_649434.pdf', row_number: 33},
         },
     ];
     await mockInvestmentReadApis(page, {
@@ -16245,7 +16245,7 @@ test('demonstrates the shared filter header contract in the standard table token
         fieldOpacity: '1',
         alignment: 'center',
     }));
-    expect(hoverState?.fontFamily).toContain('Univers Next for HSBC');
+    expect(hoverState?.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
 
     await trigger.click();
     const dropdown = page.locator('[data-style-token-table-filter-dropdown]');
@@ -16610,12 +16610,12 @@ test('keeps the Bayesian Price Field axis column fixed and shares chart typograp
         0,
     );
     for (const font of [geometry.yTick, geometry.xTick]) {
-        expect(font.fontFamily).toContain('Univers Next for HSBC');
+        expect(font.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
         expect(font.fontSize).toBe('12px');
         expect(font.fontWeight).toBe('400');
         expect(font.lineHeight).toBe('10px');
     }
-    expect(geometry.chartYAxisFont.family).toContain('Univers Next for HSBC');
+    expect(geometry.chartYAxisFont.family).toMatch(/BlinkMacSystemFont|system-ui/);
     expect(geometry.chartYAxisFont.size).toBe(12);
     expect(String(geometry.chartYAxisFont.weight)).toBe('400');
 });
@@ -16734,7 +16734,7 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
     ]);
     expect(badges.background).toBe('rgb(0, 85, 204)');
     expect(badges.color).toBe('rgb(255, 255, 255)');
-    expect(badges.fontFamily).toContain('Univers Next for HSBC');
+    expect(badges.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
     expect(badges.fontSize).toBe('12px');
     expect(badges.lineHeight).toBe('10px');
     expect(badges.dateCenterX).toBeCloseTo(badges.lineCenterX, 1);
@@ -20131,7 +20131,7 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     ]);
     expect(contract.dateLabelBackground).toBe('rgb(0, 85, 204)');
     expect(contract.dateLabelColor).toBe('rgb(255, 255, 255)');
-    expect(contract.dateLabelFontFamily).toContain('Univers Next for HSBC');
+    expect(contract.dateLabelFontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
     expect(contract.dateLabelFontSize).toBe('12px');
     expect(contract.dateLabelLineHeight).toBe('10px');
     expect(contract.domXPathStable).toBe(true);

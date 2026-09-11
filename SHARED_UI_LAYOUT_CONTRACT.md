@@ -1,35 +1,25 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.5.0`
+Documentation version: `v1.6.0`
 
-This is the normative spatial contract for the sibling projects
-`/Users/example/Desktop/worthward` and
-`/Users/example/Desktop/agenticContext`. The two implementations may have
+This is the normative spatial contract for Worthward and its sibling
+`agenticContext` project. The two implementations may have
 different product surfaces, but shared shell geometry, token meanings, ownership
 boundaries, and acceptance tolerances are the same.
 
 ## Western typeface contract
 
-`UniversNextforHSBC.ttc` is the sole approved source for Western interface
-glyphs in both projects. The canonical source is
-`worthward/app/web/static/assets/fonts/UniversNextforHSBC.ttc`; its SHA-256 is
-`e10a317b9da0016c24a9fce70ccbd33eb39458da15253d5abfe051d8cc33e21a`.
-The mirrored `agenticContext` collection must remain byte-identical.
+Publicly distributed projects must not bundle a proprietary interface typeface
+without explicit redistribution rights. Worthward resolves ordinary Western
+text through the shared `--font-family-base` role and the operating-system stack:
+Apple system UI on macOS and iOS, Segoe UI on Windows, and the browser's generic
+sans-serif fallback elsewhere. CJK platform families remain explicit glyph
+coverage fallbacks. `--font-family-mono` remains a compatibility role that may
+alias the same base stack.
 
-Chromium does not reliably select individual faces from this collection and can
-render regular text with its Bold face when the TTC is referenced directly.
-Each project therefore serves deterministic standalone TTF transport faces
-rebuilt from the approved TTC. These files preserve the original tables,
-metrics, glyphs, and PostScript names; they are not alternate typeface sources.
-The extraction scripts and tests must reject an unapproved source checksum or a
-byte-level difference from a rebuilt face.
-
-Runtime CSS and JavaScript must obtain Western text from the shared
-`--font-family-base` or `--font-family-mono` role and must not name local or
-system Western fallbacks such as Arial, Helvetica, Inter, SF Pro, Menlo, or
-GDS Transport. CJK fallback families remain allowed strictly for glyph coverage.
-Vendored KaTeX math fonts remain an explicit content-font exception and must not
-be promoted into the interface font stack.
+Vendored KaTeX mathematical fonts remain an explicit content-font exception and
+must not be promoted into the interface font stack. Any future bundled interface
+font must carry a redistribution license compatible with the repository license.
 
 ## Canonical dimensions
 
@@ -213,7 +203,7 @@ attributes or temporary preview markers.
 
 Each project must provide static contract tests for tokens, roles, and overflow
 ownership, focused functional tests for its affected surfaces, and rendered browser
-checks at desktop, overlay/iPad, and compact widths. The final synchronization entry in
-`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md` may be marked `Synchronized` only after
+checks at desktop, overlay/iPad, and compact widths. The final entry in the
+private sibling synchronization ledger may be marked `Synchronized` only after
 both projects pass their complete gates and the same geometry is measured on isolated
 verification ports.

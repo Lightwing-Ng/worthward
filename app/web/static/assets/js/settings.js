@@ -1,4 +1,4 @@
-/* Code version: v0.24.0 */
+/* Code version: v0.24.1 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.1.0';
 import {
@@ -1785,7 +1785,7 @@ import {
                 || "600");
         const labelFontFamily = cardStyles.fontFamily
             || rootStyles.fontFamily
-            || '"Univers Next for HSBC"';
+            || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         const labelFont = `${labelFontWeight} ${labelFontSize}px ${labelFontFamily}`;
         const isStockDetailsChart = chartKind === "stock_details";
         const isTradePriceChart = chartKind === "price";

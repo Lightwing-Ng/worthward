@@ -1,6 +1,6 @@
 # Price Field reuse validation
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.1`
 Validation date: `6 Sep 2026`
 
 ## Outcome
@@ -10,7 +10,7 @@ boundary. Existing probability geometry and model training remain unchanged.
 
 ## Scope and preserved state
 
-- Checkout: `/Users/example/Desktop/worthward`, branch `main`.
+- Checkout: Worthward repository, branch `main`.
 - Starting HEAD: `262b29d366c5bbf16271f9d6c7d836a4bf2901e9`.
 - Existing optimization/tuning/documentation/gate changes and unrelated browser
   test changes were preserved. The ongoing documentation-validation task owns

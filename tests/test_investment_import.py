@@ -1,7 +1,9 @@
 """
 Tests for IBKR investment import normalization.
 
-Code version: v0.44.0
+Code version: v0.44.1
+- Changed: Replaced production-derived account, transaction, and source-file
+  identifiers with deterministic synthetic fixtures.
 - Added: HSBC paste imports retain their exact accepted UTF-8 text as one
   immutable evidence bundle, preserve exact position valuation, and label
   visible-order replay mismatches as partial-history comparisons.
@@ -302,19 +304,19 @@ class InvestmentImportTests(unittest.TestCase):
 <INVSTMTMSGSRSV1><INVSTMTTRNRS><INVSTMTRS>
 <CURDEF>USD</CURDEF><INVACCTFROM><ACCTID>U00000001</ACCTID></INVACCTFROM>
 <INVTRANLIST><DTSTART>20260701000000</DTSTART><DTEND>20260804202000</DTEND>
-<TRANSFER><INVTRAN><FITID>021223301</FITID><DTTRADE>20260731202000.000[-4:EDT]</DTTRADE>
+<TRANSFER><INVTRAN><FITID>235985042</FITID><DTTRADE>20260731202000.000[-4:EDT]</DTTRADE>
 <MEMO>FOP Transfer Out To Account 00000002</MEMO></INVTRAN>
 <SECID><UNIQUEID>78433H675</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID>
 <SUBACCTSEC>CASH</SUBACCTSEC><UNITS>-5.0</UNITS><TFERACTION>OUT</TFERACTION>
 <POSTYPE>LONG</POSTYPE><UNITPRICE>52.68</UNITPRICE></TRANSFER>
-<TRANSFER><INVTRAN><FITID>021223301</FITID><DTTRADE>20260803202000.000[-4:EDT]</DTTRADE>
+<TRANSFER><INVTRAN><FITID>235985042</FITID><DTTRADE>20260803202000.000[-4:EDT]</DTTRADE>
 <MEMO>FOP Transfer Out To Account 00000002</MEMO></INVTRAN>
 <SECID><UNIQUEID>78433H675</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID>
 <SUBACCTSEC>CASH</SUBACCTSEC><UNITS>-10.0</UNITS><TFERACTION>OUT</TFERACTION>
 <POSTYPE>LONG</POSTYPE><UNITPRICE>53.04</UNITPRICE></TRANSFER>
 </INVTRANLIST></INVSTMTRS></INVSTMTTRNRS></INVSTMTMSGSRSV1>
 <SECLIST><STOCKINFO><SECINFO><SECID><UNIQUEID>78433H675</UNIQUEID><UNIQUEIDTYPE>CUSIP</UNIQUEIDTYPE></SECID>
-<SECNAME>QQQI NEOS NASDAQ-100 HIGH INC ETF</SECNAME><TICKER>QQQI</TICKER><FIID>021223301</FIID></SECINFO></STOCKINFO></SECLIST>
+<SECNAME>QQQI NEOS NASDAQ-100 HIGH INC ETF</SECNAME><TICKER>QQQI</TICKER><FIID>235985042</FIID></SECINFO></STOCKINFO></SECLIST>
 </OFX>"""
 
     @staticmethod
@@ -952,7 +954,7 @@ Fees: 0.12
             return_value=statement_text,
         ):
             payload = build_investment_payload_from_hsbc_statement_pdfs([
-                (b"cny-boundary", "eStatementFile_106353.pdf"),
+                (b"cny-boundary", "eStatementFile_432244.pdf"),
             ])
 
         cnh_records = [
@@ -977,7 +979,7 @@ Fees: 0.12
         csv_text = "\n".join([
             "Date,Description,Billing amount,Billing currency,Balance,Balance currency",
             "02/01/2026,REF P900020001 SEC,-10.00,USD,90.00,USD",
-            "01/01/2026,9285883 R00460,100.00,USD,100.00,USD",
+            "01/01/2026,5475364 R45475,100.00,USD,100.00,USD",
         ])
 
         payload = build_investment_payload_from_hsbc_usd_savings_csv(
@@ -997,9 +999,9 @@ Fees: 0.12
     def test_hsbc_usd_savings_csv_replays_same_day_rows_in_bank_chronology(self) -> None:
         csv_text = "\n".join([
             "Date,Description,Billing amount,Billing currency,Balance,Balance currency",
-            "24/06/2026,HK112763BUG20IGW,2948.41,USD,17229.65,USD",
-            "24/06/2026,HK634259JOG5BW18 823,2200.88,USD,14281.24,USD",
-            "23/06/2026,HK725644FAFX2BPF 546,100.00,USD,12080.36,USD",
+            "24/06/2026,HK432801BUG62IGW,2948.41,USD,17229.65,USD",
+            "24/06/2026,HK213745JOG1BW02 137,2200.88,USD,14281.24,USD",
+            "23/06/2026,HK235349FAFX1BPF 123,100.00,USD,12080.36,USD",
         ])
 
         payload = build_investment_payload_from_hsbc_usd_savings_csv(
@@ -1010,9 +1012,9 @@ Fees: 0.12
         self.assertEqual(
             [record["description"] for record in payload["transactions"]],
             [
-                "HK725644FAFX2BPF 546",
-                "HK634259JOG5BW18 823",
-                "HK112763BUG20IGW",
+                "HK235349FAFX1BPF 123",
+                "HK213745JOG1BW02 137",
+                "HK432801BUG62IGW",
             ],
         )
 
@@ -1346,7 +1348,7 @@ Fees: 0.12
             "type": "withdrawal",
             "ticker": "",
             "currency": "USD",
-            "description": "HK711493P6025013",
+            "description": "HK433320P5343332",
             "net_amount_raw": "-400.00",
             "gross_amount_raw": "-400.00",
             "commission_raw": "0",
@@ -1365,7 +1367,7 @@ Fees: 0.12
             "source": {
                 "file_kind": "hsbc_statement_cash",
                 "source_format": "statement_pdf",
-                "source_filename": "eStatementFile_647003.pdf",
+                "source_filename": "eStatementFile_004244.pdf",
                 "account_type": "Foreign Currency Savings USD",
                 "account_number": "000-999999-999",
                 "balance_after_raw": "0.00",
@@ -1390,7 +1392,7 @@ Fees: 0.12
         self.assertEqual(len(merged["transactions"]), 1)
         self.assertEqual(merged["summary"]["incremental_import"]["added_record_count"], 0)
         self.assertEqual(merged["summary"]["incremental_import"]["duplicate_record_count"], 1)
-        self.assertEqual(merged["transactions"][0]["description"], "HK711493P6025013")
+        self.assertEqual(merged["transactions"][0]["description"], "HK433320P5343332")
 
     def test_hsbc_cash_cross_source_merge_retains_same_source_candidate_alias(self) -> None:
         statement_cash = {
@@ -1406,7 +1408,7 @@ Fees: 0.12
             "source": {
                 "file_kind": "hsbc_statement_cash",
                 "source_format": "statement_pdf",
-                "source_filename": "eStatementFile_647003.pdf",
+                "source_filename": "eStatementFile_004244.pdf",
                 "account_type": "Foreign Currency Savings USD",
                 "account_number": "000-999999-999",
                 "balance_after_raw": "0.00",
@@ -1420,7 +1422,7 @@ Fees: 0.12
             "type": "withdrawal",
             "ticker": "",
             "currency": "USD",
-            "description": "HK711493P6025013",
+            "description": "HK433320P5343332",
             "net_amount_raw": "-400.00",
             "gross_amount_raw": "-400.00",
             "commission_raw": "0",
@@ -1432,7 +1434,7 @@ Fees: 0.12
                 "balance_after_raw": "0.00",
                 "row_number": 1,
                 "ledger_sequence": 1,
-                "reference_id": "HK711493P6025013",
+                "reference_id": "HK433320P5343332",
             },
             "broker": "hsbc",
             "account": "000-999999-999",
@@ -1488,7 +1490,7 @@ Fees: 0.12
         statement_enriched_record["source"].update({
             "statement_date": "2026-06-10",
             "statement_pdf_balance_after_raw": "5000.00",
-            "statement_pdf_source_filename": "eStatementFile_647003.pdf",
+            "statement_pdf_source_filename": "eStatementFile_004244.pdf",
             "statement_pdf_statement_period": "2026-06",
         })
 
@@ -1512,7 +1514,7 @@ Fees: 0.12
         self.assertEqual(merged["summary"]["incremental_import"]["duplicate_record_count"], 1)
         self.assertEqual(
             merged["transactions"][0]["source"]["statement_pdf_source_filename"],
-            "eStatementFile_647003.pdf",
+            "eStatementFile_004244.pdf",
         )
 
     def test_hsbc_historical_statement_does_not_replace_current_cash_snapshot(self) -> None:
@@ -1529,7 +1531,7 @@ Fees: 0.12
             "source": {
                 "file_kind": "hsbc_statement_cash",
                 "source_format": "statement_pdf",
-                "source_filename": "eStatementFile_647003.pdf",
+                "source_filename": "eStatementFile_004244.pdf",
                 "account_type": "HKD Savings",
                 "account_number": "000-999999-999",
                 "balance_after_raw": "124.10",
@@ -2669,7 +2671,7 @@ Fees: 0.12
             "source": {
                 "file_kind": "hsbc_statement_cash",
                 "source_format": "statement_pdf",
-                "source_filename": "eStatementFile_428100.pdf",
+                "source_filename": "eStatementFile_054050.pdf",
                 "row_number": 3,
                 "ledger_sequence": 3,
                 "account_number": "000-999999-999",
@@ -2756,7 +2758,7 @@ Fees: 0.12
                 "source": {
                     "file_kind": "hsbc_statement_cash",
                     "source_format": "statement_pdf",
-                    "source_filename": "eStatementFile_106353.pdf",
+                    "source_filename": "eStatementFile_432244.pdf",
                     "source_file_sha256": "b" * 64,
                     "row_number": row_number,
                     "ledger_sequence": row_number,
@@ -2821,7 +2823,7 @@ Fees: 0.12
                 "account": "000-999999-999",
                 "source": {
                     "file_kind": "hsbc_order_status_text",
-                    "statement_order_id": "S-645804",
+                    "statement_order_id": "S-223761",
                     "cash_settlement_amount_raw": "269.99",
                     "cash_settlement_balance_after_raw": "25236.79",
                     "cash_settlement_postings": [
@@ -2919,7 +2921,7 @@ Fees: 0.12
                 "account": "000-999999-999",
                 "source": {
                     "file_kind": "hsbc_order_status_text",
-                    "statement_order_id": "P-024880",
+                    "statement_order_id": "P-900001",
                     "cash_settlement_amount_raw": "-22.50",
                     "cash_settlement_balance_after_raw": "20444.97",
                     "cash_settlement_postings": [{
@@ -2935,8 +2937,8 @@ Fees: 0.12
         }
         csv_text = "\n".join([
             "Date,Description,Billing amount,Billing currency,Balance,Balance currency",
-            "04/08/2026,REF P922735121 SEC,-22.50,USD,20545.39,USD",
-            "03/08/2026,9285883 R00460,100.00,USD,20567.89,USD",
+            "04/08/2026,REF P900001001 SEC,-22.50,USD,20545.39,USD",
+            "03/08/2026,5475364 R45475,100.00,USD,20567.89,USD",
         ])
         csv_payload = build_investment_payload_from_hsbc_usd_savings_csv(
             csv_text.encode("utf-8"),
@@ -2947,7 +2949,7 @@ Fees: 0.12
         order = next(
             transaction
             for transaction in merged["transactions"]
-            if transaction.get("source", {}).get("statement_order_id") == "P-024880"
+            if transaction.get("source", {}).get("statement_order_id") == "P-900001"
         )
 
         self.assertEqual(
@@ -3561,7 +3563,7 @@ Fees: 0.12
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
             transaction_filename="Individual_XXX001_Transactions_20260801-001049.csv",
-            positions_filename="Individual-Positions-2438-56-45-021633.csv",
+            positions_filename="Individual-Positions-0919-37-54-091937.csv",
         )
 
         transfer = next(record for record in payload["transactions"] if record["type"] == "transfer_in")
@@ -3587,7 +3589,7 @@ Fees: 0.12
             '"08/21/2026","Non-Qualified Div","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","$32.59"',
         ]) + "\n"
         positions_csv = "\n".join([
-            '"Positions for account Individual ...103 as of 02:07 AM ET, 2026/08/22"',
+            '"Positions for account Individual ...900 as of 02:07 AM ET, 2026/08/22"',
             "",
             '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
             '"QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","54.24","$271.20","$286.29","ETFs & Closed End Funds",',
@@ -3598,7 +3600,7 @@ Fees: 0.12
         payload = build_investment_payload_from_schwab_csv(
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
-            transaction_filename="Individual_XXX342_Transactions_20260822.csv",
+            transaction_filename="Individual_XXX900_Transactions_20260822.csv",
             positions_filename="Individual-Positions-2026-08-22.csv",
         )
 
@@ -3664,12 +3666,12 @@ Fees: 0.12
             "commission_raw": "0",
             "net_amount_raw": "-3.26",
             "broker": "schwab",
-            "account": "Individual ...103",
+            "account": "Individual ...900",
             "source": {
                 "file_kind": "schwab_csv",
                 "action_raw": "NRA Tax Adj",
                 "broker": "schwab",
-                "account": "Individual ...103",
+                "account": "Individual ...900",
                 "row_number": 2,
             },
         }
@@ -3686,13 +3688,13 @@ Fees: 0.12
             {
                 "schema_version": 3,
                 "broker": "schwab",
-                "account": "Individual ...103",
+                "account": "Individual ...900",
                 "transactions": [legacy_tax],
             },
             {
                 "schema_version": 3,
                 "broker": "schwab",
-                "account": "Individual ...103",
+                "account": "Individual ...900",
                 "transactions": [incoming_tax],
             },
         )
@@ -3784,7 +3786,7 @@ Fees: 0.12
             '"08/21/2026","08/21/2026 03:14:15 PM ET","Non-Qualified Div","QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","","","","$1.50"',
         ]) + "\n"
         positions_csv = "\n".join([
-            '"Positions for account Individual ...103 as of 02:07 AM ET, 2026/08/22"',
+            '"Positions for account Individual ...900 as of 02:07 AM ET, 2026/08/22"',
             "",
             '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
             '"QQQI","NEOS NASDAQ-100(R) HIGH INCOME ETF","5","54.24","$271.20","$286.29","ETFs & Closed End Funds",',
@@ -3795,7 +3797,7 @@ Fees: 0.12
         payload = build_investment_payload_from_schwab_csv(
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
-            transaction_filename="Individual_XXX342_Transactions_20260822.csv",
+            transaction_filename="Individual_XXX900_Transactions_20260822.csv",
             positions_filename="Individual-Positions-2026-08-22.csv",
         )
 
@@ -3874,7 +3876,7 @@ Fees: 0.12
             '"07/31/2026 as of 07/30/2026","MoneyLink Transfer","","Tfr COLUMN NATIONAL AS","","","","$0.41"',
         ]) + "\n"
         positions_csv = "\n".join([
-            '"Positions for account Individual ...103 as of 07:32 AM ET, 2026/08/15"',
+            '"Positions for account Individual ...900 as of 07:32 AM ET, 2026/08/15"',
             "",
             '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
             '"DRAM","ROUNDHILL MEMORY ETF","200","57.32","$11,464.00","$11,846.07","ETFs & Closed End Funds",',
@@ -3886,11 +3888,11 @@ Fees: 0.12
         payload = build_investment_payload_from_schwab_csv(
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
-            transaction_filename="Individual_XXX471_Transactions_00994307-711224.csv",
-            positions_filename="Individual-Positions-0914-95-53-412323.csv",
+            transaction_filename="Individual_XXX900_Transactions_20260815.csv",
+            positions_filename="Individual-Positions-2026-08-15.csv",
         )
 
-        self.assertEqual(payload["account"], "Individual ...103")
+        self.assertEqual(payload["account"], "Individual ...900")
         self.assertEqual(payload["summary"]["schwab_suppressed_internal_transfer_count"], 10)
         self.assertEqual(len(payload["summary"]["schwab_suppressed_internal_transfer_rows"]), 10)
         self.assertEqual(len(payload["transactions"]), 6)
@@ -3910,7 +3912,7 @@ Fees: 0.12
             '"08/12/2026","Security Transfer","DRAM","ROUNDHILL MEMORY ETF","5","","",""',
         ]) + "\n"
         positions_csv = "\n".join([
-            '"Positions for account Individual ...103 as of 07:32 AM ET, 2026/08/15"',
+            '"Positions for account Individual ...900 as of 07:32 AM ET, 2026/08/15"',
             "",
             '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
             '"DRAM","ROUNDHILL MEMORY ETF","5","57.32","$286.60","$296.15","ETFs & Closed End Funds",',
@@ -3920,14 +3922,14 @@ Fees: 0.12
         incoming = build_investment_payload_from_schwab_csv(
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
-            transaction_filename="Individual_XXX471_Transactions_00994307-711224.csv",
-            positions_filename="Individual-Positions-0914-95-53-412323.csv",
+            transaction_filename="Individual_XXX900_Transactions_20260815.csv",
+            positions_filename="Individual-Positions-2026-08-15.csv",
         )
         stale_rows = []
         for row in incoming["summary"]["schwab_suppressed_internal_transfer_rows"]:
             stale_rows.append({
                 "broker": "schwab",
-                "account": "Individual ...103",
+                "account": "Individual ...900",
                 "date": row["date"],
                 "datetime": f'{row["date"]} 23:00:00',
                 "type": "adjustment",
@@ -3937,7 +3939,7 @@ Fees: 0.12
                 "quantity_abs": row["quantity"].lstrip("-"),
                 "source": {
                     "broker": "schwab",
-                    "account": "Individual ...103",
+                    "account": "Individual ...900",
                     "action_raw": row["action"],
                 },
             })
@@ -3985,7 +3987,7 @@ Fees: 0.12
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
             transaction_filename="Individual_XXX002_Transactions_20260803-211710.csv",
-            positions_filename="Individual-Positions-4089-06-00-151201.csv",
+            positions_filename="Individual-Positions-2533-38-21-253338.csv",
         )
 
         self.assertEqual(
@@ -4137,7 +4139,7 @@ Fees: 0.12
             transactions_csv.encode("utf-8"),
             positions_csv.encode("utf-8"),
             transaction_filename="Individual_XXX001_Transactions_20260804-051528.csv",
-            positions_filename="Individual-Positions-5024-93-07-989933.csv",
+            positions_filename="Individual-Positions-3595-90-00-359590.csv",
         )
 
         self.assertEqual(payload["account"], "Individual ...001")
@@ -4900,15 +4902,15 @@ Fees: 0.12
             "1,475.55 USD",
             "Post date Description Amount in Amount out Balance Additional options",
             "16 Jun 2026",
-            "HK752751CVFAK8AO 955",
+            "HK149972CVFAK7AO 414",
             "1,475.55",
             "1,475.55",
             "29 May 2026",
-            "HK711493P6025013",
+            "HK433320P5343332",
             "400.00",
             "0.00",
             "29 May 2026",
-            "HK594421HJDNP81I 557",
+            "HK812548HJDNP12I 812",
             "400.00",
             "400.00",
             "Download",
@@ -4924,17 +4926,17 @@ Fees: 0.12
         standalone_deposit = next(
             txn
             for txn in transactions
-            if txn["description"] == "HK752751CVFAK8AO 955"
+            if txn["description"] == "HK149972CVFAK7AO 414"
         )
         mirrored_deposit = next(
             txn
             for txn in transactions
-            if txn["description"] == "HK594421HJDNP81I 557"
+            if txn["description"] == "HK812548HJDNP12I 812"
         )
         mirrored_withdrawal = next(
             txn
             for txn in transactions
-            if txn["description"] == "HK711493P6025013"
+            if txn["description"] == "HK433320P5343332"
         )
 
         self.assertEqual(standalone_deposit["type"], "deposit")
@@ -5004,7 +5006,7 @@ Fees: 0.12
             "68.00",
             "617.19",
             "16 Jun 2026",
-            "HK752751CVFAK8AO 955",
+            "HK149972CVFAK7AO 414",
             "685.19",
             "685.19",
             "Download",
@@ -5022,7 +5024,7 @@ Fees: 0.12
 
         self.assertTrue(
             any(
-                txn["description"] == "HK752751CVFAK8AO 955"
+                txn["description"] == "HK149972CVFAK7AO 414"
                 for txn in transactions
             )
         )
@@ -5087,7 +5089,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             "919.50 USD",
             "Post date Description Amount in Amount out Balance Additional options",
             "21 Jun 2026",
-            "HK024945J1FUKAYO",
+            "HK154805J2FUKAYO",
             "1,000.00",
             "1,000.00",
             "Download",
@@ -5102,7 +5104,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
         deposit = next(
             txn
             for txn in payload["transactions"]
-            if txn["description"] == "HK024945J1FUKAYO"
+            if txn["description"] == "HK154805J2FUKAYO"
         )
         buy_order = next(
             txn
@@ -5336,7 +5338,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
                 "117.02",
                 "1,000.00",
                 "21 Jun 2026",
-                "HK024945J1FUKAYO",
+                "HK154805J2FUKAYO",
                 "1,000.00",
                 "1,000.00",
                 "Download",
@@ -5446,7 +5448,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             "117.01",
             "4,360.54",
             "18 Jun 2026",
-            "HK507133JOFHL19I 815",
+            "HK292344JOFHL25I 292",
             "2,200.00",
             "4,243.53",
             "Download",
@@ -5866,7 +5868,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             "21,834.41 USD",
             "Post date Description Amount in Amount out Balance Additional options",
             "22 Jun 2026",
-            "HK024945J1FUKAYO",
+            "HK154805J2FUKAYO",
             "21,496.88",
             "25,857.41",
             "18 Jun 2026",
@@ -5878,7 +5880,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             "117.01",
             "4,360.54",
             "18 Jun 2026",
-            "HK507133JOFHL19I 815",
+            "HK292344JOFHL25I 292",
             "2,200.00",
             "4,243.53",
             "Download",
@@ -5894,7 +5896,7 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
         pending_broker_deposit = next(
             record
             for record in cash_records
-            if record["description"] == "HK024945J1FUKAYO"
+            if record["description"] == "HK154805J2FUKAYO"
         )
         self.assertEqual(available_balance, Decimal("21834.41"))
         self.assertEqual(ledger_balance, Decimal("25857.41"))
@@ -5916,15 +5918,15 @@ class InvestmentImportIntegrationTests(unittest.TestCase):
             "19,676.30 USD",
             "Post date Description Amount in Amount out Balance Additional options",
             "26 Jun 2026",
-            "HK308302G5G8NWOW",
+            "HK605822G6G9NWOW",
             "2,946.63",
             "19,676.30",
             "26 Jun 2026",
-            "HK316488P1417473",
+            "HK041439P4004143",
             "100.88",
             "16,729.67",
             "26 Jun 2026",
-            "HK336887DVG2ZN9S",
+            "HK417567DVG9ZN5S",
             "78.00",
             "16,830.55",
             "25 Jun 2026",
@@ -9019,7 +9021,7 @@ Fees: 0.0"""
         self.assertEqual(transfer["price_raw"], "52.68")
         self.assertEqual(transfer["net_amount_raw"], "0")
         self.assertFalse(transfer["normalized"]["is_cash_flow"])
-        self.assertEqual(transfer["source"]["fitid"], "021223301")
+        self.assertEqual(transfer["source"]["fitid"], "235985042")
         self.assertEqual(transfer["source"]["transfer_direction"], "out")
         self.assertEqual(transfer["source"]["transfer_account"], "00000002")
 
@@ -9084,7 +9086,7 @@ Fees: 0.0"""
             if record["quantity_raw"] in {"5", "5.0"}
         )
         self.assertEqual(matched["price_raw"], "52.68")
-        self.assertEqual(matched["source"]["fitid"], "021223301")
+        self.assertEqual(matched["source"]["fitid"], "235985042")
         self.assertEqual(matched["source"]["source_format"], "ofx_gkx")
         self.assertEqual(matched["source"]["market_value_raw"], "-263.40")
         self.assertEqual(
@@ -10322,7 +10324,7 @@ Fees: 0.0"""
             "normalized": {"net_amount": "1271.50"},
             "source": {
                 "file_kind": "futuhk_statement_pdf",
-                "statement_order_id": "48132654",
+                "statement_order_id": "60839007",
             },
         }
         ordinary_futu_deposit = {
@@ -10370,7 +10372,7 @@ Fees: 0.0"""
         if hkd_current_ending is not None:
             hkd_current_section = f"""
 
-HKD Current (453-565-1-629733-6)
+	HKD Current (900-000-1-000045-1)
 Date         Transaction Details                                        Deposit                     Withdrawal Balance in Original Currency
 {transaction_date}   Transfer                                                  {hkd_current_ending}                                                  {hkd_current_ending}
              FPS/HSBC/REF-CURRENT
@@ -10382,7 +10384,7 @@ Statement Date                        {statement_date}
 Account Transaction Details
 
 Savings Account
-HKD Savings (454-049-4-235541-0)
+	HKD Savings (900-000-1-000006-6)
 Date         Transaction Details                                        Deposit                     Withdrawal Balance in Original Currency
 {transaction_date}   ATM Cash                                                 100.00                                                  100.00
              ATM DEP
@@ -10391,14 +10393,14 @@ Date         Transaction Details                                        Deposit 
 {statement_date}   Balance Carried Forward                                                                                                  {hkd_ending}
 {hkd_current_section}
 
-Foreign Currency Savings (255-449-9-034545-0)
+	Foreign Currency Savings (900-000-1-000007-9)
 Date         Transaction Details                                        Deposit                     Withdrawal Balance in Original Currency
              CNY
 {transaction_date}   Transfer                                                  {cny_ending}                                                  {cny_ending}
              FPS/WU/REF-CNY
 {statement_date}   Balance Carried Forward                                                                                                  {cny_ending}
 
-Foreign Currency Savings (255-449-9-034545-0)
+	Foreign Currency Savings (900-000-1-000007-9)
 Date         Transaction Details                                                           Deposit                    Withdrawal Balance in Original Currency
              USD
 {transaction_date}   Transfer                                                  {usd_ending}                                                  {usd_ending}
@@ -10440,7 +10442,7 @@ Transaction Date              Summary                                           
         self.assertTrue(replaced)
 
         payload = build_investment_payload_from_bochk_statement_pdfs(
-            [(pdf_bytes, "Jul 6734.pdf")],
+            [(pdf_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={id(pdf_bytes): "\n".join(lines)},
         )
         hkd_rows = [row for row in payload["transactions"] if row["currency"] == "HKD"]
@@ -10471,7 +10473,7 @@ Transaction Date              Summary                                           
             "2026/07/01   ATM Cash",
         )
         payload = build_investment_payload_from_bochk_statement_pdfs(
-            [(pdf_bytes, "Jul 6734.pdf")],
+            [(pdf_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={id(pdf_bytes): text},
         )
         descriptions = " ".join(str(row["description"]) for row in payload["transactions"]).upper()
@@ -10502,7 +10504,7 @@ Transaction Date              Summary                                           
         )
 
         payload = build_investment_payload_from_bochk_statement_pdfs(
-            [(pdf_bytes, "Jul 6734.pdf")],
+            [(pdf_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={id(pdf_bytes): text},
         )
         hkd_balance = next(
@@ -10535,7 +10537,7 @@ Transaction Date              Summary                                           
 
         with self.assertRaisesRegex(ValueError, "undated amount row"):
             build_investment_payload_from_bochk_statement_pdfs(
-                [(pdf_bytes, "Jul 6734.pdf")],
+                [(pdf_bytes, "Jul 2526.pdf")],
                 _extracted_text_by_payload_id={id(pdf_bytes): "\n".join(lines)},
             )
 
@@ -10554,7 +10556,7 @@ Transaction Date              Summary                                           
         )
         with self.assertRaisesRegex(ValueError, "balance continuity"):
             build_investment_payload_from_bochk_statement_pdfs(
-                [(pdf_bytes, "Jul 6734.pdf")],
+                [(pdf_bytes, "Jul 2526.pdf")],
                 _extracted_text_by_payload_id={id(pdf_bytes): text},
             )
 
@@ -10574,8 +10576,8 @@ Transaction Date              Summary                                           
         )
         payload = build_investment_payload_from_bochk_statement_pdfs(
             [
-                (first_bytes, "Jun 2637.pdf"),
-                (second_bytes, "Jul 6734.pdf"),
+                (first_bytes, "Jun 4005.pdf"),
+                (second_bytes, "Jul 2526.pdf"),
             ],
             _extracted_text_by_payload_id={
                 id(first_bytes): first_text,
@@ -10616,7 +10618,7 @@ Transaction Date              Summary                                           
         )
 
         payload = build_investment_payload_from_bochk_statement_pdfs(
-            [(pdf_bytes, "Jul 6734.pdf")],
+            [(pdf_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={id(pdf_bytes): text},
         )
 
@@ -10658,7 +10660,7 @@ Transaction Date              Summary                                           
             "source": {
                 "broker": "boc_hk",
                 "file_kind": "boc_hk_statement_pdf",
-                "account_number": "255-449-9-034545-0",
+                "account_number": "900-000-1-000007-9",
                 "account_number_short": "0079",
                 "account_type": "Foreign Currency Savings",
                 "statement_currency_raw": "CNY",
@@ -10726,11 +10728,11 @@ Transaction Date              Summary                                           
             usd_ending="20.00",
         )
         first = build_investment_payload_from_bochk_statement_pdfs(
-            [(first_bytes, "Jun 2637.pdf")],
+            [(first_bytes, "Jun 4005.pdf")],
             _extracted_text_by_payload_id={id(first_bytes): first_text},
         )
         second = build_investment_payload_from_bochk_statement_pdfs(
-            [(second_bytes, "Jul 6734.pdf")],
+            [(second_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={id(second_bytes): second_text},
         )
 
@@ -10757,7 +10759,7 @@ Transaction Date              Summary                                           
         june_bytes = b"bochk-mixed-june"
         july_bytes = b"bochk-mixed-july"
         june = build_investment_payload_from_bochk_statement_pdfs(
-            [(june_bytes, "Jun 2637.pdf")],
+            [(june_bytes, "Jun 4005.pdf")],
             _extracted_text_by_payload_id={
                 id(june_bytes): self._synthetic_bochk_statement_text(
                     statement_date="2026/06/30",
@@ -10766,7 +10768,7 @@ Transaction Date              Summary                                           
             },
         )
         july = build_investment_payload_from_bochk_statement_pdfs(
-            [(july_bytes, "Jul 6734.pdf")],
+            [(july_bytes, "Jul 2526.pdf")],
             _extracted_text_by_payload_id={
                 id(july_bytes): self._synthetic_bochk_statement_text(
                     statement_date="2026/07/31",
@@ -10815,7 +10817,7 @@ Transaction Date              Summary                                           
             usd_ending="0.00",
         )
         payload = build_investment_payload_from_bochk_statement_pdfs(
-            [(pdf_bytes, "Feb 6243.pdf"), (pdf_bytes, "Feb 6243.pdf")],
+            [(pdf_bytes, "Feb 9753.pdf"), (pdf_bytes, "Feb 9753.pdf")],
             _extracted_text_by_payload_id={id(pdf_bytes): text},
         )
         hkd_rows = [
@@ -10840,14 +10842,14 @@ Transaction Date              Summary                                           
 
         with self.assertRaisesRegex(ValueError, "non-zero securities-account cash activity"):
             build_investment_payload_from_bochk_statement_pdfs(
-                [(pdf_bytes, "Jul 6734.pdf")],
+                [(pdf_bytes, "Jul 2526.pdf")],
                 _extracted_text_by_payload_id={id(pdf_bytes): text},
             )
 
     def test_bochk_statement_parser_rejects_empty_or_unidentified_source_files(self) -> None:
         with self.assertRaisesRegex(ValueError, "is empty"):
             build_investment_payload_from_bochk_statement_pdfs(
-                [(b"", "Jul 6734.pdf")],
+                [(b"", "Jul 2526.pdf")],
             )
 
         with self.assertRaisesRegex(ValueError, "non-empty filename"):
@@ -11250,10 +11252,10 @@ Transaction Date              Summary                                           
             "account": "000-999999-999",
             "currency": "USD",
             "net_amount_raw": "-400.00",
-            "description": "HK711493P6025013",
+            "description": "HK433320P5343332",
             "source": {
                 "file_kind": "hsbc_usd_account_text",
-                "reference_id": "HK711493P6025013",
+                "reference_id": "HK433320P5343332",
             },
         }
         legacy_source_key = (
@@ -11262,7 +11264,7 @@ Transaction Date              Summary                                           
         )
         legacy_target_key = (
             "hsbc|000-999999-999|2026-05-29|withdrawal|USD|-400.00|"
-            "HK711493P6025013|hsbc_usd_account_text|HK711493P6025013"
+            "HK433320P5343332|hsbc_usd_account_text|HK433320P5343332"
         )
         existing_payload = normalize_investment_payload_tickers({
             "schema_version": 3,
@@ -11339,12 +11341,12 @@ Transaction Date              Summary                                           
                 "account": "000-999999-999",
                 "currency": "HKD",
                 "net_amount_raw": "-100.00",
-                "description": "TO USMART T453910QU272(09FEB02)",
+                "description": "TO USMART T548125QU155(48FEB12)",
                 "source": {
                     "file_kind": "hsbc_statement_cash",
-                    "source_filename": "eStatementFile_723330.pdf",
+                    "source_filename": "eStatementFile_649434.pdf",
                     "row_number": 31,
-                    "reference_id": "TO USMART T453910QU272(09FEB02)",
+                    "reference_id": "TO USMART T548125QU155(48FEB12)",
                 },
             },
             {
@@ -11357,7 +11359,7 @@ Transaction Date              Summary                                           
                 "description": "DEMO ACCOUNT HOLDER REF00000000000000 18FEB",
                 "source": {
                     "file_kind": "hsbc_statement_cash",
-                    "source_filename": "eStatementFile_723330.pdf",
+                    "source_filename": "eStatementFile_649434.pdf",
                     "row_number": 33,
                     "reference_id": "DEMO ACCOUNT HOLDER REF00000000000000 18FEB",
                 },
@@ -11401,7 +11403,7 @@ Transaction Date              Summary                                           
             correct_target_key,
         )
         self.assertEqual(source["broker"], "usmart_hk")
-        self.assertEqual(target["description"], "TO USMART T453910QU272(09FEB02)")
+        self.assertEqual(target["description"], "TO USMART T548125QU155(48FEB12)")
 
     def test_manual_transfer_v3_keys_survive_additive_statement_hash_enrichment(self) -> None:
         source_records = [
@@ -11415,7 +11417,7 @@ Transaction Date              Summary                                           
                 "description": "DEPOSIT",
                 "source": {
                     "file_kind": "hsbc_statement_cash",
-                    "source_filename": "eStatementFile_723330.pdf",
+                    "source_filename": "eStatementFile_649434.pdf",
                     "source_file_sha256": "statement-sha256",
                     "row_number": row_number,
                     "reference_id": "DEPOSIT",
@@ -11434,7 +11436,7 @@ Transaction Date              Summary                                           
                 "description": description,
                 "source": {
                     "file_kind": "boc_hk_statement_pdf",
-                    "source_filename": "Mar 6300.pdf",
+                    "source_filename": "Mar 3331.pdf",
                     "row_number": row_number,
                     "reference_id": description,
                 },
@@ -11672,7 +11674,7 @@ Transaction Date              Summary                                           
             "description": "Withdrawal · CMB Wing Lung Bank",
             "source": {
                 "file_kind": "futuhk_statement_pdf",
-                "statement_order_id": "34558056",
+                "statement_order_id": "83211864",
             },
         }
         source, target = validate_investment_internal_transfer_binding(

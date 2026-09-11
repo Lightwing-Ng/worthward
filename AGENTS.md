@@ -5,8 +5,8 @@ Canonical agent guide: [`docs/AGENTS.md`](docs/AGENTS.md)
 Documentation map and repository ownership:
 [`docs/README.md`](docs/README.md)
 
-Shared UI synchronization ledger:
-`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md`
+Shared UI synchronization workflow:
+[`docs/SHARED_UI_WORKFLOW.md`](docs/SHARED_UI_WORKFLOW.md)
 
 The following safety rules apply before reading the canonical guide:
 

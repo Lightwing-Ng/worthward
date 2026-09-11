@@ -1,16 +1,14 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
-from hashlib import sha256
 import re
-import struct
 import unittest
 from pathlib import Path
 
@@ -23,9 +21,6 @@ from app.web.style_token_rows import (
     build_material_token_rows,
     build_style_token_rows,
 )
-from scripts.build_web_fonts import FACE_NAMES, SOURCE_SHA256, extract_face
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
 STYLE_TOKEN_ROWS_PATH = REPO_ROOT / "app" / "web" / "style_token_rows.py"
@@ -142,19 +137,19 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertIn('type="number" inputmode="numeric"', compare_template)
         self.assertIn('type="number" inputmode="numeric"', app_js)
 
-    def test_univers_next_uses_the_complete_collection_and_face_contract(self) -> None:
+    def test_public_runtime_uses_only_the_system_interface_font_stack(self) -> None:
         fonts_css = read_text(WEB_CSS_ROOT / "foundation" / "fonts.css")
         tokens_css = read_text(FOUNDATION_TOKENS_CSS_PATH)
-        collection_path = WEB_FONTS_ROOT / "UniversNextforHSBC.ttc"
-        collection = collection_path.read_bytes()
 
-        self.assertTrue(collection_path.is_file())
-        self.assertEqual(collection[:4], b"ttcf")
-        self.assertEqual(sha256(collection).hexdigest(), SOURCE_SHA256)
-        self.assertIn('font-family: "Univers Next for HSBC";', fonts_css)
-        self.assertNotIn('format("truetype-collection")', fonts_css)
-        self.assertNotIn("hsbc-compatible/", fonts_css)
-        self.assertIn('--font-family-brand: "Univers Next for HSBC";', tokens_css)
+        self.assertNotIn("@font-face", fonts_css)
+        self.assertEqual(
+            [path.name for path in WEB_FONTS_ROOT.iterdir()],
+            ["README.md"],
+        )
+        self.assertIn(
+            '--font-family-brand: -apple-system, BlinkMacSystemFont, "Segoe UI";',
+            tokens_css,
+        )
         self.assertIn(
             "--font-family-base: var(--font-family-brand), var(--font-family-cjk);",
             tokens_css,
@@ -162,20 +157,10 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertIn("--font-family-mono: var(--font-family-base);", tokens_css)
         self.assertIn("font-synthesis: none", tokens_css)
 
-        for index, face_name in enumerate(FACE_NAMES):
-            target = WEB_FONTS_ROOT / f"UniversNextforHSBC-{face_name}.ttf"
-            offset = struct.unpack_from(">I", collection, 12 + 4 * index)[0]
-            self.assertTrue(target.is_file())
-            self.assertEqual(target.read_bytes(), extract_face(collection, offset))
-            self.assertIn(
-                f'url("../../fonts/UniversNextforHSBC-{face_name}.ttf") format("truetype")',
-                fonts_css,
-            )
-
-    def test_production_runtime_has_no_unapproved_western_font_family(self) -> None:
+    def test_production_runtime_has_no_bundled_western_font_family(self) -> None:
         forbidden = re.compile(
-            r"GDS Transport|Helvetica(?: Neue)?|Arial|Georgia|SF Pro|SFMono|Menlo|Monaco|"
-            r"Consolas|Liberation Mono|Courier New|Times New Roman|system-ui|"
+            r"GDS Transport|Univers Next for HSBC|Georgia|SF Pro|SFMono|Menlo|Monaco|"
+            r"Consolas|Liberation Mono|Courier New|Times New Roman|"
             r"(?:^|[^A-Za-z])Inter(?:[^A-Za-z]|$)|monospace",
         )
         runtime_roots = (

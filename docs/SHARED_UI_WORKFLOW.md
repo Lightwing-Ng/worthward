@@ -1,11 +1,10 @@
 # Shared UI workflow
 
-Documentation version: `v1.1.4`
+Documentation version: `v1.1.5`
 
-This is the short entrypoint for shared visual and interaction work. The only
-long-form synchronization state lives in:
-
-`/Users/example/Desktop/shared_docs/SHARED_UI_SYNC.md`
+This is the public entrypoint for shared visual and interaction work. A private
+sibling synchronization ledger may exist in a maintainer checkout, but it is not
+required to build, run, test, or contribute to Worthward.
 
 ## Read order
 

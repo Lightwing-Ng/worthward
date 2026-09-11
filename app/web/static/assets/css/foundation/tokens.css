@@ -1,4 +1,4 @@
-/* Code version: v0.37.0 */
+/* Code version: v0.38.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -528,7 +528,7 @@
 	--font-weight-medium: 500;
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
-	--font-family-brand: "Univers Next for HSBC";
+	--font-family-brand: -apple-system, BlinkMacSystemFont, "Segoe UI";
 	--font-family-cjk: "PingFang SC", "PingFang TC", "PingFang HK", "Microsoft YaHei", "Microsoft JhengHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
 	--font-family-base: var(--font-family-brand), var(--font-family-cjk);
 	--font-family-mono: var(--font-family-base);
