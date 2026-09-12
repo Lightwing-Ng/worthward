@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.4.0`
 
 ## Scope and model evidence
 
@@ -239,9 +239,17 @@ legacy autoregressive adapters retain their existing behavior. Marginal standard
 deviation is the model's concentration measure. One rendered cell's mass is not
 a monotonic confidence score because the forecast mean can straddle a fixed price
 band boundary and divide a narrow distribution across adjacent cells.
-The hover/detail parity and near-versus-far concentration checks apply to every
-direct architecture, including ModernTCN; none may opt out through a
-model-specific renderer or a reduced horizon set.
+The direct detail view uses an anchor-centered logarithmic price scale because
+the model's Gaussian quantity is log return and the implied price marginal is
+lognormal. Its 20 equal log-return rows preserve positive true-price bounds and
+place zero return at the middle row boundary. Cells, observed paths, and axis
+ticks share that transform. The overview remains on the live chart Y scale, so
+hover/detail parity means identical origins, learned horizons, model moments,
+and Gaussian CDF evaluation within each surface's own bands; exact price-band
+equality is neither required nor expected. These semantic parity and
+near-versus-far concentration checks apply to every direct architecture,
+including ModernTCN; none may opt out through a model-specific renderer or a
+reduced horizon set.
 
 ## Frozen overnight experiment
 

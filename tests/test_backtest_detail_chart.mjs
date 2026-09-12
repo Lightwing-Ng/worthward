@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 require('../app/web/static/assets/js/backtest/detail-chart.js');
 const {computeDirectForecastPriceDomain, computeLayout} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
 
-test('direct forecasts receive a local symmetric price domain instead of the multi-year chart scale', () => {
+test('direct forecasts receive a local symmetric log-return domain instead of the multi-year chart scale', () => {
     const domain = computeDirectForecastPriceDomain({
         anchorPrice: 469,
         history: [448, 452, 460, 469],
@@ -16,8 +16,12 @@ test('direct forecasts receive a local symmetric price domain instead of the mul
     assert.ok(domain);
     assert.ok(domain.lowerPrice < 448);
     assert.ok(domain.upperPrice > 469 * Math.exp(0.03 + (2.576 * 0.0156)));
-    assert.ok(Math.abs((469 - domain.lowerPrice) - (domain.upperPrice - 469)) < 1e-9);
+    assert.ok(Math.abs(
+        Math.log(domain.lowerPrice / 469) + Math.log(domain.upperPrice / 469),
+    ) < 1e-12);
     assert.ok((domain.upperPrice - domain.lowerPrice) / 20 < 10);
+    assert.equal(domain.scaleKind, 'symmetric-log-return');
+    assert.equal(domain.lowerLogReturn, -domain.upperLogReturn);
     assert.equal(domain.standardDeviationRadius, 2.576);
 });
 
@@ -42,9 +46,20 @@ test('an exceptional history point cannot collapse direct forecasts into a thin 
         horizonMean: [0],
         horizonStd: [0.02],
     });
-    const forecastHalfSpan = 100 * (Math.exp(2.576 * 0.02) - 1);
-    assert.ok(domain.upperPrice - 100 <= forecastHalfSpan * 1.5 * 1.06 + 1e-9);
-    assert.ok(domain.upperPrice - 100 >= forecastHalfSpan * 1.06 - 1e-9);
+    const forecastHalfSpan = 2.576 * 0.02;
+    assert.ok(domain.upperLogReturn <= forecastHalfSpan * 1.5 * 1.06 + 1e-12);
+    assert.ok(domain.upperLogReturn >= forecastHalfSpan * 1.06 - 1e-12);
+});
+
+test('lognormal upper tails cannot create an empty near-zero lower half', () => {
+    const domain = computeDirectForecastPriceDomain({
+        anchorPrice: 100,
+        horizonMean: [0.05],
+        horizonStd: [0.24],
+    });
+    assert.ok(domain.lowerPrice > 45);
+    assert.ok(domain.upperPrice > 195);
+    assert.ok(Math.abs(domain.lowerPrice * domain.upperPrice - 10_000) < 1e-9);
 });
 
 for (const width of [230, 710]) {
@@ -72,6 +87,48 @@ test('one-sided forecasts and single historical origins remain anchored', () => 
     assert.equal(layout.historyX(0), 150);
     assert.ok(layout.gridTop >= layout.anchorY);
 });
+
+test('log detail layout maps prices and ticks through the same anchor-centered transform', () => {
+    const anchorPrice = 100;
+    const layout = computeLayout({
+        width: 300,
+        height: 200,
+        anchorPrice,
+        lowerPrice: anchorPrice * Math.exp(-0.2),
+        upperPrice: anchorPrice * Math.exp(0.2),
+        rowsAbove: 10,
+        rowsBelow: 10,
+        columns: 20,
+        history: [90, 100],
+        horizon: 20,
+        priceScale: 'log',
+    });
+    assert.ok(layout);
+    assert.equal(layout.priceScale, 'log');
+    assert.ok(Math.abs(layout.priceToY(anchorPrice) - layout.anchorY) < 1e-12);
+    assert.ok(Math.abs(
+        layout.priceToY(anchorPrice * Math.exp(0.1))
+        - (layout.anchorY - (5 * layout.pitch)),
+    ) < 1e-9);
+    assert.ok(Math.abs(
+        layout.yToPrice(layout.priceToY(anchorPrice * Math.exp(0.1)))
+        - anchorPrice * Math.exp(0.1),
+    ) < 1e-9);
+    assert.equal(layout.yToPrice(layout.anchorY), anchorPrice);
+    assert.ok(Math.abs(layout.minPrice * layout.maxPrice - anchorPrice ** 2) < 1e-8);
+    assert.equal(computeLayout({
+        width: 300,
+        height: 200,
+        anchorPrice,
+        lowerPrice: 80,
+        upperPrice: 130,
+        rowsAbove: 10,
+        rowsBelow: 10,
+        columns: 20,
+        horizon: 20,
+        priceScale: 'log',
+    }), null);
+});
 test('unavailable dimensions and degenerate price bins fail closed', () => {
     assert.equal(computeLayout({width: 0, height: 100, rowsAbove: 10, rowsBelow: 10, columns: 20}), null);
     assert.equal(computeLayout({width: 300, height: 100, anchorPrice: 50, lowerPrice: 50,
@@ -96,4 +153,16 @@ test('observed prices split at the selected price and never bridge unavailable b
     const limited = buildObservedPaths([50, 60, 40], layout, 50, 1, 1);
     assert.equal(limited.up, 'M100,50 L110,40');
     assert.equal(limited.down, '');
+});
+
+test('observed path color changes at the mapped anchor on a log-price scale', () => {
+    const {buildObservedPaths} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+    const layout = {
+        anchorX: 100,
+        pitch: 10,
+        priceToY: (price) => 100 - (Math.log(price / 100) * 10),
+    };
+    const paths = buildObservedPaths([50, 200], layout, 100, 1, 1);
+    assert.match(paths.down, /^M100,[^ ]+ L105,100$/);
+    assert.match(paths.up, /^M105,100 L110,/);
 });

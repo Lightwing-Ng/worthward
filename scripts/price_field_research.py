@@ -1,4 +1,4 @@
-"""Frozen-input neural probability research coordinator. Code version: v1.1.0.
+"""Frozen-input neural probability research coordinator. Code version: v1.1.1.
 
 Search, replicated validation selection, and reporting have separate data
 boundaries. This process never fetches data or updates production settings.
@@ -102,7 +102,7 @@ def validation_folds(count: int, *, smoke: bool = False) -> tuple[int, list[tupl
 
 
 def _load_snapshot(path: Path, *, smoke: bool = False) -> dict[str, Any]:
-    from strategies.price_field_pipeline import _bundle_ohlcv_frame
+    from strategies.price_field_pipeline import bundle_to_price_field_ohlcv
 
     payload = json.loads(path.read_text())
     if payload.get("interval") != "1d":
@@ -120,7 +120,7 @@ def _load_snapshot(path: Path, *, smoke: bool = False) -> dict[str, Any]:
         if not bundle["ohlcv"]:
             raise ValueError("The smoke snapshot needs sufficient historical observations.")
         bundle = clip_bundle(bundle, pd.Timestamp(bundle["ohlcv"][-1]["observed_at"]))
-    frame = _bundle_ohlcv_frame(bundle)
+    frame = bundle_to_price_field_ohlcv(bundle)
     return {"ticker": payload["ticker"], "frame": frame, "bundle": bundle}
 
 

@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.8.1
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -38,6 +38,69 @@ from app.services.logos import (
 
 
 class LogoServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self._store_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._store_directory.cleanup)
+        store_root = Path(self._store_directory.name)
+        self.market_store_root = store_root / "market_store"
+        settings_store_root = store_root / "settings_store"
+        replacements = {
+            "app.infrastructure.storage.MARKET_STORE_DIR": self.market_store_root,
+            "app.infrastructure.storage.SETTINGS_STORE_DIR": settings_store_root,
+            "app.infrastructure.storage.HISTORICAL_STORE_DIR": (
+                self.market_store_root / "historical"
+            ),
+            "app.infrastructure.storage.PROFILES_STORE_DIR": (
+                self.market_store_root / "profiles"
+            ),
+            "app.infrastructure.storage.PROFILES_PARQUET_PATH": (
+                self.market_store_root / "profiles" / "profiles.parquet"
+            ),
+            "app.infrastructure.storage.LOGOS_STORE_DIR": (
+                self.market_store_root / "logos"
+            ),
+            "app.infrastructure.storage.LEGACY_SEARCH_STORE_DIR": (
+                self.market_store_root / "search"
+            ),
+            "app.infrastructure.storage.SEARCH_STORE_DIR": (
+                settings_store_root / "search"
+            ),
+            "app.infrastructure.storage.SEARCH_CACHE_PARQUET_PATH": (
+                settings_store_root / "search" / "search_cache.parquet"
+            ),
+            "app.infrastructure.storage.TICKER_USAGE_STORE_PATH": (
+                settings_store_root / "search" / "ticker_usage.json"
+            ),
+            "app.infrastructure.storage.STRATEGY_USAGE_STORE_PATH": (
+                settings_store_root / "search" / "strategy_usage.json"
+            ),
+            "app.services.logos.LOGOS_STORE_DIR": self.market_store_root / "logos",
+        }
+        for target, replacement in replacements.items():
+            patcher = patch(target, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        settings_patcher = patch(
+            "app.infrastructure.storage.get_settings",
+            return_value={
+                "investment": {
+                    "money_market_funds": {"tickers": ["005276756"]},
+                },
+            },
+        )
+        settings_patcher.start()
+        self.addCleanup(settings_patcher.stop)
+
+    def _seed_svg_logo(self, ticker: str) -> Path:
+        logo_path = self.market_store_root / "logos" / f"{ticker}.svg"
+        logo_path.parent.mkdir(parents=True, exist_ok=True)
+        logo_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+            encoding="utf-8",
+        )
+        return logo_path
+
     def test_yfinance_search_reuses_shared_verified_session(self) -> None:
         shared_session = object()
         with patch(
@@ -531,6 +594,7 @@ class LogoServiceTests(unittest.TestCase):
         )
 
     def test_fetch_quote_profile_keeps_pinned_roundhill_logo_during_forced_refresh(self) -> None:
+        self._seed_svg_logo("DRAM")
         with create_app().test_request_context():
             with patch("app.services.logos.load_profile_record", return_value=None), \
                     patch("app.services.logos.has_remote_market_access", return_value=True), \
@@ -570,6 +634,7 @@ class LogoServiceTests(unittest.TestCase):
                 patch("app.services.logos.fetch_remote_logo_bytes") as remote_mock:
             for ticker in ("DRAM", "RAM"):
                 with self.subTest(ticker=ticker):
+                    self._seed_svg_logo(ticker)
                     logo_path = logo_store_path_for(ticker)
                     original_logo = logo_path.read_bytes()
 

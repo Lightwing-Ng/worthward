@@ -1,4 +1,4 @@
-/* Code version: v0.12.0 */
+/* Code version: v0.13.0 */
 import {expect, test} from '@playwright/test';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
@@ -36,6 +36,28 @@ test('remembers Backtest parameters per strategy and gives explicit URLs precede
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0&holding_max=789');
     await expect(page.locator('#strategy_param_holding_max')).toHaveValue('789');
     await expect.poll(() => readRememberedValue(page, 'grid-trading', 'holding_max')).toBe('500');
+});
+
+test('collapses common Backtest parameters after a strategy switch only when every switch is off', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 900});
+    const commonParameters = page.locator('[data-collapse="backtest"]');
+    const chooseStrategy = async (strategyId) => {
+        await page.locator('[data-trade-strategy-trigger]').click();
+        await page.locator(`[data-trade-strategy-dropdown] [data-value="${strategyId}"]`).click();
+        await expect(page).toHaveURL(new RegExp(`strategy=${strategyId}`), {timeout: 30_000});
+    };
+
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=2y&strategy=supertrend-ai'
+        + '&price_only=0&dividends=0&stop_loss=0&show_trade_details=0');
+    await expect(commonParameters).toHaveAttribute('open', '');
+    await chooseStrategy('macd');
+    await expect(commonParameters).not.toHaveAttribute('open');
+
+    await page.goto('/workspaces/backtest?ticker=QQQ&range=2y&strategy=supertrend-ai'
+        + '&price_only=0&dividends=0&stop_loss=0&show_trade_details=1');
+    await expect(commonParameters).toHaveAttribute('open', '');
+    await chooseStrategy('macd');
+    await expect(commonParameters).toHaveAttribute('open', '');
 });
 
 test('Backtest parameters become a non-consuming overlay at iPad widths', async ({page}) => {

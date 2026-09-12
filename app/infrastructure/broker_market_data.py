@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.16.0
+Code version: v0.17.1
 - Fixed: Daily candles now resolve their trading dates in each ticker's native
   market timezone instead of applying New York dates to every market.
 """
@@ -33,7 +33,13 @@ from app.core.broker_settings import (
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.market_calendar import latest_completed_nyse_trading_day
+from app.core.market_identity import (
+    MARKET_TIMEZONES,
+    infer_ticker_market,
+    market_timezone_for_ticker,
+)
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
+from app.infrastructure.longbridge_sdk import build_longbridge_sdk_config
 from app.infrastructure.storage import (
     ensure_market_store_dir,
     history_store_path_for,
@@ -56,6 +62,16 @@ HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 NEW_YORK_TIMEZONE = "America/New_York"
 UTC_TIMEZONE = "UTC"
 NEW_YORK_ZONE = ZoneInfo(NEW_YORK_TIMEZONE)
+_CANDLESTICK_VALUE_FIELDS = (
+    ("Open", "open"),
+    ("High", "high"),
+    ("Low", "low"),
+    ("Close", "close"),
+    ("Volume", "volume"),
+    ("Turnover", "turnover"),
+)
+_CANDLESTICK_COLUMNS = ("Date", *(column for column, _field in _CANDLESTICK_VALUE_FIELDS))
+_EXTENDED_CANDLESTICK_COLUMNS = (*_CANDLESTICK_COLUMNS, "Session")
 LONGBRIDGE_KEEPALIVE_INTERVAL_SECONDS = 240
 LONGBRIDGE_KEEPALIVE_SYMBOL = "AAPL.US"
 LONGBRIDGE_CONTEXT_LOCK = Lock()
@@ -282,14 +298,7 @@ def _resolve_longbridge_daily_adjust_type(adjust_type_enum: Any) -> Any:
     return _resolve_longbridge_adjust_type(adjust_type_enum)
 
 
-def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
-    app_key = settings.longbridge_app_key.strip()
-    app_secret = settings.longbridge_app_secret.strip()
-    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
-    factory = getattr(config_cls, "from_apikey", None)
-    if callable(factory):
-        return factory(app_key, app_secret, access_token)
-    return config_cls(app_key, app_secret, access_token)
+_build_longbridge_config = build_longbridge_sdk_config
 
 
 def _longbridge_settings_signature(settings: BrokerSettings) -> tuple[str, str, str]:
@@ -748,84 +757,8 @@ def _is_regular_new_york_session(timestamp: pd.Timestamp) -> bool:
     return session_open <= localized < session_close
 
 
-def _infer_market_from_ticker(ticker: str | None) -> str:
-    normalized = normalize_ticker(str(ticker or ""))
-    if normalized.endswith(".HK"):
-        return "HK"
-    if normalized.endswith((".KS", ".KQ")):
-        return "KR"
-    if normalized.endswith((".T", ".JP")):
-        return "JP"
-    if normalized.endswith((".SH", ".SS", ".SZ")):
-        return "CN"
-    if normalized.endswith((".SG", ".SI")):
-        return "SG"
-    if normalized.endswith(".L"):
-        return "UK"
-    if normalized.endswith(".AX"):
-        return "AU"
-    if normalized.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
-        return "CA"
-    if normalized.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
-        return "EU"
-    if normalized.endswith(".HE"):
-        return "FI"
-    if normalized.endswith((".NS", ".BO")):
-        return "IN"
-    if normalized.endswith((".TW", ".TWO")):
-        return "TW"
-    if normalized.endswith(".KL"):
-        return "MY"
-    if normalized.endswith(".BK"):
-        return "TH"
-    if normalized.endswith(".JK"):
-        return "ID"
-    if normalized.endswith(".NZ"):
-        return "NZ"
-    if normalized.endswith(".SA"):
-        return "BR"
-    if normalized.endswith((".BA", ".MX")):
-        return "LATAM"
-    if normalized.endswith(".TA"):
-        return "IL"
-    if normalized.endswith((".SR", ".SE")):
-        return "SA"
-    if normalized.endswith(".JO"):
-        return "ZA"
-    if normalized.endswith(".QA"):
-        return "QA"
-    return "US"
-
-
-MARKET_TIMEZONES = {
-    "US": NEW_YORK_TIMEZONE,
-    "HK": HONG_KONG_TIMEZONE,
-    "KR": "Asia/Seoul",
-    "JP": "Asia/Tokyo",
-    "CN": "Asia/Shanghai",
-    "UK": "Europe/London",
-    "SG": "Asia/Singapore",
-    "AU": "Australia/Sydney",
-    "CA": "America/Toronto",
-    "EU": "Europe/Paris",
-    "FI": "Europe/Helsinki",
-    "IN": "Asia/Kolkata",
-    "TW": "Asia/Taipei",
-    "MY": "Asia/Kuala_Lumpur",
-    "TH": "Asia/Bangkok",
-    "ID": "Asia/Jakarta",
-    "NZ": "Pacific/Auckland",
-    "BR": "America/Sao_Paulo",
-    "LATAM": "America/Mexico_City",
-    "IL": "Asia/Jerusalem",
-    "SA": "Asia/Riyadh",
-    "ZA": "Africa/Johannesburg",
-    "QA": "Asia/Qatar",
-}
-
-
-def _market_timezone_for_ticker(ticker: str | None) -> str:
-    return MARKET_TIMEZONES.get(_infer_market_from_ticker(ticker), NEW_YORK_TIMEZONE)
+_infer_market_from_ticker = infer_ticker_market
+_market_timezone_for_ticker = market_timezone_for_ticker
 
 
 def _market_local_date(value: object, ticker: str | None) -> date:
@@ -885,7 +818,9 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
         "ID": (9 * 60, 16 * 60),
         "NZ": (10 * 60, (16 * 60) + 45),
         "BR": (10 * 60, 17 * 60),
+        "AR": ((10 * 60) + 30, 17 * 60),
         "LATAM": ((8 * 60) + 30, 15 * 60),
+        "TR": (10 * 60, 18 * 60),
         "IL": ((9 * 60) + 30, (17 * 60) + 30),
         "SA": (10 * 60, 15 * 60),
         "ZA": (9 * 60, 17 * 60),
@@ -946,7 +881,9 @@ def _regular_market_session_mask(values: pd.Series, ticker: str | None = None) -
             "ID": (9 * 60, 16 * 60),
             "NZ": (10 * 60, (16 * 60) + 45),
             "BR": (10 * 60, 17 * 60),
+            "AR": ((10 * 60) + 30, 17 * 60),
             "LATAM": ((8 * 60) + 30, 15 * 60),
+            "TR": (10 * 60, 18 * 60),
             "IL": ((9 * 60) + 30, (17 * 60) + 30),
             "SA": (10 * 60, 15 * 60),
             "ZA": (9 * 60, 17 * 60),
@@ -1006,7 +943,33 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame, ticker: str | None =
     return normalized.reset_index(drop=True)
 
 
-def _candlestick_rows_to_frame(candlesticks: list[Any], ticker: str | None = None) -> pd.DataFrame:
+def _sdk_candlestick_values(candle: Any) -> dict[str, float]:
+    return {
+        column: float(getattr(candle, field))
+        for column, field in _CANDLESTICK_VALUE_FIELDS
+    }
+
+
+def _cli_candlestick_values(candle: dict[str, Any]) -> dict[str, float]:
+    return {
+        column: float(candle.get(field, 0))
+        for column, field in _CANDLESTICK_VALUE_FIELDS
+    }
+
+
+def _candlestick_frame(
+        rows: list[dict[str, object]],
+        *,
+        include_session: bool = False,
+) -> pd.DataFrame:
+    columns = _EXTENDED_CANDLESTICK_COLUMNS if include_session else _CANDLESTICK_COLUMNS
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _candlestick_rows_to_frame(
+        candlesticks: list[Any],
+        ticker: str | None = None,
+) -> pd.DataFrame:
     """
     Robustly converts Longbridge candlesticks to a DataFrame stored in NYT.
 
@@ -1031,17 +994,10 @@ def _candlestick_rows_to_frame(candlesticks: list[Any], ticker: str | None = Non
         rows.append(
             {
                 "Date": ts_nyt.tz_localize(None),
-                "Open": float(getattr(candle, "open")),
-                "High": float(getattr(candle, "high")),
-                "Low": float(getattr(candle, "low")),
-                "Close": float(getattr(candle, "close")),
-                "Volume": float(getattr(candle, "volume")),
-                "Turnover": float(getattr(candle, "turnover")),
+                **_sdk_candlestick_values(candle),
             }
         )
-    if not rows:
-        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows)
 
 
 def _daily_candlestick_rows_to_frame(
@@ -1057,17 +1013,10 @@ def _daily_candlestick_rows_to_frame(
         rows.append(
             {
                 "Date": pd.Timestamp(trading_date),
-                "Open": float(getattr(candle, "open")),
-                "High": float(getattr(candle, "high")),
-                "Low": float(getattr(candle, "low")),
-                "Close": float(getattr(candle, "close")),
-                "Volume": float(getattr(candle, "volume")),
-                "Turnover": float(getattr(candle, "turnover")),
+                **_sdk_candlestick_values(candle),
             }
         )
-    if not rows:
-        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows)
 
 
 def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]], ticker: str | None = None) -> pd.DataFrame:
@@ -1082,17 +1031,10 @@ def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]], ticker: s
         rows.append(
             {
                 "Date": ts_nyt.tz_localize(None),
-                "Open": float(candle.get("open", 0)),
-                "High": float(candle.get("high", 0)),
-                "Low": float(candle.get("low", 0)),
-                "Close": float(candle.get("close", 0)),
-                "Volume": float(candle.get("volume", 0)),
-                "Turnover": float(candle.get("turnover", 0)),
+                **_cli_candlestick_values(candle),
             }
         )
-    if not rows:
-        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows)
 
 
 def _normalize_longbridge_trade_session(value: object) -> str:
@@ -1115,20 +1057,11 @@ def _extended_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame
         rows.append(
             {
                 "Date": ts_nyt.tz_localize(None),
-                "Open": float(getattr(candle, "open")),
-                "High": float(getattr(candle, "high")),
-                "Low": float(getattr(candle, "low")),
-                "Close": float(getattr(candle, "close")),
-                "Volume": float(getattr(candle, "volume")),
-                "Turnover": float(getattr(candle, "turnover")),
+                **_sdk_candlestick_values(candle),
                 "Session": session,
             }
         )
-    if not rows:
-        return pd.DataFrame(
-            columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover", "Session"]
-        )
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows, include_session=True)
 
 
 def _cli_extended_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
@@ -1141,20 +1074,11 @@ def _cli_extended_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) 
         rows.append(
             {
                 "Date": ts_nyt.tz_localize(None),
-                "Open": float(candle.get("open", 0)),
-                "High": float(candle.get("high", 0)),
-                "Low": float(candle.get("low", 0)),
-                "Close": float(candle.get("close", 0)),
-                "Volume": float(candle.get("volume", 0)),
-                "Turnover": float(candle.get("turnover", 0)),
+                **_cli_candlestick_values(candle),
                 "Session": _normalize_longbridge_trade_session(candle.get("session")),
             }
         )
-    if not rows:
-        return pd.DataFrame(
-            columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover", "Session"]
-        )
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows, include_session=True)
 
 
 def _cli_daily_candlestick_rows_to_frame(
@@ -1172,17 +1096,10 @@ def _cli_daily_candlestick_rows_to_frame(
         rows.append(
             {
                 "Date": pd.Timestamp(trading_date),
-                "Open": float(candle.get("open", 0)),
-                "High": float(candle.get("high", 0)),
-                "Low": float(candle.get("low", 0)),
-                "Close": float(candle.get("close", 0)),
-                "Volume": float(candle.get("volume", 0)),
-                "Turnover": float(candle.get("turnover", 0)),
+                **_cli_candlestick_values(candle),
             }
         )
-    if not rows:
-        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
-    return pd.DataFrame(rows)
+    return _candlestick_frame(rows)
 
 
 def fetch_longbridge_compare_one_day_history(

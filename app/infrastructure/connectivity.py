@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.8.0
+Code version: v0.8.1
 - Added: parallel, transport-aware dependency self-checks for Settings.
 - Removed: The retired TradingView analysis and unused legacy connectivity
   cache accessors.
@@ -20,7 +20,6 @@ import io
 import json
 import logging
 import os
-import re
 import smtplib
 import socket
 import ssl
@@ -35,6 +34,7 @@ from app.core.branding import read_compatible_environment
 from app.infrastructure.runtime_network import (
     get_yfinance_session,
     open_scoped_network_url as urlopen,
+    sanitize_network_diagnostic,
 )
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d&interval=1d"
@@ -65,18 +65,9 @@ REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
 _remote_market_access_cache: tuple[float, float, bool] | None = None
 _remote_logo_access_cache: tuple[float, float, bool] | None = None
 
-_NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
-_NETWORK_SECRET_QUERY_PATTERN = re.compile(
-    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
-)
-
-
 def _scrub_network_diagnostic(value: object) -> str:
     """Return a short diagnostic without proxy credentials or URL secrets."""
-    diagnostic = " ".join(str(value or "").split())
-    diagnostic = _NETWORK_URL_USERINFO_PATTERN.sub(r"\1REDACTED@", diagnostic)
-    diagnostic = _NETWORK_SECRET_QUERY_PATTERN.sub(r"\1REDACTED", diagnostic)
-    return diagnostic[:240]
+    return sanitize_network_diagnostic(value, max_length=240)
 
 
 def _exception_diagnostic(error: BaseException) -> str:

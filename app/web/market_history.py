@@ -1,6 +1,6 @@
 """Read-only local market-history helpers used by the web runtime.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from app.infrastructure.storage import (
     intraday_history_store_path_for,
     market_ticker_store_aliases,
 )
-from app.services.comparisons import market_trading_date_for_timestamp
+from app.services.comparisons import market_trading_dates_for_history
 from app.services.range_options import build_supported_periods_from_dates
 
 
@@ -60,23 +60,6 @@ def extract_union_dates(datasets: list[pd.DataFrame]) -> pd.Series:
         [dataset["Date"] for dataset in datasets if "Date" in dataset.columns],
         ignore_index=True,
     ).drop_duplicates().sort_values().reset_index(drop=True)
-
-
-def market_trading_dates_for_history(
-        dataset: pd.DataFrame,
-        ticker: str,
-) -> pd.Series:
-    """Return exchange trading dates aligned to one intraday history frame."""
-    if "Date" not in dataset.columns:
-        raise ValueError("Intraday market history is missing Date.")
-    timestamps = pd.to_datetime(dataset["Date"], errors="coerce")
-    if timestamps.isna().any():
-        raise ValueError("Intraday market history contains an invalid timestamp.")
-    return timestamps.map(
-        lambda value: pd.Timestamp(
-            market_trading_date_for_timestamp(value, ticker)
-        )
-    )
 
 
 def slice_intraday_history_for_period(

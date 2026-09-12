@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.8.2
+Code version: v1.8.3
 """
 
 from __future__ import annotations
@@ -276,7 +276,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
     def _assert_workspace_contract(self, html: str, *, control_class: str) -> None:
         sidebar_html = _slice_between(
             html,
-            '<aside class="panel sidebar" id="app_sidebar">',
+            '<aside class="panel sidebar" id="app_sidebar" data-layout-role="sidebar-shell">',
             "</aside>",
         )
         workspace_html = _slice_between(
@@ -363,7 +363,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
         )
         market_cap_sidebar = _slice_between(
             market_cap_html,
-            '<aside class="panel sidebar" id="app_sidebar">',
+            '<aside class="panel sidebar" id="app_sidebar" data-layout-role="sidebar-shell">',
             "</aside>",
         )
         self.assertLess(market_cap_sidebar.index("Ticker comparison"), market_cap_sidebar.index("Compute your portfolio"))

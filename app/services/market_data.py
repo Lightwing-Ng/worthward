@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.25.0
+Code version: v0.25.1
 
 - Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
@@ -16,7 +16,6 @@ import io
 import logging
 import math
 import contextlib
-import re
 from time import monotonic, sleep
 from pathlib import Path
 from threading import Lock
@@ -29,10 +28,15 @@ from app.core.broker_settings import (
     load_broker_settings,
     uses_longbridge_cli_oauth,
 )
+from app.core.market_identity import (
+    infer_ticker_market,
+    market_timezone_for_ticker,
+)
 from app.infrastructure.connectivity import has_remote_market_access, is_remote_market_access_disabled
 from app.infrastructure.runtime_network import (
     add_yahoo_tls_configuration_hint,
     get_yfinance_session,
+    sanitize_network_diagnostic,
 )
 from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status, run_longbridge_cli_json
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history, download_yahoo_chart_history
@@ -94,12 +98,6 @@ COMPARE_OVERNIGHT_COMPANION_SYMBOLS = {
 }
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOGGER = logging.getLogger("yfinance")
-NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
-NETWORK_SECRET_QUERY_PATTERN = re.compile(
-    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
-)
-
-
 class YfinanceDownloadError(ValueError):
     """Raised when yfinance returns no usable frame or raises a transport error."""
 
@@ -175,9 +173,8 @@ def _select_yfinance_realtime_recovery_tickers(tickers: list[str]) -> list[str]:
 
 
 def _sanitize_network_diagnostic(value: object) -> str:
-    diagnostic = " ".join(str(value or "").split())
-    diagnostic = NETWORK_URL_USERINFO_PATTERN.sub(r"\1REDACTED@", diagnostic)
-    return NETWORK_SECRET_QUERY_PATTERN.sub(r"\1REDACTED", diagnostic)
+    """Retain the established local name for the shared sanitizer."""
+    return sanitize_network_diagnostic(value)
 
 
 def _yfinance_failure_detail(
@@ -542,55 +539,6 @@ def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
     ) from (longbridge_error or yfinance_errors[-1][1])
 
 
-def infer_ticker_market(ticker: str) -> str:
-    normalized_ticker = normalize_ticker(ticker)
-    if normalized_ticker.endswith(".HK"):
-        return "HK"
-    if normalized_ticker.endswith((".KS", ".KQ")):
-        return "KR"
-    if normalized_ticker.endswith((".T", ".JP")):
-        return "JP"
-    if normalized_ticker.endswith((".SH", ".SS", ".SZ")):
-        return "CN"
-    if normalized_ticker.endswith((".SG", ".SI")):
-        return "SG"
-    if normalized_ticker.endswith(".L"):
-        return "UK"
-    if normalized_ticker.endswith(".AX"):
-        return "AU"
-    if normalized_ticker.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
-        return "CA"
-    if normalized_ticker.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS", ".WA")):
-        return "EU"
-    if normalized_ticker.endswith(".HE"):
-        return "FI"
-    if normalized_ticker.endswith((".NS", ".BO")):
-        return "IN"
-    if normalized_ticker.endswith((".TW", ".TWO")):
-        return "TW"
-    if normalized_ticker.endswith(".KL"):
-        return "MY"
-    if normalized_ticker.endswith(".BK"):
-        return "TH"
-    if normalized_ticker.endswith(".JK"):
-        return "ID"
-    if normalized_ticker.endswith(".NZ"):
-        return "NZ"
-    if normalized_ticker.endswith(".SA"):
-        return "BR"
-    if normalized_ticker.endswith((".BA", ".MX")):
-        return "LATAM"
-    if normalized_ticker.endswith(".TA"):
-        return "IL"
-    if normalized_ticker.endswith((".SR", ".SE")):
-        return "SA"
-    if normalized_ticker.endswith(".JO"):
-        return "ZA"
-    if normalized_ticker.endswith(".QA"):
-        return "QA"
-    return "US"
-
-
 def _supports_longbridge_history_fallback(ticker: str) -> bool:
     """Return whether Longbridge documents daily-history coverage for this market."""
     return infer_ticker_market(ticker) in {"US", "HK", "CN", "SG"}
@@ -641,55 +589,6 @@ def supports_compare_overnight(tickers: list[str], period: str) -> bool:
 def has_compare_overnight_market_data_source() -> bool:
     """Return whether a provider can add the true US overnight session."""
     return _load_compare_overnight_market_settings() is not None
-
-
-def market_timezone_for_ticker(ticker: str) -> str:
-    market = infer_ticker_market(ticker)
-    if market == "HK":
-        return HONG_KONG_TIMEZONE
-    if market == "KR":
-        return "Asia/Seoul"
-    if market == "JP":
-        return "Asia/Tokyo"
-    if market == "CN":
-        return "Asia/Shanghai"
-    if market == "UK":
-        return "Europe/London"
-    if market == "SG":
-        return "Asia/Singapore"
-    if market == "AU":
-        return "Australia/Sydney"
-    if market == "CA":
-        return "America/Toronto"
-    if market == "EU":
-        return "Europe/Paris"
-    if market == "FI":
-        return "Europe/Helsinki"
-    if market == "IN":
-        return "Asia/Kolkata"
-    if market == "TW":
-        return "Asia/Taipei"
-    if market == "MY":
-        return "Asia/Kuala_Lumpur"
-    if market == "TH":
-        return "Asia/Bangkok"
-    if market == "ID":
-        return "Asia/Jakarta"
-    if market == "NZ":
-        return "Pacific/Auckland"
-    if market == "BR":
-        return "America/Sao_Paulo"
-    if market == "LATAM":
-        return "America/Mexico_City"
-    if market == "IL":
-        return "Asia/Jerusalem"
-    if market == "SA":
-        return "Asia/Riyadh"
-    if market == "ZA":
-        return "Africa/Johannesburg"
-    if market == "QA":
-        return "Asia/Qatar"
-    return NEW_YORK_TIMEZONE
 
 
 def fetch_one_minute_history_for_trading_date(

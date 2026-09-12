@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.4 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.9 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -264,12 +264,12 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.32.0');
+    expect(desktop.version).toBe('v0.33.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.33.0');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.34.2');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.69.1');
+    expect(desktop.appScript).toContain('app-v0.70.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -863,8 +863,8 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.32.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.33.0');
+    expect(contract.version).toBe('v0.33.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.34.2');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Price field detail');

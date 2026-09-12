@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.10.2
+Code version: v0.10.3
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from app.infrastructure.runtime_network import (
     add_yahoo_tls_configuration_hint,
     get_yfinance_session,
     open_scoped_network_url as urlopen,
+    sanitize_network_diagnostic,
 )
 from app.models.schemas import QuoteProfile
 from app.infrastructure.storage import (
@@ -67,11 +68,6 @@ SUPPORTED_MARKET_SUFFIXES = {
 SUPPORTED_MARKET_EXCHANGES = US_EXCHANGES | {"HKG", "LSE"}
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOOKUP_LOCK = Lock()
-NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
-NETWORK_SECRET_QUERY_PATTERN = re.compile(
-    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
-)
-
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
     "XQQI": "https://neosfunds.com/xqqi/",
@@ -117,9 +113,7 @@ def _run_yfinance_silently(callback):
 
 
 def _yfinance_failure_diagnostic(value: object) -> str:
-    diagnostic = " ".join(str(value or "").split())
-    diagnostic = NETWORK_URL_USERINFO_PATTERN.sub(r"\1REDACTED@", diagnostic)
-    diagnostic = NETWORK_SECRET_QUERY_PATTERN.sub(r"\1REDACTED", diagnostic)
+    diagnostic = sanitize_network_diagnostic(value)
     return add_yahoo_tls_configuration_hint(diagnostic)
 
 

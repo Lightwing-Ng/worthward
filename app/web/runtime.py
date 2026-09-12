@@ -1,7 +1,9 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v1.4.0
+Code version: v1.4.2
+- Fixed: Istanbul and Buenos Aires use their own local regular-session windows.
+- Changed: Reuse the dependency-neutral ticker market and timezone authority.
 - Fixed: Date-bounded chip requests, including a single historical day, use
   Longbridge daily OHLCV instead of current trade statistics.
 - Changed: Chip comparison no longer requests circulating-share metadata while
@@ -156,6 +158,7 @@ from app.core.investment_settings import (
     load_investment_cost_basis_method,
     save_investment_cost_basis_method,
 )
+from app.core.market_identity import infer_ticker_market, market_timezone_for_ticker
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.date_display_settings import (
     load_date_display_settings,
@@ -327,7 +330,6 @@ from app.services.market_data import (
     fetch_one_minute_history_for_trading_date,
     fetch_yfinance_realtime_quotes,
     has_compare_overnight_market_data_source,
-    infer_ticker_market,
     list_available_market_intervals,
     load_local_one_minute_history,
     normalize_history_frame,
@@ -1957,54 +1959,6 @@ def build_web_runtime() -> WebRuntime:
             if start_date <= pd.to_datetime(trading_date).date() <= end_date
         ]
 
-    def market_timezone_for_ticker(ticker: str) -> str:
-        market = infer_ticker_market(ticker)
-        if market == "HK":
-            return "Asia/Hong_Kong"
-        if market == "KR":
-            return "Asia/Seoul"
-        if market == "JP":
-            return "Asia/Tokyo"
-        if market == "CN":
-            return "Asia/Shanghai"
-        if market == "UK":
-            return "Europe/London"
-        if market == "SG":
-            return "Asia/Singapore"
-        if market == "AU":
-            return "Australia/Sydney"
-        if market == "CA":
-            return "America/Toronto"
-        if market == "EU":
-            return "Europe/Paris"
-        if market == "FI":
-            return "Europe/Helsinki"
-        if market == "IN":
-            return "Asia/Kolkata"
-        if market == "TW":
-            return "Asia/Taipei"
-        if market == "MY":
-            return "Asia/Kuala_Lumpur"
-        if market == "TH":
-            return "Asia/Bangkok"
-        if market == "ID":
-            return "Asia/Jakarta"
-        if market == "NZ":
-            return "Pacific/Auckland"
-        if market == "BR":
-            return "America/Sao_Paulo"
-        if market == "LATAM":
-            return "America/Mexico_City"
-        if market == "IL":
-            return "Asia/Jerusalem"
-        if market == "SA":
-            return "Asia/Riyadh"
-        if market == "ZA":
-            return "Africa/Johannesburg"
-        if market == "QA":
-            return "Asia/Qatar"
-        return "America/New_York"
-
     def resolve_compare_market_trading_date(
             ticker: str,
             requested_trading_date: object,
@@ -2046,8 +2000,10 @@ def build_web_runtime() -> WebRuntime:
             return (16 * 60) - 1
         if market == "SG":
             return (17 * 60) - 1
-        if market in {"BR", "ZA"}:
+        if market in {"AR", "BR", "ZA"}:
             return (17 * 60) - 1
+        if market == "TR":
+            return (18 * 60) - 1
         if market in {"EU", "FI", "IL"}:
             return (17 * 60) + 30
         if market == "IN":
@@ -2096,8 +2052,12 @@ def build_web_runtime() -> WebRuntime:
             return [(10 * 60, (16 * 60) + 45)]
         if market == "BR":
             return [(10 * 60, 17 * 60)]
+        if market == "AR":
+            return [((10 * 60) + 30, 17 * 60)]
         if market == "LATAM":
             return [((8 * 60) + 30, 15 * 60)]
+        if market == "TR":
+            return [(10 * 60, 18 * 60)]
         if market == "IL":
             return [((9 * 60) + 30, (17 * 60) + 30)]
         if market == "SA":

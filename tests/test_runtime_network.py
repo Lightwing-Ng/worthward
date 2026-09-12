@@ -1,6 +1,6 @@
 """Runtime network certificate discovery tests.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,20 @@ import subprocess
 from unittest.mock import call, Mock
 
 from app.infrastructure import runtime_network
+
+
+def test_network_diagnostic_sanitizer_has_one_redaction_contract() -> None:
+    raw = (
+        "  GET https://alice:secret@example.com/path?token=abc&key=def\n"
+        "failed  "
+    )
+
+    sanitized = runtime_network.sanitize_network_diagnostic(raw)
+
+    assert sanitized == (
+        "GET https://REDACTED@example.com/path?token=REDACTED&key=REDACTED failed"
+    )
+    assert runtime_network.sanitize_network_diagnostic(raw, max_length=12) == sanitized[:12]
 
 
 def _reset_macos_ca_detection(monkeypatch, bundle_directory: Path) -> None:

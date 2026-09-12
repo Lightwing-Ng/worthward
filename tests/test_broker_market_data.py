@@ -1,7 +1,7 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.13.0
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from app.infrastructure.broker_market_data import (
     _cli_extended_candlestick_rows_to_frame,
     _candlestick_rows_to_frame,
     _daily_candlestick_rows_to_frame,
+    _extended_candlestick_rows_to_frame,
     _normalize_longbridge_market_cap_row,
     _normalize_longbridge_static_row,
     _normalize_longbridge_trade_stats_payload,
@@ -439,6 +440,34 @@ class BrokerMarketDataTests(unittest.TestCase):
         )
         sdk_daily_frame = _daily_candlestick_rows_to_frame([sdk_candle], "AAPL")
         self.assertEqual(sdk_daily_frame["Date"].tolist(), [pd.Timestamp("2026-07-14")])
+
+    def test_candlestick_adapters_share_canonical_output_schemas(self) -> None:
+        standard_columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"]
+        extended_columns = [*standard_columns, "Session"]
+
+        for frame in (
+            _candlestick_rows_to_frame([]),
+            _daily_candlestick_rows_to_frame([]),
+            _cli_candlestick_rows_to_frame([]),
+            _cli_daily_candlestick_rows_to_frame([]),
+        ):
+            self.assertEqual(frame.columns.tolist(), standard_columns)
+        for frame in (
+            _extended_candlestick_rows_to_frame([]),
+            _cli_extended_candlestick_rows_to_frame([]),
+        ):
+            self.assertEqual(frame.columns.tolist(), extended_columns)
+
+        cli_frame = _cli_daily_candlestick_rows_to_frame(
+            [{"time": "2026-07-14T13:30:00Z"}],
+            "AAPL",
+        )
+        self.assertEqual(cli_frame.iloc[0]["Open"], 0.0)
+        with self.assertRaises(AttributeError):
+            _daily_candlestick_rows_to_frame(
+                [SimpleNamespace(timestamp="2026-07-14T13:30:00Z")],
+                "AAPL",
+            )
 
     def test_daily_candlestick_adapters_use_the_ticker_market_date(self) -> None:
         hong_kong_candle = {

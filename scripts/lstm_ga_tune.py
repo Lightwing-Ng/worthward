@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.12.1
+Code version: v0.13.0
 - Added: Complete close-price grid scoring, with equal weight for 20 horizons.
 - Fixed: Deadline polling and rejection of an infeasible final winner.
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
@@ -13,6 +13,8 @@ Code version: v0.12.1
   directly instead of importing Bayesian strategy helpers.
 - Added: The web training manager can reuse the runner's canonical request and
   state-path builders without depending on private implementation names.
+- Changed: Document the dependency-light application package import contract.
+- Changed: Reuse the side-effect-isolated project workspace path primitive.
 """
 
 from __future__ import annotations
@@ -45,14 +47,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Keep the import-time contract available to the web training service. The
-# application package imports that service while this CLI is being imported,
-# so these public launcher constants must exist before app submodules load.
+# Keep the launcher contract available before importing application submodules.
+# This ordering also lets the module run directly from outside the project root.
 DEFAULT_DURATION_SECONDS = 43_200
 DEFAULT_POPULATION_SIZE = 64
 MAX_WORKERS = 8
 
 from app.core.config import PERIOD_OFFSETS  # noqa: E402
+from app.infrastructure.compute_jobs import project_compute_workspace_root  # noqa: E402
 from app.services.price_field_market_factors import (  # noqa: E402
     build_local_price_field_factor_bundle,
 )  # noqa: E402
@@ -375,14 +377,17 @@ def _request_hash(spec: Mapping[str, Any]) -> str:
 
 
 def _build_run_paths(args: argparse.Namespace, spec: Mapping[str, Any]) -> RunPaths:
-    workspace_hash = hashlib.sha256(str(PROJECT_ROOT.resolve()).encode("utf-8")).hexdigest()[:16]
     run_hash = _request_hash(spec)
     root = (
         Path(args.state_root).expanduser().resolve()
         if args.state_root
         else _default_state_root()
     )
-    state = root / workspace_hash / f"lstm-ga-{run_hash[:24]}"
+    state = project_compute_workspace_root(
+        root,
+        PROJECT_ROOT,
+        f"lstm-ga-{run_hash[:24]}",
+    )
     return RunPaths(
         root=root,
         state=state,

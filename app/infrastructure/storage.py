@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.18.5
+Code version: v0.18.6
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
@@ -35,6 +35,7 @@ import pandas as pd
 
 from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
 from app.core.settings import get_settings
+from app.core.upload_limits import MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES
 
 LEGACY_INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
 INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.parquet"
@@ -79,7 +80,6 @@ _MARKET_STORE_LOCK_DEPTHS = threading.local()
 # Exact broker uploads are expected to be ordinary statements, not bulk archives.
 # The limits keep immutable source evidence useful without allowing one import to
 # consume the device-local store indefinitely.
-MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES = 256 * 1024 * 1024
 INVESTMENT_EVIDENCE_DIRECTORY_MODE = 0o700
 INVESTMENT_EVIDENCE_FILE_MODE = 0o600
@@ -1324,6 +1324,28 @@ def _save_profiles_table(table: pd.DataFrame) -> None:
     _write_parquet_table(PROFILES_PARQUET_PATH, normalized, _PROFILE_COLUMNS)
 
 
+def _profile_row_to_record(
+        row: Any,
+        fallback_ticker: str,
+) -> dict[str, Any]:
+    """Convert one persisted profile row into its public record shape."""
+    return {
+        "ticker": str(row.get("ticker") or fallback_ticker),
+        "company_name": str(row.get("company_name") or "").strip(),
+        "website": str(row.get("website") or "").strip() or None,
+        "storage_scope": _normalize_profile_scope(
+            str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)
+        ),
+        "tradingview_screener": _normalize_tradingview_screener(
+            str(row.get("tradingview_screener") or "")
+        ) or None,
+        "tradingview_exchange": _normalize_tradingview_exchange(
+            str(row.get("tradingview_exchange") or "")
+        ) or None,
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
 def load_profile_record(ticker: str) -> dict[str, str] | None:
     normalized_ticker = normalize_ticker(ticker)
     table = _load_profiles_table()
@@ -1332,16 +1354,7 @@ def load_profile_record(ticker: str) -> dict[str, str] | None:
     matches = table.loc[table["ticker"] == normalized_ticker]
     if matches.empty:
         return None
-    row = matches.iloc[0]
-    return {
-        "ticker": str(row.get("ticker") or normalized_ticker),
-        "company_name": str(row.get("company_name") or "").strip(),
-        "website": str(row.get("website") or "").strip() or None,
-        "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
-        "tradingview_screener": _normalize_tradingview_screener(str(row.get("tradingview_screener") or "")) or None,
-        "tradingview_exchange": _normalize_tradingview_exchange(str(row.get("tradingview_exchange") or "")) or None,
-        "updated_at": str(row.get("updated_at") or ""),
-    }
+    return _profile_row_to_record(matches.iloc[0], normalized_ticker)
 
 
 def has_profile_record(ticker: str) -> bool:
@@ -1374,16 +1387,10 @@ def upsert_profile_record(
         if not table.empty:
             matches = table.loc[table["ticker"] == normalized_ticker]
             if not matches.empty:
-                row = matches.iloc[0]
-                current = {
-                    "ticker": str(row.get("ticker") or normalized_ticker),
-                    "company_name": str(row.get("company_name") or "").strip(),
-                    "website": str(row.get("website") or "").strip() or None,
-                    "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
-                    "tradingview_screener": _normalize_tradingview_screener(str(row.get("tradingview_screener") or "")) or None,
-                    "tradingview_exchange": _normalize_tradingview_exchange(str(row.get("tradingview_exchange") or "")) or None,
-                    "updated_at": str(row.get("updated_at") or ""),
-                }
+                current = _profile_row_to_record(
+                    matches.iloc[0],
+                    normalized_ticker,
+                )
         merged = incoming if current is None else _merge_profile_rows(current, incoming)
         filtered = table.loc[table["ticker"] != normalized_ticker].copy() if not table.empty else _empty_frame(_PROFILE_COLUMNS)
         filtered = pd.concat([filtered, pd.DataFrame([merged])], ignore_index=True)
@@ -1427,6 +1434,17 @@ def _save_search_cache_table(table: pd.DataFrame) -> None:
     _write_parquet_table(SEARCH_CACHE_PARQUET_PATH, normalized, _SEARCH_CACHE_COLUMNS)
 
 
+def _search_cache_row_to_item(row: Any) -> dict[str, str]:
+    """Convert one persisted search-cache row into its public item shape."""
+    return {
+        "symbol": str(row.get("symbol") or "").upper(),
+        "name": str(row.get("name") or "").strip(),
+        "asset_type": str(row.get("asset_type") or "").strip(),
+        "logo_url": str(row.get("logo_url") or "").strip(),
+        "source": str(row.get("source") or "remote").strip() or "remote",
+    }
+
+
 def load_search_cache_items(query: str) -> list[dict[str, str]]:
     normalized_query = normalize_ticker(query)
     table = _load_search_cache_table()
@@ -1437,13 +1455,7 @@ def load_search_cache_items(query: str) -> list[dict[str, str]]:
         return []
     matches = matches.sort_values(["updated_at", "symbol"], ascending=[False, True])
     return [
-        {
-            "symbol": str(row.get("symbol") or "").upper(),
-            "name": str(row.get("name") or "").strip(),
-            "asset_type": str(row.get("asset_type") or "").strip(),
-            "logo_url": str(row.get("logo_url") or "").strip(),
-            "source": str(row.get("source") or "remote").strip() or "remote",
-        }
+        _search_cache_row_to_item(row)
         for _, row in matches.iterrows()
         if str(row.get("symbol") or "").strip()
     ]
@@ -1458,13 +1470,7 @@ def load_latest_search_cache_item_for_symbol(symbol: str) -> dict[str, str] | No
     if matches.empty:
         return None
     row = matches.sort_values("updated_at", ascending=False).iloc[0]
-    return {
-        "symbol": str(row.get("symbol") or "").upper(),
-        "name": str(row.get("name") or "").strip(),
-        "asset_type": str(row.get("asset_type") or "").strip(),
-        "logo_url": str(row.get("logo_url") or "").strip(),
-        "source": str(row.get("source") or "remote").strip() or "remote",
-    }
+    return _search_cache_row_to_item(row)
 
 
 def store_search_cache_items(query: str, items: list[dict[str, str]]) -> None:

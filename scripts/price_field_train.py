@@ -1,4 +1,4 @@
-"""Train one saved neural Price Field configuration. Code version: v1.1.0."""
+"""Train one saved neural Price Field configuration. Code version: v1.1.1."""
 
 from __future__ import annotations
 
@@ -27,8 +27,6 @@ def run(request_path: Path, run_token: str) -> dict:
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
     ensure_price_field_runtime(request["params"]["compute_backend"], Path(__file__), sys.argv[1:])
 
-    # Application initialization precedes strategy imports, matching production.
-    import app  # noqa: F401
     import pandas as pd
     from app.services.price_field_training import completed_probability_score, training_strategy, validate_parameters, write_json
     from scripts.lstm_ga_tune import _date_bounds, _frame_rows, _json_safe

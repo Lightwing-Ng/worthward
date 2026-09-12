@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.6.2
+Code version: v0.7.0
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import math
 import os
@@ -23,6 +22,14 @@ import sys
 from typing import Any, Mapping
 
 from app.core.config import PERIOD_OFFSETS
+from app.infrastructure.compute_jobs import (
+    assign_daily_run_identifiers,
+    compute_workspace_lock,
+    matching_run_directories,
+    project_compute_workspace_root,
+    read_json_object,
+    write_json_atomic,
+)
 from app.infrastructure.storage import has_valid_ticker_format, normalize_ticker
 from scripts import lstm_ga_tune as ga_runner
 
@@ -51,24 +58,24 @@ class LstmTrainingManager:
             return []
         runs = [
             self._read_run(state_dir)
-            for state_dir in workspace_root.iterdir()
-            if state_dir.is_dir() and not state_dir.is_symlink() and RUN_ID_PATTERN.fullmatch(state_dir.name)
+            for state_dir in matching_run_directories(
+                workspace_root,
+                RUN_ID_PATTERN,
+            )
         ]
         # Include recoverable archives when numbering, so deleting a run never renames its siblings.
         archived = workspace_root / ".deleted"
-        numbering = list(runs)
-        if archived.is_dir() and not archived.is_symlink():
-            numbering.extend(self._read_run(path) for path in archived.iterdir()
-                             if path.is_dir() and not path.is_symlink() and RUN_ID_PATTERN.fullmatch(path.name))
-        counters: dict[tuple[str, str], int] = {}
-        for run in sorted(numbering, key=lambda item: (str(item["started_at"]), item["id"])):
-            try:
-                day = datetime.fromisoformat(run["started_at"]).astimezone(timezone.utc).strftime("%y%m%d")
-            except (ValueError, TypeError):
-                continue
-            key = (run["ticker"], day)
-            counters[key] = counters.get(key, 0) + 1
-            run["identifier"] = f"{day}({counters[key]:02d})"
+        assign_daily_run_identifiers(
+            runs,
+            [
+                self._read_run(path)
+                for path in matching_run_directories(
+                    archived,
+                    RUN_ID_PATTERN,
+                )
+            ],
+            group_fields=("ticker",),
+        )
         return sorted(
             runs,
             key=lambda item: str(item.get("started_at") or item.get("created_at") or ""),
@@ -81,84 +88,101 @@ class LstmTrainingManager:
         normalized_interval = ga_runner.validate_training_interval(interval)
         selected_params = ga_runner.validate_selected_params(params)
         settings = ga_runner.validate_training_configuration(configuration)
-        if any(
-            run.get("ticker") == normalized_ticker and run.get("status") in ACTIVE_STATUSES
-            for run in self.list_runs()
-        ):
-            raise LstmTrainingConflict(
-                f"LSTM training is already running for {normalized_ticker}."
-            )
+        workspace_root = self._workspace_root()
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        if workspace_root.is_symlink():
+            raise ValueError("Invalid LSTM training workspace.")
 
-        seed = self._unique_seed(normalized_ticker, normalized_period, selected_params, normalized_interval, settings)
-        args = self._build_runner_args(normalized_ticker, normalized_period, seed)
-        args.selected_params = selected_params
-        args.interval = normalized_interval
-        args.configuration = settings
-        spec = ga_runner.build_request_spec(args)
-        paths = ga_runner.build_run_paths(args, spec)
-        paths.state.mkdir(parents=True, exist_ok=False)
-        command = [
-            sys.executable,
-            str(PROJECT_ROOT / "scripts" / "lstm_ga_tune.py"),
-            "--ticker",
-            normalized_ticker,
-            "--period",
-            normalized_period,
-            "--interval",
-            normalized_interval,
-            "--duration-seconds",
-            str(DEFAULT_DURATION_SECONDS),
-            "--population-size",
-            str(DEFAULT_POPULATION_SIZE),
-            "--max-workers",
-            str(args.max_workers),
-            "--ga-seed",
-            str(seed),
-            "--state-root",
-            str(paths.root),
-            "--selected-params",
-            json.dumps(selected_params, sort_keys=True, allow_nan=False),
-            "--configuration",
-            json.dumps(settings, sort_keys=True, allow_nan=False),
-            "--prepared-request",
-            str(paths.request),
-        ]
-        self._write_json(paths.request, spec)
-        log_handle = paths.log.open("a", encoding="utf-8")
-        try:
-            process = subprocess.Popen(
-                command,
-                cwd=str(PROJECT_ROOT),
-                stdin=subprocess.DEVNULL,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
+        with compute_workspace_lock(workspace_root / "workspace.lock"):
+            if any(
+                run.get("ticker") == normalized_ticker
+                and run.get("status") in ACTIVE_STATUSES
+                for run in self.list_runs()
+            ):
+                raise LstmTrainingConflict(
+                    f"LSTM training is already running for {normalized_ticker}."
+                )
+
+            seed = self._unique_seed(
+                normalized_ticker,
+                normalized_period,
+                selected_params,
+                normalized_interval,
+                settings,
             )
-        except Exception:
-            log_handle.close()
-            self._remove_empty_state(paths.state)
-            raise
-        finally:
-            if not log_handle.closed:
+            args = self._build_runner_args(
+                normalized_ticker,
+                normalized_period,
+                seed,
+            )
+            args.selected_params = selected_params
+            args.interval = normalized_interval
+            args.configuration = settings
+            spec = ga_runner.build_request_spec(args)
+            paths = ga_runner.build_run_paths(args, spec)
+            paths.state.mkdir(parents=True, exist_ok=False)
+            command = [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "lstm_ga_tune.py"),
+                "--ticker",
+                normalized_ticker,
+                "--period",
+                normalized_period,
+                "--interval",
+                normalized_interval,
+                "--duration-seconds",
+                str(DEFAULT_DURATION_SECONDS),
+                "--population-size",
+                str(DEFAULT_POPULATION_SIZE),
+                "--max-workers",
+                str(args.max_workers),
+                "--ga-seed",
+                str(seed),
+                "--state-root",
+                str(paths.root),
+                "--selected-params",
+                json.dumps(selected_params, sort_keys=True, allow_nan=False),
+                "--configuration",
+                json.dumps(settings, sort_keys=True, allow_nan=False),
+                "--prepared-request",
+                str(paths.request),
+            ]
+            self._write_json(paths.request, spec)
+            log_handle = paths.log.open("a", encoding="utf-8")
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(PROJECT_ROOT),
+                    stdin=subprocess.DEVNULL,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except Exception:
                 log_handle.close()
+                self._remove_empty_state(paths.state)
+                raise
+            finally:
+                if not log_handle.closed:
+                    log_handle.close()
 
-        self._write_json(paths.state / "launch.json", {
-            "schema": 1,
-            "run_id": paths.state.name,
-            "pid": process.pid,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "ticker": normalized_ticker,
-            "period": normalized_period,
-            "interval": normalized_interval,
-            "ga_seed": seed,
-            "selected_params": selected_params,
-            "configuration": settings,
-        })
-        return {
-            **self._read_run(paths.state),
-            "status": "starting",
-            "active": True,
-        }
+            self._write_json(paths.state / "launch.json", {
+                "schema": 1,
+                "run_id": paths.state.name,
+                "pid": process.pid,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "ticker": normalized_ticker,
+                "period": normalized_period,
+                "interval": normalized_interval,
+                "ga_seed": seed,
+                "selected_params": selected_params,
+                "configuration": settings,
+            })
+            return {
+                **self._read_run(paths.state),
+                "status": "starting",
+                "active": True,
+            }
 
     def stop(self, run_id: str) -> dict[str, Any]:
         paths = self._paths_for_run_id(run_id)
@@ -213,8 +237,10 @@ class LstmTrainingManager:
         return Path.home() / "Library" / "Application Support" / "Worthward" / "compute-jobs"
 
     def _workspace_root(self) -> Path:
-        workspace_hash = hashlib.sha256(str(PROJECT_ROOT.resolve()).encode("utf-8")).hexdigest()[:16]
-        return self._state_root() / workspace_hash
+        return project_compute_workspace_root(
+            self._state_root(),
+            PROJECT_ROOT,
+        )
 
     def _paths_for_run_id(self, run_id: str) -> ga_runner.RunPaths:
         if not RUN_ID_PATTERN.fullmatch(str(run_id).strip()):
@@ -491,19 +517,11 @@ class LstmTrainingManager:
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
-        if path.is_symlink():
-            return {}
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {}
-        return value if isinstance(value, dict) else {}
+        return read_json_object(path)
 
     @staticmethod
     def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
-        os.replace(temporary, path)
+        write_json_atomic(path, payload, compact=True)
 
     @staticmethod
     def _remove_empty_state(state: Path) -> None:

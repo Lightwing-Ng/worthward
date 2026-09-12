@@ -5,7 +5,7 @@
  * This module owns geometry, cells, opacity, and the pure pin reducer.
  * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.33.0
+ * Code version: v0.34.2
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -243,7 +243,11 @@
             return_autoregression: returnAutoregression,
             return_long_run_mean: returnLongRunMean,
             return_innovation_scale: returnInnovationScale,
-            ...(directHorizons ? {horizon_predictive_mean: horizonMean, horizon_predictive_std: horizonStd} : {}),
+            ...(directHorizons ? {
+                horizon_predictive_mean: horizonMean,
+                horizon_predictive_std: horizonStd,
+                max_horizon: DEFAULT_COLUMN_COUNT,
+            } : {}),
             ...(hasDataKeys ? {data_keys: dataKeys} : {}),
         });
     };
@@ -693,11 +697,22 @@
         const domainUpper = finiteOrNull(priceDomain?.upperPrice);
         const hasPriceDomain = domainLower !== null && domainUpper !== null
             && domainLower > 0 && domainUpper > domainLower;
-        const domainPriceStep = hasPriceDomain
-            ? (domainUpper - domainLower) / Number(geometry?.rowCount)
+        const normalizedAnchorPrice = Number(anchorPrice);
+        const usesLogPriceDomain = hasPriceDomain
+            && priceDomain?.scaleKind === "symmetric-log-return";
+        const domainLowerValue = usesLogPriceDomain
+            ? Math.log(domainLower / normalizedAnchorPrice)
+            : domainLower;
+        const domainUpperValue = usesLogPriceDomain
+            ? Math.log(domainUpper / normalizedAnchorPrice)
+            : domainUpper;
+        const domainValueStep = hasPriceDomain
+            ? (domainUpperValue - domainLowerValue) / Number(geometry?.rowCount)
             : null;
         if (!geometry || typeof distribution?.probabilityBetweenPrices !== "function"
             || (!hasPriceDomain && typeof valueForPixel !== "function")
+            || (usesLogPriceDomain && !(normalizedAnchorPrice > 0))
+            || (hasPriceDomain && !(domainValueStep > 0))
             || !Number.isFinite(normalizedStepPixels) || !(normalizedStepPixels > 0)
             || !Number.isFinite(geometryStepPixels) || !(geometryStepPixels > 0)
             || Math.abs(geometryStepPixels - normalizedStepPixels) > 1e-9
@@ -710,15 +725,22 @@
                 + (row * (geometry.cellSize + geometry.gap));
             const cellBottom = cellTop + geometry.cellSize;
             const firstValue = hasPriceDomain
-                ? domainUpper - (row * domainPriceStep)
+                ? domainUpperValue - (row * domainValueStep)
                 : Number(valueForPixel(cellTop));
             const secondValue = hasPriceDomain
-                ? domainUpper - ((row + 1) * domainPriceStep)
+                ? domainUpperValue - ((row + 1) * domainValueStep)
                 : Number(valueForPixel(cellBottom));
-            const lowerPrice = Math.min(firstValue, secondValue);
-            const upperPrice = Math.max(firstValue, secondValue);
-            const normalizedAnchorPrice = Number(anchorPrice);
-            const sign = Number.isFinite(normalizedAnchorPrice)
+            const firstPrice = usesLogPriceDomain
+                ? normalizedAnchorPrice * Math.exp(firstValue)
+                : firstValue;
+            const secondPrice = usesLogPriceDomain
+                ? normalizedAnchorPrice * Math.exp(secondValue)
+                : secondValue;
+            const lowerPrice = Math.min(firstPrice, secondPrice);
+            const upperPrice = Math.max(firstPrice, secondPrice);
+            const sign = usesLogPriceDomain
+                ? (row < geometry.rowsAbove ? "up" : "down")
+                : Number.isFinite(normalizedAnchorPrice)
                 && Number.isFinite(lowerPrice)
                 ? (lowerPrice >= normalizedAnchorPrice ? "up" : "down")
                 : (row < geometry.rowsAbove ? "up" : "down");

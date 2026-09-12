@@ -1,11 +1,12 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.5.4
+Code version: v0.5.5
 - Fixed: Order submission now reuses the canonical Longbridge market-symbol
   adapter, including share classes and provider suffix normalization.
 - Removed: The unused Bearer-token REST asset transport. Account assets use
   the Longbridge CLI, while order operations use the supported SDK boundary.
+- Changed: Reuse the canonical Longbridge SDK config constructor.
 """
 
 from __future__ import annotations
@@ -18,11 +19,11 @@ from typing import Any
 from app.core.broker_settings import (
     BrokerSettings,
     has_longbridge_credentials,
-    normalize_longbridge_access_token,
     uses_longbridge_cli_oauth,
 )
 from app.infrastructure.broker_market_data import normalize_longbridge_symbol
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json
+from app.infrastructure.longbridge_sdk import build_longbridge_sdk_config
 
 
 @dataclass(frozen=True)
@@ -155,14 +156,7 @@ def _load_longbridge_trade_api() -> tuple[Any, Any, Any, Any, Any]:
     )
 
 
-def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
-    app_key = settings.longbridge_app_key.strip()
-    app_secret = settings.longbridge_app_secret.strip()
-    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
-    factory = getattr(config_cls, "from_apikey", None)
-    if callable(factory):
-        return factory(app_key, app_secret, access_token)
-    return config_cls(app_key, app_secret, access_token)
+_build_longbridge_config = build_longbridge_sdk_config
 
 
 def _build_longbridge_trade_context(settings: BrokerSettings) -> Any:

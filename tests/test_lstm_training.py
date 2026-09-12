@@ -1,15 +1,18 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.7.1."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.8.1."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import json
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from app.infrastructure.compute_jobs import project_compute_workspace_root
 from app.services import lstm_training
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
 from scripts import lstm_ga_tune as ga_runner
@@ -48,6 +51,20 @@ def test_training_ticker_normalization_reuses_canonical_storage_contract(tmp_pat
     manager = lstm_training.LstmTrainingManager(tmp_path)
     assert manager._normalize_ticker("BRK.B") == "BRK-B"
     assert manager._normalize_ticker("META.US") == "META"
+
+
+def test_runner_and_manager_share_the_project_workspace_root(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    args = manager._build_runner_args("NVDA", "1y", 42)
+    spec = ga_runner.build_request_spec(args)
+    paths = ga_runner.build_run_paths(args, spec)
+    expected_workspace = project_compute_workspace_root(
+        tmp_path,
+        ga_runner.PROJECT_ROOT,
+    )
+
+    assert manager._workspace_root() == expected_workspace
+    assert paths.state.parent == expected_workspace
 
 
 def test_history_exposes_complete_exact_configuration_and_measured_score(tmp_path):
@@ -178,6 +195,41 @@ def test_web_launch_reservation_is_claimed_once_without_implicit_resume(tmp_path
     args.prepared_request = None
     with pytest.raises(RuntimeError, match="use --resume"):
         ga_runner._run(args)
+
+
+def test_concurrent_same_ticker_launches_share_one_admission_lock(
+        tmp_path,
+        monkeypatch,
+) -> None:
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    popen_entered = Event()
+    release_popen = Event()
+    commands = []
+
+    def launch(command, **_kwargs):
+        commands.append(command)
+        popen_entered.set()
+        assert release_popen.wait(timeout=5)
+        return SimpleNamespace(pid=123)
+
+    monkeypatch.setattr(manager, "_process_matches", lambda *_args: True)
+    monkeypatch.setattr(lstm_training.subprocess, "Popen", launch)
+    executor = ThreadPoolExecutor(max_workers=2)
+    try:
+        first = executor.submit(manager.start, "NVDA", "1y", {}, interval="1d")
+        assert popen_entered.wait(timeout=5)
+        second = executor.submit(manager.start, "NVDA", "1y", {}, interval="1d")
+        with pytest.raises(FuturesTimeoutError):
+            second.result(timeout=0.1)
+        release_popen.set()
+        assert first.result(timeout=5)["status"] == "starting"
+        with pytest.raises(lstm_training.LstmTrainingConflict):
+            second.result(timeout=5)
+    finally:
+        release_popen.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    assert len(commands) == 1
 
 
 @pytest.mark.parametrize("raw", ["", "{", "null", "[]", "false", '{"compute_backend":"invalid"}'])

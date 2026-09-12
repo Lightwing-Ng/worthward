@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.4.0 */
+/* Neural Price Field UI integration. Code version: v1.5.0 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -51,22 +51,43 @@ for (const width of [1024, 390]) {
             await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
+            await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Log-price scale');
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
                 (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
             )).toBe(20);
-            const detailDomain = await page.locator('#backtest_probability_detail_panel').evaluate((panel) => ({
-                kind: panel.dataset.priceDomain,
-                lower: Number(panel.dataset.priceDomainLower),
-                upper: Number(panel.dataset.priceDomainUpper),
-                anchor: Number(panel.querySelector('[data-backtest-probability-detail-anchor]')?.dataset.price),
-            }));
-            expect(detailDomain.kind).toBe('direct-forecast-adaptive');
+            const detailDomain = await page.locator('#backtest_probability_detail_panel').evaluate((panel) => {
+                const grid = panel.querySelector('[data-backtest-probability-detail-grid]');
+                const firstCell = grid?.querySelector('[data-horizon]');
+                const upperAnchorCell = grid?.querySelector('[data-row="9"][data-column="0"]');
+                const lowerAnchorCell = grid?.querySelector('[data-row="10"][data-column="0"]');
+                const gridRect = grid?.getBoundingClientRect();
+                const cellRect = firstCell?.getBoundingClientRect();
+                return {
+                    kind: panel.dataset.priceDomain,
+                    scale: panel.dataset.priceScale,
+                    lower: Number(panel.dataset.priceDomainLower),
+                    upper: Number(panel.dataset.priceDomainUpper),
+                    anchor: Number(panel.querySelector('[data-backtest-probability-detail-anchor]')?.dataset.price),
+                    upperAnchorBoundary: Number(upperAnchorCell?.dataset.lowerPrice),
+                    lowerAnchorBoundary: Number(lowerAnchorCell?.dataset.upperPrice),
+                    gridWidth: Number(gridRect?.width),
+                    gridHeight: Number(gridRect?.height),
+                    cellWidth: Number(cellRect?.width),
+                    cellHeight: Number(cellRect?.height),
+                };
+            });
+            expect(detailDomain.kind).toBe('direct-forecast-log');
+            expect(detailDomain.scale).toBe('symmetric-log-return');
             expect(detailDomain.lower).toBeLessThan(detailDomain.anchor);
             expect(detailDomain.upper).toBeGreaterThan(detailDomain.anchor);
             expect(Math.abs(
-                (detailDomain.anchor - detailDomain.lower)
-                - (detailDomain.upper - detailDomain.anchor),
-            )).toBeLessThan(1e-6);
+                Math.log(detailDomain.lower / detailDomain.anchor)
+                + Math.log(detailDomain.upper / detailDomain.anchor),
+            )).toBeLessThan(1e-9);
+            expect(detailDomain.upperAnchorBoundary).toBeCloseTo(detailDomain.anchor, 9);
+            expect(detailDomain.lowerAnchorBoundary).toBeCloseTo(detailDomain.anchor, 9);
+            expect(Math.abs(detailDomain.gridWidth - detailDomain.gridHeight)).toBeLessThanOrEqual(1);
+            expect(Math.abs(detailDomain.cellWidth - detailDomain.cellHeight)).toBeLessThanOrEqual(0.25);
             if (architecture === 'timexer') await page.screenshot({path: testInfo.outputPath(`neural-price-field-${width}.png`), fullPage: true});
         }
         expect(errors).toEqual([]);

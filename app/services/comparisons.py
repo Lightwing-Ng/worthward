@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.11.2
+Code version: v0.12.1
 """
 
 from __future__ import annotations
@@ -9,67 +9,23 @@ from __future__ import annotations
 import pandas as pd
 
 from app.core.config import PERIOD_OFFSETS
-from app.infrastructure.storage import normalize_ticker
-from app.services.presentation import format_display_date, format_display_datetime, format_period_label
+from app.core.market_identity import (
+    infer_ticker_market,
+    market_timezone_for_ticker,
+)
 from app.models.schemas import SeriesPayload
+from app.services.presentation import (
+    format_display_date,
+    format_display_datetime,
+    format_period_label,
+)
 
 _REGULAR_SESSION_OPEN_MINUTE = (9 * 60) + 30
 _REGULAR_SESSION_CLOSE_MINUTE = (16 * 60) - 1
-_HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 _NEW_YORK_TIMEZONE = "America/New_York"
-_SOUTH_KOREA_TIMEZONE = "Asia/Seoul"
-_JAPAN_TIMEZONE = "Asia/Tokyo"
-_CHINA_TIMEZONE = "Asia/Shanghai"
-_UNITED_KINGDOM_TIMEZONE = "Europe/London"
 
-
-def _market_for_ticker(ticker: str | None) -> str:
-    normalized = normalize_ticker(str(ticker or ""))
-    if normalized.endswith(".HK"):
-        return "HK"
-    if normalized.endswith((".KS", ".KQ")):
-        return "KR"
-    if normalized.endswith((".T", ".JP")):
-        return "JP"
-    if normalized.endswith((".SH", ".SS", ".SZ")):
-        return "CN"
-    if normalized.endswith((".SG", ".SI")):
-        return "SG"
-    if normalized.endswith(".L"):
-        return "UK"
-    if normalized.endswith(".AX"):
-        return "AU"
-    if normalized.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
-        return "CA"
-    if normalized.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
-        return "EU"
-    if normalized.endswith(".HE"):
-        return "FI"
-    if normalized.endswith((".NS", ".BO")):
-        return "IN"
-    if normalized.endswith((".TW", ".TWO")):
-        return "TW"
-    if normalized.endswith(".KL"):
-        return "MY"
-    if normalized.endswith(".BK"):
-        return "TH"
-    if normalized.endswith(".JK"):
-        return "ID"
-    if normalized.endswith(".NZ"):
-        return "NZ"
-    if normalized.endswith(".SA"):
-        return "BR"
-    if normalized.endswith((".BA", ".MX")):
-        return "LATAM"
-    if normalized.endswith(".TA"):
-        return "IL"
-    if normalized.endswith((".SR", ".SE")):
-        return "SA"
-    if normalized.endswith(".JO"):
-        return "ZA"
-    if normalized.endswith(".QA"):
-        return "QA"
-    return "US"
+_market_for_ticker = infer_ticker_market
+_market_timezone_for_ticker = market_timezone_for_ticker
 
 
 def _minute_of_day(timestamp: pd.Timestamp) -> int:
@@ -101,6 +57,23 @@ def market_trading_date_for_timestamp(timestamp: object, ticker: str | None = No
     return localized.date()
 
 
+def market_trading_dates_for_history(
+        dataset: pd.DataFrame,
+        ticker: str,
+) -> pd.Series:
+    """Return exchange trading dates aligned to one intraday history frame."""
+    if "Date" not in dataset.columns:
+        raise ValueError("Intraday market history is missing Date.")
+    timestamps = pd.to_datetime(dataset["Date"], errors="coerce")
+    if timestamps.isna().any():
+        raise ValueError("Intraday market history contains an invalid timestamp.")
+    return timestamps.map(
+        lambda value: pd.Timestamp(
+            market_trading_date_for_timestamp(value, ticker)
+        )
+    )
+
+
 def _market_local_datetime_series(values: pd.Series, ticker: str | None = None) -> pd.Series:
     parsed = pd.to_datetime(values, errors="coerce")
     try:
@@ -126,55 +99,6 @@ def _market_session_mask(values: pd.Series, ticker: str | None = None) -> pd.Ser
     for start_minute, end_minute in segments:
         session_mask |= minutes.between(start_minute, end_minute, inclusive="both")
     return mask & session_mask
-
-
-def _market_timezone_for_ticker(ticker: str | None = None) -> str:
-    market = _market_for_ticker(ticker)
-    if market == "HK":
-        return _HONG_KONG_TIMEZONE
-    if market == "KR":
-        return _SOUTH_KOREA_TIMEZONE
-    if market == "JP":
-        return _JAPAN_TIMEZONE
-    if market == "CN":
-        return _CHINA_TIMEZONE
-    if market == "UK":
-        return _UNITED_KINGDOM_TIMEZONE
-    if market == "SG":
-        return "Asia/Singapore"
-    if market == "AU":
-        return "Australia/Sydney"
-    if market == "CA":
-        return "America/Toronto"
-    if market == "EU":
-        return "Europe/Paris"
-    if market == "FI":
-        return "Europe/Helsinki"
-    if market == "IN":
-        return "Asia/Kolkata"
-    if market == "TW":
-        return "Asia/Taipei"
-    if market == "MY":
-        return "Asia/Kuala_Lumpur"
-    if market == "TH":
-        return "Asia/Bangkok"
-    if market == "ID":
-        return "Asia/Jakarta"
-    if market == "NZ":
-        return "Pacific/Auckland"
-    if market == "BR":
-        return "America/Sao_Paulo"
-    if market == "LATAM":
-        return "America/Mexico_City"
-    if market == "IL":
-        return "Asia/Jerusalem"
-    if market == "SA":
-        return "Asia/Riyadh"
-    if market == "ZA":
-        return "Africa/Johannesburg"
-    if market == "QA":
-        return "Asia/Qatar"
-    return _NEW_YORK_TIMEZONE
 
 
 def _is_market_session_timestamp(timestamp: pd.Timestamp, ticker: str | None = None) -> bool:
@@ -210,8 +134,10 @@ def _market_session_close_minute(ticker: str | None = None) -> int:
         return (16 * 60) - 1
     if market == "SG":
         return (17 * 60) - 1
-    if market in {"BR", "ZA"}:
+    if market in {"AR", "BR", "ZA"}:
         return (17 * 60) - 1
+    if market == "TR":
+        return (18 * 60) - 1
     if market in {"EU", "FI", "IL"}:
         return (17 * 60) + 30
     if market == "IN":
@@ -255,8 +181,12 @@ def _market_session_open_minute(ticker: str | None = None) -> int:
         return 10 * 60
     if market == "BR":
         return 10 * 60
+    if market == "AR":
+        return (10 * 60) + 30
     if market == "LATAM":
         return (8 * 60) + 30
+    if market == "TR":
+        return 10 * 60
     if market == "IL":
         return (9 * 60) + 30
     if market == "SA":

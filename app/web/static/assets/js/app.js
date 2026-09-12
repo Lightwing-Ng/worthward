@@ -1,4 +1,4 @@
-/* Code version: v0.69.1 */
+/* Code version: v0.70.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -8107,6 +8107,37 @@
         }
     };
 
+    const BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY = "worthward:backtest-collapse-after-strategy-change:v1";
+
+    const rememberBacktestCollapseForStrategyChange = (strategyId) => {
+        const collapse = document.querySelector('[data-collapse="backtest"]');
+        if (!(collapse instanceof HTMLDetailsElement)) return;
+        const hasEnabledSwitch = Array.from(collapse.querySelectorAll('input[type="checkbox"]'))
+            .some((input) => input instanceof HTMLInputElement && input.checked);
+        if (hasEnabledSwitch) {
+            preferenceStorage.session.removeItem(BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY);
+            return;
+        }
+        preferenceStorage.session.setItem(
+            BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY,
+            String(strategyId || ""),
+        );
+    };
+
+    const restoreBacktestCollapseAfterStrategyChange = () => {
+        const requestedStrategyId = preferenceStorage.session.getItem(
+            BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY,
+        );
+        if (!requestedStrategyId) return;
+        preferenceStorage.session.removeItem(BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY);
+        const selectedStrategyId = String(
+            document.getElementById("trade_strategy")?.value || state.selectedStrategyId || "",
+        );
+        if (requestedStrategyId !== selectedStrategyId) return;
+        const collapse = document.querySelector('[data-collapse="backtest"]');
+        if (collapse instanceof HTMLDetailsElement) collapse.open = false;
+    };
+
     const allocationLabelLayouts = new WeakMap();
     const separateAllocationHandles = (container, low, high) => {
         const track = container.querySelector('.strategy-allocation-track-shell');
@@ -8804,6 +8835,7 @@
             refs.select.addEventListener("change", async () => {
                 const {select} = getTradeStrategyRefs();
                 if (!(select instanceof HTMLSelectElement)) return;
+                rememberBacktestCollapseForStrategyChange(select.value);
                 rememberBacktestStrategyParams(state.selectedStrategyId);
                 syncStrategyOptionSelection(select, select.value);
                 syncTradeStrategyTriggerLabel();
@@ -8831,6 +8863,7 @@
 
     seedTickerValidationState();
     repairSidebarControlBindings();
+    restoreBacktestCollapseAfterStrategyChange();
 
     window.addEventListener("resize", () => {
         getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));

@@ -1,11 +1,8 @@
-"""Strategy-neutral local probability-model training jobs. Code version: v1.1.2."""
+"""Strategy-neutral local probability-model training jobs. Code version: v1.1.3."""
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import datetime, timezone
-import hashlib
-import json
 import math
 import os
 from pathlib import Path
@@ -18,6 +15,14 @@ import time
 from typing import Any
 
 from app.core.config import PERIOD_OFFSETS
+from app.infrastructure.compute_jobs import (
+    assign_daily_run_identifiers,
+    compute_workspace_lock,
+    matching_run_directories,
+    project_compute_workspace_root,
+    read_json_object,
+    write_json_atomic,
+)
 from app.infrastructure.storage import has_valid_ticker_format, normalize_ticker
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -105,45 +110,18 @@ def validate_parameters(strategy, raw: object) -> dict[str, Any]:
 
 
 def read_json(path: Path) -> dict:
-    if path.is_symlink():
-        return {}
-    try:
-        result = json.loads(path.read_text(encoding="utf-8"))
-        return result if isinstance(result, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    """Compatibility wrapper for the shared compute-job JSON reader."""
+    return read_json_object(path)
 
 
 def write_json(path: Path, value: dict) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, sort_keys=True, allow_nan=False), encoding="utf-8")
-    temporary.replace(path)
+    """Compatibility wrapper for the shared compute-job JSON writer."""
+    write_json_atomic(path, value)
 
 
-@contextmanager
 def _workspace_lock(path: Path):
-    """Serialize launch and archive decisions across concurrent web requests."""
-    if path.is_symlink():
-        raise ValueError("Invalid training lock path.")
-    with path.open("a+b") as handle:
-        if os.name == "nt":
-            import msvcrt
-            handle.seek(0)
-            handle.write(b"\0")
-            handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    """Retain the established private name for existing callers and tests."""
+    return compute_workspace_lock(path)
 
 
 class PriceFieldTrainingManager:
@@ -156,8 +134,11 @@ class PriceFieldTrainingManager:
         )
 
     def workspace_root(self) -> Path:
-        digest = hashlib.sha256(str(PROJECT_ROOT.resolve()).encode()).hexdigest()[:16]
-        return self.root / digest / "probability-models"
+        return project_compute_workspace_root(
+            self.root,
+            PROJECT_ROOT,
+            "probability-models",
+        )
 
     def _path(self, run_id: str) -> Path:
         if not RUN_PATTERN.fullmatch(str(run_id)):
@@ -173,21 +154,15 @@ class PriceFieldTrainingManager:
         root = self.workspace_root()
         if not root.is_dir():
             return []
-        paths = [path for path in root.iterdir() if path.is_dir()
-                 and not path.is_symlink() and RUN_PATTERN.fullmatch(path.name)]
+        paths = matching_run_directories(root, RUN_PATTERN)
         archive = root / ".deleted"
-        archived = [path for path in archive.iterdir() if path.is_dir()
-                    and not path.is_symlink() and RUN_PATTERN.fullmatch(path.name)] if archive.is_dir() and not archive.is_symlink() else []
+        archived = matching_run_directories(archive, RUN_PATTERN)
         runs = [self.read_run(path) for path in paths]
-        counters: dict[tuple, int] = {}
-        for run in sorted(runs + [self.read_run(path) for path in archived], key=lambda item: (item["started_at"], item["id"])):
-            try:
-                day = datetime.fromisoformat(run["started_at"]).astimezone(timezone.utc).strftime("%y%m%d")
-            except ValueError:
-                continue
-            key = (run["strategy"], run["ticker"], day)
-            counters[key] = counters.get(key, 0) + 1
-            run["identifier"] = f"{day}({counters[key]:02d})"
+        assign_daily_run_identifiers(
+            runs,
+            [self.read_run(path) for path in archived],
+            group_fields=("strategy", "ticker"),
+        )
         return sorted([run for run in runs if not strategy_id or run["strategy"] == strategy_id],
                       key=lambda run: (run["started_at"], run["id"]), reverse=True)
 

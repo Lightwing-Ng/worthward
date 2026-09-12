@@ -1,4 +1,4 @@
-/* Code version: v1.10.0 */
+/* Code version: v1.11.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -19,7 +19,7 @@
 		if (window.WORTHWARD_PRICE_FIELD_DETAIL_CHART) return Promise.resolve();
 		if (!detailModulePromise) detailModulePromise = new Promise((resolve, reject) => {
 			const script = document.createElement("script");
-			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.3.0";
+			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.4.1";
 			script.onload = () => window.WORTHWARD_PRICE_FIELD_DETAIL_CHART
 				? resolve() : reject(new Error("Price Field detail module is unavailable."));
 			script.onerror = () => reject(new Error("Price Field detail module could not be loaded."));
@@ -1611,6 +1611,9 @@
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
 			if (detailModel.maxHorizon) {
 				latestProbabilityDetailBaseStatus += ` · Direct close-price forecasts: 1–${detailModel.maxHorizon} trading days`;
+				if (detailModel.priceDomain?.scaleKind === "symmetric-log-return") {
+					latestProbabilityDetailBaseStatus += " · Log-price scale";
+				}
 			}
 			if (strategyPresentation?.training_label) {
 				const trainingLabel = String(strategyPresentation.training_label);
@@ -1709,7 +1712,9 @@
 				cells.filter((cell) => cell.isVisible === false).length,
 			);
 			probabilityDetailPanel.dataset.priceDomain = detailModel.priceDomain
-				? "direct-forecast-adaptive" : "overview-y-scale";
+				? "direct-forecast-log" : "overview-y-scale";
+			probabilityDetailPanel.dataset.priceScale = detailModel.priceDomain?.scaleKind
+				|| "linear-price";
 			if (detailModel.priceDomain) {
 				probabilityDetailPanel.dataset.priceDomainLower = String(detailModel.priceDomain.lowerPrice);
 				probabilityDetailPanel.dataset.priceDomainUpper = String(detailModel.priceDomain.upperPrice);
@@ -1719,7 +1724,9 @@
 			}
 			probabilityDetailGrid.setAttribute(
 				"aria-label",
-				`Future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`,
+				`Future price probability field for ${labels[index] || "selected date"}; displayed from the signal-close anchor; executable target is next-open to-following-open`
+					+ (detailModel.priceDomain?.scaleKind === "symmetric-log-return"
+						? "; logarithmic price scale" : ""),
 			);
 			if (probabilityDetailStatus instanceof HTMLElement) {
 				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
@@ -1763,6 +1770,8 @@
 				upperPrice: Math.max(...cells.map((cell) => cell.upperPrice)),
 				rowsAbove: geometry.rowsAbove, rowsBelow: geometry.rowsBelow,
 				columns: geometry.columnCount, gap: geometry.gap,
+				priceScale: detailModel.priceDomain?.scaleKind === "symmetric-log-return"
+					? "log" : "linear",
 			});
 			if (!layout) return false;
 			const detailLayoutKey = renderKey;
@@ -1835,7 +1844,7 @@
 			probabilityDetailYAxis.replaceChildren();
 			for (let tickIndex = 0; tickIndex < 5; tickIndex += 1) {
 				const tick = document.createElement("span");
-				const price = layout.maxPrice - (layout.maxPrice - layout.minPrice) * tickIndex / 4;
+				const price = layout.yToPrice(detailGridViewportHeight * tickIndex / 4);
 				tick.className = "backtest-probability-detail-y-tick";
 				tick.dataset.backtestProbabilityDetailYTick = "";
 				tick.dataset.price = String(price);

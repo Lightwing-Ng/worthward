@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.33.0 */
+/* Shared Backtest probability-grid contracts. Code version: v0.34.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,8 +10,10 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 require(path.join(root, 'app/web/static/assets/js/backtest/distributions.js'));
 require(path.join(root, 'app/web/static/assets/js/backtest/probability-grid.js'));
+require(path.join(root, 'app/web/static/assets/js/backtest/detail-chart.js'));
 const distributions = globalThis.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS;
 const grid = globalThis.WORTHWARD_BACKTEST_PROBABILITY_GRID;
+const detailChart = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
 
 const rawDates = ['2026-08-25', '2026-08-26', '2026-08-27'];
 const presentation = {
@@ -100,6 +102,29 @@ test('accepts the versioned Bayesian and LSTM presentation schemas', () => {
     assert.equal(grid.normalizePresentation({...presentation, schema: 'other/v1'}, rawDates, rawDates.length), null);
     assert.equal(grid.normalizePresentation({...presentation, predictive_scale: [0.02]}, rawDates, rawDates.length), null);
     assert.equal(grid.normalizePresentation({...presentation, return_autoregression: [0.2]}, rawDates, rawDates.length), null);
+});
+
+test('normalizes a direct horizon count before the controller chooses its renderer path', () => {
+    const horizonMean = [
+        [0.001, ...Array(19).fill(0.002)],
+        Array(20).fill(null),
+        [-0.002, ...Array(19).fill(-0.001)],
+    ];
+    const horizonStd = [
+        [0.02, ...Array(19).fill(0.03)],
+        Array(20).fill(null),
+        [0.03, ...Array(19).fill(0.04)],
+    ];
+    const normalized = grid.normalizePresentation({
+        ...presentation,
+        distribution_kind: 'direct-normal-horizon',
+        max_horizon: '20',
+        horizon_predictive_mean: horizonMean,
+        horizon_predictive_std: horizonStd,
+    }, rawDates);
+    assert.ok(normalized);
+    assert.equal(normalized.max_horizon, 20);
+    assert.equal(Number.isInteger(normalized.max_horizon), true);
 });
 
 test('preserves bounded strategy-owned symmetric geometry while fixing the 20-column horizon', () => {
@@ -681,6 +706,136 @@ test('detail price domains allocate all twenty rows independently of the overvie
     assert.equal(cells.at(-1).upperPrice, 82);
     assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
     assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+});
+
+test('direct detail domains allocate equal log-return rows around the exact anchor boundary', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 200,
+        anchorY: 90,
+        stepPixels: 2,
+        limitRowsToChartArea: false,
+    });
+    const anchorPrice = 100;
+    const cells = grid.buildProbabilityCells({
+        geometry,
+        distribution: distributions.directGaussian,
+        anchorPrice,
+        mean: 0,
+        scale: 0.05,
+        horizonMean: Array(20).fill(0),
+        horizonStd: Array(20).fill(0.05),
+        maxHorizon: 20,
+        horizonStep: 1,
+        stepPixels: 2,
+        priceDomain: {
+            lowerPrice: anchorPrice * Math.exp(-0.2),
+            upperPrice: anchorPrice * Math.exp(0.2),
+            scaleKind: 'symmetric-log-return',
+        },
+        valueForPixel: () => {
+            throw new Error('log detail bins must not read the overview Y scale');
+        },
+        cellDisplayThresholdPct: 0,
+    });
+    assert.equal(cells.length, 20 * 20);
+    const firstColumn = cells.filter((cell) => cell.column === 0);
+    assert.ok(firstColumn.every((cell) => cell.lowerPrice > 0));
+    assert.ok(firstColumn.every((cell) => (
+        Math.abs(Math.log(cell.upperPrice / cell.lowerPrice) - 0.02) < 1e-12
+    )));
+    assert.equal(firstColumn.find((cell) => cell.row === 9).lowerPrice, anchorPrice);
+    assert.equal(firstColumn.find((cell) => cell.row === 10).upperPrice, anchorPrice);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+    for (let horizon = 1; horizon <= 20; horizon += 1) {
+        const mass = cells.filter((cell) => cell.horizon === horizon)
+            .reduce((sum, cell) => sum + cell.probability, 0);
+        assert.ok(mass > 0.9999 && mass < 1);
+    }
+    assert.deepEqual(grid.buildProbabilityCells({
+        geometry,
+        anchorPrice: 0,
+        mean: 0,
+        scale: 0.05,
+        stepPixels: 2,
+        priceDomain: {
+            lowerPrice: 80,
+            upperPrice: 120,
+            scaleKind: 'symmetric-log-return',
+        },
+    }), []);
+});
+
+test('log detail row colors stay balanced when exp round-trips the anchor boundary', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 200,
+        anchorY: 90,
+        stepPixels: 2,
+        limitRowsToChartArea: false,
+    });
+    const anchorPrice = 171.323;
+    const halfSpan = 0.03837835509330034;
+    const cells = grid.buildProbabilityCells({
+        geometry,
+        distribution: distributions.directGaussian,
+        anchorPrice,
+        mean: 0,
+        scale: 0.01,
+        horizonMean: Array(20).fill(0),
+        horizonStd: Array(20).fill(0.01),
+        maxHorizon: 20,
+        horizonStep: 1,
+        stepPixels: 2,
+        priceDomain: {
+            lowerPrice: anchorPrice * Math.exp(-halfSpan),
+            upperPrice: anchorPrice * Math.exp(halfSpan),
+            scaleKind: 'symmetric-log-return',
+        },
+        cellDisplayThresholdPct: 0,
+    });
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+});
+
+test('a two-percent threshold keeps a wide lognormal forecast visibly two-dimensional', () => {
+    const geometry = grid.computeGridGeometry({
+        chartArea: {left: 0, right: 600, top: 0, bottom: 180},
+        anchorX: 200,
+        anchorY: 90,
+        stepPixels: 2,
+        limitRowsToChartArea: false,
+    });
+    const anchorPrice = 100;
+    const horizonMean = Array(20).fill(0.05);
+    const horizonStd = Array(20).fill(0.24);
+    const priceDomain = detailChart.computeDirectForecastPriceDomain({
+        anchorPrice,
+        horizonMean,
+        horizonStd,
+    });
+    const cells = grid.buildProbabilityCells({
+        geometry,
+        distribution: distributions.directGaussian,
+        anchorPrice,
+        mean: horizonMean[0],
+        scale: horizonStd[0],
+        horizonMean,
+        horizonStd,
+        maxHorizon: 20,
+        horizonStep: 1,
+        stepPixels: 2,
+        priceDomain,
+        cellDisplayThresholdPct: 2,
+    });
+    const visibleRows = new Set(
+        cells.filter((cell) => cell.isVisible).map((cell) => cell.row),
+    );
+    assert.equal(cells.length, 20 * 20);
+    assert.ok(visibleRows.size >= 12);
+    assert.ok(visibleRows.has(9));
+    assert.ok(visibleRows.has(10));
 });
 
 test('threshold-relative contrast keeps the same endpoints and nonlinear palette', () => {

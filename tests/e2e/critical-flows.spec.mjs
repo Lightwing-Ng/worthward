@@ -1,4 +1,4 @@
-/* Code version: v1.213.4 */
+/* Code version: v1.213.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -21120,11 +21120,17 @@ test('renders, pans, pins, and clears the Bayesian Backtest probability field', 
     }), {timeout: 10_000}).toBe(true);
     await priceCanvas.evaluate((element) => element.scrollIntoView({block: 'center', inline: 'nearest'}));
     await waitForChartGeometry();
-    const narrowAnchor = await pointAt(0.55);
-    if (!narrowAnchor) throw new Error('Narrow Bayesian hover anchor is unavailable.');
-    await page.mouse.move(narrowAnchor.x, narrowAnchor.y);
-    await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    await waitForPanTarget();
+    await expect.poll(async () => {
+        const anchor = await pointAt(0.55);
+        if (!anchor) return false;
+        return page.evaluate(({x, y}) => (
+            document.elementFromPoint(x, y) === document.querySelector('#tradePriceChart')
+        ), anchor);
+    }, {
+        message: 'Narrow Bayesian curve anchor must clear the sidebar layout transition',
+        timeout: 10_000,
+    }).toBe(true);
+    await moveToVisiblePriceCurve(0.55, 'Narrow Bayesian hover');
 
     const narrowLayout = await page.evaluate(() => {
         const results = document.querySelector('.backtest-results-stack');

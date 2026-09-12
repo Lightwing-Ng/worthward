@@ -1,7 +1,7 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.7.0
+Code version: v0.7.1
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import atexit
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import ssl
 import subprocess
@@ -32,6 +33,10 @@ _TLS_ERROR_MARKERS = (
     "curl (60)",
     "ssl certificate problem",
 )
+_NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
+_NETWORK_SECRET_QUERY_PATTERN = re.compile(
+    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
+)
 _SESSION_LOCK = RLock()
 _YFINANCE_SESSION: curl_requests.Session | None = None
 _YFINANCE_ENTERPRISE_CA_PATH: Path | None = None
@@ -44,6 +49,26 @@ _MACOS_SYSTEM_CA_PEM: Path | None = None
 
 class YahooTLSConfigurationError(ValueError):
     """Raised when the configured Yahoo enterprise CA cannot be used safely."""
+
+
+def sanitize_network_diagnostic(
+        value: object,
+        *,
+        max_length: int | None = None,
+) -> str:
+    """Collapse and redact a diagnostic without changing its error semantics."""
+    diagnostic = " ".join(str(value or "").split())
+    diagnostic = _NETWORK_URL_USERINFO_PATTERN.sub(
+        r"\1REDACTED@",
+        diagnostic,
+    )
+    diagnostic = _NETWORK_SECRET_QUERY_PATTERN.sub(
+        r"\1REDACTED",
+        diagnostic,
+    )
+    if max_length is not None:
+        return diagnostic[:max(0, int(max_length))]
+    return diagnostic
 
 
 def detect_macos_system_ca_pem() -> Path | None:

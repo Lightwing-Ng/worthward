@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.17.0
+Code version: v0.17.1
 """
 
 from pathlib import Path
@@ -742,7 +742,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.33.0",
+        "-backtest-probability-grid-v0.34.2",
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
         "-backtest-layout-v0.6.0",
     ):

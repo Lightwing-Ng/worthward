@@ -1,25 +1,27 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.10.0
+Code version: v0.11.0
+- Changed: Keep the package facade dependency-light until create_app() is called.
 """
 
-import secrets
+from __future__ import annotations
 
-from flask import Flask, Response
+from typing import TYPE_CHECKING
 
-from app.core.broker_catalog import (
-    INVESTMENT_IMPORT_BROKER_CODES,
-    LIVE_TRADING_BROKER_CODES,
-    SETTINGS_BROKER_CODES,
-    sorted_broker_entries,
-)
 from app.core.upload_limits import (
     INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES as INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES,
     MAX_INVESTMENT_IMPORT_REQUEST_BYTES,
 )
-from app.web.routes_entry import register_routes
-from app.web.request_security import get_or_create_investment_csrf_token
+
+if TYPE_CHECKING:
+    from flask import Flask
+
+__all__ = (
+    "INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES",
+    "MAX_INVESTMENT_IMPORT_REQUEST_BYTES",
+    "create_app",
+)
 
 
 # This global Flask request cap permits one artifact-sized multipart request
@@ -28,6 +30,19 @@ from app.web.request_security import get_or_create_investment_csrf_token
 
 
 def create_app() -> Flask:
+    import secrets
+
+    from flask import Flask, Response
+
+    from app.core.broker_catalog import (
+        INVESTMENT_IMPORT_BROKER_CODES,
+        LIVE_TRADING_BROKER_CODES,
+        SETTINGS_BROKER_CODES,
+        sorted_broker_entries,
+    )
+    from app.web.request_security import get_or_create_investment_csrf_token
+    from app.web.routes_entry import register_routes
+
     app = Flask(
         __name__,
         template_folder="web/templates",

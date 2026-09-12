@@ -1,8 +1,21 @@
 # Testing guide
 
-Documentation version: `v1.71.2`
+Documentation version: `v1.72.0`
 
 ## Current workflow
+
+Reuse-boundary coverage is executable rather than review-only.
+`tests/test_architecture_boundaries.py` rejects outward imports from inner
+application layers, eager outer-layer loading during a core import, route-module
+dependencies outside Flask and `WebRuntime`, and drift among runtime fields,
+builder arguments, and route consumers. `tests/test_market_identity.py` protects
+the canonical aliases, every supported market family's representative timezone,
+and distinct Istanbul and Buenos Aires regular-session windows. The compute-job,
+storage-row, Longbridge config, network-diagnostic, and broker-candlestick suites
+verify their shared pure adapters without touching production stores or making
+broker or market requests. LSTM coverage launches two same-ticker requests
+concurrently and proves that exactly one subprocess reservation crosses the
+shared admission lock.
 
 Price comparison coverage verifies HK and KR Longbridge daily timestamps against each ticker's market-local trading date, exact one-day chip requests against bounded daily OHLCV, the absence of unused circulating-share metadata requests, prepared cumulative hover-prefix equivalence, automatic recovery from a transient per-ticker chip error without discarding successful cached profiles, exclusion of locally covered tickers such as `000660.KS` from unnecessary Longbridge fallback requests, and currency-free mixed-market Y-axis labels with currency-preserving shared tooltips.
 

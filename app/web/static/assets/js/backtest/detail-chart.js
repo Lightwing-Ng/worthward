@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.1 */
 /** Shared square-cell layout with equal historical and forecast time spans. */
 (function bootstrapPriceFieldDetailChart(scope) {
     "use strict";
@@ -18,52 +18,71 @@
         if (!(anchor > 0) || !(radius > 0) || !(padding >= 0) || !(minimumRatio > 0)
             || !Array.isArray(horizonMean) || !Array.isArray(horizonStd)
             || horizonMean.length === 0 || horizonMean.length !== horizonStd.length) return null;
-        const historyPrices = [];
+        const historyReturns = [];
         history.forEach((value) => {
             const price = Number(value);
-            if (Number.isFinite(price) && price > 0) historyPrices.push(price);
+            if (Number.isFinite(price) && price > 0) {
+                historyReturns.push(Math.log(price / anchor));
+            }
         });
-        const forecastPrices = [];
+        const forecastReturns = [];
         for (let index = 0; index < horizonMean.length; index += 1) {
             const mean = Number(horizonMean[index]);
             const standardDeviation = Number(horizonStd[index]);
             if (!Number.isFinite(mean) || !(standardDeviation > 0)) return null;
             const lowerReturn = Math.max(-20, Math.min(20, mean - (radius * standardDeviation)));
             const upperReturn = Math.max(-20, Math.min(20, mean + (radius * standardDeviation)));
-            const lowerPrice = anchor * Math.exp(lowerReturn);
-            const upperPrice = anchor * Math.exp(upperReturn);
-            if (!(lowerPrice > 0) || !Number.isFinite(upperPrice)) return null;
-            forecastPrices.push(lowerPrice, upperPrice);
+            forecastReturns.push(lowerReturn, upperReturn);
         }
         const forecastHalfSpan = Math.max(
-            ...forecastPrices.map((price) => Math.abs(price - anchor)),
+            ...forecastReturns.map((value) => Math.abs(value)),
         );
         const historyHalfSpan = Math.max(
             0,
-            ...historyPrices.map((price) => Math.abs(price - anchor)),
+            ...historyReturns.map((value) => Math.abs(value)),
         );
-        // The observed suffix supplies context but cannot consume the lattice's
-        // forecast resolution after one exceptional historical move.
+        // Gaussian direct heads live in log-return space. Keep the anchor at the
+        // geometric midpoint so an upper lognormal tail cannot manufacture an
+        // equally large, mostly empty linear-price region below the anchor.
         const halfSpan = Math.max(
-            anchor * minimumRatio,
+            Math.log1p(minimumRatio),
             forecastHalfSpan,
             Math.min(historyHalfSpan, forecastHalfSpan * 1.5),
         ) * (1 + padding);
         if (!(halfSpan > 0) || !Number.isFinite(halfSpan)) return null;
+        const lowerPrice = anchor * Math.exp(-halfSpan);
+        const upperPrice = anchor * Math.exp(halfSpan);
+        if (!(lowerPrice > 0) || !Number.isFinite(upperPrice)) return null;
         return Object.freeze({
-            lowerPrice: Math.max(Number.MIN_VALUE, anchor - halfSpan),
-            upperPrice: anchor + halfSpan,
+            lowerPrice,
+            upperPrice,
+            lowerLogReturn: -halfSpan,
+            upperLogReturn: halfSpan,
+            scaleKind: "symmetric-log-return",
             standardDeviationRadius: radius,
         });
     };
     const computeLayout = ({width, height, anchorPrice, lowerPrice, upperPrice,
         rowsAbove, rowsBelow, columns, history = [], horizon = history.length - 1,
-        gap = 2, padding = 2}) => {
+        gap = 2, padding = 2, priceScale = "linear"}) => {
         const rowCount = rowsAbove + rowsBelow;
-        const priceStep = (upperPrice - lowerPrice) / rowCount;
-        if (![width, height, priceStep, columns, horizon].every(Number.isFinite)
-            || !(width > 0 && height > 0 && priceStep > 0 && columns > 0 && horizon > 0)
-            || !Number.isFinite(anchorPrice)) return null;
+        const anchor = Number(anchorPrice);
+        const lower = Number(lowerPrice);
+        const upper = Number(upperPrice);
+        const usesLogPriceScale = priceScale === "log";
+        if (!["linear", "log"].includes(priceScale)
+            || ![width, height, anchor, lower, upper, columns, horizon].every(Number.isFinite)
+            || !(width > 0 && height > 0 && upper > lower && columns > 0 && horizon > 0)) return null;
+        let valueStep = (upper - lower) / rowCount;
+        if (usesLogPriceScale) {
+            if (!(anchor > 0) || !(lower > 0)) return null;
+            const lowerReturn = Math.log(lower / anchor);
+            const upperReturn = Math.log(upper / anchor);
+            const symmetryTolerance = 1e-9 * Math.max(1, Math.abs(lowerReturn), Math.abs(upperReturn));
+            if (Math.abs(lowerReturn + upperReturn) > symmetryTolerance) return null;
+            valueStep = (upperReturn - lowerReturn) / rowCount;
+        }
+        if (!(valueStep > 0) || !Number.isFinite(valueStep)) return null;
         const anchorX = width / 2;
         const anchorY = height / 2;
         const pitch = Math.min((anchorX - padding) / columns,
@@ -71,8 +90,13 @@
         if (!(pitch > 0)) return null;
         const cellGap = Math.min(gap, pitch / 2);
         const cellSize = pitch - cellGap;
-        const scale = pitch / priceStep;
-        const priceToY = (price) => anchorY - (price - anchorPrice) * scale;
+        const scale = pitch / valueStep;
+        const priceToY = usesLogPriceScale
+            ? (price) => anchorY - Math.log(Number(price) / anchor) * scale
+            : (price) => anchorY - (Number(price) - anchor) * scale;
+        const yToPrice = usesLogPriceScale
+            ? (y) => anchor * Math.exp((anchorY - Number(y)) / scale)
+            : (y) => anchor + (anchorY - Number(y)) / scale;
         // Missing early history leaves empty time; it must not stretch the observed suffix.
         const historyX = (index) => anchorX - (history.length - 1 - index) * columns * pitch / horizon;
         return Object.freeze({anchorX, anchorY, cellWidth: cellSize, cellHeight: cellSize,
@@ -83,9 +107,9 @@
             gridHeight: rowCount * pitch - cellGap,
             historyLeft: anchorX - columns * pitch,
             forecastRight: anchorX + columns * pitch,
-            minPrice: anchorPrice - anchorY / scale,
-            maxPrice: anchorPrice + anchorY / scale,
-            priceToY, historyX});
+            minPrice: yToPrice(height),
+            maxPrice: yToPrice(0),
+            priceScale, priceToY, yToPrice, historyX});
     };
     const buildObservedPaths = (prices, layout, anchorPrice, horizon, columns) => {
         const paths = {up: [], down: []};
@@ -101,8 +125,9 @@
             const afterUp = prices[index] >= anchorPrice;
             if (beforeUp === afterUp) segment(beforeUp ? "up" : "down", start, end);
             else {
-                const fraction = (anchorPrice - prices[index - 1]) / (prices[index] - prices[index - 1]);
-                const crossing = {x: start.x + fraction * (end.x - start.x), y: layout.priceToY(anchorPrice)};
+                const anchorY = layout.priceToY(anchorPrice);
+                const fraction = (anchorY - start.y) / (end.y - start.y);
+                const crossing = {x: start.x + fraction * (end.x - start.x), y: anchorY};
                 segment(beforeUp ? "up" : "down", start, crossing);
                 segment(afterUp ? "up" : "down", crossing, end);
             }

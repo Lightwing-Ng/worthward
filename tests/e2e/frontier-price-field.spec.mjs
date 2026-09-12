@@ -1,4 +1,4 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.4.1 */
+/* Additional neural Price Field GUI contracts. Code version: v1.5.1 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -16,7 +16,7 @@ const modernTcnAnnotatedUrl = '/workspaces/backtest?ticker=QQQ&range=2y&strategy
     + '&training_window=64&retrain_interval=20&cell_display_threshold=1';
 const trainingMenu = (page) => page.locator('[data-strategy-action-slot="price-field-training"] [data-lstm-training-menu]');
 
-async function directHoverDetailParity(page, {height = 1404} = {}) {
+async function directHoverDetailSemantics(page, {height = 1404} = {}) {
     await page.setViewportSize({width: 1023, height});
     const canvas = page.locator('#tradePriceChart');
     await canvas.scrollIntoViewIfNeeded();
@@ -55,28 +55,41 @@ async function directHoverDetailParity(page, {height = 1404} = {}) {
         const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
         return new Set([...grid?.children || []].map((cell) => Number(cell.dataset.horizon))).size;
     }), {timeout: 15_000}).toBe(20);
-    return page.evaluate((selectedIndex) => {
+    return page.evaluate(() => {
         const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
         const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
         const detailGrid = document.querySelector('[data-backtest-probability-detail-grid]');
+        const detailPanel = document.querySelector('#backtest_probability_detail_panel');
         const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const selectedIndex = Number(detailPanel?.dataset.activeIndex);
         const hoverCells = [...grid?.querySelectorAll('.backtest-probability-cell') || []];
         const detailCells = [...detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []];
-        const detailByBand = new Map(detailCells.map((cell) => [
-            `${cell.dataset.horizon}|${cell.dataset.lowerPrice}|${cell.dataset.upperPrice}`,
-            {
-                probability: Number(cell.dataset.probability),
-                visible: cell.dataset.thresholdVisible === 'true',
-            },
-        ]));
-        const mismatches = hoverCells.filter((cell) => {
-            const key = `${cell.dataset.horizon}|${cell.dataset.lowerPrice}|${cell.dataset.upperPrice}`;
-            const detailCell = detailByBand.get(key);
-            return !Number.isFinite(detailCell?.probability)
-                || Math.abs(detailCell.probability - Number(cell.dataset.probability)) > 1e-12
-                || detailCell.visible !== (cell.dataset.thresholdVisible === 'true');
-        }).length;
+        const threshold = Number(detailPanel?.dataset.cellDisplayThresholdPct);
+        const anchorPrice = Number(
+            detailPanel?.querySelector('[data-backtest-probability-detail-anchor]')?.dataset.price,
+        );
+        const horizonMean = presentation?.horizon_predictive_mean?.[selectedIndex] || [];
         const horizonStds = presentation?.horizon_predictive_std?.[selectedIndex] || [];
+        const semanticMismatches = (cells) => cells.filter((cell) => {
+            const probability = Number(cell.dataset.probability);
+            const expected = window.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS.directGaussian
+                .probabilityBetweenPrices({
+                    anchorPrice,
+                    lowerPrice: Number(cell.dataset.lowerPrice),
+                    upperPrice: Number(cell.dataset.upperPrice),
+                    horizon: Number(cell.dataset.horizon),
+                    horizonMean,
+                    horizonStd: horizonStds,
+                });
+            return !Number.isFinite(expected)
+                || Math.abs(expected - probability) > 1e-12
+                || (cell.dataset.thresholdVisible === 'true') !== (expected * 100 >= threshold);
+        }).length;
+        const detailMasses = Array.from({length: 20}, (_, index) => detailCells
+            .filter((cell) => Number(cell.dataset.horizon) === index + 1)
+            .reduce((sum, cell) => sum + Number(cell.dataset.probability), 0));
+        const gridRect = detailGrid?.getBoundingClientRect();
+        const cellRect = detailCells[0]?.getBoundingClientRect();
         return {
             daysPerColumn: Number(grid?.dataset.daysPerColumn),
             horizonStep: Number(grid?.dataset.horizonStep),
@@ -88,13 +101,21 @@ async function directHoverDetailParity(page, {height = 1404} = {}) {
             detailHorizons: [...new Set(detailCells.map((cell) => Number(cell.dataset.horizon)))],
             firstHorizonStd: Number(horizonStds[0]),
             lastHorizonStd: Number(horizonStds[19]),
-            mismatches,
-            threshold: Number(
-                document.querySelector('#backtest_probability_detail_panel')
-                    ?.dataset.cellDisplayThresholdPct,
-            ),
+            hoverSemanticMismatches: semanticMismatches(hoverCells),
+            detailSemanticMismatches: semanticMismatches(detailCells),
+            minimumDetailMass: Math.min(...detailMasses),
+            domainKind: detailPanel?.dataset.priceDomain,
+            scaleKind: detailPanel?.dataset.priceScale,
+            lowerPrice: Number(detailPanel?.dataset.priceDomainLower),
+            upperPrice: Number(detailPanel?.dataset.priceDomainUpper),
+            anchorPrice,
+            gridWidth: Number(gridRect?.width),
+            gridHeight: Number(gridRect?.height),
+            cellWidth: Number(cellRect?.width),
+            cellHeight: Number(cellRect?.height),
+            threshold,
         };
-    }, target.index);
+    });
 }
 
 async function visibleConfiguration(page) {
@@ -169,11 +190,12 @@ for (const width of [1024, 390]) {
             await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
+            await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Log-price scale');
             await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
                 (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
             )).toBe(20);
             if (width === 1024) {
-                const parity = await directHoverDetailParity(page, {
+                const parity = await directHoverDetailSemantics(page, {
                     height: architecture === 'moderntcn' ? 1580 : 1404,
                 });
                 expect(parity.daysPerColumn).toBeGreaterThan(1);
@@ -183,7 +205,17 @@ for (const width of [1024, 390]) {
                 expect(parity.hoverHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
                 expect(parity.detailHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
                 expect(parity.firstHorizonStd).toBeLessThan(parity.lastHorizonStd);
-                expect(parity.mismatches).toBe(0);
+                expect(parity.hoverSemanticMismatches).toBe(0);
+                expect(parity.detailSemanticMismatches).toBe(0);
+                expect(parity.minimumDetailMass).toBeGreaterThan(0.99);
+                expect(parity.domainKind).toBe('direct-forecast-log');
+                expect(parity.scaleKind).toBe('symmetric-log-return');
+                expect(Math.abs(
+                    Math.log(parity.lowerPrice / parity.anchorPrice)
+                    + Math.log(parity.upperPrice / parity.anchorPrice),
+                )).toBeLessThan(1e-9);
+                expect(Math.abs(parity.gridWidth - parity.gridHeight)).toBeLessThanOrEqual(1);
+                expect(Math.abs(parity.cellWidth - parity.cellHeight)).toBeLessThanOrEqual(0.25);
                 expect(parity.threshold).toBe(1);
                 if (architecture === 'moderntcn') {
                     await page.screenshot({

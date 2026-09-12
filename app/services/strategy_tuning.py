@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.3.0."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.3.1."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 
 from app.services.dca import simulate_recurring_investment
+from app.services.comparisons import market_trading_dates_for_history
 from app.services.market_data import (
     history_store_path_for_interval,
     select_price_series,
 )
-from app.web.market_history import market_trading_dates_for_history
 from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
 from strategies.interval_bridge import (
     DAILY_CLOSE_TO_NEXT_SESSION_OPEN,
