@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.16.0
+Code version: v0.16.1
 """
 
 from __future__ import annotations
@@ -537,10 +537,20 @@ class ComparePageTests(unittest.TestCase):
 
     def test_price_page_keeps_the_chips_switch_mounted_for_metric_hydration(self) -> None:
         client = create_app().test_client()
-        price_response = client.get("/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1")
-        market_cap_response = client.get(
-            "/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&chips=1"
-        )
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, *args, **kwargs: close_frame_for_ticker(ticker)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.build_market_cap_series_payload", side_effect=lambda ticker, dataset, **kwargs: SeriesPayload(
+                ticker=ticker, dates=["26 Mar 2026", "27 Mar 2026"],
+                raw_dates=["2026-03-26", "2026-03-27"], normalized_returns=[0.0, 1.0],
+                market_caps=[1_000_000.0, 1_010_000.0], market_cap_currency="USD",
+            )),
+        ):
+            price_response = client.get("/workspaces/prices?ticker=AAPL&ticker=NVDA&chips=1")
+            market_cap_response = client.get(
+                "/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&chips=1"
+            )
 
         price_html = price_response.get_data(as_text=True)
         market_cap_html = market_cap_response.get_data(as_text=True)

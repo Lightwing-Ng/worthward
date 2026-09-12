@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.2.1 */
+/* Code version: v1.2.2 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -278,9 +278,12 @@ test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({
         expect(target).toBeTruthy();
         await page.mouse.move(target.x, target.y);
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-        const settledTarget = (await readTargetPoints()).find((point) => point?.date === date);
-        await page.mouse.move(settledTarget.x, settledTarget.y);
-        await expect.poll(() => readSnapshot(page)).toMatchObject({
+        await expect.poll(async () => {
+            const settledTarget = (await readTargetPoints()).find((point) => point?.date === date);
+            await page.mouse.move(settledTarget.x, settledTarget.y);
+            await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+            return readSnapshot(page);
+        }).toMatchObject({
             activeIndex: target.index,
             date: target.date,
         });

@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.11.0
+Code version: v0.12.0
 - Changed: Keep the package facade dependency-light until create_app() is called.
 """
 
@@ -32,7 +32,7 @@ __all__ = (
 def create_app() -> Flask:
     import secrets
 
-    from flask import Flask, Response
+    from flask import Flask, Response, request
 
     from app.core.broker_catalog import (
         INVESTMENT_IMPORT_BROKER_CODES,
@@ -40,7 +40,7 @@ def create_app() -> Flask:
         SETTINGS_BROKER_CODES,
         sorted_broker_entries,
     )
-    from app.web.request_security import get_or_create_investment_csrf_token
+    from app.web.request_security import get_or_create_investment_csrf_token, protect_settings_writes
     from app.web.routes_entry import register_routes
 
     app = Flask(
@@ -61,7 +61,12 @@ def create_app() -> Flask:
         """Apply compatible baseline browser protections to every response."""
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        # Native form POSTs otherwise carry Origin: null in Chromium. Keep
+        # Settings origin proof while still withholding external referrers.
+        response.headers.setdefault(
+            "Referrer-Policy",
+            "same-origin" if request.path.startswith("/settings") else "no-referrer",
+        )
         return response
 
     @app.context_processor
@@ -75,4 +80,5 @@ def create_app() -> Flask:
         }
 
     register_routes(app)
+    app.before_request(protect_settings_writes)
     return app

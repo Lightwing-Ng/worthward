@@ -1,7 +1,7 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.6.0
+Code version: v0.7.0
 - Removed: The retired raw authorization-code login path. Browser OAuth is the
   only application-owned authentication entrypoint.
 """
@@ -67,6 +67,8 @@ def _normalize_longbridge_cli_path(candidate: str | None) -> str | None:
 
 
 def resolve_longbridge_cli_path(settings: BrokerSettings) -> str:
+    if os.environ.get("WORTHWARD_LONGBRIDGE_CLI_ACCESS", "").strip().lower() == "disabled":
+        raise PermissionError("Longbridge CLI access is disabled for this process.")
     explicit_path = settings.longbridge_cli_path.strip()
     if explicit_path:
         normalized_explicit_path = _normalize_longbridge_cli_path(explicit_path)

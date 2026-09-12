@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.6.0
+Code version: v0.6.1
 - Changed: Spawned CPU workers skip application bootstrap when importing this
   entrypoint, preventing Flask and broker prewarm side effects in child
   processes while preserving the normal WSGI and CLI launch paths.
@@ -79,8 +79,8 @@ def _build_run_options(config: dict) -> dict:
     # Note: IBKR remains an offline historical-import source; no local broker process is managed.
     return {
         "debug": debug_enabled,
-        "host": read_compatible_environment("WORTHWARD_HOST", "WORTHWARD_HOST") or config["server"].get("host", DEFAULT_HOST),
-        "port": int(read_compatible_environment("WORTHWARD_PORT", "WORTHWARD_PORT") or config["server"].get("port", DEFAULT_PORT)),
+        "host": read_compatible_environment("WORTHWARD_HOST", "ANTIGRAVITY_HOST") or config["server"].get("host", DEFAULT_HOST),
+        "port": int(read_compatible_environment("WORTHWARD_PORT", "ANTIGRAVITY_PORT") or config["server"].get("port", DEFAULT_PORT)),
         "use_reloader": use_reloader,
     }
 

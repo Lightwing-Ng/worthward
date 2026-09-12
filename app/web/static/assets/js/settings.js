@@ -1,4 +1,4 @@
-/* Code version: v0.24.1 */
+/* Code version: v0.25.0 */
 
 import {getNumericDisplayParts} from './numeric-display.js?v=numeric-display-v1.1.0';
 import {
@@ -3040,7 +3040,10 @@ import {
             // Use fetch to update without hard reload if possible, fallback to form
             fetch('/settings/cash-equivalents/action', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRF-Token': window.WORTHWARD_APP?.security?.investmentCsrfToken || '',
+                },
                 body: new URLSearchParams({ action: 'set', tickers: (tickers || []).join(',') })
             }).then(() => {
                 window.location.reload();

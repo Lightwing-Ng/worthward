@@ -1,6 +1,22 @@
 # Testing guide
 
-Documentation version: `v1.72.0`
+Documentation version: `v1.73.0`
+
+## Audit regression isolation
+
+`tests/conftest.py` installs temporary market, settings, and compute roots before
+application imports, with remote market and Longbridge CLI access disabled.
+Mocked transport unit tests explicitly enable their provider branch. The E2E
+launcher forces loopback binding and `WORTHWARD_LONGBRIDGE_CLI_ACCESS=disabled`;
+the existing test-only PIN does not grant access to the host's real CLI account.
+The daily Yahoo fallback honors remote-disable even after the primary transport
+fails. Browser fixtures must provide enough local data for the intended test.
+
+`tests/test_settings_write_security.py` and `tests/e2e/settings-security.spec.mjs`
+cover rejected Settings requests, native form and language-toggle compatibility,
+and hostile provider text in comparison and Live trading suggestions.
+`tests/test_settings_atomic_persistence.py` covers concurrent threads/processes,
+failed replacement, owner-only file permissions, and corrupt-file preservation.
 
 ## Current workflow
 

@@ -1,4 +1,4 @@
-/* Backtest content-sized strategy-choice parity. Code version: v1.1.0 */
+/* Backtest content-sized strategy-choice parity. Code version: v1.1.1 */
 import {expect, test} from '@playwright/test';
 
 const readChoiceMenuContract = async (page, key) => {
@@ -10,6 +10,9 @@ const readChoiceMenuContract = async (page, key) => {
 
     const dropdown = page.locator(`#strategy_param_${key}_dropdown`);
     await expect(dropdown).toBeVisible();
+    await trigger.evaluate(async (element) => {
+        await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
+    });
     const contract = await page.evaluate((parameterKey) => {
         const parameterField = document.querySelector(`[data-strategy-param-key="${parameterKey}"]`);
         const parameterTrigger = parameterField?.querySelector('[data-shared-select-trigger]');

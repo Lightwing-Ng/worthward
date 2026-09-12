@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.3.2
+Code version: v1.3.3
 """
 
 from __future__ import annotations
@@ -69,8 +69,11 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                 patch("app.web.runtime.start_longbridge_cli_browser_oauth", return_value=(True, "Browser opened.")) as authorize,
             ):
                 client = create_app().test_client()
+                with client.session_transaction() as session:
+                    session["_investment_csrf_token"] = "t" * 43
                 response = client.post(
                     "/settings/broker-access/action",
+                    headers={"Origin": "http://localhost", "X-CSRF-Token": "t" * 43},
                     data={
                         "selected_broker": "longbridge",
                         "action": "authorize",
@@ -130,9 +133,12 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                 ),
             ):
                 client = create_app().test_client()
+                with client.session_transaction() as session:
+                    session["_investment_csrf_token"] = "t" * 43
                 response = client.post(
                     "/settings/broker-access/action",
                     data={"selected_broker": "longbridge", "action": "authorize"},
+                    headers={"Origin": "http://localhost", "X-CSRF-Token": "t" * 43},
                     follow_redirects=True,
                 )
 

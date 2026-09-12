@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for Flask integration tests. Code version: v1.1.1."""
+"""Shared pytest fixtures for Flask integration tests. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -13,11 +13,19 @@ from flask.testing import FlaskClient
 # derived path remains isolated for the complete pytest process.
 _PYTEST_SETTINGS_STORE = TemporaryDirectory(prefix="worthward-pytest-settings-")
 os.environ["WORTHWARD_SETTINGS_STORE_DIR"] = _PYTEST_SETTINGS_STORE.name
+_PYTEST_MARKET_STORE = TemporaryDirectory(prefix="worthward-pytest-market-")
+_PYTEST_COMPUTE_STORE = TemporaryDirectory(prefix="worthward-pytest-compute-")
+os.environ["WORTHWARD_MARKET_STORE_DIR"] = _PYTEST_MARKET_STORE.name
+os.environ["WORTHWARD_COMPUTE_ROOT"] = _PYTEST_COMPUTE_STORE.name
+os.environ["WORTHWARD_REMOTE_MARKET_ACCESS"] = "disabled"
+os.environ["WORTHWARD_LONGBRIDGE_CLI_ACCESS"] = "disabled"
 
 
 def pytest_sessionfinish() -> None:
     """Remove the process-wide isolated settings store after pytest finishes."""
     _PYTEST_SETTINGS_STORE.cleanup()
+    _PYTEST_MARKET_STORE.cleanup()
+    _PYTEST_COMPUTE_STORE.cleanup()
 
 
 @pytest.fixture

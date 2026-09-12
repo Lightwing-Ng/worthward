@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.21.0
+Code version: v0.22.0
 """
 
 from __future__ import annotations
@@ -434,6 +434,19 @@ class MarketDataFreshnessTests(unittest.TestCase):
     def setUp(self) -> None:
         _reset_yfinance_rate_limit_backoff()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "disabled"})
+    def test_remote_disable_blocks_direct_yahoo_fallback(self) -> None:
+        with (
+            patch("app.services.market_data.yf.download") as primary,
+            patch("app.services.market_data.download_yahoo_chart_daily_history") as fallback,
+            patch("app.services.market_data._load_longbridge_market_settings") as broker,
+        ):
+            with self.assertRaisesRegex(YfinanceDownloadError, "Remote market access is disabled"):
+                _download_daily_history_with_fallback("AAPL", period="max")
+        primary.assert_not_called()
+        fallback.assert_not_called()
+        broker.assert_not_called()
+
     def tearDown(self) -> None:
         _reset_yfinance_rate_limit_backoff()
 
@@ -785,6 +798,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         refresh_mock.assert_not_called()
         self.assertEqual(float(result["Dividends"].sum()), 0.0)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_download_full_history_serializes_concurrent_yfinance_requests(self) -> None:
         fake_history = pd.DataFrame(
             {
@@ -827,6 +841,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(max_active_calls, 1)
         self.assertCountEqual(requested_tickers, ["QQQ", "AAPL"])
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_yfinance_empty_download_preserves_sanitized_transport_diagnostic(self) -> None:
         def fake_download(**kwargs) -> pd.DataFrame:
             del kwargs
@@ -846,6 +861,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertNotIn("user:password", message)
         self.assertNotIn("secret-value", message)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_yfinance_fallback_download_receives_shared_verified_session(self) -> None:
         fake_history = market_frame("QQQ").set_index("Date")
         shared_session = object()
@@ -865,6 +881,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertFalse(result.empty)
         self.assertIs(download_mock.call_args.kwargs["session"], shared_session)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_daily_history_uses_direct_yahoo_chart_before_optional_longbridge(self) -> None:
         chart_history = market_frame("DRAM").set_index("Date")
 
@@ -890,6 +907,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         )
         longbridge_mock.assert_not_called()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_daily_history_failure_reports_both_yahoo_transports_without_requiring_longbridge(self) -> None:
         with (
             patch(
@@ -911,6 +929,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertIn("Optional Longbridge fallback is not configured", message)
         self.assertNotIn("Configure Longbridge", message)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_download_daily_history_with_fallback_steps_down_from_max_for_newly_listed_tickers(self) -> None:
         short_history = pd.DataFrame(
             {
@@ -941,6 +960,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         attempted_periods = [call.kwargs["period"] for call in download_mock.call_args_list]
         self.assertEqual(attempted_periods[:2], ["max", "5y"])
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_download_full_history_canonicalizes_share_class_symbol_for_yfinance(self) -> None:
         fake_history = pd.DataFrame(
             {
@@ -1013,6 +1033,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(yfinance_mock.call_count, 2)
         longbridge_mock.assert_called_once_with("AAPL")
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_intraday_history_skips_longbridge_for_unsupported_korean_ticker(self) -> None:
         rate_limit_error = YfinanceDownloadError("Yahoo requests are temporarily paused after a rate limit response.")
 
@@ -1047,6 +1068,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         refresh_settings_mock.assert_not_called()
         refresh_longbridge_mock.assert_not_called()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_refresh_one_minute_store_uses_yfinance_before_configured_longbridge(self) -> None:
         yfinance_history = market_frame("QQQ", intraday=True)
         expected_path = Path("isolated-market-store/QQQ-1m.parquet")
@@ -1068,6 +1090,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         yfinance_mock.assert_called_once_with("QQQ", days=30)
         longbridge_mock.assert_not_called()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_refresh_one_minute_store_uses_one_recent_window_for_existing_cache(self) -> None:
         yfinance_history = market_frame("QQQ", intraday=True)
         expected_path = Path("isolated-market-store/QQQ-1m.parquet")
@@ -1179,6 +1202,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(third_cooldown, 1_200.0)
         self.assertEqual(fourth_cooldown, 1_800.0)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_yfinance_rate_limit_cooldown_blocks_the_transport_before_another_request(self) -> None:
         with (
             patch("app.services.market_data._yfinance_rate_limit_until", 160.0),
@@ -1190,6 +1214,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         download_mock.assert_not_called()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_daily_rate_limit_uses_direct_yahoo_chart_before_longbridge(self) -> None:
         rate_limit_error = YfinanceDownloadError("Too Many Requests. Rate limited.")
         chart_history = market_frame("000660.KS")
@@ -1212,6 +1237,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         chart_mock.assert_called_once_with("000660.KS", start=None, period="max")
         settings_mock.assert_not_called()
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_daily_history_does_not_probe_longbridge_for_unsupported_korean_market(self) -> None:
         with (
             patch(

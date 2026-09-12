@@ -1,6 +1,6 @@
 """Regression coverage for exclusive Playwright runtime ownership."""
 
-# Code version: v1.1.0
+# Code version: v1.2.0
 
 from __future__ import annotations
 
@@ -174,6 +174,8 @@ state = {name: os.environ.get(name) for name in names}
 state["program"] = Path(__file__).name
 state["remote_access"] = os.environ.get("WORTHWARD_REMOTE_MARKET_ACCESS")
 state["port"] = os.environ.get("WORTHWARD_PORT")
+state["host"] = os.environ.get("WORTHWARD_HOST")
+state["cli_access"] = os.environ.get("WORTHWARD_LONGBRIDGE_CLI_ACCESS")
 with Path(os.environ["E2E_TEST_OBSERVED"]).open("a") as stream:
     stream.write(json.dumps(state) + "\\n")
 root = Path(os.environ["WORTHWARD_COMPUTE_ROOT"])
@@ -187,6 +189,8 @@ root.mkdir(parents=True, exist_ok=True)
         "WORTHWARD_PYTHON": sys.executable,
         "WORTHWARD_E2E_LOCK_FILE_OVERRIDE": str(tmp_path / "host.lock"),
         "E2E_TEST_OBSERVED": str(observed),
+        "WORTHWARD_HOST": "0.0.0.0",
+        "WORTHWARD_LONGBRIDGE_CLI_ACCESS": "enabled",
     }
     for name in ("WORTHWARD_E2E_LOCK_TOKEN", "ANTIGRAVITY_E2E_LOCK_TOKEN", "WORTHWARD_COMPUTE_ROOT"):
         environment.pop(name, None)
@@ -211,6 +215,8 @@ root.mkdir(parents=True, exist_ok=True)
         assert record["WORTHWARD_SETTINGS_STORE_DIR"] == str(runtime_root / "settings_store")
         assert record["remote_access"] == "disabled"
         assert record["port"] == "8699"
+        assert record["host"] == "127.0.0.1"
+        assert record["cli_access"] == "disabled"
     assert not runtime_root.exists()
     assert list(protected_root.iterdir()) == [protected_marker]
     assert protected_marker.read_bytes() == b"existing user research must remain unchanged"

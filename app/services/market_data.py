@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.25.1
+Code version: v0.26.0
 
 - Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
@@ -1261,6 +1261,9 @@ def _download_daily_history_with_fallback(
             yfinance_errors.append((candidate_period, exc))
             if _is_yfinance_rate_limit_error(exc):
                 break
+
+    if is_remote_market_access_disabled():
+        raise YfinanceDownloadError("Remote market access is disabled for this process.")
 
     yahoo_chart_errors: list[tuple[str | None, Exception]] = []
     lookup_ticker = yfinance_lookup_symbol(ticker)

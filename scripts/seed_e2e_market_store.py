@@ -1,4 +1,4 @@
-"""Build the isolated deterministic market store used by Playwright. Code version: v1.2.1."""
+"""Build the isolated deterministic market store used by Playwright. Code version: v1.3.1."""
 
 from __future__ import annotations
 
@@ -20,11 +20,17 @@ DAILY_TICKERS = (
     "AMD",
     "DRAM",
     "GOOGL",
+    "JEPQ",
     "META",
+    "MSFT",
     "MU",
     "NVDA",
     "QQQ",
+    "QQQI",
+    "SKHY",
+    "SPY",
     "STX",
+    "TQQQ",
 )
 US_INTRADAY_TICKERS = ("AAPL", "DRAM", "MU", "NVDA", "QQQ", "STX")
 PROFILE_ROWS = (
@@ -34,11 +40,17 @@ PROFILE_ROWS = (
     ("AMD", "Advanced Micro Devices, Inc.", "https://www.amd.com"),
     ("DRAM", "Roundhill Memory ETF", "https://www.roundhillinvestments.com/etf/dram/"),
     ("GOOGL", "Alphabet Inc.", "https://abc.xyz"),
+    ("JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", ""),
     ("META", "Meta Platforms, Inc.", "https://about.meta.com"),
+    ("MSFT", "Microsoft Corporation", "https://www.microsoft.com"),
     ("MU", "Micron Technology, Inc.", "https://www.micron.com"),
     ("NVDA", "NVIDIA Corporation", "https://www.nvidia.com"),
     ("QQQ", "Invesco QQQ Trust", "https://www.invesco.com"),
+    ("QQQI", "NEOS Nasdaq-100 High Income ETF", ""),
+    ("SKHY", "SK hynix ADR", ""),
+    ("SPY", "SPDR S&P 500 ETF Trust", ""),
     ("STX", "Seagate Technology Holdings plc", "https://www.seagate.com"),
+    ("TQQQ", "ProShares UltraPro QQQ", ""),
 )
 
 

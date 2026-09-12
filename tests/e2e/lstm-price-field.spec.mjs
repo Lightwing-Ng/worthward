@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.9 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.10 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -269,7 +269,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.34.2');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.70.0');
+    expect(desktop.appScript).toContain('app-v0.71.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -357,7 +357,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     const enabledOptions = await optionsFactors.locator('[data-strategy-param-switch]').evaluateAll(
         (nodes) => nodes.filter((node) => node.checked).length,
     );
-    await expect(optionsFactors.locator(':scope > summary')).toHaveText(`Options (${enabledOptions})`);
+    await expect(optionsFactors.locator(':scope > summary')).toHaveText(enabledOptions ? `Options (${enabledOptions})` : 'Options');
     await researchFactors.locator(':scope > summary').click();
     await expect(factorsSection.locator('[data-strategy-param-key="use_broker_holding"]')).toBeVisible();
     await trainingSection.locator(':scope > summary').focus();

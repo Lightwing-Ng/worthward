@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.15.0
+ * Code version: v1.16.0
  * - Changed: Intraday stock-price y-axis labels now reuse the shared
  *   three-digit integer and sub-100 two-decimal contract.
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
@@ -1263,7 +1263,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 { key: "remote", title: "Matches" },
             ].filter((group) => items.some((item) => item.source === group.key));
             panel.innerHTML = groups.map((group) => {
-                const entries = items.filter((item) => item.source === group.key);
+                const entries = items.filter((item) => item.source === group.key).map((item) => ({
+                    symbol: escapeHtml(item.symbol),
+                    name: escapeHtml(item.name),
+                    logo_url: escapeHtml(item.logo_url || ""),
+                }));
                 return `
                     <div class="suggestion-group">
                         <div class="suggestion-group-label">${group.title}</div>

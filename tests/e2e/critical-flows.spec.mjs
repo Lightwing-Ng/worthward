@@ -1,10 +1,27 @@
-/* Code version: v1.213.5 */
+/* Code version: v1.214.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 const fixturePath = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+
+const requireChipFallback = async (page) => {
+    // Model a legacy store without OHLCV so fallback/cache tests actually enter
+    // that branch, independently of the complete local market-store fixture.
+    await page.route('**/workspaces/prices?**', async (route) => {
+        const response = await route.fetch();
+        const html = (await response.text()).replace(
+            /(<script[^>]*id="worthward_state"[^>]*>)([\s\S]*?)(<\/script>)/,
+            (_match, start, json, end) => {
+                const state = JSON.parse(json);
+                for (const series of state.chart?.series || []) series.ohlcv = [];
+                return start + JSON.stringify(state).replaceAll('<', '\\u003c') + end;
+            },
+        );
+        await route.fulfill({response, body: html});
+    });
+};
 
 const setSidebarExpanded = async (page, expanded) => {
     const toggle = page.locator('#sidebar_toggle');
@@ -2806,7 +2823,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-progress="1.0000"]')).toHaveCount(4);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-logo-progress="1.0000"]')).toHaveCount(4);
     await expect(page.locator('[data-chips-chart-canvas]')).toHaveCount(0);
-    expect(fallbackRequests).toBe(1);
+    expect(fallbackRequests).toBe(0);
 
     const fullRangePocs = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => Number(canvas.dataset.chipPocPrice))
@@ -3320,10 +3337,11 @@ test('uses range-wide OHLCV chips when Longbridge price buckets are too narrow',
         }))
     ));
     expect(chipShape.every((item) => item.source === 'ohlcv-estimate' && item.populatedBins > 10)).toBe(true);
-    expect(fallbackRequests).toBe(1);
+    expect(fallbackRequests).toBe(0);
 });
 
 test('reuses the cached chip payload when removing an unchanged ticker', async ({page}) => {
+    await requireChipFallback(page);
     let chipRequests = 0;
     const tickers = ['SPY', 'QQQ', 'MU', 'DRAM'];
     const start = Date.UTC(2025, 7, 25);
@@ -3369,6 +3387,7 @@ test('reuses the cached chip payload when removing an unchanged ticker', async (
 });
 
 test('reuses unchanged chip profiles and scopes replacement loading to the new ticker', async ({page}) => {
+    await requireChipFallback(page);
     const initialTickers = ['SPY', 'QQQ', 'MU'];
     const chipRequests = [];
     let releaseReplacementResponse;
@@ -3444,6 +3463,7 @@ test('reuses unchanged chip profiles and scopes replacement loading to the new t
 });
 
 test('reuses and narrows the cached chip payload when shortening Period', async ({page}) => {
+    await requireChipFallback(page);
     let chipRequests = 0;
     const tickers = ['SPY', 'QQQ', 'MU', 'DRAM'];
     const start = Date.UTC(2024, 7, 26);
@@ -3652,6 +3672,7 @@ test('exposes turnover-survival metadata and dense cost ranges in the browser bu
 });
 
 test('keeps the production chip panel on the complete selected-range volume profile', async ({page}) => {
+    await requireChipFallback(page);
     await page.setViewportSize({width: 759, height: 1170});
     let chipRequests = 0;
     const tickers = ['QQQ', 'SPY'];
@@ -3728,6 +3749,7 @@ test('keeps the production chip panel on the complete selected-range volume prof
 });
 
 test('keeps a range-wide chip profile when turnover reaches saturation', async ({page}) => {
+    await requireChipFallback(page);
     let chipRequests = 0;
     const tickers = ['000660.KS', 'SKHY', 'DRAM'];
     const buildOhlcv = (tickerIndex, startDate, rowCount) => Array.from({length: rowCount}, (_, rowIndex) => {
@@ -3749,9 +3771,10 @@ test('keeps a range-wide chip profile when turnover reaches saturation', async (
     await page.route('**/api/compare/chips**', async (route) => {
         chipRequests += 1;
         const requestUrl = new URL(route.request().url());
-        const isThreeMonthRange = requestUrl.searchParams.get('from') === '2026-05-26';
-        const startDate = isThreeMonthRange ? '2026-05-26' : '2026-07-27';
-        const rowCount = isThreeMonthRange ? 65 : 23;
+        const startDate = requestUrl.searchParams.get('from') || '2026-04-14';
+        const endDate = requestUrl.searchParams.get('to') || '2026-07-14';
+        const rowCount = Math.floor((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000) + 1;
+        expect(rowCount).toBeGreaterThan(20);
         await route.fulfill({
             contentType: 'application/json',
             body: JSON.stringify({
@@ -4205,7 +4228,7 @@ test('switches short price ranges and formats price axes by currency precision',
         && item.labels.every((label) => Array.isArray(label) && label.length === 2 && /^\d{2}:\d{2}$/.test(label[0]))
     ))).toBe(true);
 
-    const oneDaySessionDividers = await page.evaluate(() => {
+    const oneDaySessionDividers = await page.evaluate(async () => {
         const originalSeries = window.WORTHWARD_APP.chart.series;
         const minutes = Array.from({length: 960}, (_, index) => {
             const totalMinutes = (4 * 60) + index;
@@ -4222,6 +4245,7 @@ test('switches short price ranges and formats price axes by currency precision',
             }),
         }));
         window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
         const result = canvases.map((canvas, index) => {
             const chart = window.Chart.getChart(canvas);
@@ -4361,7 +4385,7 @@ test('switches short price ranges and formats price axes by currency precision',
     }));
     expect(currencyPrecision).toEqual({krw: 'KRW 2,300,000', jpy: 'JPY 1,040', usd: 'USD 64.00'});
 
-    const tooltipDateLines = await page.evaluate(() => {
+    const tooltipDateLines = await page.evaluate(async () => {
         const host = document.createElement('div');
         host.innerHTML = window.WORTHWARD_BOOTSTRAP.formatPriceSharedTooltipDate(
             '2026-07-10 12:53',
@@ -4378,7 +4402,7 @@ test('switches short price ranges and formats price axes by currency precision',
             {period: '6mo'},
         );
         const originalHref = window.location.href;
-        const renderTooltipForPeriod = (period) => {
+        const renderTooltipForPeriod = async (period) => {
             const params = new URLSearchParams(window.location.search);
             params.set('range', period);
             params.delete('period');
@@ -4391,14 +4415,15 @@ test('switches short price ranges and formats price axes by currency precision',
                 [{index: 0}],
                 chart,
             );
+            await new Promise((resolve) => requestAnimationFrame(resolve));
             const tooltip = document.querySelector('.price-shared-tooltip');
             return {
                 date: tooltip?.querySelector('.chart-tooltip-primary-date')?.textContent || '',
                 time: tooltip?.querySelector('.chart-tooltip-market-time')?.textContent || '',
             };
         };
-        const renderedShortRange = renderTooltipForPeriod('3d');
-        const renderedLongRange = renderTooltipForPeriod('6mo');
+        const renderedShortRange = await renderTooltipForPeriod('3d');
+        const renderedLongRange = await renderTooltipForPeriod('6mo');
         window.history.replaceState({}, '', originalHref);
         window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace();
         return {
@@ -7081,16 +7106,18 @@ test('renders restored Hong Kong bank names and logos from a direct Metrics URL'
 
 test('keeps Investment view, range, broker scope, and pagination in the canonical URL', async ({page}) => {
     const transactions = Array.from({length: 205}, (_, index) => ({
+        ledger_no: index + 2,
         broker: 'hsbc',
         date: '2026-07-10',
         type: 'sell',
         ticker: 'AAPL',
         currency: 'USD',
         quantity: 1,
-        price: 100 + index,
-        amount: 100 + index,
+        price: 100,
+        amount: 100,
     }));
     transactions.push({
+        ledger_no: 2,
         broker: 'ibkr',
         date: '2026-07-10',
         type: 'sell',
@@ -7100,6 +7127,11 @@ test('keeps Investment view, range, broker scope, and pagination in the canonica
         price: 99,
         amount: 99,
     });
+    transactions.unshift(...['hsbc', 'ibkr'].map((broker) => ({
+        ledger_no: 1,
+        broker, date: '2026-07-09', type: 'buy', ticker: 'AAPL', currency: 'USD',
+        quantity: 205, price: 90, amount: -18_450,
+    })));
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc', 'ibkr'],
         transactions,
@@ -7674,7 +7706,7 @@ test('resizes the investment overview and history responsively in portrait layou
 test('keeps investment pagination visible at the lower resize limit', async ({page}) => {
     const transactions = Array.from({length: 105}, (_, index) => {
         const price = 350 + index;
-        const isSell = index % 3 === 0;
+        const isSell = index % 3 === 2;
         return {
             broker: 'ibkr',
             date: '2026-07-10',
@@ -8117,7 +8149,7 @@ test('keeps Local market store pagination aligned with the Investment pagination
     )).toHaveAttribute('aria-current', 'page');
     await expect(page.locator(
         '#local_store_region .local-store-table-wrap tbody .local-store-index-cell',
-    )).toHaveText(['11']);
+    )).toHaveText(['11', '12', '13', '14', '15', '16', '17']);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/settings\/local-market-store$/);
@@ -8135,7 +8167,7 @@ test('keeps Local market store pagination aligned with the Investment pagination
     )).toHaveAttribute('aria-current', 'page');
     await expect(page.locator(
         '#local_store_region .local-store-table-wrap tbody .local-store-index-cell',
-    )).toHaveText(['11']);
+    )).toHaveText(['11', '12', '13', '14', '15', '16', '17']);
 
     await page.mouse.move(0, 0);
     await page.goto('/trade/investment');
@@ -8581,7 +8613,12 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(Math.abs(geometry.chartCardBottom - geometry.metricsBottom)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCardBottom - geometry.donutCardBottom)).toBeLessThanOrEqual(1);
     expect(geometry.metricsOverflowY).toBe('auto');
-    expect(geometry.metricsOverflow).toBeLessThanOrEqual(1);
+    // Metrics own a scrollport; a growing metric list must remain reachable
+    // without enlarging or colliding with the neighboring chart and donut.
+    expect(await page.locator('#stock_panel .investment-stock-details-metrics').evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        return element.scrollHeight - element.clientHeight - element.scrollTop;
+    })).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCenterY - geometry.donutCenterY)).toBeLessThanOrEqual(
         verticalAlignmentTolerance,
     );
@@ -11325,7 +11362,7 @@ test('uses Longbridge extended-hours quotes for the Stock details live position 
     await expect(metricGrid).not.toHaveClass(/is-investment-realtime-pulse/);
 });
 
-test('matches every dark investment transaction header to body text without changing light mode', async ({page}) => {
+test('matches investment transaction headers to the shared field-title color in both themes', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {ledger_no: 1, broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
@@ -11368,7 +11405,15 @@ test('matches every dark investment transaction header to body text without chan
     await page.emulateMedia({colorScheme: 'light'});
     await expect.poll(async () => (await readColors(stockTable)).headers[0].color).not.toBe(darkStockColors.body);
     const lightStockColors = await readColors(stockTable);
-    expect(lightStockColors.headers.every(({color}) => color !== lightStockColors.body)).toBe(true);
+    const fieldTitleColor = await stockTable.evaluate((host) => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--field-title-color)';
+        host.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+    });
+    expect(lightStockColors.headers.every(({color}) => color === fieldTitleColor)).toBe(true);
     expect(lightStockColors.headers.every(({color}) => color !== darkStockColors.body)).toBe(true);
     expect(lightStockColors.filterControls.every((color) => color !== darkStockColors.body)).toBe(true);
 });
@@ -13470,6 +13515,7 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
     await expect(hoverDateLabel).toHaveClass(/is-visible/);
     await expect(hoverDateLabel.locator('[data-investment-hover-date-line="primary"]')).toHaveText('1 Jun');
     await expect(hoverDateLabel.locator('[data-investment-hover-date-line="secondary"]')).toHaveText('2026');
+    const expectedFontFamily = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
     await expect.poll(() => hoverDateLabel.evaluate((element) => {
         const style = getComputedStyle(element);
         const axis = window.Chart?.getChart(document.querySelector('#investmentEquityChart'))
@@ -13489,13 +13535,13 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
             textAlign: style.textAlign,
         };
     })).toMatchObject({
-        axisFontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+        axisFontFamily: expectedFontFamily,
         axisFontSize: '12px',
         axisFontWeight: '400',
         axisLineHeight: '10px',
         backgroundColor: 'rgb(0, 85, 204)',
         color: 'rgb(255, 255, 255)',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+        fontFamily: expectedFontFamily,
         fontSize: '12px',
         fontWeight: '400',
         lineHeight: '10px',
@@ -15859,7 +15905,7 @@ test('shows the standalone primary button specimen alongside the shared Secondar
     expect(state.borderWidth).toBe('1px');
     expect(state.fontWeight).toBe('600');
     expect(state.radius).toBe('999px');
-    expect(state.minHeight).toBe('0px');
+    expect(state.minHeight).toBe('32px');
 
     const closeControls = [
         page.locator('[data-style-token-card="modal-dialog"] .workspace-modal-close'),
@@ -17687,7 +17733,8 @@ test('applies the Scrollable table style to Backtest transaction details', async
     await expect(referenceTableShell).toBeVisible();
     const referenceStyle = await readHostStyle(referenceTableShell);
 
-    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=1&ticker=TQQQ&range=3y&strategy=supertrend-ai');
+    // Monthly DCA guarantees enough local-fixture rows to exercise the scrollport.
+    await page.goto('/workspaces/backtest?show_trade_details=1&stop_loss=0&ticker=TQQQ&range=5y&strategy=dca&month_day=1');
     const backtestTableHost = page.locator('#backtest_history_table_wrap');
     await expect(backtestTableHost).toBeVisible();
     await expect(backtestTableHost).toHaveClass(/scrollable-data-table-shell/);
@@ -18021,12 +18068,7 @@ test('enters DCA through the Backtest strategy dropdown and tunes private parame
     expect(Number(dropdownStyle.zIndex)).toBeGreaterThanOrEqual(10002);
 
     const dcaOption = strategyDropdown.locator('[data-value="dca"]');
-    const dcaOptionBox = await dcaOption.boundingBox();
-    if (!dcaOptionBox) throw new Error('DCA strategy option did not have a clickable bounding box.');
-    await page.mouse.click(
-        dcaOptionBox.x + (dcaOptionBox.width / 2),
-        dcaOptionBox.y + (dcaOptionBox.height / 2),
-    );
+    await dcaOption.click();
     await expect.poll(() => page.locator('#trade_strategy').inputValue()).toBe('dca');
     await expect.poll(() => new URL(page.url()).searchParams.get('strategy')).toBe('dca');
     await expect.poll(() => new URL(page.url()).searchParams.get('ticker')).toBe('TQQQ');
@@ -18734,7 +18776,7 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
 
 test('keeps narrow Backtest tables scrollable and the section-resizer ARIA state accurate', async ({page}) => {
     await page.setViewportSize({width: 1280, height: 720});
-    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=3y&strategy=grid-trading&stop_loss=0');
+    await page.goto('/workspaces/backtest?show_trade_details=1&ticker=TQQQ&range=5y&strategy=dca&stop_loss=0&month_day=1');
     await page.setViewportSize({width: 390, height: 844});
     const visibleNoticeClose = page.locator('[data-dismissible-notice]:not([hidden]) .notice-close').first();
     if (await visibleNoticeClose.isVisible()) {

@@ -1,7 +1,10 @@
-/* Code version: v0.70.0 */
+/* Code version: v0.71.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
+    const escapeSuggestionText = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[character]);
     // A long-running server can still render the pre-migration cached template.
     if (!window.SHARED_SELECT) {
         await import(new URL("select-controller.js?v=select-controller-v1.0.1", document.currentScript.src).href);
@@ -3944,7 +3947,11 @@
                 {key: "remote", title: "Matches"},
             ].filter((group) => items.some((item) => item.source === group.key));
             panel.innerHTML = groups.map((group) => {
-                const entries = items.filter((item) => item.source === group.key);
+                const entries = items.filter((item) => item.source === group.key).map((item) => ({
+                    symbol: escapeSuggestionText(item.symbol),
+                    name: escapeSuggestionText(item.name),
+                    logo_url: escapeSuggestionText(item.logo_url),
+                }));
                 return `
 					<div class="suggestion-group">
 						<div class="suggestion-group-label">${group.title}</div>
@@ -4460,7 +4467,7 @@
             try {
                 const response = await fetch("/api/settings/language/cycle", {
                     method: "POST",
-                    headers: {"Content-Type": "application/json"},
+                    headers: {"Content-Type": "application/json", "X-CSRF-Token": state.security?.investmentCsrfToken || ""},
                     body: JSON.stringify({current: getLanguageState().code || "en"}),
                 });
                 const payload = await response.json().catch(() => null);

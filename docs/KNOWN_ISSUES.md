@@ -1,5 +1,26 @@
 # Known issues and operating constraints
 
+Audit remediation, 12 Sep 2026: Settings POST routes now require a local
+same-origin request and a session-bound CSRF token. Native forms carry the
+token as a hidden field; asynchronous writes use the existing security header
+or submitted form data. Settings documents retain only same-origin referrers
+so Chromium native submissions preserve Origin proof. This remains a trusted-LAN
+application, not a multi-user authenticated administration service.
+
+Settings persistence serializes cooperating threads and processes, atomically
+replaces the JSON document with an owner-only temporary file, and refuses to
+overwrite malformed existing JSON. Existing production directories and credential
+files are not rewritten by an upgrade alone. Browser ticker suggestions escape
+external labels and image attributes before markup insertion.
+
+Pytest configures temporary market, settings, and compute directories before
+application imports. Remote market downloads and real Longbridge CLI invocation
+are disabled by default; transport unit tests explicitly enable their mocked
+provider branch. The Playwright launcher binds only to 127.0.0.1:8699 and disables
+the real CLI, including account reads and browser OAuth launches. Its market
+fixture includes the supported test tickers; disabled remote access also blocks
+the direct Yahoo Chart fallback.
+
 Backtest parameter overlay, 10 Sep 2026: at the registered 900 px sidebar-overlay
 breakpoint and below, the Backtest controls surface is a default-collapsed fixed
 overlay instead of a full-width block above Performance. The result column keeps
@@ -187,7 +208,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.252.0`
+Documentation version: `v1.253.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

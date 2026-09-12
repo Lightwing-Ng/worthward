@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.30.0."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.30.1."""
 
 from __future__ import annotations
 
@@ -819,6 +819,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("option_put_call_volume_ratio", factor_values)
         self.assertIn("option_put_call_open_interest_ratio", factor_values)
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_option_detail_selection_requests_shared_history_without_composite(self) -> None:
         frame = _market_frame(10)
         bundle = _bundle_from_frame(frame, factor_status={
@@ -1644,6 +1645,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 equal_nan=True,
             )
 
+    @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_market_loader_requests_warmup_and_preserves_the_bundle(self) -> None:
         bars = tuple(
             SimpleNamespace(

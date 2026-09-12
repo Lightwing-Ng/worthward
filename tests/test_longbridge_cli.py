@@ -1,11 +1,12 @@
 """Focused safety tests for Longbridge CLI path resolution.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -15,6 +16,25 @@ from app.infrastructure import longbridge_cli
 
 
 class LongbridgeCliPathResolutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # These tests resolve disposable executables without invoking them.
+        access = patch.dict(os.environ, {"WORTHWARD_LONGBRIDGE_CLI_ACCESS": "enabled"})
+        access.start()
+        self.addCleanup(access.stop)
+
+    def test_disabled_cli_rejects_explicit_paths_before_process_creation(self) -> None:
+        with (
+            patch.dict(os.environ, {"WORTHWARD_LONGBRIDGE_CLI_ACCESS": "disabled"}),
+            patch.object(longbridge_cli.subprocess, "run") as run,
+            patch.object(longbridge_cli.subprocess, "Popen") as popen,
+        ):
+            with self.assertRaises(PermissionError):
+                longbridge_cli.run_longbridge_cli(BrokerSettings(longbridge_cli_path="/tmp/longbridge"), ["assets"])
+            success, _ = longbridge_cli.start_longbridge_cli_browser_oauth(BrokerSettings())
+        self.assertFalse(success)
+        run.assert_not_called()
+        popen.assert_not_called()
+
     @staticmethod
     def _write_executable(directory: Path, name: str = "longbridge") -> Path:
         executable = directory / name

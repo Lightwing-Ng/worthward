@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.5.0
+# Code version: v1.6.0
 
 set -euo pipefail
 
@@ -69,6 +69,8 @@ export WORTHWARD_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"
 export WORTHWARD_SETTINGS_STORE_DIR="$RUNTIME_ROOT/settings_store"
 export WORTHWARD_COMPUTE_ROOT="$RUNTIME_ROOT/compute-jobs"
 export WORTHWARD_REMOTE_MARKET_ACCESS="disabled"
+export WORTHWARD_LONGBRIDGE_CLI_ACCESS="disabled"
+export WORTHWARD_HOST="127.0.0.1"
 export WORTHWARD_PORT="8699"
 
 PYTHONPATH="$ROOT_DIR" "$PYTHON_BIN" "$ROOT_DIR/scripts/seed_e2e_market_store.py" "$WORTHWARD_MARKET_STORE_DIR"

@@ -1,7 +1,7 @@
 """
 Browser write-request security helpers.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -12,12 +12,23 @@ import re
 import secrets
 from urllib.parse import urlsplit
 
-from flask import Request, session
+from flask import Request, jsonify, request, session
 
 
 INVESTMENT_CSRF_SESSION_KEY = "_investment_csrf_token"
 INVESTMENT_CSRF_HEADER = "X-CSRF-Token"
 _CSRF_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def protect_settings_writes():
+    """Apply the shared browser-write boundary before any Settings handler runs."""
+    if request.method == "POST" and request.path.startswith(("/settings/", "/api/settings/")):
+        rejection = validate_local_browser_write_request(
+            request, action_label="Settings changes", allow_form_token=True,
+        )
+        if rejection:
+            return jsonify(success=False, error=rejection), 403
+    return None
 
 
 def get_or_create_investment_csrf_token() -> str:
@@ -69,6 +80,7 @@ def validate_local_browser_write_request(
     browser_request: Request,
     *,
     action_label: str = "Local changes",
+    allow_form_token: bool = False,
 ) -> str | None:
     """Return a rejection unless origin and session CSRF proof are valid."""
     origin = _canonical_origin(browser_request.headers.get("Origin", ""))
@@ -84,6 +96,8 @@ def validate_local_browser_write_request(
 
     expected_token = str(session.get(INVESTMENT_CSRF_SESSION_KEY) or "")
     supplied_token = str(browser_request.headers.get(INVESTMENT_CSRF_HEADER) or "")
+    if allow_form_token and not supplied_token:
+        supplied_token = str(browser_request.form.get("csrf_token") or "")
     if (
         not _CSRF_TOKEN_PATTERN.fullmatch(expected_token)
         or not _CSRF_TOKEN_PATTERN.fullmatch(supplied_token)

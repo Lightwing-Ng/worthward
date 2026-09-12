@@ -1,4 +1,4 @@
-/* Code version: v0.2.2 */
+/* Code version: v0.2.3 */
 import {expect, test} from '@playwright/test';
 
 test('accepts SMH as a selectable ETF ticker', async ({page}) => {
@@ -211,7 +211,7 @@ test('retries a transient per-ticker chip error without discarding successful pr
     const buildOhlcv = (tickerIndex) => Array.from({length: 12}, (_, rowIndex) => {
         const close = 100 + (tickerIndex * 50) + rowIndex;
         return {
-            t: `2026-08-${String(rowIndex + 1).padStart(2, '0')} 00:00`,
+            t: `2026-07-${String(rowIndex + 1).padStart(2, '0')} 00:00`,
             o: close - 1,
             h: close + 2,
             l: close - 2,
