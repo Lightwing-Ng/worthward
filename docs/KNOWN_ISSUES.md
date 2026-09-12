@@ -32,6 +32,13 @@ and workspace destinations use the shared 36 px compact-row token. The collapsed
 global toggle uses equal top and left global-anchor distances; desktop retains the
 existing two-column layout.
 
+Backtest header clearance, 12 Sep 2026: the 900 px overlay layout keeps
+Performance below the Backtest title instead of applying the desktop upward
+translation. The title reserves both round controls, whose edges remain 10 px
+apart in either parameter-panel state. The existing compact vertical anchors
+remain aligned. The title-alignment browser regression covers 390, 600, 767,
+768, 897, 900, 901, 1,021, and 1,276 px widths.
+
 Bayesian automatic compute, 8 Sep 2026: Bayesian Price Field no longer exposes
 a compute-backend selector. Every refresh uses an internal `Auto` policy that
 coordinates the bounded local CPU executor with an available Apple MPS or CUDA
@@ -208,7 +215,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.253.0`
+Documentation version: `v1.253.1`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

@@ -1,12 +1,20 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {test, expect} from '@playwright/test';
 
 test('Backtest result title shares the desktop centerline and preserves compact flow', async ({page}) => {
+    test.setTimeout(90_000);
     await page.goto('/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field&show_trade_details=0&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
     const result = page.locator('.backtest-results-stack [data-layout-role="result-heading"]');
     await expect(result).toBeVisible();
-    for (const width of [1276, 1021, 900, 768, 390]) {
+    for (const width of [1276, 1021, 901, 900, 897, 768, 767, 600, 390]) {
         await page.setViewportSize({width, height: 863});
+        if (width <= 900) {
+            const sidebarToggle = page.locator('#sidebar_toggle');
+            if (await sidebarToggle.getAttribute('aria-expanded') === 'true') {
+                await sidebarToggle.click();
+            }
+            await expect(sidebarToggle).toHaveAttribute('aria-expanded', 'false');
+        }
         await expect.poll(async () => page.evaluate(() => {
             const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
             const center = (selector) => {
@@ -21,12 +29,12 @@ test('Backtest result title shares the desktop centerline and preserves compact 
             const surfaceStyle = getComputedStyle(document.querySelector('#backtest_overview_panel > .backtest-surface'));
             const resizer = rect('#backtest_section_resizer');
             return {
-                aligned: innerWidth < 768 || [
+                aligned: innerWidth <= 900 || [
                     center('#sidebar_toggle'),
                     center('[data-layout-role="global-theme-anchor"]'),
                     result.y + result.height / 2,
                 ].every(value => Math.abs(value - top) <= 1),
-                compactFlow: innerWidth >= 768 || (getComputedStyle(main).transform === 'none' && result.y > top),
+                compactFlow: innerWidth > 900 || (getComputedStyle(main).transform === 'none' && result.y > top),
                 chartVisible: stack.height > 0 && stack.width > 0,
                 splitterBelowChart: resizer.y >= stack.bottom - 1,
                 probabilityStackBottomPadding: stackStyle.paddingBottom,
@@ -42,5 +50,23 @@ test('Backtest result title shares the desktop centerline and preserves compact 
             overviewInlinePadding: ['6px', '6px'],
             noHorizontalOverflow: true,
         });
+        if (width <= 900) {
+            const toggle = page.locator('#backtest_parameter_toggle');
+            for (const expanded of [true, false]) {
+                await toggle.click();
+                await expect(toggle).toHaveAttribute('aria-expanded', String(expanded));
+                await expect.poll(() => page.evaluate(() => {
+                    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+                    const global = rect('#sidebar_toggle');
+                    const parameter = rect('#backtest_parameter_toggle');
+                    const title = rect('[data-layout-role="title-heading"] .report-heading');
+                    return {
+                        gap: Math.round(parameter.left - global.right),
+                        aligned: Math.abs(parameter.top - global.top) <= 1,
+                        titleClear: title.left >= parameter.right + 9,
+                    };
+                })).toEqual({gap: 10, aligned: true, titleClear: true});
+            }
+        }
     }
 });

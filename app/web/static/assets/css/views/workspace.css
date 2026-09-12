@@ -1,4 +1,4 @@
-/* Code version: v1.27.0 */
+/* Code version: v1.27.1 */
 /* Keep modal dismiss actions in a dedicated macOS-style upper-left rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -328,6 +328,10 @@
 
 @media (max-width: 900px) {
     .backtest-workspace-shell {
+        --workspace-title-rail-collapsed-pad-inline-start: calc(
+            var(--settings-round-icon-button-size) * 2
+            + var(--layout-edge-gap) * 3
+        );
         --backtest-parameter-overlay-content-start: calc(
             var(--global-quick-actions-top)
             - var(--sidebar-overlay-inset-top)
@@ -340,11 +344,15 @@
         width: 100%;
     }
 
+    .workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card {
+        padding-left: var(--workspace-title-rail-collapsed-pad-inline-start);
+    }
+
     .backtest-parameter-toggle {
         position: fixed;
         top: var(--global-quick-actions-top);
         left: calc(
-            var(--sidebar-overlay-inset-left)
+            var(--layout-global-anchor-left)
             + var(--settings-round-icon-button-size)
             + var(--layout-edge-gap)
         );
@@ -381,11 +389,6 @@
     .backtest-workspace-shell > .workspace-mode-layout {
         grid-template-columns: minmax(0, 1fr);
         gap: 0;
-    }
-
-    .backtest-workspace-shell > .workspace-mode-layout > .workspace-mode-main {
-        height: 100%;
-        transform: none;
     }
 
     .backtest-workspace-shell > .workspace-mode-layout > [data-backtest-parameter-panel] {
@@ -435,6 +438,11 @@
 @media (max-width: 600px) {
     .backtest-parameter-toggle {
         top: var(--sidebar-overlay-inset-top);
+        left: calc(
+            var(--sidebar-overlay-inset-left)
+            + var(--settings-round-icon-button-size)
+            + var(--layout-edge-gap)
+        );
     }
 }
 
@@ -2804,6 +2812,13 @@ body.is-price-subplot-reordering {
     .workspace-mode-shell > .workspace-mode-layout > .workspace-mode-main {
         height: calc(100% + var(--workspace-mode-result-heading-lift));
         transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));
+    }
+}
+
+@media (max-width: 900px) {
+    .backtest-workspace-shell > .workspace-mode-layout > .workspace-mode-main {
+        height: 100%;
+        transform: none;
     }
 }
 
