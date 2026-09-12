@@ -6,7 +6,7 @@ yfinance==1.5.1
 urllib3==2.7.0
 longbridge==4.0.5
 openpyxl==3.1.5
-curl_cffi~=0.15.0
+curl_cffi~=0.16.3
 certifi>=2024.8.30
 numpy~=2.3.5
 # Bayesian and LSTM Apple Silicon/CUDA acceleration. The application still
