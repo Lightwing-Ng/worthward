@@ -1,4 +1,4 @@
-/* Code version: v0.24.0 */
+/* Code version: v0.24.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -964,7 +964,7 @@ input[type="number"],
 [data-shared-select-overlay] {
 	position: fixed;
 	inset: 0;
-	z-index: var(--layer-global-popover);
+	z-index: var(--layer-modal-dialog);
 	pointer-events: none;
 }
 [data-shared-select-overlay] > .backtest-shared-select-dropdown {

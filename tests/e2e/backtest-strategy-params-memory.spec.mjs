@@ -1,5 +1,6 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.13.1 */
 import {expect, test} from '@playwright/test';
+import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
 
@@ -58,6 +59,43 @@ test('collapses common Backtest parameters after a strategy switch only when eve
     await expect(commonParameters).toHaveAttribute('open', '');
     await chooseStrategy('macd');
     await expect(commonParameters).toHaveAttribute('open', '');
+});
+
+test.describe('iPad Backtest strategy interaction', () => {
+    test.use({
+        viewport: {width: 900, height: 1079},
+        hasTouch: true,
+        isMobile: true,
+    });
+
+    test('switches Strategy through the open parameter drawer at the 900px breakpoint', async ({page}) => {
+        await page.goto('/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
+            + '&cell_display_threshold=2.50&training_window=30&chip_window=41&prior_strength=1.51'
+            + '&use_illiquidity_20d=1&use_close_location=0&use_intraday_return=0&use_volume=1'
+            + '&use_volume_change=0&use_option_call_volume=1&use_options=1'
+            + '&use_option_put_call_open_interest_ratio=1&use_option_put_call_volume_ratio=1');
+        await expect(page.locator('#tradePriceChart')).toBeVisible();
+        await expect(await openBacktestParameterOverlay(page)).toBe(true);
+
+        const trigger = page.locator('[data-trade-strategy-trigger]');
+        const dropdown = page.locator('#trade_strategy_dropdown');
+        await trigger.click();
+        await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        await expect(dropdown).toBeVisible();
+
+        const option = dropdown.locator('[data-value="macd"]');
+        await expect.poll(() => option.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+            ));
+        })).toBe(true);
+        await option.click();
+
+        await expect(page).toHaveURL(/strategy=macd/, {timeout: 30_000});
+        await expect(page.locator('#trade_strategy')).toHaveValue('macd');
+    });
 });
 
 test('Backtest parameters become a non-consuming overlay at iPad widths', async ({page}) => {

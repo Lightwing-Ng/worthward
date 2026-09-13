@@ -1,4 +1,4 @@
-/* Code version: v3.75.0 */
+/* Code version: v3.75.4 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -440,7 +440,7 @@
     --workspace-article-pad-block-start: 2px;
     --workspace-article-pad-inline: 0px;
     --workspace-article-pad-block-end: 2px;
-    --backtest-result-surface-pad-inline: 6px;
+    --backtest-result-surface-pad-inline: 12px;
     --backtest-share-action-inset-block-start: 6px;
 }
 
@@ -586,6 +586,7 @@
 #backtest_overview_panel > .backtest-surface {
     flex: 1 1 auto;
     width: 100%;
+    box-sizing: border-box;
     padding-inline: var(--backtest-result-surface-pad-inline);
     padding-top: 0;
     padding-bottom: 0 !important;
@@ -920,25 +921,44 @@
 }
 
 .backtest-history-table {
-    --scrollable-data-table-min-width: 900px;
+    --scrollable-data-table-min-width: 100%;
     --backtest-col-no-width: 5%;
-    --backtest-col-date-time-width: 15%;
-    --backtest-col-ticker-width: 10%;
-    --backtest-col-side-width: 10%;
-    --backtest-col-price-width: 10%;
-    --backtest-col-quantity-width: 10%;
+    --backtest-col-date-time-width: 12%;
+    --backtest-col-ticker-width: 8%;
+    --backtest-col-side-width: 6%;
+    --backtest-col-price-width: 8%;
+    --backtest-col-quantity-width: 8%;
+    --backtest-col-realized-pnl-width: 12%;
+    --backtest-col-unrealized-pnl-width: 12%;
+    --backtest-col-cash-width: 10%;
+    --backtest-col-market-value-width: 15%;
+    --backtest-col-equity-width: 12%;
+    table-layout: fixed;
+}
+
+.backtest-history-table-shell--multi-asset .backtest-history-table {
+    --backtest-col-side-width: 5%;
     --backtest-col-realized-pnl-width: 10%;
     --backtest-col-unrealized-pnl-width: 10%;
-    --backtest-col-cash-width: 10%;
-    --backtest-col-market-value-width: 10%;
-    --backtest-col-equity-width: 10%;
-    table-layout: fixed;
+    --backtest-col-market-value-width: 12%;
 }
 
 .backtest-history-table-shell > .backtest-history-table[data-table-header],
 .backtest-history-table-shell > .investment-history-table-scroll > .backtest-history-table {
-    width: max(100%, 900px);
-    min-width: 900px !important;
+    width: 100%;
+    min-width: 100% !important;
+}
+
+@container (max-width: 600px) {
+    .backtest-history-table {
+        --scrollable-data-table-min-width: 720px;
+    }
+
+    .backtest-history-table-shell > .backtest-history-table[data-table-header],
+    .backtest-history-table-shell > .investment-history-table-scroll > .backtest-history-table {
+        width: max(100%, 720px);
+        min-width: 720px !important;
+    }
 }
 
 .backtest-history-table-shell .backtest-history-table thead th {
@@ -953,6 +973,13 @@
     white-space: nowrap !important;
     overflow-wrap: normal !important;
     word-break: normal !important;
+}
+
+.backtest-history-table .trade-transactions-index,
+.backtest-history-table .trade-transactions-date,
+.backtest-history-table .trade-transactions-side,
+.backtest-history-table .trade-transactions-number {
+    width: auto;
 }
 
 .trade-performance-card > .export-transactions-button,

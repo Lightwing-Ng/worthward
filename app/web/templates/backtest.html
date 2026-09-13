@@ -1,4 +1,4 @@
-{# Code version: v0.10.0 #}
+{# Code version: v0.10.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -150,7 +150,7 @@
                         <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"{% if not show_trade_details %} hidden{% endif %}>
                         {% if backtest_result or dca_result %}
                     <div id="backtest_history_table_wrap"
-                         class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}">
+                         class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell{% if backtest_result and backtest_result.multi_asset %} backtest-history-table-shell--multi-asset{% endif %}{% if selected_strategy_id == 'dca' %} trade-transactions-shell dca-transactions-shell{% endif %}">
                     {% if selected_strategy_id == 'dca' %}
                         {% include "_dca_backtest_table.html" %}
                     {% else %}

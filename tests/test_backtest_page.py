@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.21.0
+Code version: v0.21.1
 """
 
 from __future__ import annotations
@@ -491,6 +491,7 @@ class BacktestPageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("backtest-history-table-shell--multi-asset", html)
         for label in [
             "No.",
             "Date time",
@@ -853,6 +854,7 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('name="rotation_window"', html)
         self.assertIn('data-strategy-allocation-range', html)
         self.assertIn('data-markdown-export-label="Ticker">Ticker</th>', html)
+        self.assertIn("backtest-history-table-shell--multi-asset", html)
         self.assertIn('"multi_asset": true', html)
 
     def test_leveraged_rotation_strategy_fields_api_exposes_ticker_contract(self) -> None:

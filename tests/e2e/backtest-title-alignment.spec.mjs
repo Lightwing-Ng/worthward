@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {test, expect} from '@playwright/test';
 
 test('Backtest title shares the global control centerline and preserves compact result flow', async ({page}) => {
@@ -23,6 +23,8 @@ test('Backtest title shares the global control centerline and preserves compact 
             };
             const top = center('[data-layout-role="title-heading"]');
             const result = rect('.backtest-results-stack [data-layout-role="result-heading"]');
+            const resultText = rect('.backtest-results-stack [data-layout-role="result-heading"] .report-heading');
+            const chartHeading = rect('.backtest-surface > .chart-heading-row > .chart-heading');
             const main = document.querySelector('.backtest-workspace-main');
             const stack = rect('.trade-chart-stack');
             const stackStyle = getComputedStyle(document.querySelector('.trade-chart-stack'));
@@ -36,6 +38,7 @@ test('Backtest title shares the global control centerline and preserves compact 
                 desktopResultAligned: innerWidth <= 900
                     || Math.abs(result.y + result.height / 2 - top) <= 1,
                 compactFlow: innerWidth > 900 || (getComputedStyle(main).transform === 'none' && result.y > top),
+                secondaryHeadingAligned: Math.abs(chartHeading.left - resultText.left) <= 1,
                 chartVisible: stack.height > 0 && stack.width > 0,
                 splitterBelowChart: resizer.y >= stack.bottom - 1,
                 probabilityStackBottomPadding: stackStyle.paddingBottom,
@@ -46,10 +49,11 @@ test('Backtest title shares the global control centerline and preserves compact 
             aligned: true,
             desktopResultAligned: true,
             compactFlow: true,
+            secondaryHeadingAligned: true,
             chartVisible: true,
             splitterBelowChart: true,
             probabilityStackBottomPadding: '6px',
-            overviewInlinePadding: ['6px', '6px'],
+            overviewInlinePadding: ['12px', '12px'],
             noHorizontalOverflow: true,
         });
         if (width <= 900) {

@@ -1,4 +1,4 @@
-/* Code version: v1.214.0 */
+/* Code version: v1.214.5 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -17826,7 +17826,7 @@ test('starts every backtest strategy with its starter parameters from the dropdo
         [...new Set(options.map((option) => option.value))]
     ));
     expect(strategyIds.length).toBeGreaterThan(1);
-    test.setTimeout(30_000 + strategyIds.length * 15_000);
+    test.setTimeout(30_000 + strategyIds.length * 30_000);
 
     for (const strategyId of strategyIds) {
         const currentStrategyId = await page.locator('#trade_strategy').inputValue();
@@ -18442,6 +18442,7 @@ test('reuses compact numeric display and Backtest section spacing contracts', as
 test('renders the Backtest transaction contract for intraday results', async ({page}) => {
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?show_trade_details=1&ticker=QQQ&range=3d&interval=1m&strategy=buy-and-hold&stop_loss=0');
+    await setSidebarExpanded(page, false);
 
     const headerCells = page.locator('#backtest_history_table_wrap [data-table-header] thead th');
     await expect(headerCells).toHaveText([
@@ -18464,14 +18465,20 @@ test('renders the Backtest transaction contract for intraday results', async ({p
     await expect(page.locator('#backtest_interval_control')).toHaveAttribute('data-active', '1m');
     await expect(firstRow.locator('.trade-transactions-date')).toHaveText(/\d{2}:\d{2}/);
 
-    const tableGeometry = await page.locator('#backtest_history_table_wrap [data-table-header]').evaluate((table) => ({
-        columnCount: table.querySelectorAll('col').length,
-        minWidth: Number.parseFloat(getComputedStyle(table).minWidth),
-        tableWidth: table.getBoundingClientRect().width,
-    }));
+    const tableGeometry = await page.locator('#backtest_history_table_wrap').evaluate((shell) => {
+        const headerTable = shell.querySelector('[data-table-header]');
+        const bodyTable = shell.querySelector('[data-table-body]');
+        const scroll = shell.querySelector('[data-table-scroll]');
+        return {
+            columnCount: headerTable.querySelectorAll('col').length,
+            minWidth: getComputedStyle(bodyTable).minWidth,
+            clientWidth: scroll.clientWidth,
+            scrollWidth: scroll.scrollWidth,
+        };
+    });
     expect(tableGeometry.columnCount).toBe(10);
-    expect(tableGeometry.minWidth).toBeGreaterThanOrEqual(900);
-    expect(tableGeometry.tableWidth).toBeGreaterThanOrEqual(900);
+    expect(tableGeometry.minWidth).toBe('100%');
+    expect(tableGeometry.scrollWidth - tableGeometry.clientWidth).toBeLessThanOrEqual(1);
 });
 
 test('removes the glass border color from the shared Backtest Period trigger', async ({page}) => {

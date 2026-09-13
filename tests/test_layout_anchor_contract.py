@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.17.2
+Code version: v0.17.6
 """
 
 from pathlib import Path
@@ -243,6 +243,7 @@ def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
     for fragment in (
         "--workspace-article-pad-block-start: 2px;",
         "--workspace-article-pad-block-end: 2px;",
+        "--backtest-result-surface-pad-inline: 12px;",
     ):
         assert fragment in result_card_rule
 
@@ -276,7 +277,83 @@ def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
         in trade_css
     )
 
-    assert "--backtest-result-surface-pad-inline: 6px;" in result_card_rule
+    assert "--backtest-result-surface-pad-inline: 12px;" in result_card_rule
+    overview_surface_start = trade_css.index(
+        "#backtest_overview_panel > .backtest-surface {"
+    )
+    overview_surface_rule = trade_css[
+        overview_surface_start : trade_css.index("\n}", overview_surface_start)
+    ]
+    assert "box-sizing: border-box;" in overview_surface_rule
+
+
+def test_shared_select_overlay_sits_above_modal_drawers() -> None:
+    forms_css = _read(ASSET_ROOT / "css/components/forms.css")
+    overlay_start = forms_css.index("[data-shared-select-overlay] {")
+    overlay_rule = forms_css[overlay_start : forms_css.index("\n}", overlay_start)]
+
+    assert "z-index: var(--layer-modal-dialog);" in overlay_rule
+
+
+def test_backtest_transaction_columns_fill_each_responsive_table_width() -> None:
+    trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+    backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
+    single_widths = {
+        "no": 5,
+        "date-time": 12,
+        "side": 6,
+        "price": 8,
+        "quantity": 8,
+        "realized-pnl": 12,
+        "unrealized-pnl": 12,
+        "cash": 10,
+        "market-value": 15,
+        "equity": 12,
+    }
+    multi_widths = {
+        "no": 5,
+        "date-time": 12,
+        "ticker": 8,
+        "side": 5,
+        "price": 8,
+        "quantity": 8,
+        "realized-pnl": 10,
+        "unrealized-pnl": 10,
+        "cash": 10,
+        "market-value": 12,
+        "equity": 12,
+    }
+
+    assert sum(single_widths.values()) == 100
+    assert sum(multi_widths.values()) == 100
+    assert all(value % 2 == 0 or value % 5 == 0 for value in single_widths.values())
+    assert all(value % 2 == 0 or value % 5 == 0 for value in multi_widths.values())
+    for name, value in single_widths.items():
+        if name == "ticker":
+            continue
+        assert f"--backtest-col-{name}-width: {value}%;" in trade_css
+
+    multi_start = trade_css.index(
+        ".backtest-history-table-shell--multi-asset .backtest-history-table {"
+    )
+    multi_rule = trade_css[multi_start : trade_css.index("\n}", multi_start)]
+    for name in ("side", "realized-pnl", "unrealized-pnl", "market-value"):
+        assert f"--backtest-col-{name}-width: {multi_widths[name]}%;" in multi_rule
+    assert "--backtest-col-ticker-width: 8%;" in trade_css
+    assert "--scrollable-data-table-min-width: 100%;" in trade_css
+    assert "@container (max-width: 600px)" in trade_css
+    assert "--scrollable-data-table-min-width: 720px;" in trade_css
+    legacy_width_override_start = trade_css.index(
+        ".backtest-history-table .trade-transactions-index,"
+    )
+    legacy_width_override = trade_css[
+        legacy_width_override_start : trade_css.index("\n}", legacy_width_override_start)
+    ]
+    assert ".backtest-history-table .trade-transactions-date," in legacy_width_override
+    assert ".backtest-history-table .trade-transactions-side," in legacy_width_override
+    assert ".backtest-history-table .trade-transactions-number {" in legacy_width_override
+    assert "width: auto;" in legacy_width_override
+    assert "backtest-history-table-shell--multi-asset" in backtest_template
 
 
 def test_backtest_shared_controls_use_the_sampled_geometry_contract() -> None:
