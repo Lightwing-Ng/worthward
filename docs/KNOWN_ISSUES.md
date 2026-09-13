@@ -1,5 +1,16 @@
 # Known issues and operating constraints
 
+Price Field rendering audit, 13 Sep 2026: direct-horizon neural models now use
+the central 95% Gaussian envelope for their finite detail viewport. The former
+99% viewport spent multiple rows on tail mass that an ordinary 2% cell display
+threshold could never show, so otherwise square PatchTST, TSMixer, N-HiTS,
+TimeXer, iTransformer, TiDE, ModernTCN, and TFT lattices appeared as horizontal
+bands. The shared nonlinear color scale remains normalized within each selected
+field: its winner is fully opaque, values continuously approach transparency at
+the selected display threshold, and below-threshold cells remain hidden. The
+display-domain repair does not alter forecasts, signals, probability diagnostics,
+or scoring.
+
 Audit remediation, 12 Sep 2026: Settings POST routes now require a local
 same-origin request and a session-bound CSRF token. Native forms carry the
 token as a hidden field; asynchronous writes use the existing security header
@@ -36,8 +47,11 @@ Backtest header clearance, 12 Sep 2026: the 900 px overlay layout keeps
 Performance below the Backtest title instead of applying the desktop upward
 translation. The title reserves both round controls, whose edges remain 10 px
 apart in either parameter-panel state. The existing compact vertical anchors
-remain aligned. The title-alignment browser regression covers 390, 600, 767,
-768, 897, 900, 901, 1,021, and 1,276 px widths.
+remain aligned. A 13 Sep 2026 follow-up removed the narrow title card's inherited
+60 px safe-top offset: the primary title now shares the vertical centerline of
+the sidebar, Backtest-parameter, and theme controls while Performance remains in
+compact flow below it. The title-alignment browser regression covers 390, 600,
+687, 767, 768, 897, 900, 901, 1,021, and 1,276 px widths.
 
 Bayesian automatic compute, 8 Sep 2026: Bayesian Price Field no longer exposes
 a compute-backend selector. Every refresh uses an internal `Auto` policy that

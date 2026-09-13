@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -15,14 +15,14 @@ test('direct forecasts receive a local symmetric log-return domain instead of th
     });
     assert.ok(domain);
     assert.ok(domain.lowerPrice < 448);
-    assert.ok(domain.upperPrice > 469 * Math.exp(0.03 + (2.576 * 0.0156)));
+    assert.ok(domain.upperPrice > 469 * Math.exp(0.03 + (1.959963984540054 * 0.0156)));
     assert.ok(Math.abs(
         Math.log(domain.lowerPrice / 469) + Math.log(domain.upperPrice / 469),
     ) < 1e-12);
     assert.ok((domain.upperPrice - domain.lowerPrice) / 20 < 10);
     assert.equal(domain.scaleKind, 'symmetric-log-return');
     assert.equal(domain.lowerLogReturn, -domain.upperLogReturn);
-    assert.equal(domain.standardDeviationRadius, 2.576);
+    assert.equal(domain.standardDeviationRadius, 1.959963984540054);
 });
 
 test('direct forecast domain rejects incomplete distributions and keeps a nondegenerate floor', () => {
@@ -46,7 +46,7 @@ test('an exceptional history point cannot collapse direct forecasts into a thin 
         horizonMean: [0],
         horizonStd: [0.02],
     });
-    const forecastHalfSpan = 2.576 * 0.02;
+    const forecastHalfSpan = 1.959963984540054 * 0.02;
     assert.ok(domain.upperLogReturn <= forecastHalfSpan * 1.5 * 1.06 + 1e-12);
     assert.ok(domain.upperLogReturn >= forecastHalfSpan * 1.06 - 1e-12);
 });
@@ -57,8 +57,8 @@ test('lognormal upper tails cannot create an empty near-zero lower half', () => 
         horizonMean: [0.05],
         horizonStd: [0.24],
     });
-    assert.ok(domain.lowerPrice > 45);
-    assert.ok(domain.upperPrice > 195);
+    assert.ok(domain.lowerPrice > 55);
+    assert.ok(domain.upperPrice > 170);
     assert.ok(Math.abs(domain.lowerPrice * domain.upperPrice - 10_000) < 1e-9);
 });
 

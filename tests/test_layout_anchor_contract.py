@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.17.1
+Code version: v0.17.2
 """
 
 from pathlib import Path
@@ -1188,7 +1188,7 @@ def test_production_templates_publish_the_shared_layout_role_registry() -> None:
     assert 'data-layout-role="content-scrollport"' in _read(TEMPLATE_ROOT / "settings.html")
 
 
-def test_backtest_result_rail_reuses_shared_desktop_title_alignment() -> None:
+def test_backtest_title_rails_reuse_shared_control_alignment() -> None:
     template = _read(TEMPLATE_ROOT / "backtest.html")
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
 
@@ -1197,6 +1197,21 @@ def test_backtest_result_rail_reuses_shared_desktop_title_alignment() -> None:
     assert ".workspace-mode-main.backtest-workspace-main {" not in workspace
     assert "height: calc(100% + var(--workspace-mode-result-heading-lift));" in workspace
     assert "transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));" in workspace
+    assert (
+        ".workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card {\n"
+        "        min-height: var(--workspace-title-rail-height);\n"
+        "        padding-top: var(--workspace-title-rail-pad-block-start);\n"
+        "        padding-bottom: 0;\n"
+        "        padding-left: var(--workspace-title-rail-collapsed-pad-inline-start);\n"
+        "        display: flex;\n"
+        "        align-items: flex-start;"
+    ) in workspace
+    assert (
+        ".backtest-workspace-shell > .workspace-mode-title-card > .report-heading-row {\n"
+        "        width: 100%;\n"
+        "        min-height: var(--workspace-title-rail-control-height);\n"
+        "        margin-bottom: 0;"
+    ) in workspace
 
 
 def test_backtest_parameters_use_the_registered_sidebar_overlay_breakpoint() -> None:

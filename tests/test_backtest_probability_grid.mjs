@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.34.2 */
+/* Shared Backtest probability-grid contracts. Code version: v0.34.3 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -799,7 +799,7 @@ test('log detail row colors stay balanced when exp round-trips the anchor bounda
     assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
 });
 
-test('a two-percent threshold keeps a wide lognormal forecast visibly two-dimensional', () => {
+test('a two-percent threshold keeps a direct-horizon PatchTST field visibly two-dimensional', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
         anchorX: 200,
@@ -807,9 +807,21 @@ test('a two-percent threshold keeps a wide lognormal forecast visibly two-dimens
         stepPixels: 2,
         limitRowsToChartArea: false,
     });
-    const anchorPrice = 100;
-    const horizonMean = Array(20).fill(0.05);
-    const horizonStd = Array(20).fill(0.24);
+    const anchorPrice = 621.275;
+    // Regression shape from the reported PatchTST origin, rounded only beyond
+    // the precision needed to preserve its direct-horizon concentration.
+    const horizonMean = [
+        0.0004434, 0.0029288, 0.0050051, 0.0068468, 0.0032466,
+        0.0049398, 0.0071950, 0.0104181, 0.0103788, 0.0114287,
+        0.0117094, 0.0150202, 0.0147357, 0.0194189, 0.0193461,
+        0.0162075, 0.0178507, 0.0251694, 0.0227408, 0.0245592,
+    ];
+    const horizonStd = [
+        0.0177252, 0.0220713, 0.0235906, 0.0249406, 0.0297079,
+        0.0305532, 0.0273500, 0.0323544, 0.0322621, 0.0323234,
+        0.0319313, 0.0305870, 0.0326471, 0.0337426, 0.0344403,
+        0.0418560, 0.0381501, 0.0395153, 0.0430957, 0.0435053,
+    ];
     const priceDomain = detailChart.computeDirectForecastPriceDomain({
         anchorPrice,
         horizonMean,
@@ -833,7 +845,27 @@ test('a two-percent threshold keeps a wide lognormal forecast visibly two-dimens
         cells.filter((cell) => cell.isVisible).map((cell) => cell.row),
     );
     assert.equal(cells.length, 20 * 20);
-    assert.ok(visibleRows.size >= 12);
+    const visibleCells = cells.filter((cell) => cell.isVisible);
+    const visibleByColumn = Array.from({length: 20}, (_, column) => (
+        visibleCells.filter((cell) => cell.column === column).length
+    ));
+    assert.ok(visibleRows.size >= 14);
+    assert.ok(visibleCells.length >= 215);
+    assert.ok(Math.min(...visibleByColumn) >= 7);
+    assert.equal(Math.max(...visibleCells.map((cell) => cell.opacity)), 1);
+    assert.ok(Math.min(...visibleCells.map((cell) => cell.opacity)) < 0.01);
+    const orderedVisibleCells = [...visibleCells].sort((left, right) => (
+        left.probability - right.probability
+    ));
+    for (let index = 1; index < orderedVisibleCells.length; index += 1) {
+        const previous = orderedVisibleCells[index - 1];
+        const current = orderedVisibleCells[index];
+        if (current.probability > previous.probability) {
+            assert.ok(current.opacity > previous.opacity);
+        } else {
+            assert.equal(current.opacity, previous.opacity);
+        }
+    }
     assert.ok(visibleRows.has(9));
     assert.ok(visibleRows.has(10));
 });
@@ -846,6 +878,15 @@ test('threshold-relative contrast keeps the same endpoints and nonlinear palette
     }
     assert.equal(first[0].opacity, 0);
     assert.equal(first[2].opacity, 1);
+    const nearThreshold = grid.computeInstantOpacityProfile(
+        [0.02, 0.0201, 0.021, 0.025, 0.03, 0.04, 0.1],
+        {displayFloor: 0.02},
+    );
+    for (let index = 1; index < nearThreshold.length; index += 1) {
+        assert.ok(nearThreshold[index].opacity > nearThreshold[index - 1].opacity);
+    }
+    assert.ok(nearThreshold[1].opacity < 0.001);
+    assert.equal(nearThreshold.at(-1).opacity, 1);
     assert.deepEqual(grid.computeInstantOpacityProfile([0.1, 0.1], {displayFloor: 0.1}).map((cell) => cell.opacity), [1, 1]);
     assert.deepEqual(grid.computeInstantOpacityProfile([0, NaN], {displayFloor: 0}).map((cell) => cell.opacity), [0, 0]);
     assert.deepEqual(grid.computeInstantOpacityProfile([0.1, 0.2], {displayFloor: 0.5}).map((cell) => cell.opacity), [0, 0]);

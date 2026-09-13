@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 /** Shared square-cell layout with equal historical and forecast time spans. */
 (function bootstrapPriceFieldDetailChart(scope) {
     "use strict";
@@ -7,7 +7,7 @@
         history = [],
         horizonMean = [],
         horizonStd = [],
-        standardDeviationRadius = 2.576,
+        standardDeviationRadius = 1.959963984540054,
         paddingRatio = 0.06,
         minimumHalfSpanRatio = 0.005,
     } = {}) => {
@@ -42,8 +42,9 @@
             ...historyReturns.map((value) => Math.abs(value)),
         );
         // Gaussian direct heads live in log-return space. Keep the anchor at the
-        // geometric midpoint so an upper lognormal tail cannot manufacture an
-        // equally large, mostly empty linear-price region below the anchor.
+        // geometric midpoint and reserve the finite 20-row lattice for the
+        // conventional central 95% interval. More extreme tails remain in the
+        // model and scoring contracts instead of consuming empty display rows.
         const halfSpan = Math.max(
             Math.log1p(minimumRatio),
             forecastHalfSpan,
