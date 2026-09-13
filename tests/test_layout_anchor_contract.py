@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.17.6
+Code version: v0.17.7
 """
 
 from pathlib import Path
@@ -152,11 +152,21 @@ def test_portfolio_result_owns_date_and_share_action() -> None:
     assert '<p class="portfolio-summary-range workspace-result-date-range">{{ display_range }}</p>' in portfolio
     assert "placement='summary-panel'" in portfolio
 
+    result_stack_start = workspace.index(
+        ".portfolio-workspace .workspace-mode-main > .workspace-header {"
+    )
+    result_stack_rule = workspace[
+        result_stack_start : workspace.index("\n}", result_stack_start)
+    ]
     for fragment in (
-        ".portfolio-workspace .workspace-mode-main > .workspace-header {",
-        "width: min(100%, var(--layout-content-width));",
-        "max-width: var(--layout-content-width);",
-        "    .portfolio-workspace .workspace-mode-main > .workspace-header {\n        width: 100%;\n        max-width: none;\n    }",
+        "width: 100%;",
+        "max-width: none;",
+        "align-self: stretch;",
+    ):
+        assert fragment in result_stack_rule
+    assert "var(--layout-content-width)" not in result_stack_rule
+
+    for fragment in (
         ".portfolio-summary-content-card {\n    overflow: visible;\n}",
         "#portfolio_summary_region > .investment-share-actions[data-share-placement=\"summary-panel\"] {",
         "right: var(--layout-edge-gap);",

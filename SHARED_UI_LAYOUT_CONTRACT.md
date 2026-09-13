@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.7.0`
+Documentation version: `v1.8.0`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -86,7 +86,8 @@ Each project publishes `--layout-content-width: 640px`,
 `--layout-edge-gap: var(--page-edge-pad)`, and
 `--layout-physical-effect-bleed: 48px`. Feature aliases must reference these tokens.
 The effective width of an owned element is `min(parent inline size, W)` or
-`min(parent inline size, C)`, never a new intermediate pixel constant.
+`min(parent inline size, C)`, never a new intermediate pixel constant, unless a
+documented product-specific result surface owns the full parent inline size.
 
 ### Sidebar shell tokens
 
@@ -215,7 +216,9 @@ attributes or temporary preview markers.
 
 ## Product-specific invariants
 
-- Portfolio's visible primary title is the single-line `Portfolio`. The date belongs
+- Portfolio's visible primary title is the single-line `Portfolio`. Its result stack,
+  summary card, and return-chart surface use the full available parent inline size at
+  desktop and responsive widths rather than the `W` content maximum. The date belongs
   inside the result container, and the share action belongs in that container's upper
   right corner, aligned to the global action centerline without collision.
 - Three-column comparison surfaces partition controls, result title, and result body

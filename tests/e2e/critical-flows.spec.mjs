@@ -1,4 +1,4 @@
-/* Code version: v1.214.5 */
+/* Code version: v1.214.7 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -1381,9 +1381,64 @@ test('keeps shared shell anchors on the ten-pixel spatial grid across desktop an
     }
 });
 
-test('keeps Portfolio summary metadata inside the desktop card and fills narrow result width', async ({page}) => {
-    await page.setViewportSize({width: 1_352, height: 1_050});
-    await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
+test('keeps Portfolio metadata inside a full-width responsive result stack', async ({page}) => {
+    await page.addInitScript(() => {
+        window.sessionStorage.setItem('worthward:sidebar-open', 'false');
+    });
+    const url = '/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y';
+    const readWideGeometry = () => page.evaluate(() => {
+        const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading').getBoundingClientRect();
+        const main = document.querySelector('.workspace-mode-main').getBoundingClientRect();
+        const resultStack = document.querySelector('.workspace-mode-main > .workspace-header').getBoundingClientRect();
+        const summaryTitle = document.querySelector('.workspace-mode-main > .workspace-header > .workspace-summary-card').getBoundingClientRect();
+        const resultCard = document.querySelector('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card').getBoundingClientRect();
+        const chartSurface = document.querySelector('.workspace-mode-main > .workspace-header > .chart-surface').getBoundingClientRect();
+        const summaryMain = document.querySelector('.portfolio-summary-main');
+        const shareButton = document.querySelector('#export_transactions_button').getBoundingClientRect();
+        const shareResultCard = document.querySelector('#export_transactions_button').closest('.portfolio-summary-content-card');
+        const theme = document.querySelector('#global_theme_toggle').getBoundingClientRect();
+        const toggle = document.querySelector('#sidebar_toggle').getBoundingClientRect();
+        const center = (rect, axis) => rect[axis] + (rect[axis === 'left' ? 'width' : 'height'] / 2);
+        return {
+            modeCenterDelta: Math.abs(center(modeTitle, 'top') - center(toggle, 'top')),
+            mainWidth: main.width,
+            resultStackWidth: resultStack.width,
+            summaryWidth: summaryTitle.width,
+            resultWidth: resultCard.width,
+            chartWidth: chartSurface.width,
+            resultRightDelta: Math.abs(main.right - resultStack.right),
+            chartRightDelta: Math.abs(main.right - chartSurface.right),
+            shareCenterDelta: Math.abs(center(shareButton, 'left') - center(theme, 'left')),
+            rangeInsideResult: Boolean(summaryMain && summaryMain.contains(document.querySelector('.portfolio-summary-range'))),
+            shareInsideResult: shareResultCard === document.querySelector('.portfolio-summary-content-card'),
+            shareTopInset: shareButton.top - resultCard.top,
+            shareRightInset: resultCard.right - shareButton.right,
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+        };
+    });
+
+    for (const width of [1_058, 1_352]) {
+        await page.setViewportSize({width, height: 1_050});
+        if (page.url() === 'about:blank') await page.goto(url);
+        else await page.reload();
+        await expect(page.locator('.portfolio-summary-range')).toBeVisible();
+        const geometry = await readWideGeometry();
+
+        expect(geometry.modeCenterDelta).toBeLessThanOrEqual(1);
+        expect(geometry.mainWidth).toBeGreaterThan(640);
+        expect(geometry.resultStackWidth).toBeCloseTo(geometry.mainWidth, 0);
+        expect(geometry.summaryWidth).toBeCloseTo(geometry.mainWidth, 0);
+        expect(geometry.resultWidth).toBeCloseTo(geometry.mainWidth, 0);
+        expect(geometry.chartWidth).toBeCloseTo(geometry.mainWidth, 0);
+        expect(geometry.resultRightDelta).toBeLessThanOrEqual(1);
+        expect(geometry.chartRightDelta).toBeLessThanOrEqual(1);
+        expect(geometry.shareCenterDelta).toBeLessThanOrEqual(1);
+        expect(geometry.rangeInsideResult).toBe(true);
+        expect(geometry.shareInsideResult).toBe(true);
+        expect(geometry.shareTopInset).toBeGreaterThanOrEqual(-1);
+        expect(geometry.shareRightInset).toBeGreaterThanOrEqual(8);
+        expect(geometry.noHorizontalOverflow).toBe(true);
+    }
 
     const summaryTitle = page.locator('.workspace-mode-main > .workspace-header > .workspace-summary-card .report-heading');
     const resultCard = page.locator('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card');
@@ -1394,38 +1449,6 @@ test('keeps Portfolio summary metadata inside the desktop card and fills narrow 
     await expect(range).not.toHaveText('');
     await expect(resultCard).toContainText('Portfolio ending return');
     await expect(shareButton).toBeVisible();
-
-    const geometry = await page.evaluate(() => {
-        const sidebarTitle = document.querySelector('#app_sidebar .hero h1').getBoundingClientRect();
-        const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading').getBoundingClientRect();
-        const summaryTitle = document.querySelector('.workspace-mode-main > .workspace-header > .workspace-summary-card').getBoundingClientRect();
-        const resultCard = document.querySelector('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card').getBoundingClientRect();
-        const summaryRange = document.querySelector('.portfolio-summary-range').getBoundingClientRect();
-        const summaryMain = document.querySelector('.portfolio-summary-main');
-        const shareButton = document.querySelector('#export_transactions_button').getBoundingClientRect();
-        const shareResultCard = document.querySelector('#export_transactions_button').closest('.portfolio-summary-content-card');
-        const toggle = document.querySelector('#sidebar_toggle').getBoundingClientRect();
-        const centerY = (rect) => rect.top + (rect.height / 2);
-        return {
-            sidebarCenterDelta: Math.abs(centerY(sidebarTitle) - centerY(toggle)),
-            modeCenterDelta: Math.abs(centerY(modeTitle) - centerY(toggle)),
-            summaryWidth: summaryTitle.width,
-            resultWidth: resultCard.width,
-            rangeInsideResult: Boolean(summaryMain && summaryMain.contains(document.querySelector('.portfolio-summary-range'))),
-            shareInsideResult: shareResultCard === document.querySelector('.portfolio-summary-content-card'),
-            shareTopInset: shareButton.top - resultCard.top,
-            shareRightInset: resultCard.right - shareButton.right,
-        };
-    });
-
-    expect(geometry.sidebarCenterDelta).toBeLessThanOrEqual(1);
-    expect(geometry.modeCenterDelta).toBeLessThanOrEqual(1);
-    expect(geometry.summaryWidth).toBeCloseTo(640, 0);
-    expect(geometry.resultWidth).toBeCloseTo(640, 0);
-    expect(geometry.rangeInsideResult).toBe(true);
-    expect(geometry.shareInsideResult).toBe(true);
-    expect(geometry.shareTopInset).toBeGreaterThanOrEqual(-1);
-    expect(geometry.shareRightInset).toBeGreaterThanOrEqual(8);
 
     await page.setViewportSize({width: 727, height: 1_178});
     await page.reload();
@@ -12165,6 +12188,14 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     await expect(page.locator('#stock_panel')).toBeVisible();
     const stockDetailsRange = page.locator('#stock_panel .investment-stock-details-range-segmented');
     await expect(stockDetailsRange).toHaveClass(/is-pill-ready/);
+    const overflowWidth = await stockDetailsRange.evaluate((control) => {
+        const naturalWidth = Math.max(control.scrollWidth, control.getBoundingClientRect().width);
+        return Math.max(1, Math.floor(naturalWidth / 2));
+    });
+    await page.addStyleTag({
+        content: `#stock_panel .investment-stock-details-range-shell { width: ${overflowWidth}px !important; }`,
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
     await expect(stockDetailsRange).toHaveAttribute('data-segmented-overflow', '1');
     const segmentedMotherStyle = (selector) => page.locator(selector).evaluate((element) => {
         const computed = getComputedStyle(element);
