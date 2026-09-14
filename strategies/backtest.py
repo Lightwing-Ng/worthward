@@ -1,17 +1,175 @@
 """
 Long-only backtest engines.
 
-Code version: v0.16.0
+Code version: v0.18.1
 """
 
 from __future__ import annotations
 
-from math import floor, isfinite
+from math import floor, fsum, isclose, isfinite
 from typing import Any
 
 import pandas as pd
 
 from .base import StrategySignalResult, normalize_strategy_presentation
+
+
+def _distribution_diagnostics(
+        diagnostics: dict[str, object],
+) -> dict[str, object] | None:
+    grid = diagnostics.get("grid")
+    if isinstance(grid, dict):
+        return grid
+    if "crps_skill_score" in diagnostics:
+        return diagnostics
+    return None
+
+
+def _percentage(value: object, *, scale: float = 1.0) -> float | None:
+    if type(value) not in (int, float) or not isfinite(float(value)):
+        return None
+    rounded = round(float(value) * scale, 2)
+    return 0.0 if rounded == 0 else rounded
+
+
+def _crps_skill_percentage(value: object) -> float | None:
+    """Format only finite CRPS skills within their mathematical upper bound."""
+    if (
+            type(value) not in (int, float)
+            or not isfinite(float(value))
+            or float(value) > 1.0
+    ):
+        return None
+    return _percentage(value, scale=100.0)
+
+
+def _has_complete_distribution_skill_evidence(
+        distribution: dict[str, object],
+) -> bool:
+    """Require explicit 20-horizon and complete-pair evidence for the headline."""
+    required_horizons = distribution.get("crps_skill_required_horizon_count")
+    valid_horizons = distribution.get("crps_skill_valid_horizon_count")
+    headline_skill = distribution.get("crps_skill_score")
+    eligible_pairs = distribution.get("eligible_pairs")
+    valid_pairs = distribution.get("valid_pairs")
+    if (
+            type(required_horizons) is not int
+            or type(valid_horizons) is not int
+            or type(distribution.get("horizon_count")) is not int
+            or required_horizons != 20
+            or valid_horizons != required_horizons
+            or distribution.get("horizon_count") != required_horizons
+            or _crps_skill_percentage(headline_skill) is None
+            or distribution.get("crps_skill_aggregation")
+            != "equal-mean-of-all-20-horizon-skills"
+            or type(eligible_pairs) is not int
+            or type(valid_pairs) is not int
+            or eligible_pairs <= 0
+            or valid_pairs != eligible_pairs
+            or distribution.get(
+                "crps_skill_requires_complete_pair_coverage"
+            ) is not True
+            or distribution.get(
+                "crps_skill_has_complete_pair_coverage"
+            ) is not True
+    ):
+        return False
+    horizons = distribution.get("horizons")
+    if not isinstance(horizons, dict):
+        return False
+    measured_pairs = 0
+    measured_skills: list[float] = []
+    for horizon in range(1, required_horizons + 1):
+        item = horizons.get(str(horizon))
+        if not isinstance(item, dict):
+            return False
+        skill = item.get("crps_skill_score")
+        item_eligible = item.get("eligible_pairs")
+        item_valid = item.get("valid_pairs")
+        if (
+                _crps_skill_percentage(skill) is None
+                or type(item_eligible) is not int
+                or type(item_valid) is not int
+                or item_eligible <= 0
+                or item_valid != item_eligible
+        ):
+            return False
+        measured_pairs += item_valid
+        measured_skills.append(float(skill))
+    measured_skill = fsum(measured_skills) / required_horizons
+    return measured_pairs == valid_pairs and isclose(
+        float(headline_skill),
+        measured_skill,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
+
+
+def _attach_distribution_summary(
+        summary: dict[str, object],
+        diagnostics: dict[str, object],
+) -> None:
+    distribution = _distribution_diagnostics(diagnostics)
+    if distribution is None:
+        return
+    summary["probability_field_distribution_skill_pct"] = (
+        _crps_skill_percentage(distribution.get("crps_skill_score"))
+        if _has_complete_distribution_skill_evidence(distribution)
+        else None
+    )
+    summary["probability_field_forecast_coverage_pct"] = _percentage(
+        distribution.get("coverage_pct")
+    )
+    for source_key, destination_key in (
+            ("valid_pairs", "probability_field_valid_pairs"),
+            ("eligible_pairs", "probability_field_eligible_pairs"),
+            (
+                "crps_skill_valid_horizon_count",
+                "probability_field_skill_valid_horizon_count",
+            ),
+            (
+                "crps_skill_required_horizon_count",
+                "probability_field_skill_required_horizon_count",
+            ),
+    ):
+        value = distribution.get(source_key)
+        if type(value) is int:
+            summary[destination_key] = value
+
+    central_intervals = distribution.get("central_intervals")
+    interval_80 = (
+        central_intervals.get("80")
+        if isinstance(central_intervals, dict)
+        else None
+    )
+    if isinstance(interval_80, dict):
+        summary["probability_field_interval_80_coverage_pct"] = _percentage(
+            interval_80.get("coverage_pct")
+        )
+        summary["probability_field_interval_80_mean_price_span_pct"] = _percentage(
+            interval_80.get("mean_price_span_pct")
+        )
+
+    horizons = distribution.get("horizons")
+    if not isinstance(horizons, dict):
+        return
+    horizon_profile: dict[str, dict[str, object]] = {}
+    for horizon_key in ("1", "5", "10", "20"):
+        horizon = horizons.get(horizon_key)
+        if not isinstance(horizon, dict):
+            continue
+        profile_item: dict[str, object] = {
+            "distribution_skill_pct": _crps_skill_percentage(
+                horizon.get("crps_skill_score")
+            ),
+            "forecast_coverage_pct": _percentage(horizon.get("coverage_pct")),
+        }
+        for source_key in ("valid_pairs", "eligible_pairs"):
+            value = horizon.get(source_key)
+            if type(value) is int:
+                profile_item[source_key] = value
+        horizon_profile[horizon_key] = profile_item
+    summary["probability_field_horizon_profile"] = horizon_profile
 
 
 def _attach_strategy_presentation(
@@ -43,6 +201,7 @@ def _attach_strategy_presentation(
         summary = result.get("summary")
         diagnostics = presentation.get("diagnostics")
         if isinstance(summary, dict) and isinstance(diagnostics, dict):
+            _attach_distribution_summary(summary, diagnostics)
             direction_hit_rate = diagnostics.get("direction_hit_rate_pct")
             probability_score = diagnostics.get("probability_score_pct")
             scored_points = diagnostics.get("scored_points")

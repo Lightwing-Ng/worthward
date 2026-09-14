@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.2.0 */
 (() => {
     const create = (context) => {
         const {
@@ -12,6 +12,7 @@
             beginOptimisticPageNavigation,
             bootstrap,
             constraints,
+            getProgressiveManifest,
             getFilledTickers,
             getTickerInputs,
             initializeWorkspaceEnhancements,
@@ -396,27 +397,50 @@
             });
         };
 
-        const applyComparePendingState = () => {
-            bootstrap.applyComparePendingState?.();
+        const clearWorkspacePendingState = (workspacePanel = document.getElementById("workspace_panel")) => {
+            if (!(workspacePanel instanceof HTMLElement)) return;
+            workspacePanel.querySelectorAll(".is-masked-during-switch").forEach((node) => {
+                node.classList.remove("is-masked-during-switch");
+            });
+            delete workspacePanel.dataset.workspacePending;
+            const preserveNavigationBusy = document.body.classList.contains("is-page-navigating")
+                && workspacePanel.dataset.navigationSkeleton === "1";
+            if (!preserveNavigationBusy) {
+                workspacePanel.removeAttribute("aria-busy");
+                document.body.classList.remove("is-workspace-switching");
+            }
         };
 
-        const applyPortfolioPendingState = () => {
+        const applyWorkspacePendingState = () => {
+            if (document.body.classList.contains("is-page-navigating")) return;
             const workspacePanel = document.getElementById("workspace_panel");
-            if (!workspacePanel) return;
-            delete workspacePanel.dataset.workspacePending;
+            if (!(workspacePanel instanceof HTMLElement)) return;
+            workspacePanel.querySelectorAll(".is-masked-during-switch").forEach((node) => {
+                node.classList.remove("is-masked-during-switch");
+            });
+            const manifest = getProgressiveManifest?.(state.currentView) || {masks: []};
+            (manifest.masks || []).forEach((selector) => {
+                workspacePanel.querySelectorAll(selector).forEach((node) => {
+                    node.classList.add("is-masked-during-switch");
+                });
+            });
+            document.body.classList.add("is-workspace-switching");
+            workspacePanel.dataset.workspacePending = "1";
+            workspacePanel.setAttribute("aria-busy", "true");
         };
+
+        const applyComparePendingState = () => applyWorkspacePendingState();
+
+        const applyPortfolioPendingState = () => applyWorkspacePendingState();
 
         const applyBacktestPendingState = () => {
             bootstrap.setBacktestLoadState?.("loading");
-            const workspacePanel = document.getElementById("workspace_panel");
-            if (!workspacePanel) return;
-            const metricNodes = Array.from(workspacePanel.querySelectorAll('[data-workspace-mask="trade-metric"]'));
-            if (!metricNodes.length) return;
-            metricNodes.forEach((node) => {
-                node.classList.add("is-pending-value");
-            });
-            workspacePanel.dataset.workspacePending = "1";
+            applyWorkspacePendingState();
         };
+
+        bootstrap.applyWorkspacePendingState = applyWorkspacePendingState;
+        bootstrap.clearWorkspacePendingState = clearWorkspacePendingState;
+        bootstrap.applyComparePendingState = applyWorkspacePendingState;
 
         const hydrateWorkspaceModeMain = (workspacePanel, nextWorkspacePanel) => {
             const currentMain = workspacePanel.querySelector(".workspace-mode-main");
@@ -505,11 +529,10 @@
                 applyPortfolioPendingState();
                 return;
             }
-    		if (state.currentView === "prices") {
-    			const workspacePanel = document.getElementById("workspace_panel");
-    			if (workspacePanel) workspacePanel.dataset.workspacePending = "1";
-    			return;
-    		}
+            if (state.currentView === "prices") {
+                applyWorkspacePendingState();
+                return;
+            }
             if (state.currentView === "backtest" || state.currentView === "dca") {
                 applyBacktestPendingState();
                 return;
@@ -606,7 +629,14 @@
             activeWorkspaceHydration = null;
         };
 
+        const isWorkspaceHydrationObsolete = (controller, token) => (
+            controller.signal.aborted
+            || token !== workspaceHydrationToken
+            || document.body.classList.contains("is-page-navigating")
+        );
+
         const hydrateWorkspaceFromUrl = async (nextUrl) => {
+            if (document.body.classList.contains("is-page-navigating")) return false;
             if (activeWorkspaceHydration) {
                 reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "aborting previous workspace hydration", {
                     nextUrl,
@@ -638,6 +668,7 @@
                     errorMessage: error?.message || "",
                     aborted: controller.signal.aborted,
                 });
+                if (isWorkspaceHydrationObsolete(controller, token)) return false;
                 throw error;
             }
             reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "workspace hydration response received", {
@@ -646,9 +677,10 @@
                 status: response.status,
                 aborted: controller.signal.aborted,
             });
+            if (isWorkspaceHydrationObsolete(controller, token)) return false;
             if (!response.ok) throw new Error(`Workspace refresh failed: ${response.status}`);
             const html = await response.text();
-            if (controller.signal.aborted || token !== workspaceHydrationToken) return false;
+            if (isWorkspaceHydrationObsolete(controller, token)) return false;
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, "text/html");
             const nextWorkspacePanel = doc.getElementById("workspace_panel");
@@ -684,7 +716,7 @@
             } else {
                 workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
             }
-            delete workspacePanel.dataset.workspacePending;
+            clearWorkspacePendingState(workspacePanel);
             const nextState = mergeKnownTickerProfilesIntoState(parseStateFromHtmlDocument(doc));
             if (nextState) {
                 window.WORTHWARD_APP = nextState;
@@ -848,14 +880,17 @@
             applyComparePendingState,
             applyPendingWorkspaceMarkup,
             applyPortfolioPendingState,
+            applyWorkspacePendingState,
             attachDockMemory,
             attachOptimisticInternalNavigation,
             buildPendingWorkspaceMarkup,
             buildWorkspaceRangeNoticeFingerprint,
             collectKnownTickerProfileMap,
+            clearWorkspacePendingState,
             hydratePriceComparisonWorkspace,
             hydrateWorkspaceFromUrl,
             hydrateWorkspaceModeMain,
+            isWorkspaceHydrationObsolete,
             lastWorkspaceRangeNoticeFingerprint,
             lastWorkspaceRangeNoticeTexts,
             mergeKnownTickerProfilesIntoState,

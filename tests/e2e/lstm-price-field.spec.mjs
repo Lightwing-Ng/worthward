@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.19.12 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.20.6 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -269,7 +269,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.34.2');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.72.1');
+    expect(desktop.appScript).toContain('app-v0.72.5');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -893,6 +893,44 @@ test('the two supplied DRAM audit URLs render model-specific fields on the share
             columns: 20,
             showTradeDetails: false,
         });
+        const skill = page.locator('[data-backtest-metric="probability-field-distribution-skill"]');
+        const evidence = page.locator('[data-backtest-metric="probability-field-forecast-evidence"]');
+        const metrics = page.locator('#backtest_metrics_panel');
+        await expect(metrics).toHaveAttribute('role', 'region');
+        await expect(metrics).toHaveAttribute('tabindex', '0');
+        await expect(skill.locator('.trade-metric-label')).toHaveText('CRPS skill vs baseline');
+        await expect(skill).toHaveAttribute(
+            'data-probability-field-metric',
+            'standardized-1-20d-crps-skill-vs-causal-baseline',
+        );
+        await expect(skill.locator('.trade-metric-detail > span')).toHaveCount(4);
+        await expect(evidence.locator('.trade-metric-label')).toHaveText('1–20d forecast coverage');
+        await expect(evidence).toHaveAttribute(
+            'data-probability-field-metric',
+            'standardized-1-20d-coverage-and-calibration',
+        );
+        await expect(evidence.locator('.trade-metric-detail')).toContainText('80% interval coverage');
+        const detailGeometry = await page.locator(
+            '.trade-metric-card--diagnostic .trade-metric-detail',
+        ).evaluateAll((details) => details.map((detail) => {
+            const detailRect = detail.getBoundingClientRect();
+            const cardRect = detail.closest('.trade-metric-card')?.getBoundingClientRect();
+            return {
+                clientWidth: detail.clientWidth,
+                horizontalOverflow: detail.scrollWidth - detail.clientWidth,
+                bottomOverflow: detailRect.bottom - Number(cardRect?.bottom || 0),
+                scrollWidth: detail.scrollWidth,
+                text: detail.textContent?.trim() || '',
+            };
+        }));
+        expect(
+            detailGeometry.every(({horizontalOverflow, bottomOverflow}) => (
+                horizontalOverflow <= 1 && bottomOverflow <= 1
+            )),
+            JSON.stringify(detailGeometry),
+        ).toBe(true);
+        await expect(page.locator('[data-backtest-metric="probability-field-probability-score"]')).toHaveCount(0);
+        await expect(page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]')).toHaveCount(0);
     }
 });
 

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 (() => {
     const create = (context) => {
         const {
@@ -232,7 +232,10 @@
                     && getFilledTickers().length > PRICE_COMPARISON_MAX_TICKERS
                 );
                 if (!form || requiresPriceLimitReload) {
-                    window.requestAnimationFrame(() => window.location.assign(nextUrl));
+                    window.requestAnimationFrame(() => {
+                        if (document.body.classList.contains("is-page-navigating")) return;
+                        window.location.assign(nextUrl);
+                    });
                     return;
                 }
                 form.requestSubmit();

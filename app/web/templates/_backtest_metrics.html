@@ -1,4 +1,4 @@
-{# Code version: v0.5.1 #}
+{# Code version: v0.6.3 #}
 {% if selected_strategy_id == 'dca' %}
 {% include "_dca_backtest_metrics.html" %}
 {% else %}
@@ -6,8 +6,10 @@
 {% set direct_probability_field = field_presentation.distribution_kind|default('') == 'direct-normal-horizon' %}
 {% set metric_strategy = (strategy_options|default([])|selectattr('id', 'equalto', selected_strategy_id)|first)|default({}) %}
 {% set probability_metric_name = (metric_strategy.name|default('Neural Price Field')|replace(' Price Field', '')) if direct_probability_field else ('LSTM' if selected_strategy_id == 'lstm-price-field' else 'Bayesian') %}
+{% set has_distribution_evidence = backtest_result.summary.probability_field_distribution_skill_pct is defined %}
+{% set horizon_profile = backtest_result.summary.probability_field_horizon_profile|default({}) %}
 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid"
-     id="backtest_metrics_panel">
+     id="backtest_metrics_panel" role="region" aria-label="Backtest metrics" tabindex="0">
     <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span
             class="trade-metric-value"
             data-workspace-mask="trade-metric">{{ "{:,.2f}".format(backtest_result.summary.initial_capital) }}</span>
@@ -28,7 +30,7 @@
             class="trade-metric-value"
             data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.win_rate_pct is none else "%.2f"|format(backtest_result.summary.win_rate_pct) ~ "%" }}</span>
     </div>
-    {% if backtest_result.summary.probability_field_direction_hit_rate_pct is defined %}
+    {% if backtest_result.summary.probability_field_direction_hit_rate_pct is defined and not has_distribution_evidence %}
     <div class="trade-metric-card" data-backtest-metric="probability-field-direction-hit-rate"
          data-probability-field-metric="{{ 'next-close-direction-hit-rate' if direct_probability_field else 'next-open-direction-hit-rate' }}"
          title="{% if direct_probability_field %}Percentage of causal predictions whose direction matched the signal-close-to-next-close return. Neutral 50% predictions and unchanged prices are excluded. This observed direction hit rate is separate from the complete-grid probability score.{% else %}Percentage of causal predictions whose 50% direction matched the executable next-open-to-following-open return. This is an observed direction hit rate, not a probability-grid cell score.{% endif %}">
@@ -36,7 +38,52 @@
         <span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "N/A" if backtest_result.summary.probability_field_direction_hit_rate_pct is none or (backtest_result.summary.probability_field_direction_scored_points is defined and backtest_result.summary.probability_field_direction_scored_points == 0) else "%.2f"|format(backtest_result.summary.probability_field_direction_hit_rate_pct) ~ "%" }}</span>
     </div>
     {% endif %}
-    {% if backtest_result.summary.probability_field_probability_score_pct is defined %}
+    {% if has_distribution_evidence %}
+    {% set distribution_skill = backtest_result.summary.probability_field_distribution_skill_pct %}
+    {% set skill_required_horizons = backtest_result.summary.probability_field_skill_required_horizon_count|default(20) %}
+    {% set skill_valid_horizons = backtest_result.summary.probability_field_skill_valid_horizon_count|default(skill_required_horizons if distribution_skill is not none else 0) %}
+    <div class="trade-metric-card trade-metric-card--diagnostic"
+         data-backtest-metric="probability-field-distribution-skill"
+         data-probability-field-metric="standardized-1-20d-crps-skill-vs-causal-baseline"
+         role="group" aria-labelledby="probability_field_distribution_skill_label"
+         aria-describedby="probability_field_distribution_skill_description"
+         title="Equal-weighted mean of historical causal walk-forward CRPS skill for the {{ probability_metric_name }} standardized close-anchored price distribution at horizons 1–20 versus a causal zero-drift volatility baseline. The headline is available only when all {{ skill_required_horizons }} horizons and every eligible forecast pair is scored; this result has {{ skill_valid_horizons }} scored horizons. Positive values beat the baseline; zero matches it; negative values trail it. This is not an independent holdout or a win rate.">
+        <span class="trade-metric-label" id="probability_field_distribution_skill_label">CRPS skill vs baseline</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric"
+              {% if distribution_skill is not none %}style="color: {{ 'var(--theme-accent-positive)' if distribution_skill > 0 else ('var(--theme-accent-secondary)' if distribution_skill < 0 else 'var(--text)') }};"{% endif %}>
+            {% if distribution_skill is none %}N/A{% else %}{{ "+" if distribution_skill > 0 else "" }}{{ "%.2f"|format(distribution_skill) }}%{% endif %}
+        </span>
+        <span class="trade-metric-detail">
+            {% for horizon in ('1', '5', '10', '20') %}
+                {% set horizon_item = horizon_profile.get(horizon) %}
+                {% set horizon_skill = horizon_item.distribution_skill_pct if horizon_item else none %}
+                <span>{{ horizon }}d {% if horizon_skill is none %}N/A{% else %}{{ "+" if horizon_skill > 0 else "" }}{{ "%.1f"|format(horizon_skill) }}%{% endif %}</span>
+            {% endfor %}
+        </span>
+        <span class="sr-only" id="probability_field_distribution_skill_description">Historical causal walk-forward CRPS skill for the standardized close-anchored 1–20 day distribution versus a causal zero-drift volatility baseline. The headline requires all {{ skill_required_horizons }} horizons and complete eligible-pair forecast coverage; {{ skill_valid_horizons }} horizons are scored. Positive values beat the baseline. This is not an independent holdout or a win rate.</span>
+    </div>
+    {% set forecast_coverage = backtest_result.summary.probability_field_forecast_coverage_pct %}
+    {% set interval_80_coverage = backtest_result.summary.probability_field_interval_80_coverage_pct|default(none) %}
+    {% set interval_80_span = backtest_result.summary.probability_field_interval_80_mean_price_span_pct|default(none) %}
+    <div class="trade-metric-card trade-metric-card--diagnostic"
+         data-backtest-metric="probability-field-forecast-evidence"
+         data-probability-field-metric="standardized-1-20d-coverage-and-calibration"
+         role="group" aria-labelledby="probability_field_forecast_evidence_label"
+         aria-describedby="probability_field_forecast_evidence_description"
+         title="Usable forecasts divided by causally eligible forecast pairs across horizons 1–20 in the visible backtest range. Hidden pre-range history supplies causal context for the model, state, price bands, and baseline; scored outcomes stay inside the visible range. The supporting line compares realized coverage of the model's central 80% interval with its 80% target and reports the mean price span relative to each forecast median. Origins and horizons overlap, so the pair count is evidence coverage and is not a count of independent observations.">
+        <span class="trade-metric-label" id="probability_field_forecast_evidence_label">1–20d forecast coverage</span>
+        <span class="trade-metric-value" data-workspace-mask="trade-metric">
+            {{ "N/A" if forecast_coverage is none else "%.2f"|format(forecast_coverage) ~ "%" }}
+        </span>
+        <span class="trade-metric-detail">
+            <span>{{ "{:,}".format(backtest_result.summary.probability_field_valid_pairs|default(0)) }} / {{ "{:,}".format(backtest_result.summary.probability_field_eligible_pairs|default(0)) }} forecasts</span>
+            {% if skill_valid_horizons < skill_required_horizons %}<span>{{ skill_valid_horizons }} / {{ skill_required_horizons }} horizons scored</span>{% endif %}
+            <span>80% interval coverage {{ "N/A" if interval_80_coverage is none else "%.1f"|format(interval_80_coverage) ~ "%" }}</span>
+            {% if interval_80_span is not none %}<span>Mean span {{ "%.1f"|format(interval_80_span) }}%</span>{% endif %}
+        </span>
+        <span class="sr-only" id="probability_field_forecast_evidence_description">Forecast availability over causally eligible pairs in the visible backtest range. The central 80% interval value is its realized empirical coverage, and mean span is relative to each forecast median. Origins and horizons overlap, so the pair count is not an independent sample count.</span>
+    </div>
+    {% elif backtest_result.summary.probability_field_probability_score_pct is defined %}
     <div class="trade-metric-card" data-backtest-metric="probability-field-probability-score"
          data-probability-field-metric="{{ 'direct-close-full-grid-brier' if direct_probability_field else 'one-minus-brier-score' }}"
          title="{% if direct_probability_field %}Complete-grid probability score: 100% times one minus the equally weighted mean normalized multiclass Brier loss across close-to-future-close horizons 1–20, using 20 price bands and both tails. Missing forecasts receive maximum loss. Scored horizons: {{ field_presentation.diagnostics.horizon_count|default(0) }} of 20; shorter windows are partial. Higher is better; this is not a win rate.{% else %}Bounded proper probability score: 100% times one minus the mean Brier loss for the executable next-open direction. Higher is better; this is not a hit rate.{% endif %}">

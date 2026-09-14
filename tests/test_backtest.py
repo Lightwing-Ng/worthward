@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.7.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -11,11 +11,24 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from strategies.backtest import _calculate_win_rate_pct, run_single_ticker_backtest
+from strategies.backtest import (
+    _calculate_win_rate_pct,
+    _crps_skill_percentage,
+    _has_complete_distribution_skill_evidence,
+    _percentage,
+    run_single_ticker_backtest,
+)
 from strategies.base import StrategySignalResult
 
 
 class BacktestMetricTests(unittest.TestCase):
+    def test_probability_percentage_normalizes_negative_zero(self) -> None:
+        self.assertEqual(_percentage(-0.00001, scale=100.0), 0.0)
+        self.assertIsNone(_percentage(True, scale=100.0))
+        self.assertEqual(_crps_skill_percentage(0.125), 12.5)
+        self.assertIsNone(_crps_skill_percentage(True))
+        self.assertIsNone(_crps_skill_percentage(1.01))
+
     def test_strategy_signal_result_preserves_legacy_positional_field_order(self) -> None:
         frame = pd.DataFrame()
         result = StrategySignalResult(
@@ -61,6 +74,181 @@ class BacktestMetricTests(unittest.TestCase):
 
         self.assertEqual(result["strategy_presentation"], presentation)
         self.assertIsNot(result["strategy_presentation"], presentation)
+
+    def test_backtest_maps_complete_distribution_evidence_to_human_metrics(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+        selected_skills = {1: 0.12, 5: 0.08, 10: -0.01, 20: -0.04}
+        horizon_profile = {
+            str(horizon): {
+                "crps_skill_score": selected_skills.get(horizon, -0.053375),
+                "coverage_pct": 100.0,
+                "valid_pairs": 10,
+                "eligible_pairs": 10,
+            }
+            for horizon in range(1, 21)
+        }
+        presentation = {
+            "diagnostics": {
+                "grid": {
+                    "crps_skill_score": -0.0352,
+                    "crps_skill_aggregation": (
+                        "equal-mean-of-all-20-horizon-skills"
+                    ),
+                    "horizon_count": 20,
+                    "coverage_pct": 100.0,
+                    "valid_pairs": 200,
+                    "eligible_pairs": 200,
+                    "crps_skill_valid_horizon_count": 20,
+                    "crps_skill_required_horizon_count": 20,
+                    "crps_skill_requires_complete_pair_coverage": True,
+                    "crps_skill_has_complete_pair_coverage": True,
+                    "central_intervals": {
+                        "80": {
+                            "coverage_pct": 78.6,
+                            "mean_price_span_pct": 14.2,
+                        }
+                    },
+                    "horizons": horizon_profile,
+                }
+            }
+        }
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+                presentation=presentation,
+            ),
+            initial_capital=10_000.0,
+        )
+
+        summary = result["summary"]
+        self.assertEqual(summary["probability_field_distribution_skill_pct"], -3.52)
+        self.assertEqual(summary["probability_field_forecast_coverage_pct"], 100.0)
+        self.assertEqual(summary["probability_field_valid_pairs"], 200)
+        self.assertEqual(summary["probability_field_eligible_pairs"], 200)
+        self.assertEqual(
+            summary["probability_field_skill_valid_horizon_count"],
+            20,
+        )
+        self.assertEqual(
+            summary["probability_field_skill_required_horizon_count"],
+            20,
+        )
+        self.assertEqual(summary["probability_field_interval_80_coverage_pct"], 78.6)
+        self.assertEqual(
+            summary["probability_field_interval_80_mean_price_span_pct"],
+            14.2,
+        )
+        self.assertEqual(
+            summary["probability_field_horizon_profile"]["20"][
+                "distribution_skill_pct"
+            ],
+            -4.0,
+        )
+
+    def test_distribution_headline_rejects_malformed_or_mismatched_aggregates(
+            self,
+    ) -> None:
+        distribution = {
+            "crps_skill_score": 0.1,
+            "crps_skill_aggregation": "equal-mean-of-all-20-horizon-skills",
+            "horizon_count": 20,
+            "eligible_pairs": 200,
+            "valid_pairs": 200,
+            "crps_skill_valid_horizon_count": 20,
+            "crps_skill_required_horizon_count": 20,
+            "crps_skill_requires_complete_pair_coverage": True,
+            "crps_skill_has_complete_pair_coverage": True,
+            "horizons": {
+                str(horizon): {
+                    "crps_skill_score": 0.1,
+                    "valid_pairs": 10,
+                    "eligible_pairs": 10,
+                }
+                for horizon in range(1, 21)
+            },
+        }
+        self.assertTrue(_has_complete_distribution_skill_evidence(distribution))
+
+        invalid_cases = {
+            "float required horizon count": {
+                "crps_skill_required_horizon_count": 20.0,
+            },
+            "boolean valid horizon count": {
+                "crps_skill_valid_horizon_count": True,
+            },
+            "float available horizon count": {"horizon_count": 20.0},
+            "boolean headline": {"crps_skill_score": True},
+            "nonfinite headline": {"crps_skill_score": float("inf")},
+            "mismatched aggregate": {"crps_skill_score": 0.2},
+            "wrong aggregation": {"crps_skill_aggregation": "pair-weighted"},
+        }
+        for label, replacement in invalid_cases.items():
+            with self.subTest(label=label):
+                candidate = {**distribution, **replacement}
+                self.assertFalse(
+                    _has_complete_distribution_skill_evidence(candidate)
+                )
+
+        boolean_horizon = {
+            **distribution,
+            "horizons": {
+                **distribution["horizons"],
+                "1": {
+                    **distribution["horizons"]["1"],
+                    "crps_skill_score": True,
+                },
+            },
+        }
+        self.assertFalse(
+            _has_complete_distribution_skill_evidence(boolean_horizon)
+        )
+
+    def test_backtest_withholds_distribution_skill_without_explicit_complete_evidence(
+            self,
+    ) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=2, freq="D"),
+                "Close": [100.0, 101.0],
+                "buy_signal": [False, False],
+                "sell_signal": [False, False],
+            }
+        )
+        presentation = {
+            "diagnostics": {
+                "grid": {
+                    "crps_skill_score": 0.42,
+                    "coverage_pct": 95.0,
+                    "valid_pairs": 19,
+                    "eligible_pairs": 20,
+                    "horizons": {},
+                }
+            }
+        }
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+                presentation=presentation,
+            ),
+            initial_capital=10_000.0,
+        )
+
+        self.assertIsNone(
+            result["summary"]["probability_field_distribution_skill_pct"]
+        )
 
     def test_backtest_rejects_strategy_presentation_data_key_length_mismatch(self) -> None:
         frame = pd.DataFrame(

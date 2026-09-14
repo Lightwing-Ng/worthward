@@ -1,5 +1,21 @@
 # Known issues and operating constraints
 
+Price Field metric interpretation, 14 Sep 2026: Backtest Metrics now presents
+standardized 1–20 day CRPS skill against a causal zero-drift volatility
+baseline instead of the ambiguous `100% * (1 - Brier loss)` probability score.
+The headline is the equal mean of horizon-specific relative skills for days 1
+through 20, with days 1, 5, 10, and 20 visible underneath. The headline is
+`N/A` unless all 20 horizons and every causally eligible pair have valid
+forecasts. Its companion reports valid-versus-eligible forecast coverage,
+realized central-80% interval coverage, and mean price span relative to the
+forecast median. Skill uses equal horizon weights; interval evidence uses
+valid-pair weights. Hidden pre-range history supplies causal context, but scored
+outcomes remain inside the visible range. Origin and horizon outcomes overlap,
+and the displayed pair count is not an independent-sample count. The legacy
+executable-direction and Brier fields remain compatibility diagnostics; the
+LSTM training-history badge retains its separately labelled training score and
+is not numerically comparable with the new Backtest skill card.
+
 Price Field rendering audit, 13 Sep 2026: direct-horizon neural models now use
 the central 95% Gaussian envelope for their finite detail viewport. The former
 99% viewport spent multiple rows on tail mass that an ordinary 2% cell display
@@ -229,7 +245,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.253.1`
+Documentation version: `v1.254.0`
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

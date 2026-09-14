@@ -1,6 +1,6 @@
 """Build the pages settings web-runtime context.
 
-Code version: v0.1.0
+Code version: v0.2.1
 """
 
 from __future__ import annotations
@@ -367,6 +367,86 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
                 if probability_field_probability_score is None
                 else f"{parse_float_value(probability_field_probability_score, 0.0):,.2f}%"
             )
+            distribution_skill = summary.get(
+                "probability_field_distribution_skill_pct"
+            )
+            has_distribution_evidence = (
+                "probability_field_distribution_skill_pct" in summary
+            )
+            distribution_skill_value = (
+                parse_float_value(distribution_skill, 0.0)
+                if distribution_skill is not None
+                else None
+            )
+            distribution_skill_display = (
+                "N/A"
+                if distribution_skill_value is None
+                else (
+                    f"{'+' if distribution_skill_value > 0 else ''}"
+                    f"{distribution_skill_value:,.2f}%"
+                )
+            )
+            forecast_coverage = summary.get(
+                "probability_field_forecast_coverage_pct"
+            )
+            forecast_coverage_display = (
+                "N/A"
+                if forecast_coverage is None
+                else f"{parse_float_value(forecast_coverage, 0.0):,.2f}%"
+            )
+            valid_forecast_pairs = int(
+                summary.get("probability_field_valid_pairs", 0) or 0
+            )
+            eligible_forecast_pairs = int(
+                summary.get("probability_field_eligible_pairs", 0) or 0
+            )
+            skill_valid_horizons = int(
+                summary.get(
+                    "probability_field_skill_valid_horizon_count",
+                    0,
+                )
+                or 0
+            )
+            skill_required_horizons = int(
+                summary.get(
+                    "probability_field_skill_required_horizon_count",
+                    20,
+                )
+                or 20
+            )
+            interval_80_coverage = summary.get(
+                "probability_field_interval_80_coverage_pct"
+            )
+            interval_80_coverage_display = (
+                "N/A"
+                if interval_80_coverage is None
+                else f"{parse_float_value(interval_80_coverage, 0.0):,.2f}%"
+            )
+            interval_80_span = summary.get(
+                "probability_field_interval_80_mean_price_span_pct"
+            )
+            probability_metric_name = str(strategy_name).replace(
+                " Price Field", ""
+            )
+            horizon_profile = summary.get("probability_field_horizon_profile")
+            horizon_profile_display = " · ".join(
+                f"{horizon}d "
+                + (
+                    "N/A"
+                    if not isinstance(item, dict)
+                    or item.get("distribution_skill_pct") is None
+                    else (
+                        f"{'+' if float(item['distribution_skill_pct']) > 0 else ''}"
+                        f"{float(item['distribution_skill_pct']):,.1f}%"
+                    )
+                )
+                for horizon in ("1", "5", "10", "20")
+                for item in (
+                    horizon_profile.get(horizon)
+                    if isinstance(horizon_profile, dict)
+                    else None,
+                )
+            )
 
             md_lines = [
                 f"## Backtest Report: {ticker_caption}",
@@ -382,16 +462,35 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
                 f"- **Win rate**: {win_rate_display}",
                 *(
                     [
-                        f"- **Bayesian direction hit rate (next-open execution)**: {probability_field_direction_hit_rate_display}",
+                        f"- **{probability_metric_name} direction hit rate (next-open execution)**: {probability_field_direction_hit_rate_display}",
                     ]
                     if probability_field_direction_hit_rate is not None
+                    and not has_distribution_evidence
                     else []
                 ),
                 *(
                     [
-                        f"- **Bayesian probability score (one minus Brier loss)**: {probability_field_probability_score_display}",
+                        f"- **{probability_metric_name} standardized 1–20d distribution skill vs baseline (CRPS)**: {distribution_skill_display}",
+                        f"- **CRPS headline completeness**: {skill_valid_horizons:,} / {skill_required_horizons:,} horizons; {valid_forecast_pairs:,} / {eligible_forecast_pairs:,} eligible forecast pairs",
+                        f"- **Distribution skill by horizon**: {horizon_profile_display}",
+                        f"- **1–20d forecast coverage**: {forecast_coverage_display} ({valid_forecast_pairs:,} / {eligible_forecast_pairs:,})",
+                        f"- **Central 80% interval coverage**: {interval_80_coverage_display}"
+                        + (
+                            f"; mean price span relative to forecast median {parse_float_value(interval_80_span, 0.0):,.2f}%"
+                            if interval_80_span is not None
+                            else ""
+                        ),
+                        "- **Distribution evaluation frame**: visible backtest range; hidden pre-range history supplies causal prior context only",
+                    ]
+                    if has_distribution_evidence
+                    else []
+                ),
+                *(
+                    [
+                        f"- **{probability_metric_name} probability score (one minus Brier loss)**: {probability_field_probability_score_display}",
                     ]
                     if probability_field_probability_score is not None
+                    and not has_distribution_evidence
                     else []
                 ),
                 f"- **Beat B&H**: {beat_bh_pct:,.2f}%",

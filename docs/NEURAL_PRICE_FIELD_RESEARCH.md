@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.4.0`
+Documentation version: `v1.4.1`
 
 ## Scope and model evidence
 
@@ -137,9 +137,10 @@ event probabilities. The existing execution engine may render compatibility
 trades, but entry thresholds and trade return do not define this research's
 probability objective.
 
-## Probability score
+## Training score and Backtest diagnostic
 
-The canonical score is `100 * (1 - mean_horizon(normalized Brier loss))`.
+The training-history and hyperparameter-selection score remains
+`100 * (1 - mean_horizon(normalized Brier loss))`.
 Each horizon evaluates the complete fixed causal grid: 20 finite price bands
 and both outside tails, with normalized multiclass Brier loss equal to half
 the sum of squared probability errors. Grid boundaries depend only on prices
@@ -150,14 +151,18 @@ the denominator. Display thresholds and browser zoom do not change the score.
 A score near 75 is not automatically evidence of useful prediction. The separate
 next-day binary diagnostic gives an always-50% direction forecast a score of 75;
 it is a different task and denominator from this complete multiclass grid.
-Interpret the new grid score with its zero-drift historical-volatility reference,
-Brier skill, forecast coverage, and per-horizon diagnostics. The reference uses
-only past returns and square-root-of-horizon scaling; it is a transparent
-baseline, not a claim of a correct market model.
+The human-facing Backtest headline instead uses the equal-weighted mean of
+horizon-specific Gaussian CRPS skill for the standardized close-anchored 1–20
+day distribution. It is available only when all 20 horizons and every causally
+eligible forecast pair are scored. Its zero-drift historical-volatility
+reference uses only past returns and square-root-of-horizon scaling; it is a
+transparent baseline, not a claim of a correct market model. The adjacent card
+reports forecast coverage so an incomplete model cannot hide missing cases.
 
 The report includes Gaussian CRPS and reference CRPS, negative log predictive
 density, realized-cell probability, top-cell accuracy, PIT histograms, and
-central 50%, 80%, and 95% interval coverage and width. Continuous diagnostics use
+central 50%, 80%, and 95% interval coverage and width. Skill uses equal horizon
+weights; interval summaries use valid-pair weights. Continuous diagnostics use
 valid forecasts only and say so explicitly. Direction hit rate excludes neutral
 probability ties and unchanged prices. Overlapping horizons are dependent;
 neither their count nor these diagnostics establish independent trials or a

@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.18.1
+Code version: v0.19.1
 """
 
 from pathlib import Path
@@ -250,7 +250,7 @@ def test_portfolio_result_owns_date_and_share_action() -> None:
     assert "{{ display_range }}" not in heading_block
     assert '<div class="portfolio-summary-main">' in portfolio
     assert (
-        '<p class="portfolio-summary-range workspace-result-date-range">{{ display_range }}</p>'
+        '<p class="portfolio-summary-range workspace-result-date-range" data-workspace-mask="result-date-range">{{ display_range }}</p>'
         in portfolio
     )
     assert "placement='summary-panel'" in portfolio
@@ -275,6 +275,17 @@ def test_portfolio_result_owns_date_and_share_action() -> None:
         "right: var(--layout-edge-gap);",
     ):
         assert fragment in workspace
+
+
+def test_portfolio_chart_precedes_summary_content() -> None:
+    portfolio = _read(TEMPLATE_ROOT / "portfolio.html")
+
+    chart_position = portfolio.index("{{ render_chart_surface(")
+    summary_position = portfolio.index(
+        '<article class="report-card workspace-content-card '
+        'portfolio-summary-content-card"'
+    )
+    assert chart_position < summary_position
 
 
 def test_broker_feedback_uses_the_copy_column_and_own_layout_row() -> None:
@@ -1529,8 +1540,9 @@ def test_backtest_title_rails_reuse_shared_control_alignment() -> None:
         "transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));"
         in workspace
     )
+    assert ".workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card," in workspace
     assert (
-        ".workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card {\n"
+        ".workspace > .navigation-skeleton-root > .backtest-workspace-shell:first-child > .workspace-mode-title-card {\n"
         "        min-height: var(--workspace-title-rail-height);\n"
         "        padding-top: var(--workspace-title-rail-pad-block-start);\n"
         "        padding-bottom: 0;\n"

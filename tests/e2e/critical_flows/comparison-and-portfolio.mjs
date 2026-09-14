@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.3.3 */
 import {
     expect,
     test,
@@ -117,22 +117,395 @@ test('keeps the merged DCA strategy out of the optimistic workspace sidebar', as
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT');
 
     const navigationState = await page.evaluate(() => {
-        const rendered = window.WORTHWARD_BOOTSTRAP.renderOptimisticNavigationSkeleton({view: 'backtest'});
+        const cases = [
+            {view: 'tickers', targetUrl: '/workspaces/compare', pageTitle: 'Return comparison', resultTitle: 'Performance summary', order: ['result-title', 'summary', 'chart']},
+            {view: 'prices', targetUrl: '/workspaces/prices', pageTitle: 'Price performance', resultTitle: 'Price history', order: ['result-title', 'chart']},
+            {view: 'prices', targetUrl: '/workspaces/prices?metric=market-cap', pageTitle: 'Market cap comparison', resultTitle: 'Market cap history', order: ['result-title', 'chart']},
+            {view: 'portfolio', targetUrl: '/workspaces/portfolio', pageTitle: 'Portfolio', resultTitle: 'Portfolio summary', order: ['result-title', 'chart', 'summary']},
+            {view: 'dca', targetUrl: '/workspaces/backtest?strategy=dca', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history']},
+            {view: 'backtest', targetUrl: '/workspaces/backtest?strategy=grid-trading', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history']},
+            {view: 'backtest', targetUrl: '/workspaces/backtest?strategy=lstm-price-field', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history']},
+        ];
+        const skeletons = cases.map((testCase) => {
+            const rendered = window.WORTHWARD_BOOTSTRAP.renderOptimisticNavigationSkeleton(testCase);
+            const root = document.querySelector('[data-navigation-skeleton-view]');
+            const results = root?.querySelector('.workspace-mode-results-stack');
+            return {
+                rendered,
+                view: root?.dataset.navigationSkeletonView,
+                pageTitle: root?.querySelector('[data-navigation-skeleton-region="page-title"]')?.textContent.trim(),
+                resultTitle: root?.querySelector('[data-navigation-skeleton-region="result-title"]')?.textContent.trim(),
+                order: Array.from(results?.children || []).map((node) => node.dataset.navigationSkeletonRegion),
+                historySegmentCount: root?.querySelectorAll('.navigation-skeleton-segments .navigation-skeleton-line').length || 0,
+                metricCount: root?.querySelectorAll('.navigation-skeleton-metrics-grid .navigation-skeleton-metric').length || 0,
+                activeSidebarLabel: document.querySelector('.navigation-skeleton-sidebar-nav .settings-nav-item.is-active .settings-nav-label')?.textContent.trim() || '',
+                hasCurrentTopology: Boolean(
+                    root?.querySelector(':scope > .workspace-mode-layout > [data-navigation-skeleton-region="controls"]')
+                    && root?.querySelector(':scope > .workspace-mode-layout > .workspace-mode-main > .workspace-mode-results-stack'),
+                ),
+            };
+        });
         const sidebar = document.querySelector('#app_sidebar');
         return {
-            rendered,
+            skeletons,
             labels: [...sidebar.querySelectorAll('.navigation-skeleton-sidebar-nav .settings-nav-label')]
                 .map((node) => node.textContent.trim()),
             hasDcaLabel: sidebar.textContent.includes('Dollar-cost averaging'),
         };
     });
 
-    expect(navigationState).toEqual({
-        rendered: true,
-        labels: ['Return comparison', 'Ticker comparison', 'Compute your portfolio', 'Backtest'],
-        hasDcaLabel: false,
-    });
+    expect(navigationState.labels).toEqual(['Return comparison', 'Ticker comparison', 'Compute your portfolio', 'Backtest']);
+    expect(navigationState.hasDcaLabel).toBe(false);
+    expect(navigationState.skeletons).toEqual([
+        {rendered: true, view: 'tickers', pageTitle: 'Return comparison', resultTitle: 'Performance summary', order: ['result-title', 'summary', 'chart'], historySegmentCount: 0, metricCount: 0, activeSidebarLabel: 'Return comparison', hasCurrentTopology: true},
+        {rendered: true, view: 'prices', pageTitle: 'Price performance', resultTitle: 'Price history', order: ['result-title', 'chart'], historySegmentCount: 0, metricCount: 0, activeSidebarLabel: 'Ticker comparison', hasCurrentTopology: true},
+        {rendered: true, view: 'prices', pageTitle: 'Market cap comparison', resultTitle: 'Market cap history', order: ['result-title', 'chart'], historySegmentCount: 0, metricCount: 0, activeSidebarLabel: 'Ticker comparison', hasCurrentTopology: true},
+        {rendered: true, view: 'portfolio', pageTitle: 'Portfolio', resultTitle: 'Portfolio summary', order: ['result-title', 'chart', 'summary'], historySegmentCount: 0, metricCount: 0, activeSidebarLabel: 'Compute your portfolio', hasCurrentTopology: true},
+        {rendered: true, view: 'dca', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history'], historySegmentCount: 2, metricCount: 9, activeSidebarLabel: 'Backtest', hasCurrentTopology: true},
+        {rendered: true, view: 'backtest', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history'], historySegmentCount: 2, metricCount: 10, activeSidebarLabel: 'Backtest', hasCurrentTopology: true},
+        {rendered: true, view: 'backtest', pageTitle: 'Backtest', resultTitle: 'Performance', order: ['result-title', 'overview', 'resizer', 'history'], historySegmentCount: 3, metricCount: 10, activeSidebarLabel: 'Backtest', hasCurrentTopology: true},
+    ]);
 });
+
+test('replaces stale Price content with a target-aligned Portfolio skeleton during real navigation', async ({page}) => {
+    await page.addInitScript(() => {
+        window.sessionStorage.setItem('worthward:sidebar-open', 'false');
+    });
+    await page.setViewportSize({width: 1_058, height: 900});
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&period=1y');
+
+    let releaseNavigation;
+    const navigationGate = new Promise((resolve) => {
+        releaseNavigation = resolve;
+    });
+    let markNavigationRequested;
+    const navigationRequested = new Promise((resolve) => {
+        markNavigationRequested = resolve;
+    });
+    await page.route('**/workspaces/portfolio*', async (route) => {
+        if (!route.request().isNavigationRequest()) {
+            await route.continue();
+            return;
+        }
+        markNavigationRequested();
+        await navigationGate;
+        await route.continue();
+    });
+
+    const wideState = await page.locator('.workspace-nav-item-portfolio').evaluate((link) => {
+        link.click();
+        const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+        const layout = rect('.navigation-skeleton-page > .workspace-mode-layout');
+        const controls = rect('[data-navigation-skeleton-region="controls"]');
+        const main = rect('.navigation-skeleton-page .workspace-mode-main');
+        const resultTitle = rect('[data-navigation-skeleton-region="result-title"]');
+        const chart = rect('[data-navigation-skeleton-region="chart"]');
+        const summary = rect('[data-navigation-skeleton-region="summary"]');
+        const workspacePanel = document.querySelector('#workspace_panel');
+        const text = (selector) => document.querySelector(selector)?.textContent?.trim() || '';
+        if (!layout || !controls || !main || !resultTitle || !chart || !summary || !workspacePanel) return null;
+        return {
+            ariaBusy: workspacePanel.getAttribute('aria-busy'),
+            navigationSkeleton: workspacePanel.dataset.navigationSkeleton,
+            pageNavigating: document.body.classList.contains('is-page-navigating'),
+            navigationTarget: document.documentElement.dataset.navigationTarget,
+            documentAriaBusy: document.documentElement.getAttribute('aria-busy'),
+            oldPriceShellCount: document.querySelectorAll('.price-compare-workspace').length,
+            oldPriceChartCount: document.querySelectorAll('#price_subplot_region').length,
+            pageTitle: text('[data-navigation-skeleton-region="page-title"]'),
+            resultTitle: text('[data-navigation-skeleton-region="result-title"]'),
+            chartTitle: text('[data-navigation-skeleton-region="chart"]'),
+            resultOrder: Array.from(document.querySelector('.workspace-mode-results-stack').children)
+                .map((node) => node.dataset.navigationSkeletonRegion),
+            columnGap: main.left - controls.right,
+            layoutLeftDelta: Math.abs(layout.left - controls.left),
+            resultLeftDelta: Math.abs(main.left - resultTitle.left),
+            resultWidthDelta: Math.abs(main.width - resultTitle.width),
+            chartWidthDelta: Math.abs(main.width - chart.width),
+            summaryWidthDelta: Math.abs(main.width - summary.width),
+            chartBeforeSummary: chart.top < summary.top,
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+        };
+    });
+    expect(wideState).not.toBeNull();
+    expect(wideState.ariaBusy).toBe('true');
+    expect(wideState.navigationSkeleton).toBe('1');
+    expect(wideState.pageNavigating).toBe(true);
+    expect(wideState.navigationTarget).toBe('portfolio');
+    expect(wideState.documentAriaBusy).toBe('true');
+    expect(wideState.oldPriceShellCount).toBe(0);
+    expect(wideState.oldPriceChartCount).toBe(0);
+    expect(wideState.pageTitle).toBe('Portfolio');
+    expect(wideState.resultTitle).toBe('Portfolio summary');
+    expect(wideState.chartTitle).toContain('Portfolio return chart');
+    expect(wideState.resultOrder).toEqual(['result-title', 'chart', 'summary']);
+    expect(wideState.columnGap).toBeGreaterThanOrEqual(11);
+    expect(wideState.columnGap).toBeLessThanOrEqual(13);
+    expect(wideState.layoutLeftDelta).toBeLessThanOrEqual(1);
+    expect(wideState.resultLeftDelta).toBeLessThanOrEqual(1);
+    expect(wideState.resultWidthDelta).toBeLessThanOrEqual(1);
+    expect(wideState.chartWidthDelta).toBeLessThanOrEqual(1);
+    expect(wideState.summaryWidthDelta).toBeLessThanOrEqual(1);
+    expect(wideState.chartBeforeSummary).toBe(true);
+    expect(wideState.noHorizontalOverflow).toBe(true);
+
+    await navigationRequested;
+    releaseNavigation();
+    await expect(page).toHaveURL(/\/workspaces\/portfolio/);
+    await expect(page.locator('[data-navigation-skeleton]')).toHaveCount(0);
+    await expect(page.locator('#workspace_panel')).not.toHaveAttribute('aria-busy', 'true');
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&period=1y');
+    const narrowGeometry = await page.evaluate(() => {
+        window.WORTHWARD_BOOTSTRAP.renderOptimisticNavigationSkeleton({
+            view: 'portfolio',
+            targetUrl: '/workspaces/portfolio',
+        });
+        const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+        const title = rect('[data-navigation-skeleton-region="page-title"]');
+        const layout = rect('.navigation-skeleton-page > .workspace-mode-layout');
+        const controls = rect('[data-navigation-skeleton-region="controls"]');
+        const main = rect('.navigation-skeleton-page .workspace-mode-main');
+        const chart = rect('[data-navigation-skeleton-region="chart"]');
+        const summary = rect('[data-navigation-skeleton-region="summary"]');
+        if (!title || !layout || !controls || !main || !chart || !summary) return null;
+        return {
+            titleLeftDelta: Math.abs(title.left - layout.left),
+            controlsLeftDelta: Math.abs(controls.left - layout.left),
+            mainLeftDelta: Math.abs(main.left - layout.left),
+            controlsWidthDelta: Math.abs(controls.width - layout.width),
+            mainWidthDelta: Math.abs(main.width - layout.width),
+            stackGap: main.top - controls.bottom,
+            chartBeforeSummary: chart.top < summary.top,
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+        };
+    });
+    expect(narrowGeometry).not.toBeNull();
+    expect(narrowGeometry.titleLeftDelta).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.controlsLeftDelta).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.mainLeftDelta).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.controlsWidthDelta).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.mainWidthDelta).toBeLessThanOrEqual(1);
+    expect(narrowGeometry.stackGap).toBeGreaterThanOrEqual(11);
+    expect(narrowGeometry.stackGap).toBeLessThanOrEqual(13);
+    expect(narrowGeometry.chartBeforeSummary).toBe(true);
+    expect(narrowGeometry.noHorizontalOverflow).toBe(true);
+});
+
+test('masks stale Price results throughout same-page optimistic hydration', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&period=1y');
+
+    let releaseHydration;
+    const hydrationGate = new Promise((resolve) => {
+        releaseHydration = resolve;
+    });
+    let markHydrationRequested;
+    const hydrationRequested = new Promise((resolve) => {
+        markHydrationRequested = resolve;
+    });
+    await page.route('**/workspaces/prices*', async (route) => {
+        if (route.request().headers()['x-requested-with'] !== 'workspace-hydrate') {
+            await route.continue();
+            return;
+        }
+        markHydrationRequested();
+        await hydrationGate;
+        await route.continue();
+    });
+
+    await page.getByRole('button', {name: /^Period:/}).click();
+    await page.getByRole('listbox', {name: 'Period', exact: true})
+        .getByRole('option', {name: '2 years', exact: true})
+        .click();
+    await hydrationRequested;
+
+    const workspacePanel = page.locator('#workspace_panel');
+    await expect(workspacePanel).toHaveAttribute('data-workspace-pending', '1');
+    await expect(workspacePanel).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('body')).toHaveClass(/is-workspace-switching/);
+    const pendingMasks = page.locator('#workspace_panel [data-workspace-mask].is-masked-during-switch');
+    expect(await pendingMasks.count()).toBeGreaterThan(0);
+    await expect(page.locator('#price_subplot_region')).toHaveClass(/is-masked-during-switch/);
+    await expect(page.locator('[data-workspace-mask="page-heading"]')).toHaveClass(/is-masked-during-switch/);
+    await expect(page.locator('[data-workspace-mask="result-heading"]')).toHaveClass(/is-masked-during-switch/);
+    await expect(page.locator('[data-workspace-mask="result-date-range"]')).toHaveClass(/is-masked-during-switch/);
+
+    releaseHydration();
+    await expect.poll(() => new URL(page.url()).searchParams.get('range')).toBe('2y');
+    await expect(workspacePanel).not.toHaveAttribute('data-workspace-pending', '1');
+    await expect(workspacePanel).not.toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('body')).not.toHaveClass(/is-workspace-switching/);
+    await expect(page.locator('.is-masked-during-switch')).toHaveCount(0);
+});
+
+test('masks stale identities, dates, and Backtest history as complete regions', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
+    await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
+    const compareSummary = page.locator('#compare_summary_panel');
+    await expect(compareSummary).toHaveClass(/is-masked-during-switch/);
+    await expect(compareSummary).toHaveCSS('pointer-events', 'none');
+    await expect(compareSummary.locator(':scope > *').first()).toHaveCSS('opacity', '0');
+    await expect(compareSummary.locator(':scope > *').first()).toHaveCSS('visibility', 'hidden');
+    await expect(compareSummary).toContainText('AAPL');
+
+    await page.goto('/workspaces/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=1y');
+    await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
+    await expect(page.locator('.portfolio-summary-range')).toHaveClass(/is-masked-during-switch/);
+
+    await page.goto('/workspaces/backtest?ticker=AAPL&strategy=grid-trading&period=1y');
+    await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
+    const backtestHistory = page.locator('#backtest_history_surface');
+    await expect(backtestHistory).toHaveClass(/is-masked-during-switch/);
+    await expect(backtestHistory).toHaveCSS('pointer-events', 'none');
+    await expect(backtestHistory.locator(':scope > *').first()).toHaveCSS('opacity', '0');
+    await expect(backtestHistory.locator(':scope > *').first()).toHaveCSS('visibility', 'hidden');
+    await expect(page.locator('[data-workspace-mask="backtest-chart-stage"]')).toHaveClass(/is-masked-during-switch/);
+});
+
+test('rejects a delayed Price hydration after a Portfolio navigation skeleton takes ownership', async ({page}) => {
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&period=1y');
+    const initialUrl = page.url();
+
+    let releaseHydration;
+    const hydrationGate = new Promise((resolve) => {
+        releaseHydration = resolve;
+    });
+    let markHydrationRequested;
+    const hydrationRequested = new Promise((resolve) => {
+        markHydrationRequested = resolve;
+    });
+    let markHydrationDelivered;
+    const hydrationDelivered = new Promise((resolve) => {
+        markHydrationDelivered = resolve;
+    });
+    await page.route('**/workspaces/prices*', async (route) => {
+        if (route.request().headers()['x-requested-with'] !== 'workspace-hydrate') {
+            await route.continue();
+            return;
+        }
+        const response = await route.fetch();
+        markHydrationRequested();
+        await hydrationGate;
+        await route.fulfill({response});
+        markHydrationDelivered();
+    });
+
+    await page.getByRole('button', {name: /^Period:/}).click();
+    await page.getByRole('listbox', {name: 'Period', exact: true})
+        .getByRole('option', {name: '2 years', exact: true})
+        .click();
+    await hydrationRequested;
+    await page.evaluate(() => {
+        document.body.classList.add('is-workspace-switching', 'is-page-navigating');
+        document.documentElement.dataset.navigationTarget = 'portfolio';
+        document.documentElement.setAttribute('aria-busy', 'true');
+        window.WORTHWARD_BOOTSTRAP.renderOptimisticNavigationSkeleton({
+            view: 'portfolio',
+            targetUrl: '/workspaces/portfolio',
+        });
+    });
+
+    releaseHydration();
+    await hydrationDelivered;
+    await page.waitForTimeout(100);
+    await expect(page.locator('[data-navigation-skeleton-view="portfolio"]')).toHaveCount(1);
+    await expect(page.locator('#workspace_panel')).toHaveAttribute('data-navigation-skeleton', '1');
+    await expect(page.locator('#workspace_panel')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#price_subplot_region')).toHaveCount(0);
+    expect(page.url()).toBe(initialUrl);
+});
+
+for (const width of [810, 390]) {
+test(`aligns the responsive Backtest parameter control with its navigation skeleton at ${width}px`, async ({page}) => {
+    await page.addInitScript(() => {
+        window.sessionStorage.setItem('worthward:sidebar-open', 'false');
+        window.sessionStorage.removeItem('worthward:view-memory');
+    });
+    await page.setViewportSize({width, height: 900});
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=MSFT&period=1y');
+
+    let releaseNavigation;
+    const navigationGate = new Promise((resolve) => {
+        releaseNavigation = resolve;
+    });
+    let markNavigationRequested;
+    const navigationRequested = new Promise((resolve) => {
+        markNavigationRequested = resolve;
+    });
+    await page.route('**/workspaces/backtest*', async (route) => {
+        if (!route.request().isNavigationRequest()) {
+            await route.continue();
+            return;
+        }
+        markNavigationRequested();
+        await navigationGate;
+        await route.continue();
+    });
+
+    const overlayGeometry = await page.locator('.workspace-nav-item-backtest').evaluate((link) => {
+        link.click();
+        const toggleElement = document.querySelector('[data-navigation-skeleton-backtest-toggle]');
+        const titleElement = document.querySelector('[data-navigation-skeleton-region="page-title"] .report-heading');
+        if (!(toggleElement instanceof HTMLElement) || !(titleElement instanceof HTMLElement)) return null;
+        const toggle = toggleElement.getBoundingClientRect();
+        const title = document.querySelector('[data-navigation-skeleton-region="page-title"] .report-heading').getBoundingClientRect();
+        return {
+            display: getComputedStyle(toggleElement).display,
+            skeletonView: document.querySelector('[data-navigation-skeleton-view]')?.dataset.navigationSkeletonView,
+            titleClearsToggle: title.left >= toggle.right + 8,
+            toggleInsideViewport: toggle.left >= 0 && toggle.right <= window.innerWidth,
+        };
+    });
+    expect(overlayGeometry).not.toBeNull();
+    expect(overlayGeometry.display).not.toBe('none');
+    expect(overlayGeometry.skeletonView).toBe('backtest');
+    expect(overlayGeometry.titleClearsToggle).toBe(true);
+    expect(overlayGeometry.toggleInsideViewport).toBe(true);
+
+    await navigationRequested;
+    releaseNavigation();
+    await expect(page).toHaveURL(/\/workspaces\/backtest/);
+    await expect(page.locator('[data-navigation-skeleton-backtest-toggle]')).toHaveCount(0);
+    await expect(page.locator('[data-backtest-parameter-toggle]')).toBeVisible();
+
+    let releaseDeparture;
+    const departureGate = new Promise((resolve) => {
+        releaseDeparture = resolve;
+    });
+    let markDepartureRequested;
+    const departureRequested = new Promise((resolve) => {
+        markDepartureRequested = resolve;
+    });
+    await page.route('**/workspaces/portfolio*', async (route) => {
+        if (!route.request().isNavigationRequest()) {
+            await route.continue();
+            return;
+        }
+        markDepartureRequested();
+        await departureGate;
+        await route.continue();
+    });
+    const departureState = await page.locator('.workspace-nav-item-portfolio').evaluate((link) => {
+        link.click();
+        const backtestToggle = document.querySelector('[data-backtest-parameter-toggle]');
+        return {
+            oldToggleHidden: backtestToggle instanceof HTMLButtonElement && backtestToggle.hidden,
+            placeholderCount: document.querySelectorAll('[data-navigation-skeleton-backtest-toggle]').length,
+            skeletonView: document.querySelector('[data-navigation-skeleton-view]')?.dataset.navigationSkeletonView,
+        };
+    });
+    expect(departureState).toEqual({
+        oldToggleHidden: true,
+        placeholderCount: 0,
+        skeletonView: 'portfolio',
+    });
+    await departureRequested;
+    releaseDeparture();
+    await expect(page).toHaveURL(/\/workspaces\/portfolio/);
+    await expect(page.locator('[data-backtest-parameter-toggle]')).toHaveCount(0);
+});
+}
 
 test('anchors the comparison share control to the summary panel without overlapping the theme control', async ({page}) => {
     await page.addInitScript(() => {
@@ -333,10 +706,12 @@ test('keeps Portfolio metadata inside a full-width responsive result stack', asy
     const readWideGeometry = () => page.evaluate(() => {
         const modeTitle = document.querySelector('.workspace-mode-title-card .report-heading').getBoundingClientRect();
         const main = document.querySelector('.workspace-mode-main').getBoundingClientRect();
-        const resultStack = document.querySelector('.workspace-mode-main > .workspace-header').getBoundingClientRect();
+        const resultStackElement = document.querySelector('.workspace-mode-main > .workspace-header');
+        const resultStack = resultStackElement.getBoundingClientRect();
         const summaryTitle = document.querySelector('.workspace-mode-main > .workspace-header > .workspace-summary-card').getBoundingClientRect();
         const resultCard = document.querySelector('.workspace-mode-main > .workspace-header > .portfolio-summary-content-card').getBoundingClientRect();
         const chartSurface = document.querySelector('.workspace-mode-main > .workspace-header > .chart-surface').getBoundingClientRect();
+        const resultChildren = Array.from(resultStackElement.children);
         const summaryMain = document.querySelector('.portfolio-summary-main');
         const shareButton = document.querySelector('#export_transactions_button').getBoundingClientRect();
         const shareResultCard = document.querySelector('#export_transactions_button').closest('.portfolio-summary-content-card');
@@ -350,6 +725,8 @@ test('keeps Portfolio metadata inside a full-width responsive result stack', asy
             summaryWidth: summaryTitle.width,
             resultWidth: resultCard.width,
             chartWidth: chartSurface.width,
+            chartBeforeResult: resultChildren.indexOf(resultStackElement.querySelector(':scope > .chart-surface'))
+                < resultChildren.indexOf(resultStackElement.querySelector(':scope > .portfolio-summary-content-card')),
             resultRightDelta: Math.abs(main.right - resultStack.right),
             chartRightDelta: Math.abs(main.right - chartSurface.right),
             shareCenterDelta: Math.abs(center(shareButton, 'left') - center(theme, 'left')),
@@ -374,6 +751,7 @@ test('keeps Portfolio metadata inside a full-width responsive result stack', asy
         expect(geometry.summaryWidth).toBeCloseTo(geometry.mainWidth, 0);
         expect(geometry.resultWidth).toBeCloseTo(geometry.mainWidth, 0);
         expect(geometry.chartWidth).toBeCloseTo(geometry.mainWidth, 0);
+        expect(geometry.chartBeforeResult).toBe(true);
         expect(geometry.resultRightDelta).toBeLessThanOrEqual(1);
         expect(geometry.chartRightDelta).toBeLessThanOrEqual(1);
         expect(geometry.shareCenterDelta).toBeLessThanOrEqual(1);
@@ -1352,4 +1730,3 @@ test('reorders price subplots and ticker fields without recreating charts', asyn
     });
     expect(liveRequests).toHaveLength(0);
 });
-

@@ -1,4 +1,4 @@
-/* Code version: v1.80.4 */
+/* Code version: v1.80.5 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1932,6 +1932,10 @@
     gap: 8px;
 }
 
+.investment-community-share-card[data-share-view="backtest"] .investment-community-share-body {
+    grid-template-rows: auto 130px 200px;
+}
+
 .investment-community-share-card[data-share-view="dca"] .workspace-share-section--trade-chart,
 .investment-community-share-card[data-share-view="backtest"] .workspace-share-section--trade-chart,
 .investment-community-share-card[data-share-view="dca"] .workspace-share-section--trade-chart .investment-community-share-chart-shell,
@@ -2160,6 +2164,10 @@
     gap: 12px 14px;
     align-content: start;
     overflow: visible;
+}
+
+.investment-community-share-card[data-share-view="backtest"] .workspace-share-metrics-card {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .investment-community-share-card .investment-community-share-metrics-grid > .trade-metric-card {

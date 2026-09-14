@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.11.0
+Code version: v1.12.2
 - Changed: Startup defaults use the robust validation-selected AAPL grid GA
   cohort profile and its CPU execution semantics.
 - Changed: Price Field strategies now declare the shared Price Field catalog
@@ -54,6 +54,10 @@ from strategies.price_field_pipeline import (
     price_field_probabilistic_diagnostics as _probabilistic_diagnostics,
     probability_threshold_signals as _probability_threshold_signals,
     record_price_field_value as _record_value,
+)
+from strategies.price_field_scoring import (
+    score_price_field_grid,
+    visible_scoring_bounds,
 )
 
 from ..base import (
@@ -504,6 +508,39 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             output[_PREDICTION_MEAN_COLUMN].to_numpy(dtype=np.float64),
             output[_PREDICTION_STD_COLUMN].to_numpy(dtype=np.float64),
             output[_PROBABILITY_COLUMN].to_numpy(dtype=np.float64),
+        )
+        grid_scoring_frame = full_frame.assign(
+            **{
+                _PREDICTION_MEAN_COLUMN: predictive_mean,
+                _PREDICTION_STD_COLUMN: predictive_std,
+                _AUTOREGRESSION_COLUMN: autoregression,
+                _LONG_RUN_MEAN_COLUMN: long_run_mean,
+                _INNOVATION_STD_COLUMN: innovation_std,
+            }
+        )
+        grid_score_start, grid_score_end = visible_scoring_bounds(
+            grid_scoring_frame["Date"],
+            visible_frame["Date"],
+        )
+        diagnostics["grid"] = score_price_field_grid(
+            grid_scoring_frame,
+            grid_score_start,
+            grid_score_end,
+            predictive_mean_column=_PREDICTION_MEAN_COLUMN,
+            predictive_scale_column=_PREDICTION_STD_COLUMN,
+            return_autoregression_column=_AUTOREGRESSION_COLUMN,
+            return_long_run_mean_column=_LONG_RUN_MEAN_COLUMN,
+            return_innovation_scale_column=_INNOVATION_STD_COLUMN,
+        )
+        diagnostics["distribution_metric_kind"] = (
+            "close-anchored-standardized-1-20d-crps-skill"
+        )
+        diagnostics["distribution_evaluation_scope"] = (
+            "visible-backtest-range-with-causal-prior-history"
+        )
+        diagnostics["distribution_warmup_history_points"] = grid_score_start
+        diagnostics["distribution_visible_origin_points"] = (
+            grid_score_end - grid_score_start
         )
         entry_probability = float(normalized_params["entry_probability"]) / 100.0
         buy_signals, sell_signals = _probability_threshold_signals(

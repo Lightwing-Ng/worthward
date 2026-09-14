@@ -1,4 +1,4 @@
-/* Code version: v3.75.4 */
+/* Code version: v3.76.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -1258,6 +1258,33 @@
     font-weight: var(--workspace-metric-value-font-weight);
 }
 
+.trade-metric-card--diagnostic {
+    grid-template-rows:
+        minmax(var(--trade-metric-card-label-min-height), auto)
+        minmax(0, auto)
+        minmax(0, auto);
+    align-content: start;
+}
+
+.trade-metric-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-width: 0;
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+}
+
+.trade-metric-detail > span {
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
 .workspace-metric-value-major,
 .workspace-metric-value-minor,
 .workspace-metric-value-suffix {
@@ -1288,6 +1315,12 @@
         grid-auto-rows: var(--workspace-metrics-grid-auto-rows-wide);
         align-content: start;
         overflow-y: auto;
+    }
+}
+
+@container (max-width: 600px) {
+    .backtest-surface .trade-metrics-panel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 

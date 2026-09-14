@@ -1,9 +1,10 @@
-"""Shared neural strategy and causal input contracts. Code version: v1.3.0."""
+"""Shared neural strategy and causal input contracts. Code version: v1.4.1."""
 
 from copy import deepcopy
 import subprocess
 import sys
 from types import MappingProxyType
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ from strategies.neural_price_field_inputs import (
     causal_neural_market_bundle, factor_values_for_neural,
     plain_market_bundle, prepare_neural_price_field_inputs,
 )
+from strategies.neural_price_field_compute import NeuralForecast
 from strategies.neural_price_field_registry import NEURAL_ARCHITECTURES, NEURAL_SPECS
 from tests.factories.market import ohlc_frame_for_dates
 
@@ -119,6 +121,43 @@ def small_params():
             "epochs": 1, "retrain_interval": 20, "training_window": 64}
 
 
+def plain_bundle_for_frame(frame):
+    return {
+        "ohlcv": [
+            {
+                "observed_at": row.Date.isoformat(),
+                "open": row.Open,
+                "high": row.High,
+                "low": row.Low,
+                "close": row.Close,
+                "volume": row.Volume,
+                "turnover": None,
+            }
+            for row in frame.itertuples(index=False)
+        ],
+        "factor_status": {
+            "ohlcv": "available",
+            "pe": "missing",
+            "options": "missing",
+        },
+        "source_commands": [],
+        "fingerprint": "direct-neural-warmup-boundary",
+    }
+
+
+def deterministic_forecast(features, closes, **_kwargs):
+    row_count = len(closes)
+    horizon_scales = 0.01 * np.sqrt(np.arange(1, 21, dtype=float))
+    return NeuralForecast(
+        means=np.zeros((row_count, 20), dtype=float),
+        stds=np.broadcast_to(horizon_scales, (row_count, 20)).copy(),
+        device={"requested": "CPU", "resolved": "cpu", "engine": "test-double"},
+        selected_features=("close_return",),
+        origin_training_end=np.arange(row_count, dtype=int) - 20,
+        training_diagnostics={"kind": "deterministic-warmup-boundary"},
+    )
+
+
 def test_eight_discovered_strategies_share_factors_and_training():
     names = {item["id"] for item in list_enabled_strategies()}
     assert {f"{key}-price-field" for key in ARCHITECTURES}.issubset(names)
@@ -187,13 +226,56 @@ def test_each_architecture_emits_direct_horizon_contract_on_cpu(architecture):
     assert presentation["diagnostics"]["horizon_count"] == 20
     assert presentation["metric_geometry"]["diagnostic_outcome"]["horizons"] == list(range(1, 21))
     assert presentation["metric_geometry"]["diagnostic_outcome"]["proper_probability_rule"] == "one-minus-half-multiclass-brier"
+    distribution = presentation["metric_geometry"]["distribution_diagnostic"]
+    assert distribution["skill_aggregation"] == (
+        "equal-mean-of-all-20-horizon-skills"
+    )
+    assert distribution["skill_requires_complete_horizon_set"] is True
+    assert distribution["skill_requires_complete_pair_coverage"] is True
+    assert distribution["interval_aggregation"] == "valid-pair-weighted"
     lattice = presentation["metric_geometry"]["render_lattice"]
     assert lattice["horizon_unit"] == "close-to-future-close-session"
     assert lattice["horizon_mapping"] == "direct-learned-1-through-20"
     assert lattice["spatial_mapping"] == "viewport-quantized-display-only"
     assert lattice["detail_horizons"] == list(range(1, 21))
-    assert presentation["diagnostics"]["coverage_pct"] == 100
+    diagnostics = presentation["diagnostics"]
+    assert 0 < diagnostics["coverage_pct"] < 100
+    assert diagnostics["crps_skill_score"] is None
+    assert diagnostics["crps_skill_has_complete_pair_coverage"] is False
+    assert diagnostics["distribution_metric_kind"] == (
+        "close-anchored-standardized-1-20d-crps-skill"
+    )
+    assert diagnostics["distribution_warmup_history_points"] == 0
     assert result.frame["buy_signal"].dtype == bool
+
+
+def test_hidden_history_scores_only_visible_direct_neural_origins():
+    full_frame = daily_frame(120)
+    visible_frame = full_frame.iloc[60:].reset_index(drop=True)
+    strategy = instantiate_strategy("patchtst-price-field")
+    strategy._warmup_bundle = plain_bundle_for_frame(full_frame)
+
+    with patch(
+        "strategies.neural_price_field.walk_forward_neural_predictions",
+        side_effect=deterministic_forecast,
+    ):
+        result = strategy.compute_signals(visible_frame, small_params())
+
+    diagnostics = result.presentation["diagnostics"]
+    assert diagnostics["origin_start"] == 60
+    assert diagnostics["origin_end"] == 120
+    assert diagnostics["eligible_pairs"] == sum(
+        max(len(visible_frame) - horizon, 0) for horizon in range(1, 21)
+    )
+    assert diagnostics["valid_pairs"] == diagnostics["eligible_pairs"]
+    assert diagnostics["distribution_warmup_history_points"] == 60
+    assert diagnostics["distribution_visible_origin_points"] == 60
+    assert diagnostics["warmup_excluded_points"] == 60
+    pd.testing.assert_series_equal(
+        result.frame["Date"],
+        visible_frame["Date"],
+        check_names=False,
+    )
 
 
 @pytest.mark.parametrize("architecture", ("tsmixer", "itransformer", "tide", "moderntcn", "tft"))

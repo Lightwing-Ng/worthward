@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 (() => {
     const create = (context) => {
         const {
@@ -8,6 +8,7 @@
             UNKNOWN_MESSAGE,
             abortActiveWorkspaceHydration,
             bootstrap,
+            clearWorkspacePendingState,
             clearWorkspaceChartTransitionRequest,
             defaults,
             endpoints,
@@ -1765,6 +1766,7 @@
             if (!runtimeState.isSubmittingWithOverlay) return false;
             runtimeState.workspaceSubmitToken += 1;
             abortActiveWorkspaceHydration();
+            clearWorkspacePendingState();
             runtimeState.isSubmittingWithOverlay = false;
             setFormBusyState(false);
             hideWorkspaceModal();

@@ -1,4 +1,4 @@
-"""Complete probability-grid scoring regressions. Code version: v1.0.0."""
+"""Complete probability-grid scoring regressions. Code version: v1.2.0."""
 
 from concurrent.futures import Future
 import math
@@ -9,7 +9,12 @@ import pandas as pd
 import pytest
 
 from scripts import lstm_ga_tune as ga
-from strategies.price_field_scoring import causal_grid_edges, grid_masses, score_price_field_grid
+from strategies.price_field_scoring import (
+    causal_grid_edges,
+    grid_masses,
+    score_price_field_grid,
+    visible_scoring_bounds,
+)
 from tests.factories.market import ohlc_frame_for_dates
 
 
@@ -56,11 +61,158 @@ def test_matching_curve_beats_wrong_drift_and_missing_predictions(forecast_frame
     assert missing["eligible_pairs"] == good["eligible_pairs"]
 
 
+def test_distribution_skill_and_interval_evidence_use_the_complete_grid(
+        forecast_frame,
+):
+    scored = score_price_field_grid(forecast_frame, 25, 80)
+
+    assert scored["crps_skill_score"] > 0
+    assert scored["crps_skill_score"] == pytest.approx(np.mean([
+        item["crps_skill_score"]
+        for item in scored["horizons"].values()
+    ]))
+    assert (
+        scored["crps_skill_aggregation"]
+        == "equal-mean-of-all-20-horizon-skills"
+    )
+    assert scored["crps_skill_valid_horizon_count"] == 20
+    assert scored["crps_skill_required_horizon_count"] == 20
+    assert scored["crps_skill_requires_complete_pair_coverage"] is True
+    assert scored["crps_skill_has_complete_pair_coverage"] is True
+    assert scored["crps"] < scored["reference_crps"]
+    assert scored["valid_pairs"] == scored["eligible_pairs"]
+    interval_80 = scored["central_intervals"]["80"]
+    assert interval_80["valid_pairs"] == scored["valid_pairs"]
+    assert 0 <= interval_80["coverage_pct"] <= 100
+    expected_price_span = sum(
+        item["central_intervals"]["80"]["mean_price_span_pct"]
+        * item["valid_pairs"]
+        for item in scored["horizons"].values()
+    ) / scored["valid_pairs"]
+    assert interval_80["mean_price_span_pct"] == pytest.approx(
+        expected_price_span
+    )
+    for horizon in ("1", "5", "10", "20"):
+        item = scored["horizons"][horizon]
+        assert item["crps_skill_score"] is not None
+        assert item["central_intervals"]["80"]["hits"] <= item["valid_pairs"]
+        assert item["central_intervals"]["80"]["mean_price_span_pct"] > 0
+
+
+def test_crps_headline_requires_all_horizons_and_every_eligible_pair(
+        forecast_frame,
+):
+    short = score_price_field_grid(forecast_frame, 25, 44)
+
+    assert short["horizon_count"] == 18
+    assert short["crps_skill_valid_horizon_count"] == 18
+    assert short["crps_skill_required_horizon_count"] == 20
+    assert short["crps_skill_has_complete_pair_coverage"] is True
+    assert short["crps_skill_score"] is None
+
+    incomplete_frame = forecast_frame.copy()
+    incomplete_frame.loc[30, "lstm_predictive_mean"] = np.nan
+    incomplete = score_price_field_grid(incomplete_frame, 25, 80)
+
+    assert incomplete["horizon_count"] == 20
+    assert incomplete["crps_skill_valid_horizon_count"] == 20
+    assert incomplete["valid_pairs"] < incomplete["eligible_pairs"]
+    assert incomplete["crps_skill_has_complete_pair_coverage"] is False
+    assert incomplete["crps_skill_score"] is None
+
+
+def test_candidate_equal_to_causal_reference_has_zero_crps_skill(
+        forecast_frame,
+):
+    reference = forecast_frame.copy()
+    closes = reference["Close"].to_numpy(dtype=float)
+    scales = np.full(len(reference), 0.005, dtype=float)
+    for origin in range(15, len(reference)):
+        history = closes[max(0, origin - 60):origin + 1]
+        scales[origin] = max(
+            0.005,
+            float(np.std(np.diff(np.log(history)), ddof=1)),
+        )
+    reference["lstm_predictive_mean"] = 0.0
+    reference["lstm_predictive_std"] = scales
+    reference["lstm_return_autoregression"] = 0.0
+    reference["lstm_return_long_run_mean"] = 0.0
+    reference["lstm_return_innovation_std"] = scales
+
+    scored = score_price_field_grid(reference, 25, 80)
+
+    assert scored["crps_skill_score"] == pytest.approx(0.0, abs=1e-12)
+    for item in scored["horizons"].values():
+        assert item["crps_skill_score"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_visible_bounds_keep_causal_warmup_outside_the_scoring_denominator(
+        forecast_frame,
+):
+    visible = forecast_frame.iloc[25:80].copy()
+    start, end = visible_scoring_bounds(forecast_frame["Date"], visible["Date"])
+
+    assert (start, end) == (25, 80)
+    with_warmup = score_price_field_grid(forecast_frame, start, end)
+    without_warmup = score_price_field_grid(visible, 0, len(visible))
+    assert with_warmup["origin_start"] == 25
+    assert with_warmup["origin_end"] == 80
+    assert with_warmup["eligible_pairs"] == sum(
+        len(visible) - horizon
+        for horizon in range(1, 21)
+    )
+    assert without_warmup["eligible_pairs"] < with_warmup["eligible_pairs"]
+
+
 def test_fold_does_not_read_outcomes_past_its_boundary(forecast_frame):
     before = score_price_field_grid(forecast_frame, 25, 55)
     forecast_frame.loc[55:, "Close"] *= 10
     assert score_price_field_grid(forecast_frame, 25, 55) == before
     assert before["horizons"]["20"]["eligible_pairs"] == 10
+
+
+def test_empty_scoring_denominator_has_no_coverage_percentage(forecast_frame):
+    scored = score_price_field_grid(forecast_frame, 40, 40)
+
+    assert scored["eligible_pairs"] == 0
+    assert scored["valid_pairs"] == 0
+    assert scored["coverage_pct"] is None
+    assert scored["crps_skill_score"] is None
+
+
+def test_extreme_finite_scale_omits_unrenderable_price_span(forecast_frame):
+    forecast_frame["lstm_predictive_std"] = 1_000.0
+    forecast_frame["lstm_return_innovation_std"] = 1_000.0
+
+    scored = score_price_field_grid(forecast_frame, 25, 80)
+
+    assert math.isfinite(scored["crps"])
+    assert scored["central_intervals"]["80"]["mean_price_span_pct"] is None
+
+
+def test_extreme_finite_ar_forecast_is_counted_as_missing(forecast_frame):
+    complete = score_price_field_grid(forecast_frame, 25, 80)
+    for column in (
+            "lstm_predictive_mean",
+            "lstm_predictive_std",
+            "lstm_return_autoregression",
+            "lstm_return_long_run_mean",
+            "lstm_return_innovation_std",
+    ):
+        forecast_frame[column] = 1e308
+
+    scored = score_price_field_grid(forecast_frame, 25, 80)
+
+    assert scored["eligible_pairs"] == complete["eligible_pairs"]
+    assert scored["valid_pairs"] == 0
+    assert scored["coverage_pct"] == 0
+    assert scored["probability_score_pct"] == 0
+    assert scored["crps"] is None
+    assert scored["crps_skill_score"] is None
+    assert all(
+        item["brier_loss"] == 1.0
+        for item in scored["horizons"].values()
+    )
 
 
 def test_outside_tail_is_scored_instead_of_dropped(forecast_frame):

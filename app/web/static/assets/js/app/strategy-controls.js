@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.2 */
 (() => {
     const create = (context) => {
         const {
@@ -13,6 +13,7 @@
             buildCleanWorkspaceUrl,
             captureBacktestRefreshTransition,
             captureLineChartRefreshTransition,
+            clearWorkspacePendingState,
             clearWorkspaceChartTransitionRequest,
             closeSharedSelectDropdowns,
             didCompareRequestChangeMetric,
@@ -1257,7 +1258,13 @@
                         loadingSpinner: true,
                     });
                     rememberCurrentViewUrl(nextUrl);
-                    window.requestAnimationFrame(() => window.location.assign(nextUrl));
+                    window.requestAnimationFrame(() => {
+                        if (
+                            submitToken !== runtimeState.workspaceSubmitToken
+                            || document.body.classList.contains("is-page-navigating")
+                        ) return;
+                        window.location.assign(nextUrl);
+                    });
                     return;
                 }
                 let missingLocalTickers = [];
@@ -1376,6 +1383,10 @@
                     }
                     if (error?.name === "AbortError") return;
                     window.requestAnimationFrame(() => {
+                        if (
+                            submitToken !== runtimeState.workspaceSubmitToken
+                            || document.body.classList.contains("is-page-navigating")
+                        ) return;
                         window.location.assign(nextUrl);
                     });
                     return;
@@ -1448,6 +1459,7 @@
         window.addEventListener("pageshow", hideWorkspaceModal);
         window.addEventListener("pageshow", () => {
             restoreOptimisticNavigationSnapshot();
+            clearWorkspacePendingState();
             document.body.classList.remove("is-workspace-switching", "is-page-navigating");
             document.documentElement.removeAttribute("data-navigation-target");
             document.documentElement.removeAttribute("aria-busy");

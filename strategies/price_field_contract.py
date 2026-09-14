@@ -5,7 +5,7 @@ Bayesian Price Field and LSTM Price Field both emit this geometry and
 renderer payload. Shared browser geometry, distribution adapters, and the chart
 controller own layout, probability math, interaction, and lifecycle.
 
-Code version: v1.2.0
+Code version: v1.3.3
 """
 
 from __future__ import annotations
@@ -84,6 +84,21 @@ def probability_grid_geometry_fields() -> dict[str, Any]:
                 "horizon": 1,
                 "horizon_unit": "executed-open-to-open-session",
                 "proper_probability_rule": "one-minus-brier-score",
+            },
+            "distribution_diagnostic": {
+                "target": "log(close[t+h]/close[t])",
+                "horizons": list(range(1, PROBABILITY_FIELD_COLUMNS + 1)),
+                "horizon_unit": "close-to-future-close-session",
+                "proper_probability_rule": "crps-skill-vs-causal-baseline",
+                "reference": "zero-drift-causal-volatility",
+                "horizon_weighting": "equal",
+                "skill_aggregation": "equal-mean-of-all-20-horizon-skills",
+                "skill_requires_complete_horizon_set": True,
+                "skill_requires_complete_pair_coverage": True,
+                "interval_aggregation": "valid-pair-weighted",
+                "continuous_denominator": "valid-forecast-pairs",
+                "coverage_companion": "eligible-pair-coverage",
+                "pair_independence": "overlapping-origins-and-horizons",
             },
             "render_lattice": {
                 "columns": PROBABILITY_FIELD_COLUMNS,

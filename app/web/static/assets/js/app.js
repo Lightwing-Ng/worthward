@@ -1,4 +1,4 @@
-/* Code version: v0.72.1 */
+/* Code version: v0.72.5 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -169,19 +169,22 @@
     const progressiveViewRegistry = {
         tickers: {
             masks: [
-                '[data-workspace-mask="compare-return"]',
-                '[data-workspace-mask="compare-ttm-dividend-yield"]',
+                '[data-workspace-mask="compare-summary"]',
                 '[data-workspace-mask="chart-area"]',
             ],
         },
         prices: {
             masks: [
+                '[data-workspace-mask="page-heading"]',
+                '[data-workspace-mask="result-heading"]',
+                '[data-workspace-mask="result-date-range"]',
                 '[data-workspace-mask="price-subplots"]',
                 '[data-workspace-mask="chart-area"]',
             ],
         },
         portfolio: {
             masks: [
+                '[data-workspace-mask="result-date-range"]',
                 '[data-workspace-mask="portfolio-total-return"]',
                 '[data-workspace-mask="portfolio-donut-start"]',
                 '[data-workspace-mask="portfolio-donut-end"]',
@@ -190,16 +193,14 @@
         },
         dca: {
             masks: [
-                '[data-workspace-mask="trade-metric"]',
-                '[data-workspace-mask="trade-price-chart"]',
-                '[data-workspace-mask="trade-equity-chart"]',
+                '[data-workspace-mask="backtest-history"]',
+                '[data-workspace-mask="backtest-chart-stage"]',
             ],
         },
         "backtest": {
             masks: [
-                '[data-workspace-mask="trade-metric"]',
-                '[data-workspace-mask="trade-price-chart"]',
-                '[data-workspace-mask="trade-equity-chart"]',
+                '[data-workspace-mask="backtest-history"]',
+                '[data-workspace-mask="backtest-chart-stage"]',
             ],
         },
         settings: {
@@ -541,14 +542,14 @@
 
     const appModuleSpecs = Object.freeze([
         ["WORTHWARD_APP_CHART_EXPORT", "app/chart-export.js", "app-chart-export-v1.0.0"],
-        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.0.0"],
+        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.2.1"],
         ["WORTHWARD_APP_WORKSPACE_ENHANCEMENTS", "app/workspace-enhancements.js", "app-workspace-enhancements-v1.0.0"],
-        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.0.0"],
-        ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.0.0"],
+        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.2.0"],
+        ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.0.1"],
         ["WORTHWARD_APP_SELECT_CONTROLS", "app/select-controls.js", "app-select-controls-v1.0.0"],
         ["WORTHWARD_APP_DATE_CONTROLS", "app/date-controls.js", "app-date-controls-v1.0.0"],
-        ["WORTHWARD_APP_RANGE_CONTROLS", "app/range-controls.js", "app-range-controls-v1.0.0"],
-        ["WORTHWARD_APP_STRATEGY_CONTROLS", "app/strategy-controls.js", "app-strategy-controls-v1.0.0"],
+        ["WORTHWARD_APP_RANGE_CONTROLS", "app/range-controls.js", "app-range-controls-v1.0.1"],
+        ["WORTHWARD_APP_STRATEGY_CONTROLS", "app/strategy-controls.js", "app-strategy-controls-v1.0.2"],
     ]);
     for (const [namespace, relativePath, cacheKey] of appModuleSpecs) {
         if (typeof window[namespace]?.create === "function") continue;

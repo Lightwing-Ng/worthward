@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.2.1 */
 (() => {
     const create = (context) => {
         const {
@@ -68,12 +68,76 @@
             "live-trading": {title: "Live trading"},
         });
         const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({
-            tickers: {title: labels.dock_tickers || "Return comparison"},
-            prices: {title: labels.dock_ticker_comparison || "Ticker comparison"},
-            portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
-            dca: {title: labels.dock_dca || "Dollar-cost averaging"},
-            backtest: {title: labels.dock_backtest || "Backtest"},
+            tickers: {
+                title: labels.dock_tickers || "Return comparison",
+                pageTitle: labels.dock_tickers || "Return comparison",
+                resultTitle: labels.performance_summary || "Performance summary",
+                chartTitle: labels.chart_summary || "Stock return comparison",
+            },
+            prices: {
+                title: labels.dock_ticker_comparison || "Ticker comparison",
+                pageTitle: labels.dock_prices || "Price performance",
+                resultTitle: translateUi("Price history"),
+                chartTitle: translateUi("Price history"),
+                isMarketCap: false,
+            },
+            portfolio: {
+                title: labels.dock_portfolio || "Compute your portfolio",
+                pageTitle: translateUi("Portfolio"),
+                resultTitle: labels.portfolio_summary || "Portfolio summary",
+                chartTitle: labels.portfolio_chart || "Portfolio return chart",
+            },
+            dca: {
+                title: labels.dock_dca || "Dollar-cost averaging",
+                pageTitle: labels.dock_backtest || "Backtest",
+                resultTitle: labels.dca_metrics || "Performance",
+                chartTitle: labels.dca_chart || "Recurring buys and total return curve",
+            },
+            backtest: {
+                title: labels.dock_backtest || "Backtest",
+                pageTitle: labels.dock_backtest || "Backtest",
+                resultTitle: labels.backtest_metrics || "Performance",
+                chartTitle: labels.backtest_chart || "Price and strategy analysis",
+            },
         });
+
+        const resolveWorkspaceNavigationProfile = (targetView, targetUrl = "") => {
+            const profile = WORKSPACE_NAVIGATION_PROFILES[targetView] || WORKSPACE_NAVIGATION_PROFILES.backtest;
+            try {
+                const parsedUrl = new URL(targetUrl || window.location.href, window.location.origin);
+                if (targetView === "prices") {
+                    const isMarketCap = parsedUrl.pathname === "/workspaces/market-caps"
+                        || parsedUrl.pathname.startsWith("/workspaces/market-caps/")
+                        || parsedUrl.searchParams.get("metric") === "market-cap";
+                    if (!isMarketCap) return profile;
+                    const pageTitle = labels.dock_market_caps || "Market cap comparison";
+                    return {
+                        ...profile,
+                        pageTitle,
+                        resultTitle: translateUi("Market cap history"),
+                        chartTitle: translateUi("Market cap history"),
+                        isMarketCap: true,
+                    };
+                }
+                if (targetView !== "backtest" && targetView !== "dca") return profile;
+                const strategyId = targetView === "dca"
+                    ? "dca"
+                    : (parsedUrl.searchParams.get("strategy") || state.selectedStrategyId || "");
+                const isDca = strategyId === "dca";
+                const priceFieldStrategyIds = new Set(
+                    Array.isArray(state.priceFieldStrategyIds)
+                        ? state.priceFieldStrategyIds.map((value) => String(value))
+                        : ["bayesian-price-field", "lstm-price-field"],
+                );
+                return {
+                    ...(isDca ? WORKSPACE_NAVIGATION_PROFILES.dca : WORKSPACE_NAVIGATION_PROFILES.backtest),
+                    historySegmentCount: !isDca && priceFieldStrategyIds.has(strategyId) ? 3 : 2,
+                    metricCount: isDca ? 9 : 10,
+                };
+            } catch (_error) {
+                return profile;
+            }
+        };
 
         const escapeSkeletonText = (value) => String(value || "")
             .replaceAll("&", "&amp;")
@@ -101,7 +165,7 @@
                     key,
                     label: profile.title,
                 }));
-            let activeKey = targetView;
+            let activeKey = targetView === "dca" ? "backtest" : targetView;
             if (targetView === "settings") {
                 title = labels.settings_title || "Settings";
                 items = SETTINGS_NAVIGATION_ORDER.map((key) => ({key, label: SETTINGS_NAVIGATION_PROFILES[key].title}));
@@ -133,46 +197,150 @@
             </article>
         `;
 
-        const buildWorkspaceNavigationSkeleton = (targetView) => {
-            const profile = WORKSPACE_NAVIGATION_PROFILES[targetView] || WORKSPACE_NAVIGATION_PROFILES.backtest;
-            if (targetView === "tickers" || targetView === "prices") {
-                return `
-                    <section class="workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
-                        ${buildNavigationTitleCard(profile.title)}
-                        <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-summary-grid">
-                            ${["72%", "56%", "68%"].map((width) => `<div class="navigation-skeleton-metric">${navigationSkeletonLines([width, "42%"])}</div>`).join("")}
-                        </article>
-                        <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["30%"])}</article>
-                    </section>
-                `;
-            }
+        const buildWorkspaceNavigationTitleCard = (title) => `
+            <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card navigation-skeleton-title-card"
+                    data-layout-role="title-rail"
+                    data-navigation-skeleton-region="page-title">
+                <div class="report-heading-row" data-layout-role="title-heading">
+                    <h2 class="report-heading">${escapeSkeletonText(title)}</h2>
+                </div>
+            </header>
+        `;
+
+        const buildWorkspaceNavigationResultTitle = (title) => `
+            <header class="report-card workspace-article-card workspace-summary-card navigation-skeleton-title-card"
+                    data-layout-role="result-title-rail"
+                    data-navigation-skeleton-region="result-title">
+                <div class="report-heading-row" data-layout-role="result-heading">
+                    <h2 class="report-heading">${escapeSkeletonText(title)}</h2>
+                </div>
+            </header>
+        `;
+
+        const buildWorkspaceNavigationControls = (targetView) => {
+            const fieldCount = targetView === "backtest" || targetView === "dca" ? 10 : 8;
+            const elementName = targetView === "tickers" || targetView === "prices" ? "aside" : "article";
+            const backtestAttributes = targetView === "backtest" || targetView === "dca"
+                ? ' id="backtest_parameter_panel" data-backtest-parameter-panel'
+                : "";
+            return `
+                <${elementName} class="chart-surface workspace-mode-controls-surface navigation-skeleton-card navigation-skeleton-controls"
+                                data-navigation-skeleton-region="controls"${backtestAttributes}>
+                    <div class="navigation-skeleton-form">
+                        ${Array.from({length: fieldCount}, (_, index) => `
+                            <div class="navigation-skeleton-field">
+                                ${navigationSkeletonLine(index % 3 === 0 ? "48%" : "34%")}
+                                ${navigationSkeletonLine("100%", "navigation-skeleton-control")}
+                            </div>
+                        `).join("")}
+                    </div>
+                </${elementName}>
+            `;
+        };
+
+        const buildWorkspaceNavigationChart = (profile, className = "") => `
+            <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart${className ? ` ${className}` : ""}"
+                     data-navigation-skeleton-region="chart">
+                <div class="chart-heading-row"><p class="chart-heading">${escapeSkeletonText(profile.chartTitle)}</p></div>
+                ${navigationSkeletonLines(["100%"])}
+            </article>
+        `;
+
+        const buildWorkspaceNavigationSummary = (targetView) => {
             if (targetView === "portfolio") {
                 return `
-                    <section class="workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
-                        ${buildNavigationTitleCard(profile.title)}
-                        <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-portfolio">
-                            <span class="navigation-skeleton-orbit"></span>
-                            <span class="navigation-skeleton-orbit"></span>
-                            ${navigationSkeletonLines(["46%", "62%"]) }
-                        </article>
-                        <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["34%"])}</article>
-                    </section>
+                    <article class="report-card workspace-content-card portfolio-summary-content-card navigation-skeleton-card navigation-skeleton-portfolio"
+                             data-layout-role="result-container"
+                             data-navigation-skeleton-region="summary">
+                        <span class="navigation-skeleton-orbit"></span>
+                        <span class="navigation-skeleton-orbit"></span>
+                        ${navigationSkeletonLines(["46%", "62%"]) }
+                    </article>
                 `;
             }
-            const metricCount = targetView === "dca" ? 9 : 10;
             return `
-                <section class="workspace-mode-shell navigation-skeleton-page">
-                    ${buildNavigationTitleCard(profile.title)}
-                    <div class="workspace-mode-layout navigation-skeleton-workspace-layout">
-                        <article class="chart-surface workspace-mode-controls-surface navigation-skeleton-card navigation-skeleton-controls">
-                            ${navigationSkeletonLines(["42%", "100%", "72%", "100%", "56%", "100%"]) }
-                        </article>
-                        <article class="workspace-mode-main navigation-skeleton-results">
-                            <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-metrics-grid">
-                                ${Array.from({length: metricCount}, () => `<div class="navigation-skeleton-metric">${navigationSkeletonLines(["68%", "42%"])}</div>`).join("")}
+                <article class="report-card workspace-content-card compare-summary-content-card navigation-skeleton-card"
+                         data-layout-role="result-container"
+                         data-navigation-skeleton-region="summary">
+                    <div class="performance-grid navigation-skeleton-summary-grid">
+                        ${Array.from({length: 2}, (_, index) => `<div class="navigation-skeleton-metric">${navigationSkeletonLines([index ? "56%" : "72%", "42%"])}</div>`).join("")}
+                    </div>
+                </article>
+            `;
+        };
+
+        const buildBacktestNavigationResults = (profile) => {
+            const metricCount = profile.metricCount || 10;
+            const historySegmentCount = profile.historySegmentCount || 2;
+            return `
+                ${buildWorkspaceNavigationResultTitle(profile.resultTitle)}
+                <article class="report-card workspace-content-card trade-performance-card investment-report-card backtest-trade-performance-card navigation-skeleton-card"
+                         data-layout-role="result-container"
+                         data-navigation-skeleton-region="overview">
+                    <article class="chart-surface backtest-surface navigation-skeleton-chart">
+                        <div class="chart-heading-row"><p class="chart-heading">${escapeSkeletonText(profile.chartTitle)}</p></div>
+                        ${navigationSkeletonLines(["100%"]) }
+                    </article>
+                </article>
+                <div class="backtest-section-resizer-slot" data-backtest-section-resizer-slot data-navigation-skeleton-region="resizer">
+                    <span class="surface-resizer surface-resizer--block backtest-section-resizer"></span>
+                </div>
+                <article class="chart-surface investment-history-surface backtest-history-surface navigation-skeleton-card"
+                         data-navigation-skeleton-region="history">
+                    <div class="navigation-skeleton-segments">
+                        ${Array.from({length: historySegmentCount}, () => navigationSkeletonLine("100%")).join("")}
+                    </div>
+                    <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid navigation-skeleton-metrics-grid">
+                        ${Array.from({length: metricCount}, () => `<div class="navigation-skeleton-metric">${navigationSkeletonLines(["68%", "42%"])}</div>`).join("")}
+                    </div>
+                </article>
+            `;
+        };
+
+        const buildWorkspaceNavigationSkeleton = (targetView, targetUrl = "") => {
+            const profile = resolveWorkspaceNavigationProfile(targetView, targetUrl);
+            const isBacktest = targetView === "backtest" || targetView === "dca";
+            const shellClasses = [
+                "workspace-mode-shell",
+                targetView === "prices" ? "price-compare-workspace" : "",
+                profile.isMarketCap ? "market-cap-compare-workspace" : "",
+                targetView === "portfolio" ? "portfolio-workspace" : "",
+                isBacktest ? "backtest-workspace-shell" : "",
+                "navigation-skeleton-page",
+            ].filter(Boolean).join(" ");
+            let resultsMarkup = "";
+            if (targetView === "tickers") {
+                resultsMarkup = `
+                    ${buildWorkspaceNavigationResultTitle(profile.resultTitle)}
+                    ${buildWorkspaceNavigationSummary(targetView)}
+                    ${buildWorkspaceNavigationChart(profile)}
+                `;
+            } else if (targetView === "prices") {
+                resultsMarkup = `
+                    ${buildWorkspaceNavigationResultTitle(profile.resultTitle)}
+                    ${buildWorkspaceNavigationChart(profile, "price-subplots-surface")}
+                `;
+            } else if (targetView === "portfolio") {
+                resultsMarkup = `
+                    ${buildWorkspaceNavigationResultTitle(profile.resultTitle)}
+                    ${buildWorkspaceNavigationChart(profile)}
+                    ${buildWorkspaceNavigationSummary(targetView)}
+                `;
+            } else {
+                resultsMarkup = buildBacktestNavigationResults(profile);
+            }
+            return `
+                <section class="${shellClasses}"
+                         data-navigation-skeleton-view="${escapeSkeletonText(targetView)}"${isBacktest ? " data-backtest-workspace-shell" : ""}>
+                    ${buildWorkspaceNavigationTitleCard(profile.pageTitle)}
+                    <div class="workspace-mode-layout">
+                        ${buildWorkspaceNavigationControls(targetView)}
+                        <section class="workspace-mode-main${isBacktest ? " backtest-workspace-main" : ""}">
+                            <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack${isBacktest ? " backtest-results-stack investment-workspace-header" : ""}"
+                                     data-mobile-summary-fixed>
+                                ${resultsMarkup}
                             </article>
-                            <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["36%"])}</article>
-                        </article>
+                        </section>
                     </div>
                 </section>
             `;
@@ -259,7 +427,7 @@
             `;
         };
 
-        const renderOptimisticNavigationSkeleton = ({view, section = null} = {}) => {
+        const renderOptimisticNavigationSkeleton = ({view, section = null, targetUrl = ""} = {}) => {
             const targetView = view || state.currentView;
             const workspacePanel = document.getElementById("workspace_panel");
             const sidebar = document.getElementById("app_sidebar");
@@ -273,15 +441,20 @@
                 normalizedSection = TRADE_NAVIGATION_PROFILES[section] ? section : "investment";
                 workspaceMarkup = buildTradeNavigationSkeleton(normalizedSection);
             } else if (WORKSPACE_VIEWS.has(targetView)) {
-                workspaceMarkup = buildWorkspaceNavigationSkeleton(targetView);
+                workspaceMarkup = buildWorkspaceNavigationSkeleton(targetView, targetUrl);
             } else {
                 return false;
             }
-            if (targetView !== state.currentView) {
+            if (targetView !== state.currentView || sidebar.querySelector(".navigation-skeleton-sidebar-nav")) {
                 sidebar.innerHTML = buildNavigationSidebar(targetView, normalizedSection);
             }
+            const loadingTitle = targetView === "settings"
+                ? SETTINGS_NAVIGATION_PROFILES[normalizedSection].title
+                : targetView === "trade"
+                    ? TRADE_NAVIGATION_PROFILES[normalizedSection].title
+                    : resolveWorkspaceNavigationProfile(targetView, targetUrl).pageTitle;
             workspacePanel.innerHTML = `
-                <div class="navigation-skeleton-status sr-only" role="status" aria-live="polite">Loading ${escapeSkeletonText(targetView === "settings" ? SETTINGS_NAVIGATION_PROFILES[normalizedSection].title : targetView === "trade" ? TRADE_NAVIGATION_PROFILES[normalizedSection].title : WORKSPACE_NAVIGATION_PROFILES[targetView].title)}</div>
+                <div class="navigation-skeleton-status sr-only" role="status" aria-live="polite">Loading ${escapeSkeletonText(loadingTitle)}</div>
                 <div class="navigation-skeleton-root" data-navigation-skeleton aria-hidden="true">${workspaceMarkup}</div>
             `;
             workspacePanel.dataset.navigationSkeleton = "1";
@@ -295,11 +468,34 @@
             delete workspacePanel.dataset.navigationSkeleton;
             workspacePanel.removeAttribute("aria-busy");
         };
+        const clearNavigationBacktestToggle = () => {
+            document.querySelectorAll("[data-navigation-skeleton-backtest-toggle]").forEach((node) => node.remove());
+        };
+        const syncNavigationBacktestToggle = (targetView) => {
+            clearNavigationBacktestToggle();
+            const existingToggle = document.querySelector("[data-backtest-parameter-toggle]");
+            if (existingToggle instanceof HTMLButtonElement) {
+                existingToggle.hidden = true;
+                existingToggle.setAttribute("aria-hidden", "true");
+            }
+            if (targetView !== "backtest" && targetView !== "dca") return;
+            const globalSidebarToggle = document.getElementById("sidebar_toggle");
+            if (globalSidebarToggle?.getAttribute("aria-expanded") === "true") return;
+            const appShell = document.querySelector(".app-shell");
+            if (!(appShell instanceof HTMLElement)) return;
+            const toggle = document.createElement("span");
+            toggle.className = "sidebar-icon-button sidebar-secondary-button backtest-parameter-toggle navigation-skeleton-backtest-toggle";
+            toggle.dataset.navigationSkeletonBacktestToggle = "";
+            toggle.setAttribute("aria-hidden", "true");
+            toggle.innerHTML = '<span class="icon icon-backtest-parameters" aria-hidden="true"></span>';
+            appShell.before(toggle);
+        };
         const captureOptimisticNavigationSnapshot = () => {
             if (optimisticNavigationSnapshot) return;
             const sidebar = document.getElementById("app_sidebar");
             const workspacePanel = document.getElementById("workspace_panel");
             const dock = document.querySelector(".sidebar-dock");
+            const backtestToggle = document.querySelector("[data-backtest-parameter-toggle]");
             if (!(sidebar instanceof HTMLElement) || !(workspacePanel instanceof HTMLElement)) return;
             optimisticNavigationSnapshot = {
                 sidebarNodes: Array.from(sidebar.childNodes),
@@ -308,6 +504,12 @@
                     className: item.className,
                     ariaCurrent: item.getAttribute("aria-current"),
                 })),
+                backtestToggleState: backtestToggle instanceof HTMLButtonElement ? {
+                    node: backtestToggle,
+                    hidden: backtestToggle.hidden,
+                    ariaHidden: backtestToggle.getAttribute("aria-hidden"),
+                    ariaExpanded: backtestToggle.getAttribute("aria-expanded"),
+                } : null,
             };
         };
         const restoreOptimisticNavigationSnapshot = () => {
@@ -318,6 +520,21 @@
             if (!(sidebar instanceof HTMLElement) || !(workspacePanel instanceof HTMLElement)) return false;
             sidebar.replaceChildren(...optimisticNavigationSnapshot.sidebarNodes);
             workspacePanel.replaceChildren(...optimisticNavigationSnapshot.workspaceNodes);
+            clearNavigationBacktestToggle();
+            const backtestToggleState = optimisticNavigationSnapshot.backtestToggleState;
+            if (backtestToggleState?.node instanceof HTMLButtonElement) {
+                backtestToggleState.node.hidden = backtestToggleState.hidden;
+                if (backtestToggleState.ariaHidden === null) {
+                    backtestToggleState.node.removeAttribute("aria-hidden");
+                } else {
+                    backtestToggleState.node.setAttribute("aria-hidden", backtestToggleState.ariaHidden);
+                }
+                if (backtestToggleState.ariaExpanded === null) {
+                    backtestToggleState.node.removeAttribute("aria-expanded");
+                } else {
+                    backtestToggleState.node.setAttribute("aria-expanded", backtestToggleState.ariaExpanded);
+                }
+            }
             if (dock instanceof HTMLElement) {
                 Array.from(dock.querySelectorAll(".sidebar-dock-item")).forEach((item, index) => {
                     const itemState = optimisticNavigationSnapshot.dockState[index];
@@ -362,13 +579,13 @@
                     || path.startsWith("/dca/")
                     || path === "/workspaces/dca"
                     || path.startsWith("/workspaces/dca/")
-                ) return "backtest";
+                ) return "dca";
                 if (
                     path === "/backtest"
                     || path.startsWith("/backtest/")
                     || path === "/workspaces/backtest"
                     || path.startsWith("/workspaces/backtest/")
-                ) return "backtest";
+                ) return parsedUrl.searchParams.get("strategy") === "dca" ? "dca" : "backtest";
                 if (path === "/trade" || path.startsWith("/trade/") || path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "trade";
                 if (path === "/settings" || path.startsWith("/settings/")) return "settings";
                 return null;
@@ -440,12 +657,27 @@
                     : null;
             const dockGroup = targetDockGroup || resolveDockGroupFromView(targetView);
             captureOptimisticNavigationSnapshot();
+            const runtimeState = context.runtimeState;
+            if (runtimeState) {
+                if (runtimeState.autoSubmitTimer) {
+                    window.clearTimeout(runtimeState.autoSubmitTimer);
+                    runtimeState.autoSubmitTimer = null;
+                }
+                runtimeState.workspaceSubmitToken += 1;
+                runtimeState.isSubmittingWithOverlay = false;
+            }
+            context.abortActiveWorkspaceHydration?.();
+            context.clearWorkspacePendingState?.();
+            context.clearWorkspaceChartTransitionRequest?.();
+            context.setFormBusyState?.(false);
+            context.hideWorkspaceModal?.();
             document.body.classList.add("is-workspace-switching", "is-page-navigating");
             document.documentElement.dataset.navigationTarget = targetView || "page";
             document.documentElement.setAttribute("aria-busy", "true");
             syncDockPreviewTarget(dockGroup);
             syncLocalPreviewTarget(link);
-            renderOptimisticNavigationSkeleton({view: targetView, section: targetSection});
+            syncNavigationBacktestToggle(targetView);
+            renderOptimisticNavigationSkeleton({view: targetView, section: targetSection, targetUrl: nextUrl});
             let navigationCommitted = false;
             const commitNavigation = () => {
                 if (navigationCommitted) return;
@@ -474,9 +706,15 @@
             buildSettingsNavigationContent,
             buildSettingsNavigationSkeleton,
             buildTradeNavigationSkeleton,
+            buildWorkspaceNavigationChart,
+            buildWorkspaceNavigationControls,
+            buildWorkspaceNavigationResultTitle,
+            buildWorkspaceNavigationSummary,
+            buildWorkspaceNavigationTitleCard,
             buildWorkspaceNavigationSkeleton,
             captureOptimisticNavigationSnapshot,
             clearOptimisticNavigationSkeleton,
+            clearNavigationBacktestToggle,
             escapeSkeletonText,
             getProgressiveManifest,
             navigationSkeletonLine,
@@ -489,8 +727,10 @@
             resolveSettingsSectionFromUrl,
             resolveTradeSectionFromUrl,
             resolveViewFromUrl,
+            resolveWorkspaceNavigationProfile,
             restoreOptimisticNavigationSnapshot,
             syncDockPreviewTarget,
+            syncNavigationBacktestToggle,
             syncLocalPreviewTarget,
         });
     };

@@ -1,4 +1,4 @@
-{# Code version: v0.6.9 #}
+{# Code version: v0.6.10 #}
 
 {% macro render_notice_banner(
     title='',
@@ -68,7 +68,7 @@
     {% endif %}
     {% if range_text %}
     <div class="chart-heading-row price-compare-range-row">
-        <span class="{{ range_class }}">{{ range_text }}</span>
+        <span class="{{ range_class }}" data-workspace-mask="result-date-range">{{ range_text }}</span>
     </div>
     {% endif %}
     <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %} class="chart-region-wrap">

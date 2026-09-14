@@ -1,4 +1,4 @@
-"""Isolated generic probability training contracts. Code version: v1.3.1."""
+"""Isolated generic probability training contracts. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -132,7 +132,8 @@ def test_new_model_history_cannot_restore_another_models_complete_configuration(
 
 @pytest.mark.parametrize("corruption", [
     "missing", "not_a_mapping", "nan", "infinity", "negative", "too_high", "text_score",
-    "partial_horizons", "missing_horizon", "unobserved_horizon", "invalid_loss", "count_mismatch", "wrong_weighting",
+    "partial_horizons", "missing_horizon", "unobserved_horizon", "partial_pair",
+    "invalid_loss", "count_mismatch", "wrong_weighting",
 ])
 def test_corrupted_or_partial_results_cannot_be_selected_as_completed(prepared_manager, corruption):
     manager, _commands = prepared_manager
@@ -153,6 +154,9 @@ def test_corrupted_or_partial_results_cannot_be_selected_as_completed(prepared_m
         del diagnostics["horizons"]["20"]
     elif corruption == "unobserved_horizon":
         diagnostics["horizons"]["20"]["valid_pairs"] = 0
+    elif corruption == "partial_pair":
+        diagnostics["horizons"]["20"]["valid_pairs"] = 9
+        diagnostics["valid_pairs"] = 199
     elif corruption == "invalid_loss":
         diagnostics["horizons"]["20"]["brier_loss"] = None
     elif corruption == "count_mismatch":
@@ -267,7 +271,9 @@ def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_pa
     })
     request = {"strategy": strategy_id, "ticker": "NVDA", "period": "2y", "interval": "1d",
                "params": params, "run_token": "owned-worker-test", "started_at": "2026-09-07T00:00:00Z",
-               "configuration": {"range": "exact", "from": "2025-01-02", "to": "2025-06-30"}}
+               "configuration": {"range": "exact",
+                                 "from": frame["Date"].iloc[70].date().isoformat(),
+                                 "to": "2025-06-30"}}
     path = tmp_path / "request.json"
     training.write_json(path, request)
     result = price_field_train.run(path, request["run_token"])
@@ -294,7 +300,7 @@ def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_pa
     partial_path = tmp_path / "partial"
     partial_path.mkdir()
     partial_request = {**request, "configuration": {**request["configuration"],
-                       "from": frame["Date"].iloc[-30].date().isoformat()}}
+                       "from": frame["Date"].iloc[-20].date().isoformat()}}
     training.write_json(partial_path / "request.json", partial_request)
     with pytest.raises(ValueError, match="Insufficient scoring window"):
         price_field_train.run(partial_path / "request.json", request["run_token"])

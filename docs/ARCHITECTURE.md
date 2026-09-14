@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.110.1`
+Documentation version: `v1.111.3`
 
 ## Reuse and dependency boundaries
 
@@ -721,13 +721,12 @@ state. The first-step factor-conditioned posterior evolves through that state
 for every viewport-selected integer horizon, including mean reversion,
 autocorrelation, innovation variance, and cumulative state covariance; the
 renderer no longer applies frozen `h * mean` and `sqrt(h) * scale` diffusion.
-The user-facing `Bayesian direction hit rate` is the observed 0-100% accuracy
-of the 50% next-open direction decision, counting only non-flat executable
-returns and non-neutral forecasts. Empty or all-neutral direction samples are
-unscored. `Bayesian probability score` is the
-bounded proper transformation `100% * (1 - mean Brier loss)`. Gaussian negative
-log predictive density and CRPS remain research metadata and are not presented
-as hit rates. The signal-close remains an explicitly declared display anchor
+The executable-return diagnostics retain the observed 0-100% accuracy of the
+50% next-open direction decision and the bounded transformation
+`100% * (1 - mean Brier loss)` as machine-readable compatibility fields. Empty
+or all-neutral direction samples remain unscored. The human-facing Metrics and
+Markdown report instead use standardized 1–20 day CRPS skill and its coverage companion,
+as specified below. The signal-close remains an explicitly declared display anchor
 for absolute price cells; it is not the trading target or assumed fill price.
 The shared `next_open` executor rejects a missing or nonpositive Open instead
 of silently substituting Close.
@@ -742,7 +741,11 @@ The probability field is not a Frosted Glass consumer. Its matrix is explicitly 
 
 The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each hover side independently to `min(10, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`; the half-plot cap prevents edge-adjacent hover fields from consuming the entire plot. The contained Price Field detail surface uses the complete strategy-owned row counts without the hover boundary cap and scales them inside its own viewport. Grid cells use a fixed 2 px logical gap; the same 2 px inset separates the vertical guide from the first column. Overview cells map their top and bottom pixels through the live Y scale to exact price intervals. Detail cells for direct-horizon neural models use their independent anchor-centered log-price domain; other detail cells retain live-Y-scale intervals. Hover and detail therefore share model moments, horizon identities, and Gaussian CDF semantics but intentionally use different price-band boundaries. Horizontal cells map to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It has no cell or outer radius and uses an explicitly transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding. The shared vertical resizer invokes the Backtest overlay refresh after Chart.js has resized, so a pinned or tracking field cannot retain a stale geometry frame. During native or visual probability scrolling, the pointer-defined crosshair is recomputed in the same frame as the overlay translation. Every chart layout refresh clears screen-space pointer coordinates before recalculating geometry, so viewport, sidebar, and resizer reflows cannot inherit a stale pointer anchor or overflowed field; the next real pointer event re-establishes both guides from the current chart bounds. This matrix has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
 
-The model diagnostics are independent of the viewport-quantized 20-column grid. Direction hit rate, Brier probability score, Gaussian log score, and CRPS score the single executable next-open-to-following-open outcome for each origin. None is a model feature, signal input, or cache key. Autoregressive browser columns may represent more than one trading day, and their probability masses come from the origin's fitted return-state transition rather than a frozen one-day diffusion. Direct-horizon browser columns always represent learned horizons 1 through 20; their wider overview slots are a legibility constraint, not horizon downsampling.
+The `close-price-grid/v1.1.3` and `direct-close-price-grid/v1.1.3` diagnostics score a viewport-independent, standardized close-anchored distribution at horizons 1 through 20. The machine-readable target and Gaussian CRPS units are explicitly `log(close[t+h]/close[t])`; the renderer converts that distribution back to anchored prices. Each horizon compares Gaussian CRPS with a causal zero-drift reference whose scale comes only from prior realized volatility. The primary `CRPS skill vs baseline` value is the equal-weighted mean of all 20 horizon-specific relative skills; averaging relative skills prevents longer-horizon CRPS scale from silently receiving more weight. The headline is `N/A` unless all 20 horizons and every causally eligible forecast pair have valid model forecasts. This complete-pair gate prevents a model from improving the headline by omitting difficult origins. Finite but numerically unrepresentable forecast moments are retained in the eligible denominator and scored as missing instead of surfacing non-finite diagnostics. Positive values beat the reference, zero matches it, and negative values trail it.
+
+Scoring runs on the warmup-inclusive frame, but `origin_start` and `origin_end` map the visible backtest date range into that frame. Hidden pre-range observations may therefore establish model state, price bands, and the causal reference without moving any scored outcome outside the visible range. Continuous diagnostics use valid forecasts only, so the adjacent `1–20d forecast coverage` card discloses valid and eligible pair counts. Skill aggregation is equal-horizon; central interval coverage and mean multiplicative price span are valid-pair-weighted. Origins and horizons overlap, so the pair count is not an independent-sample count. The visible skill card includes 1, 5, 10, and 20 day values to expose horizon deterioration that an aggregate could hide.
+
+The executable next-open direction hit rate, binary Brier probability score, Gaussian log score, and one-step CRPS remain compatibility diagnostics for Bayesian and LSTM strategies. They are not the displayed full-grid skill and must not be compared numerically with it. No diagnostic is a model feature, signal input, or cache key. Autoregressive browser columns may represent more than one trading day, and their probability masses come from the origin's fitted return-state transition rather than a frozen one-day diffusion. Direct-horizon browser columns always represent learned horizons 1 through 20; their wider overview slots are a legibility constraint, not horizon downsampling.
 
 Durable LSTM GPU workers use `scripts/lstm_runtime.py` before starting a run.
 The worker checks the current interpreter, an explicit configured runtime, the
@@ -1202,9 +1205,11 @@ recognizes the `__mp_main__` import and skips Flask construction, Longbridge
 prewarm, and network bootstrap. WSGI imports and the normal CLI path retain
 their existing application initialization behavior.
 
-The post-hoc model diagnostics score the executable next-open direction and
-return distribution. The UI exposes only the 0-100% direction hit rate and
-bounded Brier probability score; raw Gaussian log score and CRPS remain
+The post-hoc model diagnostics retain executable next-open direction and Brier
+fields for compatibility. The UI and Markdown report instead expose the
+standardized close-anchored 1–20 day CRPS skill headline, its complete-horizon
+and complete-pair availability gate, forecast coverage, central-80% interval
+calibration, and selected horizon profile. Raw Gaussian log score remains
 research metadata. None is a model input. Research-factor rows
 require a verified availability or disclosure timestamp. `filing_date`, report
 period, settlement date, `updated_at`, and snapshot timestamps are not accepted

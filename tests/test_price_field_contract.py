@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.4.1."""
+"""Shared Price Field contract tests. Code version: v1.5.1."""
 
 from __future__ import annotations
 
@@ -145,6 +145,22 @@ class PriceFieldContractTests(unittest.TestCase):
         self.assertEqual(PROBABILITY_FIELD_COLUMNS, 20)
         self.assertEqual(PROBABILITY_FIELD_ROWS_ABOVE, 10)
         self.assertEqual(PROBABILITY_FIELD_GAP_PX, 2)
+        distribution = geometry["metric_geometry"]["distribution_diagnostic"]
+        self.assertEqual(
+            distribution["target"],
+            "log(close[t+h]/close[t])",
+        )
+        self.assertEqual(distribution["horizons"], list(range(1, 21)))
+        self.assertEqual(
+            distribution["skill_aggregation"],
+            "equal-mean-of-all-20-horizon-skills",
+        )
+        self.assertTrue(distribution["skill_requires_complete_horizon_set"])
+        self.assertTrue(distribution["skill_requires_complete_pair_coverage"])
+        self.assertEqual(
+            distribution["interval_aggregation"],
+            "valid-pair-weighted",
+        )
 
     def test_builder_preserves_schema_and_rejects_unknown_schemas(self) -> None:
         payload = build_probability_grid_presentation(

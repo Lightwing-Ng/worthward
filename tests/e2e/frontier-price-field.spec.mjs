@@ -1,4 +1,4 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.5.1 */
+/* Additional neural Price Field GUI contracts. Code version: v1.6.1 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -162,6 +162,7 @@ for (const width of [1024, 390]) {
                 return {
                     kind: presentation.distribution_kind, horizon: presentation.max_horizon,
                     score: presentation.diagnostics.probability_score_pct,
+                    skill: presentation.diagnostics.crps_skill_score,
                     horizonCount: presentation.diagnostics.horizon_count,
                     count: presentation.diagnostics.valid_pairs, backend: presentation.device.resolved,
                     fields: document.querySelectorAll('[data-strategy-param-input]').length,
@@ -174,19 +175,24 @@ for (const width of [1024, 390]) {
             expect(Number.isFinite(contract.score)).toBe(true);
             expect(contract.score).toBeGreaterThanOrEqual(0);
             expect(contract.score).toBeLessThanOrEqual(100);
+            expect(Number.isFinite(contract.skill)).toBe(true);
             expect(contract.count).toBeGreaterThan(0);
             expect(contract.backend).toBe('cpu');
             expect(contract.fields).toBeGreaterThan(50);
             expect(contract.overflow).toBeLessThanOrEqual(1);
-            const probability = page.locator('[data-backtest-metric="probability-field-probability-score"]');
-            const direction = page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]');
-            await expect(probability.locator('.trade-metric-label')).toHaveText(`${label} probability score`);
-            await expect(probability).toHaveAttribute('data-probability-field-metric', 'direct-close-full-grid-brier');
-            await expect(probability).toHaveAttribute('title', /equally weighted mean normalized multiclass Brier loss across close-to-future-close horizons 1–20/);
-            await expect(probability).toHaveAttribute('title', /Scored horizons: 20 of 20/);
-            await expect(probability).not.toHaveAttribute('title', /next-open|75%/);
-            await expect(direction.locator('.trade-metric-label')).toHaveText(`${label} direction hit rate`);
-            await expect(direction).toHaveAttribute('title', /signal-close-to-next-close/);
+            const skill = page.locator('[data-backtest-metric="probability-field-distribution-skill"]');
+            const evidence = page.locator('[data-backtest-metric="probability-field-forecast-evidence"]');
+            await expect(skill.locator('.trade-metric-label')).toHaveText('CRPS skill vs baseline');
+            await expect(skill).toHaveAttribute('data-probability-field-metric', 'standardized-1-20d-crps-skill-vs-causal-baseline');
+            await expect(skill).toHaveAttribute('title', /Equal-weighted mean of historical causal walk-forward CRPS skill/);
+            await expect(evidence.locator('.trade-metric-label')).toHaveText('1–20d forecast coverage');
+            await expect(evidence).toHaveAttribute('title', /not a count of independent observations/);
+            const detailOverflow = await page.locator('.trade-metric-card--diagnostic .trade-metric-detail').evaluateAll(
+                (details) => details.map((detail) => detail.scrollWidth - detail.clientWidth),
+            );
+            expect(detailOverflow.every((overflow) => overflow <= 1)).toBe(true);
+            await expect(page.locator('[data-backtest-metric="probability-field-probability-score"]')).toHaveCount(0);
+            await expect(page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]')).toHaveCount(0);
             await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');

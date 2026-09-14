@@ -1,4 +1,4 @@
-/* Code version: v0.6.2 */
+/* Code version: v0.6.4 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const appState = () => window.WORTHWARD_APP || {};
@@ -99,11 +99,16 @@
 
 	const sanitizeWorkspaceShareClone = (node, { removeWinnerBadge = false } = {}) => {
 		if (!(node instanceof HTMLElement)) return node;
+		node.removeAttribute("id");
 		node.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
-		node.querySelectorAll("[data-bound], [data-chart-mounted], [data-trade-chart-ready]").forEach((element) => {
+		[node, ...node.querySelectorAll("[data-bound], [data-chart-mounted], [data-trade-chart-ready]")].forEach((element) => {
 			element.removeAttribute("data-bound");
 			element.removeAttribute("data-chart-mounted");
 			element.removeAttribute("data-trade-chart-ready");
+		});
+		[node, ...node.querySelectorAll("[aria-labelledby], [aria-describedby]")].forEach((element) => {
+			element.removeAttribute("aria-labelledby");
+			element.removeAttribute("aria-describedby");
 		});
 		if (removeWinnerBadge) {
 			node.querySelectorAll(".winner-badge").forEach((element) => element.remove());
@@ -120,6 +125,8 @@
 	const createWorkspaceShareTemplateFrame = ({ shareView, title }) => {
 		const host = document.createElement("div");
 		host.className = "investment-community-share-capture";
+		host.setAttribute("aria-hidden", "true");
+		host.inert = true;
 		host.style.setProperty("--investment-community-share-shell-export-width", "var(--investment-community-share-shell-width, 1080px)");
 		host.style.setProperty("--investment-community-share-shell-export-height", "var(--investment-community-share-shell-height, 1730px)");
 

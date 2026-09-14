@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.30.1."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.30.5."""
 
 from __future__ import annotations
 
@@ -387,6 +387,57 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(
             result.metadata["probability_field_direction_hit_rate_pct"],
             diagnostics["direction_hit_rate_pct"],
+        )
+        grid = diagnostics["grid"]
+        self.assertEqual(grid["schema"], "close-price-grid/v1.1.3")
+        self.assertEqual(grid["target"], "log(close[t+h]/close[t])")
+        self.assertEqual(grid["horizon_count"], 20)
+        self.assertGreater(grid["valid_pairs"], 0)
+        self.assertEqual(grid["crps_skill_required_horizon_count"], 20)
+        self.assertEqual(
+            grid["crps_skill_has_complete_pair_coverage"],
+            grid["eligible_pairs"] > 0
+            and grid["valid_pairs"] == grid["eligible_pairs"],
+        )
+        self.assertEqual(
+            grid["crps_skill_score"] is not None,
+            grid["crps_skill_valid_horizon_count"] == 20
+            and grid["crps_skill_has_complete_pair_coverage"],
+        )
+        self.assertEqual(
+            diagnostics["distribution_metric_kind"],
+            "close-anchored-standardized-1-20d-crps-skill",
+        )
+        self.assertEqual(
+            diagnostics["distribution_evaluation_scope"],
+            "visible-backtest-range-with-causal-prior-history",
+        )
+        self.assertIn("80", grid["central_intervals"])
+
+    def test_hidden_history_establishes_causal_grid_for_visible_origins(
+            self,
+    ) -> None:
+        full_frame = _market_frame(120)
+        visible_frame = full_frame.iloc[60:].reset_index(drop=True)
+        strategy = BayesianPriceFieldStrategy()
+        strategy._warmup_bundle = _bundle_from_frame(full_frame)
+
+        result = strategy.compute_signals(
+            visible_frame,
+            _cpu_params(use_pe_ratio=False, use_options=False),
+        )
+
+        diagnostics = result.presentation["diagnostics"]
+        grid = diagnostics["grid"]
+        self.assertEqual(grid["origin_start"], 60)
+        self.assertEqual(grid["origin_end"], 120)
+        self.assertEqual(
+            grid["eligible_pairs"],
+            sum(len(visible_frame) - horizon for horizon in range(1, 21)),
+        )
+        self.assertEqual(
+            diagnostics["distribution_evaluation_scope"],
+            "visible-backtest-range-with-causal-prior-history",
         )
 
     def test_probability_diagnostics_do_not_score_without_two_later_opens(self) -> None:

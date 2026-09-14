@@ -1,4 +1,4 @@
-"""Evaluate direct multi-horizon return distributions. Code version: v1.0.0.
+"""Evaluate direct multi-horizon return distributions. Code version: v1.2.0.
 
 The fixed causal grid is shared with the existing Price Field scorer. Display
 thresholds never change its denominator, cells, or outside-tail probabilities.
@@ -16,22 +16,16 @@ import pandas as pd
 from strategies.price_field_scoring import (
     GRID_HORIZONS,
     GRID_ROWS,
+    aggregate_complete_horizon_crps_skill,
+    aggregate_central_intervals,
     causal_grid_edges,
+    central_price_span_pct,
     grid_masses,
+    normal_crps,
 )
 
-NEURAL_SCORING_VERSION = "direct-close-price-grid/v1.0.0"
+NEURAL_SCORING_VERSION = "direct-close-price-grid/v1.1.3"
 _INTERVALS = (0.50, 0.80, 0.95)
-
-
-def normal_crps(observed: float, mean: float, scale: float) -> float:
-    """Return the Gaussian CRPS in the observed target's units."""
-    if not all(math.isfinite(value) for value in (observed, mean, scale)) or scale <= 0:
-        raise ValueError("CRPS requires finite observations and a positive scale.")
-    z = (observed - mean) / scale
-    cdf = 0.5 * math.erfc(-z / math.sqrt(2.0))
-    density = math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
-    return scale * (z * (2 * cdf - 1) + 2 * density - 1 / math.sqrt(math.pi))
 
 
 def _mean(values: list[float]) -> float | None:
@@ -39,7 +33,7 @@ def _mean(values: list[float]) -> float | None:
 
 
 def score_neural_price_field(frame: pd.DataFrame, start: int, end: int) -> dict[str, Any]:
-    """Score origins and realized Close[t+h]/Close[t] wholly inside [start, end).
+    """Score realized log(Close[t+h]/Close[t]) wholly inside [start, end).
 
     Missing forecasts receive maximum grid loss on the same eligible slots.
     Continuous diagnostics report their valid-only denominator explicitly;
@@ -64,7 +58,14 @@ def score_neural_price_field(frame: pd.DataFrame, start: int, end: int) -> dict[
         scales = pd.to_numeric(frame.get(f"pf_std_h{horizon:02d}", pd.Series(np.nan, index=frame.index)), errors="coerce").to_numpy(dtype=float)
         losses, references, crps_values, reference_crps, nlpds, pits = [], [], [], [], [], []
         hit_masses, cell_logs = [], []
-        intervals: dict[str, Any] = {str(int(level * 100)): {"hits": 0, "widths": []} for level in _INTERVALS}
+        intervals: dict[str, Any] = {
+            str(int(level * 100)): {
+                "hits": 0,
+                "widths": [],
+                "price_spans": [],
+            }
+            for level in _INTERVALS
+        }
         top_hits, outside = 0, 0
         for origin, edges in edges_by_origin.items():
             target = origin + horizon
@@ -84,37 +85,97 @@ def score_neural_price_field(frame: pd.DataFrame, start: int, end: int) -> dict[
                 if horizon == 1:
                     binary_losses.append(1.0)
                 continue
-            masses = grid_masses(edges, mean, scale)
-            losses.append(float((masses @ masses + 1 - 2 * masses[category]) / 2))
-            hit_masses.append(float(masses[category]))
-            cell_logs.append(-math.log(max(1e-15, float(masses[category]))))
+            try:
+                masses = grid_masses(edges, mean, scale)
+                loss = float(
+                    (masses @ masses + 1 - 2 * masses[category]) / 2
+                )
+                hit_mass = float(masses[category])
+                cell_log = -math.log(max(1e-15, hit_mass))
+                z_score = (observed - mean) / scale
+                pit = 0.5 * math.erfc(-z_score / math.sqrt(2.0))
+                crps_value = normal_crps(observed, mean, scale)
+                reference_crps_value = normal_crps(
+                    observed,
+                    0.0,
+                    reference_scale,
+                )
+                nlpd = (
+                    0.5 * math.log(2 * math.pi)
+                    + math.log(scale)
+                    + 0.5 * z_score * z_score
+                )
+                radii = {
+                    level: NormalDist().inv_cdf((1 + level) / 2) * scale
+                    for level in _INTERVALS
+                }
+                probability = (
+                    0.5 * math.erfc(-mean / (scale * math.sqrt(2.0)))
+                    if horizon == 1
+                    else None
+                )
+            except (ArithmeticError, ValueError):
+                losses.append(1.0)
+                if horizon == 1:
+                    binary_losses.append(1.0)
+                continue
+            candidate_values = (
+                loss,
+                hit_mass,
+                cell_log,
+                z_score,
+                pit,
+                crps_value,
+                reference_crps_value,
+                nlpd,
+                *(value for radius in radii.values() for value in (radius, 2.0 * radius)),
+            )
+            if not all(math.isfinite(value) for value in candidate_values):
+                losses.append(1.0)
+                if horizon == 1:
+                    binary_losses.append(1.0)
+                continue
+            losses.append(loss)
+            hit_masses.append(hit_mass)
+            cell_logs.append(cell_log)
             top_hits += int(int(np.argmax(masses)) == category)
             outside += int(category in {0, GRID_ROWS + 1})
-            z = (observed - mean) / scale
-            pits.append(0.5 * math.erfc(-z / math.sqrt(2.0)))
-            crps_values.append(normal_crps(observed, mean, scale))
-            reference_crps.append(normal_crps(observed, 0.0, reference_scale))
-            nlpds.append(0.5 * math.log(2 * math.pi) + math.log(scale) + 0.5 * z * z)
-            for level in _INTERVALS:
+            pits.append(pit)
+            crps_values.append(crps_value)
+            reference_crps.append(reference_crps_value)
+            nlpds.append(nlpd)
+            for level, radius in radii.items():
                 item = intervals[str(int(level * 100))]
-                radius = NormalDist().inv_cdf((1 + level) / 2) * scale
                 item["hits"] += int(abs(observed - mean) <= radius)
                 item["widths"].append(2 * radius)
-            if horizon == 1:
-                probability = 0.5 * math.erfc(-mean / (scale * math.sqrt(2.0)))
-                binary_losses.append((probability - float(observed > 0)) ** 2)
+                item["price_spans"].append(central_price_span_pct(radius))
+            if probability is not None:
+                binary_losses.append(
+                    (probability - float(observed > 0)) ** 2
+                )
                 binary_valid += 1
                 if probability != 0.5 and observed != 0:
                     direction_count += 1
-                    binary_hits += int((probability > 0.5) == (observed > 0))
+                    binary_hits += int(
+                        (probability > 0.5) == (observed > 0)
+                    )
         eligible, valid = len(losses), len(crps_values)
         crps, ref_crps = _mean(crps_values), _mean(reference_crps)
         for item in intervals.values():
             item["coverage_pct"] = 100 * item["hits"] / valid if valid else None
             item["mean_log_return_width"] = _mean(item.pop("widths"))
+            price_spans = item.pop("price_spans")
+            finite_price_spans = [
+                span for span in price_spans if span is not None
+            ]
+            item["mean_price_span_pct"] = (
+                _mean(finite_price_spans)
+                if len(finite_price_spans) == len(price_spans)
+                else None
+            )
         horizons[str(horizon)] = {
             "eligible_pairs": eligible, "valid_pairs": valid,
-            "coverage_pct": 100 * valid / eligible if eligible else 0.0,
+            "coverage_pct": 100 * valid / eligible if eligible else None,
             "brier_loss": _mean(losses), "reference_brier_loss": _mean(references),
             "mean_realized_cell_probability": _mean(hit_masses),
             "negative_log_score": _mean(cell_logs),
@@ -132,16 +193,36 @@ def score_neural_price_field(frame: pd.DataFrame, start: int, end: int) -> dict[
     loss = _mean([item["brier_loss"] for item in available])
     reference = _mean([item["reference_brier_loss"] for item in available])
     probability_score = 100 * (1 - loss) if loss is not None else None
+    continuous = [item for item in available if item.get("crps") is not None]
+    crps = _mean([float(item["crps"]) for item in continuous])
+    reference_crps = _mean(
+        [float(item["reference_crps"]) for item in continuous]
+    )
+    crps_skill_score, crps_skill_valid_horizon_count = (
+        aggregate_complete_horizon_crps_skill(horizons)
+    )
+    complete_pair_coverage = eligible > 0 and valid == eligible
+    if not complete_pair_coverage:
+        crps_skill_score = None
     binary = _mean(binary_losses)
     return {
         "schema": NEURAL_SCORING_VERSION, "target": "log(close[t+h]/close[t])",
         "origin_start": start, "origin_end": end,
         "grid_rows": GRID_ROWS, "tail_categories": 2, "horizon_count": len(available),
         "eligible_pairs": eligible, "valid_pairs": valid,
-        "coverage_pct": 100 * valid / eligible if eligible else 0.0,
+        "coverage_pct": 100 * valid / eligible if eligible else None,
         "brier_loss": loss, "reference_brier_loss": reference,
         "brier_skill_score": 1 - loss / reference if reference and loss is not None else None,
         "probability_score_pct": probability_score,
+        "crps": crps,
+        "reference_crps": reference_crps,
+        "crps_skill_score": crps_skill_score,
+        "crps_skill_aggregation": "equal-mean-of-all-20-horizon-skills",
+        "crps_skill_valid_horizon_count": crps_skill_valid_horizon_count,
+        "crps_skill_required_horizon_count": len(GRID_HORIZONS),
+        "crps_skill_requires_complete_pair_coverage": True,
+        "crps_skill_has_complete_pair_coverage": complete_pair_coverage,
+        "central_intervals": aggregate_central_intervals(horizons),
         "continuous_diagnostics_denominator": "valid forecasts only; inspect coverage",
         "next_day": {
             "probability_score_pct": 100 * (1 - binary) if binary is not None else None,

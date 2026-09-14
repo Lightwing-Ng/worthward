@@ -1,4 +1,4 @@
-"""Strategy-neutral local probability-model training jobs. Code version: v1.1.3."""
+"""Strategy-neutral local probability-model training jobs. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -52,8 +52,15 @@ def completed_probability_score(diagnostics: object) -> float:
         if not isinstance(item, dict):
             raise ValueError(f"Insufficient scoring window: horizon {horizon} has no measured diagnostics.")
         valid, eligible = item.get("valid_pairs"), item.get("eligible_pairs")
-        if type(valid) is not int or type(eligible) is not int or not 0 < valid <= eligible:
-            raise ValueError(f"Insufficient scoring window: horizon {horizon} needs a valid observed forecast.")
+        if (
+                type(valid) is not int
+                or type(eligible) is not int
+                or not 0 < valid == eligible
+        ):
+            raise ValueError(
+                "Insufficient scoring window: horizon "
+                f"{horizon} needs every eligible forecast."
+            )
         loss = item.get("brier_loss")
         if type(loss) not in (int, float) or not math.isfinite(loss) or not 0 <= loss <= 1:
             raise ValueError(f"The training result has an invalid Brier loss for horizon {horizon}.")

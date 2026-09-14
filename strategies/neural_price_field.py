@@ -1,4 +1,4 @@
-"""One strategy adapter for eight direct probability engines. Code version: v1.3.0."""
+"""One strategy adapter for eight direct probability engines. Code version: v1.4.4."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from strategies.neural_price_field_inputs import (
     factor_values_for_neural, plain_market_bundle, prepare_neural_price_field_inputs,
 )
 from strategies.neural_price_field_scoring import score_neural_price_field
+from strategies.price_field_scoring import visible_scoring_bounds
 from strategies.neural_price_field_registry import neural_architecture_spec
 from strategies.price_field_contract import build_probability_grid_presentation
 from strategies.price_field_pipeline import (
@@ -136,7 +137,13 @@ class NeuralPriceFieldStrategy(BaseStrategy):
             predictions[f"pf_mean_h{horizon + 1:02d}"] = forecast.means[:, horizon]
             predictions[f"pf_std_h{horizon + 1:02d}"] = forecast.stds[:, horizon]
         predictions["pf_training_end"] = forecast.origin_training_end
-        output = visible.merge(pd.DataFrame(predictions), on="Date", how="left", validate="one_to_one")
+        prediction_frame = pd.DataFrame(predictions)
+        output = visible.merge(
+            prediction_frame,
+            on="Date",
+            how="left",
+            validate="one_to_one",
+        )
         means = output[[f"pf_mean_h{h:02d}" for h in range(1, 21)]].to_numpy(dtype=float)
         stds = output[[f"pf_std_h{h:02d}" for h in range(1, 21)]].to_numpy(dtype=float)
         probabilities = np.asarray([normal_probability_above_zero(mean, std) if np.isfinite(mean) and np.isfinite(std)
@@ -145,18 +152,36 @@ class NeuralPriceFieldStrategy(BaseStrategy):
         buy, sell = probability_threshold_signals(pd.Series(probabilities), normalized["entry_probability"] / 100)
         output["buy_signal"] = np.asarray(buy, dtype=bool)
         output["sell_signal"] = np.asarray(sell, dtype=bool)
-        valid = np.flatnonzero(np.isfinite(means).all(axis=1) & np.isfinite(stds).all(axis=1))
-        # The page excludes its displayed warmup and labels this explicitly.
-        # Research passes fixed common start/end boundaries to the same scorer.
-        score_start = int(valid[0]) if len(valid) else len(output)
-        diagnostics = score_neural_price_field(output, score_start, len(output))
+        scoring_frame = prepared.merge(
+            prediction_frame,
+            on="Date",
+            how="left",
+            validate="one_to_one",
+        )
+        score_start, score_end = visible_scoring_bounds(
+            scoring_frame["Date"],
+            visible["Date"],
+        )
+        diagnostics = score_neural_price_field(
+            scoring_frame,
+            score_start,
+            score_end,
+        )
         next_day = diagnostics.get("next_day") or {}
         diagnostics.update(
             direction_hit_rate_pct=next_day.get("direction_hit_rate_pct"),
             scored_points=diagnostics.get("valid_pairs", 0),
-            metric_kind="direct-close-full-grid-brier", target_interval="signal-close-to-future-close",
+            metric_kind="direct-close-standardized-1-20d-brier",
+            distribution_metric_kind=(
+                "close-anchored-standardized-1-20d-crps-skill"
+            ),
+            target_interval="signal-close-to-future-close",
             proper_probability_rule="one-minus-half-multiclass-brier", causal=True,
-            warmup_excluded_points=score_start, evaluation_scope="displayed-history-after-warmup",
+            warmup_excluded_points=score_start,
+            warmup_history_points=score_start,
+            distribution_warmup_history_points=score_start,
+            distribution_visible_origin_points=score_end - score_start,
+            evaluation_scope="visible-backtest-range-with-causal-prior-history",
         )
         selected = [name for name in forecast.selected_features if name != "close_return"]
         selection = {"origin_index": max(0, len(output) - 1), "eligible": selected, "selected": selected,
@@ -194,6 +219,21 @@ class NeuralPriceFieldStrategy(BaseStrategy):
                                        "horizons": list(range(1, 21)), "horizon_unit": "close-to-future-close-session",
                                        "proper_probability_rule": "one-minus-half-multiclass-brier",
                                        "bands": 20, "tail_bins": 2, "horizon_weighting": "equal",
+                                   },
+                                   "distribution_diagnostic": {
+                                       "target": "log(close[t+h]/close[t])",
+                                       "horizons": list(range(1, 21)),
+                                       "horizon_unit": "close-to-future-close-session",
+                                       "proper_probability_rule": "crps-skill-vs-causal-baseline",
+                                       "reference": "zero-drift-causal-volatility",
+                                       "horizon_weighting": "equal",
+                                       "skill_aggregation": "equal-mean-of-all-20-horizon-skills",
+                                       "skill_requires_complete_horizon_set": True,
+                                       "skill_requires_complete_pair_coverage": True,
+                                       "interval_aggregation": "valid-pair-weighted",
+                                       "continuous_denominator": "valid-forecast-pairs",
+                                       "coverage_companion": "eligible-pair-coverage",
+                                       "pair_independence": "overlapping-origins-and-horizons",
                                    },
                                    "render_lattice": {
                                        "columns": 20, "rows_above": 10, "rows_below": 10,

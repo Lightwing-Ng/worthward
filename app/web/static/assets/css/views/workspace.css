@@ -1,4 +1,4 @@
-/* Code version: v1.28.0 */
+/* Code version: v1.28.1 */
 /* Keep dismiss actions above modal content without reserving a full-height rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -98,7 +98,8 @@
     width: 100%;
 }
 
-.workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card {
+.workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card,
+.workspace > .navigation-skeleton-root > .workspace-mode-shell:first-child > .workspace-mode-title-card {
     padding-top: max(10px, var(--workspace-title-safe-top));
 }
 
@@ -335,7 +336,8 @@
         );
     }
 
-    .workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card {
+    .workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card,
+    .workspace > .navigation-skeleton-root > .backtest-workspace-shell:first-child > .workspace-mode-title-card {
         min-height: var(--workspace-title-rail-height);
         padding-top: var(--workspace-title-rail-pad-block-start);
         padding-bottom: 0;

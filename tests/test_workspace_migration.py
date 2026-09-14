@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.8.5
+Code version: v1.10.0
 """
 
 from __future__ import annotations
@@ -32,9 +32,19 @@ MOTION_CSS = ROOT / "app/web/static/assets/css/foundation/motion.css"
 SPINNER_SVG = ROOT / "app/web/static/images/loading.spinner.svg"
 STYLE_TOKEN_ROWS = ROOT / "app/web/style_token_rows.py"
 PRICE_COMPARE_JS = ROOT / "app/web/static/assets/js/price-compare.js"
+NAVIGATION_JS = ROOT / "app/web/static/assets/js/app/navigation.js"
+WORKSPACE_HYDRATION_JS = ROOT / "app/web/static/assets/js/app/workspace-hydration.js"
+TICKER_CONTROLS_JS = ROOT / "app/web/static/assets/js/app/ticker-controls.js"
+STRATEGY_CONTROLS_JS = ROOT / "app/web/static/assets/js/app/strategy-controls.js"
+RANGE_CONTROLS_JS = ROOT / "app/web/static/assets/js/app/range-controls.js"
 SHELL_CSS = ROOT / "app/web/static/assets/css/layout/shell.css"
 RESPONSIVE_CSS = ROOT / "app/web/static/assets/css/utilities/responsive.css"
 WORKSPACE_CSS = ROOT / "app/web/static/assets/css/views/workspace.css"
+COMPARE_HTML = ROOT / "app/web/templates/compare.html"
+PRICE_COMPARE_HTML = ROOT / "app/web/templates/price_compare.html"
+PORTFOLIO_HTML = ROOT / "app/web/templates/portfolio.html"
+BACKTEST_HTML = ROOT / "app/web/templates/backtest.html"
+MACROS_HTML = ROOT / "app/web/templates/_macros.html"
 
 
 def _slice_between(html: str, start_marker: str, end_marker: str) -> str:
@@ -44,9 +54,17 @@ def _slice_between(html: str, start_marker: str, end_marker: str) -> str:
 class OptimisticNavigationTests(unittest.TestCase):
     def test_navigation_registry_covers_every_route_profile(self) -> None:
         source = read_app_bundle()
+        workspace_profiles = source.split(
+            "const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({",
+            1,
+        )[1].split("const resolveWorkspaceNavigationProfile", 1)[0]
 
         for view in ("tickers", "prices", "portfolio", "dca", "backtest"):
-            self.assertIn(f"{view}: {{title:", source)
+            profile = workspace_profiles.split(f"{view}: {{", 1)[1].split("},", 1)[0]
+            self.assertIn("title:", profile)
+            self.assertIn("pageTitle:", profile)
+            self.assertIn("resultTitle:", profile)
+            self.assertIn("chartTitle:", profile)
 
         for section in (
             "about",
@@ -72,6 +90,162 @@ class OptimisticNavigationTests(unittest.TestCase):
 
         self.assertIn('investment: {title: "Investment"}', source)
         self.assertIn('"live-trading": {title: "Live trading"}', source)
+
+    def test_workspace_navigation_skeleton_matches_current_page_topology(self) -> None:
+        source = NAVIGATION_JS.read_text(encoding="utf-8")
+        workspace_builder = source.split(
+            "const buildWorkspaceNavigationSkeleton =",
+            1,
+        )[1].split("const buildTradeNavigationSkeleton", 1)[0]
+        portfolio_branch = workspace_builder.split(
+            '} else if (targetView === "portfolio") {',
+            1,
+        )[1].split("} else {", 1)[0]
+
+        self.assertIn('(targetView, targetUrl = "")', workspace_builder)
+        self.assertIn('"workspace-mode-shell"', workspace_builder)
+        self.assertIn('class="workspace-mode-layout"', workspace_builder)
+        self.assertIn('class="workspace-mode-main', workspace_builder)
+        self.assertIn("workspace-mode-results-stack", workspace_builder)
+        self.assertIn('data-navigation-skeleton-region="controls"', source)
+        self.assertIn('data-navigation-skeleton-region="result-title"', source)
+        self.assertLess(
+            portfolio_branch.index("buildWorkspaceNavigationChart(profile)"),
+            portfolio_branch.index("buildWorkspaceNavigationSummary(targetView)"),
+        )
+        self.assertNotIn(
+            'if (targetView === "tickers" || targetView === "prices")',
+            workspace_builder,
+        )
+        self.assertIn(
+            "renderOptimisticNavigationSkeleton({view: targetView, section: targetSection, targetUrl: nextUrl});",
+            source,
+        )
+        self.assertIn('parsedUrl.searchParams.get("metric") === "market-cap"', source)
+        self.assertIn('resultTitle: translateUi("Market cap history")', source)
+        self.assertIn('targetView === "dca" ? "backtest" : targetView', source)
+        self.assertIn('historySegmentCount: !isDca && priceFieldStrategyIds.has(strategyId) ? 3 : 2', source)
+        self.assertIn('metricCount: isDca ? 9 : 10', source)
+        self.assertIn(') return "dca";', source)
+        self.assertIn(
+            'parsedUrl.searchParams.get("strategy") === "dca" ? "dca" : "backtest"',
+            source,
+        )
+
+    def test_workspace_pending_registry_covers_stale_identity_and_history_regions(self) -> None:
+        app_source = read_app_bundle()
+        registry = app_source.split(
+            "const progressiveViewRegistry = {",
+            1,
+        )[1].split("const fetchJsonCached", 1)[0]
+
+        for mask in (
+            "compare-summary",
+            "page-heading",
+            "result-heading",
+            "result-date-range",
+            "price-subplots",
+            "portfolio-total-return",
+            "backtest-history",
+            "backtest-chart-stage",
+        ):
+            self.assertIn(f'[data-workspace-mask="{mask}"]', registry)
+
+        self.assertIn(
+            'id="compare_summary_panel" data-workspace-mask="compare-summary"',
+            COMPARE_HTML.read_text(encoding="utf-8"),
+        )
+        price_template = PRICE_COMPARE_HTML.read_text(encoding="utf-8")
+        self.assertIn('data-workspace-mask="page-heading"', price_template)
+        self.assertIn('data-workspace-mask="result-heading"', price_template)
+        self.assertIn('data-workspace-mask="result-date-range"', price_template)
+        self.assertIn(
+            'data-workspace-mask="result-date-range"',
+            MACROS_HTML.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'data-workspace-mask="result-date-range"',
+            PORTFOLIO_HTML.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'data-workspace-mask="backtest-history"',
+            BACKTEST_HTML.read_text(encoding="utf-8"),
+        )
+
+    def test_page_navigation_invalidates_stale_workspace_work(self) -> None:
+        navigation_source = NAVIGATION_JS.read_text(encoding="utf-8")
+        hydration_source = WORKSPACE_HYDRATION_JS.read_text(encoding="utf-8")
+        strategy_source = STRATEGY_CONTROLS_JS.read_text(encoding="utf-8")
+        range_source = RANGE_CONTROLS_JS.read_text(encoding="utf-8")
+        begin_navigation = navigation_source.split(
+            "const beginOptimisticPageNavigation =",
+            1,
+        )[1].split("return Object.freeze", 1)[0]
+
+        self.assertIn("runtimeState.workspaceSubmitToken += 1", begin_navigation)
+        self.assertIn("runtimeState.autoSubmitTimer = null", begin_navigation)
+        self.assertIn("context.abortActiveWorkspaceHydration?.();", begin_navigation)
+        self.assertIn("context.clearWorkspacePendingState?.();", begin_navigation)
+        self.assertIn("context.hideWorkspaceModal?.();", begin_navigation)
+        self.assertIn("syncNavigationBacktestToggle(targetView);", begin_navigation)
+        self.assertIn(
+            'if (document.body.classList.contains("is-page-navigating")) return false;',
+            hydration_source,
+        )
+        self.assertGreaterEqual(
+            hydration_source.count("isWorkspaceHydrationObsolete(controller, token)"),
+            3,
+        )
+        self.assertGreaterEqual(
+            strategy_source.count('document.body.classList.contains("is-page-navigating")'),
+            2,
+        )
+        self.assertIn(
+            'document.body.classList.contains("is-page-navigating")',
+            range_source,
+        )
+
+    def test_backtest_navigation_skeleton_owns_the_responsive_parameter_toggle(self) -> None:
+        source = NAVIGATION_JS.read_text(encoding="utf-8")
+
+        self.assertIn("data-navigation-skeleton-backtest-toggle", source)
+        self.assertIn("backtestToggleState:", source)
+        self.assertIn("clearNavigationBacktestToggle();", source)
+        self.assertIn('targetView !== "backtest" && targetView !== "dca"', source)
+
+    def test_workspace_hydration_masks_stale_results_until_latest_response(self) -> None:
+        source = WORKSPACE_HYDRATION_JS.read_text(encoding="utf-8")
+        app_source = read_app_bundle()
+        apply_pending = source.split(
+            "const applyWorkspacePendingState = () => {",
+            1,
+        )[1].split("const applyComparePendingState", 1)[0]
+        clear_pending = source.split(
+            "const clearWorkspacePendingState =",
+            1,
+        )[1].split("const applyWorkspacePendingState", 1)[0]
+
+        self.assertIn("getProgressiveManifest?.(state.currentView)", apply_pending)
+        self.assertIn('node.classList.add("is-masked-during-switch")', apply_pending)
+        self.assertIn('document.body.classList.add("is-workspace-switching")', apply_pending)
+        self.assertIn('workspacePanel.dataset.workspacePending = "1"', apply_pending)
+        self.assertIn('workspacePanel.setAttribute("aria-busy", "true")', apply_pending)
+        self.assertIn('node.classList.remove("is-masked-during-switch")', clear_pending)
+        self.assertIn('workspacePanel.removeAttribute("aria-busy")', clear_pending)
+        self.assertIn("clearWorkspacePendingState(workspacePanel);", source)
+        self.assertIn("bootstrap.setBacktestLoadState?.(\"loading\");", source)
+        self.assertIn("applyWorkspacePendingState();", source)
+        self.assertIn("'[data-workspace-mask=\"compare-summary\"]'", app_source)
+        self.assertIn("'[data-workspace-mask=\"result-date-range\"]'", app_source)
+        self.assertIn("'[data-workspace-mask=\"backtest-history\"]'", app_source)
+        self.assertIn(
+            "abortActiveWorkspaceHydration();\n            clearWorkspacePendingState();",
+            TICKER_CONTROLS_JS.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "restoreOptimisticNavigationSnapshot();\n            clearWorkspacePendingState();",
+            STRATEGY_CONTROLS_JS.read_text(encoding="utf-8"),
+        )
 
     def test_settings_navigation_uses_shared_skeleton_lifecycle(self) -> None:
         source = SETTINGS_JS.read_text(encoding="utf-8")
@@ -108,7 +282,12 @@ class OptimisticNavigationTests(unittest.TestCase):
             source,
         )
         self.assertIn("backdrop-filter: var(--glass-mask-blur)", source)
+        self.assertIn('data-workspace-mask="price-subplots"', source)
         self.assertIn('data-workspace-mask="trade-metric"', source)
+        self.assertIn('data-workspace-mask="compare-summary"', source)
+        self.assertIn('data-workspace-mask="backtest-history"', source)
+        self.assertIn("pointer-events: none", source)
+        self.assertIn("visibility: hidden", source)
 
     def test_price_range_modal_reuses_the_ticker_fetch_spinner(self) -> None:
         source = read_app_bundle()

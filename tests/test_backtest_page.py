@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.21.1
+Code version: v0.23.0
 """
 
 from __future__ import annotations
@@ -312,6 +312,239 @@ class BacktestPageTests(unittest.TestCase):
             html,
         )
         self.assertIn(">78.25%</span>", html)
+
+    def test_price_field_distribution_evidence_replaces_ambiguous_probability_score(self) -> None:
+        result = backtest_result()
+        result["summary"].update({
+            "probability_field_direction_hit_rate_pct": 53.6,
+            "probability_field_probability_score_pct": 74.12,
+            "probability_field_distribution_skill_pct": -3.52,
+            "probability_field_forecast_coverage_pct": 100.0,
+            "probability_field_valid_pairs": 2_000,
+            "probability_field_eligible_pairs": 2_000,
+            "probability_field_skill_valid_horizon_count": 20,
+            "probability_field_skill_required_horizon_count": 20,
+            "probability_field_interval_80_coverage_pct": 78.6,
+            "probability_field_interval_80_mean_price_span_pct": 14.2,
+            "probability_field_horizon_profile": {
+                "1": {"distribution_skill_pct": 2.1},
+                "5": {"distribution_skill_pct": 1.0},
+                "10": {"distribution_skill_pct": -1.5},
+                "20": {"distribution_skill_pct": -4.2},
+            },
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("CRPS skill vs baseline", html)
+        self.assertIn("-3.52%", html)
+        self.assertIn("1d +2.1%", html)
+        self.assertIn("20d -4.2%", html)
+        self.assertIn("1–20d forecast coverage", html)
+        self.assertIn("100.00%", html)
+        self.assertIn("2,000 / 2,000 forecasts", html)
+        self.assertIn("80% interval coverage 78.6%", html)
+        self.assertIn("Mean span 14.2%", html)
+        self.assertIn(
+            'data-probability-field-metric="standardized-1-20d-crps-skill-vs-causal-baseline"',
+            html,
+        )
+        self.assertIn(
+            'data-probability-field-metric="standardized-1-20d-coverage-and-calibration"',
+            html,
+        )
+        self.assertIn(
+            'id="backtest_metrics_panel" role="region" '
+            'aria-label="Backtest metrics" tabindex="0"',
+            html,
+        )
+        self.assertIn("all 20 horizons and every eligible forecast pair", html)
+        self.assertNotIn(">74.12%</span>", html)
+        self.assertNotIn(">53.60%</span>", html)
+
+    def test_price_field_export_uses_the_same_distribution_evidence(self) -> None:
+        result = backtest_result()
+        result["summary"].update({
+            "probability_field_direction_hit_rate_pct": 53.6,
+            "probability_field_probability_score_pct": 74.12,
+            "probability_field_distribution_skill_pct": -9.25,
+            "probability_field_forecast_coverage_pct": 100.0,
+            "probability_field_valid_pairs": 9_530,
+            "probability_field_eligible_pairs": 9_530,
+            "probability_field_skill_valid_horizon_count": 20,
+            "probability_field_skill_required_horizon_count": 20,
+            "probability_field_interval_80_coverage_pct": 75.17,
+            "probability_field_interval_80_mean_price_span_pct": 9.07,
+            "probability_field_horizon_profile": {
+                "1": {"distribution_skill_pct": -2.77},
+                "5": {"distribution_skill_pct": -4.61},
+                "10": {"distribution_skill_pct": -8.74},
+                "20": {"distribution_skill_pct": -18.0},
+            },
+        })
+        result["trades"] = [{
+            "date": "2025/01/02",
+            "side": "Buy",
+            "price": 101.0,
+            "quantity": 1,
+            "realized_pnl": 0.0,
+            "unrealized_pnl": 0.0,
+            "cash": 9_899.0,
+            "market_value": 101.0,
+            "equity": 10_000.0,
+        }]
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/api/export-transactions?ticker=QQQ&strategy=lstm-price-field"
+            )
+
+        report = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            "- **LSTM standardized 1–20d distribution skill vs baseline "
+            "(CRPS)**: -9.25%",
+            report,
+        )
+        self.assertIn(
+            "- **CRPS headline completeness**: 20 / 20 horizons; "
+            "9,530 / 9,530 eligible forecast pairs",
+            report,
+        )
+        self.assertIn(
+            "- **Distribution skill by horizon**: "
+            "1d -2.8% · 5d -4.6% · 10d -8.7% · 20d -18.0%",
+            report,
+        )
+        self.assertIn(
+            "- **1–20d forecast coverage**: 100.00% (9,530 / 9,530)",
+            report,
+        )
+        self.assertIn(
+            "- **Central 80% interval coverage**: 75.17%; "
+            "mean price span relative to forecast median 9.07%",
+            report,
+        )
+        self.assertIn(
+            "- **Distribution evaluation frame**: visible backtest range; "
+            "hidden pre-range history supplies causal prior context only",
+            report,
+        )
+        self.assertNotIn("probability score", report)
+
+    def test_price_field_distribution_evidence_is_explicit_when_incomplete(self) -> None:
+        result = backtest_result()
+        result["summary"].update({
+            "probability_field_probability_score_pct": 74.12,
+            "probability_field_distribution_skill_pct": None,
+            "probability_field_forecast_coverage_pct": 96.5,
+            "probability_field_valid_pairs": 1_930,
+            "probability_field_eligible_pairs": 2_000,
+            "probability_field_skill_valid_horizon_count": 19,
+            "probability_field_skill_required_horizon_count": 20,
+            "probability_field_interval_80_coverage_pct": 78.6,
+            "probability_field_interval_80_mean_price_span_pct": 14.2,
+            "probability_field_horizon_profile": {},
+        })
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("CRPS skill vs baseline", html)
+        self.assertIn("1–20d forecast coverage", html)
+        self.assertIn("1,930 / 2,000 forecasts", html)
+        self.assertIn("19 / 20 horizons scored", html)
+        self.assertIn("80% interval coverage 78.6%", html)
+        self.assertNotIn(">74.12%</span>", html)
+
+    def test_price_field_empty_evidence_renders_na_in_page_and_export(self) -> None:
+        result = backtest_result()
+        result["summary"].update({
+            "probability_field_distribution_skill_pct": None,
+            "probability_field_forecast_coverage_pct": None,
+            "probability_field_valid_pairs": 0,
+            "probability_field_eligible_pairs": 0,
+            "probability_field_skill_valid_horizon_count": 0,
+            "probability_field_skill_required_horizon_count": 20,
+            "probability_field_interval_80_coverage_pct": None,
+            "probability_field_interval_80_mean_price_span_pct": None,
+            "probability_field_horizon_profile": {},
+        })
+        result["trades"] = [{
+            "date": "2025/01/02",
+            "side": "Buy",
+            "price": 101.0,
+            "quantity": 1,
+            "realized_pnl": 0.0,
+            "unrealized_pnl": 0.0,
+            "cash": 9_899.0,
+            "market_value": 101.0,
+            "equity": 10_000.0,
+        }]
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=result),
+            patch("app.web.runtime.record_strategy_usage"),
+        ):
+            client = create_app().test_client()
+            page_response = client.get(
+                "/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field"
+            )
+            export_response = client.get(
+                "/api/export-transactions?ticker=QQQ&strategy=lstm-price-field"
+            )
+
+        html = page_response.get_data(as_text=True)
+        report = export_response.get_data(as_text=True)
+        evidence_start = html.index(
+            'data-backtest-metric="probability-field-forecast-evidence"'
+        )
+        evidence_card = html[evidence_start : evidence_start + 2_500]
+
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(export_response.status_code, 200)
+        self.assertIn(">\n            N/A\n        </span>", evidence_card)
+        self.assertIn("0 / 0 forecasts", evidence_card)
+        self.assertIn("0 / 20 horizons scored", evidence_card)
+        self.assertIn("80% interval coverage N/A", evidence_card)
+        self.assertIn(
+            "- **1–20d forecast coverage**: N/A (0 / 0)",
+            report,
+        )
+        self.assertIn(
+            "- **Central 80% interval coverage**: N/A",
+            report,
+        )
+        self.assertNotIn("0.00% (0 / 0)", report)
 
     def test_bayesian_scores_render_na_when_no_executable_points_are_scored(self) -> None:
         result = backtest_result()

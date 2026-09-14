@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.5.0 */
+/* Neural Price Field UI integration. Code version: v1.6.1 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -6,7 +6,6 @@ import {
 } from './backtest-parameter-overlay-helper.mjs';
 
 const architectures = ['patchtst', 'tsmixer', 'nhits', 'timexer'];
-const architectureNames = {patchtst: 'PatchTST', tsmixer: 'TSMixer', nhits: 'N-HiTS', timexer: 'TimeXer'};
 const urlFor = (architecture) => `/workspaces/backtest?ticker=NVDA&strategy=${architecture}-price-field`
     + '&range=exact&from=2024-07-14&to=2026-07-14&period=2y&interval=1d&show_trade_details=0'
     + '&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8&training_window=64&retrain_interval=20&cell_display_threshold=0';
@@ -28,26 +27,33 @@ for (const width of [1024, 390]) {
                 const presentation = result.strategy_presentation;
                 return {kind: presentation.distribution_kind, horizon: presentation.max_horizon,
                     score: presentation.diagnostics.probability_score_pct,
+                    skill: presentation.diagnostics.crps_skill_score,
                     count: presentation.diagnostics.valid_pairs, backend: presentation.device.resolved,
                     fields: document.querySelectorAll('[data-strategy-param-input]').length,
                     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth};
             });
             expect(contract.kind).toBe('direct-normal-horizon');
             expect(contract.horizon).toBe(20);
+            expect(Number.isFinite(contract.skill)).toBe(true);
             expect(contract.count).toBeGreaterThan(0);
             expect(contract.backend).toBe('cpu');
             expect(contract.fields).toBeGreaterThan(50);
             expect(contract.overflow).toBeLessThanOrEqual(1);
-            const probability = page.locator('[data-backtest-metric="probability-field-probability-score"]');
-            const direction = page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]');
-            await expect(probability.locator('.trade-metric-label')).toHaveText(`${architectureNames[architecture]} probability score`);
-            await expect(probability).toHaveAttribute('data-probability-field-metric', 'direct-close-full-grid-brier');
-            await expect(probability).toHaveAttribute('title', /equally weighted mean normalized multiclass Brier loss across close-to-future-close horizons 1–20/);
-            await expect(probability).toHaveAttribute('title', /Scored horizons: 20 of 20/);
-            await expect(probability).not.toHaveAttribute('title', /next-open|75%/);
-            await expect(direction.locator('.trade-metric-label')).toHaveText(`${architectureNames[architecture]} direction hit rate`);
-            await expect(direction).toHaveAttribute('data-probability-field-metric', 'next-close-direction-hit-rate');
-            await expect(direction).toHaveAttribute('title', /signal-close-to-next-close/);
+            const skill = page.locator('[data-backtest-metric="probability-field-distribution-skill"]');
+            const evidence = page.locator('[data-backtest-metric="probability-field-forecast-evidence"]');
+            await expect(skill.locator('.trade-metric-label')).toHaveText('CRPS skill vs baseline');
+            await expect(skill).toHaveAttribute('data-probability-field-metric', 'standardized-1-20d-crps-skill-vs-causal-baseline');
+            await expect(skill).toHaveAttribute('title', /Equal-weighted mean of historical causal walk-forward CRPS skill/);
+            await expect(skill).toHaveAttribute('title', /all 20 horizons and every eligible forecast pair/);
+            await expect(evidence.locator('.trade-metric-label')).toHaveText('1–20d forecast coverage');
+            await expect(evidence).toHaveAttribute('data-probability-field-metric', 'standardized-1-20d-coverage-and-calibration');
+            await expect(evidence).toHaveAttribute('title', /not a count of independent observations/);
+            const detailOverflow = await page.locator('.trade-metric-card--diagnostic .trade-metric-detail').evaluateAll(
+                (details) => details.map((detail) => detail.scrollWidth - detail.clientWidth),
+            );
+            expect(detailOverflow.every((overflow) => overflow <= 1)).toBe(true);
+            await expect(page.locator('[data-backtest-metric="probability-field-probability-score"]')).toHaveCount(0);
+            await expect(page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]')).toHaveCount(0);
             await closeBacktestParameterOverlay(page);
             await page.locator('label[for="backtest_history_probability"]').click();
             await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
