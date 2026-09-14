@@ -1,7 +1,7 @@
 /**
  * Investment pagination compatibility exports.
  *
- * Code version: v1.4.1
+ * Code version: v1.4.2
  * - Added: Investment history inherits the shared hidden-page range picker.
  */
 
@@ -17,9 +17,9 @@ import {
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
     setLocalStorePaginationActivePage,
-} from '../local-store-pagination.js?v=local-store-pagination-v1.2.4';
+} from '../local-store-pagination.js?v=local-store-pagination-v1.2.5';
 
-export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.4.1';
+export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.4.2';
 export const INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE = LOCAL_STORE_PAGINATION_CHUNK_SIZE;
 
 export {

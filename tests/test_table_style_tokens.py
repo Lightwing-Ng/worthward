@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.16.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.16.1."""
 
 from __future__ import annotations
 
@@ -522,6 +522,23 @@ def test_pagination_range_menu_respects_clipping_ancestors() -> None:
         "const clipBottom = Math.min(window.innerHeight - viewportInset, clipBounds.bottom);",
         "const spaceAbove = Math.max(0, pickerRect.top - clipTop - menuGap);",
         "const spaceBelow = Math.max(0, clipBottom - pickerRect.bottom - menuGap);",
+    ):
+        assert token in script
+
+
+def test_pagination_indicator_remeasures_after_responsive_geometry_changes() -> None:
+    """Keep the active indicator aligned when its viewport or container changes."""
+    project_root = Path(__file__).resolve().parents[1]
+    script = (
+        project_root / "app/web/static/assets/js/local-store-pagination.js"
+    ).read_text(encoding="utf-8")
+
+    for token in (
+        "function scheduleLocalStorePaginationIndicatorGeometrySync(pagination = null)",
+        "window.addEventListener('resize', scheduleAll, {passive: true});",
+        "window.visualViewport?.addEventListener('resize', scheduleAll, {passive: true});",
+        "localStorePaginationIndicatorResizeObserver = new ResizeObserver((entries) => {",
+        "positionLocalStorePaginationIndicator(pagination, active, {immediate: true});",
     ):
         assert token in script
 

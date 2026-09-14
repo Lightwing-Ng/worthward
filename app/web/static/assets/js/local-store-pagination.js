@@ -1,7 +1,9 @@
 /**
  * Shared pagination primitives.
  *
- * Code version: v1.2.4
+ * Code version: v1.2.5
+ * - Fixed: Active indicators remeasure after viewport or container geometry
+ *   changes so fractional responsive gaps cannot expose a crescent.
  * - Fixed: Range menus respect the nearest clipping ancestor when calculating
  *   available height, while keeping the scroll surface free of scrollbar paint.
  * - Added: Ellipses expose grouped hidden-page ranges through an accessible,
@@ -15,7 +17,7 @@
  *   that preserve an existing direct-child DOM contract.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.4';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.5';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
 const LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE = 100;
@@ -25,6 +27,10 @@ let localStorePaginationRangeMenuId = 0;
 let pinnedLocalStorePaginationRangePicker = null;
 let localStorePaginationRangeCloseTimer = 0;
 let didBindLocalStorePaginationRangeGlobals = false;
+let didBindLocalStorePaginationIndicatorGeometryGlobals = false;
+let localStorePaginationIndicatorGeometryFrame = 0;
+let localStorePaginationIndicatorResizeObserver = null;
+const pendingLocalStorePaginationIndicatorGeometrySyncs = new Set();
 
 function normalizePositiveInteger(value, fallback = 1) {
     const numericValue = Number(value);
@@ -258,8 +264,59 @@ export function ensureLocalStorePaginationIndicator(pagination) {
     return indicator;
 }
 
+function syncLocalStorePaginationIndicatorGeometry(pagination) {
+    if (
+        !(pagination instanceof HTMLElement)
+        || !pagination.isConnected
+        || pagination.hidden
+        || !pagination.classList.contains('is-animated')
+        || pagination.classList.contains('is-animating')
+    ) return;
+    const active = pagination.querySelector('.local-store-page-button.is-active');
+    if (!(active instanceof HTMLElement)) return;
+    positionLocalStorePaginationIndicator(pagination, active, {immediate: true});
+}
+
+function scheduleLocalStorePaginationIndicatorGeometrySync(pagination = null) {
+    if (pagination instanceof HTMLElement) {
+        pendingLocalStorePaginationIndicatorGeometrySyncs.add(pagination);
+    } else {
+        document.querySelectorAll('.local-store-pagination.is-animated')
+            .forEach((candidate) => pendingLocalStorePaginationIndicatorGeometrySyncs.add(candidate));
+    }
+    if (localStorePaginationIndicatorGeometryFrame) return;
+    localStorePaginationIndicatorGeometryFrame = window.requestAnimationFrame(() => {
+        localStorePaginationIndicatorGeometryFrame = 0;
+        const pendingPaginations = Array.from(pendingLocalStorePaginationIndicatorGeometrySyncs);
+        pendingLocalStorePaginationIndicatorGeometrySyncs.clear();
+        pendingPaginations.forEach(syncLocalStorePaginationIndicatorGeometry);
+    });
+}
+
+function ensureLocalStorePaginationIndicatorGeometryBindings(pagination) {
+    if (!(pagination instanceof HTMLElement)) return;
+    if (!didBindLocalStorePaginationIndicatorGeometryGlobals) {
+        didBindLocalStorePaginationIndicatorGeometryGlobals = true;
+        const scheduleAll = () => scheduleLocalStorePaginationIndicatorGeometrySync();
+        window.addEventListener('resize', scheduleAll, {passive: true});
+        window.visualViewport?.addEventListener('resize', scheduleAll, {passive: true});
+    }
+    if (pagination.dataset.paginationIndicatorGeometryBound === '1') return;
+    pagination.dataset.paginationIndicatorGeometryBound = '1';
+    if (typeof ResizeObserver !== 'function') return;
+    if (!localStorePaginationIndicatorResizeObserver) {
+        localStorePaginationIndicatorResizeObserver = new ResizeObserver((entries) => {
+            entries.forEach(({target}) => {
+                scheduleLocalStorePaginationIndicatorGeometrySync(target);
+            });
+        });
+    }
+    localStorePaginationIndicatorResizeObserver.observe(pagination);
+}
+
 export function positionLocalStorePaginationIndicator(pagination, target, {immediate = false} = {}) {
     if (!pagination || !target) return;
+    ensureLocalStorePaginationIndicatorGeometryBindings(pagination);
     const indicator = ensureLocalStorePaginationIndicator(pagination);
     if (!indicator) return;
     const paginationRect = pagination.getBoundingClientRect();

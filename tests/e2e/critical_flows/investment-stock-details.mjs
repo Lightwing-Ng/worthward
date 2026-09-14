@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -48,19 +48,21 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     };
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
+    const currentPaginationVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/pagination.js');
     const currentStockDetailsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/stock-details.js');
+    const currentTransactionTableVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/transaction-table.js');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
         entry: currentEntryVersion,
         chartOrbit: 'v1.39.0',
         dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.10.0',
         layout: 'v1.4.0',
-        pagination: 'v1.4.1',
+        pagination: currentPaginationVersion,
         realtime: 'v1.3.3',
         numericDisplay: 'v1.1.0',
         stockDetails: currentStockDetailsVersion,
         transactionFilters: 'v1.3.0',
-        transactionTable: 'v1.0.2',
+        transactionTable: currentTransactionTableVersion,
         urlState: 'v1.2.0',
     });
     await expect.poll(() => page.evaluate((version) => performance.getEntriesByType('resource').some((entry) => {
@@ -1415,4 +1417,3 @@ test('keeps HSBC unsettled buy history sequential while current cash stays curre
     );
     await expect(currentCash).toHaveAttribute('data-investment-live-display', '*22,474.51');
 });
-

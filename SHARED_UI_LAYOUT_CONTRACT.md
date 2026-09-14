@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.8.0`
+Documentation version: `v1.11.0`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -57,9 +57,10 @@ The Collapse specimen has no placeholder explanatory paragraph.
   do not intercept pointer events. Each shared workspace modal and floating notice uses `12px`
   padding on all four sides. Its circular `24px` dismiss target sits in the upper
   left with equal `12px` CSS top and left insets, so the center has the same distance
-  from both axes; any surface border contributes equally. A dedicated leading grid
-  track separates that target from the status icon and content rather than
-  compensating with extra right padding.
+  from both axes; any surface border contributes equally. The dismiss target owns
+  the first grid row without reserving a full-height column. The status icon and
+  content begin together in the second row: the icon reuses the surface's left
+  inset, while the title and copy share the flexible column after the standard gap.
 
 These rules are not tied to the annotation's 1,024px viewport. Existing desktop,
 overlay, and compact breakpoints and role-based shell geometry remain unchanged.
@@ -152,9 +153,20 @@ constant:
 
 `sidebar bottom - dock bottom = G`
 
+The Dock is icon-only at every supported breakpoint. Its 44px items and active
+indicator step do not expand into a labeled mobile variant. Visible names remain
+available through the owning links' `aria-label` and hover/focus tooltips; the
+redundant `.sidebar-dock-label` copy stays hidden from rendering.
+
 Any pagination belongs to an explicit owner and satisfies:
 
 `pagination center x = owner center x`
+
+The active-page indicator must be remeasured from the active control after any
+viewport or pagination-container geometry change. Once responsive layout and motion
+settle, the indicator and active control must have matching x/y coordinates, width,
+and height within the rendered-geometry tolerance; a fractional gap must never expose
+the active control as a crescent around the indicator.
 
 The acceptance tolerance for rendered geometry is `<= 1px`, after waiting for the
 intended media-query state and motion settle. Touch-sized controls may use the larger

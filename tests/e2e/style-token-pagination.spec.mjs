@@ -1,29 +1,11 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.3.5 */
 import {expect, test} from '@playwright/test';
 
 const paginationSelector = '#style_token_pagination_demo';
 const scrollableTableDemoSelector = '[data-style-token-card="scrollable-table"] .style-token-table-demo-shell';
 
-test('keeps the Style tokens pagination demo circular and makes both hidden ranges interactive', async ({page}) => {
-    await page.goto('/settings/style-tokens');
-
-    const pagination = page.locator(paginationSelector);
-    const leadingRange = pagination.locator('[data-pagination-ellipsis="leading"]');
-    const trailingRange = pagination.locator('[data-pagination-ellipsis="trailing"]');
-    const previousPage = pagination.locator('button.local-store-page-nav[aria-label="Previous page"]');
-    const nextPage = pagination.locator('button.local-store-page-nav[aria-label="Next page"]');
-
-    await expect(pagination).toHaveCount(1);
-    await expect(previousPage).toHaveCount(1);
-    await expect(previousPage.locator('.icon-page-prev')).toHaveCount(1);
-    await expect(nextPage).toHaveCount(1);
-    await expect(nextPage.locator('.icon-page-next')).toHaveCount(1);
-    await expect(leadingRange).toHaveClass(/local-store-pagination-range-picker/);
-    await expect(trailingRange).toHaveClass(/local-store-pagination-range-picker/);
-    await expect(leadingRange.locator('[data-pagination-range-trigger]')).toHaveCount(1);
-    await expect(trailingRange.locator('[data-pagination-range-trigger]')).toHaveCount(1);
-
-    const geometry = await pagination.evaluate((nav) => {
+async function readPaginationIndicatorGeometry(pagination) {
+    return pagination.evaluate((nav) => {
         const active = nav.querySelector('.local-store-page-button.is-active');
         const indicator = nav.querySelector('.local-store-pagination-indicator');
         const activeRect = active.getBoundingClientRect();
@@ -47,6 +29,28 @@ test('keeps the Style tokens pagination demo circular and makes both hidden rang
             },
         };
     });
+}
+
+test('keeps the Style tokens pagination demo circular and makes both hidden ranges interactive', async ({page}) => {
+    await page.goto('/settings/style-tokens');
+
+    const pagination = page.locator(paginationSelector);
+    const leadingRange = pagination.locator('[data-pagination-ellipsis="leading"]');
+    const trailingRange = pagination.locator('[data-pagination-ellipsis="trailing"]');
+    const previousPage = pagination.locator('button.local-store-page-nav[aria-label="Previous page"]');
+    const nextPage = pagination.locator('button.local-store-page-nav[aria-label="Next page"]');
+
+    await expect(pagination).toHaveCount(1);
+    await expect(previousPage).toHaveCount(1);
+    await expect(previousPage.locator('.icon-page-prev')).toHaveCount(1);
+    await expect(nextPage).toHaveCount(1);
+    await expect(nextPage.locator('.icon-page-next')).toHaveCount(1);
+    await expect(leadingRange).toHaveClass(/local-store-pagination-range-picker/);
+    await expect(trailingRange).toHaveClass(/local-store-pagination-range-picker/);
+    await expect(leadingRange.locator('[data-pagination-range-trigger]')).toHaveCount(1);
+    await expect(trailingRange.locator('[data-pagination-range-trigger]')).toHaveCount(1);
+
+    const geometry = await readPaginationIndicatorGeometry(pagination);
     expect(geometry.active.width).toBe(30);
     expect(geometry.active.height).toBe(30);
     expect(geometry.indicator.width).toBe(30);
@@ -72,6 +76,29 @@ test('keeps the Style tokens pagination demo circular and makes both hidden rang
     await expect(pagination).toHaveAttribute('data-pagination-current-page', '31');
     await expect(pagination.locator('.local-store-page-button.is-active')).toHaveText('31');
     await expect(pagination.locator('.local-store-pagination-range-picker.is-open')).toHaveCount(0);
+});
+
+test('keeps the active indicator pixel-aligned after resizing to the annotated viewport', async ({page}) => {
+    await page.setViewportSize({width: 1024, height: 1355});
+    await page.goto('/settings/style-tokens');
+
+    const pagination = page.locator(paginationSelector);
+    await expect(pagination).toHaveClass(/is-animated/);
+
+    const initialGeometry = await readPaginationIndicatorGeometry(pagination);
+    expect(Math.abs(initialGeometry.delta.x)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(initialGeometry.delta.y)).toBeLessThanOrEqual(0.01);
+
+    await page.setViewportSize({width: 753, height: 1355});
+    await page.evaluate(() => new Promise((resolve) => {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    }));
+
+    const resizedGeometry = await readPaginationIndicatorGeometry(pagination);
+    expect(Math.abs(resizedGeometry.delta.x)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(resizedGeometry.delta.y)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(resizedGeometry.delta.width)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(resizedGeometry.delta.height)).toBeLessThanOrEqual(0.01);
 });
 
 test('keeps the scrollable table aligned after moving to page two', async ({page}) => {

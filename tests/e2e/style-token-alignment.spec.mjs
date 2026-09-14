@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.6.0 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -63,17 +63,29 @@ for (const width of [1024, 800, 390]) {
             await expect(close).toHaveCSS('height', '24px');
             await expect(close).toHaveCSS('border-radius', '50%');
             const geometry = await surface.evaluate((node) => {
-                const button = node.querySelector('.dismiss-button').getBoundingClientRect();
-                const icon = node.querySelector('.workspace-modal-icon').getBoundingClientRect();
-                const bounds = node.getBoundingClientRect();
+                const button = node.querySelector('.dismiss-button');
+                const icon = node.querySelector('.workspace-modal-icon');
+                const title = node.querySelector('.workspace-modal-title, .notice-floating-banner-heading');
+                const copy = node.querySelector('.workspace-modal-copy, .notice-floating-banner-copy, .notice-floating-banner-list');
                 return {
-                    centerTop: button.top + (button.height / 2) - bounds.top,
-                    centerLeft: button.left + (button.width / 2) - bounds.left,
-                    controlIconGap: icon.left - button.right,
+                    centerTop: button.offsetTop + (button.offsetHeight / 2),
+                    centerLeft: button.offsetLeft + (button.offsetWidth / 2),
+                    iconLeft: icon.offsetLeft,
+                    iconTop: icon.offsetTop,
+                    iconWidth: icon.offsetWidth,
+                    closeLeft: button.offsetLeft,
+                    closeBottom: button.offsetTop + button.offsetHeight,
+                    titleLeft: title.offsetLeft,
+                    titleTop: title.offsetTop,
+                    copyLeft: copy.offsetLeft,
                 };
             });
             expect(Math.abs(geometry.centerTop - geometry.centerLeft)).toBeLessThanOrEqual(1);
-            expect(geometry.controlIconGap).toBeGreaterThan(0);
+            expect(Math.abs(geometry.iconLeft - geometry.closeLeft)).toBeLessThanOrEqual(1);
+            expect(geometry.iconTop - geometry.closeBottom).toBeGreaterThanOrEqual(4);
+            expect(geometry.titleLeft - geometry.iconLeft - geometry.iconWidth).toBe(12);
+            expect(Math.abs(geometry.titleTop - geometry.iconTop)).toBeLessThanOrEqual(2);
+            expect(geometry.copyLeft).toBe(geometry.titleLeft);
             await page.mouse.move(0, 0);
             await expect(close).toHaveCSS('opacity', '0');
             await close.locator('..').hover();

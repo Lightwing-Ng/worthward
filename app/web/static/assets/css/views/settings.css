@@ -1,4 +1,4 @@
-/* Code version: v0.32.1 */
+/* Code version: v0.33.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -1886,28 +1886,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .style-token-action-package-live-control .ios-switch-shell input:checked + .ios-switch-slider::after {
     transform: translateX(12px);
-}
-
-.style-token-demo[data-style-token-density="compact"] .workspace-modal-dialog,
-.style-token-demo[data-style-token-density="tight"] .workspace-modal-dialog {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 12px;
-    padding-right: calc(var(--workspace-modal-close-size) + 24px);
-}
-
-.style-token-demo[data-style-token-density="compact"] .workspace-modal-icon,
-.style-token-demo[data-style-token-density="compact"] .workspace-modal-title,
-.style-token-demo[data-style-token-density="compact"] .workspace-modal-copy,
-.style-token-demo[data-style-token-density="tight"] .workspace-modal-icon,
-.style-token-demo[data-style-token-density="tight"] .workspace-modal-title,
-.style-token-demo[data-style-token-density="tight"] .workspace-modal-copy {
-    grid-column: 1;
-    grid-row: auto;
-}
-
-.style-token-demo[data-style-token-density="compact"] .workspace-modal-icon,
-.style-token-demo[data-style-token-density="tight"] .workspace-modal-icon {
-    justify-self: start;
 }
 
 .style-token-demo[data-style-token-density="compact"] .style-token-chart-tooltip-demo.chart-tooltip,

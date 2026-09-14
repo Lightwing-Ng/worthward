@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.17.12
+Code version: v0.18.1
 """
 
 from pathlib import Path
@@ -74,6 +74,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--sidebar-shell-border:",
         "--sidebar-shell-shadow:",
         "--sidebar-shell-blur: saturate(160%) blur(18px);",
+        "--layout-sidebar-dock-block-size: calc(",
         "--settings-nav-item-block-size: 48px;",
         "--settings-nav-item-padding-block: 10px;",
         "--settings-nav-item-gap: 8px;",
@@ -121,7 +122,6 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "border-radius: 0;",
         "appearance: none;",
         "left: calc(var(--sidebar-overlay-inset-left) + (var(--layout-sidebar-overlay-inline-size) / 2)) !important;",
-        "--layout-sidebar-dock-block-size: calc(",
         "padding: var(--sidebar-shell-overlay-padding);",
         "scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);",
     ):
@@ -129,6 +129,75 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
 
     assert "--sidebar-toggle-top: 20px;" not in responsive
     assert "--sidebar-toggle-left: 20px;" not in responsive
+
+
+def test_sidebar_dock_stays_icon_only_at_every_breakpoint() -> None:
+    """Keep responsive layouts on the shared icon-only Dock geometry."""
+    trade = _read(ASSET_ROOT / "css/views/trade.css")
+    responsive = _read(ASSET_ROOT / "css/utilities/responsive.css")
+
+    label_start = trade.index(".sidebar-dock-label {")
+    label_rule = trade[label_start : trade.index("\n}", label_start)]
+    indicator_start = trade.index(".sidebar-dock::before {")
+    indicator_rule = trade[indicator_start : trade.index("\n}", indicator_start)]
+    item_start = trade.index(".sidebar-dock-item {")
+    item_rule = trade[item_start : trade.index("\n}", item_start)]
+
+    assert "display: none;" in label_rule
+    assert "width: 44px;" in indicator_rule
+    assert "* 50px" in indicator_rule
+    assert "width: 44px;" in item_rule
+    assert "min-width: 44px;" in item_rule
+    assert "height: var(--layout-sidebar-dock-item-block-size);" in item_rule
+    for obsolete_fragment in (
+        ".sidebar-dock-label {",
+        "width: 72px;",
+        "min-width: 72px;",
+        "height: 52px;",
+        "min-height: 52px;",
+        "* 74px",
+        "--layout-sidebar-dock-item-block-size: 52px;",
+    ):
+        assert obsolete_fragment not in responsive
+
+
+def test_modal_and_notice_content_start_below_the_dismiss_row() -> None:
+    workspace = _read(ASSET_ROOT / "css/views/workspace.css")
+    settings = _read(ASSET_ROOT / "css/views/settings.css")
+
+    modal_start = workspace.index(".workspace-modal-dialog {")
+    modal_rule = workspace[modal_start : workspace.index("\n}", modal_start)]
+    banner_start = workspace.index(".notice-floating-banner {")
+    banner_rule = workspace[banner_start : workspace.index("\n}", banner_start)]
+
+    for rule in (modal_rule, banner_rule):
+        columns_start = rule.index("grid-template-columns:")
+        columns = rule[columns_start : rule.index(";", columns_start)]
+        rows_start = rule.index("grid-template-rows:")
+        rows = rule[rows_start : rule.index(";", rows_start)]
+        assert "var(--workspace-modal-close-size)" not in columns
+        assert "var(--workspace-modal-icon-size)" in columns
+        assert "minmax(0, 1fr)" in columns
+        assert "var(--workspace-modal-close-size)" in rows
+        assert "row-gap: var(--workspace-modal-row-gap);" in rule
+
+    for fragment in (
+        ".workspace-modal-icon {\n    grid-column: 1;\n    grid-row: 2 / span 2;",
+        ".workspace-modal-title {\n    grid-column: 2;\n    grid-row: 2;",
+        ".workspace-modal-copy {\n    grid-column: 2;\n    grid-row: 3;",
+        ".notice-floating-banner-icon {\n    grid-column: 1;\n    grid-row: 2;",
+        ".notice-floating-banner-content {\n    grid-column: 2;\n    grid-row: 2;",
+    ):
+        assert fragment in workspace
+
+    assert (
+        'data-style-token-density="compact"] .workspace-modal-dialog'
+        not in settings
+    )
+    assert (
+        'data-style-token-density="tight"] .workspace-modal-dialog'
+        not in settings
+    )
 
 
 def test_compare_share_and_date_rows_use_the_same_summary_grid() -> None:

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.109.2`
+Documentation version: `v1.110.1`
 
 ## Reuse and dependency boundaries
 
@@ -1238,7 +1238,7 @@ to the owning domain file and keep both aggregators small.
 
 ## Shared component catalog, 8 Sep 2026
 
-Style token rows and component CSS follow Shared UI Layout Contract v1.3.0.
+Style token rows and component CSS follow Shared UI Layout Contract v1.10.0.
 Secondary button replaces the inverted-primary specimen with the intrinsic-width
 agenticContext glass-chip action and has a 32px minimum height. The foundation owns
 the 30px shared-select trigger, 36px shared-select option, and 30px strategy-stepper
@@ -1249,6 +1249,9 @@ uses the sparkles symbol, and the optional Beta Dock destination uses the same l
 `sparkles.2.svg` asset in both projects. Style-token copy actions align to the global
 theme action's right anchor.
 Modal and notice dismiss controls reveal on owner hover or keyboard focus, and
-remain visible for touch input. The obsolete Workspace article catalog row and
-demo branch are removed, without deleting role-governed live page containers.
+remain visible for touch input. Their upper-left row is independent from the
+content row, so status icons reuse the surface's left padding and text begins after
+the standard icon gap instead of inheriting a full-height dismiss column. The
+obsolete Workspace article catalog row and demo branch are removed, without
+deleting role-governed live page containers.
 Responsive acceptance lives in tests/e2e/style-token-alignment.spec.mjs.

@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.144.0
+ * Code version: v2.144.1
  * - Refactored: Feature runtimes are composed from bounded, versioned modules.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
@@ -61,7 +61,7 @@ import {
     buildInvestmentHistoryPagination,
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
-} from './investment/pagination.js?v=investment-pagination-v1.4.1';
+} from './investment/pagination.js?v=investment-pagination-v1.4.2';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
@@ -108,7 +108,7 @@ import {
     getInvestmentHistoryTotalPages,
     isInvestmentHistoryDisplayHidden,
     selectVisibleInvestmentHistoryTransactions,
-} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.2';
+} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.3';
 import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
@@ -124,7 +124,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.144.0',
+    entry: 'v2.144.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

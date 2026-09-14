@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -18,6 +18,7 @@ const responsiveViewports = [
     {name: 'iPhone SE', width: 375, height: 667, overlaySidebar: true},
     {name: 'iPhone 15 Pro', width: 393, height: 852, overlaySidebar: true},
     {name: 'iPad mini portrait', width: 744, height: 1133, overlaySidebar: true},
+    {name: 'annotated tablet portrait', width: 753, height: 1355, overlaySidebar: true},
     {name: 'iPad portrait', width: 768, height: 1024, overlaySidebar: true},
     {name: 'iPad Air portrait', width: 820, height: 1180, overlaySidebar: true},
     {name: 'iPad Pro 11 portrait', width: 834, height: 1194, overlaySidebar: true},
@@ -72,7 +73,7 @@ for (const viewport of responsiveViewports) {
             ? ['workspace', 'trade', 'beta', 'settings']
             : ['workspace', 'trade', 'settings']);
         expect(layout.dockLabels.every((label) => label.text.length > 0)).toBe(true);
-        expect(layout.dockLabels.every((label) => label.visible)).toBe(viewport.overlaySidebar);
+        expect(layout.dockLabels.every((label) => !label.visible)).toBe(true);
         if (viewport.overlaySidebar) {
             expect(layout.toggle.width).toBeGreaterThanOrEqual(44);
             expect(layout.toggle.height).toBeGreaterThanOrEqual(44);

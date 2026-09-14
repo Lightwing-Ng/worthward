@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.3.0`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -37,6 +37,11 @@ markers in older modules. Preserve an existing module's convention unless a
 dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
+
+Shared workspace modals and floating notices reserve their first grid row for the
+upper-left dismiss target. The icon and content start in the next row, with the
+icon aligned to the surface's left padding and the text in the adjacent flexible
+column. Do not restore a dismiss column that consumes the full content height.
 
 Ticker inputs share one leading-slot geometry in `components/forms.css`: the
 logo center is half the input height from its leading edge and vertically
