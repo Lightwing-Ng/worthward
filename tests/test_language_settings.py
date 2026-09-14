@@ -1,6 +1,6 @@
 """Tests for complete Settings language mapping coverage.
 
-Code version: v0.3.0
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -20,6 +20,10 @@ from app.core.language_settings import (
     translate_nested_text,
 )
 from app.core.settings import get_settings
+from tests.app_test_utils import read_app_bundle
+from tests.css_test_utils import read_css_bundle
+from tests.runtime_test_utils import read_runtime_bundle
+from tests.template_test_utils import read_template_bundle
 from app.web.strategy_forms import build_strategy_settings_rows
 from app.web.style_token_rows import (
     build_export_image_rows,
@@ -33,20 +37,26 @@ from strategies.loader import instantiate_strategy, list_enabled_strategies
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_TEMPLATE_PATH = REPO_ROOT / "app" / "web" / "templates" / "settings.html"
 BASE_TEMPLATE_PATH = REPO_ROOT / "app" / "web" / "templates" / "base.html"
-RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
-APP_JS_PATH = REPO_ROOT / "app" / "web" / "static" / "assets" / "js" / "app.js"
-SETTINGS_CSS_PATH = REPO_ROOT / "app" / "web" / "static" / "assets" / "css" / "views" / "settings.css"
-SETTINGS_JS_PATH = REPO_ROOT / "app" / "web" / "static" / "assets" / "js" / "settings.js"
+SETTINGS_CSS_PATH = (
+    REPO_ROOT / "app" / "web" / "static" / "assets" / "css" / "views" / "settings.css"
+)
+SETTINGS_JS_PATH = (
+    REPO_ROOT / "app" / "web" / "static" / "assets" / "js" / "settings.js"
+)
 CONFIG_PATH = REPO_ROOT / "config.toml"
 
 TRANSLATION_CALL_RE = re.compile(
-    r'''(?:translate_ui|translateUi)\(\s*(?P<quoted>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')'''
+    r"""(?:translate_ui|translateUi)\(\s*(?P<quoted>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
 )
 
 
 def extract_literal_translation_keys(path: Path) -> set[str]:
     keys: set[str] = set()
-    source = path.read_text(encoding="utf-8")
+    source = (
+        read_template_bundle(path)
+        if path == SETTINGS_TEMPLATE_PATH
+        else path.read_text(encoding="utf-8")
+    )
     for match in TRANSLATION_CALL_RE.finditer(source):
         value = ast.literal_eval(match.group("quoted"))
         if isinstance(value, str):
@@ -54,19 +64,41 @@ def extract_literal_translation_keys(path: Path) -> set[str]:
     return keys
 
 
+def extract_literal_runtime_translation_keys() -> set[str]:
+    keys: set[str] = set()
+    for match in TRANSLATION_CALL_RE.finditer(read_runtime_bundle()):
+        value = ast.literal_eval(match.group("quoted"))
+        if isinstance(value, str):
+            keys.add(value)
+    return keys
+
+
+def extract_literal_app_translation_keys() -> set[str]:
+    keys: set[str] = set()
+    for match in TRANSLATION_CALL_RE.finditer(read_app_bundle()):
+        value = ast.literal_eval(match.group("quoted"))
+        if isinstance(value, str):
+            keys.add(value)
+    return keys
+
+
 class LanguageSettingsTests(unittest.TestCase):
-    def test_default_mapping_covers_every_general_settings_translation_key(self) -> None:
+    def test_default_mapping_covers_every_general_settings_translation_key(
+        self,
+    ) -> None:
         translations = build_translation_map(LanguageSettings())
         translation_keys = set(translations)
 
         source_paths = (
             BASE_TEMPLATE_PATH,
             SETTINGS_TEMPLATE_PATH,
-            RUNTIME_PATH,
-            APP_JS_PATH,
             SETTINGS_JS_PATH,
         )
-        source_keys = set().union(*(extract_literal_translation_keys(path) for path in source_paths))
+        source_keys = set().union(
+            *(extract_literal_translation_keys(path) for path in source_paths)
+        )
+        source_keys.update(extract_literal_app_translation_keys())
+        source_keys.update(extract_literal_runtime_translation_keys())
         self.assertEqual(source_keys - translation_keys, set())
 
         with CONFIG_PATH.open("rb") as config_file:
@@ -120,9 +152,7 @@ class LanguageSettingsTests(unittest.TestCase):
                 strategy_factory=instantiate_strategy,
             ),
         }
-        translations = build_translation_map(
-            LanguageSettings(language="zh_hans_cn")
-        )
+        translations = build_translation_map(LanguageSettings(language="zh_hans_cn"))
 
         localized = {
             name: translate_nested_text(payload, "zh_hans_cn", translations)
@@ -134,21 +164,29 @@ class LanguageSettingsTests(unittest.TestCase):
         )
         self.assertEqual(style_row["name"], "文本输入控件")
         font_row = next(row for row in localized["font"] if row["name"] == "原始尺度")
-        self.assertEqual(font_row["description"], "设计系统定义的基础像素大小；语义文字角色会继承这些源令牌。")
+        self.assertEqual(
+            font_row["description"],
+            "设计系统定义的基础像素大小；语义文字角色会继承这些源令牌。",
+        )
         self.assertEqual(localized["material"][0]["name"], "磨砂玻璃")
         self.assertEqual(localized["export"][0]["name"], "投资社区分享卡片")
         self.assertIn("机器学习", {row["category"] for row in localized["strategy"]})
 
     def test_language_tabs_reuse_the_standard_segmented_control(self) -> None:
-        template = SETTINGS_TEMPLATE_PATH.read_text(encoding="utf-8")
-        stylesheet = SETTINGS_CSS_PATH.read_text(encoding="utf-8")
+        template = read_template_bundle(SETTINGS_TEMPLATE_PATH)
+        stylesheet = read_css_bundle(SETTINGS_CSS_PATH)
         script = SETTINGS_JS_PATH.read_text(encoding="utf-8")
 
-        self.assertIn('class="settings-language-tabs segmented-control segmented-control--tabs"', template)
+        self.assertIn(
+            'class="settings-language-tabs segmented-control segmented-control--tabs"',
+            template,
+        )
         self.assertIn('data-option-count="2"', template)
         self.assertIn('data-active="{{ settings_tab }}"', template)
-        self.assertIn('class="settings-language-tab segmented-control-option"', template)
-        self.assertIn('data-language-initial-page=', template)
+        self.assertIn(
+            'class="settings-language-tab segmented-control-option"', template
+        )
+        self.assertIn("data-language-initial-page=", template)
         self.assertNotIn(".settings-language-tabs::before", stylesheet)
         self.assertNotIn(".settings-language-tab.is-active", stylesheet)
         self.assertIn('"--segmented-active-index"', script)

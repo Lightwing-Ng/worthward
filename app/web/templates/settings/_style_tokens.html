@@ -1,0 +1,539 @@
+{# Code version: v1.0.0 #}
+    <section class="style-token-shell" data-style-token-shell>
+            <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-style-token-copy-status></p>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
+            <div class="style-token-list">
+            {% for row in style_token_rows %}
+            <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
+                <div class="style-token-demo">
+                    {% if row.sample_kind == "allocation-range" %}
+                    <div class="style-token-allocation-demo" aria-label="Allocation range variants">
+                        <div class="strategy-allocation-range style-token-allocation-distribution"
+                             style="--allocation-primary: 44%; --allocation-leveraged: 31%; --allocation-cash: 25%;">
+                            <div class="strategy-allocation-labels">
+                                <span class="strategy-allocation-label strategy-allocation-label--primary" style="left: 22%;">
+                                    <span class="strategy-allocation-label-name">QQQ</span>
+                                    <span class="strategy-allocation-label-value">44.00%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--leveraged" style="left: 59.5%;">
+                                    <span class="strategy-allocation-label-name">TQQQ</span>
+                                    <span class="strategy-allocation-label-value">31.00%</span>
+                                </span>
+                                <span class="strategy-allocation-label strategy-allocation-label--cash" style="left: 87.5%;">
+                                    <span class="strategy-allocation-label-name">Cash</span>
+                                    <span class="strategy-allocation-label-value">2,500.00</span>
+                                </span>
+                            </div>
+                            <div class="strategy-allocation-track-shell">
+                                <div class="strategy-allocation-track" aria-hidden="true">
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--primary"></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--leveraged"></span>
+                                    <span class="strategy-allocation-segment strategy-allocation-segment--cash"></span>
+                                </div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="44" tabindex="-1" aria-label="QQQ allocation boundary">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="75" tabindex="-1" data-allocation-boundary="invested" aria-label="TQQQ and Cash boundary">
+                            </div>
+                        </div>
+                        {% for asset, ticker, minimum, maximum in [('primary', 'QQQ', 25, 100), ('leveraged', 'TQQQ', 0, 75)] %}
+                        <div class="strategy-limit-range strategy-limit-range--{{ asset }}">
+                            <div class="strategy-limit-ticker">{{ ticker }}</div>
+                            <div class="strategy-limit-labels">
+                                <label class="{{ 'is-range-start' if minimum == 0 else '' }}" style="left: {{ minimum }}%;">
+                                    <span class="strategy-limit-value">{{ minimum }}%</span>
+                                    <span class="strategy-limit-caption">Minimum</span>
+                                </label>
+                                <label class="{{ 'is-range-end' if maximum == 100 else '' }}" style="left: {{ maximum }}%;">
+                                    <span class="strategy-limit-value">{{ maximum }}%</span>
+                                    <span class="strategy-limit-caption">Maximum</span>
+                                </label>
+                            </div>
+                            <div class="strategy-allocation-track-shell">
+                                <div class="strategy-allocation-track" aria-hidden="true"></div>
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="{{ minimum }}" tabindex="-1" aria-label="{{ ticker }} minimum">
+                                <input class="strategy-allocation-handle" type="range" min="0" max="100" value="{{ maximum }}" tabindex="-1" aria-label="{{ ticker }} maximum">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% elif row.sample_kind == "collapse" %}
+                        {% call render_collapse(row.sample_title, "style-token-collapse") %}
+                        <div class="style-token-collapse-example" data-style-token-collapse-example>
+                            <div class="style-token-collapse-example-header">
+                                <span class="style-token-collapse-example-title">{{ translate_ui('LSTM Price Field') }}</span>
+                                <span class="style-token-collapse-example-badge">{{ translate_ui('Default') }}</span>
+                            </div>
+                            <div class="style-token-collapse-example-grid">
+                                {% for field in row.sample_fields %}
+                                <div class="style-token-collapse-example-row">
+                                    <span class="style-token-collapse-example-label">{{ translate_ui(field.label) }}</span>
+                                    <span class="style-token-collapse-example-value">
+                                        <span>{{ field.value }}</span>{% if field.unit %}<span class="style-token-collapse-example-unit">{{ field.unit }}</span>{% endif %}
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endcall %}
+                    {% elif row.sample_kind == "range-mode" %}
+                    <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
+                        <label class="range-mode-option" for="style_token_range_overview">
+                            <input id="style_token_range_overview" name="style_token_range_mode" type="radio" value="overview" checked>
+                            <span>{{ translate_ui('Overview') }}</span>
+                        </label>
+                        <label class="range-mode-option" for="style_token_range_details">
+                            <input id="style_token_range_details" name="style_token_range_mode" type="radio" value="details">
+                            <span>{{ translate_ui('Details') }}</span>
+                        </label>
+                        <label class="range-mode-option" for="style_token_range_metrics">
+                            <input id="style_token_range_metrics" name="style_token_range_mode" type="radio" value="metrics">
+                            <span>{{ translate_ui('Metrics') }}</span>
+                        </label>
+                    </div>
+                    {% elif row.sample_kind == "switch" %}
+                    <div class="field-checkbox field-switch style-token-switch-demo" data-style-token-switch-demo>
+                        {{ render_switch(
+                            "style_token_switch_demo",
+                            row.sample_title,
+                            "style_token_switch_demo",
+                            input_attrs="data-style-token-switch-input"
+                        ) }}
+                    </div>
+                    {% elif row.sample_kind == "action-button" %}
+                    <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
+                    {% elif row.sample_kind == "round-icon-button" %}
+                    <button type="button" class="{{ row.sample_button_class }}" aria-label="{{ row.name }}">
+                        <span class="icon {{ row.sample_icon_class }}" aria-hidden="true"></span>
+                    </button>
+                    {% elif row.sample_kind == "action-package" %}
+                    <div class="settings-action-package {{ row.sample_icon_shell_class }}"
+                         data-style-token-action-package
+                         data-action-package-live="false"
+                         data-action-package-default-copy="{{ row.sample_copy }}"
+                         data-action-package-pending-copy="{{ labels.local_store_maintain_pending_note }}">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="{{ labels.local_store_maintain_live_marker }}" title="{{ labels.local_store_maintain_live_marker }}" hidden></span>{{ row.sample_title }}</p>
+                            <p class="settings-service-note" data-action-package-copy>{{ row.sample_copy }}</p>
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="button" class="{{ row.sample_button_class }}" data-action-package-button data-default-label="{{ row.sample_button }}" data-pending-label="{{ labels.local_store_maintain_pending_button }}">{{ row.sample_button }}</button>
+                        </div>
+                    </div>
+                    {{ render_switch(
+                        "style_token_action_package_live",
+                        translate_ui('Live marker'),
+                        row_class="switch-row style-token-action-package-live-control",
+                        label_class="style-token-action-package-live-label",
+                        input_attrs="data-style-token-action-package-live"
+                    ) }}
+                    {% elif row.sample_kind == "text-input-control" %}
+                    <div class="style-token-settings-input-shell style-token-text-input-shell">
+                        <label class="style-token-settings-input-label" for="style_token_text_input">{{ row.sample_title }}</label>
+                        <div class="text-input-control-shell">
+                            <input id="style_token_text_input" type="text" class="text-input-control style-token-settings-input" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" readonly>
+                            <button type="button" class="text-input-clear is-visible" aria-label="{{ translate_ui('Clear input') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "ticker-input-control" %}
+                    <div class="style-token-settings-input-shell style-token-ticker-input-shell">
+                        <form class="controls sidebar-form ticker-controls ticker-form-controls style-token-ticker-input-form" onsubmit="return false;">
+                            <div class="field ticker-field" data-index="1">
+                                <div class="ticker-input-row">
+                                    <div class="ticker-input-main">
+                                        <label for="style_token_ticker_input">{{ row.sample_title }}</label>
+                                        <div class="ticker-input-control">
+                                            <span class="ticker-leading-slot" aria-hidden="true">
+                                                <span class="ticker-logo-placeholder"></span>
+                                                <img class="ticker-input-logo" src="/market-store/logos/{{ row.sample_value }}.svg" alt="" onerror="this.style.display='none'; this.previousElementSibling.style.display='flex'">
+                                            </span>
+                                            <input id="style_token_ticker_input" class="text-input-control style-token-settings-input" name="ticker" data-ticker-input data-symbol="{{ row.sample_value }}" data-logo-url="/market-store/logos/{{ row.sample_value }}.svg" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
+                                            <button type="button" class="ticker-clear is-visible" aria-label="{{ translate_ui('Clear ticker') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="ticker-remove" aria-label="{{ translate_ui('Remove ticker') }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    {% elif row.sample_kind == "ticker-identity-row" %}
+                    <div class="ticker-identity-item is-active style-token-ticker-identity-demo" aria-hidden="true">
+                        <div class="ticker-identity-row">
+                            <img src="/market-store/logos/GOOGL.svg" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.sample_value }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.sample_title }}">{{ row.sample_title }}</span>
+                            </span>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "settings-general-option" %}
+                    <form class="settings-general-form style-token-settings-general-form" action="#" method="get">
+                        <label class="settings-general-option">
+                            <input type="radio" name="style_token_execution_mode" value="signal_close" checked>
+                            <span class="settings-general-option-copy">
+                                <span class="settings-general-option-title">{{ row.sample_title }}</span>
+                                <span class="settings-general-option-desc">{{ row.sample_copy }}</span>
+                            </span>
+                        </label>
+                    </form>
+                    {% elif row.sample_kind == "modal-dialog" %}
+                    <div class="style-token-modal-shell">
+                        <div class="workspace-modal-dialog style-token-modal-demo">
+                            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}">
+                                <span class="icon icon-dismiss-control"></span>
+                            </button>
+                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" aria-hidden="true"></span>
+                            <p class="workspace-modal-title">{{ row.sample_title }}</p>
+                            <p class="workspace-modal-copy">{{ row.sample_copy }}</p>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "floating-banner" %}
+                    <div class="style-token-modal-shell">
+                        {% call render_notice_banner(
+                            title=row.sample_title,
+                            icon_class=row.sample_icon_class,
+                            banner_class="style-token-modal-demo",
+                            numbered=false
+                        ) %}
+                            <ol class="notice-floating-banner-list"><li><strong>{{ row.sample_copy }}</strong></li></ol>
+                        {% endcall %}
+                    </div>
+                    {% elif row.sample_kind == "chart-tooltip" %}
+                    <div class="style-token-chart-tooltip-shell">
+                        <div class="chart-tooltip is-visible style-token-chart-tooltip-demo">
+                            <p class="chart-tooltip-date">{{ row.sample_title }}</p>
+                            <div class="chart-tooltip-list">
+                                {% for item in row.sample_rows %}
+                                <div class="chart-tooltip-row">
+                                    <span class="chart-tooltip-dot" data-inline-background="{{ item.color }}"></span>
+                                    <span></span>
+                                    <span class="chart-tooltip-label">{{ item.label }}</span>
+                                    <span class="chart-tooltip-value" data-numeric-display-value="{{ item.value }}">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "portfolio-donut-orbit" %}
+                    <div class="style-token-portfolio-donut-shell">
+                        <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
+                            <div class="portfolio-donut-logo-layer">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/AAPL.svg" alt="" data-ticker="AAPL" data-style-token-donut-angle="79.92" data-style-token-donut-segment-start="0" data-style-token-donut-segment-end="159.84" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/GOOGL.svg" alt="" data-ticker="GOOGL" data-style-token-donut-angle="205.44" data-style-token-donut-segment-start="161.04" data-style-token-donut-segment-end="249.84" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.svg" alt="" data-ticker="NVDA" data-style-token-donut-angle="286.56" data-style-token-donut-segment-start="251.04" data-style-token-donut-segment-end="322.08" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/MSFT.svg" alt="" data-ticker="MSFT" data-style-token-donut-angle="341.04" data-style-token-donut-segment-start="323.28" data-style-token-donut-segment-end="358.8" decoding="async">
+                            </div>
+                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 159.84deg, transparent 159.84deg 161.04deg, color-mix(in srgb, var(--theme-accent-primary) 72%, var(--theme-accent-secondary) 28%) 161.04deg 249.84deg, transparent 249.84deg 251.04deg, color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-accent-secondary) 72%) 251.04deg 322.08deg, transparent 322.08deg 323.28deg, var(--theme-accent-secondary) 323.28deg 358.8deg, transparent 358.8deg 360deg);"></div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "metric-value" %}
+                    <div class="style-token-metric-demo-shell">
+                        <div class="trade-metric-card style-token-metric-card-demo{% if row.sample_card_class %} {{ row.sample_card_class }}{% endif %}">
+                            <span class="trade-metric-label">{{ row.sample_title }}</span>
+                            <span class="trade-metric-value style-token-metric-value-demo" data-numeric-display-value="{{ row.sample_value }}">{{ row.sample_value }}</span>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "data-table" %}
+                    <div class="style-token-table-demo-shell">
+                        <div class="scrollable-data-table-shell local-store-pagination-host style-token-table-demo" data-style-token-table-filter-demo data-style-token-table-page-size="{{ row.sample_table_page_size or 6 }}">
+                            <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table"
+                                   data-table-header
+                                   data-table-interactive-header
+                                   aria-label="{{ translate_ui('Transaction history') }}">
+                                <thead>
+                                <tr>
+                                    {% for column in row.sample_table_columns %}
+                                    {% if loop.index0 == row.sample_table_filter_column_index %}
+                                    <th class="scrollable-data-table-filter-header" data-style-token-table-filter-header>
+                                        <span class="scrollable-data-table-filter-default-label" aria-hidden="true">{{ translate_ui(row.sample_table_filter_label) }}</span>
+                                        <div class="field scrollable-data-table-filter-field backtest-shared-select-field" data-style-token-table-filter-field>
+                                            <div class="trade-strategy-row backtest-shared-select-row">
+                                                <button type="button"
+                                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger scrollable-data-table-filter-trigger"
+                                                        data-style-token-table-filter-trigger
+                                                        aria-haspopup="listbox"
+                                                        aria-expanded="false"
+                                                        aria-label="{{ translate_ui(row.sample_table_filter_label) }} filter: {{ translate_ui(row.sample_table_filter_options[0]) }}">
+                                                    <span class="trade-strategy-trigger-label" data-style-token-table-filter-label>{{ translate_ui(row.sample_table_filter_options[0]) }}</span>
+                                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                                </button>
+                                                <div class="trade-strategy-dropdown backtest-shared-select-dropdown style-token-table-filter-dropdown"
+                                                     data-style-token-table-filter-dropdown
+                                                     role="listbox"
+                                                     aria-label="{{ translate_ui(row.sample_table_filter_label) }} filter"
+                                                     hidden>
+                                                    {% for option in row.sample_table_filter_options %}
+                                                    <button type="button"
+                                                            class="trade-strategy-dropdown-option{% if loop.first %} is-selected is-active{% endif %}"
+                                                            data-style-token-table-filter-option="{{ option|lower }}"
+                                                            role="option"
+                                                            aria-selected="{{ 'true' if loop.first else 'false' }}">
+                                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ translate_ui(option) }}</span></span>
+                                                    </button>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </th>
+                                    {% else %}
+                                    <th>{{ column }}</th>
+                                    {% endif %}
+                                    {% endfor %}
+                                </tr>
+                                <tr data-table-summary-row data-summary-scope="both">
+                                    <td colspan="3"><span class="investment-holdings-summary-copy" data-style-token-table-filter-summary>{{ row.sample_table_rows|length }} filtered of {{ row.sample_table_rows|length }} total</span></td>
+                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68">$7,089.68</span></span></td>
+                                </tr>
+                                </thead>
+                            </table>
+                            <div class="trade-transactions-wrap scrollable-data-table-scroll style-token-scrollable-table-scroll style-token-table-demo-scroll" id="style_token_table_demo_scroll" data-table-scroll>
+                                <table class="settings-table trade-transactions-table scrollable-data-table style-token-scrollable-table" id="style_token_table_demo_body_table" data-table-body>
+                                    <tbody id="style_token_table_demo_body">
+                                    {% for sample_row in row.sample_table_rows %}
+                                    <tr data-style-token-table-demo-row data-style-token-table-filter-value="{{ sample_row[row.sample_table_filter_column_index]|lower }}">
+                                        {% for cell in sample_row %}
+                                        <td data-numeric-display-cell>{{ cell }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <nav class="settings-pagination local-store-pagination local-store-pagination--floating style-token-table-demo-pagination"
+                                 data-layout-role="pagination"
+                                 aria-label="{{ translate_ui('Scrollable table pages') }}"
+                                 aria-controls="style_token_table_demo_body"
+                                 data-pagination-scroll-target="style_token_table_demo_scroll"
+                                 data-style-token-table-pagination
+                                 hidden></nav>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "investment-holdings-allocation-badge" %}
+                    <div class="style-token-holdings-allocation-badge-demo" aria-hidden="true">
+                        {% for allocation in row.sample_allocations %}
+                        <span class="investment-holdings-summary-metric-label">{{ allocation.label }}</span>
+                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount" data-numeric-display-value="{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}">{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}</span>
+                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value">
+                            <span class="workspace-metric-value-major">{% for glyph in allocation.percent_integer %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
+                            <span class="workspace-metric-value-minor"><span class="investment-holdings-allocation-badge-glyph">.</span>{% for glyph in allocation.percent_fraction %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
+                            <span class="workspace-metric-value-suffix"><span class="investment-holdings-allocation-badge-glyph">%</span></span>
+                        </span></span>
+                        {% endfor %}
+                    </div>
+                    {% elif row.sample_kind == "shared-select-filter" %}
+                    <div class="style-token-shared-select-shell" data-style-token-shared-select-demo>
+                        <div class="field backtest-shared-select-field is-open" data-shared-select-field data-shared-select-kind="style-token-demo">
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <select id="style_token_shared_select_demo"
+                                        class="trade-strategy-native-select backtest-shared-select-native"
+                                        hidden
+                                        aria-hidden="true"
+                                        tabindex="-1">
+                                    {% for option in ["All", "Buy", "Sell"] %}
+                                    <option value="{{ option|lower }}"{% if option == row.sample_button %} selected{% endif %}>{{ translate_ui(option) }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger
+                                        aria-haspopup="listbox"
+                                        aria-expanded="true"
+                                        aria-controls="style_token_shared_select_demo_dropdown">
+                                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label>{{ translate_ui(row.sample_button) }}</span>
+                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                </button>
+                                <div id="style_token_shared_select_demo_dropdown"
+                                     class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                     data-shared-select-dropdown
+                                     role="listbox"
+                                     aria-label="{{ translate_ui('Shared select filter') }}">
+                                    {% for option in ["All", "Buy", "Sell"] %}
+                                    <button type="button"
+                                            class="trade-strategy-dropdown-option{% if option == row.sample_button %} is-selected is-active{% endif %}"
+                                            data-value="{{ option|lower }}"
+                                            role="option"
+                                            aria-selected="{{ 'true' if option == row.sample_button else 'false' }}">
+                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ translate_ui(option) }}</span></span>
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "shared-select-dropdown" %}
+                    <div class="style-token-shared-select-shell" data-style-token-shared-select-dropdown-demo>
+                        <div class="field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="style-token-demo">
+                            <label class="sr-only" for="style_token_shared_select_dropdown">{{ translate_ui(row.sample_title) }}</label>
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <select id="style_token_shared_select_dropdown"
+                                        class="trade-strategy-native-select backtest-shared-select-native"
+                                        hidden
+                                        aria-hidden="true"
+                                        tabindex="-1">
+                                    {% for option in row.sample_options %}
+                                    <option value="{{ option.value }}"{% if option.value == row.sample_value %} selected{% endif %}>{{ translate_ui(option.label) }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger
+                                        aria-haspopup="listbox"
+                                        aria-expanded="false"
+                                        aria-controls="style_token_shared_select_dropdown_menu"
+                                        aria-label="{{ translate_ui(row.sample_title) }}: {{ translate_ui(row.sample_button) }}">
+                                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ translate_ui(row.sample_button) }}">{{ translate_ui(row.sample_button) }}</span>
+                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                </button>
+                                <div id="style_token_shared_select_dropdown_menu"
+                                     class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                     data-shared-select-dropdown
+                                     role="listbox"
+                                     hidden
+                                     aria-label="{{ translate_ui(row.sample_title) }}">
+                                    {% for option in row.sample_options %}
+                                    <button type="button"
+                                            class="trade-strategy-dropdown-option{% if option.value == row.sample_value %} is-selected is-active{% endif %}"
+                                            data-value="{{ option.value }}"
+                                            role="option"
+                                            aria-selected="{{ 'true' if option.value == row.sample_value else 'false' }}">
+                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                        <span class="trade-strategy-dropdown-text">{{ translate_ui(option.label) }}</span>
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "strategy-tuning-control" %}
+                    <section class="style-token-strategy-tuning-demo" data-style-token-strategy-tuning aria-label="{{ translate_ui('Strategy tuning control demo') }}">
+                        <span class="style-token-strategy-tuning-label">{{ translate_ui(row.sample_title) }}</span>
+                        <div class="style-token-strategy-tuning-row">
+                            <button type="button"
+                                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger style-token-strategy-tuning-trigger"
+                                    aria-label="{{ translate_ui(row.sample_title) }}: {{ translate_ui(row.sample_button) }}">
+                                <span class="trade-strategy-trigger-label">{{ translate_ui(row.sample_button) }}</span>
+                            </button>
+                            <button type="button"
+                                    class="trade-strategy-tune-button is-active"
+                                    data-style-token-strategy-tune-button
+                                    aria-label="{{ translate_ui('Tune strategy parameters') }}"
+                                    aria-pressed="true"
+                                    aria-expanded="true"
+                                    aria-controls="style_token_strategy_tuning_panel">
+                                <span class="icon icon-strategy-tune" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                        <section id="style_token_strategy_tuning_panel"
+                                 class="trade-strategy-params-popover style-token-strategy-tuning-panel"
+                                 data-style-token-strategy-tuning-panel
+                                 role="region"
+                                 aria-label="{{ translate_ui('Strategy parameters') }}">
+                            <div class="style-token-strategy-tuning-heading">
+                                <span>{{ translate_ui('Strategy parameters') }}</span>
+                                <span class="style-token-strategy-tuning-chevron" aria-hidden="true"></span>
+                            </div>
+                            <div class="style-token-strategy-tuning-grid">
+                                {% for field in row.sample_fields %}
+                                <div class="style-token-strategy-tuning-param">
+                                    <span>{{ translate_ui(field.label) }}</span>
+                                    <output>{{ field.value }}</output>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    </section>
+                    {% elif row.sample_kind == "trade-strategy-stepper" %}
+                    <div class="style-token-stepper-shell">
+                        <div class="style-token-stepper-preview">
+                            <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-stepper-input" value="10px" readonly>
+                            <div class="trade-strategy-stepper style-token-stepper-demo" aria-hidden="false">
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "local-store-pagination" %}
+                    <div class="style-token-pagination-demo-surface">
+                    <nav id="style_token_pagination_demo" class="settings-pagination local-store-pagination local-store-pagination--floating" data-layout-role="pagination" aria-label="{{ translate_ui('Pagination demo') }}" data-local-store-pagination-demo data-pagination-page-count="64" data-pagination-current-page="23" data-pagination-compact="0" style="--local-store-pagination-slots: 11;">
+                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-floating-shell-padding) + ((var(--local-store-pagination-slot-size) + var(--local-store-pagination-floating-item-gap)) * 5)), 0, 0); opacity: 1;"></span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-prev" aria-hidden="true"></span></span>
+                        <span class="local-store-page-button" aria-hidden="true">1</span>
+                        <span class="local-store-page-ellipsis" aria-hidden="true">
+                            <span class="local-store-page-ellipsis-dots"></span>
+                        </span>
+                        <span class="local-store-page-button" aria-hidden="true">21</span>
+                        <span class="local-store-page-button" aria-hidden="true">22</span>
+                        <span class="local-store-page-button is-active" aria-hidden="true">23</span>
+                        <span class="local-store-page-button" aria-hidden="true">24</span>
+                        <span class="local-store-page-button" aria-hidden="true">25</span>
+                        <span class="local-store-page-ellipsis" aria-hidden="true">
+                            <span class="local-store-page-ellipsis-dots"></span>
+                        </span>
+                        <span class="local-store-page-button" aria-hidden="true">64</span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true"><span class="icon icon-page-next" aria-hidden="true"></span></span>
+                    </nav>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="style-token-meta">
+                    <div class="style-token-title-row">
+                        <p class="style-token-title">{{ row.name }}</p>
+                        <button
+                            type="button"
+                            class="settings-round-icon-button style-token-copy-button"
+                            data-style-token-copy="{{ row.name }}"
+                            aria-label="{{ translate_ui('Copy style name') }}"
+                            title="{{ translate_ui('Copy style name') }}"
+                        >
+                            <span class="icon icon-style-token-copy" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <div class="style-token-table-wrap">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value">
+                                        {% if token.editable %}
+                                        <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
+                                            <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
+                                            <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        {% if token.reference_target_id %}
+                                        <a
+                                            href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                                            class="style-token-value-link"
+                                            data-settings-section-link="material-tokens"
+                                            data-style-token-material-link
+                                        >{{ token.reference_label }}</a>
+                                        {% else %}
+                                        <span class="style-token-value-text">{{ token.value }}</span>
+                                        {% endif %}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% for related_style in row.related_styles %}
+                                <tr class="style-token-related-row">
+                                    <td class="style-token-name">
+                                        <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
+                                    </td>
+                                    <td class="style-token-value">
+                                        <span class="style-token-related-value">{{ translate_ui('Reusable style') }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+            </div>
+    </section>

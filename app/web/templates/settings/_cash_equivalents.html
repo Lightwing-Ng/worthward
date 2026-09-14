@@ -1,0 +1,64 @@
+{# Code version: v1.0.0 #}
+    <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
+        <div class="cash-equivalent-category" data-cash-equivalent-category="stocks">
+            <div class="cash-equivalent-category-heading">
+                <h2 id="cash_equivalent_stocks_heading">{{ translate_ui('Stocks') }}</h2>
+                <p class="settings-service-note">{{ translate_ui('Configurable exchange-traded securities') }}</p>
+            </div>
+            <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
+                <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
+            </div>
+            <div class="cash-equivalents-list" id="cash_equivalents_list" aria-labelledby="cash_equivalent_stocks_heading" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
+                {% for row in cash_equivalent_rows %}
+                <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">
+                    <div class="ticker-identity-item">
+                        <div class="ticker-identity-row">
+                            {% if row.logo_url %}
+                            <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
+                            {% else %}
+                            <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                            {% endif %}
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button" class="ticker-remove cash-equiv-remove" aria-label="{{ translate_ui('Remove') }} {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                </div>
+                {% else %}
+                <div class="cash-equivalents-empty">{{ translate_ui('No stock cash equivalents configured.') }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="cash-equivalent-category" data-cash-equivalent-category="funds">
+            <div class="cash-equivalent-category-heading">
+                <h2 id="cash_equivalent_funds_heading">{{ translate_ui('Funds') }}</h2>
+                <p class="settings-service-note">{{ translate_ui('Configured money-market funds') }}</p>
+            </div>
+            <div class="cash-equivalents-list cash-equivalent-funds-list" aria-labelledby="cash_equivalent_funds_heading">
+                {% for row in cash_equivalent_fund_rows %}
+                <div class="cash-equivalent-row ticker-input-row cash-equivalent-fund-row" data-fund-ticker="{{ row.ticker }}">
+                    <div class="ticker-identity-item">
+                        <div class="ticker-identity-row">
+                            <span class="ticker-identity-logo {{ row.token_logo_class }}" aria-hidden="true"></span>
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                            </span>
+                            {% if row.quote_currency %}
+                            <span class="cash-equivalent-currency-badge">{{ row.quote_currency }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="cash-equivalents-empty">{{ translate_ui('No money-market funds configured.') }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <form id="cash_equiv_form" method="post" action="/settings/cash-equivalents/action" style="display:none;">
+            <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+            <input type="hidden" name="action" value="set">
+        </form>
+    </section>

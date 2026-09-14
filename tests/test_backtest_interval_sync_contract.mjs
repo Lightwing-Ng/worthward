@@ -1,21 +1,25 @@
-/* Backtest interval synchronization contract tests. Code version: v1.2.0 */
+/* Backtest interval synchronization contract tests. Code version: v1.3.0 */
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-const APP_SOURCE = await readFile(
-    new URL("../app/web/static/assets/js/app.js", import.meta.url),
+const DATE_CONTROLS_SOURCE = await readFile(
+    new URL("../app/web/static/assets/js/app/date-controls.js", import.meta.url),
     "utf8",
 );
-const SYNC_SOURCE = APP_SOURCE.slice(
-    APP_SOURCE.indexOf("const getRequiredBacktestTickerSnapshot"),
-    APP_SOURCE.indexOf("const syncDateConstraints"),
+const SELECT_CONTROLS_SOURCE = await readFile(
+    new URL("../app/web/static/assets/js/app/select-controls.js", import.meta.url),
+    "utf8",
 );
-const CONTRACT_SOURCE = APP_SOURCE.slice(
-    APP_SOURCE.indexOf("const backtestTickerSnapshotsMatch"),
-    APP_SOURCE.indexOf("const syncBacktestIntervals"),
+const SYNC_SOURCE = DATE_CONTROLS_SOURCE.slice(
+    DATE_CONTROLS_SOURCE.indexOf("const getRequiredBacktestTickerSnapshot"),
+    DATE_CONTROLS_SOURCE.indexOf("const syncDateConstraints"),
+);
+const CONTRACT_SOURCE = DATE_CONTROLS_SOURCE.slice(
+    DATE_CONTROLS_SOURCE.indexOf("const backtestTickerSnapshotsMatch"),
+    DATE_CONTROLS_SOURCE.indexOf("const syncBacktestIntervals"),
 );
 
 const createContract = ({requestToken = 0, requiredTickerCount = 1, tickers = []} = {}) => {
@@ -46,7 +50,7 @@ test("intersects Period options across every required Backtest ticker", () => {
     assert.match(SYNC_SOURCE, /\.slice\(0, requiredTickerCount\)/);
     assert.match(SYNC_SOURCE, /tickerSnapshot\.forEach\(\(ticker\) => params\.append\("ticker", ticker\)\)/);
     assert.match(SYNC_SOURCE, /tickerSnapshot\.every\(\(ticker\) => payload\.has1m\?\.\[ticker\] === true\)/);
-    assert.match(APP_SOURCE, /state\.strategySupports\?\.execution_intervals/);
+    assert.match(SELECT_CONTROLS_SOURCE, /state\.strategySupports\?\.execution_intervals/);
 });
 
 test("rejects stale Backtest interval responses before mutating state", () => {
@@ -67,7 +71,7 @@ test("rejects stale Backtest interval responses before mutating state", () => {
     );
     assert.match(
         SYNC_SOURCE,
-        /if \(tickerSnapshot\.length < requiredTickerCount\) \{[\s\S]*setBacktestIntervalAvailability\(false\);[\s\S]*return;[\s\S]*\}\n\n        try \{/,
+        /if \(tickerSnapshot\.length < requiredTickerCount\) \{[\s\S]*setBacktestIntervalAvailability\(false\);[\s\S]*return;[\s\S]*\}\n\n\s+try \{/,
     );
     assert.ok(
         SYNC_SOURCE.indexOf("if (!canApplyBacktestIntervalResponse")

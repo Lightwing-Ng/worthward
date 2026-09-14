@@ -1,0 +1,38 @@
+{# Code version: v1.0.0 #}
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
+            <h2 class="about-heading">{{ translate_ui('What this service does') }}</h2>
+            <p class="about-copy">{{ translate_ui('Compare securities, research strategies, and review your investments in one local-first workspace.') }}</p>
+            <p class="about-copy">{{ translate_ui('Explore price history, portfolios, backtests, and Bayesian or LSTM forecasts. Review imported broker records and use optional protected Longbridge trading. IBKR supports file imports only.') }}</p>
+    </article>
+
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
+            <h2 class="about-heading">{{ translate_ui('System information') }}</h2>
+            <dl class="footer-meta about-meta">
+                <dt>{{ labels.code_version }}</dt>
+                <dd>{{ version }}</dd>
+                <dt>{{ labels.updated_on }}</dt>
+                <dd>{{ updated_on }}</dd>
+            </dl>
+    </article>
+
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
+            <h2 class="about-heading">{{ translate_ui('Source code') }}</h2>
+            <a class="about-link-card" href="{{ project_source_url }}" target="_blank" rel="noreferrer">
+                <span class="about-link-logo-shell" aria-hidden="true">
+                    <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="">
+                </span>
+                <span class="about-link-copy">{{ project_display_url }}</span>
+            </a>
+    </article>
+
+    <article class="report-card workspace-content-card about-section about-disclaimer settings-reading-guard">
+            <h2 class="about-heading">{{ translate_ui('Disclaimer') }}</h2>
+            <ol class="about-disclaimer-list">
+                <li class="about-copy">{{ translate_ui('Research only. Outputs are general information, not personalized investment, legal, or tax advice, a recommendation, or an offer to trade. They do not assess your objectives, finances, or risk tolerance. Seek qualified independent advice.') }}</li>
+                <li class="about-copy">{{ translate_ui('Simulations are hypothetical. Backtests, optimized strategies, and model forecasts are not actual trading results or promises. Hindsight, overfitting, data gaps, and assumptions about fills, liquidity, fees, taxes, and corporate actions can materially distort results. Estimated probabilities can be wrong.') }}</li>
+                <li class="about-copy">{{ translate_ui('You can lose money. Past performance does not predict future results. Securities and cash-equivalent classifications do not guarantee safety or liquidity; leverage and margin can produce losses greater than your initial investment.') }}</li>
+                <li class="about-copy">{{ translate_ui('Verify the source. Third-party data, cached prices, imported records, valuations, and calculations may be delayed, incomplete, or incorrect. Reconcile with official broker statements and current market information before relying on an output or filing taxes.') }}</li>
+                <li class="about-copy">{{ translate_ui('Live trading uses real money. Review the account, instrument, side, quantity, price, and order status before authorizing an order. Software, network, or broker failures can delay, reject, or duplicate requests. A submitted request is not confirmation of execution; verify fills with your broker.') }}</li>
+                <li class="about-copy">{{ translate_ui('Availability and legal rights. The software and information are provided as is and as available, without warranties to the extent permitted by applicable law. No uninterrupted service, accuracy, or investment outcome is guaranteed. Nothing in this notice waives nonwaivable rights or excludes liability that applicable law does not allow to be excluded.') }}</li>
+            </ol>
+    </article>

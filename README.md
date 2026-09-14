@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.29.1`
+Documentation version: `v3.29.2`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -614,11 +614,14 @@ scripts/check.sh                -> Complete local and CI quality gate
 .github/workflows/quality.yml   -> Push and pull-request quality-gate workflow
 app/core/                       -> Shared config, settings helpers, and market-calendar primitives
 app/infrastructure/             -> Storage, connectivity, and broker market-data integration
-app/services/                   -> Business logic for comparisons, market data, investment import, and presentation
+app/services/                   -> Business logic and bounded investment-import domain modules
 app/web/routes/                 -> Flask route registration by workspace
-app/web/runtime.py              -> Web runtime assembly and request handling
+app/web/runtime.py              -> Static WebRuntime facade and dependency composition
+app/web/runtime_*.py            -> Bounded request, page, import, market, and mutation factories
 app/web/templates/              -> Server-rendered HTML templates
-app/web/static/                 -> CSS, JavaScript, and image assets
+app/web/static/assets/js/app/   -> Shared workspace browser factories
+app/web/static/assets/js/investment/runtime/ -> Investment workspace browser factories
+app/web/static/                 -> Versioned CSS, JavaScript, and image assets
 strategies/                     -> Strategy framework, loader, backtest engine, and algorithms
 market_store/                   -> Local market history, profile, and logo caches
 settings_store/                 -> Runtime-generated local settings, investment ledger, and search caches

@@ -1,0 +1,84 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-color-token-layout" data-color-token-layout>
+        <div class="settings-color-token-content">
+            <div class="settings-color-token-intro settings-card">
+                <p class="settings-color-token-intro-title">{{ translate_ui('Color tokens') }}</p>
+                <p class="settings-color-token-intro-copy">{{ translate_ui('Use the text field for any CSS color expression. Hex colors also expose a native color picker. The positive green group intentionally keeps separate Light and Dark values.') }}</p>
+            </div>
+            <aside class="settings-color-token-sidebar" data-color-token-sidebar aria-label="{{ translate_ui('Color token groups') }}">
+                <div class="settings-color-token-sidebar-heading">
+                    <p class="settings-color-token-sidebar-kicker">{{ translate_ui('Palette') }}</p>
+                    <p class="settings-color-token-sidebar-note">{{ translate_ui('Tune the Light and Dark values independently. Changes stay in this browser.') }}</p>
+                </div>
+                <nav class="settings-color-token-sidebar-nav" aria-label="{{ translate_ui('Color token groups') }}">
+                    {% for group in color_token_rows %}
+                    <a class="settings-color-token-sidebar-link{% if loop.first %} is-active{% endif %}" href="#color-token-{{ group.id }}" data-color-token-group-link="{{ group.id }}">
+                        <span class="settings-color-token-sidebar-swatches" aria-hidden="true">
+                            <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-light" style="--color-token-sidebar-swatch: {{ group.tokens[0].light_value }};"></span>
+                            <span class="settings-color-token-sidebar-swatch settings-color-token-sidebar-swatch-dark" style="--color-token-sidebar-swatch: {{ group.tokens[0].dark_value }};"></span>
+                        </span>
+                        <span class="settings-color-token-sidebar-link-copy">
+                            <span class="settings-color-token-sidebar-link-name">{{ group.name }}</span>
+                            <span class="settings-color-token-sidebar-link-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
+                        </span>
+                    </a>
+                    {% endfor %}
+                </nav>
+            </aside>
+            {% for group in color_token_rows %}
+            <section id="color-token-{{ group.id }}" class="settings-color-token-group settings-card" data-color-token-group="{{ group.id }}">
+                <header class="settings-color-token-group-header">
+                    <div>
+                        <p class="settings-color-token-group-title">{{ group.name }}</p>
+                        <p class="settings-color-token-group-description">{{ group.description }}</p>
+                    </div>
+                    <span class="settings-color-token-group-count">{{ group.tokens|length }} {{ translate_ui('tokens') }}</span>
+                </header>
+                <div class="settings-color-token-list">
+                    {% for token in group.tokens %}
+                    <article class="settings-color-token-card" data-color-token-card="{{ token.name }}">
+                        <div class="settings-color-token-card-heading">
+                            <p class="settings-color-token-label">{{ token.label }}</p>
+                            <code class="settings-color-token-name">{{ token.name }}</code>
+                        </div>
+                        <div class="settings-color-token-variants">
+                            <div class="settings-color-token-variant" data-color-token-control data-color-token-name="{{ token.name }}" data-color-token-mode="light" data-color-token-default="{{ token.light_value }}">
+                                <span class="settings-color-token-mode">{{ translate_ui('Light') }}</span>
+                                <span class="settings-color-token-swatch" data-color-token-swatch style="--color-token-swatch-value: {{ token.light_value }};" aria-hidden="true"></span>
+                                <input class="settings-color-token-value" type="text" value="{{ token.light_value }}" data-color-token-value aria-label="{{ token.label }} {{ translate_ui('Light') }} {{ translate_ui('color') }}">
+                                {% if token.light_is_hex %}
+                                <input class="settings-color-token-picker" type="color" value="{{ token.light_value }}" data-color-token-picker aria-label="{{ token.label }} {{ translate_ui('Light') }} {{ translate_ui('color picker') }}">
+                                {% else %}
+                                <span class="settings-color-token-picker-spacer" aria-hidden="true"></span>
+                                {% endif %}
+                                <button type="button" class="settings-color-token-reset" data-color-token-reset>{{ translate_ui('Reset') }}</button>
+                            </div>
+                            <div class="settings-color-token-variant" data-color-token-control data-color-token-name="{{ token.name }}" data-color-token-mode="dark" data-color-token-default="{{ token.dark_value }}">
+                                <span class="settings-color-token-mode">{{ translate_ui('Dark') }}</span>
+                                <span class="settings-color-token-swatch" data-color-token-swatch style="--color-token-swatch-value: {{ token.dark_value }};" aria-hidden="true"></span>
+                                <input class="settings-color-token-value" type="text" value="{{ token.dark_value }}" data-color-token-value aria-label="{{ token.label }} {{ translate_ui('Dark') }} {{ translate_ui('color') }}">
+                                {% if token.dark_is_hex %}
+                                <input class="settings-color-token-picker" type="color" value="{{ token.dark_value }}" data-color-token-picker aria-label="{{ token.label }} {{ translate_ui('Dark') }} {{ translate_ui('color picker') }}">
+                                {% else %}
+                                <span class="settings-color-token-picker-spacer" aria-hidden="true"></span>
+                                {% endif %}
+                                <button type="button" class="settings-color-token-reset" data-color-token-reset>{{ translate_ui('Reset') }}</button>
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endfor %}
+            <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Reset all color overrides') }}</p>
+                    <p class="settings-service-note">{{ translate_ui('Restore the default Light and Dark palettes in this browser.') }}</p>
+                </div>
+                <div class="settings-action-package-form settings-danger-form">
+                    <button type="button" class="settings-inline-button settings-inline-button-danger" data-color-token-reset-all>{{ translate_ui('Reset all color overrides') }}</button>
+                </div>
+            </section>
+        </div>
+    </section>

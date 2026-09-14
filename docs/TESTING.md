@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.74.1`
+Documentation version: `v1.74.2`
 
 ## Audit regression isolation
 
@@ -57,6 +57,23 @@ expensive GPU defaults. This does not establish GPU training compatibility.
 
 Node discovers every `tests/test_*.mjs` file automatically. Coverage thresholds
 remain unchanged. New suites no longer require editing a manual filename list.
+
+`tests/test_repository_contracts.py` enforces a 100 KiB upper bound for every
+first-party `.py`, `.js`, `.mjs`, `.css`, `.html`, `.sh`, and `.ps1` file under
+`main.py`, `app/`, `strategies/`, `scripts/`, and `tests/`. The scan includes
+present untracked files so a newly extracted module cannot bypass the guard;
+only the explicit browser `vendor/` tree is excluded. Large browser owners are
+tested through ordered bundle readers, including `tests/app_test_utils.py`,
+while template, CSS, and runtime helpers preserve the corresponding source
+composition order. Static assertions must follow the real owner module rather
+than retaining implementation text in a facade comment.
+
+The legacy investment-import and critical-flow test entrypoints are now thin
+aggregators. Broker-focused Python mixins remain discoverable through the
+public `InvestmentImportTests` and `InvestmentImportIntegrationTests` classes;
+Playwright domain fragments remain imported by
+`tests/e2e/critical-flows.spec.mjs` in stable title order. Add coverage to the
+owning mixin or domain fragment rather than growing either aggregator.
 
 Dated feature checks are preserved in [Historical testing evidence](TESTING_HISTORY.md).
 Past pass counts and failures do not establish the current checkout's status.

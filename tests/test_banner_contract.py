@@ -1,8 +1,9 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.6."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.8."""
 
 from pathlib import Path
 
 from app import create_app
+from tests.css_test_utils import read_css_bundle
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +35,7 @@ def test_shared_banner_css_uses_top_aligned_icon_and_hanging_numbered_copy() -> 
 def test_ibkr_feedback_contains_plain_title_rich_emphasis_and_numbered_list() -> None:
     javascript = (STATIC_ROOT / "js/investment/import-feedback.js").read_text(encoding="utf-8")
     entry_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
-    investment_css = (STATIC_ROOT / "css/views/investment.css").read_text(encoding="utf-8")
+    investment_css = read_css_bundle(STATIC_ROOT / "css/views/investment.css")
 
     assert "from './investment/import-feedback.js?" in entry_javascript
     assert '<p class="notice-floating-banner-heading">IBKR import complete</p>' in javascript
@@ -62,24 +63,26 @@ def test_server_notice_renders_the_same_title_and_numbered_copy_structure() -> N
 
 def test_investment_import_progress_uses_the_workspace_modal_contract() -> None:
     base_template = (TEMPLATES_ROOT / "base.html").read_text(encoding="utf-8")
-    investment_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
+    investment_workflow_javascript = (
+        STATIC_ROOT / "js/investment/runtime/stock-history-filters.js"
+    ).read_text(encoding="utf-8")
 
     assert 'id="workspace_modal_overlay"' in base_template
     assert 'role="dialog"' in base_template
     assert 'aria-modal="true"' in base_template
     assert 'aria-labelledby="workspace_modal_overlay_title"' in base_template
     assert 'aria-describedby="workspace_modal_overlay_copy"' in base_template
-    assert "title: 'Import in progress'" in investment_javascript
-    assert "showInvestmentImportProgressModal(resolvedMessage);" in investment_javascript
-    assert "if (isLoading) {" in investment_javascript
+    assert "title: 'Import in progress'" in investment_workflow_javascript
+    assert "showInvestmentImportProgressModal(resolvedMessage);" in investment_workflow_javascript
+    assert "if (isLoading) {" in investment_workflow_javascript
 
 
 def test_investment_import_feedback_escapes_the_report_card_stacking_context() -> None:
     investment_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
-    investment_css = (STATIC_ROOT / "css/views/investment.css").read_text(encoding="utf-8")
+    investment_css = read_css_bundle(STATIC_ROOT / "css/views/investment.css")
 
     assert "importFeedback.parentElement !== document.body" in investment_javascript
-    assert "document.body.append(importFeedback);" in investment_javascript
+    assert "document.body.append(runtime.importFeedback);" in investment_javascript
     assert (
         ".investment-import-feedback-banner {\n"
         "    width: min(460px, calc(100vw - (var(--page-edge-pad) * 2)));\n"

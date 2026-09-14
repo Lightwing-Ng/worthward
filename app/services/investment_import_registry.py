@@ -50,28 +50,36 @@ class InvestmentParserRegistry:
     """Explicit parser registry that prevents route-level broker dispatch drift."""
 
     def __init__(self) -> None:
-        self._registrations: dict[InvestmentParserKey, InvestmentParserRegistration] = {}
+        self._registrations: dict[
+            InvestmentParserKey, InvestmentParserRegistration
+        ] = {}
 
     def register(
-            self,
-            broker: object,
-            source_format: object,
-            parser: InvestmentParser,
-            *,
-            description: str = "",
+        self,
+        broker: object,
+        source_format: object,
+        parser: InvestmentParser,
+        *,
+        description: str = "",
     ) -> None:
         key = InvestmentParserKey.build(broker, source_format)
         if not callable(parser):
-            raise TypeError(f"Investment parser {key.broker}:{key.source_format} must be callable.")
+            raise TypeError(
+                f"Investment parser {key.broker}:{key.source_format} must be callable."
+            )
         if key in self._registrations:
-            raise ValueError(f"Investment parser {key.broker}:{key.source_format} is already registered.")
+            raise ValueError(
+                f"Investment parser {key.broker}:{key.source_format} is already registered."
+            )
         self._registrations[key] = InvestmentParserRegistration(
             key=key,
             parser=parser,
             description=str(description or "").strip(),
         )
 
-    def parse(self, broker: object, source_format: object, /, **parser_kwargs: Any) -> InvestmentPayload:
+    def parse(
+        self, broker: object, source_format: object, /, **parser_kwargs: Any
+    ) -> InvestmentPayload:
         key = InvestmentParserKey.build(broker, source_format)
         registration = self._registrations.get(key)
         if registration is None:
@@ -86,9 +94,9 @@ class InvestmentParserRegistry:
 
 
 def validate_investment_import_payload(
-        payload: object,
-        *,
-        key: InvestmentParserKey | None = None,
+    payload: object,
+    *,
+    key: InvestmentParserKey | None = None,
 ) -> InvestmentPayload:
     """Validate the shared payload boundary without inventing missing records."""
     context = f" for {key.broker}:{key.source_format}" if key else ""
@@ -98,33 +106,39 @@ def validate_investment_import_payload(
     if not isinstance(transactions, list):
         raise ValueError(f"Investment parser{context} must return a transactions list.")
     if any(not isinstance(record, dict) for record in transactions):
-        raise ValueError(f"Investment parser{context} returned a non-dictionary transaction.")
+        raise ValueError(
+            f"Investment parser{context} returned a non-dictionary transaction."
+        )
     return payload
 
 
 def commit_investment_import(
-        imported_payload: InvestmentPayload,
-        *,
-        normalize_payload: Callable[[InvestmentPayload], InvestmentPayload],
-        merge_payloads: Callable[[InvestmentPayload, InvestmentPayload], InvestmentPayload],
-        update_store: Callable[
-            [Callable[[dict[str, object]], tuple[dict[str, object], InvestmentPayload]]],
-            InvestmentPayload,
-        ],
-        load_store: Callable[[], InvestmentPayload],
-        invalidate_cache: Callable[[], None],
-        materialize_payload: Callable[[InvestmentPayload], InvestmentPayload],
-        verify_persisted_payload: Callable[[InvestmentPayload], None],
+    imported_payload: InvestmentPayload,
+    *,
+    normalize_payload: Callable[[InvestmentPayload], InvestmentPayload],
+    merge_payloads: Callable[[InvestmentPayload, InvestmentPayload], InvestmentPayload],
+    update_store: Callable[
+        [Callable[[dict[str, object]], tuple[dict[str, object], InvestmentPayload]]],
+        InvestmentPayload,
+    ],
+    load_store: Callable[[], InvestmentPayload],
+    invalidate_cache: Callable[[], None],
+    materialize_payload: Callable[[InvestmentPayload], InvestmentPayload],
+    verify_persisted_payload: Callable[[InvestmentPayload], None],
 ) -> InvestmentPayload:
     """Atomically normalize, idempotently merge, persist, and verify one import."""
     if not callable(materialize_payload):
         raise TypeError("Investment import requires a source-evidence materializer.")
     if not callable(verify_persisted_payload):
-        raise TypeError("Investment import requires a persisted source-evidence verifier.")
-    normalized_import = normalize_payload(deepcopy(validate_investment_import_payload(imported_payload)))
+        raise TypeError(
+            "Investment import requires a persisted source-evidence verifier."
+        )
+    normalized_import = normalize_payload(
+        deepcopy(validate_investment_import_payload(imported_payload))
+    )
 
     def merge_current_payload(
-            current_payload: dict[str, object],
+        current_payload: dict[str, object],
     ) -> tuple[dict[str, object], InvestmentPayload]:
         normalized_current = normalize_payload(dict(current_payload))
         merged_payload = merge_payloads(normalized_current, normalized_import)
@@ -148,7 +162,7 @@ def commit_investment_import(
 
 
 def build_registry_from_parsers(
-        parsers: Mapping[tuple[str, str], InvestmentParser],
+    parsers: Mapping[tuple[str, str], InvestmentParser],
 ) -> InvestmentParserRegistry:
     """Build a registry from an explicit mapping for tests and composition roots."""
     registry = InvestmentParserRegistry()

@@ -1,0 +1,46 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-action-package settings-callout-card-primary">
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">{{ labels.network_self_check }}</p>
+                <p class="settings-service-note">{{ translate_ui('Review every fixed external dependency used by this application from the application host.') }}</p>
+
+            </div>
+            <div class="settings-action-package-form">
+                <button
+                    type="button"
+                    class="settings-inline-button settings-inline-button-primary"
+                    data-network-refresh-button
+                >{{ translate_ui('Check again') }}</button>
+            </div>
+    </section>
+    {% call render_collapse(translate_ui('Connection details'), 'settings-network-details') %}
+                <p class="settings-service-note" data-network-transport>{{ translate_ui('Checks run from the application host. HTTP(S) probes honor standard proxy variables and verified TLS; account credentials are not submitted here.') }}</p>
+                <p class="settings-service-note" data-network-last-checked>{% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text }}{% else %}{{ translate_ui('Last checked:') }} {{ translate_ui('Not checked yet.') }}{% endif %}</p>
+    {% endcall %}
+    <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
+            <div class="settings-general-header">
+                <p class="settings-general-kicker">{{ labels.service_status }}</p>
+                <p class="settings-general-copy">{{ translate_ui('Each row is checked independently, so a blocked provider does not prevent the remaining diagnostics from completing.') }}</p>
+            </div>
+            <div class="settings-service-list settings-service-list-network">
+                {% for row in settings_service_rows %}
+                <div class="settings-service-row" data-settings-service-row data-service-key="{{ row.key }}">
+                    <div class="settings-service-main settings-reading-guard-row">
+                        <div class="settings-service-heading">
+                            {% if row.logo_url %}
+                            <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
+                            {% endif %}
+                            <p class="settings-service-name">{{ row.name }}</p>
+                        </div>
+                        <p class="settings-service-note" data-settings-service-note data-pending-note="{{ row.pending_note }}">{{ row.note }}</p>
+                        <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
+                    </div>
+                    <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
+                        <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status suggestion-loading-spinner{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
+                        <span data-workspace-mask="settings-status-text" data-settings-service-status>{{ row.status }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+    </section>

@@ -1,0 +1,85 @@
+{# Code version: v1.0.0 #}
+    <p class="settings-summary">{{ translate_ui('Review the authoritative strategy categories used by Backtest, then inspect each strategy and its reusable parameters.') }}</p>
+    <nav class="settings-strategy-category-index" aria-label="{{ translate_ui('Strategy categories') }}">
+        {% for group in strategy_settings_groups %}
+        <a class="settings-strategy-category-link" href="#strategy_category_{{ group.key }}">
+            <span>{{ group.label }}</span>
+            <span class="settings-strategy-category-link-count">{{ group.count }}</span>
+        </a>
+        {% endfor %}
+    </nav>
+    {% set strategy_ns = namespace(opened=false) %}
+    {% for group in strategy_settings_groups %}
+    <section id="strategy_category_{{ group.key }}" class="settings-strategy-category" data-strategy-category="{{ group.key }}" aria-labelledby="strategy_category_{{ group.key }}_title">
+        <header class="settings-strategy-category-header">
+            <div class="settings-strategy-category-copy">
+                <h2 id="strategy_category_{{ group.key }}_title" class="settings-strategy-category-title">{{ group.label }}</h2>
+                <p class="settings-strategy-category-description">{{ group.description }}</p>
+            </div>
+            <span class="settings-strategy-category-count">{{ group.count }} {{ translate_ui('strategies') }}</span>
+        </header>
+        <div class="settings-strategy-list">
+        {% for row in group['items'] %}
+        {% set initially_open = not strategy_ns.opened %}
+        {% if initially_open %}{% set strategy_ns.opened = true %}{% endif %}
+        <details class="ui-collapse settings-strategy-card" data-strategy-id="{{ row.id }}"{% if initially_open %} open{% endif %}>
+                <summary class="settings-strategy-summary">
+                    <div class="settings-service-main settings-strategy-main">
+                        <p class="settings-service-name">{{ row.name }}</p>
+                        <p class="settings-service-note">{{ row.description }}</p>
+                        <div class="settings-strategy-meta" aria-label="{{ row.name }} {{ translate_ui('capabilities') }}">
+                            {% if row.supports.execution_intervals %}
+                            <span>{{ row.supports.execution_intervals|join(' · ') }}</span>
+                            {% endif %}
+                            <span>{{ row.parameters|length }} {{ translate_ui('parameters') }}</span>
+                            {% if row.presentation_renderer == 'probability-grid-v1' %}
+                            <span>{{ translate_ui('Price Field grid') }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </summary>
+                {% if row.parameters %}
+                <div class="settings-strategy-params-shell">
+                    <div class="scrollable-data-table-shell settings-strategy-params-table-shell">
+                        <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-hidden="true">
+                            <colgroup>
+                                <col class="settings-strategy-params-col-label">
+                                <col class="settings-strategy-params-col-value">
+                                <col class="settings-strategy-params-col-meaning">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>{{ translate_ui('Value name') }}</th>
+                                    <th>{{ translate_ui('Default') }}</th>
+                                    <th>{{ translate_ui('Meaning') }}</th>
+                                </tr>
+                            </thead>
+                        </table>
+                        <div class="settings-strategy-params-table-wrap scrollable-data-table-scroll">
+                            <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-label="{{ row.name }} {{ translate_ui('parameters') }}">
+                                <colgroup>
+                                    <col class="settings-strategy-params-col-label">
+                                    <col class="settings-strategy-params-col-value">
+                                    <col class="settings-strategy-params-col-meaning">
+                                </colgroup>
+                                <tbody>
+                                    {% for parameter in row.parameters %}
+                                    <tr>
+                                        <td class="settings-strategy-param-label" data-column-label="{{ translate_ui('Value name') }}">{{ parameter.label }}</td>
+                                        <td class="settings-strategy-param-value" data-column-label="{{ translate_ui('Default') }}">{{ parameter.default_display }}</td>
+                                        <td class="settings-strategy-param-meaning" data-column-label="{{ translate_ui('Meaning') }}">{{ parameter.meaning }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="settings-strategy-empty">{{ translate_ui('No configurable parameters.') }}</p>
+                {% endif %}
+        </details>
+        {% endfor %}
+        </div>
+    </section>
+    {% endfor %}

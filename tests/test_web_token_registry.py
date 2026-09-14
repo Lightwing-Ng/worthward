@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.13.2
+Code version: v0.13.5
 """
 
 from __future__ import annotations
@@ -12,7 +12,10 @@ import re
 import unittest
 from pathlib import Path
 
-from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
+from app.web.token_registry import (
+    FOUNDATION_TOKENS_CSS_PATH,
+    load_foundation_css_token_registry,
+)
 from app.web.style_token_rows import (
     SHARED_STYLE_TOKEN_NAMES,
     build_color_token_rows,
@@ -21,14 +24,22 @@ from app.web.style_token_rows import (
     build_material_token_rows,
     build_style_token_rows,
 )
+from tests.app_test_utils import read_app_bundle
+from tests.css_test_utils import read_css_bundle
+from tests.runtime_test_utils import read_runtime_bundle
+from tests.template_test_utils import read_template_bundle
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
 STYLE_TOKEN_ROWS_PATH = REPO_ROOT / "app" / "web" / "style_token_rows.py"
 WEB_CSS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "css"
 WEB_FONTS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "fonts"
 
 
 def read_text(path: Path) -> str:
+    if path.name in {"investment.css", "settings.css"}:
+        return read_css_bundle(path)
+    if path.name == "settings.html":
+        return read_template_bundle(path)
     return path.read_text(encoding="utf-8")
 
 
@@ -52,7 +63,9 @@ def collect_literal_runtime_defaults(function_name: str) -> dict[str, str]:
             continue
         token_name_node = node.args[0]
         token_value_node = node.args[1]
-        if not isinstance(token_name_node, ast.Constant) or not isinstance(token_name_node.value, str):
+        if not isinstance(token_name_node, ast.Constant) or not isinstance(
+            token_name_node.value, str
+        ):
             continue
         if not isinstance(token_value_node, ast.Constant):
             continue
@@ -80,7 +93,9 @@ def collect_literal_runtime_token_names(function_name: str) -> list[str]:
         if not node.args:
             continue
         token_name_node = node.args[0]
-        if isinstance(token_name_node, ast.Constant) and isinstance(token_name_node.value, str):
+        if isinstance(token_name_node, ast.Constant) and isinstance(
+            token_name_node.value, str
+        ):
             names.append(token_name_node.value)
     return names
 
@@ -90,7 +105,8 @@ def collect_material_rows() -> dict[str, set[str]]:
     target_function = next(
         node
         for node in ast.walk(module)
-        if isinstance(node, ast.FunctionDef) and node.name == "build_material_token_rows"
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "build_material_token_rows"
     )
 
     rows: dict[str, set[str]] = {}
@@ -104,9 +120,14 @@ def collect_material_rows() -> dict[str, set[str]]:
         name_node = items.get("name")
         sample_kind_node = items.get("sample_kind")
         tokens_node = items.get("tokens")
-        if not isinstance(name_node, ast.Constant) or not isinstance(name_node.value, str):
+        if not isinstance(name_node, ast.Constant) or not isinstance(
+            name_node.value, str
+        ):
             continue
-        if not isinstance(sample_kind_node, ast.Constant) or sample_kind_node.value != "glass-surface":
+        if (
+            not isinstance(sample_kind_node, ast.Constant)
+            or sample_kind_node.value != "glass-surface"
+        ):
             continue
         if not isinstance(tokens_node, ast.List):
             continue
@@ -128,8 +149,10 @@ class WebTokenRegistryTests(unittest.TestCase):
     def test_numeric_input_controls_share_the_28px_keyboard_contract(self) -> None:
         registry = load_foundation_css_token_registry()
         forms_css = read_text(WEB_CSS_ROOT / "components" / "forms.css")
-        compare_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "_compare_portfolio_sidebar.html")
-        app_js = read_text(REPO_ROOT / "app" / "web" / "static" / "assets" / "js" / "app.js")
+        compare_template = read_text(
+            REPO_ROOT / "app" / "web" / "templates" / "_compare_portfolio_sidebar.html"
+        )
+        app_js = read_app_bundle()
 
         self.assertEqual(registry["--numeric-input-control-height"].value, "28px")
         self.assertIn('input[type="number"]', forms_css)
@@ -171,7 +194,10 @@ class WebTokenRegistryTests(unittest.TestCase):
         violations: list[str] = []
         for runtime_root in runtime_roots:
             for path in runtime_root.rglob("*"):
-                if path.suffix not in {".css", ".html", ".js"} or "vendor" in path.parts:
+                if (
+                    path.suffix not in {".css", ".html", ".js"}
+                    or "vendor" in path.parts
+                ):
                     continue
                 if forbidden.search(read_text(path)):
                     violations.append(str(path.relative_to(REPO_ROOT)))
@@ -239,14 +265,30 @@ class WebTokenRegistryTests(unittest.TestCase):
         font_rows = build_font_token_rows(labels)
         material_rows = build_material_token_rows()
         color_rows = build_color_token_rows(
-            {"accent_positive": "#16a34a", "success": "#16a34a", "success_strong": "#16a34a"},
-            {"accent_positive": "#2fff9c", "success": "#2fff9c", "success_strong": "#2fff9c"},
+            {
+                "accent_positive": "#16a34a",
+                "success": "#16a34a",
+                "success_strong": "#16a34a",
+            },
+            {
+                "accent_positive": "#2fff9c",
+                "success": "#2fff9c",
+                "success_strong": "#2fff9c",
+            },
         )
 
-        action_package = next(row for row in style_rows if row["name"] == "Settings action package")
-        allocation_range = next(row for row in style_rows if row["name"] == "Allocation range")
-        primary_button = next(row for row in style_rows if row["name"] == "Primary button")
-        secondary_button = next(row for row in style_rows if row["name"] == "Secondary button")
+        action_package = next(
+            row for row in style_rows if row["name"] == "Settings action package"
+        )
+        allocation_range = next(
+            row for row in style_rows if row["name"] == "Allocation range"
+        )
+        primary_button = next(
+            row for row in style_rows if row["name"] == "Primary button"
+        )
+        secondary_button = next(
+            row for row in style_rows if row["name"] == "Secondary button"
+        )
         self.assertNotIn("Settings action button", {row["name"] for row in style_rows})
         self.assertEqual(primary_button["id"], "primary-button")
         self.assertEqual(
@@ -276,9 +318,16 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(secondary_button["related_styles"], [])
         self.assertEqual(
             action_package["related_styles"],
-            [{"name": "Settings execution option", "target_id": "settings-execution-option"}],
+            [
+                {
+                    "name": "Settings execution option",
+                    "target_id": "settings-execution-option",
+                }
+            ],
         )
-        self.assertEqual(action_package["sample_title"], labels["local_store_maintain_title"])
+        self.assertEqual(
+            action_package["sample_title"], labels["local_store_maintain_title"]
+        )
         self.assertEqual(allocation_range["sample_kind"], "allocation-range")
         self.assertEqual(
             {token["name"] for token in allocation_range["tokens"]},
@@ -297,19 +346,29 @@ class WebTokenRegistryTests(unittest.TestCase):
             },
         )
         self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
-        self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
+        self.assertEqual(
+            font_rows[0]["samples"][5]["sample_text"], labels["hero_title"]
+        )
         self.assertEqual(material_rows[0]["name"], "Frosted glass")
-        positive_green = next(row for row in color_rows if row["id"] == "positive-green")
+        positive_green = next(
+            row for row in color_rows if row["id"] == "positive-green"
+        )
         self.assertEqual(
             {token["name"] for token in positive_green["tokens"]},
             {"--theme-accent-positive", "--theme-success", "--theme-success-strong"},
         )
         self.assertEqual(
-            next(token for token in positive_green["tokens"] if token["name"] == "--theme-accent-positive")["dark_value"],
+            next(
+                token
+                for token in positive_green["tokens"]
+                if token["name"] == "--theme-accent-positive"
+            )["dark_value"],
             "#2fff9c",
         )
 
-    def test_numeric_fraction_scale_has_one_font_owner_and_shared_markup_inputs(self) -> None:
+    def test_numeric_fraction_scale_has_one_font_owner_and_shared_markup_inputs(
+        self,
+    ) -> None:
         labels = {
             "local_store_maintain_button": "Maintain local data",
             "local_store_maintain_title": "Local data maintenance",
@@ -324,17 +383,17 @@ class WebTokenRegistryTests(unittest.TestCase):
         style_rows = build_style_token_rows(labels)
         font_rows = build_font_token_rows(labels)
         style_token_names = {
-            token["name"]
-            for row in style_rows
-            for token in row.get("tokens", [])
+            token["name"] for row in style_rows for token in row.get("tokens", [])
         }
         font_token_names = {
-            token["name"]
-            for row in font_rows
-            for token in row.get("tokens", [])
+            token["name"] for row in font_rows for token in row.get("tokens", [])
         }
-        workspace_metric = next(row for row in style_rows if row["name"] == "Workspace metric value")
-        workspace_metric_tokens = {token["name"]: token["value"] for token in workspace_metric["tokens"]}
+        workspace_metric = next(
+            row for row in style_rows if row["name"] == "Workspace metric value"
+        )
+        workspace_metric_tokens = {
+            token["name"]: token["value"] for token in workspace_metric["tokens"]
+        }
         font_metric_samples = [
             sample
             for row in font_rows
@@ -360,21 +419,39 @@ class WebTokenRegistryTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(font_metric_samples), 6)
 
-    def test_export_image_defaults_share_the_settings_and_capture_contract(self) -> None:
+    def test_export_image_defaults_share_the_settings_and_capture_contract(
+        self,
+    ) -> None:
         export_row = build_export_image_rows("example.test/design-preview")[0]
-        export_tokens = {token["name"]: token["value"] for token in export_row["tokens"]}
+        export_tokens = {
+            token["name"]: token["value"] for token in export_row["tokens"]
+        }
         investment_css = read_text(WEB_CSS_ROOT / "views" / "investment.css")
         base_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "base.html")
-        settings_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "settings.html")
+        settings_template = read_text(
+            REPO_ROOT / "app" / "web" / "templates" / "settings.html"
+        )
 
-        self.assertEqual(export_tokens["--investment-community-share-shell-width"], "1080px")
-        self.assertEqual(export_tokens["--investment-community-share-shell-height"], "1730px")
-        self.assertEqual(export_tokens["--investment-community-share-section-gap"], "10px")
-        self.assertIn("--investment-community-share-shell-width: 1080px;", investment_css)
-        self.assertIn("--investment-community-share-shell-height: 1730px;", investment_css)
+        self.assertEqual(
+            export_tokens["--investment-community-share-shell-width"], "1080px"
+        )
+        self.assertEqual(
+            export_tokens["--investment-community-share-shell-height"], "1730px"
+        )
+        self.assertEqual(
+            export_tokens["--investment-community-share-section-gap"], "10px"
+        )
+        self.assertIn(
+            "--investment-community-share-shell-width: 1080px;", investment_css
+        )
+        self.assertIn(
+            "--investment-community-share-shell-height: 1730px;", investment_css
+        )
         self.assertIn("aspect-ratio: 53.98 / 86.50;", investment_css)
         self.assertIn("export-image-config.js", base_template)
-        self.assertIn('data-export-image-profile="investment-community-share"', settings_template)
+        self.assertIn(
+            'data-export-image-profile="investment-community-share"', settings_template
+        )
 
     def test_loader_reads_foundation_root_tokens(self) -> None:
         registry = load_foundation_css_token_registry()
@@ -391,15 +468,27 @@ class WebTokenRegistryTests(unittest.TestCase):
             registry["--tooltip-background"].value,
             "var(--frosted-glass-background)",
         )
-        self.assertEqual(registry["--glass-mask-shadow"].value, "0 12px 24px var(--theme-glass-border)")
-        self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())
+        self.assertEqual(
+            registry["--glass-mask-shadow"].value,
+            "0 12px 24px var(--theme-glass-border)",
+        )
+        self.assertEqual(
+            registry["--mode-switch-radius"].source_path.resolve(),
+            FOUNDATION_TOKENS_CSS_PATH.resolve(),
+        )
         self.assertGreater(registry["--mode-switch-radius"].line, 1)
 
-    def test_style_and_font_runtime_defaults_match_foundation_css_baseline(self) -> None:
+    def test_style_and_font_runtime_defaults_match_foundation_css_baseline(
+        self,
+    ) -> None:
         registry = load_foundation_css_token_registry()
         runtime_defaults = {}
-        runtime_defaults.update(collect_literal_runtime_defaults("build_style_token_rows"))
-        runtime_defaults.update(collect_literal_runtime_defaults("build_font_token_rows"))
+        runtime_defaults.update(
+            collect_literal_runtime_defaults("build_style_token_rows")
+        )
+        runtime_defaults.update(
+            collect_literal_runtime_defaults("build_font_token_rows")
+        )
 
         comparable_defaults = {
             token_name: value
@@ -450,7 +539,9 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(html.count("data-style-token-card="), 1)
         self.assertEqual(html.count('data-style-token-card="frosted-glass"'), 1)
-        self.assertEqual(html.count('<p class="style-token-title">Frosted glass</p>'), 1)
+        self.assertEqual(
+            html.count('<p class="style-token-title">Frosted glass</p>'), 1
+        )
         self.assertEqual(html.count('class="report-card style-token-demo-card"'), 1)
         self.assertNotIn("data-inline-backdrop-filter", html)
         self.assertNotIn("data-inline-border", html)
@@ -458,8 +549,10 @@ class WebTokenRegistryTests(unittest.TestCase):
 
     def test_every_canonical_frosted_glass_reference_is_defined(self) -> None:
         registry = load_foundation_css_token_registry()
-        source_text = read_text(WEB_RUNTIME_PATH) + read_text(STYLE_TOKEN_ROWS_PATH)
-        source_text += "\n".join(read_text(path) for path in WEB_CSS_ROOT.rglob("*.css"))
+        source_text = read_runtime_bundle() + read_text(STYLE_TOKEN_ROWS_PATH)
+        source_text += "\n".join(
+            read_text(path) for path in WEB_CSS_ROOT.rglob("*.css")
+        )
         references = set(re.findall(r"var\((--frosted-glass-[a-z-]+)\)", source_text))
 
         self.assertGreaterEqual(len(references), 7)

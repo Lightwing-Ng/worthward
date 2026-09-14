@@ -1,0 +1,28 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">{{ translate_ui('Investment accounting') }}</p>
+            <p class="settings-general-copy">{{ translate_ui('Choose how each sell is matched to the open buy inventory. Holdings, Stock details, and local realized P&L use the same method.') }}</p>
+        </div>
+        <form class="settings-general-form settings-investment-accounting-form" method="post" action="{{ settings_urls.investment }}/action">
+            <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+            <div class="field settings-date-format-field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="settings-investment-cost-basis">
+                <label for="settings_investment_cost_basis_method">{{ translate_ui('Sell matching method') }}</label>
+                <div class="trade-strategy-row backtest-shared-select-row">
+                    <select id="settings_investment_cost_basis_method" name="investment_cost_basis_method" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
+                        <option value="lowest_cost_first" data-description="{{ translate_ui('Match sells against the lowest-cost open lots first. This is the default strategy-attribution method.') }}" {% if investment_cost_basis_method == 'lowest_cost_first' %}selected{% endif %}>{{ translate_ui('Lowest-cost lots first') }}</option>
+                        <option value="fifo" data-description="{{ translate_ui('Match sells against the oldest open lots first.') }}" {% if investment_cost_basis_method == 'fifo' %}selected{% endif %}>{{ translate_ui('First in, first out (FIFO)') }}</option>
+                        <option value="lifo" data-description="{{ translate_ui('Match sells against the newest open lots first.') }}" {% if investment_cost_basis_method == 'lifo' %}selected{% endif %}>{{ translate_ui('Last in, first out (LIFO)') }}</option>
+                        <option value="moving_average" data-description="{{ translate_ui('Pool open buys into one moving average cost before each sell.') }}" {% if investment_cost_basis_method == 'moving_average' %}selected{% endif %}>{{ translate_ui('Moving average cost') }}</option>
+                    </select>
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false" aria-controls="settings_investment_cost_basis_method_dropdown">
+                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                        </button>
+                    </div>
+                    <div id="settings_investment_cost_basis_method_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" aria-label="{{ translate_ui('Sell matching method') }}" hidden></div>
+                </div>
+            </div>
+        </form>
+        <p class="settings-general-copy">{{ translate_ui('Broker-reported closed-trade P&L remains authoritative when available. Transfer-basis reconstruction remains separately labelled as FIFO reconstructed.') }}</p>
+    </section>

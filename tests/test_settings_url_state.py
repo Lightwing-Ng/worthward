@@ -1,6 +1,6 @@
 """Route tests for the canonical Settings URL state contract.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import create_app
+from tests.css_test_utils import read_css_bundle
 
 
 class SettingsUrlStateRouteTests(unittest.TestCase):
@@ -137,7 +138,7 @@ class SettingsUrlStateRouteTests(unittest.TestCase):
         )
 
     def test_cash_equivalent_groups_are_isolated_from_workspace_grid_columns(self) -> None:
-        css = Path("app/web/static/assets/css/views/settings.css").read_text(encoding="utf-8")
+        css = read_css_bundle(Path("app/web/static/assets/css/views/settings.css"))
 
         self.assertRegex(
             css,

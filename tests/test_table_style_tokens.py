@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.15.2."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.16.0."""
 
 from __future__ import annotations
 
@@ -6,13 +6,25 @@ import re
 from pathlib import Path
 
 from app import create_app
+from tests.css_test_utils import read_css_bundle
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+JAVASCRIPT_ROOT = PROJECT_ROOT / "app/web/static/assets/js"
+
+
+def _read_javascript_sources(*relative_paths: str) -> str:
+    return "\n".join(
+        (JAVASCRIPT_ROOT / relative_path).read_text(encoding="utf-8")
+        for relative_path in relative_paths
+    )
 
 
 def test_settings_css_has_no_legacy_ibkr_gateway_selectors() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
     assert "settings-ibkr-gateway" not in settings_css
     assert "settings-broker-guide" not in settings_css
     assert "settingsIbkrGatewayPulse" not in settings_css
@@ -34,9 +46,9 @@ def test_settings_general_option_uses_the_half_pixel_border_token() -> None:
 
 def test_style_token_stepper_input_has_a_compact_demo_height_fallback() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
 
     stepper_rule = settings_css.split(
         ".style-token-stepper-input {", 1
@@ -98,12 +110,12 @@ def test_field_titles_use_the_shared_agent_reference_role() -> None:
     forms_css = (
         project_root / "app/web/static/assets/css/components/forms.css"
     ).read_text(encoding="utf-8")
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
-    settings_css = (
+    )
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
     style_token_rows = (
         project_root / "app/web/style_token_rows.py"
     ).read_text(encoding="utf-8")
@@ -200,8 +212,8 @@ def test_style_tokens_expose_the_optional_strategy_tuning_control() -> None:
     forms_css = (
         project_root / "app/web/static/assets/css/components/forms.css"
     ).read_text(encoding="utf-8")
-    settings_js = (
-        project_root / "app/web/static/assets/js/settings.js"
+    settings_style_tokens_js = (
+        project_root / "app/web/static/assets/js/settings/style-token-controller.js"
     ).read_text(encoding="utf-8")
     html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
 
@@ -222,8 +234,8 @@ def test_style_tokens_expose_the_optional_strategy_tuning_control() -> None:
     assert "data-style-token-strategy-tuning-panel" in html
     assert 'aria-label="Tune strategy parameters"' in html
     assert "Strategy parameters" in html
-    assert 'event.target.closest("[data-style-token-strategy-tune-button]")' in settings_js
-    assert "panel.hidden = !nextOpen;" in settings_js
+    assert 'event.target.closest("[data-style-token-strategy-tune-button]")' in settings_style_tokens_js
+    assert "panel.hidden = !nextOpen;" in settings_style_tokens_js
 
 
 def test_workspace_metric_label_reuses_the_agent_field_typography_contract() -> None:
@@ -295,9 +307,9 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
     tables_css = (
         project_root / "app/web/static/assets/css/components/tables.css"
     ).read_text(encoding="utf-8")
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
     tokens_css = (
         project_root / "app/web/static/assets/css/foundation/tokens.css"
     ).read_text(encoding="utf-8")
@@ -340,9 +352,9 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
 
 def test_style_token_reference_links_share_the_value_text_alignment_contract() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
 
     link_rule = settings_css.split(
         ".style-token-value-link {", 1
@@ -415,7 +427,7 @@ def test_style_tokens_are_alphabetized_without_the_shared_primitives_specimen() 
 def test_shared_segmented_and_pagination_controls_use_regular_unselected_weight() -> None:
     project_root = Path(__file__).resolve().parents[1]
     forms_css = (project_root / "app/web/static/assets/css/components/forms.css").read_text(encoding="utf-8")
-    settings_css = (project_root / "app/web/static/assets/css/views/settings.css").read_text(encoding="utf-8")
+    settings_css = read_css_bundle(project_root / "app/web/static/assets/css/views/settings.css")
 
     segmented_rule_start = forms_css.index(".segmented-control-option span,")
     segmented_rule_end = forms_css.index(".segmented-control[data-segmented-pill=", segmented_rule_start)
@@ -446,9 +458,9 @@ def test_shared_select_option_highlights_use_pill_geometry() -> None:
 
 def test_investment_pagination_menu_uses_opaque_frosted_material() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
     tokens_css = (
         project_root / "app/web/static/assets/css/foundation/tokens.css"
     ).read_text(encoding="utf-8")
@@ -465,9 +477,9 @@ def test_investment_pagination_menu_uses_opaque_frosted_material() -> None:
 
 def test_pagination_range_menu_hides_the_scrollbar_track() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    settings_css = (
+    settings_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/settings.css"
-    ).read_text(encoding="utf-8")
+    )
 
     menu_rule = settings_css.split(
         ".local-store-pagination-range-menu {", maxsplit=1
@@ -516,9 +528,9 @@ def test_pagination_range_menu_respects_clipping_ancestors() -> None:
 
 def test_investment_history_scroll_shell_keeps_rounded_bottom_corners() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
 
     scroll_rule = investment_css.split(
         ".investment-history-table-shell > .investment-history-table-scroll {",
@@ -616,9 +628,9 @@ def test_color_tokens_settings_expose_paired_light_dark_rows_and_local_override_
 
 def test_holdings_allocation_badge_uses_the_active_theme_background_for_text() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
     badge_rule = investment_css.split(
         ".investment-holdings-allocation-badge {", maxsplit=1
     )[1].split("}", maxsplit=1)[0]
@@ -632,12 +644,13 @@ def test_neutral_holdings_badge_and_investment_hover_guides_share_soft_muted_gra
     tokens_css = (
         project_root / "app/web/static/assets/css/foundation/tokens.css"
     ).read_text(encoding="utf-8")
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
-    investment_js = (
-        project_root / "app/web/static/assets/js/investment.js"
-    ).read_text(encoding="utf-8")
+    )
+    investment_js = _read_javascript_sources(
+        "investment.js",
+        "investment/runtime/equity-chart.js",
+    )
     stock_details_js = (
         project_root / "app/web/static/assets/js/investment/stock-details.js"
     ).read_text(encoding="utf-8")
@@ -701,12 +714,13 @@ def test_style_tokens_modal_title_uses_shared_bold_weight() -> None:
 
 def test_investment_ranges_reuse_the_investment_view_segmented_control_contract() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_js = (
-        project_root / "app/web/static/assets/js/investment.js"
-    ).read_text(encoding="utf-8")
-    investment_css = (
+    investment_js = _read_javascript_sources(
+        "investment/runtime/config.js",
+        "investment/runtime/range-transfer.js",
+    )
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
 
     assert (
         "'segmented-control--compact investment-view-segmented "
@@ -730,9 +744,9 @@ def test_blue_pill_variants_reuse_the_segmented_thumb_background_token() -> None
     trade_css = (
         project_root / "app/web/static/assets/css/views/trade.css"
     ).read_text(encoding="utf-8")
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
 
     assert "background: var(--mode-switch-thumb-background);" in forms_css
     switch_rule = workspace_css.split(
@@ -753,9 +767,9 @@ def test_blue_pill_variants_reuse_the_segmented_thumb_background_token() -> None
 
 def test_investment_import_modal_uses_page_blur_and_standard_action_package() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
     client = create_app().test_client()
 
     response = client.get("/trade/investment")
@@ -813,12 +827,12 @@ def test_investment_table_header_is_interactive_and_body_is_measurable() -> None
 
 def test_interactive_table_header_retains_standard_frosted_material() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
-    investment_js = (
-        project_root / "app/web/static/assets/js/investment.js"
-    ).read_text(encoding="utf-8")
+    )
+    investment_js = _read_javascript_sources(
+        "investment/runtime/export-history.js",
+    )
 
     header_rule = investment_css.split(
         ".scrollable-data-table-shell > .scrollable-data-table[data-table-header],",
@@ -832,9 +846,9 @@ def test_interactive_table_header_retains_standard_frosted_material() -> None:
 
 def test_scrollable_table_headers_allow_standard_line_wrapping() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
     trade_css = (
         project_root / "app/web/static/assets/css/views/trade.css"
     ).read_text(encoding="utf-8")
@@ -875,9 +889,9 @@ def test_transaction_date_time_and_backtest_ticker_alignment_contracts() -> None
 
 def test_investment_holdings_body_omits_vertical_cell_borders() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
+    )
 
     holdings_body_rule = investment_css.split(
         ".investment-holdings-table tbody td+td {",
@@ -889,12 +903,12 @@ def test_investment_holdings_body_omits_vertical_cell_borders() -> None:
 
 def test_investment_type_filter_uses_progressive_disclosure() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    investment_css = (
+    investment_css = read_css_bundle(
         project_root / "app/web/static/assets/css/views/investment.css"
-    ).read_text(encoding="utf-8")
-    investment_js = (
-        project_root / "app/web/static/assets/js/investment.js"
-    ).read_text(encoding="utf-8")
+    )
+    investment_js = _read_javascript_sources(
+        "investment/runtime/binding-pagination.js",
+    )
 
     assert 'investment-side-filter-default-label" aria-hidden="true">Type<' in investment_js
     assert 'aria-label="Type filter: ${selectedLabel}"' in investment_js
@@ -926,9 +940,10 @@ def test_investment_compact_filters_share_the_type_hover_contract() -> None:
     tables_css = (
         project_root / "app/web/static/assets/css/components/tables.css"
     ).read_text(encoding="utf-8")
-    investment_js = (
-        project_root / "app/web/static/assets/js/investment.js"
-    ).read_text(encoding="utf-8")
+    investment_js = _read_javascript_sources(
+        "investment/runtime/binding-pagination.js",
+        "investment/runtime/import-workflows.js",
+    )
 
     assert "scrollable-data-table-filter-header" in investment_js
     assert "scrollable-data-table-filter-default-label" in investment_js

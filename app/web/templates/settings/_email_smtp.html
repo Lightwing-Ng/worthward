@@ -1,0 +1,59 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-action-package settings-callout-card-warning">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}" onclick="this.closest('section').remove()">
+                <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+            </button>
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">{{ labels.email_smtp }}</p>
+                <p class="settings-service-note">{{ translate_ui('Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full') }} <code>@yahoo.com</code> {{ translate_ui('address with the generated app password.') }}</p>
+            </div>
+    </section>
+    <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell settings-email-smtp-form">
+        <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+            <input type="hidden" name="host" value="smtp.mail.yahoo.com">
+            <input type="hidden" name="port" value="587">
+            <div class="settings-form-grid">
+                <div class="field">
+                    <label>{{ labels.email_smtp_host }}</label>
+                    <input type="text" class="settings-form-control" value="smtp.mail.yahoo.com" readonly aria-readonly="true">
+                </div>
+                <div class="field">
+                    <label>{{ labels.email_smtp_port }}</label>
+                    <input type="text" class="settings-form-control settings-form-control-numeric" value="587" inputmode="numeric" readonly aria-readonly="true">
+                </div>
+                <div class="field">
+                    <label for="smtp_from_email">{{ labels.email_smtp_from }}</label>
+                    <input id="smtp_from_email" name="from_email" type="email" class="settings-form-control" value="{{ smtp_settings.from_email }}" autocomplete="username email" placeholder="your-name@example.invalid">
+                </div>
+                <div class="field settings-field-span-full">
+                    <label for="smtp_password">{{ labels.email_smtp_password }}</label>
+                    <input id="smtp_password" name="password" type="password" class="settings-form-control settings-form-control-secret" autocomplete="new-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}{{ translate_ui('Yahoo Mail app password') }}{% endif %}">
+                </div>
+            </div>
+            <div class="field-checkbox field-switch settings-field-span-full">
+                {{ render_switch("smtp_use_starttls", labels.email_smtp_starttls, "use_starttls", checked=smtp_settings.use_starttls) }}
+            </div>
+            <div class="settings-action-package-grid">
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_save }}</p>
+                        <p class="settings-service-note">{{ translate_ui('Store the Yahoo SMTP endpoint, mailbox, app password, and STARTTLS setting on this device.') }}</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">{{ labels.email_smtp_save }}</button>
+                    </div>
+                </section>
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_test }}</p>
+                        <p class="settings-service-note">{{ translate_ui('Verify SMTP login against Yahoo Mail with the saved app password.') }}</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
+                    </div>
+                </section>
+            </div>
+    </form>

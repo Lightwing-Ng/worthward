@@ -1,0 +1,56 @@
+{# Code version: v1.0.0 #}
+        {% for row in font_token_rows %}
+        <section id="{{ row.id }}" class="font-preview-card settings-general-panel settings-reading-guard font-token-panel">
+                <div class="font-preview-header">
+                    <p class="font-preview-kicker">{{ row.name }}</p>
+                    <p class="font-preview-copy">{{ row.description }}</p>
+                </div>
+                <div class="font-token-demo-stack">
+                    <div class="font-token-sample-list">
+                        {% for sample in row.samples %}
+                        <div class="font-token-sample-row">
+                            <div class="font-token-sample-meta">
+                                <p class="font-token-sample-usage">{{ sample.usage_label }}</p>
+                                <p class="font-token-sample-name">{{ sample.token_name }}</p>
+                            </div>
+                            <div class="font-token-sample-preview">
+                                {% if sample.sample_kind == "numeric-fraction" %}
+                                <p
+                                    class="font-token-sample-text font-token-sample-numeric-fraction"
+                                    aria-label="{{ sample.sample_text }}"
+                                    data-numeric-display-value="{{ sample.sample_text }}"
+                                    data-inline-font-size-token="{{ sample.preview_font_size_token or sample.token_name }}"
+                                >
+                                    {{ sample.sample_text }}
+                                </p>
+                                {% else %}
+                                <p
+                                    class="font-token-sample-text"
+                                    data-inline-font-size-token="{{ sample.token_name }}"
+                                >{{ sample.sample_text }}</p>
+                                {% endif %}
+                                <p class="font-token-sample-value">{{ sample.sample_value }}</p>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="font-token-table-wrap">
+                        <div class="style-token-title-row font-token-title-row">
+                            <p class="style-token-title">{{ translate_ui('Token map') }}</p>
+                        </div>
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value"><span class="style-token-value-text">{{ token.value }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="font-token-panel-actions">
+                    </div>
+                </div>
+        </section>
+        {% endfor %}

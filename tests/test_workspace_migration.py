@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.8.3
+Code version: v1.8.5
 """
 
 from __future__ import annotations
@@ -12,11 +12,17 @@ from unittest.mock import patch
 
 from app import create_app
 from app.models.schemas import SeriesPayload
-from tests.factories.market import FakeStrategy, backtest_result, fetch_history_stub, quote_profile_stub
+from tests.factories.market import (
+    FakeStrategy,
+    backtest_result,
+    fetch_history_stub,
+    quote_profile_stub,
+)
+from tests.app_test_utils import read_app_bundle
+from tests.template_test_utils import read_template_bundle
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_JS = ROOT / "app/web/static/assets/js/app.js"
 INVESTMENT_JS = ROOT / "app/web/static/assets/js/investment.js"
 WORKSPACE_SHARE_JS = ROOT / "app/web/static/assets/js/workspace-share.js"
 SETTINGS_JS = ROOT / "app/web/static/assets/js/settings.js"
@@ -37,7 +43,7 @@ def _slice_between(html: str, start_marker: str, end_marker: str) -> str:
 
 class OptimisticNavigationTests(unittest.TestCase):
     def test_navigation_registry_covers_every_route_profile(self) -> None:
-        source = APP_JS.read_text(encoding="utf-8")
+        source = read_app_bundle()
 
         for view in ("tickers", "prices", "portfolio", "dca", "backtest"):
             self.assertIn(f"{view}: {{title:", source)
@@ -60,8 +66,7 @@ class OptimisticNavigationTests(unittest.TestCase):
             "style-tokens",
         ):
             has_profile = (
-                f'{section}: {{title:' in source
-                or f'"{section}": {{title:' in source
+                f"{section}: {{title:" in source or f'"{section}": {{title:' in source
             )
             self.assertTrue(has_profile, section)
 
@@ -106,22 +111,34 @@ class OptimisticNavigationTests(unittest.TestCase):
         self.assertIn('data-workspace-mask="trade-metric"', source)
 
     def test_price_range_modal_reuses_the_ticker_fetch_spinner(self) -> None:
-        source = APP_JS.read_text(encoding="utf-8")
+        source = read_app_bundle()
 
         self.assertIn(
             '"suggestion-loading-spinner workspace-modal-icon"',
             source,
         )
-        price_loading_dialog = source.split("const showImmediateRangeLoadingDialog = () => {", 1)[1].split(
-            "const showCompareOverlay", 1
-        )[0]
-        self.assertIn('title: translateUi("Updating price history")', price_loading_dialog)
+        price_loading_dialog = source.split(
+            "const showImmediateRangeLoadingDialog = () => {", 1
+        )[1].split("const showCompareOverlay", 1)[0]
+        self.assertIn(
+            'title: translateUi("Updating price history")', price_loading_dialog
+        )
         self.assertIn("loadingSpinner: true", price_loading_dialog)
+        progressive_view_registry = source.split(
+            "const progressiveViewRegistry = {",
+            1,
+        )[1].split("const fetchJsonCached", 1)[0]
         self.assertIn(
             "'[data-workspace-mask=\"chart-area\"]'",
-            source.split("prices: {", 1)[1].split("portfolio: {", 1)[0],
+            progressive_view_registry.split("prices: {", 1)[1].split(
+                "portfolio: {",
+                1,
+            )[0],
         )
-        self.assertNotIn("showImmediateRangeLoadingDialog();\n            refreshSharedSelectField", source)
+        self.assertNotIn(
+            "showImmediateRangeLoadingDialog();\n            refreshSharedSelectField",
+            source,
+        )
         self.assertIn(
             'if (state.currentView === "prices" && isMarketCapComparison()) {',
             source,
@@ -131,33 +148,48 @@ class OptimisticNavigationTests(unittest.TestCase):
         )[0]
         self.assertNotIn("!hasInitialResult", can_auto_submit)
 
-    def test_price_metric_switch_hydrates_in_place_and_preserves_the_selected_pill(self) -> None:
-        source = APP_JS.read_text(encoding="utf-8")
-        metric_handler = source.split("comparisonMetricInputs.forEach((input) => {", 1)[1].split(
+    def test_price_metric_switch_hydrates_in_place_and_preserves_the_selected_pill(
+        self,
+    ) -> None:
+        source = read_app_bundle()
+        metric_handler = source.split("comparisonMetricInputs.forEach((input) => {", 1)[
+            1
+        ].split(
             "[exactStartInput, exactEndInput, exactTradingDateInput]",
             1,
         )[0]
-        hydration_helper = source.split("const hydratePriceComparisonWorkspace =", 1)[1].split(
+        hydration_helper = source.split("const hydratePriceComparisonWorkspace =", 1)[
+            1
+        ].split(
             "const applyPendingWorkspaceMarkup",
             1,
         )[0]
 
-        self.assertIn('syncSegmentedControlLayout(metricShell, {', metric_handler)
-        self.assertIn('showImmediateRangeLoadingDialog();', metric_handler)
-        self.assertIn('requestWorkspaceChartTransition("comparison-metric");', metric_handler)
-        self.assertIn('form.requestSubmit();', metric_handler)
-        self.assertIn('const requiresPriceLimitReload = (', metric_handler)
-        self.assertIn('hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);', hydration_helper)
-        self.assertIn('currentChipsField.hidden = nextChipsField.hidden;', hydration_helper)
-        self.assertNotIn('workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;', hydration_helper)
+        self.assertIn("syncSegmentedControlLayout(metricShell, {", metric_handler)
+        self.assertIn("showImmediateRangeLoadingDialog();", metric_handler)
+        self.assertIn(
+            'requestWorkspaceChartTransition("comparison-metric");', metric_handler
+        )
+        self.assertIn("form.requestSubmit();", metric_handler)
+        self.assertIn("const requiresPriceLimitReload = (", metric_handler)
+        self.assertIn(
+            "hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);",
+            hydration_helper,
+        )
+        self.assertIn(
+            "currentChipsField.hidden = nextChipsField.hidden;", hydration_helper
+        )
+        self.assertNotIn(
+            "workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;", hydration_helper
+        )
 
     def test_waiting_states_share_the_vector_ticker_spinner(self) -> None:
-        app_source = APP_JS.read_text(encoding="utf-8")
+        app_source = read_app_bundle()
         investment_source = INVESTMENT_JS.read_text(encoding="utf-8")
         share_source = WORKSPACE_SHARE_JS.read_text(encoding="utf-8")
         settings_source = SETTINGS_JS.read_text(encoding="utf-8")
         base_source = BASE_HTML.read_text(encoding="utf-8")
-        settings_html = SETTINGS_HTML.read_text(encoding="utf-8")
+        settings_html = read_template_bundle(SETTINGS_HTML)
         motion_source = MOTION_CSS.read_text(encoding="utf-8")
         spinner_source = SPINNER_SVG.read_text(encoding="utf-8")
         style_token_source = STYLE_TOKEN_ROWS.read_text(encoding="utf-8")
@@ -167,24 +199,35 @@ class OptimisticNavigationTests(unittest.TestCase):
             app_source,
         )
         self.assertNotIn('iconClass: "icon-', app_source)
-        self.assertIn('class="suggestion-loading-spinner workspace-modal-icon"', base_source)
+        self.assertIn(
+            'class="suggestion-loading-spinner workspace-modal-icon"', base_source
+        )
         self.assertIn("suggestion-loading-spinner", investment_source)
-        self.assertIn('SHARE_RENDER_MODAL_ICON_CLASS = "suggestion-loading-spinner"', share_source)
+        self.assertIn(
+            'SHARE_RENDER_MODAL_ICON_CLASS = "suggestion-loading-spinner"', share_source
+        )
         self.assertIn('"suggestion-loading-spinner"', settings_source)
         self.assertIn("suggestion-loading-spinner", settings_html)
-        self.assertIn('"sample_icon_class": "suggestion-loading-spinner"', style_token_source)
+        self.assertIn(
+            '"sample_icon_class": "suggestion-loading-spinner"', style_token_source
+        )
         self.assertIn('mask: url("/static/images/loading.spinner.svg")', motion_source)
         self.assertIn('stroke-linecap="round"', spinner_source)
         self.assertNotIn("border: 2px solid", motion_source)
 
-    def test_empty_price_history_does_not_request_live_data_without_tickers(self) -> None:
+    def test_empty_price_history_does_not_request_live_data_without_tickers(
+        self,
+    ) -> None:
         source = PRICE_COMPARE_JS.read_text(encoding="utf-8")
-        refresh_live_prices = source.split("const refreshLivePrices = async () => {", 1)[1].split(
-            "bootstrap.initPriceCompareWorkspace", 1
-        )[0]
+        refresh_live_prices = source.split(
+            "const refreshLivePrices = async () => {", 1
+        )[1].split("bootstrap.initPriceCompareWorkspace", 1)[0]
 
         self.assertIn("if (tickers.length < 2) return;", refresh_live_prices)
-        self.assertIn("tickers.forEach((ticker) => params.append(\"ticker\", ticker));", refresh_live_prices)
+        self.assertIn(
+            'tickers.forEach((ticker) => params.append("ticker", ticker));',
+            refresh_live_prices,
+        )
 
 
 class WorkspaceMigrationTests(unittest.TestCase):
@@ -195,7 +238,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
     def test_overlay_sidebar_dock_and_backtest_height_contracts(self) -> None:
         responsive_source = RESPONSIVE_CSS.read_text(encoding="utf-8")
-        app_source = APP_JS.read_text(encoding="utf-8")
+        app_source = read_app_bundle()
         shell_source = SHELL_CSS.read_text(encoding="utf-8")
 
         collapsed_dock_rule = responsive_source.split(
@@ -230,20 +273,22 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertIn("translateY(0)", open_motion)
         self.assertIn("transition-delay: 140ms", open_motion)
 
-    def test_sidebar_gel_motion_reuses_best_shared_physics_without_layout_geometry(self) -> None:
-        app_source = APP_JS.read_text(encoding="utf-8")
+    def test_sidebar_gel_motion_reuses_best_shared_physics_without_layout_geometry(
+        self,
+    ) -> None:
+        app_source = read_app_bundle()
         motion_source = MOTION_CSS.read_text(encoding="utf-8")
 
         for token in (
             '"workspace-sidebar-gel-open"',
             '"workspace-sidebar-gel-close"',
-            'mobileSidebarMedia.matches',
-            'reducedMotionMedia.matches',
-            'motion?.isReducedMotion?.()',
+            "mobileSidebarMedia.matches",
+            "reducedMotionMedia.matches",
+            "motion?.isReducedMotion?.()",
             'const sidebarGelTargetSelector = "[data-sidebar-gel-content]";',
             'target.setAttribute("data-sidebar-gel-content", "")',
             'setSidebarGelMotionState(nextIsOpen ? "opening" : "closing")',
-            'clearSidebarGelMotion();',
+            "clearSidebarGelMotion();",
         ):
             self.assertIn(token, app_source)
 
@@ -302,19 +347,26 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertNotIn('<form class="controls sidebar-form', sidebar_html)
 
         self.assertIn('class="workspace-mode-layout"', workspace_html)
-        self.assertIn('class="chart-surface workspace-mode-controls-surface"', workspace_html)
-        self.assertIn('workspace-mode-results-stack', workspace_html)
+        self.assertIn(
+            'class="chart-surface workspace-mode-controls-surface"', workspace_html
+        )
+        self.assertIn("workspace-mode-results-stack", workspace_html)
         self.assertIn(control_class, workspace_html)
 
         self.assertIn('aria-label="Workspace"', dock_html)
         self.assertIn('data-tooltip="Workspace"', dock_html)
         self.assertEqual(dock_html.count('class="sidebar-dock-item'), 4)
-        self.assertLess(dock_html.index('data-dock-group="beta"'), dock_html.index('data-dock-group="settings"'))
+        self.assertLess(
+            dock_html.index('data-dock-group="beta"'),
+            dock_html.index('data-dock-group="settings"'),
+        )
         self.assertNotIn('data-tooltip="Compare stocks"', dock_html)
         self.assertNotIn('data-tooltip="Compute your portfolio"', dock_html)
         self.assertNotIn('data-tooltip="Backtest"', dock_html)
 
-    def test_compare_portfolio_and_backtest_pages_keep_controls_inside_workspace(self) -> None:
+    def test_compare_portfolio_and_backtest_pages_keep_controls_inside_workspace(
+        self,
+    ) -> None:
         market_cap_series = SeriesPayload(
             ticker="QQQ",
             dates=["1 Jan 2026", "2 Jan 2026"],
@@ -324,18 +376,34 @@ class WorkspaceMigrationTests(unittest.TestCase):
         )
         with (
             patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
-            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch(
+                "app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub
+            ),
             patch("app.web.runtime.record_ticker_usage"),
             patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
-            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch(
+                "app.web.runtime.run_single_ticker_backtest",
+                return_value=backtest_result(),
+            ),
             patch("app.web.runtime.record_strategy_usage"),
-            patch("app.web.runtime.build_market_cap_series_payload", return_value=market_cap_series),
+            patch(
+                "app.web.runtime.build_market_cap_series_payload",
+                return_value=market_cap_series,
+            ),
         ):
             responses = {
-                "compare": self.client.get("/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y&dividends=1"),
-                "market_caps": self.client.get("/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=AAPL&period=1y"),
-                "portfolio": self.client.get("/workspaces/portfolio?ticker=NVDA&ticker=AAPL&weight=60&weight=40&period=1y&dividends=1"),
-                "backtest": self.client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y&capital=10000"),
+                "compare": self.client.get(
+                    "/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y&dividends=1"
+                ),
+                "market_caps": self.client.get(
+                    "/workspaces/prices?metric=market-cap&ticker=QQQ&ticker=AAPL&period=1y"
+                ),
+                "portfolio": self.client.get(
+                    "/workspaces/portfolio?ticker=NVDA&ticker=AAPL&weight=60&weight=40&period=1y&dividends=1"
+                ),
+                "backtest": self.client.get(
+                    "/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y&capital=10000"
+                ),
             }
 
         self.assertEqual(
@@ -354,46 +422,61 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
         self._assert_workspace_contract(
             responses["compare"].get_data(as_text=True),
-            control_class='ticker-form-controls tickers-controls',
+            control_class="ticker-form-controls tickers-controls",
         )
         market_cap_html = responses["market_caps"].get_data(as_text=True)
         self._assert_workspace_contract(
             market_cap_html,
-            control_class='ticker-form-controls prices-controls',
+            control_class="ticker-form-controls prices-controls",
         )
         market_cap_sidebar = _slice_between(
             market_cap_html,
             '<aside class="panel sidebar" id="app_sidebar" data-layout-role="sidebar-shell">',
             "</aside>",
         )
-        self.assertLess(market_cap_sidebar.index("Ticker comparison"), market_cap_sidebar.index("Compute your portfolio"))
-        self.assertIn('data-comparison-metric-field', market_cap_html)
+        self.assertLess(
+            market_cap_sidebar.index("Ticker comparison"),
+            market_cap_sidebar.index("Compute your portfolio"),
+        )
+        self.assertIn("data-comparison-metric-field", market_cap_html)
         self.assertIn('value="market-cap" checked', market_cap_html)
         self.assertIn('"comparisonMetric": "market-cap"', market_cap_html)
         self.assertIn('"market_caps": [1000000000.0, 1100000000.0]', market_cap_html)
-        self.assertIn('data-exact-range-date-grid', market_cap_html)
-        self.assertIn('data-exact-single-date-grid', market_cap_html)
+        self.assertIn("data-exact-range-date-grid", market_cap_html)
+        self.assertIn("data-exact-single-date-grid", market_cap_html)
         self.assertIn('id="exact_start"', market_cap_html)
         self.assertIn('id="exact_end"', market_cap_html)
-        self.assertNotIn('Market capitalization uses point-in-time shares without look-ahead.', market_cap_html)
-        self.assertNotIn('notice-market-cap-method', market_cap_html)
-        self.assertNotIn('notice-market-cap-method', WORKSPACE_CSS.read_text(encoding="utf-8"))
-        self.assertNotIn('Historical market capitalization', market_cap_html)
+        self.assertNotIn(
+            "Market capitalization uses point-in-time shares without look-ahead.",
+            market_cap_html,
+        )
+        self.assertNotIn("notice-market-cap-method", market_cap_html)
+        self.assertNotIn(
+            "notice-market-cap-method", WORKSPACE_CSS.read_text(encoding="utf-8")
+        )
+        self.assertNotIn("Historical market capitalization", market_cap_html)
         self.assertNotIn('class="workspace-method-note"', market_cap_html)
         self._assert_workspace_contract(
             responses["portfolio"].get_data(as_text=True),
-            control_class='ticker-form-controls portfolio-controls',
+            control_class="ticker-form-controls portfolio-controls",
         )
         self._assert_workspace_contract(
             responses["backtest"].get_data(as_text=True),
-            control_class='ticker-controls trade-controls',
+            control_class="ticker-controls trade-controls",
         )
 
-    def test_comparison_workspace_memory_uses_one_price_view_with_metric_state(self) -> None:
-        app_source = APP_JS.read_text(encoding="utf-8")
-        self.assertIn('const comparisonViews = new Set(["tickers", "prices"]);', app_source)
+    def test_comparison_workspace_memory_uses_one_price_view_with_metric_state(
+        self,
+    ) -> None:
+        app_source = read_app_bundle()
+        self.assertIn(
+            'const comparisonViews = new Set(["tickers", "prices"]);', app_source
+        )
         self.assertIn('path === "/workspaces/market-caps"', app_source)
-        self.assertIn('state.currentView === "prices" && normalizeComparisonMetric(state.comparisonMetric) === "market-cap"', app_source)
+        self.assertIn(
+            'state.currentView === "prices" && normalizeComparisonMetric(state.comparisonMetric) === "market-cap"',
+            app_source,
+        )
 
 
 if __name__ == "__main__":

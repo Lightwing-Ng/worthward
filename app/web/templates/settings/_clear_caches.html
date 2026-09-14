@@ -1,0 +1,27 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Clear market data caches') }}</p>
+                    <p class="settings-service-note">{{ translate_ui('This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.') }}</p>
+                </div>
+                <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
+                    <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+                    <input type="hidden" name="section" value="clear-caches">
+                    <input type="hidden" name="action" value="market-data">
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">{{ translate_ui('Clear market data caches') }}</button>
+                </form>
+    </section>
+    <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">{{ translate_ui('Clear local broker transaction record') }}</p>
+                    <p class="settings-service-note">{{ translate_ui('This deletes') }} <code>settings_store/investment.parquet</code> {{ translate_ui('on this device, which removes the imported local broker transaction history shown in My investment.') }}</p>
+                </div>
+                <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
+                    <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+                    <input type="hidden" name="section" value="clear-caches">
+                    <input type="hidden" name="action" value="investment-transactions">
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">{{ translate_ui('Clear local broker transaction record') }}</button>
+                </form>
+    </section>

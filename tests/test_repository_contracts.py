@@ -1,12 +1,13 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.5.0
+Code version: v1.6.2
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 import re
+import subprocess
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,20 @@ JAVASCRIPT_ROOT = PROJECT_ROOT / "app/web/static/assets/js"
 STATIC_ROOT = PROJECT_ROOT / "app/web/static"
 CSS_ROOT = STATIC_ROOT / "assets/css"
 E2E_ROOT = PROJECT_ROOT / "tests/e2e"
+MAX_FIRST_PARTY_CODE_FILE_BYTES = 100 * 1024
+FIRST_PARTY_CODE_SUFFIXES = frozenset(
+    {".css", ".html", ".js", ".mjs", ".ps1", ".py", ".sh"}
+)
+FIRST_PARTY_CODE_SIZE_EXCLUSIONS = (
+    Path("app/web/static/assets/js/vendor"),
+)
+FIRST_PARTY_CODE_ROOTS = (
+    Path("main.py"),
+    Path("app"),
+    Path("strategies"),
+    Path("scripts"),
+    Path("tests"),
+)
 SHARED_STATIC_HOUSEKEEPING_CONTRACT = (
     PROJECT_ROOT.parent / "shared_docs" / "SHARED_STATIC_FILE_HOUSEKEEPING.md"
 )
@@ -28,10 +43,25 @@ APP_CSS_IMPORT_ORDER = (
     "components/tables.css",
     "views/workspace.css",
     "views/settings.css",
+    "views/settings-sections.css",
     "views/trade.css",
     "views/investment.css",
+    "views/investment-tables.css",
     "utilities/responsive.css",
     "foundation/motion.css",
+)
+
+APP_SCRIPT_LOAD_ORDER = (
+    "assets/js/app/chart-export.js",
+    "assets/js/app/navigation.js",
+    "assets/js/app/workspace-enhancements.js",
+    "assets/js/app/workspace-hydration.js",
+    "assets/js/app/ticker-controls.js",
+    "assets/js/app/select-controls.js",
+    "assets/js/app/date-controls.js",
+    "assets/js/app/range-controls.js",
+    "assets/js/app/strategy-controls.js",
+    "assets/js/app.js",
 )
 
 DOCUMENTATION_ENTRYPOINTS = (
@@ -73,6 +103,9 @@ E2E_RESOURCE_VERSION_PATTERN = re.compile(
 CSS_IMPORT_PATTERN = re.compile(
     r'@import\s+url\(["\']\./(?P<path>[^"\']+\.css)\?v=(?P<query>[^"\']+)["\']\);'
 )
+APP_FALLBACK_MODULE_PATTERN = re.compile(
+    r'\["WORTHWARD_APP_[A-Z_]+", "(?P<path>app/[^"]+\.js)", "(?P<query>[^"]+)"\]'
+)
 
 
 def _read(path: Path) -> str:
@@ -83,6 +116,108 @@ def _code_version(path: Path) -> str:
     match = CODE_VERSION_PATTERN.search(_read(path))
     assert match is not None, f"Missing Code version in {path.relative_to(PROJECT_ROOT)}"
     return match.group(1)
+
+
+def _tracked_paths() -> tuple[Path, ...]:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return tuple(
+        Path(raw_path.decode("utf-8"))
+        for raw_path in completed.stdout.split(b"\0")
+        if raw_path
+    )
+
+
+def _first_party_code_paths() -> tuple[Path, ...]:
+    candidates = set(_tracked_paths())
+    for relative_root in FIRST_PARTY_CODE_ROOTS:
+        source_root = PROJECT_ROOT / relative_root
+        if source_root.is_file():
+            candidates.add(relative_root)
+            continue
+        if source_root.is_dir():
+            candidates.update(
+                path.relative_to(PROJECT_ROOT)
+                for path in source_root.rglob("*")
+                if path.is_file()
+            )
+    return tuple(sorted(candidates))
+
+
+def test_first_party_code_files_stay_within_100_kib() -> None:
+    oversized: list[str] = []
+    for relative_path in _first_party_code_paths():
+        if relative_path.suffix.lower() not in FIRST_PARTY_CODE_SUFFIXES:
+            continue
+        if any(
+            relative_path == excluded_root
+            or relative_path.is_relative_to(excluded_root)
+            for excluded_root in FIRST_PARTY_CODE_SIZE_EXCLUSIONS
+        ):
+            continue
+        source_path = PROJECT_ROOT / relative_path
+        if not source_path.is_file():
+            continue
+        size = source_path.stat().st_size
+        if size > MAX_FIRST_PARTY_CODE_FILE_BYTES:
+            oversized.append(f"{relative_path}: {size:,} bytes")
+
+    assert oversized == [], (
+        f"First-party code files must not exceed "
+        f"{MAX_FIRST_PARTY_CODE_FILE_BYTES:,} bytes:\n"
+        + "\n".join(oversized)
+    )
+
+
+def test_app_context_factories_load_before_the_composition_root() -> None:
+    base_template = _read(PROJECT_ROOT / "app/web/templates/base.html")
+    positions = [base_template.index(asset_path) for asset_path in APP_SCRIPT_LOAD_ORDER]
+
+    assert positions == sorted(positions)
+
+    app_source = _read(JAVASCRIPT_ROOT / "app.js")
+    fallback_modules = tuple(APP_FALLBACK_MODULE_PATTERN.finditer(app_source))
+    assert tuple(f"assets/js/{match.group('path')}" for match in fallback_modules) == (
+        APP_SCRIPT_LOAD_ORDER[:-1]
+    )
+    for match in fallback_modules:
+        module_path = JAVASCRIPT_ROOT / match.group("path")
+        assert match.group("query").endswith(_code_version(module_path))
+
+
+def test_price_compare_entry_consumes_the_complete_session_axis_contract() -> None:
+    runtime_source = _read(JAVASCRIPT_ROOT / "price-compare/runtime.js")
+    entry_source = _read(JAVASCRIPT_ROOT / "price-compare.js")
+    runtime_contract = re.search(
+        r"\n\t\treturn \{\n(?P<body>.*?)\n\t\t\};\n\t\};"
+        r"\n\n\tconst createChipRevealController",
+        runtime_source,
+        re.DOTALL,
+    )
+    entry_contract = re.search(
+        r"\tconst \{\n(?P<body>.*?)\n\t\} = "
+        r"priceCompareRuntime\.createSessionAxis\(",
+        entry_source,
+        re.DOTALL,
+    )
+
+    assert runtime_contract is not None
+    assert entry_contract is not None
+    shorthand_property_pattern = re.compile(
+        r"^\s*([A-Za-z_$][A-Za-z0-9_$]*),\s*$", re.MULTILINE
+    )
+    runtime_properties = tuple(
+        shorthand_property_pattern.findall(runtime_contract.group("body"))
+    )
+    entry_properties = tuple(
+        shorthand_property_pattern.findall(entry_contract.group("body"))
+    )
+
+    assert entry_properties == runtime_properties
 
 
 def test_documentation_entrypoints_exist_and_local_links_resolve() -> None:

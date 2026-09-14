@@ -1,0 +1,24 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">{{ translate_ui('Backtest execution model') }}</p>
+            <p class="settings-general-copy">{{ translate_ui('Choose how a signal bar is translated into an executed trade.') }}</p>
+        </div>
+        <form class="settings-general-form" method="post" action="{{ settings_urls.backtest }}/action">
+            <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+            <label class="settings-general-option">
+                <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">{{ translate_ui('Signal bar close') }}</span>
+                    <span class="settings-general-option-desc">{{ translate_ui('When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.') }}</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="backtest_execution_mode" value="next_open" onchange="this.form.submit()" {% if backtest_execution_mode == 'next_open' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">{{ translate_ui('Next bar open') }}</span>
+                    <span class="settings-general-option-desc">{{ translate_ui('When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.') }}</span>
+                </span>
+            </label>
+        </form>
+    </section>

@@ -1,0 +1,49 @@
+{# Code version: v1.0.0 #}
+    <section class="style-token-shell" data-style-token-shell>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
+            <div class="style-token-list">
+            {% for row in material_token_rows %}
+            <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
+                <div class="style-token-demo">
+                    {% if row.sample_kind == "glass-surface" %}
+                    <div class="style-token-demo-surface">
+                        <div class="style-token-demo-backdrop">
+                            <p class="style-token-demo-title">{{ row.sample_title }}</p>
+                            <p class="style-token-demo-copy">{{ row.sample_copy }}</p>
+                        </div>
+                        <div class="report-card style-token-demo-card" aria-hidden="true"></div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="style-token-meta">
+                    <div class="style-token-title-row">
+                        <p class="style-token-title">{{ row.name }}</p>
+                    </div>
+                    <div class="style-token-table-wrap">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value">
+                                        {% if token.reference_target_id %}
+                                        <a
+                                            href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                                            class="style-token-value-link"
+                                            data-settings-section-link="material-tokens"
+                                            data-style-token-material-link
+                                        >{{ token.reference_label }}</a>
+                                        {% else %}
+                                        {{ token.value }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+            </div>
+    </section>

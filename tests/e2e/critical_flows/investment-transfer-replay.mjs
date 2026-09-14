@@ -1,0 +1,726 @@
+/* Code version: v1.0.0 */
+import {
+    expect,
+    test,
+    readFile,
+    openBacktestParameterOverlay,
+    fixturePath,
+    requireChipFallback,
+    setSidebarExpanded,
+    tapAtCenter,
+    readPriceLogoThemeAlignment,
+    recordCostDistributionGuideStrokes,
+    fulfillInertPriceLiveResponse,
+    mockInvestmentReadApis,
+    assertCompleteStandardInvestmentExportPayload,
+} from './support.mjs';
+test('replays a bound cash transfer with outflow before deposit', async ({page}) => {
+    const sourceKey = `v2:${JSON.stringify(['hsbc', '', '2024-11-27', 'deposit', 'USD', '3400'])}`;
+    const targetKey = `v2:${JSON.stringify(['ibkr', '', '2024-11-27', 'withdrawal', 'USD', '-3400'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        transactions: [
+            {
+                ledger_no: 8_000,
+                broker: 'hsbc',
+                date: '2024-11-27',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 3_400,
+                description: 'Receiving deposit',
+            },
+            {
+                ledger_no: 7_999,
+                broker: 'ibkr',
+                date: '2024-11-27',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -3_400,
+                description: 'Transfer outflow',
+            },
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+    });
+    await page.goto('/trade/investment');
+
+    const historyRows = page.locator('#investment_history tr[data-investment-history-row]');
+    await expect(historyRows).toHaveCount(2);
+    await expect.poll(() => historyRows.evaluateAll((rows) => (
+        rows.map((row) => row.querySelectorAll('td')[3]?.textContent.trim())
+    ))).toEqual(['Withdrawal', 'Deposit']);
+});
+
+test('keeps cross-date bound transfers out of the accounting reorder', async ({page}) => {
+    const firstSourceKey = `v2:${JSON.stringify(['hsbc', '', '2026-06-22', 'deposit', 'USD', '50000'])}`;
+    const secondSourceKey = `v2:${JSON.stringify(['hsbc', '', '2026-06-22', 'deposit', 'USD', '25000'])}`;
+    const firstTargetKey = `v2:${JSON.stringify(['ibkr', '', '2026-06-18', 'withdrawal', 'USD_OR_MISSING', '-50000'])}`;
+    const secondTargetKey = `v2:${JSON.stringify(['ibkr', '', '2026-06-19', 'withdrawal', 'USD_OR_MISSING', '-25000'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'hsbc'],
+        transactions: [
+            {
+                ledger_no: 18_001,
+                broker: 'ibkr',
+                date: '2026-06-18',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -50_000,
+                description: 'CNH transfer leg 18 Jun',
+            },
+            {
+                ledger_no: 18_002,
+                broker: 'ibkr',
+                date: '2026-06-19',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -25_000,
+                description: 'CNH transfer leg 19 Jun',
+            },
+            {
+                ledger_no: 18_003,
+                broker: 'hsbc',
+                date: '2026-06-22',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 50_000,
+                description: 'CNH transfer receipt 1',
+            },
+            {
+                ledger_no: 18_004,
+                broker: 'hsbc',
+                date: '2026-06-22',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 25_000,
+                description: 'CNH transfer receipt 2',
+            },
+        ],
+        manualInternalTransferBindings: {
+            [firstSourceKey]: firstTargetKey,
+            [secondSourceKey]: secondTargetKey,
+        },
+    });
+    await page.goto('/trade/investment?range=max');
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+
+    const chartValues = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            value: Number(chart.data.datasets?.[0]?.data?.[index]),
+        }));
+    });
+    for (const date of ['2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22']) {
+        expect(chartValues.find((point) => point.date === date)?.value).toBeCloseTo(10_000, 8);
+    }
+    expect(chartValues.some((point) => Math.abs(point.value - 10_000) > 0.01)).toBe(false);
+});
+
+test('keeps the transfer principal bridge zero after a later posting and preserves the fee', async ({page}) => {
+    const sourceKey = `v2:${JSON.stringify(['hsbc', '', '2026-06-22', 'deposit', 'USD', '990'])}`;
+    const targetKey = `v2:${JSON.stringify(['ibkr', '', '2026-06-21', 'withdrawal', 'USD_OR_MISSING', '-1000'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'hsbc'],
+        transactions: [
+            {
+                ledger_no: 18_101,
+                broker: 'ibkr',
+                date: '2026-06-21',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -1_000,
+                description: 'Transfer principal plus fee outflow',
+            },
+            {
+                ledger_no: 18_102,
+                broker: 'hsbc',
+                date: '2026-06-22',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 990,
+                description: 'Transfer principal receipt',
+            },
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+    });
+    await page.goto('/trade/investment?range=max');
+
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+
+    const chartValues = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            value: Number(chart.data.datasets?.[0]?.data?.[index]),
+        })).filter((point) => point.date >= '2026-06-21' && point.date <= '2026-06-22');
+    });
+    expect(chartValues.map((point) => point.value)).toEqual([9_990, 9_990]);
+});
+
+test('stored transfer bindings override stale ignore markers before equity replay', async ({page}) => {
+    const sourceKey = `v2:${JSON.stringify(['hsbc', 'HSBC-TEST', '2026-06-18', 'deposit', 'USD', '1000'])}`;
+    const targetKey = `v2:${JSON.stringify(['ibkr', 'IBKR-TEST', '2026-06-19', 'withdrawal', 'USD_OR_MISSING', '-1000'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-06-18',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 1000,
+                description: 'Stored binding source',
+            },
+            {
+                broker: 'ibkr',
+                account: 'IBKR-TEST',
+                date: '2026-06-19',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -1000,
+                description: 'Stored binding target',
+            },
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        manualInternalTransferIgnoredSourceKeys: [sourceKey],
+    });
+    await page.goto('/trade/investment?range=max');
+
+    const sourceRow = page.locator('#investment_history tr').filter({hasText: 'Stored binding source'}).first();
+    const bindingSelect = sourceRow.locator('select[data-investment-transfer-source-key]');
+    await expect(bindingSelect).toHaveCount(1);
+    await expect(bindingSelect).toHaveValue(targetKey);
+    await expect(bindingSelect.locator('option:checked')).not.toHaveText('Incorrectly identified, ignore');
+
+    await expect.poll(() => page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.datasets?.[0]?.data || []).filter(Number.isFinite);
+    })).toEqual(expect.arrayContaining([10_000]));
+    const chartValues = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return (chart?.data?.rawLabels || []).map((date, index) => ({
+            date,
+            value: Number(chart.data.datasets?.[0]?.data?.[index]),
+        })).filter((point) => point.date >= '2026-06-18' && point.date <= '2026-06-19');
+    });
+    expect(chartValues.map((point) => point.value)).toEqual([10_000, 10_000]);
+});
+
+test('keeps same-day same-amount transfer rows independently selectable', async ({page}) => {
+    const duplicateHsbcRows = [
+        {
+            ledger_no: 10_101,
+            broker: 'hsbc',
+            account: '000-999999-999',
+            date: '2023-02-20',
+            type: 'withdrawal',
+            currency: 'HKD',
+            amount: -100,
+            description: 'TO USMART T548125QU155(48FEB12)',
+            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_649434.pdf', row_number: 31},
+        },
+        {
+            ledger_no: 10_102,
+            broker: 'hsbc',
+            account: '000-999999-999',
+            date: '2023-02-20',
+            type: 'withdrawal',
+            currency: 'HKD',
+            amount: -100,
+            description: 'DEMO ACCOUNT HOLDER REF00000000000000 18FEB',
+            source: {file_kind: 'hsbc_statement_cash', source_filename: 'eStatementFile_649434.pdf', row_number: 33},
+        },
+    ];
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'usmart_hk'],
+        transactions: [
+            {
+                ledger_no: 10_100,
+                broker: 'usmart_hk',
+                account: '07723146',
+                date: '2023-02-20',
+                type: 'deposit',
+                currency: 'HKD',
+                amount: 100,
+                description: 'eDDA Cash Deposit',
+                source: {file_kind: 'usmart_hk_statement_pdf', source_filename: '20230301-07723146.pdf', row_number: 29},
+            },
+            ...duplicateHsbcRows,
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const bindingSelect = page.locator(
+        '#investment_history tr',
+    ).filter({hasText: 'eDDA Cash Deposit'}).locator(
+        'select[data-investment-transfer-source-key]',
+    );
+    await expect(bindingSelect).toHaveCount(1);
+    const transferOptions = await bindingSelect.locator('option').evaluateAll((options) => options
+        .filter((option) => option.value && option.value !== '__ignore__' && option.value !== '__restore__')
+        .map((option) => ({value: option.value, label: option.textContent.trim()})));
+    expect(transferOptions).toHaveLength(2);
+    expect(new Set(transferOptions.map((option) => option.value)).size).toBe(2);
+    expect(transferOptions.map((option) => option.label).join('\n')).toContain('TO USMART');
+    expect(transferOptions.map((option) => option.label).join('\n')).toContain('DEMO ACCOUNT HOLDER');
+});
+
+test('offers one-day undated bank posting lag but excludes the second day', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        transactions: [
+            {
+                ledger_no: 20_100,
+                broker: 'ibkr',
+                account: 'U12345',
+                date: '2025-09-03',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 18_500,
+                description: 'Electronic Fund Transfer',
+                source: {file_kind: 'ibkr_ofx', row_number: 282},
+            },
+            {
+                ledger_no: 20_101,
+                broker: 'hsbc',
+                account: '000-888888-888',
+                date: '2025-09-04',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -18_500,
+                description: 'NEXT-DAY BANK TRANSFER',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 10},
+            },
+            {
+                ledger_no: 20_102,
+                broker: 'hsbc',
+                account: '000-888888-888',
+                date: '2025-09-05',
+                type: 'withdrawal',
+                currency: 'USD',
+                amount: -18_500,
+                description: 'SECOND-DAY UNRELATED WITHDRAWAL',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 11},
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const bindingSelect = page.locator(
+        '#investment_history tr',
+    ).filter({hasText: 'Electronic Fund Transfer'}).locator(
+        'select[data-investment-transfer-source-key]',
+    );
+    await expect(bindingSelect).toHaveCount(1);
+    const transferOptions = await bindingSelect.locator('option').evaluateAll((options) => options
+        .filter((option) => option.value && option.value !== '__ignore__' && option.value !== '__restore__')
+        .map((option) => option.textContent.trim()));
+    expect(transferOptions).toHaveLength(1);
+    expect(transferOptions[0]).toContain('NEXT-DAY BANK TRANSFER');
+    expect(transferOptions[0]).not.toContain('SECOND-DAY UNRELATED WITHDRAWAL');
+});
+
+test('does not offer future HSBC withdrawals after a Longbridge HK deposit', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'longbridge_hk'],
+        transactions: [
+            {
+                ledger_no: 241,
+                broker: 'longbridge_hk',
+                account: 'H99999999',
+                date: '2023-03-22',
+                type: 'deposit',
+                currency: 'HKD',
+                amount: 50,
+                description: 'Deposit Cash',
+                source: {file_kind: 'longbridge_cash_flow', row_number: 6752},
+            },
+            {
+                ledger_no: 242,
+                broker: 'hsbc',
+                account: '000-999999-999',
+                date: '2023-03-22',
+                type: 'withdrawal',
+                currency: 'HKD',
+                amount: -50,
+                description: 'LONG BRIDGE HK LTD H99999999 22MAR',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 12},
+            },
+            {
+                ledger_no: 243,
+                broker: 'hsbc',
+                account: '000-999999-999',
+                date: '2023-03-23',
+                type: 'withdrawal',
+                currency: 'HKD',
+                amount: -50,
+                description: 'LONG BRIDGE HK LTD H99999999 22MAR',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 19},
+            },
+            {
+                ledger_no: 244,
+                broker: 'hsbc',
+                account: '000-999999-999',
+                date: '2023-03-25',
+                type: 'withdrawal',
+                currency: 'HKD',
+                amount: -50,
+                description: 'RETURN CHEQUE CHARGES',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 20},
+            },
+            {
+                ledger_no: 245,
+                broker: 'hsbc',
+                account: '000-999999-999',
+                date: '2023-03-27',
+                type: 'withdrawal',
+                currency: 'HKD',
+                amount: -50,
+                description: 'CR TO 000-999999-997 REF00000000000(26MAR23)',
+                source: {file_kind: 'hsbc_statement_cash', row_number: 21},
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const bindingSelect = page.locator(
+        '#investment_history tr',
+    ).filter({hasText: 'Deposit Cash'}).locator(
+        'select[data-investment-transfer-source-key]',
+    );
+    await expect(bindingSelect).toHaveCount(1);
+    const transferOptions = await bindingSelect.locator('option').evaluateAll((options) => options
+        .filter((option) => option.value && option.value !== '__ignore__' && option.value !== '__restore__')
+        .map((option) => option.textContent.trim()));
+    expect(transferOptions).toHaveLength(2);
+    expect(transferOptions.join('\n')).toContain('2023/03/22');
+    expect(transferOptions.join('\n')).toContain('2023/03/23');
+    expect(transferOptions.join('\n')).toContain('LONG BRIDGE HK LTD H99999999 22MAR');
+    expect(transferOptions.join('\n')).not.toContain('RETURN CHEQUE CHARGES');
+    expect(transferOptions.join('\n')).not.toContain('CR TO 000-999999-997');
+});
+
+test('keeps matched security transfer descriptions compact in history', async ({page}) => {
+    const sourceKey = 'v2:["ibkr","ibkr:u-suffix:00001","2026-07-31","transfer_out","QQQI","5","USD"]';
+    const targetKey = 'v2:["schwab","Individual ...001","2026-07-31","transfer_in","QQQI","5","USD"]';
+    await mockInvestmentReadApis(page, {
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        transactions: [
+            {
+                ledger_no: 1,
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-07-31',
+                type: 'transfer_out',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'QQQI transfer out',
+            },
+            {
+                ledger_no: 2,
+                broker: 'schwab',
+                account: 'Individual ...001',
+                date: '2026-07-31',
+                type: 'transfer_in',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'NEOS NASDAQ-100(R) HIGH INCOME ETF',
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const transferLink = page.locator(
+        '#investment_history .investment-transfer-link-shell:has(.investment-transfer-link-select)',
+    );
+    await expect(transferLink).toHaveCount(1);
+    await expect(transferLink.locator('.investment-transfer-link-current')).toHaveText('QQQI × 5');
+    await expect(transferLink.locator('.investment-transfer-link-current')).not.toContainText(
+        'NEOS NASDAQ-100(R) HIGH INCOME ETF',
+    );
+    await expect(transferLink.locator('.investment-transfer-link-select option:checked'))
+        .toHaveText('to Charles Schwab');
+    const transferPresentation = await transferLink.evaluate((shell) => {
+        const current = shell.querySelector('.investment-transfer-link-current');
+        const select = shell.querySelector('.investment-transfer-link-select');
+        const cell = shell.closest('td');
+        if (!(current instanceof HTMLElement) || !(select instanceof HTMLSelectElement) || !(cell instanceof HTMLElement)) {
+            return null;
+        }
+        const currentRect = current.getBoundingClientRect();
+        const selectRect = select.getBoundingClientRect();
+        const selectStyle = getComputedStyle(select);
+        return {
+            currentColor: getComputedStyle(current).color,
+            cellColor: getComputedStyle(cell).color,
+            currentLeft: currentRect.left,
+            selectTextLeft: selectRect.left + Number.parseFloat(selectStyle.paddingInlineStart || '0'),
+        };
+    });
+    expect(transferPresentation).not.toBeNull();
+    expect(transferPresentation.currentColor).toBe(transferPresentation.cellColor);
+    expect(Math.abs(transferPresentation.selectTextLeft - transferPresentation.currentLeft)).toBeLessThanOrEqual(1);
+});
+
+test('uses canonical tickers for dividend descriptions in transaction history', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {
+                ledger_no: 6515,
+                broker: 'ibkr',
+                date: '2026-08-21',
+                type: 'foreign_tax_withholding',
+                ticker: 'QQQI',
+                currency: 'USD',
+                amount: -19.55,
+                description: 'NEOS Nasdaq-100(R) High Income ETF (US78433H6751) Cash Dividend USD 0.6518 Per Share - US Tax',
+            },
+            {
+                ledger_no: 6514,
+                broker: 'ibkr',
+                date: '2026-08-21',
+                type: 'dividend',
+                ticker: 'QQQI',
+                currency: 'USD',
+                amount: 195.54,
+                description: 'NEOS Nasdaq-100(R) High Income ETF (US78433H6751) Cash Dividend USD 0.6518 Per Share (Ordinary Dividend)',
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const taxDescriptionCell = page.locator('#investment_history tr')
+        .filter({hasText: 'Foreign Tax Withholding'})
+        .locator('td').nth(4);
+    const dividendDescriptionCell = page.locator('#investment_history tr')
+        .filter({hasText: 'Ordinary dividend'})
+        .locator('td').nth(4);
+    await expect(taxDescriptionCell).toHaveText('QQQI Cash dividend USD 0.6518 per share · US tax');
+    await expect(taxDescriptionCell).not.toContainText('NEOS Nasdaq-100(R) High Income ETF');
+    await expect(taxDescriptionCell).not.toContainText('US78433H6751');
+    await expect(dividendDescriptionCell).toHaveText(
+        'QQQI Cash dividend USD 0.6518 per share (Ordinary dividend)',
+    );
+});
+
+test('replays a manually bound security transfer-out before its receipt', async ({page}) => {
+    const sourceKey = 'v2:["ibkr","ibkr:u-suffix:00001","2026-07-31","transfer_out","QQQI","5","USD"]';
+    const targetKey = 'v2:["schwab","Individual ...001","2026-07-31","transfer_in","QQQI","5","USD"]';
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'schwab'],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        transactions: [
+            {
+                broker: 'schwab',
+                account: 'Individual ...001',
+                date: '2026-07-31',
+                type: 'transfer_in',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'NEOS NASDAQ-100(R) HIGH INCOME ETF',
+                source: {row_number: 2},
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-07-31',
+                type: 'transfer_out',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'FOP transfer out: QQQI',
+                source: {row_number: 362},
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const transferRowsLocator = page.locator(
+        '#investment_history tr[data-investment-history-ticker="QQQI"]',
+    );
+    await expect(transferRowsLocator).toHaveCount(2);
+    const transferRows = await transferRowsLocator.evaluateAll((rows) => rows.map((row) => ({
+        ledgerNo: Number(row.dataset.investmentHistoryRow),
+        text: row.textContent || '',
+    })));
+    const transferOut = transferRows.find((row) => row.text.includes('Transfer Out'));
+    const transferIn = transferRows.find((row) => row.text.includes('Transfer In'));
+    expect(transferOut).toBeDefined();
+    expect(transferIn).toBeDefined();
+    expect(transferOut.ledgerNo).toBeLessThan(transferIn.ledgerNo);
+});
+
+test('rewrites the counterpart order after manually binding a later-numbered source row', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'schwab'],
+        transactions: [
+            {
+                ledger_no: 6_154,
+                broker: 'schwab',
+                account: 'Individual ...001',
+                date: '2026-07-31',
+                type: 'transfer_in',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'NEOS NASDAQ-100(R) HIGH INCOME ETF',
+                source: {row_number: 2},
+            },
+            {
+                ledger_no: 6_161,
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-07-31',
+                type: 'transfer_out',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'FOP transfer out: QQQI',
+                source: {row_number: 362},
+            },
+        ],
+    });
+    let persistedBindingRequest = null;
+    await page.route('**/api/investment/internal-transfer-binding', async (route) => {
+        persistedBindingRequest = route.request().postDataJSON();
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                manual_internal_transfer_bindings: {
+                    [persistedBindingRequest.source_key]: persistedBindingRequest.target_key,
+                },
+            }),
+        });
+    });
+    await page.goto('/trade/investment');
+
+    const bindingSelect = page.locator(
+        '#investment_history tr[data-investment-history-ticker="QQQI"] select[data-investment-transfer-source-key]',
+    );
+    await expect(bindingSelect).toHaveCount(1);
+    const bindingTarget = await bindingSelect.locator('option').evaluateAll((options) => (
+        options.map((option) => option.value).find(Boolean)
+    ));
+    expect(bindingTarget).toBeTruthy();
+    await bindingSelect.selectOption(bindingTarget);
+
+    await expect.poll(() => persistedBindingRequest).toEqual({
+        source_key: expect.stringMatching(/^v2:/),
+        target_key: expect.stringMatching(/^v2:/),
+    });
+    const transferRows = page.locator('#investment_history tr[data-investment-history-ticker="QQQI"]');
+    await expect.poll(() => transferRows.evaluateAll((rows) => {
+        const renderedRows = rows.map((row) => ({
+            ledgerNo: Number(row.dataset.investmentHistoryRow),
+            text: row.textContent || '',
+        }));
+        return {
+            transferOutLedgerNo: renderedRows.find((row) => row.text.includes('Transfer Out'))?.ledgerNo || 0,
+            transferInLedgerNo: renderedRows.find((row) => row.text.includes('Transfer In'))?.ledgerNo || 0,
+        };
+    })).toEqual({transferOutLedgerNo: 1, transferInLedgerNo: 2});
+    await expect(page.locator(
+        '#investment_history tr[data-investment-history-ticker="QQQI"] select[data-investment-security-transfer-receipt-key]',
+    )).toHaveCount(0);
+    await expect(page.locator('#investment_history')).not.toContainText('Remove source confirmation');
+    await expect(page.locator('#investment_history')).not.toContainText(
+        'Confirmation changes only All brokers aggregation.',
+    );
+});
+
+test('scopes an unbound Schwab receipt without blanking unaffected All brokers surfaces', async ({page}) => {
+    const receiptKey = 'v2:["schwab","Individual ...001","2026-07-31","transfer_in","QQQI","5","USD"]';
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'schwab'],
+        priceHistoryByTicker: {
+            DRAM: {'2026-07-31': 11},
+            QQQI: {'2026-07-31': 54},
+        },
+        summary: {
+            security_transfer_reconciliation: {
+                aggregate_holdings_available: false,
+                aggregate_scope_status: 'blocked_source_attribution_required',
+                pnl_unavailable_tickers: ['QQQI'],
+                pnl_unavailable_reason: 'cross_broker_security_transfer_basis_unverified',
+                aggregate_overlay: {
+                    source_attribution_required_receipt_keys: [receiptKey],
+                },
+            },
+        },
+        transactions: [
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-07-31',
+                type: 'buy',
+                currency: 'USD',
+                ticker: 'DRAM',
+                quantity: 10,
+                price: 10,
+                amount: -100,
+                description: 'DRAM buy',
+            },
+            {
+                broker: 'schwab',
+                account: 'Individual ...001',
+                date: '2026-07-31',
+                type: 'transfer_in',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 5,
+                amount: 0,
+                description: 'QQQI transfer receipt',
+            },
+        ],
+    });
+    await page.goto('/trade/investment');
+
+    const receiptConfirmation = page.locator(
+        '#investment_history select[data-investment-security-transfer-receipt-key]',
+    );
+    await expect(receiptConfirmation).toHaveCount(1);
+    await expect(receiptConfirmation).toHaveAttribute(
+        'data-investment-security-transfer-receipt-key',
+        receiptKey,
+    );
+    await expect(page.locator('#investment_history')).not.toContainText('Remove source confirmation');
+    await expect(page.locator('#investment_history')).not.toContainText(
+        'Confirmation changes only All brokers aggregation.',
+    );
+
+    await page.getByRole('radio', {name: 'Holdings'}).check({force: true});
+    await expect(page.locator('#investment_holdings_panel .investment-holdings-empty')).toHaveCount(0);
+    const dramRow = page.locator('#investment_holdings_panel [data-table-scroll] tr[data-investment-holdings-ticker="DRAM"]');
+    const qqqiRow = page.locator('#investment_holdings_panel [data-table-scroll] tr[data-investment-holdings-ticker="QQQI"]');
+    await expect(dramRow).toHaveCount(1);
+    await expect(qqqiRow).toHaveCount(0);
+
+    await page.getByRole('radio', {name: 'Metrics'}).check({force: true});
+    await expect(page.locator('#investment_metrics_panel')).not.toContainText(
+        'All brokers holdings, equity, and P&L are unavailable',
+    );
+
+    await page.getByRole('radio', {name: 'Stock details'}).check({force: true});
+    await expect(page.locator('#stock_panel')).not.toContainText(
+        'All brokers holdings, equity, and P&L are unavailable',
+    );
+    await expect(page.locator('#investment_equity_chart')).not.toContainText(
+        'All brokers holdings, equity, and P&L are unavailable',
+    );
+});
+

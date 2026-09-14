@@ -1,18 +1,30 @@
 """
 Investment money-market icon selection contracts.
 
-Code version: v0.4.2
+Code version: v0.5.0
 """
 
 from pathlib import Path
+
+from tests.css_test_utils import read_css_bundle
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_hkd_money_market_funds_use_the_abstract_token_and_all_usd_funds_keep_the_dollar_token() -> None:
-    investment_js = (REPOSITORY_ROOT / "app/web/static/assets/js/investment.js").read_text()
-    investment_css = (REPOSITORY_ROOT / "app/web/static/assets/css/views/investment.css").read_text()
+    investment_runtime_root = REPOSITORY_ROOT / "app/web/static/assets/js/investment/runtime"
+    investment_js = "\n".join(
+        (investment_runtime_root / source_name).read_text()
+        for source_name in (
+            "binding-pagination.js",
+            "holdings-live.js",
+            "stock-history-filters.js",
+        )
+    )
+    investment_css = read_css_bundle(
+        REPOSITORY_ROOT / "app/web/static/assets/css/views/investment.css"
+    )
     abstract_icon = REPOSITORY_ROOT / "market_store/logos/money-market-fund.ring.svg"
 
     assert "function isMoneyMarketFundTicker(ticker)" in investment_js
@@ -22,7 +34,10 @@ def test_hkd_money_market_funds_use_the_abstract_token_and_all_usd_funds_keep_th
     assert "if (isFranklinMoneyMarketTicker(normalizedTicker)) return 'Franklin MMF';" not in investment_js
     assert "getTickerQuoteCurrency(ticker) === 'USD'" in investment_js
     assert "investment-money-market-fund-token-logo" in investment_js
-    assert "const moneyMarketFundTokenLogoClass = getMoneyMarketFundTokenLogoClass(activeTicker);" in investment_js
+    assert (
+        "const moneyMarketFundTokenLogoClass = "
+        "runtime.getMoneyMarketFundTokenLogoClass(activeTicker);"
+    ) in investment_js
     assert "investment-stock-details-identity .investment-cash-equivalent-token-logo" in investment_css
     assert "investment-stock-details-identity .investment-money-market-fund-token-logo" in investment_css
     assert "portfolio-donut-logo.investment-cash-equivalent-token-logo" in investment_css

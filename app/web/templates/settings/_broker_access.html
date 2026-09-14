@@ -1,0 +1,104 @@
+{# Code version: v1.0.0 #}
+    <section class="settings-action-package settings-callout-card-warning">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}" onclick="this.closest('section').remove()">
+                <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+            </button>
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-note">{{ translate_ui('This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.') }}</p>
+            </div>
+    </section>
+    <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
+        <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+                <div class="field live-trading-broker-strip backtest-shared-select-field settings-broker-row"
+                     data-shared-select-field
+                     data-shared-select-kind="settings-broker">
+                    <label class="settings-form-label live-trading-field-label" for="selected_broker">{{ translate_ui('Broker') }}</label>
+                    <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
+                        <select id="selected_broker"
+                                name="selected_broker"
+                                class="trade-strategy-native-select backtest-shared-select-native"
+                                hidden
+                                aria-hidden="true"
+                                tabindex="-1">
+                            {{ render_broker_select_options(settings_broker_codes, broker_settings.selected_broker) }}
+                        </select>
+                        <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                            <button type="button"
+                                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger"
+                                    data-shared-select-trigger
+                                    aria-haspopup="listbox"
+                                    aria-expanded="false"
+                                    aria-controls="selected_broker_dropdown">
+                                <span class="ticker-leading-slot live-trading-broker-trigger-slot" aria-hidden="true">
+                                    <span class="ticker-logo-placeholder"
+                                          data-shared-select-trigger-placeholder></span>
+                                    <img class="ticker-input-logo live-trading-broker-trigger-logo"
+                                         data-shared-select-trigger-logo
+                                         alt=""
+                                         hidden>
+                                </span>
+                                <span class="trade-strategy-trigger-label live-trading-broker-trigger-label"
+                                      data-shared-select-trigger-label></span>
+                            </button>
+                        </div>
+                        <div id="selected_broker_dropdown"
+                             class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown"
+                             data-shared-select-dropdown
+                             role="listbox"
+                             aria-label="{{ translate_ui('Broker') }}"
+                             hidden></div>
+                    </div>
+                </div>
+
+                <div class="settings-action-package-grid" data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    {% if longbridge_oauth_pending %}
+                    <span data-longbridge-oauth-monitor
+                          data-status-url="/api/settings/longbridge-oauth/status"
+                          hidden></span>
+                    {% endif %}
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">{{ translate_ui('Longbridge OAuth') }}</p>
+                            <p class="settings-service-note">{{ translate_ui('Authorize through the installed Longbridge CLI in a separate browser window. Worthward does not receive, display, or store the authorization code or OAuth token. Your existing terminal CLI profile is used automatically.') }}</p>
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>{{ translate_ui('Authorize in browser') }}</button>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="settings-action-package-grid" data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">IBKR</p>
+                            <p class="settings-service-note">{{ translate_ui('Direct IBKR connectivity is not configured. For trading history, import official IBKR CSV or GainsKeeper files in Trade → Investment. For personal prices and market data, use Longbridge.') }}</p>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="settings-action-package-grid" data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name"><span class="settings-broker-health-indicator" data-broker-connection-health role="img" aria-label="{{ translate_ui('Healthy connection') }}" title="{{ translate_ui('Healthy connection') }}"{% if broker_test_status != 'success' %} hidden{% endif %}></span>{{ translate_ui('Broker connection test') }}</p>
+                            <p class="settings-service-note" data-broker-connection-summary>{% if broker_test_status == 'success' %}{{ translate_ui('The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order.') }}{% else %}{{ translate_ui('Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.') }}{% endif %}</p>
+                            {% if broker_test_status and broker_test_message %}
+                            <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite" data-broker-test-feedback>
+                                {% if broker_test_status == 'success' %}
+                                <span class="settings-broker-test-feedback-icon" aria-hidden="true"></span>
+                                {% endif %}
+                                <span>{{ broker_test_message }}{% if broker_test_checked_at %} {{ translate_ui('Tested at') }} {{ broker_test_checked_at }}.{% endif %}</span>
+                            </p>
+                            {% else %}
+                            <p class="settings-broker-test-feedback" role="status" aria-live="polite" data-broker-test-feedback hidden></p>
+                            {% endif %}
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary" data-broker-test-button>{{ translate_ui('Test connection') }}</button>
+                        </div>
+                    </section>
+                </div>
+    </form>

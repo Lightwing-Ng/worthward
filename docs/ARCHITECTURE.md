@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.109.1`
+Documentation version: `v1.109.2`
 
 ## Reuse and dependency boundaries
 
@@ -401,7 +401,16 @@ main.py
   -> app/services/* and app/infrastructure/*
 ```
 
-`app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; live account and order APIs authorize either that signed browser session or a valid strong access token at the request boundary.
+`app/web/runtime.py` is the static `WebRuntime` facade and composition root. It
+assembles explicit context-factory modules under `app/web/runtime_*.py` for
+foundation services, comparison and training, workspace requests and
+responses, Settings pages, investment imports, market/live reads, and
+investment mutations. The facade keeps its public fields and late-bound
+dependency seams stable for route consumers and tests; the factories own the
+cohesive implementations without dynamic source execution. Route modules only
+register canonical and compatibility URLs. The trade module also owns the
+browser PIN unlock endpoint; live account and order APIs authorize either that
+signed browser session or a valid strong access token at the request boundary.
 
 IBKR Trade Notifications web paste keeps every full-page filled row, including
 same-minute split fills that share an account, ticker, quantity, price, side,
@@ -1115,13 +1124,36 @@ sets of values.
   and the Light / Dark theme mappings;
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
-- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
+- `app/services/investment_import.py`: stable import facade. Broker parsing,
+  statement evidence, merge identity, reconciliation, payload summaries, and
+  shared support live in bounded `investment_import_*.py` domain modules. The
+  facade preserves documented patch seams while avoiding dynamic source
+  assembly.
+- `app/services/investment_import_registry.py`: explicit broker and
+  source-format parser dispatch plus the normalize, idempotent merge, atomic
+  persistence, cache invalidation, and readback-verification boundary. The
+  cohesive Zircon (HK) template and parser remain in `zircon_hk_import.py`.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing consumers keep local fallbacks if the shared script is unavailable.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
-- `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
-- `app/web/static/assets/js/investment/data-utils.js`: shared investment ledger replay, lot matching, cost basis, realized P&L, and unrealized P&L calculations used by Holdings and Stock details.
+- `app/web/static/assets/js/app.js`: shared workspace browser composition root.
+  Versioned classic-script factories under `assets/js/app/` own chart export,
+  optimistic navigation, workspace hydration, ticker and select controls, date
+  and range controls, and strategy interactions. `base.html` loads factories
+  before the composition root in explicit dependency order. The composition
+  root can also load a missing versioned factory from the same origin so a
+  long-running process with a cached pre-split template does not serve a
+  half-adopted browser bundle.
+- `app/web/static/assets/js/investment/stock-details.js`: Stock-details
+  composition with separate metrics, range, and trade-marker-glow owners.
+- `app/web/static/assets/js/investment/data-utils.js`: stable data-utility
+  facade over bounded modules for cash replay, position valuation,
+  reconciliation, summaries, and transaction presentation.
+- `app/web/static/assets/js/investment.js`: Investment workspace composition
+  root. Context-factory modules under `assets/js/investment/runtime/` own
+  controls, charts, holdings, history, imports, filters, pagination, funding
+  metrics, linked hover, and realtime behavior.
 - `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.
 - `app/web/static/assets/js/investment/transaction-table.js`: visible-row selection, stable descending order, page clamping, and ledger-to-page lookup.
 - `app/web/static/assets/js/investment/url-state.js`: canonical query-string parsing and serialization for Investment views, ranges, broker scopes, table filters, Stock details dates, and pagination.
@@ -1129,9 +1161,9 @@ sets of values.
 - `app/web/static/assets/js/settings/url-state.js`: canonical Settings section, language-tab, and pagination parsing and serialization, including legacy aliases and default omission.
 - `app/web/static/assets/js/investment/layout.js`: split-layout measurement, clamping, observers, and resizer cleanup.
 
-`investment.js` imports these browser modules and remains their composition root.
-Each extracted module has a direct Node unit-test suite; Playwright verifies the
-assembled browser behavior.
+Each extracted browser module retains a versioned cache key. Direct Node suites
+protect pure contracts, static bundle helpers assert the true owner files, and
+Playwright verifies assembled browser behavior.
 
 ### Historical Bayesian Price Field geometry amendment
 
@@ -1189,20 +1221,20 @@ definition. The E2E launcher copies only Git-tracked logo assets into its
 isolated runtime; it must not attach to an arbitrary existing server. CI retains
 Playwright failure evidence when the browser stage fails.
 
-## Known structural debt
+## Bounded source ownership
 
-`app/web/runtime.py`, the broker-specific parser collection in
-`app/services/investment_import.py`, and the remaining Investment entry
-composition are still large. Extend the parser registry and tested JavaScript
-module boundaries instead of adding route-level dispatch or another cohesive
-feature implementation directly to those files.
+First-party code under `main.py`, `app/`, `strategies/`, `scripts/`, and
+`tests/` must remain at or below 100 KiB per file. The repository contract
+excludes only explicitly vendored browser assets. Large composition surfaces
+use static facades, explicit context factories, or thin test aggregators; they
+must not reconstruct implementations through runtime source concatenation or
+dynamic execution.
 
-`tests/e2e/critical-flows.spec.mjs` is also an oversized aggregation point.
-Place new coverage in domain-focused Playwright files for comparison,
-portfolio, Backtest, Investment, Live Trading, or Settings behavior instead of
-continuing to grow the shared critical-flow file. Splitting the existing file
-requires a dedicated behavior-preserving change with an unchanged collected
-test inventory.
+`tests/e2e/critical-flows.spec.mjs` is a thin import aggregator whose domain
+files live under `tests/e2e/critical_flows/`. The collected title order is a
+compatibility contract. `tests/test_investment_import.py` similarly preserves
+its public test classes while composing broker-focused mixins. Add new coverage
+to the owning domain file and keep both aggregators small.
 
 ## Shared component catalog, 8 Sep 2026
 
