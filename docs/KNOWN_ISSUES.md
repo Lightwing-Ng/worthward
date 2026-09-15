@@ -1,5 +1,26 @@
 # Known issues and operating constraints
 
+LSTM browser GA objective alignment, 15 Sep 2026: Start GA tuning now treats
+the current private controls as a baseline for a 36,000-second genetic search
+instead of sending them through the exact-configuration bypass. Candidate and
+three-seed robust ranking maximize the same strict 1–20 day CRPS skill versus
+causal baseline that Backtest displays. Every validation fold requires all 20
+horizons and complete eligible-pair coverage; the final holdout is evaluated
+only after selection is frozen. Completed robust runs replay their complete
+seed-42 member because an aggregate parameter set without a seed is not an
+executable configuration. The explicit `--selected-params` CLI path retains its
+180-second minimum optimizer-work contract for diagnostics. Existing history is
+not rewritten, no GA begins merely by loading Backtest, and a cached 8688 service
+requires an owner-controlled restart before the new Python launch contract is
+live. The runner budget is a scheduling deadline, not the strict outer wall-clock
+supervisor described in `docs/LSTM_PROBABILITY_TUNING.md`.
+
+Strategy-tuning pressed state, 15 Sep 2026: the active round control now uses an
+opaque adaptive-white surface with the standard primary-blue SVG glyph and border.
+It keeps a restrained blue shadow and press transform so it remains distinct from
+the idle frosted control in both themes. This updates the shared token contract;
+the sibling product still requires an explicit adaptation before convergence.
+
 Settings navigation and effect-boundary repair, 14 Sep 2026: Settings section
 links now have one optimistic-navigation owner. The global hard-navigation path
 does not intercept those links, and the Settings replacement path does not run a
@@ -257,7 +278,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.256.1`
+Documentation version: `v1.257.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

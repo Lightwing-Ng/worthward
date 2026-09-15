@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.26.0
+Code version: v1.27.0
 """
 
 from __future__ import annotations
@@ -395,10 +395,10 @@ def build_style_token_rows(
                 raw_token("--strategy-tune-button-size", "var(--shared-select-control-height)"),
                 px_token("--strategy-tune-button-icon-size", 14, 1),
                 raw_token("--strategy-tune-button-radius", "var(--radius-pill)"),
-                raw_token("--strategy-tune-button-active-background", "var(--accent-fill-hover)"),
-                raw_token("--strategy-tune-button-active-border", "1px solid color-mix(in srgb, var(--accent-contrast) 44%, transparent)"),
-                raw_token("--strategy-tune-button-active-color", "var(--accent-contrast)"),
-                raw_token("--strategy-tune-button-active-shadow", "0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent), inset 0 1px 0 color-mix(in srgb, var(--accent-contrast) 38%, transparent)"),
+                raw_token("--strategy-tune-button-active-background", "var(--color-white-adaptive)"),
+                raw_token("--strategy-tune-button-active-border", "1px solid var(--theme-accent-primary)"),
+                raw_token("--strategy-tune-button-active-color", "var(--theme-accent-primary)"),
+                raw_token("--strategy-tune-button-active-shadow", "0 6px 18px color-mix(in srgb, var(--theme-accent-primary) 18%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 12%, transparent)"),
                 material_reference_token("--strategy-tune-panel-material", "Frosted glass"),
                 px_token("--strategy-tune-panel-gap", 4, 0),
                 px_token("--strategy-tune-panel-padding", 10, 0),

@@ -1,6 +1,9 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.7.0
+Code version: v0.8.0
+
+The browser action launches a 10-hour genetic search from the submitted form
+state and ranks candidates by complete 1–20 day CRPS skill versus baseline.
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -37,6 +40,7 @@ from scripts import lstm_ga_tune as ga_runner
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DURATION_SECONDS = ga_runner.DEFAULT_DURATION_SECONDS
 DEFAULT_POPULATION_SIZE = ga_runner.DEFAULT_POPULATION_SIZE
+DEFAULT_OBJECTIVE = "crps"
 MAX_WORKERS = ga_runner.MAX_WORKERS
 RUN_ID_PATTERN = re.compile(r"^lstm-ga-[a-f0-9]{24}$")
 ACTIVE_STATUSES = frozenset({"starting", "running"})
@@ -86,7 +90,7 @@ class LstmTrainingManager:
         normalized_ticker = self._normalize_ticker(ticker)
         normalized_period = self._normalize_period(period)
         normalized_interval = ga_runner.validate_training_interval(interval)
-        selected_params = ga_runner.validate_selected_params(params)
+        base_params = ga_runner.validate_selected_params(params)
         settings = ga_runner.validate_training_configuration(configuration)
         workspace_root = self._workspace_root()
         workspace_root.mkdir(parents=True, exist_ok=True)
@@ -106,7 +110,7 @@ class LstmTrainingManager:
             seed = self._unique_seed(
                 normalized_ticker,
                 normalized_period,
-                selected_params,
+                base_params,
                 normalized_interval,
                 settings,
             )
@@ -115,7 +119,8 @@ class LstmTrainingManager:
                 normalized_period,
                 seed,
             )
-            args.selected_params = selected_params
+            args.base_params = base_params
+            args.objective = DEFAULT_OBJECTIVE
             args.interval = normalized_interval
             args.configuration = settings
             spec = ga_runner.build_request_spec(args)
@@ -140,8 +145,10 @@ class LstmTrainingManager:
                 str(seed),
                 "--state-root",
                 str(paths.root),
-                "--selected-params",
-                json.dumps(selected_params, sort_keys=True, allow_nan=False),
+                "--base-params",
+                json.dumps(base_params, sort_keys=True, allow_nan=False),
+                "--objective",
+                DEFAULT_OBJECTIVE,
                 "--configuration",
                 json.dumps(settings, sort_keys=True, allow_nan=False),
                 "--prepared-request",
@@ -175,7 +182,8 @@ class LstmTrainingManager:
                 "period": normalized_period,
                 "interval": normalized_interval,
                 "ga_seed": seed,
-                "selected_params": selected_params,
+                "base_params": base_params,
+                "objective": DEFAULT_OBJECTIVE,
                 "configuration": settings,
             })
             return {
@@ -275,13 +283,21 @@ class LstmTrainingManager:
             state_root=str(self._state_root()),
             offline=False,
             resume=False,
+            selected_params=None,
+            base_params=None,
+            objective=DEFAULT_OBJECTIVE,
+            configuration=None,
+            final_reserve_seconds=None,
+            rescore_backends=None,
+            snapshot_file=None,
         )
 
     def _unique_seed(self, ticker: str, period: str, params=None, interval="1d", configuration=None) -> int:
         for _ in range(8):
             seed = secrets.randbelow(1_000_000_000)
             args = self._build_runner_args(ticker, period, seed)
-            args.selected_params = params
+            args.base_params = params
+            args.objective = DEFAULT_OBJECTIVE
             args.interval = interval
             args.configuration = configuration
             spec = ga_runner.build_request_spec(args)
@@ -322,6 +338,21 @@ class LstmTrainingManager:
         if not interval and request.get("runner_version") in {"v0.1.0", "v0.2.0"}:
             interval = "1d"  # These saved runner versions only supported daily data.
         configuration, configuration_error = self._saved_configuration(request, launch, snapshot, best, effective_status, interval)
+        objective = str(
+            request.get("objective")
+            or launch.get("objective")
+            or (best or {}).get("objective")
+            or "direction"
+        )
+        objective_label = {
+            "crps": "CRPS skill vs baseline",
+            "grid": "Complete-grid probability score",
+            "probability": "One-step probability score",
+            "direction": "Direction accuracy",
+        }.get(objective, objective)
+        crps_skill = (best or {}).get("validation_mean_crps_skill_pct")
+        if type(crps_skill) not in (int, float) or not math.isfinite(crps_skill):
+            crps_skill = None
         accuracy = None
         accuracy_label = "Holdout direction accuracy"
         if best:
@@ -343,6 +374,10 @@ class LstmTrainingManager:
             "configuration": configuration,
             "configuration_error": configuration_error,
             "requested_range": {"from": snapshot.get("start"), "to": snapshot.get("end")},
+            "objective": objective,
+            "objective_label": objective_label,
+            "crps_skill_pct": crps_skill,
+            "crps_skill_label": "Mean validation CRPS skill vs baseline",
             "accuracy_pct": accuracy,
             "accuracy_label": accuracy_label,
             "device": best.get("device") if best else None,
@@ -359,6 +394,7 @@ class LstmTrainingManager:
             "evaluated": status.get("evaluated") or result.get("evaluated"),
             "best": self._best_summary(best),
             "selected_params": request.get("selected_params", launch.get("selected_params")),
+            "base_params": request.get("base_params", launch.get("base_params")),
             "result_available": (state / "result.json").is_file(),
             "progress": self._progress_summary(status, effective_status),
             "files": self._training_files(state),
@@ -381,7 +417,7 @@ class LstmTrainingManager:
     def _saved_configuration(request, launch, snapshot, best, status, interval):
         if status != "completed" or not best:
             return None, "No completed configuration is available for this run."
-        params = best.get("params")
+        params = LstmTrainingManager._representative_params(best)
         definitions = ga_runner.LSTMPriceFieldStrategy().get_parameter_definitions()
         if not isinstance(params, dict) or not {item.key for item in definitions}.issubset(params):
             return None, "This legacy aggregate has no complete single-seed configuration."
@@ -405,6 +441,27 @@ class LstmTrainingManager:
             return None, "The saved configuration is incomplete or no longer supported."
         return {**exact, "ticker": ticker, "period": period, "interval": frequency,
                 "strategy": "lstm-price-field", "params": selected}, None
+
+    @staticmethod
+    def _representative_params(best: Mapping[str, Any]) -> object:
+        """Choose seed 42 from a complete robust winner for browser replay."""
+        params = best.get("params")
+        definitions = ga_runner.LSTMPriceFieldStrategy().get_parameter_definitions()
+        required = {item.key for item in definitions}
+        if isinstance(params, dict) and required.issubset(params):
+            return params
+        seed_results = best.get("seed_results")
+        if not isinstance(seed_results, list):
+            return params
+        for result in seed_results:
+            candidate = result.get("params") if isinstance(result, Mapping) else None
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("lstm_seed") == ga_runner.ROBUST_SEEDS[0]
+                and required.issubset(candidate)
+            ):
+                return candidate
+        return params
 
     @staticmethod
     def _progress_summary(status: Mapping[str, Any], effective_status: str) -> dict[str, Any]:
@@ -495,6 +552,8 @@ class LstmTrainingManager:
             "holdout_min_hit_rate_pct",
             "holdout_median_coverage_pct",
             "validation_median_probability_score_pct",
+            "validation_mean_crps_skill_pct",
+            "validation_crps_skill_std_pct",
             "fitness",
         )
         summary = {key: best.get(key) for key in allowed if best.get(key) is not None}

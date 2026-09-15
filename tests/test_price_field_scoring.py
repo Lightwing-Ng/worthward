@@ -1,4 +1,4 @@
-"""Complete probability-grid scoring regressions. Code version: v1.2.0."""
+"""Complete probability-grid scoring regressions. Code version: v1.3.0."""
 
 from concurrent.futures import Future
 import math
@@ -238,6 +238,55 @@ def test_grid_ranking_ignores_holdout_and_requires_every_seed(forecast_frame):
     assert ga._ranking_key({**result, **fitness}) == (1.0, fitness["fitness"])
 
 
+def test_crps_ranking_matches_complete_headline_and_fails_closed(forecast_frame):
+    score = score_price_field_grid(forecast_frame, 25, 55)
+    result = {
+        "objective": "crps",
+        "grid": {"validation_folds": {str(index): score for index in range(3)}},
+        "holdout": {"direction_hit_rate_pct": 100},
+        "backtest": {"net_return_pct": 100},
+    }
+
+    fitness = ga._fitness_fields(result)
+
+    assert fitness["feasible"]
+    assert fitness["fitness"] == pytest.approx(100 * score["crps_skill_score"])
+    assert fitness["validation_mean_crps_skill_pct"] == pytest.approx(
+        100 * score["crps_skill_score"],
+        abs=0.0001,
+    )
+    assert ga._ranking_key({**result, **fitness}) == (1.0, fitness["fitness"])
+    groups = [
+        {
+            **result,
+            **fitness,
+            "status": "ok",
+            "model_key": "complete-crps",
+            "params": {"lstm_seed": seed},
+        }
+        for seed in ga.ROBUST_SEEDS
+    ]
+    aggregate = ga._aggregate_robust(groups)[0]
+    assert aggregate["feasible"]
+    assert aggregate["validation_mean_crps_skill_pct"] == pytest.approx(
+        fitness["fitness"]
+    )
+    assert aggregate["validation_crps_skill_std_pct"] == pytest.approx(0)
+
+    incomplete = {
+        **score,
+        "valid_pairs": score["eligible_pairs"] - 1,
+        "crps_skill_score": None,
+        "crps_skill_has_complete_pair_coverage": False,
+    }
+    rejected = ga._fitness_fields({
+        "objective": "crps",
+        "grid": {"validation_folds": {str(index): incomplete for index in range(3)}},
+    })
+    assert not rejected["feasible"]
+    assert rejected["fitness"] is None
+
+
 def test_deadline_returns_even_when_worker_never_finishes():
     future = Future()
     future.set_running_or_notify_cancel()
@@ -246,9 +295,10 @@ def test_deadline_returns_even_when_worker_never_finishes():
     assert ga._evaluate_batch(executor, [{"params": {}}], -math.inf) == []
 
 
-def test_grid_search_removes_holdout_from_model_input(forecast_frame):
+@pytest.mark.parametrize("objective", ["grid", "crps"])
+def test_grid_search_removes_holdout_from_model_input(forecast_frame, objective):
     bundle = {"ohlcv": [{"observed_at": str(day), "close": 100} for day in forecast_frame.Date]}
-    context = ga.EvaluationContext(forecast_frame, bundle, (), {}, (), 88, "test", objective="grid")
+    context = ga.EvaluationContext(forecast_frame, bundle, (), {}, (), 88, "test", objective=objective)
     visible, trimmed = ga._evaluation_inputs({"origin": "random"}, context)
     assert len(visible) == 88
     assert len(trimmed["ohlcv"]) == 88

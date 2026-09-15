@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.21.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.0 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -456,13 +456,13 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await page.goto(lstmUrl);
     const menu = page.locator('[data-lstm-training-menu]');
     const button = menu.locator('[data-lstm-training-action]');
-    await expect(button).toHaveText('Start training');
+    await expect(button).toHaveText('Start GA tuning');
     await button.click();
-    await expect(button).toHaveText('Starting training…');
+    await expect(button).toHaveText('Starting GA tuning…');
     await expect(menu.getByRole('progressbar')).toBeVisible();
     await expect(page.locator('.lstm-training-spinner')).toHaveCount(0);
     releaseStart();
-    await expect(button).toHaveText('Stop training');
+    await expect(button).toHaveText('Stop GA tuning');
     await expect(button).toBeEnabled();
     await expect(button).toHaveCount(1);
     expect(startRequests).toBe(1);
@@ -485,20 +485,20 @@ test('LSTM training toggles one button and displays real progress and artifact m
     })).toBe(true);
 
     await button.click();
-    await expect(button).toHaveText('Stopping training…');
+    await expect(button).toHaveText('Stopping GA tuning…');
     await expect(button).toBeDisabled();
     runs = [{...run, status: 'interrupted', active: false}];
-    await expect(button).toHaveText('Start training', {timeout: 10_000});
+    await expect(button).toHaveText('Start GA tuning', {timeout: 10_000});
     await expect(menu.getByRole('progressbar')).toHaveCount(0);
     await page.reload();
-    await expect(button).toHaveText('Start training');
+    await expect(button).toHaveText('Start GA tuning');
     await expect(menu.locator('.lstm-training-files')).toBeHidden();
     await page.setViewportSize({width: 390, height: 844});
     await openBacktestParameterOverlay(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
     runs = [{...run, status: 'starting', progress: {percent: null}}];
-    await expect(button).toHaveText('Stop training', {timeout: 10_000});
+    await expect(button).toHaveText('Stop GA tuning', {timeout: 10_000});
     await expect(menu.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
     await expect(menu.locator('.lstm-training-progress-track')).toHaveClass(/is-indeterminate/);
 
@@ -550,7 +550,9 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     };
     runs = [{
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'NVDA', status: 'completed', active: false,
-        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', accuracy_pct: 65,
+        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', crps_skill_pct: -7.62,
+        crps_skill_label: 'Mean validation CRPS skill vs baseline',
+        objective: 'crps', objective_label: 'CRPS skill vs baseline', duration_seconds: 36_000,
         configuration, files: [{name: 'request.json', size_bytes: 1234}],
     }, {
         id: 'lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb', ticker: 'DRAM', status: 'completed', active: false,
@@ -562,7 +564,11 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(rows).toHaveCount(2, {timeout: 10_000});
     await expect(menu.locator('details, summary')).toHaveCount(0);
     await expect(menu.locator('.lstm-training-history-heading')).toHaveCSS('text-align', 'left');
-    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveText('65.00%');
+    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveText('-7.62%');
+    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveAttribute(
+        'aria-label',
+        'Mean validation CRPS skill vs baseline: -7.62%',
+    );
     expect(await menu.locator('.lstm-training-history-identifier').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
     const buttonWidth = await menu.locator('.lstm-training-action').evaluate((node) => node.getBoundingClientRect().width);
     expect(buttonWidth).toBeLessThan(await menu.evaluate((node) => node.getBoundingClientRect().width) - 50);
@@ -606,6 +612,9 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
         (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
     )).toBe(20);
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
+    await expect(menu.locator('.lstm-training-history-details').first()).toContainText(
+        'Objective CRPS skill vs baseline · Time budget 10 h',
+    );
     expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
     await page.reload();
     expect(await page.locator('[data-strategy-param-input][name]').evaluateAll((inputs) => Object.fromEntries(inputs.map((input) => {

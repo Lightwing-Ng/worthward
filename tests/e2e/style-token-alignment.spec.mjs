@@ -1,4 +1,4 @@
-/* Code version: v1.6.0 */
+/* Code version: v1.6.1 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -36,6 +36,30 @@ for (const width of [1024, 800, 390]) {
         await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
         await expect(tuneButton).toHaveCSS('width', '30px');
         await expect(tuneButton.locator('.icon')).toHaveCSS('width', '14px');
+        const pressedColors = await tuneButton.evaluate((button) => {
+            const resolvedColor = (token) => {
+                const probe = document.createElement('span');
+                probe.style.color = `var(${token})`;
+                document.body.appendChild(probe);
+                const color = getComputedStyle(probe).color;
+                probe.remove();
+                return color;
+            };
+            const style = getComputedStyle(button);
+            const icon = getComputedStyle(button.querySelector('.icon'));
+            return {
+                background: style.backgroundColor,
+                border: style.borderColor,
+                color: style.color,
+                icon: icon.backgroundColor,
+                white: resolvedColor('--color-white-adaptive'),
+                primaryBlue: resolvedColor('--theme-accent-primary'),
+            };
+        });
+        expect(pressedColors.background).toBe(pressedColors.white);
+        expect(pressedColors.border).toBe(pressedColors.primaryBlue);
+        expect(pressedColors.color).toBe(pressedColors.primaryBlue);
+        expect(pressedColors.icon).toBe(pressedColors.primaryBlue);
         await expect(tunePanel).toHaveCSS('padding', '10px');
         await expect(tunePanel).toBeVisible();
         await page.locator('.style-token-strategy-tuning-label').click();

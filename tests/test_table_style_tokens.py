@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.17.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.17.1."""
 
 from __future__ import annotations
 
@@ -220,8 +220,9 @@ def test_style_tokens_expose_the_optional_strategy_tuning_control() -> None:
     for token in (
         "--strategy-tune-button-size: var(--shared-select-control-height);",
         "--strategy-tune-button-icon-size: 14px;",
-        "--strategy-tune-button-active-background: var(--accent-fill-hover);",
-        "--strategy-tune-button-active-color: var(--accent-contrast);",
+        "--strategy-tune-button-active-background: var(--color-white-adaptive);",
+        "--strategy-tune-button-active-border: 1px solid var(--theme-accent-primary);",
+        "--strategy-tune-button-active-color: var(--theme-accent-primary);",
         "--strategy-tune-panel-gap: 4px;",
         "--strategy-tune-panel-padding: 10px;",
         "--strategy-tune-panel-row-gap: 10px;",

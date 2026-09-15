@@ -5,7 +5,10 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.13.0
+Code version: v0.14.0
+- Added: A validation-only CRPS skill objective aligned with the Backtest
+  headline metric, including strict complete-horizon and complete-pair gates.
+- Changed: The default durable search budget is 10 hours.
 - Added: Complete close-price grid scoring, with equal weight for 20 horizons.
 - Fixed: Deadline polling and rejection of an infeasible final winner.
 - Changed: LSTM tuning now consumes the canonical model-neutral Price Field
@@ -49,7 +52,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Keep the launcher contract available before importing application submodules.
 # This ordering also lets the module run directly from outside the project root.
-DEFAULT_DURATION_SECONDS = 43_200
+DEFAULT_DURATION_SECONDS = 36_000
 DEFAULT_POPULATION_SIZE = 64
 MAX_WORKERS = 8
 
@@ -98,6 +101,7 @@ ROBUST_CANDIDATE_COUNT = 32
 ROBUST_SEEDS = (42, 43, 44)
 MINIMUM_TRAINING_SECONDS = 180.0
 DEFAULT_GA_SEED = 20260903
+GRID_OBJECTIVES = frozenset({"grid", "crps"})
 
 _FACTOR_PARAMETER_KEYS = {
     definition.key: definition.parameter_key
@@ -271,7 +275,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.11.0",
+        "runner_version": "v0.12.0",
         "grid_scoring_version": GRID_SCORING_VERSION,
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
@@ -877,7 +881,7 @@ def _finite_metric(value: Any, default: float = -math.inf) -> float:
 
 
 def _evaluation_inputs(candidate: Mapping[str, Any], context: EvaluationContext) -> tuple[pd.DataFrame, dict[str, Any]]:
-    if context.objective != "grid" or candidate.get("origin") == "holdout-report":
+    if context.objective not in GRID_OBJECTIVES or candidate.get("origin") == "holdout-report":
         return context.visible_frame, context.bundle_payload
     visible = context.visible_frame.iloc[:context.holdout_start].copy()
     cutoff = pd.Timestamp(visible["Date"].iloc[-1]).date()
@@ -964,7 +968,7 @@ def _evaluate_signal_result(
             },
             "device": signal_result.presentation.get("device", {}),
         }
-        if context.objective == "grid":
+        if context.objective in GRID_OBJECTIVES:
             result["grid"] = {
                 "full": score_price_field_grid(frame, 0, len(frame)),
                 "validation_folds": {
@@ -1037,24 +1041,52 @@ def _fitness_fields(result: Mapping[str, Any]) -> dict[str, Any]:
             )
         )
         fitness = float(np.average(scores, weights=counts)) if feasible else -math.inf
-    if result.get("objective") == "grid":
+    validation_mean_crps_skill_pct = None
+    if result.get("objective") in GRID_OBJECTIVES:
         grid_folds = list((result.get("grid") or {}).get("validation_folds", {}).values())
-        feasible = (
-            len(grid_folds) == VALIDATION_FOLD_COUNT
-            and all(
-                value.get("horizon_count") == 20
-                and value.get("eligible_pairs", 0) >= 100
-                and value.get("coverage_pct", 0) >= MIN_COVERAGE_PCT
-                and math.isfinite(_finite_metric(value.get("probability_score_pct")))
+        if result.get("objective") == "crps":
+            crps_skills = [
+                _finite_metric(value.get("crps_skill_score"))
                 for value in grid_folds
+            ]
+            feasible = (
+                len(grid_folds) == VALIDATION_FOLD_COUNT
+                and all(
+                    value.get("horizon_count") == 20
+                    and value.get("crps_skill_valid_horizon_count") == 20
+                    and value.get("crps_skill_has_complete_pair_coverage") is True
+                    and value.get("eligible_pairs", 0) >= 100
+                    and value.get("valid_pairs") == value.get("eligible_pairs")
+                    and math.isfinite(skill)
+                    for value, skill in zip(grid_folds, crps_skills, strict=True)
+                )
             )
-        )
-        fitness = float(np.mean([value["probability_score_pct"] for value in grid_folds])) if feasible else -math.inf
+            validation_mean_crps_skill_pct = (
+                100.0 * float(np.mean(crps_skills)) if feasible else None
+            )
+            fitness = validation_mean_crps_skill_pct if feasible else -math.inf
+        else:
+            feasible = (
+                len(grid_folds) == VALIDATION_FOLD_COUNT
+                and all(
+                    value.get("horizon_count") == 20
+                    and value.get("eligible_pairs", 0) >= 100
+                    and value.get("coverage_pct", 0) >= MIN_COVERAGE_PCT
+                    and math.isfinite(_finite_metric(value.get("probability_score_pct")))
+                    for value in grid_folds
+                )
+            )
+            fitness = float(np.mean([value["probability_score_pct"] for value in grid_folds])) if feasible else -math.inf
     return {
         "feasible": feasible,
         "validation_median_hit_rate_pct": round(validation_median, 4) if math.isfinite(validation_median) else None,
         "validation_std_hit_rate_pct": round(validation_std, 4) if math.isfinite(validation_std) else None,
         "validation_median_probability_score_pct": round(probability_median, 4) if math.isfinite(probability_median) else None,
+        "validation_mean_crps_skill_pct": (
+            round(validation_mean_crps_skill_pct, 4)
+            if validation_mean_crps_skill_pct is not None
+            else None
+        ),
         "validation_min_coverage_pct": round(coverage_min, 4),
         "fitness": round(fitness, 6) if math.isfinite(fitness) else None,
     }
@@ -1075,7 +1107,7 @@ def _initialize_worker(context: EvaluationContext) -> None:
 
 def _ranking_key(result: Mapping[str, Any]) -> tuple[float, ...]:
     backtest = result.get("backtest") or {}
-    if result.get("objective") in {"probability", "grid"}:
+    if result.get("objective") in {"probability", *GRID_OBJECTIVES}:
         return (float(bool(result.get("feasible"))), _finite_metric(result.get("fitness")))
     return (
         1.0 if bool(result.get("feasible")) else 0.0,
@@ -1388,6 +1420,7 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
             for item in group
         ]
         probability_mode = group[0].get("objective") in {"probability", "grid"}
+        crps_mode = group[0].get("objective") == "crps"
         seed_fitness = [_finite_metric(item.get("fitness")) for item in group]
         feasible = (
             len(group) == len(ROBUST_SEEDS)
@@ -1399,7 +1432,9 @@ def _aggregate_robust(results: Sequence[Mapping[str, Any]]) -> list[dict[str, An
             "objective": group[0].get("objective", "direction"),
             "validation_mean_fitness": float(np.mean(seed_fitness)) if feasible else None,
             "validation_mean_probability_fitness": float(np.mean(seed_fitness)) if probability_mode and feasible else None,
+            "validation_mean_crps_skill_pct": float(np.mean(seed_fitness)) if crps_mode and feasible else None,
             "validation_fitness_std": float(np.std(seed_fitness)) if probability_mode and feasible else None,
+            "validation_crps_skill_std_pct": float(np.std(seed_fitness)) if crps_mode and feasible else None,
             "model_key": model_key,
             "params": {
                 key: value
@@ -1772,7 +1807,7 @@ def _run(args: argparse.Namespace) -> int:
                         continue
                     seen_models.add(model_key)
                     top_models.append(result)
-                    if len(top_models) >= (8 if context.objective in {"probability", "grid"} else ROBUST_CANDIDATE_COUNT):
+                    if len(top_models) >= (8 if context.objective in {"probability", *GRID_OBJECTIVES} else ROBUST_CANDIDATE_COUNT):
                         break
                 robust_candidates: list[dict[str, Any]] = []
                 for result in top_models:
@@ -1804,7 +1839,7 @@ def _run(args: argparse.Namespace) -> int:
                     best_aggregate = aggregates[0] if aggregates else None
                     if not best_aggregate or not best_aggregate.get("feasible"):
                         raise RuntimeError("No feasible multi-seed winner; inspect the preserved evaluations and checkpoint.")
-                    if context.objective == "grid":
+                    if context.objective in GRID_OBJECTIVES:
                         # Freeze selection before any holdout inference, including
                         # backend failures. Never promote a runner-up on holdout.
                         _atomic_write_json(paths.state / "selection.json", {
@@ -1927,7 +1962,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-params", default=None, help="Use the supplied strategy configuration as the GA baseline while still searching optimizable parameters.")
     parser.add_argument("--configuration", default=None, help="Saved date range and Backtest settings as JSON.")
     parser.add_argument("--snapshot-file", default=None, help="Reuse a real frozen local snapshot; its dates override the relative period.")
-    parser.add_argument("--objective", choices=("direction", "probability", "grid"), default="direction")
+    parser.add_argument("--objective", choices=("direction", "probability", "grid", "crps"), default="direction")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
     parser.add_argument("--prepared-request", default=None, help=argparse.SUPPRESS)

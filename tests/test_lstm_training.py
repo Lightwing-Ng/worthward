@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.8.1."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.0."""
 
 from __future__ import annotations
 
@@ -180,16 +180,18 @@ def test_web_launch_reservation_is_claimed_once_without_implicit_resume(tmp_path
     command = commands[0]
     args = ga_runner._build_parser().parse_args(command[2:])
     assert "--resume" not in command
+    assert "--selected-params" not in command
+    assert args.objective == "crps"
+    assert args.duration_seconds == 36_000
+    assert ga_runner.validate_selected_params(json.loads(args.base_params)) == ga_runner.validate_selected_params({})
     assert Path(args.prepared_request).parent.name == run["id"]
-    reached = []
-    monkeypatch.setattr(ga_runner, "_build_snapshot", lambda *_args: (None, {}))
-    monkeypatch.setattr(ga_runner, "_run_selected_configuration", lambda spec, paths, context: reached.append(paths.state.name) or 0)
-    from scripts import lstm_runtime
-    runtimes = []
-    monkeypatch.setattr(lstm_runtime, "ensure_training_runtime", lambda backend, *_args: runtimes.append(backend))
-    assert ga_runner.main(command[2:]) == 0
-    assert runtimes == [ga_runner.validate_selected_params({})["compute_backend"]]
-    assert reached == [run["id"]]
+    monkeypatch.setattr(
+        ga_runner,
+        "_build_snapshot",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("stop after reservation")),
+    )
+    assert ga_runner.main(command[2:]) == 1
+    assert (manager._paths_for_run_id(run["id"]).state / "worker.json").is_file()
     with pytest.raises(FileExistsError):
         ga_runner._run(args)
     args.prepared_request = None
@@ -274,7 +276,7 @@ def test_windows_process_identity_uses_cim_and_exact_seed(tmp_path, monkeypatch)
     assert "ProcessId = 321" in calls[0][-1]
 
 
-def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkeypatch):
+def test_web_ga_receives_dates_general_settings_and_ten_hour_budget(tmp_path, monkeypatch):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     captured = []
     monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
@@ -284,8 +286,12 @@ def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkey
     sent = json.loads(captured[0][captured[0].index("--configuration") + 1])
     assert sent == ga_runner.validate_training_configuration(config)
     paths = manager._paths_for_run_id(run["id"])
-    assert json.loads(paths.request.read_text())["minimum_training_seconds"] == 180
-    assert json.loads(paths.request.read_text())["configuration"] == sent
+    request = json.loads(paths.request.read_text())
+    assert request["duration_seconds"] == 36_000
+    assert request["minimum_training_seconds"] == 0
+    assert request["objective"] == "crps"
+    assert request["selected_params"] is None
+    assert request["configuration"] == sent
 
 
 def test_list_runs_reads_terminal_history_without_touching_market_stores(tmp_path: Path) -> None:
@@ -348,9 +354,54 @@ def test_start_uses_isolated_runner_process_and_returns_starting_run(tmp_path: P
     assert commands[0][commands[0].index("--period") + 1] == "6mo"
     assert commands[0][commands[0].index("--interval") + 1] == "1d"
     assert "--state-root" in commands[0]
-    submitted = json.loads(commands[0][commands[0].index("--selected-params") + 1])
+    assert "--selected-params" not in commands[0]
+    assert commands[0][commands[0].index("--objective") + 1] == "crps"
+    assert commands[0][commands[0].index("--duration-seconds") + 1] == "36000"
+    submitted = json.loads(commands[0][commands[0].index("--base-params") + 1])
     assert submitted == ga_runner.validate_selected_params(selected)
-    assert run["selected_params"] == submitted
+    assert run["selected_params"] is None
+    assert run["base_params"] == submitted
+    assert run["objective"] == "crps"
+    assert run["objective_label"] == "CRPS skill vs baseline"
+
+
+def test_completed_crps_ga_replays_seed_42_and_exposes_optimization_score(tmp_path):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    paths, spec = _run_paths(manager, tmp_path)
+    baseline = ga_runner.validate_selected_params({"lstm_epochs": 3})
+    seed_results = [
+        {
+            "status": "ok",
+            "params": {**baseline, "lstm_seed": seed},
+        }
+        for seed in ga_runner.ROBUST_SEEDS
+    ]
+    spec.update({"objective": "crps", "base_params": baseline})
+    _write_json(paths.request, spec)
+    _write_json(paths.snapshot, {
+        "ticker": "NVDA",
+        "start": "2025-09-04",
+        "end": "2026-09-04",
+        "interval": "1d",
+    })
+    _write_json(paths.status, {"status": "completed", "started_at": "2026-09-04T00:00:00Z"})
+    _write_json(paths.result, {"status": "completed", "best": {
+        "objective": "crps",
+        "params": {key: value for key, value in baseline.items() if key != "lstm_seed"},
+        "seed_results": seed_results,
+        "validation_mean_crps_skill_pct": -7.62,
+        "validation_crps_skill_std_pct": 0.9,
+    }})
+
+    run = manager.list_runs()[0]
+
+    assert run["configuration"]["params"]["lstm_seed"] == ga_runner.ROBUST_SEEDS[0]
+    assert run["configuration"]["params"]["lstm_epochs"] == 3
+    assert run["objective"] == "crps"
+    assert run["crps_skill_pct"] == -7.62
+    assert run["crps_skill_label"] == "Mean validation CRPS skill vs baseline"
+    assert run["base_params"] == baseline
+    assert run["best"]["validation_mean_crps_skill_pct"] == -7.62
 
 
 def test_stop_only_signals_a_process_matching_the_runner_seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -626,7 +677,7 @@ def test_selected_configuration_records_terminal_state(tmp_path, monkeypatch, ou
 ])
 def test_progress_uses_actual_work_not_elapsed_budget(progress, expected):
     result = lstm_training.LstmTrainingManager._progress_summary({
-        "progress": progress, "elapsed_seconds": 21_600, "duration_seconds": 43_200,
+        "progress": progress, "elapsed_seconds": 18_000, "duration_seconds": 36_000,
     }, "running")
     assert result["percent"] == expected
 

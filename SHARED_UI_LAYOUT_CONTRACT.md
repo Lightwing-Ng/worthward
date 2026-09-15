@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.13.0`
+Documentation version: `v1.14.0`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -50,10 +50,11 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - The strategy-tuning row reserves at most `60%` for its label track so the
   right-aligned value track can display seven-digit holding limits without
   clipping. This is a component token, not a Grid Trading page override.
-- A pressed strategy-tuning action uses the solid
-  `--strategy-tune-button-active-*` contract: deep primary blue, adaptive white
-  glyph, explicit border, and active shadow. It must remain visibly distinct
-  from the idle frosted material in both Light and Dark modes.
+- A pressed strategy-tuning action uses the
+  `--strategy-tune-button-active-*` contract: an opaque adaptive-white surface,
+  standard primary-blue glyph and border, and a restrained blue active shadow.
+  It must remain visibly distinct from the idle frosted material in both Light
+  and Dark modes.
 - Same-page Backtest hydration preserves the result surfaces in place and masks
   only the price/equity canvases, metric values, and Price Field detail plot.
   The mask's glass base is stationary; only its internal highlight animates.

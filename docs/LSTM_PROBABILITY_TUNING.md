@@ -1,9 +1,10 @@
 # Offline LSTM probability tuning
 
-Documentation version: v1.3.0
+Documentation version: v1.4.0
 
-Runner version: v0.11.0. Model version: `lstm-price-field-model/v1.2.0`.
-Exact-configuration web training remains separate.
+Runner version: v0.12.0. Model version: `lstm-price-field-model/v1.2.0`.
+The browser starts a 10-hour GA from the current form state. Exact-configuration
+training remains an explicit CLI diagnostic through `--selected-params`.
 All GA objectives now rank multi-seed finalists by validation fitness; the legacy
 direction mode no longer ranks or rejects finalists using holdout results.
 
@@ -78,6 +79,24 @@ The multiclass quadratic scoring rule follows
 [Gneiting and Raftery (2007)](https://sites.stat.washington.edu/people/raftery/Research/PDF/Gneiting2007jasa.pdf).
 The causal bins, fold weighting, and missing-prediction penalty are this
 repository's research protocol.
+
+### CRPS skill objective
+
+Use `--objective crps` to align GA selection with Backtest's primary
+`CRPS skill vs baseline` card. Fitness is 100 times the equal-weighted mean of
+the 20 horizon-specific CRPS skills in each validation fold, averaged equally
+across all three folds. The reference is the same causal zero-drift volatility
+model used by the displayed diagnostic. A positive value beats that reference;
+a negative value trails it.
+
+This objective is stricter than the legacy grid probability score. Each fold
+must expose all 20 horizons, a valid CRPS skill at every horizon, at least 100
+eligible origin/horizon pairs, and complete model coverage of every eligible
+pair. Missing predictions therefore invalidate a candidate instead of improving
+its headline by removing difficult cases. Holdout observations remain excluded
+from candidate inputs and ranking. After robust validation selects one complete
+seed-42, seed-43, and seed-44 cohort, `selection.json` freezes that decision
+before the runner computes final holdout reports.
 
 ## Objective and chronology
 
@@ -158,7 +177,10 @@ record the actual training device. Cold and warm MPS timings must be distinguish
 
 ## Ten-hour wall-clock budget
 
-The runner's `--duration-seconds 35400` leaves ten minutes inside a 36,000-second
+The browser-managed GA uses `--duration-seconds 36000`, which is a 10-hour
+scheduling budget and may wait briefly for already-dispatched evaluations to
+return. For a strict 10-hour research wall-clock boundary, the runner's
+`--duration-seconds 35400` leaves ten minutes inside a 36,000-second
 outer budget for startup and shutdown. It reserves its final 15 minutes for
 multi-seed scoring. A supervisor must start its monotonic timer before launching
 and enforce the outer limit: send SIGTERM to the owned process group at 35,940
