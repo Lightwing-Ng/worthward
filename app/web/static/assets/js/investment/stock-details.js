@@ -1,7 +1,7 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.34.3
+ * Code version: v0.34.4
  * - Fixed: The chart imports its extracted color-alpha helper before creation.
  * - Refactored: Trade-marker Glow and range/session helpers now live in
  *   directly tested modules while this file retains chart lifecycle ownership.
@@ -9,7 +9,7 @@
  */
 
 import '../backtest/distributions.js?v=backtest-distributions-v1.1.0';
-import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.34.2';
+import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
@@ -59,7 +59,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.4';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,

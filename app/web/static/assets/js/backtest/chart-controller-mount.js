@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -12,15 +12,20 @@
 	const probabilityGridApi = window.WORTHWARD_BACKTEST_PROBABILITY_GRID || {};
 	const PROBABILITY_STAGE_MINIMUM_PROPERTY = "--backtest-probability-stage-min-height";
 	const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = "worthward:backtest-probability-stage-minimum-change";
+	const PROBABILITY_STAGE_MINIMUM_LAYOUT_BUFFER_PX = 1;
 	const BACKTEST_HISTORY_VIEW_CHANGE_EVENT = "worthward:backtest-history-view-change";
 	const PROBABILITY_MODEL_CACHE_LIMIT = 24;
 	let detailModulePromise = null;
+	const hasDetailModuleApi = () => (
+		typeof window.WORTHWARD_PRICE_FIELD_DETAIL_CHART?.computePlotWidth === "function"
+		&& typeof window.WORTHWARD_PRICE_FIELD_DETAIL_CHART?.computeLayout === "function"
+	);
 	const loadDetailModule = () => {
-		if (window.WORTHWARD_PRICE_FIELD_DETAIL_CHART) return Promise.resolve();
+		if (hasDetailModuleApi()) return Promise.resolve();
 		if (!detailModulePromise) detailModulePromise = new Promise((resolve, reject) => {
 			const script = document.createElement("script");
-			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.4.2";
-			script.onload = () => window.WORTHWARD_PRICE_FIELD_DETAIL_CHART
+			script.src = "/static/assets/js/backtest/detail-chart.js?v=backtest-detail-chart-v1.5.0";
+			script.onload = () => hasDetailModuleApi()
 				? resolve() : reject(new Error("Price Field detail module is unavailable."));
 			script.onerror = () => reject(new Error("Price Field detail module could not be loaded."));
 			document.head.appendChild(script);
@@ -1039,9 +1044,12 @@
 			const chartChromeHeight = Math.max(0, canvasRect.height - currentPlotHeight);
 			const pricePanelShare = canvasRect.height / stackRect.height;
 			if (!(pricePanelShare > 0)) return;
+			// The outer split grid can resolve one CSS pixel below its published
+			// minimum after borders and fractional tracks are rounded. Reserve that
+			// pixel so the innermost complete row is not lost at the Home position.
 			const stageMinimum = Math.ceil(
 				(requiredPlotHeight + chartChromeHeight) / pricePanelShare,
-			);
+			) + PROBABILITY_STAGE_MINIMUM_LAYOUT_BUFFER_PX;
 			if (!Number.isFinite(stageMinimum) || !(stageMinimum > 0)) return;
 			const priorMinimum = Number.parseFloat(
 				resultsStack.style.getPropertyValue(PROBABILITY_STAGE_MINIMUM_PROPERTY),
@@ -1651,13 +1659,30 @@
             // Geometry depends on the container, never on hover values or label widths.
             const detailPlot = probabilityDetailYAxis.closest("[data-backtest-probability-detail-plot]");
             if (detailPlot) {
-                const axisWidth = readPxToken(tradeChartStack, "--backtest-chart-y-axis-width", 72) - 28;
+                const chartYAxisWidth = readPxToken(
+                    tradeChartStack,
+                    "--backtest-chart-y-axis-width",
+                    72,
+                );
+                const plotInlineStart = readPxToken(
+                    detailPlot,
+                    "--backtest-probability-detail-plot-inline-start",
+                    28,
+                );
+                const axisWidth = Math.max(0, chartYAxisWidth - plotInlineStart);
                 const availableWidth = probabilityDetailPanel.clientWidth - 4;
                 const availableHeight = Math.max(0, detailPlot.clientHeight - probabilityDetailXAxis.offsetHeight);
-                const plotWidth = Math.min(availableWidth,
-                    axisWidth + Math.max(0, availableHeight - 4) * geometry.columnCount / 10 + 4);
+                const plotWidth = window.WORTHWARD_PRICE_FIELD_DETAIL_CHART.computePlotWidth({
+                    availableWidth,
+                    availableHeight,
+                    axisWidth,
+                    columns: geometry.columnCount,
+                    rowsAbove: geometry.rowsAbove,
+                    rowsBelow: geometry.rowsBelow,
+                });
                 detailPlot.style.gridTemplateColumns = `${axisWidth}px minmax(0, 1fr)`;
-                detailPlot.style.width = `${plotWidth}px`;
+                if (Number.isFinite(plotWidth)) detailPlot.style.width = `${plotWidth}px`;
+                else detailPlot.style.removeProperty("width");
                 detailPlot.style.alignSelf = "center";
             }
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();

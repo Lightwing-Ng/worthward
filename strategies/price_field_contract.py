@@ -5,7 +5,7 @@ Bayesian Price Field and LSTM Price Field both emit this geometry and
 renderer payload. Shared browser geometry, distribution adapters, and the chart
 controller own layout, probability math, interaction, and lifecycle.
 
-Code version: v1.3.3
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ PRICE_FIELD_STRATEGY_IDS = frozenset(
     }
 )
 
-PROBABILITY_FIELD_ROWS_ABOVE = 10
-PROBABILITY_FIELD_ROWS_BELOW = 10
+PROBABILITY_FIELD_ROWS_ABOVE = 12
+PROBABILITY_FIELD_ROWS_BELOW = 12
 PROBABILITY_FIELD_COLUMNS = 20
 PROBABILITY_FIELD_WIDTH_FRACTION = 0.25
 PROBABILITY_FIELD_GAP_PX = 2
@@ -57,6 +57,15 @@ def is_price_field_strategy(strategy_id: object) -> bool:
         return get_strategy_definition(str(strategy_id or "")).get("presentation_renderer") == PROBABILITY_GRID_RENDERER
     except ValueError:
         return False
+
+
+def probability_grid_render_shape_fields() -> dict[str, int]:
+    """Return the shared visible lattice shape without forecast semantics."""
+    return {
+        "columns": PROBABILITY_FIELD_COLUMNS,
+        "rows_above": PROBABILITY_FIELD_ROWS_ABOVE,
+        "rows_below": PROBABILITY_FIELD_ROWS_BELOW,
+    }
 
 
 def probability_grid_geometry_fields() -> dict[str, Any]:
@@ -101,9 +110,7 @@ def probability_grid_geometry_fields() -> dict[str, Any]:
                 "pair_independence": "overlapping-origins-and-horizons",
             },
             "render_lattice": {
-                "columns": PROBABILITY_FIELD_COLUMNS,
-                "rows_above": PROBABILITY_FIELD_ROWS_ABOVE,
-                "rows_below": PROBABILITY_FIELD_ROWS_BELOW,
+                **probability_grid_render_shape_fields(),
                 "horizon_unit": "integer-trading-days-per-viewport-column",
                 "horizon_mapping": "viewport-quantized",
             },

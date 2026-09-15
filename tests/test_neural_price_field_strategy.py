@@ -1,4 +1,4 @@
-"""Shared neural strategy and causal input contracts. Code version: v1.4.1."""
+"""Shared neural strategy and causal input contracts. Code version: v1.5.0."""
 
 from copy import deepcopy
 import subprocess
@@ -234,6 +234,9 @@ def test_each_architecture_emits_direct_horizon_contract_on_cpu(architecture):
     assert distribution["skill_requires_complete_pair_coverage"] is True
     assert distribution["interval_aggregation"] == "valid-pair-weighted"
     lattice = presentation["metric_geometry"]["render_lattice"]
+    assert lattice["columns"] == 20
+    assert lattice["rows_above"] == 12
+    assert lattice["rows_below"] == 12
     assert lattice["horizon_unit"] == "close-to-future-close-session"
     assert lattice["horizon_mapping"] == "direct-learned-1-through-20"
     assert lattice["spatial_mapping"] == "viewport-quantized-display-only"

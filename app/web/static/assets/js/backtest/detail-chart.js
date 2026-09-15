@@ -1,7 +1,31 @@
-/* Code version: v1.4.2 */
+/* Code version: v1.5.0 */
 /** Shared square-cell layout with equal historical and forecast time spans. */
 (function bootstrapPriceFieldDetailChart(scope) {
     "use strict";
+    const computePlotWidth = ({
+        availableWidth,
+        availableHeight,
+        axisWidth,
+        columns,
+        rowsAbove,
+        rowsBelow,
+        frameInset = 4,
+    } = {}) => {
+        const width = Number(availableWidth);
+        const height = Number(availableHeight);
+        const axis = Number(axisWidth);
+        const columnCount = Number(columns);
+        const upperRows = Number(rowsAbove);
+        const lowerRows = Number(rowsBelow);
+        const inset = Number(frameInset);
+        const maximumRowsPerSide = Math.max(upperRows, lowerRows);
+        if (![width, height, axis, columnCount, upperRows, lowerRows, inset].every(Number.isFinite)
+            || !(width > 0) || !(height > 0) || !(axis >= 0) || !(columnCount > 0)
+            || !(maximumRowsPerSide > 0) || !(inset >= 0)) return null;
+        const squareLatticeWidth = Math.max(0, height - inset)
+            * columnCount / maximumRowsPerSide;
+        return Math.min(width, axis + squareLatticeWidth + inset);
+    };
     const computeDirectForecastPriceDomain = ({
         anchorPrice,
         history = [],
@@ -42,7 +66,7 @@
             ...historyReturns.map((value) => Math.abs(value)),
         );
         // Gaussian direct heads live in log-return space. Keep the anchor at the
-        // geometric midpoint and reserve the finite 20-row lattice for the
+        // geometric midpoint and reserve the finite render lattice for the
         // conventional central 95% interval. More extreme tails remain in the
         // model and scoring contracts instead of consuming empty display rows.
         const halfSpan = Math.max(
@@ -136,6 +160,7 @@
         return {up: paths.up.join(" "), down: paths.down.join(" ")};
     };
     scope.WORTHWARD_PRICE_FIELD_DETAIL_CHART = Object.freeze({
+        computePlotWidth,
         computeDirectForecastPriceDomain,
         computeLayout,
         buildObservedPaths,

@@ -1,4 +1,4 @@
-/* Code version: v0.72.5 */
+/* Code version: v0.73.0 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -193,14 +193,17 @@
         },
         dca: {
             masks: [
-                '[data-workspace-mask="backtest-history"]',
-                '[data-workspace-mask="backtest-chart-stage"]',
+                '[data-workspace-mask="trade-price-chart"]',
+                '[data-workspace-mask="trade-equity-chart"]',
+                '[data-workspace-mask="trade-metric"]',
             ],
         },
         "backtest": {
             masks: [
-                '[data-workspace-mask="backtest-history"]',
-                '[data-workspace-mask="backtest-chart-stage"]',
+                '[data-workspace-mask="trade-price-chart"]',
+                '[data-workspace-mask="trade-equity-chart"]',
+                '[data-workspace-mask="trade-metric"]',
+                '[data-workspace-mask="backtest-probability-detail-plot"]',
             ],
         },
         settings: {
@@ -542,9 +545,9 @@
 
     const appModuleSpecs = Object.freeze([
         ["WORTHWARD_APP_CHART_EXPORT", "app/chart-export.js", "app-chart-export-v1.0.0"],
-        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.2.1"],
+        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.3.0"],
         ["WORTHWARD_APP_WORKSPACE_ENHANCEMENTS", "app/workspace-enhancements.js", "app-workspace-enhancements-v1.0.0"],
-        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.2.0"],
+        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.2.1"],
         ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.0.1"],
         ["WORTHWARD_APP_SELECT_CONTROLS", "app/select-controls.js", "app-select-controls-v1.0.0"],
         ["WORTHWARD_APP_DATE_CONTROLS", "app/date-controls.js", "app-date-controls-v1.0.0"],

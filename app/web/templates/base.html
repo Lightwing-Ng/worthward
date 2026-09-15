@@ -1,4 +1,4 @@
-{# Code version: v0.51.27 #}
+{# Code version: v0.51.31 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.93.8') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.93.10') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -385,23 +385,23 @@
 {% endif %}
     <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/chart-export.js', v=version ~ '-app-chart-export-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/navigation.js', v=version ~ '-app-navigation-v1.2.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/navigation.js', v=version ~ '-app-navigation-v1.3.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-enhancements.js', v=version ~ '-app-workspace-enhancements-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.2.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.2.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/ticker-controls.js', v=version ~ '-app-ticker-controls-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/date-controls.js', v=version ~ '-app-date-controls-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/range-controls.js', v=version ~ '-app-range-controls-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.0.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.72.5') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.73.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.12.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/backtest/distributions.js', v=version ~ '-backtest-distributions-v1.1.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.34.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/detail-chart.js', v=version ~ '-backtest-detail-chart-v1.4.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller-mount.js', v=version ~ '-backtest-chart-controller-mount-v1.0.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/probability-grid.js', v=version ~ '-backtest-probability-grid-v0.35.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/detail-chart.js', v=version ~ '-backtest-detail-chart-v1.5.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller-mount.js', v=version ~ '-backtest-chart-controller-mount-v1.1.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest/chart-controller.js', v=version ~ '-backtest-chart-controller-v1.12.2') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version ~ '-backtest-v0.42.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v0.6.0') }}"></script>

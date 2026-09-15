@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.19.1
+Code version: v0.20.1
 """
 
 from pathlib import Path
@@ -852,8 +852,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         assert fragment in trade_css
 
     for fragment in (
-        "const DEFAULT_ROWS_ABOVE = 10;",
-        "const DEFAULT_ROWS_BELOW = 10;",
+        "const DEFAULT_ROWS_ABOVE = 12;",
+        "const DEFAULT_ROWS_BELOW = 12;",
         "const DEFAULT_COLUMN_COUNT = 20;",
         "const DEFAULT_GAP_PX = 2;",
         "const DEFAULT_PADDING_PX = 8;",
@@ -958,6 +958,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "const requiredChartAreaHeight = requirement.chartAreaMinimumHeight",
         "const requiredPlotHeight = requiredChartAreaHeight * canvasScaleY;",
         "const pricePanelShare = canvasRect.height / stackRect.height;",
+        "const PROBABILITY_STAGE_MINIMUM_LAYOUT_BUFFER_PX = 1;",
+        ") + PROBABILITY_STAGE_MINIMUM_LAYOUT_BUFFER_PX;",
         "resultsStack.style.setProperty(",
         "resultsStack.dispatchEvent(new Event(PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT));",
         "clearProbabilityStageMinimum();",
@@ -997,7 +999,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     base_template = _read(TEMPLATE_ROOT / "base.html")
     for fragment in (
         f"-app-{_css_code_version(ASSET_ROOT / 'js/app.js')}",
-        "-backtest-probability-grid-v0.34.2",
+        "-backtest-probability-grid-v0.35.0",
         (
             "-backtest-chart-controller-mount-"
             f"{_css_code_version(ASSET_ROOT / 'js/backtest/chart-controller-mount.js')}"
@@ -1132,6 +1134,10 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "const isProbabilityHistoryViewActive = () => (",
         "const buildProbabilityGridModel = (index, pricePoint) => {",
         "const buildProbabilityDetailModel = (index, model) => {",
+        "const hasDetailModuleApi = () => (",
+        'typeof window.WORTHWARD_PRICE_FIELD_DETAIL_CHART?.computePlotWidth === "function"',
+        '"--backtest-probability-detail-plot-inline-start",',
+        'detailPlot.style.removeProperty("width");',
         "const renderProbabilityDetailRowHover = (row) => {",
         "const renderProbabilityDetailSideSummary = (cells) => {",
         "const upUnits = Math.round(summary.upProbability * 10000);",
@@ -1204,6 +1210,10 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
         "gridTemplateRows: `repeat(${geometry.rowCount}, ${layout.cellHeight}px)`,",
     ):
         assert fragment in backtest_script
+    assert (
+        'readPxToken(tradeChartStack, "--backtest-chart-y-axis-width", 72) - 28'
+        not in backtest_script
+    )
     for fragment in (
         ".backtest-probability-detail-panel",
         ".backtest-probability-detail-status-row",
@@ -1256,9 +1266,9 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         ".settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,",
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;\n}",
         ".settings-content-scrollport {",
-        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
-        "padding-inline-start: var(--layout-physical-effect-bleed);",
+        "padding-block-end: var(--layout-physical-effect-bleed);",
         "overflow-x: hidden;\n    overflow-y: auto;",
+        ".settings-shell-network .settings-service-row {\n    overflow: clip;\n}",
         "width: min(100%, var(--layout-control-width));",
         "max-width: var(--layout-control-width);",
         "grid-template-columns: minmax(0, 1fr);",
@@ -1271,6 +1281,15 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         ".font-preview-card {\n    border: 0;\n}",
     ):
         assert fragment in settings_css
+
+    assert (
+        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));"
+        not in settings_css
+    )
+    assert (
+        "padding-inline-start: var(--layout-physical-effect-bleed);"
+        not in settings_css
+    )
 
     assert (
         'class="settings-content-scrollport" data-layout-role="content-scrollport" '
@@ -1609,17 +1628,17 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
         scrollport_start : settings_css.index("\n}", scrollport_start)
     ]
     for fragment in (
-        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
-        "padding-inline-start: var(--layout-physical-effect-bleed);",
         "padding-block-end: var(--layout-physical-effect-bleed);",
         "overflow-x: hidden;",
         "overflow-y: auto;",
     ):
         assert fragment in scrollport
+    assert "margin-inline" not in scrollport
+    assert "padding-inline" not in scrollport
 
     for fragment in (
-        ".settings-shell-network .settings-service-row,",
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;",
+        ".settings-shell-network .settings-service-row {\n    overflow: clip;",
         ".settings-action-package {\n    position: relative;",
     ):
         assert fragment in settings_css

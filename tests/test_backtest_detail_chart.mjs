@@ -1,10 +1,67 @@
-/* Code version: v1.4.2 */
+/* Code version: v1.5.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 require('../app/web/static/assets/js/backtest/detail-chart.js');
-const {computeDirectForecastPriceDomain, computeLayout} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+const {
+    computeDirectForecastPriceDomain,
+    computeLayout,
+    computePlotWidth,
+} = globalThis.WORTHWARD_PRICE_FIELD_DETAIL_CHART;
+
+test('detail plot width derives its aspect ratio from the reusable row shape', () => {
+    const common = {
+        availableWidth: 800,
+        availableHeight: 244,
+        axisWidth: 44,
+        columns: 20,
+    };
+    assert.equal(computePlotWidth({...common, rowsAbove: 12, rowsBelow: 12}), 448);
+    assert.equal(computePlotWidth({...common, rowsAbove: 10, rowsBelow: 10}), 528);
+    assert.equal(computePlotWidth({...common, rowsAbove: 12, rowsBelow: 8}), 448);
+    assert.equal(computePlotWidth({...common, rowsAbove: 0, rowsBelow: 0}), null);
+});
+
+test('the product detail lattice keeps twenty columns and twelve rows per side square', () => {
+    const layout = computeLayout({
+        width: 404,
+        height: 244,
+        anchorPrice: 50,
+        lowerPrice: 30,
+        upperPrice: 70,
+        rowsAbove: 12,
+        rowsBelow: 12,
+        columns: 20,
+        history: [45, 50],
+        horizon: 20,
+    });
+    assert.ok(layout);
+    assert.equal(layout.cellWidth, layout.cellHeight);
+    assert.equal(layout.gridHeight, 24 * layout.pitch - layout.rowGap);
+    assert.equal(layout.gridWidth, 20 * layout.pitch - layout.columnGap);
+    assert.equal(layout.forecastRight - layout.anchorX, layout.anchorX - layout.historyLeft);
+});
+
+test('a compressed detail viewport reduces both gaps equally without erasing square cells', () => {
+    const layout = computeLayout({
+        width: 156,
+        height: 200,
+        anchorPrice: 50,
+        lowerPrice: 30,
+        upperPrice: 70,
+        rowsAbove: 12,
+        rowsBelow: 12,
+        columns: 20,
+        history: [45, 50],
+        horizon: 20,
+    });
+    assert.ok(layout);
+    assert.ok(layout.columnGap > 0 && layout.columnGap < 2);
+    assert.equal(layout.rowGap, layout.columnGap);
+    assert.ok(layout.cellWidth > 0);
+    assert.equal(layout.cellHeight, layout.cellWidth);
+});
 
 test('direct forecasts receive a local symmetric log-return domain instead of the multi-year chart scale', () => {
     const domain = computeDirectForecastPriceDomain({

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.111.3`
+Documentation version: `v1.113.1`
 
 ## Reuse and dependency boundaries
 
@@ -41,7 +41,7 @@ aligned.
 
 ## Shared Backtest controls and research
 
-Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and white vertical handles. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the limit-thumb surface; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
+Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and theme-canvas adaptive vertical handles. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the limit-thumb surface; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
 
 The same strategy is available through `scripts/strategy_tune.py --strategy leveraged-rotation --ticker QQQ --ticker TQQQ`, including JSON fixed parameters, numeric bounds, categorical Return window search, genetic search, and random-forest search. Runs read existing local history and write explicit research outputs, with validation ranking and a separate final holdout. The adapter retains pre-fold observations for return-window warmup while stamping the scored fold's first date as the decision boundary, so a stateful strategy cannot inherit a rotation that the fold-local portfolio never executed. The default ranking is risk-adjusted; `--objective net-return` ranks the two validation folds by their mean net return percentage without changing the disclosed drawdown or allowing holdout data into selection. The result records normalized parameters for reuse in Backtest URLs or subsequent CLI requests.
 
@@ -260,7 +260,7 @@ redundant `Forecast date` axis title while retaining the forecast-date ticks.
 It intentionally has no price-probability legend: the two-dimensional cell
 field is explained by its axes and grid, not by a misleading one-dimensional
 color scale. The detail plot, main column, grid viewport, and complete lattice
-are separately clipped and contained so the full 20 × 20 geometry cannot paint
+are separately clipped and contained so the full 20 × 24 geometry cannot paint
 outside its owning surface. The detail viewport places normalized higher-price
 and lower-price shares at the right end of the horizontal price guide. For each
 forecast horizon, divide each direction's complete lattice mass by the total
@@ -275,7 +275,8 @@ percentage labels use a dedicated 17px value style so they remain
 legible beside the guide without changing the grid or axis typography.
 
 The detail panel keeps the renderer's integer-trading-day horizon, fixed 20
-columns, 2px gaps, opacity mapping, and square-cell geometry. A cell is green
+columns, 12 rows on each side of the anchor, 2px gaps, opacity mapping, and
+square-cell geometry. A cell is green
 only when its complete price interval is at or above the selected close; a cell
 whose interval crosses the close remains red, so the horizontal guide is never
 visually crossed by a green cell. The asymmetric grid is anchored to that guide
@@ -300,10 +301,10 @@ active detail panel's heading, lattice, and forecast-date axis budget. The
 panel remains shrinkable within the allocated history rail, so the plot and
 its labels cannot escape or be clipped by the parent surface when the
 horizontal or vertical workspace handles change the available space. When the
-10-row overview plot budget and that extra history demand cannot both fit,
-Backtest keeps the overview minimum and compresses history instead of scaling
-both tracks; shrinking the published plot minimum is what drops a 10-row field
-to 8 rows.
+12-row-per-side overview plot budget and that extra history demand cannot both
+fit, Backtest keeps the overview minimum and compresses history instead of
+scaling both tracks; shrinking the published plot minimum is what drops a
+complete 12-row side below its strategy-owned limit.
 
 The contained detail timeline uses `backtest/detail-chart.js` and
 `chart-controller.js`. Its selected date stays at horizontal center, with the
@@ -594,11 +595,11 @@ its scrollable demo layout requires it.
 
 The Settings workspace shell itself stays `overflow: visible`. All non-Style-token
 routes place their content in one `.settings-content-scrollport`, which is the only
-page-level vertical overflow owner. Its shared
-`--layout-physical-effect-bleed: 48px` start-side and bottom safe area keeps card
-shadows and translated controls inside the scrollport ink boundary without moving
-the 640px content or 384px control anchors. Tables and parameter lists retain their
-smaller internal scroll regions.
+page-level vertical overflow owner. That scrollport remains inside the workspace's
+inline border box and uses the shared `--layout-physical-effect-bleed: 48px` only as
+block-end clearance; it does not use a negative inline margin to manufacture effect
+space. Animated service rows and similar local effects clip at their smallest owning
+surface. Tables and parameter lists retain their smaller internal scroll regions.
 
 ## Shared spatial layout contract
 
@@ -735,11 +736,85 @@ The Longbridge factor provider is read-only and process-local. Aware provider ti
 
 `LSTMPriceFieldStrategy` reuses the Bayesian Longbridge factor pipeline, the executable `Open[t+1] -> Open[t+2]` target, `next_open` fills, and the shared 20-column probability-grid payload. Unavailable Longbridge factor columns are omitted rather than forcing every origin to fail closed, so the causal lag-return LSTM still emits a field when P/E or options history is missing. It trains a tiny causal LSTM at each origin on sequences that end at that origin and whose targets are already observable (`j <= origin - 2`). The NumPy LSTM uses the standard positive initialization bias on the forget-gate slice, matching the gate order used by its forward and backward passes rather than biasing the input gate. The one-step Gaussian mean and scale are converted to the same AR(1) multi-step field the renderer already understands. LSTM-only hyperparameters are namespaced (`lstm_lookback`, `lstm_hidden_size`, `lstm_epochs`, `lstm_learning_rate`, `lstm_seed`) so they cannot enter Bayesian cache keys. Compute backend `Auto` uses NumPy CPU for origin-local LSTM training. An explicit `GPU` request uses a confirmed Apple MPS or CUDA device only after a real tensor readback, then falls back to CPU. `Neural Engine` is reported only when Core ML compute-unit execution is confirmed. Torch, MLX, and coremltools are optional and are never imported at module load; a missing package falls back to CPU without crashing Backtest.
 
-Signal strategies may return a JSON-safe `StrategySignalResult.presentation` dictionary. The backtest engine validates finite numbers and requires any presentation `data_keys` to match `chart.raw_dates` exactly before transmitting the declarative payload; strategy-owned HTML and executable code are never accepted. `bayesian-price-field/v1` and `lstm-price-field/v1` both supply aligned predictive log-return means and scales plus a fixed 20-column contract to `probability-grid-v1`. The renderer preserves strategy-owned bounded rows, preferred width, requested gap, padding, opacity exponent, and opacity-tail ratio while enforcing the product-owned 20 columns and 4 px minimum cell size. It derives one stable daily step `s` from the median positive Chart.js point spacing across the complete rendered series. Each column slot is an integer multiple `k × s` of that step and at least one trading day. The requested gap is an upper bound, not a reason to add a day to every column: the renderer chooses the smallest `k` that preserves the 4 px cell floor, then applies `effectiveGap = min(requestedGap, k × s - 4)`. The cell is `k × s - effectiveGap`, so all 20 squares retain stable square geometry. Autoregressive Price Fields use `k` as both the spatial and semantic forecast-horizon step, preserving exact chart-time mapping. Direct-horizon neural Price Fields instead use a semantic horizon step of one while retaining `k × s` as a presentation-only overview spacing: columns 1 through 20 therefore always consume the 20 separately learned distributions in both hover and detail, even on a dense multi-year chart. The preferred field width is one quarter of the price plot, but integer-day spatial quantization, the 20-column count, and the 4 px minimum cell size take priority when those constraints require a wider field. Overview rows use the live Y scale. The contained detail for a direct-horizon neural model instead measures every learned horizon's conventional central 95% Gaussian envelope and bounded recent-history context in log-return space, then builds an anchor-centered log-price domain. Its finite 20-row lattice therefore spends resolution on interpretable central mass rather than rows that a normal tail and the explicit display threshold jointly guarantee will be invisible. Its 20 rows have equal log-return width, with zero return at the exact boundary between the 10 higher-price and 10 lower-price rows. Cell bounds, history and observed paths, and Y-axis ticks all use the same transform. The resulting positive price bounds are geometric mirrors around the anchor, so a lognormal upper tail cannot create a matching but empty dollar range near zero. One historical outlier remains capped at 1.5 times the forecast envelope. This presentation transform does not change model means, standard deviations, signals, or scores. The field uses a fixed 2 px logical gap and places cells in a transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding.
+Signal strategies may return a JSON-safe `StrategySignalResult.presentation`
+dictionary. The backtest engine validates finite numbers and requires any
+presentation `data_keys` to match `chart.raw_dates` exactly before transmitting
+the declarative payload; strategy-owned HTML and executable code are never
+accepted. `bayesian-price-field/v1` and `lstm-price-field/v1` both supply aligned
+predictive log-return means and scales plus a fixed 20-column contract to
+`probability-grid-v1`. The renderer preserves strategy-owned bounded rows,
+preferred width, requested gap, padding, opacity exponent, and opacity-tail ratio
+while enforcing the product-owned 20 columns and 4 px minimum cell size. It
+derives one stable daily step `s` from the median positive Chart.js point spacing
+across the complete rendered series. Each column slot is an integer multiple
+`k × s` of that step and at least one trading day. The requested gap is an upper
+bound, not a reason to add a day to every column: the renderer chooses the
+smallest `k` that preserves the 4 px cell floor, then applies
+`effectiveGap = min(requestedGap, k × s - 4)`. The cell is
+`k × s - effectiveGap`, so all 20 squares retain stable square geometry.
+Autoregressive Price Fields use `k` as both the spatial and semantic
+forecast-horizon step, preserving exact chart-time mapping. Direct-horizon
+neural Price Fields instead use a semantic horizon step of one while retaining
+`k × s` as a presentation-only overview spacing: columns 1 through 20 therefore
+always consume the 20 separately learned distributions in both hover and detail,
+even on a dense multi-year chart. The preferred field width is one quarter of
+the price plot, but integer-day spatial quantization, the 20-column count, and
+the 4 px minimum cell size take priority when those constraints require a wider
+field. Overview rows use the live Y scale. The contained detail for a
+direct-horizon neural model instead measures every learned horizon's conventional
+central 95% Gaussian envelope and bounded recent-history context in log-return
+space, then builds an anchor-centered log-price domain. Its finite 24-row lattice
+therefore spends resolution on interpretable central mass rather than rows that
+a normal tail and the explicit display threshold jointly guarantee will be
+invisible. Its 24 rows have equal log-return width, with zero return at the exact
+boundary between the 12 higher-price and 12 lower-price rows. Cell bounds,
+history and observed paths, and Y-axis ticks all use the same transform. The
+resulting positive price bounds are geometric mirrors around the anchor, so a
+lognormal upper tail cannot create a matching but empty dollar range near zero.
+One historical outlier remains capped at 1.5 times the forecast envelope. This
+presentation transform does not change model means, standard deviations,
+signals, or scores. The field uses a fixed 2 px logical gap and places cells in
+a transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom,
+and trailing padding.
 
 The probability field is not a Frosted Glass consumer. Its matrix is explicitly transparent with no background image, blur, border, or shadow; legacy 50%-transparent material values are retained only in the historical note below. Standard Frosted Glass tokens and every other material consumer remain unchanged. For one hover instant, let the finite clamped raw posterior cell masses be `p`, the maximum be `m`, and the selected absolute display threshold be `t`. Visible cells use `u = clamp((p - t) / (m - t), 0, 1)` and opacity `u ^ exponent`, with the existing default exponent 1.6 and unchanged green/magenta colors. The threshold always maps to the transparent/lightest endpoint, and the maximum always maps to full opacity. If `m = t > 0`, tied winners remain fully opaque; if `m < t` or all masses are zero, every cell is invisible. The standalone legacy contrast helper retains its relative-tail mode only when no absolute floor is supplied. The shared hover and detail renderers always pass the user-selected floor. Raw masses, geometry, titles, diagnostics, and scores are unchanged. The strategy-private Cell display threshold defaults to 1%, is bounded to 0–50%, and includes its exact boundary; below-threshold cells remain non-interactive and inaccessible. Cell opacity has no temporal CSS transition, preventing the prior hover's visible tail from leaking into the new instant. On desktop the field remains to the right of its vertical guide and retains one stable width while the pointer moves. On the narrow responsive chart-stage breakpoint, the same field is clamped in screen space to the stack's right edge when needed so all cells remain visible; this only changes the overlay offset, not the selected origin or probability-grid geometry. If its right edge exceeds the visible chart stack on a wider layout, the stack derives the exact missing floating visual distance `V` and reuses Motion Core's bouncy spring to reach it. The browser-native rail uses the sufficient integer physical offset `P = ceil(V)`; the controller applies `C = P - V` to both chart panels, the crosshair, the summary tooltip, and the probability tooltip, so their shared visual position is exactly `V` and their 1:1 curve/grid relationship is unchanged. Content-space calculations use `V`, not physical `scrollLeft`; a manual rail position may move left naturally, but its rightmost visual position clamps to the current exact target. Every Price Field hit test maps the pointer onto the visible curve and clamps that X to the first and last finite points, so the vertical guide cannot travel past the last trading day into the overflow field. The horizontal guide is the visible polyline intersection at that clamped X. Overflow pan is limited by the last curve point: the chart may shift left only until the vertical guide sits on that endpoint. Leaving the chart stack still clears both guides and the field. The native horizontal scrollbar exists only while that extent is needed and is absolutely positioned inside the existing 10 px Backtest section-resizer grid slot, without changing the measured chart-stack, Canvas, or probability-grid dimensions. The resizer remains keyboard-accessible and keeps a 2 px center hit strip above the native rail while the rail is active, so pointer drag and keyboard resizing continue to work without stealing the rail's lower hit area. The native surface never uses the accent scrollbar token. Returning to a fitting point, hiding the field, clearing the pinned state, or destroying the controller springs back to zero, removes the temporary extent, and restores the full resizer hit area.
 
-The current `bayesian-price-field/v1` amendment supersedes the historical 36-column, six-row, transparent-material, and no-radius descriptions above. The renderer fixes 20 columns and limits each hover side independently to `min(10, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`; the half-plot cap prevents edge-adjacent hover fields from consuming the entire plot. The contained Price Field detail surface uses the complete strategy-owned row counts without the hover boundary cap and scales them inside its own viewport. Grid cells use a fixed 2 px logical gap; the same 2 px inset separates the vertical guide from the first column. Overview cells map their top and bottom pixels through the live Y scale to exact price intervals. Detail cells for direct-horizon neural models use their independent anchor-centered log-price domain; other detail cells retain live-Y-scale intervals. Hover and detail therefore share model moments, horizon identities, and Gaussian CDF semantics but intentionally use different price-band boundaries. Horizontal cells map to an integer number of trading days. The field therefore may span more than 20 days: the fixed count is columns, not forecast-horizon days. It has no cell or outer radius and uses an explicitly transparent, borderless, shadowless, non-blurred matrix with 8 px top, bottom, and trailing padding. The shared vertical resizer invokes the Backtest overlay refresh after Chart.js has resized, so a pinned or tracking field cannot retain a stale geometry frame. During native or visual probability scrolling, the pointer-defined crosshair is recomputed in the same frame as the overlay translation. Every chart layout refresh clears screen-space pointer coordinates before recalculating geometry, so viewport, sidebar, and resizer reflows cannot inherit a stale pointer anchor or overflowed field; the next real pointer event re-establishes both guides from the current chart bounds. This matrix has no dependency on Settings Frosted Glass tokens, and it never changes the price Canvas range.
+The current `bayesian-price-field/v1` amendment supersedes the historical
+36-column, six-row, transparent-material, and no-radius descriptions above. The
+reusable display lattice fixes 20 columns and 12 strategy-owned rows on each
+side of the signal-close anchor. Each hover side is independently limited to
+`min(12, floor(50% of the current plot height in complete cell slots), floor(the relevant chart-boundary distance in complete cell slots))`;
+the half-plot cap prevents edge-adjacent hover fields from consuming the entire
+plot. The contained Price Field detail surface renders the complete 20-by-24
+lattice without the hover boundary cap and scales it inside its own viewport.
+Its width is derived from the 20-column to 12-row-per-side aspect ratio instead
+of a row-count literal. The floating overview grid uses a fixed 2 px logical
+gap, and the same 2 px inset separates the vertical guide from the first
+column. The contained detail grid requests 2 px, then reduces its horizontal
+and vertical gaps together only when its available pitch cannot retain both
+that gap and a visible square cell. The overview minimum-height conversion
+reserves one CSS pixel for outer split-grid and fractional-track rounding, so
+the twelfth complete row is not lost when the resizer is at Home. Overview cells map
+their top and bottom pixels through the live Y scale to exact price intervals.
+Detail cells for direct-horizon neural models use their independent
+anchor-centered log-price domain; other detail cells retain live-Y-scale
+intervals. Hover and detail therefore share model moments, horizon identities,
+and Gaussian CDF semantics but intentionally use different price-band
+boundaries. Horizontal cells map to an integer number of trading days. The field
+therefore may span more than 20 days: the fixed count is columns, not
+forecast-horizon days. The 24 display rows do not alter the 20 model horizons or
+the viewport-independent CRPS scoring lattice. It has no cell or outer radius
+and uses an explicitly transparent, borderless, shadowless, non-blurred matrix
+with 8 px top, bottom, and trailing padding. The shared vertical resizer invokes
+the Backtest overlay refresh after Chart.js has resized, so a pinned or tracking
+field cannot retain a stale geometry frame. During native or visual probability
+scrolling, the pointer-defined crosshair is recomputed in the same frame as the
+overlay translation. Every chart layout refresh clears screen-space pointer
+coordinates before recalculating geometry, so viewport, sidebar, and resizer
+reflows cannot inherit a stale pointer anchor or overflowed field; the next real
+pointer event re-establishes both guides from the current chart bounds. This
+matrix has no dependency on Settings Frosted Glass tokens, and it never changes
+the price Canvas range.
 
 The `close-price-grid/v1.1.3` and `direct-close-price-grid/v1.1.3` diagnostics score a viewport-independent, standardized close-anchored distribution at horizons 1 through 20. The machine-readable target and Gaussian CRPS units are explicitly `log(close[t+h]/close[t])`; the renderer converts that distribution back to anchored prices. Each horizon compares Gaussian CRPS with a causal zero-drift reference whose scale comes only from prior realized volatility. The primary `CRPS skill vs baseline` value is the equal-weighted mean of all 20 horizon-specific relative skills; averaging relative skills prevents longer-horizon CRPS scale from silently receiving more weight. The headline is `N/A` unless all 20 horizons and every causally eligible forecast pair have valid model forecasts. This complete-pair gate prevents a model from improving the headline by omitting difficult origins. Finite but numerically unrepresentable forecast moments are retained in the eligible denominator and scored as missing instead of surfacing non-finite diagnostics. Positive values beat the reference, zero matches it, and negative values trail it.
 

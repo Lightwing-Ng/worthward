@@ -1,4 +1,4 @@
-/* Code version: v0.39.0 */
+/* Code version: v0.40.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -223,6 +223,10 @@
 	--strategy-tune-button-icon-size: 14px;
 	--strategy-tune-button-radius: var(--radius-pill);
 	--strategy-tune-button-material: var(--settings-round-icon-button-background);
+	--strategy-tune-button-active-background: var(--accent-fill-hover);
+	--strategy-tune-button-active-border: 1px solid color-mix(in srgb, var(--accent-contrast) 44%, transparent);
+	--strategy-tune-button-active-color: var(--accent-contrast);
+	--strategy-tune-button-active-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent), inset 0 1px 0 color-mix(in srgb, var(--accent-contrast) 38%, transparent);
 	--strategy-tune-panel-material: var(--glass-popover-background);
 	--strategy-tune-panel-gap: 4px;
 	--strategy-tune-panel-padding: 10px;
@@ -243,7 +247,7 @@
 	--strategy-range-close-offset: calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2);
 	--strategy-range-title-font-size: var(--font-ui-lg);
 	--strategy-range-detail-font-size: var(--font-ui-xs);
-	--strategy-range-limit-thumb-background: var(--color-white-adaptive);
+	--strategy-range-limit-thumb-background: var(--theme-background);
 	--settings-form-shell-max-width: var(--layout-content-width);
 	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: var(--layout-control-width);

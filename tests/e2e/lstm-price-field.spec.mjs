@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.20.6 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.21.0 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -65,8 +65,8 @@ const injectPriceFieldPresentation = async (page, schema) => page.evaluate((pres
     result.strategy_presentation = {
         schema: presentationSchema,
         renderer: 'probability-grid-v1',
-        rows_above: 10,
-        rows_below: 10,
+        rows_above: 12,
+        rows_below: 12,
         columns: 20,
         width_fraction: 0.25,
         gap_px: 2,
@@ -264,12 +264,12 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     await page.mouse.move(box.x + (box.width * 0.55), box.y + (box.height * 0.45));
 
     const desktop = await readGridContract(page);
-    expect(desktop.version).toBe('v0.33.0');
+    expect(desktop.version).toBe('v0.34.0');
     expect(desktop.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(desktop.renderer).toBe('probability-grid-v1');
-    expect(desktop.script).toContain('backtest-probability-grid-v0.34.2');
+    expect(desktop.script).toContain('backtest-probability-grid-v0.35.0');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.72.5');
+    expect(desktop.appScript).toContain('app-v0.73.0');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -704,7 +704,7 @@ test('server-side LSTM Price Field computes a real probability field and renders
     expect(presentation.schema).toBe('lstm-price-field/v1');
     expect(presentation.renderer).toBe('probability-grid-v1');
     expect(presentation.columns).toBe(20);
-    expect(presentation.rowsAbove).toBe(10);
+    expect(presentation.rowsAbove).toBe(12);
     expect(['cpu', 'mps', 'cuda']).toContain(presentation.device);
     expect(presentation.neuralConfirmed).toBe(false);
     expect(presentation.originsTrained).toBeGreaterThan(0);
@@ -863,8 +863,8 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     await expect(page.locator('#trade_strategy')).toHaveValue('bayesian-price-field');
     await injectPriceFieldPresentation(page, 'bayesian-price-field/v1');
     const contract = await readGridContract(page);
-    expect(contract.version).toBe('v0.33.0');
-    expect(contract.script).toContain('backtest-probability-grid-v0.34.2');
+    expect(contract.version).toBe('v0.34.0');
+    expect(contract.script).toContain('backtest-probability-grid-v0.35.0');
     expect(contract.schemas).toEqual(['bayesian-price-field/v1', 'lstm-price-field/v1']);
     expect(contract.hasPriceFieldTab).toBe(true);
     expect(contract.panelTitle).toBe('Price field detail');

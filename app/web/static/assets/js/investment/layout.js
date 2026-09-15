@@ -32,7 +32,7 @@ export function resolveInvestmentTrackRange({
     const compressedHistoryMinimum = safeBaseline
         + ((safeHistoryMinimum - safeBaseline) * minimumScale);
     if (preferOverviewMinimum) {
-        // Home keeps the published 10-row plot. The live split still uses the
+        // Home keeps the published 12-row-per-side plot. The live split still uses the
         // compressed floor so Price Field detail is not collapsed until the
         // user actually moves the resizer to that minimum.
         const overviewCap = Math.max(safeBaseline, safeAvailableHeight - safeBaseline);

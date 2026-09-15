@@ -1,4 +1,4 @@
-/* Code version: v0.25.1 */
+/* Code version: v0.25.3 */
 
 import {
     buildSettingsUrl,
@@ -65,7 +65,6 @@ import {
             button.toggleAttribute("aria-busy", pending);
         }
     };
-    const canTransitionDom = () => Boolean(getContext().canTransitionDom);
     const rememberCurrentViewUrl = (url) => getContext().rememberCurrentViewUrl?.(url);
     const getSettingsCurrentUrl = () => (
         `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -424,16 +423,14 @@ import {
         const currentRegion = document.getElementById("settings_workspace_shell");
         if (!(currentRegion instanceof HTMLElement) || !nextRegion) return;
         const applyReplacement = () => {
+            const skeletonRoot = currentRegion.closest(".navigation-skeleton-root[data-navigation-skeleton]");
+            if (skeletonRoot instanceof HTMLElement) {
+                skeletonRoot.replaceWith(nextRegion);
+                document.querySelector("#workspace_panel > .navigation-skeleton-status")?.remove();
+                return;
+            }
             currentRegion.replaceWith(nextRegion);
         };
-        if (canTransitionDom()) {
-            const transition = document.startViewTransition(applyReplacement);
-            try {
-                await transition.finished;
-            } catch (_error) {
-            }
-            return;
-        }
         applyReplacement();
         await Promise.resolve();
     };

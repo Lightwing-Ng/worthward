@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.10.0
+Code version: v1.11.0
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ COMPARE_HTML = ROOT / "app/web/templates/compare.html"
 PRICE_COMPARE_HTML = ROOT / "app/web/templates/price_compare.html"
 PORTFOLIO_HTML = ROOT / "app/web/templates/portfolio.html"
 BACKTEST_HTML = ROOT / "app/web/templates/backtest.html"
+BACKTEST_PROBABILITY_HTML = ROOT / "app/web/templates/_backtest_probability_field.html"
 MACROS_HTML = ROOT / "app/web/templates/_macros.html"
 
 
@@ -146,8 +147,10 @@ class OptimisticNavigationTests(unittest.TestCase):
             "result-date-range",
             "price-subplots",
             "portfolio-total-return",
-            "backtest-history",
-            "backtest-chart-stage",
+            "trade-price-chart",
+            "trade-equity-chart",
+            "trade-metric",
+            "backtest-probability-detail-plot",
         ):
             self.assertIn(f'[data-workspace-mask="{mask}"]', registry)
 
@@ -167,9 +170,14 @@ class OptimisticNavigationTests(unittest.TestCase):
             'data-workspace-mask="result-date-range"',
             PORTFOLIO_HTML.read_text(encoding="utf-8"),
         )
+        backtest_template = BACKTEST_HTML.read_text(encoding="utf-8")
+        self.assertIn('data-workspace-mask="trade-price-chart"', backtest_template)
+        self.assertIn('data-workspace-mask="trade-equity-chart"', backtest_template)
+        self.assertNotIn('data-workspace-mask="backtest-history"', backtest_template)
+        self.assertNotIn('data-workspace-mask="backtest-chart-stage"', backtest_template)
         self.assertIn(
-            'data-workspace-mask="backtest-history"',
-            BACKTEST_HTML.read_text(encoding="utf-8"),
+            'data-workspace-mask="backtest-probability-detail-plot"',
+            BACKTEST_PROBABILITY_HTML.read_text(encoding="utf-8"),
         )
 
     def test_page_navigation_invalidates_stale_workspace_work(self) -> None:
@@ -237,7 +245,15 @@ class OptimisticNavigationTests(unittest.TestCase):
         self.assertIn("applyWorkspacePendingState();", source)
         self.assertIn("'[data-workspace-mask=\"compare-summary\"]'", app_source)
         self.assertIn("'[data-workspace-mask=\"result-date-range\"]'", app_source)
-        self.assertIn("'[data-workspace-mask=\"backtest-history\"]'", app_source)
+        self.assertIn("'[data-workspace-mask=\"trade-price-chart\"]'", app_source)
+        self.assertIn("'[data-workspace-mask=\"trade-equity-chart\"]'", app_source)
+        self.assertIn("'[data-workspace-mask=\"trade-metric\"]'", app_source)
+        self.assertIn(
+            "'[data-workspace-mask=\"backtest-probability-detail-plot\"]'",
+            app_source,
+        )
+        self.assertNotIn("'[data-workspace-mask=\"backtest-history\"]'", app_source)
+        self.assertNotIn("'[data-workspace-mask=\"backtest-chart-stage\"]'", app_source)
         self.assertIn(
             "abortActiveWorkspaceHydration();\n            clearWorkspacePendingState();",
             TICKER_CONTROLS_JS.read_text(encoding="utf-8"),
@@ -284,8 +300,12 @@ class OptimisticNavigationTests(unittest.TestCase):
         self.assertIn("backdrop-filter: var(--glass-mask-blur)", source)
         self.assertIn('data-workspace-mask="price-subplots"', source)
         self.assertIn('data-workspace-mask="trade-metric"', source)
+        self.assertIn('data-workspace-mask="backtest-probability-detail-plot"', source)
         self.assertIn('data-workspace-mask="compare-summary"', source)
-        self.assertIn('data-workspace-mask="backtest-history"', source)
+        self.assertNotIn('data-workspace-mask="backtest-history"', source)
+        self.assertNotIn('data-workspace-mask="backtest-chart-stage"', source)
+        self.assertIn("animation: workspace-pending-highlight", source)
+        self.assertIn("will-change: background-position", source)
         self.assertIn("pointer-events: none", source)
         self.assertIn("visibility: hidden", source)
 

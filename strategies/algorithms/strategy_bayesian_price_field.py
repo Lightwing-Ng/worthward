@@ -60,7 +60,7 @@ Code version: v1.34.2
   causal final-bar to next-session-open bridge without fabricating minute-level
   posterior values.
 - Changed: The declarative presentation contract retains a fixed 20-column,
-  ten-row-per-side maximum field with integer-trading-day slots and a fixed
+  twelve-row-per-side maximum field with integer-trading-day slots and a fixed
   2 px cell gap. The renderer applies the same 2 px guide-to-first-cell inset
   while retaining the vertical and trailing 8 px field padding.
 - Changed: The probability field no longer carries private radius or material

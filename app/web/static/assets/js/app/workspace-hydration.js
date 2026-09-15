@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 (() => {
     const create = (context) => {
         const {
@@ -837,6 +837,10 @@
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
             if (!(link instanceof HTMLAnchorElement)) return false;
             if (link.closest(".sidebar-dock")) return false;
+            if (
+                state.currentView === "settings"
+                && link.matches(".settings-nav-item, [data-settings-section-link]")
+            ) return false;
             if (link.hasAttribute("download")) return false;
             const target = (link.getAttribute("target") || "").toLowerCase();
             if (target && target !== "_self") return false;

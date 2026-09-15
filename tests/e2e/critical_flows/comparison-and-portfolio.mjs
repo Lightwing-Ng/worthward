@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.4.0 */
 import {
     expect,
     test,
@@ -339,7 +339,9 @@ test('masks stale Price results throughout same-page optimistic hydration', asyn
     await expect(page.locator('.is-masked-during-switch')).toHaveCount(0);
 });
 
-test('masks stale identities, dates, and Backtest history as complete regions', async ({page}) => {
+test('keeps Backtest pending glass fixed over exact graphics and values', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 1007, height: 1_355});
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');
     await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
     const compareSummary = page.locator('#compare_summary_panel');
@@ -353,14 +355,88 @@ test('masks stale identities, dates, and Backtest history as complete regions', 
     await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
     await expect(page.locator('.portfolio-summary-range')).toHaveClass(/is-masked-during-switch/);
 
-    await page.goto('/workspaces/backtest?ticker=AAPL&strategy=grid-trading&period=1y');
+    await page.emulateMedia({colorScheme: 'dark'});
+    await page.goto(
+        '/workspaces/backtest?ticker=QQQ&range=6mo&strategy=bayesian-price-field'
+        + '&cell_display_threshold=2.50',
+    );
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    const tuneColors = await tuneButton.evaluate((button) => {
+        const parse = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const luminance = (value) => {
+            const channels = parse(value).map((channel) => {
+                const normalized = channel / 255;
+                return normalized <= 0.04045
+                    ? normalized / 12.92
+                    : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+        };
+        const style = getComputedStyle(button);
+        const foreground = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        return {
+            backgroundColor: style.backgroundColor,
+            contrast: (Math.max(foreground, background) + 0.05)
+                / (Math.min(foreground, background) + 0.05),
+        };
+    });
+    expect(tuneColors.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(tuneColors.contrast).toBeGreaterThanOrEqual(4.5);
+
     await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
     const backtestHistory = page.locator('#backtest_history_surface');
-    await expect(backtestHistory).toHaveClass(/is-masked-during-switch/);
-    await expect(backtestHistory).toHaveCSS('pointer-events', 'none');
-    await expect(backtestHistory.locator(':scope > *').first()).toHaveCSS('opacity', '0');
-    await expect(backtestHistory.locator(':scope > *').first()).toHaveCSS('visibility', 'hidden');
-    await expect(page.locator('[data-workspace-mask="backtest-chart-stage"]')).toHaveClass(/is-masked-during-switch/);
+    await expect(backtestHistory).not.toHaveClass(/is-masked-during-switch/);
+    await expect(page.locator('[data-workspace-mask="backtest-history"]')).toHaveCount(0);
+    await expect(page.locator('[data-workspace-mask="backtest-chart-stage"]')).toHaveCount(0);
+    const priceMask = page.locator('[data-workspace-mask="trade-price-chart"]');
+    await expect(priceMask).toHaveClass(/is-masked-during-switch/);
+    await expect(page.locator('[data-workspace-mask="trade-equity-chart"]')).toHaveClass(/is-masked-during-switch/);
+    const metricMasks = page.locator('[data-workspace-mask="trade-metric"]');
+    expect(await metricMasks.count()).toBeGreaterThan(0);
+    await expect(metricMasks.first()).toHaveClass(/is-masked-during-switch/);
+    const probabilityMask = page.locator('[data-workspace-mask="backtest-probability-detail-plot"]');
+    await expect(probabilityMask).toHaveClass(/is-masked-during-switch/);
+    await expect(probabilityMask.locator(':scope > .backtest-probability-detail-main'))
+        .toHaveCSS('opacity', '0.18');
+
+    const initialMaskState = await priceMask.evaluate((mask) => {
+        const rect = mask.getBoundingClientRect();
+        const overlay = getComputedStyle(mask, '::after');
+        return {
+            backgroundPosition: overlay.backgroundPosition,
+            height: rect.height,
+            left: rect.left,
+            maskTransform: getComputedStyle(mask).transform,
+            overlayAnimationName: overlay.animationName,
+            overlayTransform: overlay.transform,
+            top: rect.top,
+            width: rect.width,
+        };
+    });
+    await page.waitForTimeout(120);
+    const settledMaskState = await priceMask.evaluate((mask) => {
+        const rect = mask.getBoundingClientRect();
+        return {
+            backgroundPosition: getComputedStyle(mask, '::after').backgroundPosition,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+        };
+    });
+    expect(initialMaskState.maskTransform).toBe('none');
+    expect(initialMaskState.overlayTransform).toBe('none');
+    expect(initialMaskState.overlayAnimationName).toBe('workspace-pending-highlight');
+    expect(settledMaskState.backgroundPosition).not.toBe(initialMaskState.backgroundPosition);
+    for (const key of ['height', 'left', 'top', 'width']) {
+        expect(Math.abs(settledMaskState[key] - initialMaskState[key])).toBeLessThanOrEqual(0.01);
+    }
 });
 
 test('rejects a delayed Price hydration after a Portfolio navigation skeleton takes ownership', async ({page}) => {

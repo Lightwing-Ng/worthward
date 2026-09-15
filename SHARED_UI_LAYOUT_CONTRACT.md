@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.11.0`
+Documentation version: `v1.13.0`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -50,6 +50,15 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - The strategy-tuning row reserves at most `60%` for its label track so the
   right-aligned value track can display seven-digit holding limits without
   clipping. This is a component token, not a Grid Trading page override.
+- A pressed strategy-tuning action uses the solid
+  `--strategy-tune-button-active-*` contract: deep primary blue, adaptive white
+  glyph, explicit border, and active shadow. It must remain visibly distinct
+  from the idle frosted material in both Light and Dark modes.
+- Same-page Backtest hydration preserves the result surfaces in place and masks
+  only the price/equity canvases, metric values, and Price Field detail plot.
+  The mask's glass base is stationary; only its internal highlight animates.
+  Whole chart/history-card masks and translating glass overlays are not part of
+  the optimistic-loading contract.
 - Shared workspace-modal and floating-notice dismiss buttons use standard error red
   (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
   focusing within the owning modal/notice, not the entire page. Keyboard focus
@@ -75,7 +84,7 @@ The following values are semantic tokens, not page-local overrides:
 | `G` | Shared edge gap | `10px` |
 | `W` | Content and card maximum | `640px` |
 | `C` | Control and standard dropdown maximum | `384px` |
-| `B` | Physical-effect bleed | `48px` |
+| `B` | Block-end physical-effect clearance | `48px` |
 | `R` | Sidebar and soft card radius | `10px` |
 | `T` | Round action size | project token; geometry is shared |
 | `M` | Modal and floating-notice inner pad | `12px` |
@@ -192,9 +201,12 @@ The following ownership rules are mandatory:
    translated controls, focus rings, or dropdown ink must escape.
 2. An effect host such as a frosted card sets `overflow: visible`; its outer layout
    parent must not clip it accidentally.
-3. A named `content-scrollport` is the owner of vertical data scrolling. It may use
-   `overflow-x: hidden; overflow-y: auto` and must provide `B` start/bottom bleed when
-   its children paint elevated effects near that edge.
+3. A named `content-scrollport` is the owner of vertical data scrolling. Its border
+   box must remain inside the workspace shell's inline bounds. It may use
+   `overflow-x: hidden; overflow-y: auto` and provide `B` at the block end, but it
+   must not manufacture inline effect space with negative margins. Inline effects
+   are clipped by their smallest local owner or accommodated without changing the
+   scrollport's measured width.
 4. A chart canvas viewport, data table viewport, answer pane, dropdown, or media viewer
    may clip only its own documented content. That local clipping must not be used as a
    substitute for shell geometry.

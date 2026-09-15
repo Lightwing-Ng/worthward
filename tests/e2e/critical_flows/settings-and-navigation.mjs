@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -562,7 +562,7 @@ test('shares authoritative strategy categories between Settings and Backtest', a
     expect(backtestGroups).toEqual(settingsGroups);
 });
 
-test('keeps Settings card effects visible without clipping scrollable internals', async ({page}) => {
+test('keeps Settings scrollports and local effects inside their owning surfaces', async ({page}) => {
     await page.setViewportSize({width: 1_280, height: 900});
 
     await page.goto('/settings/material-tokens');
@@ -577,8 +577,13 @@ test('keeps Settings card effects visible without clipping scrollable internals'
     const networkOverflow = await page.evaluate(() => ({
         shell: getComputedStyle(document.querySelector('.settings-shell-network')).overflow,
         scrollport: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport')).overflow,
-        bleed: document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-action-package').getBoundingClientRect().left
+        inset: document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-action-package').getBoundingClientRect().left
             - document.querySelector('.settings-shell-network > .settings-content-scrollport').getBoundingClientRect().left,
+        scrollportInsideShell: (() => {
+            const shell = document.querySelector('.settings-shell-network').getBoundingClientRect();
+            const scrollport = document.querySelector('.settings-shell-network > .settings-content-scrollport').getBoundingClientRect();
+            return scrollport.left >= shell.left - 1 && scrollport.right <= shell.right + 1;
+        })(),
         action: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-action-package')).overflow,
         panel: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network')).overflow,
         row: getComputedStyle(document.querySelector('.settings-shell-network .settings-service-row')).overflow,
@@ -586,10 +591,11 @@ test('keeps Settings card effects visible without clipping scrollable internals'
     expect(networkOverflow).toEqual({
         shell: 'visible',
         scrollport: 'hidden auto',
-        bleed: 48,
+        inset: 0,
+        scrollportInsideShell: true,
         action: 'visible',
         panel: 'visible',
-        row: 'visible',
+        row: 'clip',
     });
 
     await page.goto('/settings/strategies');
@@ -611,10 +617,20 @@ test('keeps Settings card effects visible without clipping scrollable internals'
         return {
             shell: getComputedStyle(shell).overflow,
             scrollport: getComputedStyle(scrollport).overflow,
-            bleed: card.getBoundingClientRect().left - scrollport.getBoundingClientRect().left,
+            inset: card.getBoundingClientRect().left - scrollport.getBoundingClientRect().left,
+            scrollportInsideShell: (() => {
+                const shellBounds = shell.getBoundingClientRect();
+                const scrollportBounds = scrollport.getBoundingClientRect();
+                return scrollportBounds.left >= shellBounds.left - 1 && scrollportBounds.right <= shellBounds.right + 1;
+            })(),
         };
     });
-    expect(strategyShell).toEqual({shell: 'visible', scrollport: 'hidden auto', bleed: 48});
+    expect(strategyShell).toEqual({
+        shell: 'visible',
+        scrollport: 'hidden auto',
+        inset: 0,
+        scrollportInsideShell: true,
+    });
 
     await page.setViewportSize({width: 390, height: 844});
     for (const url of ['/settings/material-tokens', '/settings/network', '/settings/strategies']) {
@@ -767,4 +783,3 @@ test('keeps Settings export tokens on detached Investment export targets', async
         hostHeight: 1730,
     });
 });
-

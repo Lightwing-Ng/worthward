@@ -1,4 +1,4 @@
-/* Code version: v3.31.4 */
+/* Code version: v3.32.0 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -386,7 +386,9 @@ body.is-workspace-switching [data-workspace-mask].is-masked-during-switch::after
 	backdrop-filter: var(--glass-mask-blur);
 	-webkit-backdrop-filter: var(--glass-mask-blur);
 	background-size: 220% 100%, auto;
-	animation: pending-sheen 1.15s var(--motion-shimmer) infinite;
+	background-position: 160% 0, 0 0;
+	animation: workspace-pending-highlight 1.15s var(--motion-shimmer) infinite;
+	will-change: background-position;
 	pointer-events: none;
 }
 body.is-workspace-switching [data-workspace-mask="compare-return"].is-masked-during-switch::after,
@@ -399,11 +401,10 @@ body.is-workspace-switching [data-workspace-mask="chart-area"].is-masked-during-
 body.is-workspace-switching [data-workspace-mask="price-subplots"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="trade-price-chart"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="trade-equity-chart"].is-masked-during-switch::after,
+body.is-workspace-switching [data-workspace-mask="backtest-probability-detail-plot"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="portfolio-donut-start"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="portfolio-donut-end"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch::after,
-body.is-workspace-switching [data-workspace-mask="backtest-chart-stage"].is-masked-during-switch::after,
-body.is-workspace-switching [data-workspace-mask="backtest-history"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="page-heading"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="result-heading"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="result-date-range"].is-masked-during-switch::after {
@@ -411,20 +412,29 @@ body.is-workspace-switching [data-workspace-mask="result-date-range"].is-masked-
 	border-radius: inherit;
 }
 body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch,
-body.is-workspace-switching [data-workspace-mask="backtest-chart-stage"].is-masked-during-switch,
-body.is-workspace-switching [data-workspace-mask="backtest-history"].is-masked-during-switch {
+body.is-workspace-switching [data-workspace-mask="trade-price-chart"].is-masked-during-switch,
+body.is-workspace-switching [data-workspace-mask="trade-equity-chart"].is-masked-during-switch,
+body.is-workspace-switching [data-workspace-mask="backtest-probability-detail-plot"].is-masked-during-switch {
 	pointer-events: none;
 }
-body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch > *,
-body.is-workspace-switching [data-workspace-mask="backtest-chart-stage"].is-masked-during-switch > *,
-body.is-workspace-switching [data-workspace-mask="backtest-history"].is-masked-during-switch > * {
+body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch > * {
 	opacity: 0;
 	visibility: hidden;
 }
+body.is-workspace-switching [data-workspace-mask="backtest-probability-detail-plot"].is-masked-during-switch > * {
+	opacity: 0.18;
+	filter: saturate(0.75) blur(1px);
+	transition: opacity 160ms var(--motion-standard), filter 220ms var(--motion-standard);
+}
 body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch::after,
-body.is-workspace-switching [data-workspace-mask="backtest-chart-stage"].is-masked-during-switch::after,
-body.is-workspace-switching [data-workspace-mask="backtest-history"].is-masked-during-switch::after {
+body.is-workspace-switching [data-workspace-mask="trade-price-chart"].is-masked-during-switch::after,
+body.is-workspace-switching [data-workspace-mask="trade-equity-chart"].is-masked-during-switch::after,
+body.is-workspace-switching [data-workspace-mask="backtest-probability-detail-plot"].is-masked-during-switch::after {
 	z-index: 2;
+}
+@keyframes workspace-pending-highlight {
+	0% { background-position: 160% 0, 0 0; }
+	100% { background-position: -60% 0, 0 0; }
 }
 .navigation-skeleton-backtest-toggle {
 	pointer-events: none;

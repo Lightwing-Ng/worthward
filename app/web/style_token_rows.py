@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.25.0
+Code version: v1.26.0
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def build_style_token_rows(
                 raw_token("--strategy-range-close-offset", "calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2)"),
                 raw_token("--strategy-range-title-font-size", "var(--font-ui-lg)"),
                 raw_token("--strategy-range-detail-font-size", "var(--font-ui-xs)"),
-                raw_token("--strategy-range-limit-thumb-background", "var(--color-white-adaptive)"),
+                raw_token("--strategy-range-limit-thumb-background", "var(--theme-background)"),
             ],
             "related_styles": [],
         },
@@ -395,6 +395,10 @@ def build_style_token_rows(
                 raw_token("--strategy-tune-button-size", "var(--shared-select-control-height)"),
                 px_token("--strategy-tune-button-icon-size", 14, 1),
                 raw_token("--strategy-tune-button-radius", "var(--radius-pill)"),
+                raw_token("--strategy-tune-button-active-background", "var(--accent-fill-hover)"),
+                raw_token("--strategy-tune-button-active-border", "1px solid color-mix(in srgb, var(--accent-contrast) 44%, transparent)"),
+                raw_token("--strategy-tune-button-active-color", "var(--accent-contrast)"),
+                raw_token("--strategy-tune-button-active-shadow", "0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent), inset 0 1px 0 color-mix(in srgb, var(--accent-contrast) 38%, transparent)"),
                 material_reference_token("--strategy-tune-panel-material", "Frosted glass"),
                 px_token("--strategy-tune-panel-gap", 4, 0),
                 px_token("--strategy-tune-panel-padding", 10, 0),

@@ -5,7 +5,7 @@
  * This module owns geometry, cells, opacity, and the pure pin reducer.
  * chart-controller.js owns DOM/events/lifecycle; distributions.js owns probability math.
  *
- * Code version: v0.34.2
+ * Code version: v0.35.0
  */
 (function bootstrapBacktestProbabilityGrid(globalScope) {
     "use strict";
@@ -23,9 +23,9 @@
     ]);
     const RENDERER_ID = "probability-grid-v1";
     const RENDERER_SCHEMA = "probability-grid/v1";
-    const DEFAULT_ROWS_ABOVE = 10;
-    const DEFAULT_ROWS_BELOW = 10;
-    const MAX_ROWS_PER_SIDE = 10;
+    const DEFAULT_ROWS_ABOVE = 12;
+    const DEFAULT_ROWS_BELOW = 12;
+    const MAX_ROWS_PER_SIDE = 12;
     const DEFAULT_COLUMN_COUNT = 20;
     const DEFAULT_WIDTH_FRACTION = 0.25;
     const DEFAULT_GAP_PX = 2;
@@ -346,9 +346,9 @@
         const gap = requestedGap;
         const cellSize = slotWidth - gap;
         // Count only complete cell slots after reserving the field's vertical
-        // edge padding and its half-gap around the horizontal guide. Ten rows
-        // per side therefore require the published plot minimum; shrinking that
-        // minimum in the shared splitter is what drops a 10-row field to 8.
+        // edge padding and its half-gap around the horizontal guide. The complete
+        // product row count therefore requires the published plot minimum;
+        // shrinking that minimum is what reduces a constrained hover field.
         const rowsThatFit = (distance) => {
             const numerator = Number(distance) - padding + (gap / 2);
             if (!(numerator > 0) || !(cellSize + gap > 0)) return 0;
@@ -356,7 +356,7 @@
         };
         const availableRowsAbove = rowsThatFit(y - top);
         const availableRowsBelow = rowsThatFit(bottom - y);
-        // Each side is independently capped by the smaller of ten rows, one
+        // Each side is independently capped by the product row limit, one
         // half of the current plot, and its own real chart boundary. The
         // half-plot cap prevents a near-edge guide from consuming the whole
         // vertical field while the boundary caps preserve exact clipping.
@@ -980,7 +980,7 @@
     );
 
     const api = Object.freeze({
-        BACKTEST_PROBABILITY_GRID_VERSION: "v0.33.0",
+        BACKTEST_PROBABILITY_GRID_VERSION: "v0.34.0",
         DEFAULT_COLUMN_COUNT,
         MAX_ROWS_PER_SIDE,
         CELL_OPACITY_MAPPING,

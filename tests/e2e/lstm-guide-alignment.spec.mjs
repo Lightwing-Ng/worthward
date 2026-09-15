@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.2.2 */
+/* Code version: v1.3.0 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -48,8 +48,8 @@ const injectPriceFieldPresentation = (page) => page.evaluate(() => {
     result.strategy_presentation = {
         schema: 'lstm-price-field/v1',
         renderer: 'probability-grid-v1',
-        rows_above: 10,
-        rows_below: 10,
+        rows_above: 12,
+        rows_below: 12,
         columns: 20,
         width_fraction: 0.25,
         gap_px: 2,

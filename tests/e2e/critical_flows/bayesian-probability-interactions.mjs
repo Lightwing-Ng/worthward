@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -88,11 +88,19 @@ export async function exerciseBayesianProbabilityField(page, harness) {
         const nextColumnRect = nextColumn?.getBoundingClientRect();
         const nextRowRect = nextRow?.getBoundingClientRect();
         return {
+            anchorY: bounds?.anchorY ?? Number.NaN,
+            availableRowsAbove: bounds?.availableRowsAbove ?? Number.NaN,
+            availableRowsBelow: bounds?.availableRowsBelow ?? Number.NaN,
+            availableRowsWithinHalfPlot: bounds?.availableRowsWithinHalfPlot ?? Number.NaN,
+            canvasHeight: canvas.getBoundingClientRect().height,
             cellSquareDelta: Math.max(...cells.map((cell) => {
                 const rect = cell.getBoundingClientRect();
                 return Math.abs(rect.width - rect.height);
             })),
             columns: new Set(cells.map((cell) => cell.dataset.column)).size,
+            chartAreaBottom: chart.chartArea.bottom,
+            chartAreaTop: chart.chartArea.top,
+            cellSize: bounds?.cellSize ?? Number.NaN,
             daysPerColumn: Number(grid.dataset.daysPerColumn),
             horizontalGap: firstRect && nextColumnRect
                 ? nextColumnRect.left - firstRect.right
@@ -111,6 +119,8 @@ export async function exerciseBayesianProbabilityField(page, harness) {
             stageMinimum: Number.parseFloat(getComputedStyle(results).getPropertyValue(
                 '--backtest-probability-stage-min-height',
             )),
+            stackHeight: canvas.closest('.trade-chart-stack')?.getBoundingClientRect().height
+                ?? Number.NaN,
             verticalGap: firstRect && nextRowRect
                 ? nextRowRect.top - firstRect.bottom
                 : Number.NaN,
@@ -121,8 +131,11 @@ export async function exerciseBayesianProbabilityField(page, harness) {
         minimumGeometry.resizerValue - minimumGeometry.resizerMinimum,
     )).toBeLessThanOrEqual(1);
     expect(minimumGeometry.stageMinimum).toBeGreaterThan(0);
-    expect(minimumGeometry.rowsUp).toBe(10);
-    expect(minimumGeometry.rowsDown).toBe(10);
+    expect(minimumGeometry.availableRowsAbove).toBeGreaterThanOrEqual(12);
+    expect(minimumGeometry.availableRowsBelow).toBeGreaterThanOrEqual(12);
+    expect(minimumGeometry.availableRowsWithinHalfPlot).toBeGreaterThanOrEqual(12);
+    expect(minimumGeometry.rowsUp, JSON.stringify(minimumGeometry)).toBe(12);
+    expect(minimumGeometry.rowsDown).toBe(12);
     expect(minimumGeometry.columns).toBe(20);
     expect(minimumGeometry.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(minimumGeometry.horizontalGap).toBeCloseTo(2, 1);
@@ -241,8 +254,8 @@ export async function exerciseBayesianProbabilityField(page, harness) {
         expect(afterDrag).not.toBeNull();
         expect(afterDrag.canvasHeight).toBeGreaterThan(beforeDrag.canvasHeight + 1);
         expect(afterDrag.chartAreaHeight).toBeGreaterThan(beforeDrag.chartAreaHeight + 1);
-        expect(afterDrag.rowsUp).toBeLessThanOrEqual(10);
-        expect(afterDrag.rowsDown).toBeLessThanOrEqual(10);
+        expect(afterDrag.rowsUp).toBeLessThanOrEqual(12);
+        expect(afterDrag.rowsDown).toBeLessThanOrEqual(12);
         expect(afterDrag.verticalGap).toBeCloseTo(2, 1);
         expect(afterDrag.guideDelta).toBeLessThanOrEqual(0.1);
         expect(afterDrag.cellGeometryDelta).toBeLessThanOrEqual(1);
@@ -966,7 +979,7 @@ export async function exerciseBayesianProbabilityField(page, harness) {
     expect(narrowLayout.detailGridWidth).toBeGreaterThan(0);
     expect(narrowLayout.detailGridFitsViewport).toBe(true);
     expect(narrowLayout.detailCellCount).toBe(narrowLayout.detailRows * 20);
-    expect(narrowLayout.detailRows).toBe(20);
+    expect(narrowLayout.detailRows).toBe(24);
     expect(narrowLayout.detailTopInset).toBeGreaterThanOrEqual(-1);
     expect(narrowLayout.detailBottomInset).toBeGreaterThanOrEqual(-1);
     expect(narrowLayout.detailCellSizesPositive).toBe(true);
@@ -996,8 +1009,8 @@ export async function exerciseBayesianProbabilityField(page, harness) {
     expect(narrowLayout.horizontalOverflow).toBeLessThanOrEqual(0);
     expect(narrowLayout.rowsUp).toBeGreaterThan(0);
     expect(narrowLayout.rowsDown).toBeGreaterThan(0);
-    expect(narrowLayout.rowsUp).toBeLessThanOrEqual(10);
-    expect(narrowLayout.rowsDown).toBeLessThanOrEqual(10);
+    expect(narrowLayout.rowsUp).toBeLessThanOrEqual(12);
+    expect(narrowLayout.rowsDown).toBeLessThanOrEqual(12);
     expect(narrowLayout.columns).toBe(20);
     expect(narrowLayout.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(narrowLayout.horizontalGap).toBeCloseTo(2, 1);

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -148,6 +148,7 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
     await expect.poll(() => page.evaluate(() => Boolean(
         window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
     ))).toBe(true);
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
 
     const readAnchor = () => page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
@@ -278,6 +279,13 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
         horizontalVisible: false,
         verticalVisible: false,
     });
+
+    await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());
+    const detailPlotMask = detailPanel.locator('[data-workspace-mask="backtest-probability-detail-plot"]');
+    await expect(detailPlotMask).toHaveClass(/is-masked-during-switch/);
+    await expect(detailPlotMask.locator(':scope > .backtest-probability-detail-main'))
+        .toHaveCSS('opacity', '0.18');
+    await expect(page.locator('#backtest_history_surface')).not.toHaveClass(/is-masked-during-switch/);
 });
 
 test('keeps the Bayesian Price Field detail plot and date labels inside the history rail', async ({page}) => {
@@ -1175,4 +1183,3 @@ test('keeps the latest Backtest interval state when an older presence response a
         window.WORTHWARD_APP?.backtestPeriodOptions?.['1m'] || []
     ))).toEqual(['1d', 'max']);
 });
-

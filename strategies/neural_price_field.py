@@ -1,4 +1,4 @@
-"""One strategy adapter for eight direct probability engines. Code version: v1.4.4."""
+"""One strategy adapter for eight direct probability engines. Code version: v1.5.0."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from strategies.neural_price_field_inputs import (
 from strategies.neural_price_field_scoring import score_neural_price_field
 from strategies.price_field_scoring import visible_scoring_bounds
 from strategies.neural_price_field_registry import neural_architecture_spec
-from strategies.price_field_contract import build_probability_grid_presentation
+from strategies.price_field_contract import (
+    build_probability_grid_presentation,
+    probability_grid_render_shape_fields,
+)
 from strategies.price_field_pipeline import (
     PRICE_FIELD_FACTOR_DEFINITIONS, build_price_field_factor_status,
     bundle_to_price_field_ohlcv, json_number_list, load_price_field_market_bundle,
@@ -236,7 +239,7 @@ class NeuralPriceFieldStrategy(BaseStrategy):
                                        "pair_independence": "overlapping-origins-and-horizons",
                                    },
                                    "render_lattice": {
-                                       "columns": 20, "rows_above": 10, "rows_below": 10,
+                                       **probability_grid_render_shape_fields(),
                                        "horizon_unit": "close-to-future-close-session",
                                        "horizon_mapping": "direct-learned-1-through-20",
                                        "spatial_mapping": "viewport-quantized-display-only", "max_horizon": 20,

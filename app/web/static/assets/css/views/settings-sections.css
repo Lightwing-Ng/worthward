@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 
 .settings-shell-strategies,
 .settings-strategy-list {
@@ -592,14 +592,13 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-warning) 30%, transparent);
 }
 
-.settings-language-save-button {
-    justify-self: end;
+.settings-form-actions-end {
+    justify-content: end;
 }
 
-.settings-language-submit-row {
-    display: grid;
-    justify-items: end;
-    gap: 8px;
+.settings-form-actions-end > .settings-language-feedback {
+    flex-basis: 100%;
+    text-align: end;
 }
 
 .settings-language-feedback {

@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.5.1."""
+"""Shared Price Field contract tests. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -22,10 +22,12 @@ from strategies.price_field_contract import (
     PROBABILITY_FIELD_COLUMNS,
     PROBABILITY_FIELD_GAP_PX,
     PROBABILITY_FIELD_ROWS_ABOVE,
+    PROBABILITY_FIELD_ROWS_BELOW,
     PROBABILITY_GRID_RENDERER,
     build_probability_grid_presentation,
     is_price_field_strategy,
     probability_grid_geometry_fields,
+    probability_grid_render_shape_fields,
 )
 
 
@@ -133,18 +135,32 @@ class PriceFieldContractTests(unittest.TestCase):
         self.assertTrue(is_price_field_strategy(LSTM_PRICE_FIELD_STRATEGY_ID))
         self.assertFalse(is_price_field_strategy("macd"))
 
-    def test_geometry_is_the_accepted_twenty_by_twenty_lattice(self) -> None:
+    def test_geometry_is_the_accepted_twenty_column_by_twenty_four_row_lattice(self) -> None:
         geometry = probability_grid_geometry_fields()
         self.assertEqual(geometry["renderer"], PROBABILITY_GRID_RENDERER)
         self.assertEqual(geometry["columns"], 20)
-        self.assertEqual(geometry["rows_above"], 10)
-        self.assertEqual(geometry["rows_below"], 10)
+        self.assertEqual(geometry["rows_above"], 12)
+        self.assertEqual(geometry["rows_below"], 12)
         self.assertEqual(geometry["gap_px"], 2)
         self.assertEqual(geometry["padding_px"], 8)
         self.assertEqual(geometry["min_cell_px"], 4)
         self.assertEqual(PROBABILITY_FIELD_COLUMNS, 20)
-        self.assertEqual(PROBABILITY_FIELD_ROWS_ABOVE, 10)
+        self.assertEqual(PROBABILITY_FIELD_ROWS_ABOVE, 12)
+        self.assertEqual(PROBABILITY_FIELD_ROWS_BELOW, 12)
         self.assertEqual(PROBABILITY_FIELD_GAP_PX, 2)
+        shape = probability_grid_render_shape_fields()
+        self.assertEqual(
+            shape,
+            {"columns": 20, "rows_above": 12, "rows_below": 12},
+        )
+        self.assertEqual(
+            geometry["metric_geometry"]["render_lattice"],
+            {
+                **shape,
+                "horizon_unit": "integer-trading-days-per-viewport-column",
+                "horizon_mapping": "viewport-quantized",
+            },
+        )
         distribution = geometry["metric_geometry"]["distribution_diagnostic"]
         self.assertEqual(
             distribution["target"],
@@ -247,7 +263,7 @@ class PriceFieldContractTests(unittest.TestCase):
         for strategy_id in PRICE_FIELD_STRATEGY_IDS:
             self.assertIn(f'"{strategy_id}"', source)
         self.assertIn("probability-grid-v1", source)
-        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.33.0\"", source)
+        self.assertIn("BACKTEST_PROBABILITY_GRID_VERSION: \"v0.34.0\"", source)
 
     def test_native_disclosures_use_shared_trailing_chevron(self) -> None:
         root = Path(__file__).resolve().parents[1]

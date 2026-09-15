@@ -1,4 +1,4 @@
-/* Code version: v0.33.0 */
+/* Code version: v0.33.1 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -219,9 +219,9 @@
     overflow: visible;
 }
 
-/* Code version: v1.0.0
- * One explicit scrollport owns Settings overflow. Its start-side and bottom
- * bleed preserve elevated-card ink without moving the 640px / 384px anchors.
+/* Code version: v1.1.0
+ * One explicit scrollport owns Settings overflow. Keep its border box inside
+ * the workspace while the bottom safe area preserves the final card shadow.
  */
 .settings-content-scrollport {
     display: flex;
@@ -230,8 +230,6 @@
     gap: var(--settings-shell-gap);
     min-width: 0;
     min-height: 0;
-    margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));
-    padding-inline-start: var(--layout-physical-effect-bleed);
     padding-block-end: var(--layout-physical-effect-bleed);
     overflow-x: hidden;
     overflow-y: auto;
@@ -291,10 +289,13 @@
 
 .settings-shell-network > .settings-content-scrollport > .settings-action-package,
 .settings-shell-network > .settings-content-scrollport > .settings-general-panel-network,
-.settings-shell-network .settings-service-row,
 .settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,
 .settings-shell-material-tokens .style-token-card {
     overflow: visible;
+}
+
+.settings-shell-network .settings-service-row {
+    overflow: clip;
 }
 
 .settings-shell-broker-access,

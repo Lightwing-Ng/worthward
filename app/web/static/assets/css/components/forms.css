@@ -1,4 +1,4 @@
-/* Code version: v0.24.1 */
+/* Code version: v0.25.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1126,9 +1126,10 @@ input[type="number"],
 }
 .trade-strategy-tune-button.is-active,
 .trade-strategy-tune-button[aria-pressed="true"] {
-	background: var(--settings-round-icon-button-background-hover);
-	box-shadow: var(--settings-round-icon-button-shadow-active);
-	color: var(--accent-text);
+	background: var(--strategy-tune-button-active-background);
+	border: var(--strategy-tune-button-active-border);
+	box-shadow: var(--strategy-tune-button-active-shadow);
+	color: var(--strategy-tune-button-active-color);
 	transform: translateY(1px) scale(0.985);
 }
 .trade-strategy-tune-button.is-hidden {

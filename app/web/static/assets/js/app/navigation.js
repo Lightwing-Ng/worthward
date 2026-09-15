@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.3.0 */
 (() => {
     const create = (context) => {
         const {
@@ -422,7 +422,9 @@
                          data-settings-workspace-region
                          data-settings-section="${section}">
                     ${buildNavigationTitleCard(profile.title)}
-                    ${buildSettingsNavigationContent(profile.layout)}
+                    <div class="settings-content-scrollport" data-layout-role="content-scrollport">
+                        ${buildSettingsNavigationContent(profile.layout)}
+                    </div>
                 </section>
             `;
         };

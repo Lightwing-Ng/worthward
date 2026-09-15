@@ -1,4 +1,4 @@
-/* Direct probability-horizon presentation contracts. Code version: v1.2.0 */
+/* Direct probability-horizon presentation contracts. Code version: v1.3.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -54,6 +54,9 @@ test('direct horizon concentration follows each learned marginal scale', () => {
 test('direct presentations require complete aligned horizon arrays and matching first head', () => {
     const normalized = grid.normalizePresentation(model, model.data_keys);
     assert.deepEqual(normalized.horizon_predictive_mean, model.horizon_predictive_mean);
+    assert.equal(normalized.columns, 20);
+    assert.equal(normalized.rows_above, 12);
+    assert.equal(normalized.rows_below, 12);
     assert.equal(grid.normalizePresentation({...model, max_horizon: 40}, model.data_keys), null);
     assert.equal(grid.normalizePresentation({...model, predictive_mean: [0.02, null]}, model.data_keys), null);
     assert.equal(grid.normalizePresentation({...model, horizon_predictive_std: [Array(19).fill(0.02), Array(20).fill(null)]}, model.data_keys), null);
@@ -68,6 +71,8 @@ test('direct overview preserves spatial spacing while rendering every learned ho
         maxHorizon: 20, horizonStep: 1, stepPixels: 1,
         valueForPixel: (pixel) => 130 - pixel * 0.1});
     assert.ok(cells.length > 0);
+    assert.equal(geometry.rowCount, 24);
+    assert.equal(cells.length, 24 * 20);
     assert.ok(geometry.daysPerColumn > 1);
     assert.ok(cells.every((cell) => cell.horizon <= 20 && Number.isFinite(cell.probability)));
     assert.deepEqual([...new Set(cells.map((cell) => cell.horizon))],

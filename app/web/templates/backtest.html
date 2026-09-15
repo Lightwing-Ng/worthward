@@ -1,4 +1,4 @@
-{# Code version: v0.10.3 #}
+{# Code version: v0.11.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -60,7 +60,6 @@
                                             </div>
                                             <div class="trade-chart-stack{% if not show_trade_details %} is-trade-details-hidden{% endif %}"
                                                  data-backtest-trade-chart-stack
-                                                 data-workspace-mask="backtest-chart-stage"
                                                  data-trade-details-visible="{{ 'true' if show_trade_details else 'false' }}">
                                                 <div class="trade-chart-panel">
                                                     <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
@@ -105,7 +104,6 @@
                     </div>
                 <article class="chart-surface investment-history-surface backtest-history-surface"
                          id="backtest_history_surface"
-                         data-workspace-mask="backtest-history"
                          data-active-view="{{ 'transactions' if show_trade_details else 'metrics' }}"
                          data-trade-details-visible="{{ 'true' if show_trade_details else 'false' }}">
                     {% set show_probability_field = show_probability_field|default(selected_strategy_id in ['bayesian-price-field', 'lstm-price-field']) %}

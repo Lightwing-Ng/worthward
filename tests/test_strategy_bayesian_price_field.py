@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.30.5."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.31.0."""
 
 from __future__ import annotations
 
@@ -1146,8 +1146,8 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(presentation["schema"], "bayesian-price-field/v1")
         self.assertEqual(presentation["renderer"], "probability-grid-v1")
         self.assertEqual(presentation["model_version"], _MODEL_VERSION)
-        self.assertEqual(presentation["rows_above"], 10)
-        self.assertEqual(presentation["rows_below"], 10)
+        self.assertEqual(presentation["rows_above"], 12)
+        self.assertEqual(presentation["rows_below"], 12)
         self.assertEqual(presentation["columns"], 20)
         self.assertEqual(presentation["width_fraction"], 0.25)
         self.assertEqual(presentation["gap_px"], 2)

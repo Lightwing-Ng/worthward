@@ -1,4 +1,4 @@
-/* Shared Backtest probability-grid contracts. Code version: v0.34.3 */
+/* Shared Backtest probability-grid contracts. Code version: v0.35.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,8 +19,8 @@ const rawDates = ['2026-08-25', '2026-08-26', '2026-08-27'];
 const presentation = {
     schema: 'bayesian-price-field/v1',
     renderer: 'probability-grid-v1',
-    rows_above: 10,
-    rows_below: 10,
+    rows_above: 12,
+    rows_below: 12,
     columns: 20,
     width_fraction: 0.25,
     gap_px: 2,
@@ -52,7 +52,7 @@ test('new models reuse the versioned renderer contract without a model allowlist
 });
 
 test('exports the discrete probability-field geometry contract version', () => {
-    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.33.0');
+    assert.equal(grid.BACKTEST_PROBABILITY_GRID_VERSION, 'v0.34.0');
     assert.equal(grid.CELL_OPACITY_MAPPING, 'instant-contrast-power-v1');
     assert.deepEqual(grid.PRESENTATION_SCHEMAS, [
         'bayesian-price-field/v1',
@@ -71,8 +71,8 @@ test('accepts the versioned Bayesian and LSTM presentation schemas', () => {
     const normalized = grid.normalizePresentation(presentation, {raw_dates: rawDates, length: rawDates.length});
     assert.equal(normalized.schema, 'bayesian-price-field/v1');
     assert.equal(normalized.renderer, 'probability-grid-v1');
-    assert.equal(normalized.rows_above, 10);
-    assert.equal(normalized.rows_below, 10);
+    assert.equal(normalized.rows_above, 12);
+    assert.equal(normalized.rows_below, 12);
     assert.equal(normalized.columns, 20);
     assert.equal(normalized.gap_px, 2);
     assert.equal(normalized.padding_px, 8);
@@ -204,8 +204,8 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
         },
         {raw_dates: rawDates, length: rawDates.length},
     );
-    assert.equal(normalized.rows_above, 10);
-    assert.equal(normalized.rows_below, 10);
+    assert.equal(normalized.rows_above, 12);
+    assert.equal(normalized.rows_below, 12);
     assert.equal(normalized.columns, 20);
     assert.equal(normalized.gap_px, 2);
     assert.equal(normalized.padding_px, 64);
@@ -227,9 +227,9 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
         rowsBelow: 11,
         stepPixels: 4,
     });
-    assert.equal(geometry.rowsAbove, 10);
-    assert.equal(geometry.rowsBelow, 10);
-    assert.equal(geometry.rowCount, 20);
+    assert.equal(geometry.rowsAbove, 12);
+    assert.equal(geometry.rowsBelow, 12);
+    assert.equal(geometry.rowCount, 24);
     const horizontalGuideY = geometry.top
         + geometry.gridPaddingTop
         + (geometry.rowsAbove * geometry.cellSize)
@@ -237,7 +237,7 @@ test('bounds untrusted strategy-owned geometry and rejects asymmetric rows', () 
     assert.equal(horizontalGuideY, geometry.anchorY);
     assert.equal(
         grid.computeMaximumGridHalfHeight({rowsAbove: 2, rowsBelow: 11}),
-        grid.computeMaximumGridHalfHeight({rowsAbove: 10, rowsBelow: 10}),
+        grid.computeMaximumGridHalfHeight({rowsAbove: 12, rowsBelow: 12}),
     );
 });
 
@@ -311,7 +311,7 @@ test('carries the three-month reference cell size across longer ranges', () => {
     assert.equal(longerRange.cellSize + longerRange.gap, longerRange.slotWidth);
 });
 
-test('uses the half-plot cap and each chart boundary to floor the ten-row ceiling', () => {
+test('uses the half-plot cap and each chart boundary to floor the twelve-row ceiling', () => {
     const centered = grid.computeGridGeometry({
         chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
         anchorX: 200,
@@ -372,14 +372,14 @@ test('can preserve the complete row lattice for an independent detail surface', 
         chartArea: {left: 0, right: 1200, top: 0, bottom: 240},
         anchorX: 200,
         anchorY: 20,
-        rowsAbove: 10,
-        rowsBelow: 10,
+        rowsAbove: 12,
+        rowsBelow: 12,
         stepPixels: 6,
         limitRowsToChartArea: false,
     });
-    assert.equal(detailGeometry.rowsAbove, 10);
-    assert.equal(detailGeometry.rowsBelow, 10);
-    assert.equal(detailGeometry.rowCount, 20);
+    assert.equal(detailGeometry.rowsAbove, 12);
+    assert.equal(detailGeometry.rowsBelow, 12);
+    assert.equal(detailGeometry.rowCount, 24);
     assert.equal(detailGeometry.availableRowsAbove, 1);
     assert.equal(detailGeometry.availableRowsBelow, 17);
     assert.ok(detailGeometry.top < 0);
@@ -403,8 +403,8 @@ test('derives the resizer plot minimum from the same quantized horizontal lattic
         gapPx: 2,
         paddingPx: 8,
         minCellPx: 4,
-        rowsAbove: 10,
-        rowsBelow: 10,
+        rowsAbove: 12,
+        rowsBelow: 12,
         stepPixels: 6,
     });
     assert.ok(minimum);
@@ -412,12 +412,12 @@ test('derives the resizer plot minimum from the same quantized horizontal lattic
     assert.equal(minimum.columnCount, 20);
     assert.equal(minimum.daysPerColumn, probe.daysPerColumn);
     assert.equal(minimum.slotWidth, probe.slotWidth);
-    assert.equal(minimum.chartAreaMinimumHeight, 254);
+    assert.equal(minimum.chartAreaMinimumHeight, 302);
     assert.equal(
         minimum.chartAreaMinimumHeight,
         2 * grid.computeMaximumGridHalfHeight({
-            rowsAbove: 10,
-            rowsBelow: 10,
+            rowsAbove: 12,
+            rowsBelow: 12,
             gapPx: probe.gap,
             paddingPx: probe.padding,
             maxCellPx: probe.cellSize,
@@ -430,8 +430,8 @@ test('derives the resizer plot minimum from the same quantized horizontal lattic
         anchorY: minimum.chartAreaMinimumHeight / 2,
         stepPixels: 6,
     });
-    assert.equal(fitting.rowsAbove, 10);
-    assert.equal(fitting.rowsBelow, 10);
+    assert.equal(fitting.rowsAbove, 12);
+    assert.equal(fitting.rowsBelow, 12);
     assert.equal(fitting.cellSize, minimum.cellSize);
 });
 
@@ -629,7 +629,7 @@ test('keeps the instantaneous contrast curve scale-invariant for extreme probabi
     assert.deepEqual(mixed.map((entry) => entry.opacity), [0, 0, 0, 1, 1]);
 });
 
-test('builds square probability cells with ten green and ten red nonlinear rows', () => {
+test('builds square probability cells with twelve green and twelve red nonlinear rows', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
         anchorX: 200,
@@ -647,9 +647,9 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
         opacityTailRatio: 0.02,
         cellDisplayThresholdPct: 1,
     });
-    assert.equal(cells.length, 20 * 20);
-    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
-    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+    assert.equal(cells.length, 24 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 12 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 12 * 20);
     assert.ok(cells.every((cell) => cell.size === geometry.cellSize));
     assert.ok(cells.every((cell) => cell.size >= 4));
     assert.ok(cells.every((cell) => cell.probability >= 0 && cell.probability <= 1));
@@ -678,7 +678,7 @@ test('builds square probability cells with ten green and ten red nonlinear rows'
         .every((cell) => cell.opacity === 1));
 });
 
-test('detail price domains allocate all twenty rows independently of the overview Y scale', () => {
+test('detail price domains allocate all twenty-four rows independently of the overview Y scale', () => {
     const geometry = grid.computeGridGeometry({
         chartArea: {left: 0, right: 600, top: 0, bottom: 180},
         anchorX: 200,
@@ -698,14 +698,14 @@ test('detail price domains allocate all twenty rows independently of the overvie
         },
         cellDisplayThresholdPct: 0,
     });
-    assert.equal(cells.length, 20 * 20);
-    assert.equal(new Set(cells.map((cell) => cell.row)).size, 20);
-    assert.equal(cells[0].lowerPrice, 118);
+    assert.equal(cells.length, 24 * 20);
+    assert.equal(new Set(cells.map((cell) => cell.row)).size, 24);
+    assert.ok(Math.abs(cells[0].lowerPrice - (120 - (40 / 24))) < 1e-12);
     assert.equal(cells[0].upperPrice, 120);
     assert.equal(cells.at(-1).lowerPrice, 80);
-    assert.equal(cells.at(-1).upperPrice, 82);
-    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
-    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+    assert.ok(Math.abs(cells.at(-1).upperPrice - (80 + (40 / 24))) < 1e-12);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 12 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 12 * 20);
 });
 
 test('direct detail domains allocate equal log-return rows around the exact anchor boundary', () => {
@@ -738,16 +738,16 @@ test('direct detail domains allocate equal log-return rows around the exact anch
         },
         cellDisplayThresholdPct: 0,
     });
-    assert.equal(cells.length, 20 * 20);
+    assert.equal(cells.length, 24 * 20);
     const firstColumn = cells.filter((cell) => cell.column === 0);
     assert.ok(firstColumn.every((cell) => cell.lowerPrice > 0));
     assert.ok(firstColumn.every((cell) => (
-        Math.abs(Math.log(cell.upperPrice / cell.lowerPrice) - 0.02) < 1e-12
+        Math.abs(Math.log(cell.upperPrice / cell.lowerPrice) - (0.4 / 24)) < 1e-12
     )));
-    assert.equal(firstColumn.find((cell) => cell.row === 9).lowerPrice, anchorPrice);
-    assert.equal(firstColumn.find((cell) => cell.row === 10).upperPrice, anchorPrice);
-    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
-    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+    assert.equal(firstColumn.find((cell) => cell.row === 11).lowerPrice, anchorPrice);
+    assert.equal(firstColumn.find((cell) => cell.row === 12).upperPrice, anchorPrice);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 12 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 12 * 20);
     for (let horizon = 1; horizon <= 20; horizon += 1) {
         const mass = cells.filter((cell) => cell.horizon === horizon)
             .reduce((sum, cell) => sum + cell.probability, 0);
@@ -795,8 +795,8 @@ test('log detail row colors stay balanced when exp round-trips the anchor bounda
         },
         cellDisplayThresholdPct: 0,
     });
-    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 10 * 20);
-    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 10 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'up').length, 12 * 20);
+    assert.equal(cells.filter((cell) => cell.sign === 'down').length, 12 * 20);
 });
 
 test('a two-percent threshold keeps a direct-horizon PatchTST field visibly two-dimensional', () => {
@@ -844,7 +844,7 @@ test('a two-percent threshold keeps a direct-horizon PatchTST field visibly two-
     const visibleRows = new Set(
         cells.filter((cell) => cell.isVisible).map((cell) => cell.row),
     );
-    assert.equal(cells.length, 20 * 20);
+    assert.equal(cells.length, 24 * 20);
     const visibleCells = cells.filter((cell) => cell.isVisible);
     const visibleByColumn = Array.from({length: 20}, (_, column) => (
         visibleCells.filter((cell) => cell.column === column).length
@@ -866,8 +866,8 @@ test('a two-percent threshold keeps a direct-horizon PatchTST field visibly two-
             assert.equal(current.opacity, previous.opacity);
         }
     }
-    assert.ok(visibleRows.has(9));
-    assert.ok(visibleRows.has(10));
+    assert.ok(visibleRows.has(11));
+    assert.ok(visibleRows.has(12));
 });
 
 test('threshold-relative contrast keeps the same endpoints and nonlinear palette', () => {

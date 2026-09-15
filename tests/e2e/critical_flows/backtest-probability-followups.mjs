@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -282,7 +282,7 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
         .toHaveClass(/is-visible/);
     await expect.poll(() => page.evaluate(() => (
         Number(document.querySelector('#backtest_probability_detail_panel')?.dataset.rowCount) || 0
-    ))).toBe(20);
+    ))).toBe(24);
 
     const lattice = await page.evaluate(() => {
         const canvas = document.querySelector('#tradePriceChart');
@@ -310,7 +310,7 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
         };
     });
     expect(lattice.tooltipVisible).toBe(true);
-    expect(lattice.requestedRows).toBe(20);
+    expect(lattice.requestedRows).toBe(24);
     expect(lattice.hoverRows).toBeLessThan(lattice.requestedRows);
     expect(lattice.hoverRowsAbove + lattice.hoverRowsBelow).toBe(lattice.hoverRows);
     expect(lattice.detailRows).toBe(lattice.requestedRows);
@@ -318,6 +318,111 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
     expect(lattice.columns).toBe(20);
     expect(lattice.detailTopInset).toBeGreaterThanOrEqual(-1);
     expect(lattice.detailBottomInset).toBeGreaterThanOrEqual(-1);
+});
+
+test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 732, height: 1232});
+    await page.goto(
+        '/workspaces/backtest?ticker=QQQ&range=5y&strategy=bayesian-price-field'
+        + '&cell_display_threshold=2.50&training_window=30&chip_window=41'
+        + '&prior_strength=1.51&show_trade_details=0',
+    );
+    await expect.poll(() => page.evaluate(() => {
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        return presentation
+            ? [presentation.columns, presentation.rows_above, presentation.rows_below]
+            : null;
+    }), {timeout: 60_000}).toEqual([20, 12, 12]);
+
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(detailPanel).toBeVisible();
+    await expect(detailPanel).toHaveAttribute('data-column-count', '20');
+    await expect(detailPanel).toHaveAttribute('data-row-count', '24');
+    const detailGrid = detailPanel.locator('[data-backtest-probability-detail-grid]');
+    await expect.poll(() => detailGrid.locator('.backtest-probability-detail-cell').count())
+        .toBe(480);
+
+    const geometry = await detailGrid.evaluate((grid) => {
+        const viewport = grid.parentElement;
+        const cells = Array.from(grid.querySelectorAll('.backtest-probability-detail-cell'));
+        const findCell = (row, column) => cells.find((cell) => (
+            Number(cell.dataset.row) === row && Number(cell.dataset.column) === column
+        ));
+        const firstRect = findCell(0, 0)?.getBoundingClientRect();
+        const nextColumnRect = findCell(0, 1)?.getBoundingClientRect();
+        const nextRowRect = findCell(1, 0)?.getBoundingClientRect();
+        const lastColumnRect = findCell(0, 19)?.getBoundingClientRect();
+        const gridRect = grid.getBoundingClientRect();
+        const viewportRect = viewport?.getBoundingClientRect();
+        const xAxis = grid.closest('.backtest-probability-detail-main')
+            ?.querySelector('[data-backtest-probability-detail-x-axis]');
+        const xAxisRect = xAxis?.getBoundingClientRect();
+        const tickRects = Array.from(
+            xAxis?.querySelectorAll('.backtest-probability-detail-x-tick') || [],
+            (tick) => tick.getBoundingClientRect(),
+        ).sort((left, right) => left.left - right.left);
+        return {
+            bottomInset: viewportRect ? viewportRect.bottom - gridRect.bottom : Number.NaN,
+            cellCount: cells.length,
+            columns: new Set(cells.map((cell) => cell.dataset.column)).size,
+            firstColumnInset: firstRect ? firstRect.left - gridRect.left : Number.NaN,
+            horizontalGap: firstRect && nextColumnRect
+                ? nextColumnRect.left - firstRect.right
+                : Number.NaN,
+            leftInset: viewportRect ? gridRect.left - viewportRect.left : Number.NaN,
+            minimumCellHeight: Math.min(...cells.map((cell) => cell.getBoundingClientRect().height)),
+            minimumCellWidth: Math.min(...cells.map((cell) => cell.getBoundingClientRect().width)),
+            lastColumnInset: lastColumnRect ? gridRect.right - lastColumnRect.right : Number.NaN,
+            rightInset: viewportRect ? viewportRect.right - gridRect.right : Number.NaN,
+            rows: new Set(cells.map((cell) => cell.dataset.row)).size,
+            squareDelta: Math.max(...cells.map((cell) => {
+                const rect = cell.getBoundingClientRect();
+                return Math.abs(rect.width - rect.height);
+            })),
+            topInset: viewportRect ? gridRect.top - viewportRect.top : Number.NaN,
+            tickCount: tickRects.length,
+            tickLeftInset: xAxisRect && tickRects.length
+                ? Math.min(...tickRects.map((rect) => rect.left - xAxisRect.left))
+                : Number.NaN,
+            tickOverlap: tickRects.some((rect, index) => (
+                index > 0 && tickRects[index - 1].right > rect.left + 0.5
+            )),
+            tickRightInset: xAxisRect && tickRects.length
+                ? Math.min(...tickRects.map((rect) => xAxisRect.right - rect.right))
+                : Number.NaN,
+            upRows: new Set(cells.filter((cell) => cell.classList.contains('is-up'))
+                .map((cell) => cell.dataset.row)).size,
+            downRows: new Set(cells.filter((cell) => cell.classList.contains('is-down'))
+                .map((cell) => cell.dataset.row)).size,
+            verticalGap: firstRect && nextRowRect
+                ? nextRowRect.top - firstRect.bottom
+                : Number.NaN,
+        };
+    });
+    expect(geometry.cellCount).toBe(480);
+    expect(geometry.columns).toBe(20);
+    expect(geometry.rows).toBe(24);
+    expect(geometry.upRows).toBe(12);
+    expect(geometry.downRows).toBe(12);
+    expect(geometry.minimumCellWidth).toBeGreaterThan(0);
+    expect(geometry.minimumCellHeight).toBeGreaterThan(0);
+    expect(geometry.squareDelta).toBeLessThanOrEqual(0.1);
+    expect(geometry.horizontalGap).toBeCloseTo(2, 1);
+    expect(geometry.verticalGap).toBeCloseTo(2, 1);
+    expect(geometry.topInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.bottomInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.leftInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.rightInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.firstColumnInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.lastColumnInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.tickCount).toBeGreaterThan(1);
+    expect(geometry.tickOverlap).toBe(false);
+    expect(geometry.tickLeftInset).toBeGreaterThanOrEqual(-1);
+    expect(geometry.tickRightInset).toBeGreaterThanOrEqual(-1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
+        .toBeLessThanOrEqual(0);
 });
 
 test('shows the full cumulative probability for a hovered Bayesian detail row', async ({page}) => {
@@ -586,4 +691,3 @@ test('keeps available Bayesian ranges near the three-month price-field cell size
             .toBeGreaterThanOrEqual(geometry.cellSizeTarget - 1e-9);
     }
 });
-

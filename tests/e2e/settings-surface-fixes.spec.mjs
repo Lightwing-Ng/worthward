@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1024, 390]) {
@@ -26,6 +26,43 @@ for (const width of [1024, 390]) {
             expect(material.blur).toBe(true);
             expect(material.radius).toBe('999px');
             expect(material.width).toBeLessThanOrEqual(material.available + 1);
+            const saveAlignment = await page.evaluate(() => {
+                const form = document.querySelector('[data-settings-language-form]');
+                const button = document.querySelector('[data-language-save-button]');
+                const formBounds = form.getBoundingClientRect();
+                const buttonBounds = button.getBoundingClientRect();
+                return {
+                    rightDelta: Math.abs(formBounds.right - buttonBounds.right),
+                    actionClasses: button.parentElement.className,
+                };
+            });
+            expect(saveAlignment.rightDelta).toBeLessThanOrEqual(1);
+            expect(saveAlignment.actionClasses).toContain('settings-form-actions');
+
+            await page.goto('/settings/style-tokens');
+            const rangeThumbMaterial = await page.getByRole('slider', {name: 'QQQ minimum', exact: true}).evaluate(() => {
+                const probe = document.createElement('span');
+                const canvasProbe = document.createElement('span');
+                const whiteProbe = document.createElement('span');
+                probe.style.background = 'var(--strategy-range-limit-thumb-background)';
+                canvasProbe.style.background = 'var(--theme-background)';
+                whiteProbe.style.background = 'var(--color-white-adaptive)';
+                document.body.append(probe, canvasProbe, whiteProbe);
+                const result = {
+                    actual: getComputedStyle(probe).backgroundColor,
+                    canvas: getComputedStyle(canvasProbe).backgroundColor,
+                    adaptiveWhite: getComputedStyle(whiteProbe).backgroundColor,
+                };
+                probe.remove();
+                canvasProbe.remove();
+                whiteProbe.remove();
+                return result;
+            });
+            expect(rangeThumbMaterial.actual).toBe(rangeThumbMaterial.canvas);
+            if (colorScheme === 'dark') {
+                expect(rangeThumbMaterial.actual).not.toBe(rangeThumbMaterial.adaptiveWhite);
+            }
+
             await page.goto('/settings/network');
             const mail = page.locator('[data-service-key="smtp"] .settings-service-heading');
             await expect(mail).toContainText("Yahoo Mail SMTP");
@@ -47,6 +84,7 @@ for (const width of [1024, 390]) {
             }));
             expect(masks.length).toBeGreaterThan(0);
             expect(masks.every(mask => mask.inset === '0px' && mask.inside)).toBe(true);
+            await expect(page.locator('.settings-service-row').first()).toHaveCSS('overflow', 'clip');
             await page.goto('/settings/strategies');
             const summary = page.locator('.settings-strategy-summary').nth(2);
             const arrow = await summary.evaluate(el => {
@@ -61,3 +99,60 @@ for (const width of [1024, 390]) {
         });
     }
 }
+
+test('Settings optimistic navigation retains one document and bounds the dark skeleton', async ({page}) => {
+    await page.setViewportSize({width: 1007, height: 1355});
+    await page.emulateMedia({colorScheme: 'dark'});
+    const networkResponse = await page.request.get('/settings/network');
+    expect(networkResponse.ok()).toBe(true);
+    const networkMarkup = await networkResponse.text();
+    await page.route('**/settings/network', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        await route.fulfill({
+            body: networkMarkup,
+            contentType: 'text/html; charset=utf-8',
+            status: networkResponse.status(),
+        });
+    });
+    await page.goto('/settings/clear-caches');
+    await page.evaluate(() => {
+        window.__settingsDocumentToken = 'retained-settings-document';
+        window.__settingsViewTransitionCalls = 0;
+        document.startViewTransition = (callback) => {
+            window.__settingsViewTransitionCalls += 1;
+            callback();
+            return {finished: Promise.resolve()};
+        };
+    });
+
+    await page.locator('.settings-nav-network').click();
+    await expect(page.locator('.navigation-skeleton-root[data-navigation-skeleton]')).toBeVisible();
+    const pendingState = await page.evaluate(() => {
+        const shell = document.querySelector('#settings_workspace_shell').getBoundingClientRect();
+        const scrollport = document.querySelector('#settings_workspace_shell > .settings-content-scrollport');
+        const scrollportBounds = scrollport.getBoundingClientRect();
+        const cards = [...scrollport.querySelectorAll('.navigation-skeleton-card')];
+        return {
+            hardNavigation: document.body.classList.contains('is-page-navigating'),
+            token: window.__settingsDocumentToken,
+            transitionCalls: window.__settingsViewTransitionCalls,
+            scrollportInsideShell: scrollportBounds.left >= shell.left - 1 && scrollportBounds.right <= shell.right + 1,
+            cardsInsideScrollport: cards.length > 0 && cards.every((card) => {
+                const bounds = card.getBoundingClientRect();
+                return bounds.left >= scrollportBounds.left - 1 && bounds.right <= scrollportBounds.right + 1;
+            }),
+        };
+    });
+    expect(pendingState).toEqual({
+        hardNavigation: false,
+        token: 'retained-settings-document',
+        transitionCalls: 0,
+        scrollportInsideShell: true,
+        cardsInsideScrollport: true,
+    });
+
+    await expect(page).toHaveURL(/\/settings\/network$/);
+    await expect(page.locator('[data-navigation-skeleton]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__settingsDocumentToken)).toBe('retained-settings-document');
+    expect(await page.evaluate(() => window.__settingsViewTransitionCalls)).toBe(0);
+});

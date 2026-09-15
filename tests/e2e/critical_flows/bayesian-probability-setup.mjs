@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -98,8 +98,8 @@ export async function prepareBayesianProbabilityField(page) {
         result.strategy_presentation = {
             schema: 'bayesian-price-field/v1',
             renderer: 'probability-grid-v1',
-            rows_above: 10,
-            rows_below: 10,
+            rows_above: 12,
+            rows_below: 12,
             columns: 20,
             width_fraction: 0.25,
             gap_px: 2,
@@ -1199,8 +1199,8 @@ export async function prepareBayesianProbabilityField(page) {
     expect(contract.rows).toBe(contract.rowsUp + contract.rowsDown);
     expect(contract.rowsUp).toBeGreaterThan(0);
     expect(contract.rowsDown).toBeGreaterThanOrEqual(0);
-    expect(contract.rowsUp).toBeLessThanOrEqual(10);
-    expect(contract.rowsDown).toBeLessThanOrEqual(10);
+    expect(contract.rowsUp).toBeLessThanOrEqual(12);
+    expect(contract.rowsDown).toBeLessThanOrEqual(12);
     expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsPerSide);
     expect(contract.rowsDown).toBeLessThanOrEqual(contract.availableRowsPerSide);
     expect(contract.rowsUp).toBeLessThanOrEqual(contract.availableRowsAbove);
@@ -1291,6 +1291,9 @@ export async function prepareBayesianProbabilityField(page) {
             `${cell.dataset.row}:${cell.dataset.column}`,
             cell,
         ]));
+        const firstDetailCellRect = detailCellByKey.get('0:0')?.getBoundingClientRect();
+        const nextDetailColumnRect = detailCellByKey.get('0:1')?.getBoundingClientRect();
+        const nextDetailRowRect = detailCellByKey.get('1:0')?.getBoundingClientRect();
         const hoverCellDataMatches = tooltipCells.every((cell) => {
             const hoverRow = Number(cell.dataset.row);
             const detailRow = cell.classList.contains('is-up')
@@ -1370,8 +1373,11 @@ export async function prepareBayesianProbabilityField(page) {
             multiStepKind: presentation?.multi_step_kind || null,
             expectedDateText,
             firstDateText: firstTick?.textContent?.trim() || '',
-            gap: detailCellRects[0] && detailCellRects[1]
-                ? detailCellRects[1].left - detailCellRects[0].right
+            columnGap: firstDetailCellRect && nextDetailColumnRect
+                ? nextDetailColumnRect.left - firstDetailCellRect.right
+                : Number.NaN,
+            rowGap: firstDetailCellRect && nextDetailRowRect
+                ? nextDetailRowRect.top - firstDetailCellRect.bottom
                 : Number.NaN,
             hoverCellDataMatches,
             detailContractCount: panel?.querySelectorAll('[data-backtest-probability-detail-contract]').length || 0,
@@ -1407,9 +1413,15 @@ export async function prepareBayesianProbabilityField(page) {
     expect(detailContract.forecastDateTitleCount).toBe(0);
     expect(detailContract.columns).toBe(20);
     expect(detailContract.rows).toBe(detailContract.requestedRows);
-    expect(detailContract.detailRowsAbove).toBe(10);
+    expect(detailContract.rows).toBe(24);
+    expect(detailContract.cellCount).toBe(480);
+    expect(detailContract.detailRowsAbove).toBe(12);
     expect(detailContract.detailCellSizesPositive).toBe(true);
-    expect(detailContract.gap).toBeCloseTo(2, 1);
+    expect(detailContract.columnGap).toBeGreaterThan(0);
+    expect(detailContract.columnGap).toBeLessThanOrEqual(2.05);
+    expect(detailContract.rowGap).toBeGreaterThan(0);
+    expect(detailContract.rowGap).toBeLessThanOrEqual(2.05);
+    expect(Math.abs(detailContract.columnGap - detailContract.rowGap)).toBeLessThanOrEqual(0.1);
     expect(detailContract.xTickCount).toBeGreaterThanOrEqual(1);
     expect(detailContract.xTickCount).toBeLessThanOrEqual(9);
     expect(detailContract.xTicksDoNotOverlap).toBe(true);

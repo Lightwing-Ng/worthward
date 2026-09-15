@@ -1,5 +1,17 @@
 # Known issues and operating constraints
 
+Settings navigation and effect-boundary repair, 14 Sep 2026: Settings section
+links now have one optimistic-navigation owner. The global hard-navigation path
+does not intercept those links, and the Settings replacement path does not run a
+document View Transition. The final region replaces the complete skeleton wrapper
+and its live status, preventing current content from remaining under `aria-hidden`.
+The optimistic skeleton now reproduces the real content-scrollport hierarchy; the
+scrollport no longer expands 48px beyond its inline parent, while network service
+rows clip their own pending effects. Language save actions use the standard action
+row aligned to the form end, and allocation-limit handles use the active theme canvas
+instead of adaptive white. The isolated `1,007 × 1,355` dark-mode regression retains
+one document, bounds the skeleton, and completes without a full-page exposure flash.
+
 Price Field metric interpretation, 14 Sep 2026: Backtest Metrics now presents
 standardized 1–20 day CRPS skill against a causal zero-drift volatility
 baseline instead of the ambiguous `100% * (1 - Brier loss)` probability score.
@@ -245,7 +257,24 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.254.0`
+Documentation version: `v1.256.1`
+
+Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
+now publishes one reusable 20-column by 24-row display lattice with 12 rows
+above and 12 rows below the signal-close anchor. The floating field still
+applies its plot-height and chart-boundary caps independently, while the
+contained detail surface always requests the complete row contract and derives
+its square-grid width from the declared shape instead of a ten-row literal.
+This is a presentation-resolution change only: the 20 forecast horizons,
+direct-horizon identities, strategy signals, model moments, and standardized
+CRPS skill versus baseline remain unchanged. Focused Python and JavaScript
+contract tests cover the shared shape, the 480-cell detail lattice, exact-square
+geometry, asymmetric inputs, and unchanged scoring boundaries. Isolated
+Chromium acceptance at the reported 732 by 1,232 viewport passes through the
+dedicated Backtest Price Field regression. The overview minimum-height
+conversion also reserves one CSS pixel for split-grid rounding, preventing a
+stable Home-position chart from dropping the twelfth complete row by a
+subpixel.
 
 Local browser infrastructure audit, 6 Sep 2026: the original disclosure-layout
 case requested three years of LSTM data with the default GPU backend. It timed

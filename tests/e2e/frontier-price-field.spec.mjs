@@ -1,4 +1,4 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.6.1 */
+/* Additional neural Price Field GUI contracts. Code version: v1.7.0 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -90,6 +90,7 @@ async function directHoverDetailSemantics(page, {height = 1404} = {}) {
             .reduce((sum, cell) => sum + Number(cell.dataset.probability), 0));
         const gridRect = detailGrid?.getBoundingClientRect();
         const cellRect = detailCells[0]?.getBoundingClientRect();
+        const gridStyle = detailGrid ? getComputedStyle(detailGrid) : null;
         return {
             daysPerColumn: Number(grid?.dataset.daysPerColumn),
             horizonStep: Number(grid?.dataset.horizonStep),
@@ -113,6 +114,8 @@ async function directHoverDetailSemantics(page, {height = 1404} = {}) {
             gridHeight: Number(gridRect?.height),
             cellWidth: Number(cellRect?.width),
             cellHeight: Number(cellRect?.height),
+            columnGap: Number.parseFloat(gridStyle?.columnGap || ''),
+            rowGap: Number.parseFloat(gridStyle?.rowGap || ''),
             threshold,
         };
     });
@@ -220,7 +223,12 @@ for (const width of [1024, 390]) {
                     Math.log(parity.lowerPrice / parity.anchorPrice)
                     + Math.log(parity.upperPrice / parity.anchorPrice),
                 )).toBeLessThan(1e-9);
-                expect(Math.abs(parity.gridWidth - parity.gridHeight)).toBeLessThanOrEqual(1);
+                expect(parity.columnGap).toBeCloseTo(2, 6);
+                expect(parity.rowGap).toBeCloseTo(2, 6);
+                expect(
+                    (parity.gridWidth + parity.columnGap)
+                    / (parity.gridHeight + parity.rowGap),
+                ).toBeCloseTo(20 / 24, 3);
                 expect(Math.abs(parity.cellWidth - parity.cellHeight)).toBeLessThanOrEqual(0.25);
                 expect(parity.threshold).toBe(1);
                 if (architecture === 'moderntcn') {

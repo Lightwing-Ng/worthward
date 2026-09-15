@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.6.1 */
+/* Neural Price Field UI integration. Code version: v1.7.0 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -64,10 +64,11 @@ for (const width of [1024, 390]) {
             const detailDomain = await page.locator('#backtest_probability_detail_panel').evaluate((panel) => {
                 const grid = panel.querySelector('[data-backtest-probability-detail-grid]');
                 const firstCell = grid?.querySelector('[data-horizon]');
-                const upperAnchorCell = grid?.querySelector('[data-row="9"][data-column="0"]');
-                const lowerAnchorCell = grid?.querySelector('[data-row="10"][data-column="0"]');
+                const upperAnchorCell = grid?.querySelector('[data-row="11"][data-column="0"]');
+                const lowerAnchorCell = grid?.querySelector('[data-row="12"][data-column="0"]');
                 const gridRect = grid?.getBoundingClientRect();
                 const cellRect = firstCell?.getBoundingClientRect();
+                const gridStyle = grid ? getComputedStyle(grid) : null;
                 return {
                     kind: panel.dataset.priceDomain,
                     scale: panel.dataset.priceScale,
@@ -80,6 +81,8 @@ for (const width of [1024, 390]) {
                     gridHeight: Number(gridRect?.height),
                     cellWidth: Number(cellRect?.width),
                     cellHeight: Number(cellRect?.height),
+                    columnGap: Number.parseFloat(gridStyle?.columnGap || ''),
+                    rowGap: Number.parseFloat(gridStyle?.rowGap || ''),
                 };
             });
             expect(detailDomain.kind).toBe('direct-forecast-log');
@@ -92,7 +95,12 @@ for (const width of [1024, 390]) {
             )).toBeLessThan(1e-9);
             expect(detailDomain.upperAnchorBoundary).toBeCloseTo(detailDomain.anchor, 9);
             expect(detailDomain.lowerAnchorBoundary).toBeCloseTo(detailDomain.anchor, 9);
-            expect(Math.abs(detailDomain.gridWidth - detailDomain.gridHeight)).toBeLessThanOrEqual(1);
+            expect(detailDomain.columnGap).toBeCloseTo(2, 6);
+            expect(detailDomain.rowGap).toBeCloseTo(2, 6);
+            expect(
+                (detailDomain.gridWidth + detailDomain.columnGap)
+                / (detailDomain.gridHeight + detailDomain.rowGap),
+            ).toBeCloseTo(20 / 24, 3);
             expect(Math.abs(detailDomain.cellWidth - detailDomain.cellHeight)).toBeLessThanOrEqual(0.25);
             if (architecture === 'timexer') await page.screenshot({path: testInfo.outputPath(`neural-price-field-${width}.png`), fullPage: true});
         }
