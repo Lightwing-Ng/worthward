@@ -1,4 +1,4 @@
-/* Code version: v0.73.1 */
+/* Code version: v0.74.1 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -492,6 +492,92 @@
         reducedMotionMedia.addListener(() => clearSidebarGelMotion());
     }
 
+    const bindWorkspaceControlsOverlay = () => {
+        const shell = $("[data-workspace-controls-shell]");
+        const panel = $("[data-workspace-controls-panel]");
+        const toggle = $("[data-workspace-controls-toggle]");
+        const backdrop = $("[data-workspace-controls-backdrop]");
+        if (
+            !(shell instanceof HTMLElement)
+            || !(panel instanceof HTMLElement)
+            || !(toggle instanceof HTMLButtonElement)
+            || !(backdrop instanceof HTMLButtonElement)
+        ) {
+            return;
+        }
+
+        const overlayMedia = responsive.media("sidebarOverlayMax");
+        const storageKey = String(shell.dataset.workspaceControlsStorageKey || "").trim();
+        let isOpen = false;
+
+        const isGlobalSidebarOpen = () => (
+            sidebarToggle instanceof HTMLButtonElement
+            && sidebarToggle.getAttribute("aria-expanded") === "true"
+        );
+        const readRememberedState = () => {
+            if (!storageKey) return false;
+            try {
+                return preferenceStorage.session.getItem(storageKey) === "true";
+            } catch (_error) {
+                return false;
+            }
+        };
+        const rememberState = (value) => {
+            if (!storageKey) return;
+            try {
+                preferenceStorage.session.setItem(storageKey, String(Boolean(value)));
+            } catch (_error) {
+            }
+        };
+        const applyState = (requestedOpen, {remember = false, returnFocus = false} = {}) => {
+            const isOverlay = overlayMedia.matches;
+            const isToggleAvailable = isOverlay && !isGlobalSidebarOpen();
+            isOpen = isToggleAvailable && Boolean(requestedOpen);
+            shell.classList.toggle("is-controls-overlay-open", isOpen);
+            toggle.hidden = !isToggleAvailable;
+            toggle.setAttribute("aria-hidden", String(!isToggleAvailable));
+            toggle.setAttribute("aria-expanded", String(isOpen));
+            panel.setAttribute("aria-hidden", String(isOverlay && !isOpen));
+            if ("inert" in panel) panel.inert = isOverlay && !isOpen;
+            backdrop.hidden = !isOpen;
+            backdrop.setAttribute("aria-hidden", String(!isOpen));
+            backdrop.tabIndex = isOpen ? 0 : -1;
+            if ("inert" in backdrop) backdrop.inert = !isOpen;
+            if (remember && isOverlay) rememberState(isOpen);
+            if (returnFocus && isToggleAvailable) toggle.focus({preventScroll: true});
+        };
+        const onToggle = () => applyState(!isOpen, {remember: true});
+        const onBackdrop = () => applyState(false, {remember: true, returnFocus: true});
+        const onGlobalSidebarStateChange = () => {
+            if (isGlobalSidebarOpen()) applyState(false, {remember: isOpen});
+            else applyState(false);
+        };
+        const onKeydown = (event) => {
+            if (event.key !== "Escape" || !isOpen) return;
+            event.preventDefault();
+            applyState(false, {remember: true, returnFocus: true});
+        };
+        const onMediaChange = () => applyState(overlayMedia.matches && readRememberedState());
+
+        toggle.addEventListener("click", onToggle);
+        backdrop.addEventListener("click", onBackdrop);
+        const globalSidebarObserver = sidebarToggle instanceof HTMLButtonElement
+            ? new MutationObserver(onGlobalSidebarStateChange)
+            : null;
+        globalSidebarObserver?.observe(sidebarToggle, {
+            attributes: true,
+            attributeFilter: ["aria-expanded"],
+        });
+        document.addEventListener("keydown", onKeydown);
+        if (typeof overlayMedia.addEventListener === "function") {
+            overlayMedia.addEventListener("change", onMediaChange);
+        } else if (typeof overlayMedia.addListener === "function") {
+            overlayMedia.addListener(onMediaChange);
+        }
+        applyState(overlayMedia.matches && readRememberedState());
+    };
+    bindWorkspaceControlsOverlay();
+
 
     const form = $("form.controls");
     const comparisonMetricInputs = $$("[data-comparison-metric-input]");
@@ -545,7 +631,7 @@
 
     const appModuleSpecs = Object.freeze([
         ["WORTHWARD_APP_CHART_EXPORT", "app/chart-export.js", "app-chart-export-v1.0.0"],
-        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.3.0"],
+        ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.3.1"],
         ["WORTHWARD_APP_WORKSPACE_ENHANCEMENTS", "app/workspace-enhancements.js", "app-workspace-enhancements-v1.0.0"],
         ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.2.1"],
         ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.0.2"],

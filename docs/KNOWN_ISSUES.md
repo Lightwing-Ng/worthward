@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Ticker-comparison controls overlay, 16 Sep 2026: at the registered 900 px
+sidebar-overlay breakpoint and below, the Ticker comparison controls now reuse
+Backtest's shared workspace-controls overlay instead of consuming a permanent
+312 px results column. The panel defaults closed, keeps an independent remembered
+session state, returns focus after Escape, and cannot remain open beside global
+navigation. Desktop widths retain the existing two-column layout. The user-owned
+8688 process may continue serving its cached template and asset keys until the
+owner performs the normal manual restart.
+
 Stock-details interaction performance, 16 Sep 2026: price-chart pointer events
 are coalesced to one commit per animation frame, while the geometry- and
 theme-dependent trade-marker Glow raster is reused across hover-only redraws.
@@ -300,7 +309,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.257.3`
+Documentation version: `v1.258.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 (() => {
     const create = (context) => {
         const {
@@ -221,7 +221,7 @@
             const fieldCount = targetView === "backtest" || targetView === "dca" ? 10 : 8;
             const elementName = targetView === "tickers" || targetView === "prices" ? "aside" : "article";
             const backtestAttributes = targetView === "backtest" || targetView === "dca"
-                ? ' id="backtest_parameter_panel" data-backtest-parameter-panel'
+                ? ' id="backtest_parameter_panel" data-workspace-controls-panel data-backtest-parameter-panel'
                 : "";
             return `
                 <${elementName} class="chart-surface workspace-mode-controls-surface navigation-skeleton-card navigation-skeleton-controls"
@@ -305,7 +305,7 @@
                 targetView === "prices" ? "price-compare-workspace" : "",
                 profile.isMarketCap ? "market-cap-compare-workspace" : "",
                 targetView === "portfolio" ? "portfolio-workspace" : "",
-                isBacktest ? "backtest-workspace-shell" : "",
+                isBacktest ? "workspace-controls-overlay-shell backtest-workspace-shell" : "",
                 "navigation-skeleton-page",
             ].filter(Boolean).join(" ");
             let resultsMarkup = "";
@@ -331,7 +331,7 @@
             }
             return `
                 <section class="${shellClasses}"
-                         data-navigation-skeleton-view="${escapeSkeletonText(targetView)}"${isBacktest ? " data-backtest-workspace-shell" : ""}>
+                         data-navigation-skeleton-view="${escapeSkeletonText(targetView)}"${isBacktest ? " data-workspace-controls-shell data-backtest-workspace-shell" : ""}>
                     ${buildWorkspaceNavigationTitleCard(profile.pageTitle)}
                     <div class="workspace-mode-layout">
                         ${buildWorkspaceNavigationControls(targetView)}
@@ -486,10 +486,10 @@
             const appShell = document.querySelector(".app-shell");
             if (!(appShell instanceof HTMLElement)) return;
             const toggle = document.createElement("span");
-            toggle.className = "sidebar-icon-button sidebar-secondary-button backtest-parameter-toggle navigation-skeleton-backtest-toggle";
+            toggle.className = "sidebar-icon-button sidebar-secondary-button workspace-controls-toggle backtest-parameter-toggle navigation-skeleton-backtest-toggle";
             toggle.dataset.navigationSkeletonBacktestToggle = "";
             toggle.setAttribute("aria-hidden", "true");
-            toggle.innerHTML = '<span class="icon icon-backtest-parameters" aria-hidden="true"></span>';
+            toggle.innerHTML = '<span class="icon icon-workspace-controls icon-backtest-parameters" aria-hidden="true"></span>';
             appShell.before(toggle);
         };
         const captureOptimisticNavigationSnapshot = () => {

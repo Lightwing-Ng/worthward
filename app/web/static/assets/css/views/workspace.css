@@ -1,4 +1,4 @@
-/* Code version: v1.28.1 */
+/* Code version: v1.29.1 */
 /* Keep dismiss actions above modal content without reserving a full-height rail. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -119,12 +119,12 @@
     margin-bottom: 0;
 }
 
-.backtest-parameter-toggle,
-.backtest-parameter-backdrop {
+.workspace-controls-toggle,
+.workspace-controls-backdrop {
     display: none;
 }
 
-.icon-backtest-parameters {
+.icon-workspace-controls {
     width: 20px;
     height: 20px;
     background-color: currentColor;
@@ -132,7 +132,7 @@
     -webkit-mask: url("/static/images/arrowtriangle.forward.inset.filled.trailingthird.rectangle.svg") center/contain no-repeat;
 }
 
-.backtest-parameter-toggle[aria-expanded="true"] .icon-backtest-parameters {
+.workspace-controls-toggle[aria-expanded="true"] .icon-workspace-controls {
     mask-image: url("/static/images/arrowtriangle.backward.inset.filled.trailingthird.rectangle.svg");
     -webkit-mask-image: url("/static/images/arrowtriangle.backward.inset.filled.trailingthird.rectangle.svg");
 }
@@ -157,7 +157,7 @@
     overflow: hidden;
 }
 
-.workspace-mode-controls-surface[data-backtest-parameter-panel] {
+.workspace-mode-controls-surface[data-workspace-controls-panel] {
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
@@ -248,7 +248,7 @@
         height: auto;
     }
 
-    .workspace-mode-controls-surface[data-backtest-parameter-panel] {
+    .workspace-mode-controls-surface[data-workspace-controls-panel] {
         height: auto;
         overflow: visible;
         overscroll-behavior-y: auto;
@@ -323,12 +323,12 @@
 }
 
 @media (max-width: 900px) {
-    .backtest-workspace-shell {
+    .workspace-controls-overlay-shell {
         --workspace-title-rail-collapsed-pad-inline-start: calc(
             var(--settings-round-icon-button-size) * 2
             + var(--layout-edge-gap) * 3
         );
-        --backtest-parameter-overlay-content-start: calc(
+        --workspace-controls-overlay-content-start: calc(
             var(--global-quick-actions-top)
             - var(--sidebar-overlay-inset-top)
             + var(--settings-round-icon-button-size)
@@ -336,8 +336,11 @@
         );
     }
 
-    .workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card,
-    .workspace > .navigation-skeleton-root > .backtest-workspace-shell:first-child > .workspace-mode-title-card {
+    .workspace > .workspace-controls-overlay-shell:first-child > .workspace-mode-title-card,
+    .workspace > .navigation-skeleton-root > .workspace-controls-overlay-shell:first-child > .workspace-mode-title-card {
+        width: 100%;
+        box-sizing: border-box;
+        align-self: stretch;
         min-height: var(--workspace-title-rail-height);
         padding-top: var(--workspace-title-rail-pad-block-start);
         padding-bottom: 0;
@@ -347,13 +350,13 @@
         transition: none;
     }
 
-    .backtest-workspace-shell > .workspace-mode-title-card > .report-heading-row {
+    .workspace-controls-overlay-shell > .workspace-mode-title-card > .report-heading-row {
         width: 100%;
         min-height: var(--workspace-title-rail-control-height);
         margin-bottom: 0;
     }
 
-    .backtest-parameter-toggle {
+    .workspace-controls-toggle {
         position: fixed;
         top: var(--global-quick-actions-top);
         left: calc(
@@ -371,7 +374,7 @@
         touch-action: manipulation;
     }
 
-    .backtest-parameter-backdrop {
+    .workspace-controls-backdrop {
         position: fixed;
         inset: 0;
         z-index: calc(var(--layer-modal-overlay) - 2);
@@ -387,16 +390,16 @@
         touch-action: none;
     }
 
-    .backtest-parameter-backdrop:not([hidden]) {
+    .workspace-controls-backdrop:not([hidden]) {
         display: block;
     }
 
-    .backtest-workspace-shell > .workspace-mode-layout {
+    .workspace-controls-overlay-shell > .workspace-mode-layout {
         grid-template-columns: minmax(0, 1fr);
         gap: 0;
     }
 
-    .backtest-workspace-shell > .workspace-mode-layout > [data-backtest-parameter-panel] {
+    .workspace-controls-overlay-shell > .workspace-mode-layout > [data-workspace-controls-panel] {
         position: fixed;
         top: var(--sidebar-overlay-inset-top);
         right: auto;
@@ -408,7 +411,7 @@
         max-width: var(--layout-sidebar-overlay-inline-size);
         height: auto;
         min-height: 0;
-        padding: var(--backtest-parameter-overlay-content-start) 14px 14px;
+        padding: var(--workspace-controls-overlay-content-start) 14px 14px;
         align-self: auto;
         overflow-x: hidden;
         overflow-y: auto;
@@ -428,7 +431,7 @@
             visibility var(--workspace-article-sidebar-morph-duration) step-end;
     }
 
-    .backtest-workspace-shell.is-parameter-overlay-open > .workspace-mode-layout > [data-backtest-parameter-panel] {
+    .workspace-controls-overlay-shell.is-controls-overlay-open > .workspace-mode-layout > [data-workspace-controls-panel] {
         transform: translate3d(0, 0, 0);
         opacity: 1;
         visibility: visible;
@@ -441,7 +444,7 @@
 }
 
 @media (max-width: 600px) {
-    .backtest-parameter-toggle {
+    .workspace-controls-toggle {
         top: var(--sidebar-overlay-inset-top);
         left: calc(
             var(--sidebar-overlay-inset-left)
@@ -2826,7 +2829,7 @@ body.is-price-subplot-reordering {
 }
 
 @media (max-width: 900px) {
-    .backtest-workspace-shell > .workspace-mode-layout > .workspace-mode-main {
+    .workspace-controls-overlay-shell > .workspace-mode-layout > .workspace-mode-main {
         height: 100%;
         transform: none;
     }

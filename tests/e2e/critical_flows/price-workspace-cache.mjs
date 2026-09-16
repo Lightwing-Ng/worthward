@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -401,10 +401,17 @@ test('keeps the Ticker comparison metric control within the narrow sidebar viewp
     await page.setViewportSize({width: 390, height: 844});
     await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&period=1y');
 
-    const sidebarToggle = page.locator('#sidebar_toggle');
-    if (await sidebarToggle.getAttribute('aria-expanded') !== 'true') {
-        await sidebarToggle.click();
-    }
+    await setSidebarExpanded(page, false);
+    const controlsToggle = page.locator('[data-workspace-controls-toggle]');
+    await expect(controlsToggle).toBeVisible();
+    await controlsToggle.click();
+    const controlsPanel = page.locator('[data-workspace-controls-panel]');
+    await expect(controlsPanel).toBeVisible();
+    await controlsPanel.evaluate(async (element) => {
+        await Promise.allSettled(
+            element.getAnimations().map((animation) => animation.finished),
+        );
+    });
 
     const metricField = page.locator('xpath=/html/body/main/div/section/section/div/aside/form/div[3]');
     await expect(metricField).toBeVisible();
@@ -1215,4 +1222,3 @@ test('discards an obsolete live-price response after the selected range changes'
     ));
     expect(chartLabels).toEqual(['DRAM', 'MU', 'STX']);
 });
-

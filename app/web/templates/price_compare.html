@@ -1,4 +1,4 @@
-{# Code version: v0.5.6 #}
+{# Code version: v0.6.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -9,15 +9,41 @@
 {% include "_workspace_mode_nav.html" %}
 {% endblock %}
 
+{% block page_overlay_controls %}
+    <button type="button"
+            class="sidebar-icon-button sidebar-secondary-button workspace-controls-toggle price-compare-controls-toggle"
+            id="price_compare_controls_toggle"
+            data-workspace-controls-toggle
+            aria-label="Toggle Ticker comparison controls"
+            aria-controls="price_compare_controls_panel"
+            aria-expanded="false"
+            hidden>
+        <span class="icon icon-workspace-controls" aria-hidden="true"></span>
+    </button>
+{% endblock %}
+
 {% block workspace_content %}
-<section class="workspace-mode-shell price-compare-workspace{% if is_market_cap_comparison %} market-cap-compare-workspace{% endif %}" aria-labelledby="ticker_comparison_heading">
+<section class="workspace-mode-shell workspace-controls-overlay-shell price-compare-workspace{% if is_market_cap_comparison %} market-cap-compare-workspace{% endif %}"
+         aria-labelledby="ticker_comparison_heading"
+         data-workspace-controls-shell
+         data-workspace-controls-storage-key="worthward:price-comparison-controls-open">
     <header class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card" data-layout-role="title-rail">
         <div class="report-heading-row" data-layout-role="title-heading">
             <h2 class="report-heading" id="ticker_comparison_heading" data-workspace-mask="page-heading">{{ report_heading or labels.get('dock_ticker_comparison', 'Ticker comparison') }}</h2>
         </div>
     </header>
+    <button type="button"
+            class="workspace-controls-backdrop price-compare-controls-backdrop"
+            data-workspace-controls-backdrop
+            aria-label="Close Ticker comparison controls"
+            aria-hidden="true"
+            tabindex="-1"
+            hidden></button>
     <div class="workspace-mode-layout">
-        <aside class="chart-surface workspace-mode-controls-surface" aria-labelledby="ticker_comparison_heading">
+        <aside class="chart-surface workspace-mode-controls-surface"
+               id="price_compare_controls_panel"
+               data-workspace-controls-panel
+               aria-labelledby="ticker_comparison_heading">
             {% include "_compare_portfolio_sidebar.html" %}
         </aside>
         <section class="workspace-mode-main" aria-labelledby="{{ comparison_heading_id }}">

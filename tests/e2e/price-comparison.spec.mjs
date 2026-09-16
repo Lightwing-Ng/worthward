@@ -1,5 +1,110 @@
-/* Code version: v0.2.3 */
+/* Code version: v0.3.0 */
 import {expect, test} from '@playwright/test';
+
+test('reuses the Backtest controls-overlay contract for the second Prices sidebar', async ({page}) => {
+    await page.addInitScript(() => {
+        window.sessionStorage.setItem('worthward:sidebar-open', 'false');
+        window.sessionStorage.removeItem('worthward:price-comparison-controls-open');
+    });
+    await page.setViewportSize({width: 751, height: 912});
+    await page.goto('/workspaces/prices?ticker=000660.KS&ticker=SKHY&range=1d');
+    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+        notices.forEach((notice) => { notice.hidden = true; });
+    });
+
+    const shell = page.locator('[data-workspace-controls-shell]');
+    const layout = shell.locator(':scope > .workspace-mode-layout');
+    const main = layout.locator(':scope > .workspace-mode-main');
+    const panel = page.locator('[data-workspace-controls-panel]');
+    const toggle = page.locator('[data-workspace-controls-toggle]');
+    const backdrop = page.locator('[data-workspace-controls-backdrop]');
+    const globalToggle = page.locator('#sidebar_toggle');
+
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveAttribute('aria-controls', 'price_compare_controls_panel');
+    await expect(toggle.locator('.icon-workspace-controls')).toHaveCSS(
+        'mask-image',
+        /arrowtriangle\.forward\.inset\.filled\.trailingthird\.rectangle\.svg/,
+    );
+    await expect(panel).toHaveAttribute('aria-hidden', 'true');
+    await expect(panel).toBeHidden();
+    await expect(backdrop).toBeHidden();
+
+    const collapsedGeometry = await page.evaluate(() => {
+        const layoutElement = document.querySelector('[data-workspace-controls-shell] > .workspace-mode-layout');
+        const mainElement = layoutElement.querySelector(':scope > .workspace-mode-main');
+        const panelElement = document.querySelector('[data-workspace-controls-panel]');
+        const toggleElement = document.querySelector('[data-workspace-controls-toggle]');
+        const titleElement = document.querySelector('#ticker_comparison_heading');
+        const layoutBox = layoutElement.getBoundingClientRect();
+        const mainBox = mainElement.getBoundingClientRect();
+        const panelBox = panelElement.getBoundingClientRect();
+        const toggleBox = toggleElement.getBoundingClientRect();
+        const titleBox = titleElement.getBoundingClientRect();
+        return {
+            columns: getComputedStyle(layoutElement).gridTemplateColumns,
+            layout: {left: layoutBox.left, right: layoutBox.right, width: layoutBox.width},
+            main: {left: mainBox.left, right: mainBox.right, width: mainBox.width},
+            panel: {right: panelBox.right, position: getComputedStyle(panelElement).position},
+            toggle: {width: toggleBox.width, height: toggleBox.height, right: toggleBox.right},
+            titleLeft: titleBox.left,
+            horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+    });
+    expect(collapsedGeometry.columns).toBe(`${collapsedGeometry.layout.width}px`);
+    expect(Math.abs(collapsedGeometry.main.left - collapsedGeometry.layout.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(collapsedGeometry.main.right - collapsedGeometry.layout.right)).toBeLessThanOrEqual(1);
+    expect(collapsedGeometry.panel.position).toBe('fixed');
+    expect(collapsedGeometry.panel.right).toBeLessThanOrEqual(0);
+    expect(collapsedGeometry.toggle.width).toBe(44);
+    expect(collapsedGeometry.toggle.height).toBe(44);
+    expect(collapsedGeometry.titleLeft).toBeGreaterThanOrEqual(collapsedGeometry.toggle.right + 8);
+    expect(collapsedGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect(panel).toBeVisible();
+    await expect(backdrop).toBeVisible();
+    await expect(shell).toHaveClass(/is-controls-overlay-open/);
+    await expect.poll(() => panel.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const styles = getComputedStyle(element);
+        return {
+            insideViewport: box.left >= 0 && box.right <= window.innerWidth,
+            overflowY: styles.overflowY,
+        };
+    })).toEqual({insideViewport: true, overflowY: 'auto'});
+    await expect.poll(() => page.evaluate(() => (
+        window.sessionStorage.getItem('worthward:price-comparison-controls-open')
+    ))).toBe('true');
+
+    await page.keyboard.press('Escape');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(panel).toBeHidden();
+    await expect(toggle).toBeFocused();
+
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeHidden();
+    await expect(panel).toBeHidden();
+    await globalToggle.click();
+    await expect(globalToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await page.setViewportSize({width: 901, height: 912});
+    await expect(toggle).toBeHidden();
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute('aria-hidden', 'false');
+    await expect.poll(() => layout.evaluate((element) => (
+        getComputedStyle(element).gridTemplateColumns
+    ))).toMatch(/^312px /);
+    await expect(main).toBeVisible();
+});
 
 test('accepts SMH as a selectable ETF ticker', async ({page}) => {
     await page.route('**/api/symbol-search?q=SMH*', async (route) => {

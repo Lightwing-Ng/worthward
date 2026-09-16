@@ -1,6 +1,17 @@
 # Testing guide
 
-Documentation version: `v1.77.9`
+Documentation version: `v1.78.0`
+
+## Prices secondary-sidebar overlay
+
+`tests/e2e/price-comparison.spec.mjs` verifies that Ticker comparison reuses the
+Backtest workspace-controls overlay at 751 by 912: the closed panel is fixed,
+inert, and non-consuming; results span the workspace; the 44 px toggle clears the
+title; opening restores one scroll owner and session memory; Escape restores
+focus; opening global navigation closes and hides the local control. Resizing to
+901 px restores the ordinary 312 px two-column desktop layout. Static layout
+contracts require both templates to expose the same generic shell, toggle,
+backdrop, and panel attributes while retaining product-specific identifiers.
 
 ## Settings optimistic navigation and bounded surfaces
 

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -175,6 +175,10 @@ test('keeps the Ticker comparison range Mode content-sized and centered', async 
 
     await page.setViewportSize({width: 390, height: 844});
     await page.reload();
+    const controlsToggle = page.locator('[data-workspace-controls-toggle]');
+    await expect(controlsToggle).toBeVisible();
+    await controlsToggle.click();
+    await expect(page.locator('[data-workspace-controls-panel]')).toBeVisible();
     await expect(periodTrigger).toBeVisible();
     await expect(rangeMode).toBeVisible();
     for (const geometry of [await readRangeModeGeometry()]) {
@@ -963,4 +967,3 @@ test('reuses unchanged chip profiles and scopes replacement loading to the new t
     await expect(page.locator('[data-price-subplot-canvas][data-chip-source="ohlcv-estimate"]')).toHaveCount(3);
     await expect(page.locator('[data-chip-loading-spinner][hidden]')).toHaveCount(3);
 });
-

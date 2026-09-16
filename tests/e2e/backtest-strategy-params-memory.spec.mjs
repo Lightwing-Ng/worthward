@@ -1,4 +1,4 @@
-/* Code version: v0.13.2 */
+/* Code version: v0.13.3 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -178,11 +178,12 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     await expect(backtestNavItem).toHaveCSS('height', '36px');
     await expect.poll(() => globalBackdrop.evaluate((element) => {
         const box = element.getBoundingClientRect();
+        const viewport = document.documentElement;
         return Math.max(
             Math.abs(box.left),
             Math.abs(box.top),
-            Math.abs(box.right - window.innerWidth),
-            Math.abs(box.bottom - window.innerHeight),
+            Math.abs(box.right - viewport.clientWidth),
+            Math.abs(box.bottom - viewport.clientHeight),
         );
     })).toBeLessThanOrEqual(0.1);
     const globalOverlayGeometry = await globalBackdrop.evaluate((element) => {

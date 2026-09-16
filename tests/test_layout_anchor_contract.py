@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.20.3
+Code version: v0.21.0
 """
 
 from pathlib import Path
@@ -1029,7 +1029,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
             f"{_css_code_version(ASSET_ROOT / 'js/backtest/chart-controller.js')}"
         ),
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.7.1",
+        "-backtest-layout-v0.7.2",
     ):
         assert fragment in base_template
 
@@ -1583,9 +1583,15 @@ def test_backtest_title_rails_reuse_shared_control_alignment() -> None:
         "transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));"
         in workspace
     )
-    assert ".workspace > .backtest-workspace-shell:first-child > .workspace-mode-title-card," in workspace
     assert (
-        ".workspace > .navigation-skeleton-root > .backtest-workspace-shell:first-child > .workspace-mode-title-card {\n"
+        ".workspace > .workspace-controls-overlay-shell:first-child > .workspace-mode-title-card,"
+        in workspace
+    )
+    assert (
+        ".workspace > .navigation-skeleton-root > .workspace-controls-overlay-shell:first-child > .workspace-mode-title-card {\n"
+        "        width: 100%;\n"
+        "        box-sizing: border-box;\n"
+        "        align-self: stretch;\n"
         "        min-height: var(--workspace-title-rail-height);\n"
         "        padding-top: var(--workspace-title-rail-pad-block-start);\n"
         "        padding-bottom: 0;\n"
@@ -1594,18 +1600,27 @@ def test_backtest_title_rails_reuse_shared_control_alignment() -> None:
         "        align-items: flex-start;"
     ) in workspace
     assert (
-        ".backtest-workspace-shell > .workspace-mode-title-card > .report-heading-row {\n"
+        ".workspace-controls-overlay-shell > .workspace-mode-title-card > .report-heading-row {\n"
         "        width: 100%;\n"
         "        min-height: var(--workspace-title-rail-control-height);\n"
         "        margin-bottom: 0;"
     ) in workspace
 
 
-def test_backtest_parameters_use_the_registered_sidebar_overlay_breakpoint() -> None:
-    template = _read(TEMPLATE_ROOT / "backtest.html")
+def test_workspace_controls_use_the_registered_sidebar_overlay_breakpoint() -> None:
+    backtest_template = _read(TEMPLATE_ROOT / "backtest.html")
+    price_template = _read(TEMPLATE_ROOT / "price_compare.html")
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
-    layout = _read(ASSET_ROOT / "js/backtest/layout.js")
+    app_script = _read(ASSET_ROOT / "js/app.js")
 
+    for fragment in (
+        "data-workspace-controls-shell",
+        "data-workspace-controls-toggle",
+        "data-workspace-controls-backdrop",
+        "data-workspace-controls-panel",
+    ):
+        assert fragment in backtest_template
+        assert fragment in price_template
     for fragment in (
         "data-backtest-workspace-shell",
         "data-backtest-parameter-toggle",
@@ -1613,27 +1628,33 @@ def test_backtest_parameters_use_the_registered_sidebar_overlay_breakpoint() -> 
         "data-backtest-parameter-backdrop",
         'id="backtest_parameter_panel"',
     ):
-        assert fragment in template
+        assert fragment in backtest_template
+    for fragment in (
+        'aria-controls="price_compare_controls_panel"',
+        'id="price_compare_controls_panel"',
+        'data-workspace-controls-storage-key="worthward:price-comparison-controls-open"',
+    ):
+        assert fragment in price_template
     for fragment in (
         "@media (max-width: 900px)",
-        ".backtest-workspace-shell > .workspace-mode-layout {",
+        ".workspace-controls-overlay-shell > .workspace-mode-layout {",
         "grid-template-columns: minmax(0, 1fr);",
         "width: var(--layout-sidebar-overlay-inline-size);",
         "top: var(--sidebar-overlay-inset-top);",
         "bottom: var(--sidebar-overlay-inset-bottom);",
-        ".backtest-workspace-shell.is-parameter-overlay-open",
+        ".workspace-controls-overlay-shell.is-controls-overlay-open",
     ):
         assert fragment in workspace
     for fragment in (
-        "responsive.media('sidebarOverlayMax')",
-        "worthward:backtest-parameters-open",
+        'responsive.media("sidebarOverlayMax")',
+        "workspaceControlsStorageKey",
         "panel.inert = isOverlay && !isOpen",
-        "event.key !== 'Escape'",
-        "globalSidebarToggle.getAttribute('aria-expanded') === 'true'",
+        'event.key !== "Escape"',
+        'sidebarToggle.getAttribute("aria-expanded") === "true"',
         "toggle.hidden = !isToggleAvailable",
         "new MutationObserver(onGlobalSidebarStateChange)",
     ):
-        assert fragment in layout
+        assert fragment in app_script
 
 
 def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:
