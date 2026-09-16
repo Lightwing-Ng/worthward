@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.77.6`
+Documentation version: `v1.77.8`
 
 ## Settings optimistic navigation and bounded surfaces
 
@@ -112,6 +112,11 @@ limit. CI versions are test coverage targets, not a runtime allowlist. On Window
 install the same dependencies with `py -3 -m pip install -r
 requirements.txt`.
 
+The requirements include explicit security-reviewed pins for transitive
+packages found by the dependency audit. The setup command upgrades the selected
+environment to those pins. When that interpreter is PEP 668 externally managed,
+the script uses its user package site instead of writing into the managed base.
+
 The JavaScript toolchain requires Node.js `22`. The setup script validates the
 major version, installs the exact lockfile with `npm ci`, and installs the
 Playwright Chromium runtime.
@@ -164,8 +169,12 @@ the complete gate. On 15 Sep 2026, the former 30-minute limit cancelled both
 matrix jobs after only 333 and 353 of 420 browser cases had completed; the
 GitHub check annotation explicitly reported the maximum execution time. The
 larger budget preserves the single-worker browser isolation and every test.
-It does not establish a successful remote run, and the Python 3.13 run also
-recorded a Backtest overlay failure before cancellation.
+On 16 Sep 2026, the first 60-minute-budget run completed the Python 3.13 matrix
+job successfully. Python 3.14 reached 422 of 423 browser cases before one test
+that serially covered two DRAM Price Field URLs exhausted its own 180-second
+limit during the second navigation. Each URL now runs as an independent test
+with the same assertions and its own 180-second bound. Post-change remote
+acceptance remains pending.
 Failed CI browser runs upload `test-results/` as a seven-day
 `playwright-failure-<python-version>` artifact. The artifact is
 diagnostic evidence, not a repository fixture.

@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.32.3`
+Documentation version: `v3.32.4`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -68,6 +68,10 @@ If your Python `3.13` or newer executable lives elsewhere, override it explicitl
 ```bash
 WORTHWARD_PYTHON=/absolute/path/to/python3 ./scripts/setup_python.sh
 ```
+
+For a PEP 668 externally managed host Python, including Homebrew Python, the
+setup script installs upgraded packages into that interpreter's user package
+site while leaving the package-manager-owned base environment unchanged.
 
 Run the app from the project root with the selected interpreter:
 

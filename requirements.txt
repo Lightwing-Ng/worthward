@@ -9,6 +9,20 @@ openpyxl==3.1.5
 curl_cffi~=0.15.0
 certifi>=2024.8.30
 numpy~=2.3.5
+
+# Security-reviewed transitive pins. Keep these explicit so setup upgrades an
+# already-populated host interpreter instead of retaining vulnerable versions.
+click==8.5.0
+filelock==3.32.7
+idna==3.19
+Jinja2==3.1.6
+protobuf==6.33.5
+Pygments==2.21.0
+requests==2.34.2
+setuptools==84.0.0
+soupsieve==2.9.2
+Werkzeug==3.1.8
+
 # Bayesian and LSTM Apple Silicon/CUDA acceleration. The application still
 # falls back to the deterministic NumPy CPU backend when no device is usable.
 torch==2.14.0

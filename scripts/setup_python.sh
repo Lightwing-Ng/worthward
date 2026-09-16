@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.7.0
+# Code version: v0.8.0
 
 set -euo pipefail
 
@@ -25,8 +25,23 @@ if sys.version_info[:2] < (3, 13):
 PY
 
 echo "Using host Python: $PYTHON_BIN"
-"$PYTHON_BIN" -m pip install --upgrade pip
-"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements.txt"
+PIP_INSTALL_ARGS=(--upgrade)
+if "$PYTHON_BIN" - <<'PY'
+from pathlib import Path
+import sysconfig
+
+raise SystemExit(
+    not (Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").is_file()
+)
+PY
+then
+	echo "Using the user package site for the externally managed host Python."
+	PIP_INSTALL_ARGS+=(--user --break-system-packages)
+fi
+
+"$PYTHON_BIN" -m pip install "${PIP_INSTALL_ARGS[@]}" pip
+"$PYTHON_BIN" -m pip install "${PIP_INSTALL_ARGS[@]}" \
+	-r "$ROOT_DIR/requirements.txt"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 	echo "Node.js/npm is required for JavaScript and browser tests." >&2

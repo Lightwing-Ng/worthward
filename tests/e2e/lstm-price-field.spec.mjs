@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.2 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.3 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -936,11 +936,11 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
     expect(contract.panelTitle).toBe('Price field detail');
 });
 
-test('the two supplied DRAM audit URLs render model-specific fields on the shared contract', async ({page}) => {
-    test.setTimeout(180_000);
-    await page.setViewportSize({width: 1024, height: 841});
+for (const audit of auditUrls) {
+    test(`supplied DRAM audit URL renders ${audit.id} on the shared contract`, async ({page}) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({width: 1024, height: 841});
 
-    for (const audit of auditUrls) {
         await page.goto(audit.url);
         await expect(page.locator('#trade_strategy')).toHaveValue(audit.id);
         await expect(page.locator('#backtest_history_probability')).toHaveCount(1);
@@ -997,8 +997,8 @@ test('the two supplied DRAM audit URLs render model-specific fields on the share
         ).toBe(true);
         await expect(page.locator('[data-backtest-metric="probability-field-probability-score"]')).toHaveCount(0);
         await expect(page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]')).toHaveCount(0);
-    }
-});
+    });
+}
 
 
 for (const url of [lstmUrl, bayesianUrl]) {
