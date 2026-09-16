@@ -1,10 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.34.4
- * - Fixed: The chart imports its extracted color-alpha helper before creation.
- * - Refactored: Trade-marker Glow and range/session helpers now live in
- *   directly tested modules while this file retains chart lifecycle ownership.
+ * Code version: v0.34.5
+ * - Optimized: Pointer hover commits are animation-frame coalesced, static
+ *   trade-marker Glow fields are cached, and theme changes update in place.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
 
@@ -35,7 +34,7 @@ import {
     resolveInvestmentTradeMarkerGlowZones,
     resolveInvestmentTradeMarkerColorWithAlpha,
     resolveInvestmentTradeMarkerRadius,
-} from './trade-marker-glow.js?v=investment-trade-marker-glow-v1.0.1';
+} from './trade-marker-glow.js?v=investment-trade-marker-glow-v1.0.2';
 import {
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
@@ -59,7 +58,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.4';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.5';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
@@ -344,12 +343,17 @@ export function createInvestmentStockDetailsUtils({
                 window.cancelAnimationFrame(chartCanvas._layoutSyncRaf);
                 chartCanvas._layoutSyncRaf = 0;
             }
+            if (Number.isInteger(chartCanvas?._hoverSyncRaf) && chartCanvas._hoverSyncRaf > 0) {
+                window.cancelAnimationFrame(chartCanvas._hoverSyncRaf);
+                chartCanvas._hoverSyncRaf = 0;
+            }
             if (Number.isInteger(chartCanvas?._layoutSyncTimer) && chartCanvas._layoutSyncTimer > 0) {
                 window.clearTimeout(chartCanvas._layoutSyncTimer);
                 chartCanvas._layoutSyncTimer = 0;
             }
             chartCanvas._scheduleLayoutSync = null;
             chartCanvas._syncInvestmentStockDetailsRealtimePulse = null;
+            chartCanvas._syncInvestmentStockDetailsTheme = null;
             chartCanvas._investmentStockDetailsChart = null;
             chartInstance.destroy();
             setInvestmentStockDetailsPriceChartInstance(null);
@@ -1262,10 +1266,14 @@ export function createInvestmentStockDetailsUtils({
                 y,
             };
         };
+        const tradeMarkerGlowCache = {
+            buy: {},
+            sell: {},
+        };
         const tradeMarkerPlugin = {
             id: 'investmentStockDetailsTradeMarkerPlugin',
             afterDatasetsDraw(chartInstance) {
-                const drawMarkerGroup = (markers, color) => {
+                const drawMarkerGroup = (markers, color, cache) => {
                     const positionedMarkers = [];
                     (Array.isArray(markers) ? markers : []).forEach((marker) => {
                         if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
@@ -1287,14 +1295,21 @@ export function createInvestmentStockDetailsUtils({
                     });
                     drawInvestmentTradeMarkerGlow(chartInstance.ctx, {
                         markers: positionedMarkers,
-                        links: resolveInvestmentTradeMarkerGlowLinks(positionedMarkers, {
-                            priceValues: closeValues,
-                        }),
+                        priceValues: closeValues,
                         color,
+                        cache,
                     });
                 };
-                drawMarkerGroup(tradeMarkerPoints.buy, resolvedTheme.accentPositive);
-                drawMarkerGroup(tradeMarkerPoints.sell, resolvedTheme.accentSecondary);
+                drawMarkerGroup(
+                    tradeMarkerPoints.buy,
+                    resolvedTheme.accentPositive,
+                    tradeMarkerGlowCache.buy,
+                );
+                drawMarkerGroup(
+                    tradeMarkerPoints.sell,
+                    resolvedTheme.accentSecondary,
+                    tradeMarkerGlowCache.sell,
+                );
             },
         };
         const realtimeEndMarkerPlugin = {
@@ -1341,11 +1356,13 @@ export function createInvestmentStockDetailsUtils({
             return tooltip;
         };
         let activeStockDetailsHoverDate = '';
+        let activeStockDetailsTooltipPresentation = '';
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
             if (tooltip.opacity === 0) {
                 tooltipEl.classList.remove('is-visible');
                 activeStockDetailsHoverDate = '';
+                activeStockDetailsTooltipPresentation = '';
                 setActiveStockDetailsHoverPointRecord(null);
                 clearInvestmentStockDetailHighlights();
                 clearInvestmentHistoryHighlights();
@@ -1363,6 +1380,19 @@ export function createInvestmentStockDetailsUtils({
             const buyQuantity = Number(snapshot?.buyQuantity);
             const sellQuantity = Number(snapshot?.sellQuantity);
             const hoverLedgerDate = normalizeLedgerDate(rawDate);
+            const tooltipPresentation = [
+                pointIndex,
+                String(chart?._activeInvestmentStockDetailsMarkerType || ''),
+                Math.round(Number(tooltip.caretX) || 0),
+                Math.round(Number(tooltip.caretY) || 0),
+            ].join(':');
+            if (
+                tooltipPresentation === activeStockDetailsTooltipPresentation
+                && tooltipEl.classList.contains('is-visible')
+            ) {
+                return;
+            }
+            activeStockDetailsTooltipPresentation = tooltipPresentation;
             setActiveStockDetailsHoverPointRecord(investmentPointByDate.get(hoverLedgerDate) || null);
             syncInvestmentStockDetailsDonutFromInteraction();
             if (hoverLedgerDate !== activeStockDetailsHoverDate) {
@@ -1578,6 +1608,30 @@ export function createInvestmentStockDetailsUtils({
             plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin, realtimeEndMarkerPlugin],
         });
         setInvestmentStockDetailsPriceChartInstance(chartInstance);
+        canvas._syncInvestmentStockDetailsTheme = () => {
+            Object.assign(resolvedTheme, resolveInvestmentTheme());
+            const closeDataset = chartInstance.data?.datasets?.[0];
+            if (closeDataset) {
+                closeDataset.borderColor = useIntradayCandles
+                    ? 'transparent'
+                    : resolvedTheme.accentPrimary;
+            }
+            const averageDataset = chartInstance.data?.datasets?.[1];
+            if (averageDataset) {
+                const averageColor = applyCanvasAlpha(
+                    resolvedTheme.muted,
+                    useIntradayCandles ? 0.78 : 0.5,
+                );
+                averageDataset.borderColor = averageColor;
+                averageDataset.backgroundColor = averageColor;
+                averageDataset.pointBackgroundColor = applyCanvasAlpha(resolvedTheme.muted, 0.9);
+                averageDataset.pointBorderColor = applyCanvasAlpha(resolvedTheme.muted, 0.9);
+            }
+            if (chartInstance.options?.scales?.y?.ticks) {
+                chartInstance.options.scales.y.ticks.color = resolvedTheme.muted;
+            }
+            chartInstance.update('none');
+        };
         canvas._syncInvestmentStockDetailsRealtimePulse = () => {
             const yScale = chartInstance.options?.scales?.y;
             if (!yScale) return;
@@ -1699,11 +1753,26 @@ export function createInvestmentStockDetailsUtils({
             const controller = new AbortController();
             chartCanvas._abortController = controller;
             const { signal } = controller;
-            chartCanvas.addEventListener('mousemove', (event) => {
-                const hoverState = resolveNearestHoverState(chart, event);
+            let pendingPointer = null;
+            const commitHoverFrame = () => {
+                chartCanvas._hoverSyncRaf = 0;
+                const pointer = pendingPointer;
+                pendingPointer = null;
+                if (!pointer || chartCanvas._investmentStockDetailsChart !== chart) return;
+                const hoverState = resolveNearestHoverState(chart, pointer);
                 syncStockDetailsHoverState(chart, hoverState);
+            };
+            chartCanvas.addEventListener('mousemove', (event) => {
+                pendingPointer = {clientX: event.clientX, clientY: event.clientY};
+                if (Number.isInteger(chartCanvas._hoverSyncRaf) && chartCanvas._hoverSyncRaf > 0) return;
+                chartCanvas._hoverSyncRaf = window.requestAnimationFrame(commitHoverFrame);
             }, { signal });
             chartCanvas.addEventListener('mouseleave', () => {
+                pendingPointer = null;
+                if (Number.isInteger(chartCanvas._hoverSyncRaf) && chartCanvas._hoverSyncRaf > 0) {
+                    window.cancelAnimationFrame(chartCanvas._hoverSyncRaf);
+                    chartCanvas._hoverSyncRaf = 0;
+                }
                 syncStockDetailsHoverState(chart, null);
             }, { signal });
         };

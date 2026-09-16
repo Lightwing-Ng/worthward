@@ -1,4 +1,4 @@
-/* Code version: v0.40.1 */
+/* Code version: v0.40.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -657,9 +657,29 @@ html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px; }
 	}
 }
 
-html.is-theme-transitioning,
-html.is-theme-transitioning *,
-html.is-theme-transitioning *::before,
-html.is-theme-transitioning *::after {
-    transition: background-color var(--motion-duration-emphasized) var(--motion-standard), border-color var(--motion-duration-emphasized) var(--motion-standard), color var(--motion-duration-emphasized) var(--motion-standard), fill var(--motion-duration-emphasized) var(--motion-standard), stroke var(--motion-duration-emphasized) var(--motion-standard), box-shadow var(--motion-duration-emphasized) var(--motion-standard) !important;
+html.is-theme-transitioning .global-theme-toggle .icon {
+    animation: global-theme-toggle-icon-swap 180ms var(--motion-standard) both;
+    will-change: transform, opacity;
+}
+
+@keyframes global-theme-toggle-icon-swap {
+    0% {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+    }
+    48% {
+        opacity: 0.36;
+        transform: rotate(38deg) scale(0.78);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.is-theme-transitioning .global-theme-toggle .icon {
+        animation: none;
+        will-change: auto;
+    }
 }

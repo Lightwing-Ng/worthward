@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 (() => {
     const create = (context) => {
         const {
@@ -1589,7 +1589,7 @@
 
             if (previousMode && previousMode !== normalizedMode) {
                 document.documentElement.classList.add("is-theme-transitioning");
-                window.setTimeout(() => document.documentElement.classList.remove("is-theme-transitioning"), 400);
+                window.setTimeout(() => document.documentElement.classList.remove("is-theme-transitioning"), 180);
             }
 
             document.documentElement.dataset.themeMode = normalizedMode;

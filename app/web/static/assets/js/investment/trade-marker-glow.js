@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 /** Pure geometry and Canvas rendering for Investment trade-marker Glow zones. */
 
 export const INVESTMENT_TRADE_MARKER_MAX_RADIUS_PX = 8;
@@ -691,35 +691,83 @@ function drawInvestmentTradeMarkerGlowZoneField(ctx, zone, field) {
 
 export function drawInvestmentTradeMarkerGlow(ctx, {
     markers = [],
-    links = [],
+    links = null,
+    priceValues = null,
     color,
+    cache = null,
 } = {}) {
     const normalizedColor = String(color || '').trim();
     const points = normalizeInvestmentTradeMarkerGlowPoints(markers);
     if (!ctx || !normalizedColor || !points.length) return false;
 
-    const zones = resolveInvestmentTradeMarkerGlowZones(points, links);
-    const pointByIndex = new Map(points.map((point) => [point.index, point]));
-    const maxAmount = Math.max(
-        0,
-        ...points
-            .map((point) => resolveInvestmentTradeMarkerGlowPointAmount(point))
-            .filter((amount) => Number.isFinite(amount) && amount > 0),
+    const normalizedLinks = Array.isArray(links) ? links : null;
+    const pointSignature = points.map((point) => [
+        point.x,
+        point.y,
+        point.radius,
+        point.amount,
+        point.type,
+        Number(point?.marker?.index),
+        Number(point?.marker?.price),
+    ].join(':')).join('|');
+    const linkSignature = normalizedLinks
+        ? normalizedLinks.map((link) => [
+            Number(link?.fromIndex),
+            Number(link?.toIndex),
+            Number(link?.distance),
+            Number(link?.strength),
+        ].join(':')).join('|')
+        : 'auto';
+    const reusableCache = cache && typeof cache === 'object' ? cache : null;
+    const canReusePlan = Boolean(
+        reusableCache?.plan
+        && reusableCache.pointSignature === pointSignature
+        && reusableCache.linkSignature === linkSignature
+        && reusableCache.color === normalizedColor
+        && (normalizedLinks || reusableCache.priceValues === priceValues)
     );
+    let plan = canReusePlan ? reusableCache.plan : null;
+    if (!plan) {
+        const resolvedLinks = normalizedLinks || resolveInvestmentTradeMarkerGlowLinks(markers, {
+            priceValues,
+        });
+        const zones = resolveInvestmentTradeMarkerGlowZones(points, resolvedLinks);
+        const pointByIndex = new Map(points.map((point) => [point.index, point]));
+        const maxAmount = Math.max(
+            0,
+            ...points
+                .map((point) => resolveInvestmentTradeMarkerGlowPointAmount(point))
+                .filter((amount) => Number.isFinite(amount) && amount > 0),
+        );
+        plan = {
+            zones: zones.map((zone) => {
+                const zonePoints = (Array.isArray(zone?.pointIndexes) ? zone.pointIndexes : [])
+                    .map((index) => pointByIndex.get(index))
+                    .filter(Boolean);
+                return {
+                    zone,
+                    field: createInvestmentTradeMarkerGlowZoneField(
+                        zone,
+                        zonePoints,
+                        maxAmount,
+                        normalizedColor,
+                    ),
+                };
+            }),
+        };
+        if (reusableCache) {
+            reusableCache.pointSignature = pointSignature;
+            reusableCache.linkSignature = linkSignature;
+            reusableCache.color = normalizedColor;
+            reusableCache.priceValues = priceValues;
+            reusableCache.plan = plan;
+        }
+    }
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
     ctx.lineCap = 'round';
-    zones.forEach((zone) => {
+    plan.zones.forEach(({zone, field}) => {
         ctx.save();
-        const zonePoints = (Array.isArray(zone?.pointIndexes) ? zone.pointIndexes : [])
-            .map((index) => pointByIndex.get(index))
-            .filter(Boolean);
-        const field = createInvestmentTradeMarkerGlowZoneField(
-            zone,
-            zonePoints,
-            maxAmount,
-            normalizedColor,
-        );
         if (field && drawInvestmentTradeMarkerGlowZoneField(ctx, zone, field)) {
             ctx.restore();
             return;

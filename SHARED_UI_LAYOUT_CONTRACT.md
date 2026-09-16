@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.14.1`
+Documentation version: `v1.14.2`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -150,6 +150,13 @@ has the same vertical centerline and a horizontal offset of `G` from the sidebar
 right edge. Collapsing or opening an overlay preserves the vertical coordinate and
 changes only the horizontal translation. No state may move the toggle along its
 vertical axis.
+
+Theme switching must not attach forced transitions to the document descendant
+tree or its pseudo-elements. Theme values may update in one style pass; finite
+interaction feedback is limited to the global toggle icon using compositor-owned
+opacity and transform. Reduced-motion preference removes that icon animation.
+Product charts update theme colors in place when their data and geometry are
+unchanged rather than recreating the chart or refetching data.
 
 The collapsed overlay toggle uses `A_top` and `A_left`, so its top and left viewport
 distances are equal when the safe-area insets are equal. The full-viewport sidebar

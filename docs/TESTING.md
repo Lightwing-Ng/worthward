@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.77.8`
+Documentation version: `v1.77.9`
 
 ## Settings optimistic navigation and bounded surfaces
 
@@ -321,7 +321,8 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
 - `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
-  session, day-boundary, and shared transaction-applier contracts.
+  session, day-boundary, shared transaction-applier, and static trade-marker
+  Glow-raster reuse contracts.
 - `tests/test_investment_transaction_filters.mjs`: broker, currency, type, and
   canonical date-filter behavior.
 - `tests/test_investment_transaction_table.mjs`: visible-row selection,

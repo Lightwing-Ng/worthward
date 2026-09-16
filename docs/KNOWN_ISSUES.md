@@ -1,5 +1,15 @@
 # Known issues and operating constraints
 
+Stock-details interaction performance, 16 Sep 2026: price-chart pointer events
+are coalesced to one commit per animation frame, while the geometry- and
+theme-dependent trade-marker Glow raster is reused across hover-only redraws.
+Unchanged tooltip presentations no longer replace or remeasure their DOM. Theme
+switching updates the active Stock-details chart in place and limits motion to
+the compositor-friendly theme-toggle icon; the former universal descendant and
+pseudo-element transition is removed. Hidden Investment charts are not rebuilt
+for a Stock-details theme switch. The user-owned 8688 process still requires an
+owner-controlled restart before this source change is adopted live.
+
 Price Field detail responsive protection, 15 Sep 2026: the contained detail
 plot now consumes the complete inline width assigned by its panel; available
 height no longer creates a narrower centered plot with unused side space. Its
@@ -290,7 +300,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.257.2`
+Documentation version: `v1.257.3`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

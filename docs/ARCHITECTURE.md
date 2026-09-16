@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.114.3`
+Documentation version: `v1.114.4`
 
 ## Reuse and dependency boundaries
 
@@ -685,6 +685,16 @@ The Investment filled hover badge is also the shared
 `WORTHWARD_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
 Backtest overlays call that primitive instead of maintaining a second badge
 renderer.
+
+Investment Stock details keeps pointer work inside one animation-frame commit.
+The active pointer replaces any earlier uncommitted pointer, so a high-frequency
+mouse cannot start more than one Chart.js update per display frame. Buy and sell
+trade-marker Glow fields are rasterized once per marker geometry and theme color;
+ordinary hover redraws reuse those static fields. Repeated tooltip presentations
+for the same point and anchor skip DOM replacement and layout measurement. A
+theme change updates the connected Stock-details chart colors and cached marker
+layer in place instead of destroying the chart, refetching intraday data, or
+rebuilding the surrounding DOM.
 
 The Bayesian Backtest overview reuses the same filled blue Y-axis badge for the
 horizontal hover guide, with its value taken from the exact polyline intersection

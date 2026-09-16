@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.0.4 */
 import {
     expect,
     test,
@@ -134,6 +134,48 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(hoverBadgePixels).not.toBeNull();
     expect(hoverBadgePixels.allocationBadgeRadius).toBe('2px');
     expect(hoverBadgePixels.cornerHasUnfilledPixels).toBe(true);
+
+    const coalescedHover = await priceChartCanvas.evaluate(async (canvas) => {
+        const chart = canvas._investmentStockDetailsChart;
+        const rect = canvas.getBoundingClientRect();
+        const originalUpdate = chart.update.bind(chart);
+        let updateCalls = 0;
+        chart.update = (...args) => {
+            updateCalls += 1;
+            return originalUpdate(...args);
+        };
+        const startX = rect.left + (rect.width * 0.42);
+        const endX = rect.left + (rect.width * 0.62);
+        const pointerY = rect.top + (rect.height * 0.48);
+        for (let index = 0; index < 24; index += 1) {
+            const progress = index / 23;
+            canvas.dispatchEvent(new MouseEvent('mousemove', {
+                bubbles: true,
+                clientX: startX + ((endX - startX) * progress),
+                clientY: pointerY,
+            }));
+        }
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        chart.update = originalUpdate;
+        return {
+            updateCalls,
+            guideX: chart._activeInvestmentStockDetailsGuideX,
+            expectedGuideX: (endX - rect.left) * chart.width / rect.width,
+        };
+    });
+    expect(coalescedHover.updateCalls).toBe(1);
+    expect(Math.abs(
+        coalescedHover.guideX - coalescedHover.expectedGuideX,
+    )).toBeLessThanOrEqual(1);
+
+    await priceChartCanvas.evaluate((canvas) => {
+        canvas._investmentStockDetailsChart._e2eThemeIdentity = true;
+    });
+    await page.locator('#global_theme_toggle').click();
+    await expect.poll(() => priceChartCanvas.evaluate((canvas) => ({
+        sameChart: canvas._investmentStockDetailsChart?._e2eThemeIdentity === true,
+        hasInPlaceThemeSync: typeof canvas._syncInvestmentStockDetailsTheme === 'function',
+    }))).toEqual({sameChart: true, hasInPlaceThemeSync: true});
 
     const readGeometry = () => page.evaluate(() => {
         const select = (selector) => document.querySelector(`#stock_panel ${selector}`);

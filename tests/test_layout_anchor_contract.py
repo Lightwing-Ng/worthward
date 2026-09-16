@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.20.2
+Code version: v0.20.3
 """
 
 from pathlib import Path
@@ -93,7 +93,6 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "--global-quick-action-gap: var(--layout-global-action-gap);",
     ):
         assert fragment in shell
-
     for fragment in (
         "padding-block: var(--layout-sidebar-dock-padding-block);",
         "height: var(--layout-sidebar-dock-item-block-size);",
@@ -129,6 +128,18 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
 
     assert "--sidebar-toggle-top: 20px;" not in responsive
     assert "--sidebar-toggle-left: 20px;" not in responsive
+
+
+def test_theme_switch_motion_is_bounded_to_the_composited_toggle_icon() -> None:
+    tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
+    ticker_controls = _read(ASSET_ROOT / "js/app/ticker-controls.js")
+
+    assert "html.is-theme-transitioning .global-theme-toggle .icon {" in tokens
+    assert "animation: global-theme-toggle-icon-swap 180ms" in tokens
+    assert "will-change: transform, opacity;" in tokens
+    assert "html.is-theme-transitioning *," not in tokens
+    assert "html.is-theme-transitioning *::before" not in tokens
+    assert 'classList.remove("is-theme-transitioning"), 180' in ticker_controls
 
 
 def test_sidebar_dock_stays_icon_only_at_every_breakpoint() -> None:

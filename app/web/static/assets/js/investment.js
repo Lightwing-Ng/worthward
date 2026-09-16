@@ -1,8 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.144.4
- * - Refactored: Feature runtimes are composed from bounded, versioned modules.
+ * Code version: v2.144.5
+ * - Optimized: Theme changes update only the active Investment chart in place.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
 
@@ -75,7 +75,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.34.4';
+} from './investment/stock-details.js?v=investment-stock-details-v0.34.5';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -124,7 +124,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.144.4',
+    entry: 'v2.144.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1298,17 +1298,15 @@ Object.assign(runtime, createInvestmentDataUtils({
 
     window.addEventListener('worthward:theme-mode-change', () => {
         window.requestAnimationFrame(() => {
-            if (runtime.state.investmentEquityChartInstance?.canvas?.isConnected) {
+            if (
+                runtime.state.activeInvestmentView === 'chart'
+                && runtime.state.investmentEquityChartInstance?.canvas?.isConnected
+            ) {
                 runtime.renderEquityChartWithEquity(runtime.state.investmentChartPointsCache);
             }
-            if (runtime.state.investmentStockDetailsPriceChartInstance?.canvas?.isConnected && runtime.state.selectedInvestmentStockTicker) {
-                runtime.renderInvestmentStockDetailsPriceChart(
-                    runtime.state.selectedInvestmentStockTicker,
-                    runtime.buildSafeInvestmentStockDetailRows(
-                        runtime.state.investmentProcessedTransactionsCache,
-                        runtime.state.selectedInvestmentStockTicker,
-                    )
-                );
+            if (runtime.state.activeInvestmentView === 'stock_details') {
+                runtime.state.investmentStockDetailsPriceChartInstance?.canvas
+                    ?._syncInvestmentStockDetailsTheme?.();
             }
         });
     });

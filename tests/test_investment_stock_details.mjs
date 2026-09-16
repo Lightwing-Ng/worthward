@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.14.0 */
+/* Tests for Investment Stock details boundaries. Code version: v1.14.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -302,6 +302,67 @@ test('trade markers paint center gradients without a border stroke', () => {
     assert.equal(operations.some((operation) => operation[0] === 'quadraticCurveTo'), false);
     assert.equal(operations.some((operation) => operation[0] === 'arc'), true);
     assert.equal(operations.some((operation) => operation[0] === 'addColorStop' && operation[1] === 1 && /0\)$/.test(operation[2])), true);
+});
+
+test('trade-marker Glow reuses its raster field until geometry or theme changes', () => {
+    const originalDocument = globalThis.document;
+    let imageDataCreations = 0;
+    let imageDraws = 0;
+    const fieldContext = {
+        createImageData(width, height) {
+            imageDataCreations += 1;
+            return {data: new Uint8ClampedArray(width * height * 4)};
+        },
+        putImageData() {},
+    };
+    globalThis.document = {
+        createElement: () => ({
+            width: 0,
+            height: 0,
+            getContext: () => fieldContext,
+        }),
+    };
+    const gradient = {addColorStop() {}};
+    const context = {
+        save() {},
+        restore() {},
+        beginPath() {},
+        moveTo() {},
+        quadraticCurveTo() {},
+        closePath() {},
+        clip() {},
+        drawImage() { imageDraws += 1; },
+        createRadialGradient: () => gradient,
+        arc() {},
+        fill() {},
+        set fillStyle(_value) {},
+        set globalCompositeOperation(_value) {},
+        set lineCap(_value) {},
+    };
+    const cache = {};
+    const markers = [
+        {x: 20, y: 30, radius: 8, amount: 100, type: 'buy'},
+        {x: 44, y: 30, radius: 6, amount: 50, type: 'buy'},
+    ];
+    const links = [{fromIndex: 0, toIndex: 1, distance: 24, strength: 0.6}];
+    try {
+        drawInvestmentTradeMarkerGlow(context, {markers, links, color: '#16a34a', cache});
+        drawInvestmentTradeMarkerGlow(context, {markers, links, color: '#16a34a', cache});
+        assert.equal(imageDataCreations, 1);
+        assert.equal(imageDraws, 2);
+
+        drawInvestmentTradeMarkerGlow(context, {
+            markers: [{...markers[0], x: 21}, markers[1]],
+            links,
+            color: '#16a34a',
+            cache,
+        });
+        assert.equal(imageDataCreations, 2);
+        assert.equal(imageDraws, 3);
+    } finally {
+        if (originalDocument === undefined) delete globalThis.document;
+        else globalThis.document = originalDocument;
+    }
 });
 
 test('pure-trade realized breakdown follows authoritative broker-scoped totals', () => {
