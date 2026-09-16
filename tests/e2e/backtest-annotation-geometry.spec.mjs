@@ -1,4 +1,4 @@
-/* Backtest annotation regression. Code version: v1.3.0 */
+/* Backtest annotation regression. Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -6,7 +6,7 @@ for (const width of [1023, 390]) {
     test(`Backtest annotated controls at ${width}px`, async ({page}) => {
         await page.setViewportSize({width, height: 1404});
         await page.route('**/api/lstm-training', route => route.fulfill({json: {
-            success: true, protocol_version: 2, runs: [],
+            success: true, protocol_version: 3, runs: [],
         }}));
         await page.goto('/workspaces/backtest?strategy=lstm-price-field&show_trade_details=1&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
         const segments = page.locator('#backtest_history_view_segmented');

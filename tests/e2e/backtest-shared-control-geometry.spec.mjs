@@ -1,4 +1,4 @@
-/* Backtest shared control geometry regression. Code version: v1.0.1 */
+/* Backtest shared control geometry regression. Code version: v1.0.2 */
 import {expect, test} from '@playwright/test';
 
 const backtestUrl = (
@@ -44,7 +44,7 @@ test('shared Backtest controls keep the sampled compact geometry', async ({page}
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({success: true, protocol_version: 2, runs: [run]}),
+        body: JSON.stringify({success: true, protocol_version: 3, runs: [run]}),
     }));
 
     await page.goto(backtestUrl);

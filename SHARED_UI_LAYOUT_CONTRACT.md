@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.14.0`
+Documentation version: `v1.14.1`
 
 This is the normative spatial contract for Worthward and its sibling
 `agenticContext` project. The two implementations may have
@@ -252,6 +252,12 @@ attributes or temporary preview markers.
 - Local market-store pagination is centered by the table region, not by the viewport.
 - Backtest Metrics and Transactions use the same horizontal resizer endpoint. Metrics
   must not leave a lower unused extent than Transactions.
+- Backtest `Price Field` detail is a product-specific full-inline-width result
+  surface. Its plot must meet both parent content edges, preserve the complete
+  square 20-by-24 lattice through a container-responsive block minimum, and
+  receive history-minimum priority from the shared vertical splitter only while
+  that view is active. The plot, panel, and document must not acquire horizontal
+  or vertical overflow from this protection.
 - Shared select controls and period controls use `C = 384px` or the smaller external
   parent width.
 

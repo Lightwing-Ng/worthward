@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {
     expect,
     test,
@@ -56,7 +56,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chartOrbit: 'v1.39.0',
         dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.10.0',
-        layout: 'v1.4.0',
+        layout: 'v1.5.1',
         pagination: currentPaginationVersion,
         realtime: 'v1.3.3',
         numericDisplay: 'v1.1.0',

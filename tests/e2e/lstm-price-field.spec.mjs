@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.0 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.2 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -290,7 +290,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({success: true, protocol_version: 2, runs: []}),
+        body: JSON.stringify({success: true, protocol_version: 3, runs: []}),
     }));
     await page.goto(lstmUrl);
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
@@ -440,7 +440,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     };
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: historyFails ? 503 : 200, contentType: 'application/json',
-        body: JSON.stringify(historyFails ? {success: false, error: 'History unavailable'} : {success: true, protocol_version: 2, runs}),
+        body: JSON.stringify(historyFails ? {success: false, error: 'History unavailable'} : {success: true, protocol_version: 3, runs}),
     }));
     await page.route('**/api/lstm-training/start', async (route) => {
         startRequests += 1;
@@ -456,13 +456,14 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await page.goto(lstmUrl);
     const menu = page.locator('[data-lstm-training-menu]');
     const button = menu.locator('[data-lstm-training-action]');
-    await expect(button).toHaveText('Start GA tuning');
+    await expect(button).toHaveText('Start training');
     await button.click();
-    await expect(button).toHaveText('Starting GA tuning…');
+    await expect(button).toHaveText('Starting training…');
     await expect(menu.getByRole('progressbar')).toBeVisible();
+    await expect(menu.getByRole('progressbar')).toHaveAttribute('aria-label', 'LSTM training progress for DRAM');
     await expect(page.locator('.lstm-training-spinner')).toHaveCount(0);
     releaseStart();
-    await expect(button).toHaveText('Stop GA tuning');
+    await expect(button).toHaveText('Stop training');
     await expect(button).toBeEnabled();
     await expect(button).toHaveCount(1);
     expect(startRequests).toBe(1);
@@ -485,20 +486,20 @@ test('LSTM training toggles one button and displays real progress and artifact m
     })).toBe(true);
 
     await button.click();
-    await expect(button).toHaveText('Stopping GA tuning…');
+    await expect(button).toHaveText('Stopping training…');
     await expect(button).toBeDisabled();
     runs = [{...run, status: 'interrupted', active: false}];
-    await expect(button).toHaveText('Start GA tuning', {timeout: 10_000});
+    await expect(button).toHaveText('Start training', {timeout: 10_000});
     await expect(menu.getByRole('progressbar')).toHaveCount(0);
     await page.reload();
-    await expect(button).toHaveText('Start GA tuning');
+    await expect(button).toHaveText('Start training');
     await expect(menu.locator('.lstm-training-files')).toBeHidden();
     await page.setViewportSize({width: 390, height: 844});
     await openBacktestParameterOverlay(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
     runs = [{...run, status: 'starting', progress: {percent: null}}];
-    await expect(button).toHaveText('Stop GA tuning', {timeout: 10_000});
+    await expect(button).toHaveText('Stop training', {timeout: 10_000});
     await expect(menu.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
     await expect(menu.locator('.lstm-training-progress-track')).toHaveClass(/is-indeterminate/);
 
@@ -521,13 +522,70 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await expect(menu.getByRole('status')).toBeVisible();
 });
 
+test('LSTM exact-training action fails closed against older or malformed launch protocols', async ({page}) => {
+    let protocolVersion = 2;
+    await page.route('**/api/lstm-training', (route) => route.fulfill({
+        json: {success: true, protocol_version: protocolVersion, runs: []},
+    }));
+    await page.goto(lstmUrl);
+    const menu = page.locator('[data-lstm-training-menu]');
+    await expect(menu.locator('[data-lstm-training-action]')).toHaveText('Start training');
+    await expect(menu.locator('[data-lstm-training-action]')).toBeDisabled();
+    await expect(menu.getByRole('status')).toHaveText(
+        'Restart the local service to enable exact-configuration training.',
+    );
+    protocolVersion = 'invalid';
+    await page.reload();
+    await expect(menu.locator('[data-lstm-training-action]')).toBeDisabled();
+    await expect(menu.getByRole('status')).toHaveText(
+        'Restart the local service to enable exact-configuration training.',
+    );
+});
+
+test('LSTM history distinguishes exact training from genetic-mode results', async ({page}) => {
+    const runs = [{
+        id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'NVDA', period: '1y', interval: '1d',
+        status: 'completed', active: false, training_mode: 'exact', accuracy_pct: 65,
+        accuracy_label: 'Holdout direction accuracy', selected_params: {compute_backend: 'CPU', lstm_epochs: 3},
+        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)',
+    }, {
+        id: 'lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb', ticker: 'NVDA', period: '1y', interval: '1d',
+        status: 'completed', active: false, training_mode: 'genetic', crps_skill_pct: -7.62,
+        crps_skill_label: 'Mean validation CRPS skill vs baseline', objective_label: 'CRPS skill vs baseline',
+        duration_seconds: 36_000, base_params: {compute_backend: 'CPU', lstm_epochs: 3},
+        started_at: '2026-09-04T01:00:00Z', identifier: '260904(02)',
+    }];
+    await page.route('**/api/lstm-training', (route) => route.fulfill({
+        json: {success: true, protocol_version: 3, runs},
+    }));
+    await page.goto(lstmUrl);
+    const menu = page.locator('[data-lstm-training-menu]');
+    const rows = menu.locator('.lstm-training-history-select');
+    await expect(rows).toHaveCount(2);
+    await expect(menu.locator('.lstm-training-accuracy')).toHaveText(['65.00%', '-7.62%']);
+
+    await rows.first().click();
+    const exactDetails = menu.locator('.lstm-training-history-details').first();
+    await expect(exactDetails).toContainText('Selected parameters:');
+    await expect(exactDetails).not.toContainText('Objective CRPS skill vs baseline');
+
+    await rows.nth(1).click();
+    const geneticDetails = menu.locator('.lstm-training-history-details').nth(1);
+    await expect(menu.locator('.lstm-training-accuracy').nth(1)).toHaveAttribute(
+        'aria-label',
+        'Mean validation CRPS skill vs baseline: -7.62%',
+    );
+    await expect(geneticDetails).toContainText('Objective CRPS skill vs baseline · Time budget 10 h');
+    await expect(geneticDetails).toContainText('GA baseline parameters:');
+});
+
 test('LSTM history selects a complete case, detaches edits, and archives one result', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 863});
     let runs = [];
     const deleted = [];
     await page.route('**/api/lstm-training', (route) => route.fulfill({
-        contentType: 'application/json', body: JSON.stringify({success: true, protocol_version: 2, runs}),
+        contentType: 'application/json', body: JSON.stringify({success: true, protocol_version: 3, runs}),
     }));
     await page.route('**/api/lstm-training/delete', async (route) => {
         const id = route.request().postDataJSON().run_id;
@@ -550,9 +608,9 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     };
     runs = [{
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'NVDA', status: 'completed', active: false,
-        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', crps_skill_pct: -7.62,
-        crps_skill_label: 'Mean validation CRPS skill vs baseline',
-        objective: 'crps', objective_label: 'CRPS skill vs baseline', duration_seconds: 36_000,
+        started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', accuracy_pct: 65,
+        accuracy_label: 'Holdout direction accuracy', training_mode: 'exact',
+        selected_params: configuration.params,
         configuration, files: [{name: 'request.json', size_bytes: 1234}],
     }, {
         id: 'lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb', ticker: 'DRAM', status: 'completed', active: false,
@@ -564,10 +622,10 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(rows).toHaveCount(2, {timeout: 10_000});
     await expect(menu.locator('details, summary')).toHaveCount(0);
     await expect(menu.locator('.lstm-training-history-heading')).toHaveCSS('text-align', 'left');
-    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveText('-7.62%');
+    await expect(menu.locator('.lstm-training-accuracy').first()).toHaveText('65.00%');
     await expect(menu.locator('.lstm-training-accuracy').first()).toHaveAttribute(
         'aria-label',
-        'Mean validation CRPS skill vs baseline: -7.62%',
+        'Holdout direction accuracy: 65.00%',
     );
     expect(await menu.locator('.lstm-training-history-identifier').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
     const buttonWidth = await menu.locator('.lstm-training-action').evaluate((node) => node.getBoundingClientRect().width);
@@ -612,9 +670,8 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
         (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
     )).toBe(20);
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
-    await expect(menu.locator('.lstm-training-history-details').first()).toContainText(
-        'Objective CRPS skill vs baseline · Time budget 10 h',
-    );
+    await expect(menu.locator('.lstm-training-history-details').first()).toContainText('Selected parameters:');
+    await expect(menu.locator('.lstm-training-history-details').first()).not.toContainText('Objective CRPS skill vs baseline');
     expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
     await page.reload();
     expect(await page.locator('[data-strategy-param-input][name]').evaluateAll((inputs) => Object.fromEntries(inputs.map((input) => {
@@ -1063,7 +1120,7 @@ for (const width of [1161, 390]) {
             // Keep this geometry check independent of asynchronously loaded
             // local training history above the chart on narrow screens.
             await page.route('**/api/lstm-training', (route) => route.fulfill({
-                json: {success: true, protocol_version: 2, runs: []},
+                json: {success: true, protocol_version: 3, runs: []},
             }));
             await page.goto(strategy === 'lstm' ? lstmUrl : bayesianUrl);
             await injectPriceFieldPresentation(page, `${strategy}-price-field/v1`);
@@ -1210,7 +1267,7 @@ test('shared detail upgrades a cached template without restarting the service', 
 });
 
 test('failed Auto training history exposes its GPU error without hiding the cause', async ({page}) => {
-    await page.route('**/api/lstm-training', (route) => route.fulfill({json: {protocol_version: 2, runs: [{
+    await page.route('**/api/lstm-training', (route) => route.fulfill({json: {protocol_version: 3, runs: [{
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'QQQ', identifier: '260906(03)', status: 'failed_closed',
         selected_params: {compute_backend: 'Auto'}, started_at: '2026-09-06T13:19:09Z',
         error: 'RuntimeError: Training requires a working PyTorch MPS or CUDA GPU. Install a supported PyTorch build or explicitly select CPU.'

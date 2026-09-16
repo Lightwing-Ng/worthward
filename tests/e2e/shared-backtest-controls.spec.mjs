@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.3.0 */
+/* Shared Backtest control primitives. Code version: v1.3.1 */
 import {test, expect} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -9,7 +9,7 @@ for (const colorScheme of ['light', 'dark']) {
             await page.setViewportSize({width, height: 900});
             await page.emulateMedia({colorScheme});
             await page.route('**/api/lstm-training', route => route.fulfill({json: {
-                success: true, protocol_version: 2, runs: [{id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa',
+                success: true, protocol_version: 3, runs: [{id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa',
                     ticker: 'NVDA', identifier: '260904(01)', status: 'completed', active: false,
                     accuracy_pct: 65, started_at: '2026-09-04T00:00:00Z'}],
             }}));

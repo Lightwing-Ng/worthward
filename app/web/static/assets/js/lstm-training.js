@@ -1,4 +1,4 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.14.1 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -237,15 +237,6 @@
         unknown: "Unavailable",
     }[String(status || "unknown")] || "Unavailable");
 
-    const trainingActionLabel = (action, pending = false) => {
-        if (!isLegacyLstm()) {
-            if (pending) return action === "stop" ? "Stopping training…" : "Starting training…";
-            return action === "stop" ? "Stop training" : "Start training";
-        }
-        if (pending) return action === "stop" ? "Stopping GA tuning…" : "Starting GA tuning…";
-        return action === "stop" ? "Stop GA tuning" : "Start GA tuning";
-    };
-
     const appendText = (parent, className, value) => {
         const element = document.createElement("span");
         element.className = className;
@@ -280,7 +271,7 @@
         const track = document.createElement("div");
         track.className = "lstm-training-progress-track";
         track.setAttribute("role", "progressbar");
-        track.setAttribute("aria-label", `${isLegacyLstm() ? "LSTM GA tuning" : "Price Field training"} progress for ${run.ticker}`);
+        track.setAttribute("aria-label", `${isLegacyLstm() ? "LSTM training" : "Price Field training"} progress for ${run.ticker}`);
         track.setAttribute("aria-valuemin", "0");
         track.setAttribute("aria-valuemax", "100");
         if (known) track.setAttribute("aria-valuenow", String(value));
@@ -317,10 +308,13 @@
         const check = appendText(summary, "lstm-training-selected-icon", "");
         check.setAttribute("aria-hidden", "true");
         appendText(summary, "lstm-training-history-run", run.ticker || "Unknown ticker");
-        const score = run.crps_skill_pct ?? run.probability_score_pct ?? run.accuracy_pct;
+        const score = run.training_mode === "genetic"
+            ? run.crps_skill_pct ?? run.probability_score_pct ?? run.accuracy_pct
+            : run.probability_score_pct ?? run.accuracy_pct;
         if (typeof score === "number" && Number.isFinite(score)) {
             const badge = appendText(summary, "investment-holdings-allocation-badge lstm-training-accuracy", `${formatNumber(score, 2)}%`);
-            badge.title = run.crps_skill_pct !== null && run.crps_skill_pct !== undefined
+            badge.title = run.training_mode === "genetic"
+                && run.crps_skill_pct !== null && run.crps_skill_pct !== undefined
                 ? run.crps_skill_label || "Mean validation CRPS skill vs baseline"
                 : run.probability_score_pct !== null && run.probability_score_pct !== undefined
                     ? run.probability_score_label : run.accuracy_label || "Holdout direction accuracy";
@@ -342,7 +336,7 @@
         remove.dataset.lstmTrainingDelete = String(run.id);
         remove.title = `Delete ${run.ticker} ${identifier || "undated run"} (recoverable)`;
         remove.setAttribute("aria-label", `Delete ${run.ticker} ${identifier || "undated run"}`);
-        remove.disabled = Boolean(run.active || pendingAction || protocolVersion < 2);
+        remove.disabled = Boolean(run.active || pendingAction || protocolVersion < 3);
         appendText(remove, "icon icon-remove-muted", "").setAttribute("aria-hidden", "true");
         remove.addEventListener("click", () => postTrainingAction(activeMenu, "delete", run.id));
         item.appendChild(remove);
@@ -358,7 +352,7 @@
         if (run.configuration) appendText(details, "lstm-training-history-meta", `${run.configuration.from} – ${run.configuration.to} · ${run.configuration.interval}`);
         if (run.requested_range?.from && run.requested_range?.to) appendText(details, "lstm-training-history-meta", `Requested window ${run.requested_range.from} – ${run.requested_range.to}`);
         if (run.configuration_error) appendText(details, "lstm-training-history-meta", run.configuration_error);
-        if (run.objective_label) {
+        if (run.training_mode === "genetic" && run.objective_label) {
             const budgetHours = Number(run.duration_seconds) / 3600;
             const budget = Number.isFinite(budgetHours) && budgetHours > 0
                 ? ` · Time budget ${formatNumber(budgetHours, Number.isInteger(budgetHours) ? 0 : 1)} h`
@@ -381,10 +375,11 @@
         if (run.evaluated != null && Number.isFinite(Number(run.evaluated))) progress.push(`${formatNumber(run.evaluated)} evaluations`);
         if (progress.length) appendText(details, "lstm-training-history-meta", progress.join(" · "));
         const best = run.best || {};
-        const submittedParams = run.base_params && typeof run.base_params === "object"
+        const submittedParams = run.training_mode === "genetic"
+            && run.base_params && typeof run.base_params === "object"
             ? run.base_params : run.selected_params;
         if (submittedParams && typeof submittedParams === "object") {
-            const prefix = run.base_params ? "GA baseline parameters" : "Selected parameters";
+            const prefix = run.training_mode === "genetic" ? "GA baseline parameters" : "Selected parameters";
             appendText(details, "lstm-training-history-meta", `${prefix}: ${Object.entries(submittedParams)
                 .map(([key, value]) => `${key}=${value}`).join(" · ")}`);
         }
@@ -426,11 +421,11 @@
         if (button instanceof HTMLButtonElement) {
             const action = activeRun ? "stop" : "start";
             const stopping = activeRun && (activeRun.status === "stopping" || stoppingRunIds.has(activeRun.id));
-            const label = pendingAction === "start" ? trainingActionLabel("start", true)
-                : pendingAction === "stop" || stopping ? trainingActionLabel("stop", true)
-                    : activeRun ? trainingActionLabel("stop") : trainingActionLabel("start");
+            const label = pendingAction === "start" ? "Starting training…"
+                : pendingAction === "stop" || stopping ? "Stopping training…"
+                    : activeRun ? "Stop training" : "Start training";
             button.dataset.lstmTrainingAction = action;
-            button.disabled = Boolean(pendingAction || stopping || (!activeRun && (!lastFetchedAt || historyError || protocolVersion < 2)));
+            button.disabled = Boolean(pendingAction || stopping || (!activeRun && (!lastFetchedAt || historyError || protocolVersion < 3)));
             button.title = label;
             button.setAttribute("aria-label", label);
             button.setAttribute("aria-busy", String(Boolean(pendingAction)));
@@ -441,7 +436,7 @@
         const status = menu.querySelector("[data-lstm-training-status]");
         if (status instanceof HTMLElement) {
             status.textContent = actionError || historyError || (applyingRunId ? "Loading saved configuration…"
-                : lastFetchedAt && protocolVersion < 2 ? "Restart the local service to enable updated training controls." : "");
+                : lastFetchedAt && protocolVersion < 3 ? "Restart the local service to enable exact-configuration training." : "");
             status.hidden = !status.textContent;
         }
 
@@ -503,7 +498,9 @@
                 cachedRuns = Array.isArray(payload.runs) ? payload.runs.filter((run) => (
                     selectedStrategy === "lstm-price-field" || run.strategy === selectedStrategy
                 )) : [];
-                protocolVersion = Number(payload.protocol_version || 0);
+                const receivedProtocolVersion = Number(payload.protocol_version);
+                protocolVersion = Number.isSafeInteger(receivedProtocolVersion)
+                    && receivedProtocolVersion >= 0 ? receivedProtocolVersion : 0;
                 if (requestedSelectionId && !applyingRunId) {
                     const requested = cachedRuns.find((run) => run.id === requestedSelectionId);
                     if (requested?.configuration && configurationMatches(requested.configuration)) {
@@ -647,7 +644,7 @@
         menu.dataset.lstmTrainingMenu = "true";
         const actions = document.createElement("div");
         actions.className = "lstm-training-actions";
-        const actionButton = buildActionButton("start", trainingActionLabel("start"), "lstm-training-start-icon");
+        const actionButton = buildActionButton("start", "Start training", "lstm-training-start-icon");
         actionButton.addEventListener("click", (event) => {
             event.stopPropagation();
             const activeRun = cachedRuns.find((run) => run.active && run.ticker === currentTicker()) || cachedRuns.find((run) => run.active);

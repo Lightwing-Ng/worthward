@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 import {
     expect,
     test,
@@ -320,9 +320,9 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
     expect(lattice.detailBottomInset).toBeGreaterThanOrEqual(-1);
 });
 
-test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', async ({page}) => {
+test('protects full-width 20-column by 24-row detail resolution at 732 by 1318', async ({page}) => {
     test.setTimeout(90_000);
-    await page.setViewportSize({width: 732, height: 1232});
+    await page.setViewportSize({width: 732, height: 1318});
     await page.goto(
         '/workspaces/backtest?ticker=QQQ&range=5y&strategy=bayesian-price-field'
         + '&cell_display_threshold=2.50&training_window=30&chip_window=41'
@@ -356,6 +356,17 @@ test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', a
         const lastColumnRect = findCell(0, 19)?.getBoundingClientRect();
         const gridRect = grid.getBoundingClientRect();
         const viewportRect = viewport?.getBoundingClientRect();
+        const panel = grid.closest('[data-backtest-probability-detail-panel]');
+        const plot = grid.closest('[data-backtest-probability-detail-plot]');
+        const panelRect = panel?.getBoundingClientRect();
+        const plotRect = plot?.getBoundingClientRect();
+        const panelStyles = panel ? getComputedStyle(panel) : null;
+        const panelContentLeft = panelRect && panelStyles
+            ? panelRect.left + (Number.parseFloat(panelStyles.paddingLeft) || 0)
+            : Number.NaN;
+        const panelContentRight = panelRect && panelStyles
+            ? panelRect.right - (Number.parseFloat(panelStyles.paddingRight) || 0)
+            : Number.NaN;
         const xAxis = grid.closest('.backtest-probability-detail-main')
             ?.querySelector('[data-backtest-probability-detail-x-axis]');
         const xAxisRect = xAxis?.getBoundingClientRect();
@@ -377,6 +388,12 @@ test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', a
             lastColumnInset: lastColumnRect ? gridRect.right - lastColumnRect.right : Number.NaN,
             rightInset: viewportRect ? viewportRect.right - gridRect.right : Number.NaN,
             rows: new Set(cells.map((cell) => cell.dataset.row)).size,
+            plotLeftWaste: plotRect ? plotRect.left - panelContentLeft : Number.NaN,
+            plotRightWaste: plotRect ? panelContentRight - plotRect.right : Number.NaN,
+            plotHorizontalOverflow: plot ? plot.scrollWidth - plot.clientWidth : Number.NaN,
+            plotVerticalOverflow: plot ? plot.scrollHeight - plot.clientHeight : Number.NaN,
+            panelHorizontalOverflow: panel ? panel.scrollWidth - panel.clientWidth : Number.NaN,
+            panelVerticalOverflow: panel ? panel.scrollHeight - panel.clientHeight : Number.NaN,
             squareDelta: Math.max(...cells.map((cell) => {
                 const rect = cell.getBoundingClientRect();
                 return Math.abs(rect.width - rect.height);
@@ -406,8 +423,8 @@ test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', a
     expect(geometry.rows).toBe(24);
     expect(geometry.upRows).toBe(12);
     expect(geometry.downRows).toBe(12);
-    expect(geometry.minimumCellWidth).toBeGreaterThan(0);
-    expect(geometry.minimumCellHeight).toBeGreaterThan(0);
+    expect(geometry.minimumCellWidth).toBeGreaterThanOrEqual(12);
+    expect(geometry.minimumCellHeight).toBeGreaterThanOrEqual(12);
     expect(geometry.squareDelta).toBeLessThanOrEqual(0.1);
     expect(geometry.horizontalGap).toBeCloseTo(2, 1);
     expect(geometry.verticalGap).toBeCloseTo(2, 1);
@@ -421,8 +438,111 @@ test('renders the reusable 20-column by 24-row detail lattice at 732 by 1232', a
     expect(geometry.tickOverlap).toBe(false);
     expect(geometry.tickLeftInset).toBeGreaterThanOrEqual(-1);
     expect(geometry.tickRightInset).toBeGreaterThanOrEqual(-1);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
-        .toBeLessThanOrEqual(0);
+    expect(Math.abs(geometry.plotLeftWaste)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.plotRightWaste)).toBeLessThanOrEqual(1);
+    expect(geometry.plotHorizontalOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.plotVerticalOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.panelHorizontalOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.panelVerticalOverflow).toBeLessThanOrEqual(1);
+    const documentOverflow = await page.evaluate(() => ({
+        horizontal: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        vertical: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }));
+    expect(documentOverflow.horizontal).toBeLessThanOrEqual(1);
+    expect(documentOverflow.vertical).toBeLessThanOrEqual(1);
+});
+
+test('protects Price field detail resolution at the desktop resizer endpoint', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.goto(
+        '/workspaces/backtest?ticker=QQQ&range=5y&strategy=bayesian-price-field'
+        + '&cell_display_threshold=2.50&training_window=30&chip_window=41'
+        + '&prior_strength=1.51&show_trade_details=0',
+    );
+    await expect.poll(() => page.evaluate(() => {
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        return presentation
+            ? [presentation.columns, presentation.rows_above, presentation.rows_below]
+            : null;
+    }), {timeout: 60_000}).toEqual([20, 12, 12]);
+
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    const detailGrid = detailPanel.locator('[data-backtest-probability-detail-grid]');
+    await expect(detailPanel).toBeVisible();
+    await expect.poll(() => detailGrid.locator('.backtest-probability-detail-cell').count())
+        .toBe(480);
+    const beforeEndpointCellSize = await detailGrid.evaluate((grid) => Math.min(
+        ...Array.from(grid.querySelectorAll('.backtest-probability-detail-cell')).flatMap((cell) => {
+            const rect = cell.getBoundingClientRect();
+            return [rect.width, rect.height];
+        }),
+    ));
+
+    const resizer = page.locator('#backtest_section_resizer');
+    await resizer.focus();
+    await resizer.press('End');
+    await expect.poll(() => resizer.evaluate((element) => (
+        Math.abs(
+            Number(element.getAttribute('aria-valuenow'))
+            - Number(element.getAttribute('aria-valuemax')),
+        )
+    ))).toBeLessThanOrEqual(1);
+
+    const protectedGeometry = await detailPanel.evaluate((panel) => {
+        const grid = panel.querySelector('[data-backtest-probability-detail-grid]');
+        const plot = panel.querySelector('[data-backtest-probability-detail-plot]');
+        const history = panel.closest('#backtest_history_surface');
+        const cells = Array.from(
+            grid?.querySelectorAll('.backtest-probability-detail-cell') || [],
+        );
+        const panelRect = panel.getBoundingClientRect();
+        const plotRect = plot?.getBoundingClientRect();
+        const panelStyles = getComputedStyle(panel);
+        const historyStyles = history ? getComputedStyle(history) : null;
+        return {
+            cellCount: cells.length,
+            historyHeight: history?.getBoundingClientRect().height || 0,
+            historyMinimum: Number.parseFloat(
+                historyStyles?.getPropertyValue('--backtest-probability-history-min-height') || '',
+            ),
+            minimumCellSize: Math.min(...cells.flatMap((cell) => {
+                const rect = cell.getBoundingClientRect();
+                return [rect.width, rect.height];
+            })),
+            panelHorizontalOverflow: panel.scrollWidth - panel.clientWidth,
+            panelVerticalOverflow: panel.scrollHeight - panel.clientHeight,
+            plotLeftWaste: plotRect
+                ? plotRect.left - panelRect.left - (Number.parseFloat(panelStyles.paddingLeft) || 0)
+                : Number.NaN,
+            plotRightWaste: plotRect
+                ? panelRect.right - (Number.parseFloat(panelStyles.paddingRight) || 0) - plotRect.right
+                : Number.NaN,
+            plotHorizontalOverflow: plot ? plot.scrollWidth - plot.clientWidth : Number.NaN,
+            plotVerticalOverflow: plot ? plot.scrollHeight - plot.clientHeight : Number.NaN,
+        };
+    });
+    expect(protectedGeometry.cellCount).toBe(480);
+    expect(protectedGeometry.minimumCellSize).toBeGreaterThanOrEqual(4);
+    expect(Math.abs(protectedGeometry.minimumCellSize - beforeEndpointCellSize))
+        .toBeLessThanOrEqual(0.1);
+    expect(protectedGeometry.historyMinimum).toBeGreaterThan(0);
+    expect(protectedGeometry.historyHeight + 1).toBeGreaterThanOrEqual(
+        protectedGeometry.historyMinimum,
+    );
+    expect(Math.abs(protectedGeometry.plotLeftWaste)).toBeLessThanOrEqual(1);
+    expect(Math.abs(protectedGeometry.plotRightWaste)).toBeLessThanOrEqual(1);
+    expect(protectedGeometry.plotHorizontalOverflow).toBeLessThanOrEqual(1);
+    expect(protectedGeometry.plotVerticalOverflow).toBeLessThanOrEqual(1);
+    expect(protectedGeometry.panelHorizontalOverflow).toBeLessThanOrEqual(1);
+    expect(protectedGeometry.panelVerticalOverflow).toBeLessThanOrEqual(1);
+    const documentOverflow = await page.evaluate(() => ({
+        horizontal: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        vertical: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }));
+    expect(documentOverflow.horizontal).toBeLessThanOrEqual(1);
+    expect(documentOverflow.vertical).toBeLessThanOrEqual(1);
 });
 
 test('shows the full cumulative probability for a hovered Bayesian detail row', async ({page}) => {

@@ -1,13 +1,14 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.6.0
+ * Code version: v0.7.1
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.4.0';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.5.1';
 
 const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';
+const PROBABILITY_HISTORY_MINIMUM_PROPERTY = '--backtest-probability-history-min-height';
 const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';
 let cleanupBacktestLayout = () => {};
 
@@ -154,19 +155,46 @@ export function initBacktestLayout() {
         );
         return Number.isFinite(value) ? Math.max(0, value) : 0;
     };
+    const isProbabilityHistoryViewActive = () => (
+        historySurface instanceof HTMLElement
+        && historySurface.dataset.activeView === 'probability'
+    );
+    const setProbabilityHistoryMinimum = (height) => {
+        if (!(historySurface instanceof HTMLElement)) return;
+        const value = Number(height);
+        if (!(value > 0)) {
+            historySurface.style.removeProperty(PROBABILITY_HISTORY_MINIMUM_PROPERTY);
+            return;
+        }
+        const nextValue = `${Math.ceil(value)}px`;
+        if (historySurface.style.getPropertyValue(PROBABILITY_HISTORY_MINIMUM_PROPERTY) !== nextValue) {
+            historySurface.style.setProperty(PROBABILITY_HISTORY_MINIMUM_PROPERTY, nextValue);
+        }
+    };
     const getProbabilityHistoryMinimumHeight = () => {
         if (!(historySurface instanceof HTMLElement)) return 0;
         const detailPanel = historySurface.querySelector(
             ':scope > .investment-view-surface-body > [data-backtest-probability-detail-panel]:not([hidden])',
         );
-        if (!(detailPanel instanceof HTMLElement) || detailPanel.getClientRects().length === 0) return 0;
+        if (!(detailPanel instanceof HTMLElement) || detailPanel.getClientRects().length === 0) {
+            setProbabilityHistoryMinimum(0);
+            return 0;
+        }
 
         const detailStyles = window.getComputedStyle(detailPanel);
-        if (detailStyles.display === 'none' || detailStyles.visibility === 'hidden') return 0;
-        const detailMinimum = Number.parseFloat(
+        if (detailStyles.display === 'none' || detailStyles.visibility === 'hidden') {
+            setProbabilityHistoryMinimum(0);
+            return 0;
+        }
+        const computedMinimum = Number.parseFloat(detailStyles.minHeight);
+        const declaredMinimum = Number.parseFloat(
             detailStyles.getPropertyValue('--backtest-probability-detail-min-height'),
         );
-        if (!(detailMinimum > 0)) return 0;
+        const detailMinimum = computedMinimum > 0 ? computedMinimum : declaredMinimum;
+        if (!(detailMinimum > 0)) {
+            setProbabilityHistoryMinimum(0);
+            return 0;
+        }
 
         const surfaceStyles = window.getComputedStyle(historySurface);
         const detailBody = detailPanel.parentElement;
@@ -188,12 +216,14 @@ export function initBacktestLayout() {
         const segmentedHeight = segmentedFrame instanceof HTMLElement
             ? segmentedFrame.getBoundingClientRect().height
             : 0;
-        return readBlockPadding(surfaceStyles)
+        const minimumHeight = readBlockPadding(surfaceStyles)
             + surfaceGap
             + segmentedHeight
             + readBlockPadding(bodyStyles)
             + detailMinimum
             + readBlockMargin(detailStyles);
+        setProbabilityHistoryMinimum(minimumHeight);
+        return minimumHeight;
     };
 
     const cleanupSectionResizer = bindInvestmentSectionResizer({
@@ -207,7 +237,8 @@ export function initBacktestLayout() {
         getChartInstances: getBacktestCharts,
         getOverviewStageMinimum: getProbabilityStageMinimum,
         getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,
-        preferOverviewMinimum: true,
+        preferOverviewMinimum: () => !isProbabilityHistoryViewActive(),
+        preferHistoryMinimum: isProbabilityHistoryViewActive,
         overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,
         ignoreMutationSelector: '[data-backtest-probability-detail-panel]',
         observeHistorySurfaceResize: false,
@@ -216,6 +247,7 @@ export function initBacktestLayout() {
     cleanupBacktestLayout = () => {
         cleanupParameterOverlay();
         cleanupSectionResizer?.();
+        setProbabilityHistoryMinimum(0);
     };
     return cleanupBacktestLayout;
 }

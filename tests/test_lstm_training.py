@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.3."""
 
 from __future__ import annotations
 
@@ -85,6 +85,7 @@ def test_history_exposes_complete_exact_configuration_and_measured_score(tmp_pat
     assert len(config["params"]) == 46
     assert config["params"]["use_turnover"] is False
     assert config["params"]["use_momentum_60d"] is False
+    assert run["training_mode"] == "exact"
 
 
 def test_delete_is_recoverable_and_does_not_renumber_survivors(tmp_path):
@@ -180,18 +181,31 @@ def test_web_launch_reservation_is_claimed_once_without_implicit_resume(tmp_path
     command = commands[0]
     args = ga_runner._build_parser().parse_args(command[2:])
     assert "--resume" not in command
-    assert "--selected-params" not in command
-    assert args.objective == "crps"
+    assert "--selected-params" in command
+    assert "--base-params" not in command
+    assert args.objective == "direction"
     assert args.duration_seconds == 36_000
-    assert ga_runner.validate_selected_params(json.loads(args.base_params)) == ga_runner.validate_selected_params({})
+    assert ga_runner.validate_selected_params(json.loads(args.selected_params)) == ga_runner.validate_selected_params({})
+    assert ga_runner.build_request_spec(args)["minimum_training_seconds"] == 180
     assert Path(args.prepared_request).parent.name == run["id"]
+    reached = []
+    context = SimpleNamespace(objective="direction")
+    monkeypatch.setattr(ga_runner, "_build_snapshot", lambda *_args: (context, {}))
     monkeypatch.setattr(
         ga_runner,
-        "_build_snapshot",
-        lambda *_args: (_ for _ in ()).throw(RuntimeError("stop after reservation")),
+        "_run_selected_configuration",
+        lambda _spec, paths, _context: reached.append(paths.state.name) or 0,
     )
-    assert ga_runner.main(command[2:]) == 1
-    assert (manager._paths_for_run_id(run["id"]).state / "worker.json").is_file()
+    from scripts import lstm_runtime
+    runtimes = []
+    monkeypatch.setattr(
+        lstm_runtime,
+        "ensure_training_runtime",
+        lambda backend, *_args: runtimes.append(backend),
+    )
+    assert ga_runner.main(command[2:]) == 0
+    assert runtimes == [ga_runner.validate_selected_params({})["compute_backend"]]
+    assert reached == [run["id"]]
     with pytest.raises(FileExistsError):
         ga_runner._run(args)
     args.prepared_request = None
@@ -276,7 +290,7 @@ def test_windows_process_identity_uses_cim_and_exact_seed(tmp_path, monkeypatch)
     assert "ProcessId = 321" in calls[0][-1]
 
 
-def test_web_ga_receives_dates_general_settings_and_ten_hour_budget(tmp_path, monkeypatch):
+def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkeypatch):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     captured = []
     monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
@@ -288,9 +302,10 @@ def test_web_ga_receives_dates_general_settings_and_ten_hour_budget(tmp_path, mo
     paths = manager._paths_for_run_id(run["id"])
     request = json.loads(paths.request.read_text())
     assert request["duration_seconds"] == 36_000
-    assert request["minimum_training_seconds"] == 0
-    assert request["objective"] == "crps"
-    assert request["selected_params"] is None
+    assert request["minimum_training_seconds"] == 180
+    assert request["objective"] == "direction"
+    assert request["selected_params"] == ga_runner.validate_selected_params({})
+    assert request["base_params"] is None
     assert request["configuration"] == sent
 
 
@@ -354,18 +369,20 @@ def test_start_uses_isolated_runner_process_and_returns_starting_run(tmp_path: P
     assert commands[0][commands[0].index("--period") + 1] == "6mo"
     assert commands[0][commands[0].index("--interval") + 1] == "1d"
     assert "--state-root" in commands[0]
-    assert "--selected-params" not in commands[0]
-    assert commands[0][commands[0].index("--objective") + 1] == "crps"
+    assert "--selected-params" in commands[0]
+    assert "--base-params" not in commands[0]
+    assert commands[0][commands[0].index("--objective") + 1] == "direction"
     assert commands[0][commands[0].index("--duration-seconds") + 1] == "36000"
-    submitted = json.loads(commands[0][commands[0].index("--base-params") + 1])
+    submitted = json.loads(commands[0][commands[0].index("--selected-params") + 1])
     assert submitted == ga_runner.validate_selected_params(selected)
-    assert run["selected_params"] is None
-    assert run["base_params"] == submitted
-    assert run["objective"] == "crps"
-    assert run["objective_label"] == "CRPS skill vs baseline"
+    assert run["selected_params"] == submitted
+    assert run["base_params"] is None
+    assert run["training_mode"] == "exact"
+    assert run["objective"] == "direction"
+    assert run["objective_label"] == "Direction accuracy"
 
 
-def test_completed_crps_ga_replays_seed_42_and_exposes_optimization_score(tmp_path):
+def test_external_cli_ga_replays_seed_42_and_exposes_optimization_score(tmp_path):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     paths, spec = _run_paths(manager, tmp_path)
     baseline = ga_runner.validate_selected_params({"lstm_epochs": 3})
@@ -401,6 +418,7 @@ def test_completed_crps_ga_replays_seed_42_and_exposes_optimization_score(tmp_pa
     assert run["crps_skill_pct"] == -7.62
     assert run["crps_skill_label"] == "Mean validation CRPS skill vs baseline"
     assert run["base_params"] == baseline
+    assert run["training_mode"] == "genetic"
     assert run["best"]["validation_mean_crps_skill_pct"] == -7.62
 
 
@@ -450,6 +468,19 @@ def test_start_and_stop_endpoints_require_same_origin_csrf_proof(client) -> None
 
     assert response.status_code == 403
     assert response.json["success"] is False
+
+
+def test_list_endpoint_exposes_exact_training_protocol(client, monkeypatch) -> None:
+    monkeypatch.setattr(
+        lstm_training.LstmTrainingManager,
+        "list_runs",
+        lambda _manager: [],
+    )
+
+    response = client.get("/api/lstm-training")
+
+    assert response.status_code == 200
+    assert response.json == {"success": True, "protocol_version": 3, "runs": []}
 
 
 def test_start_endpoint_delegates_validated_request_to_manager(client, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -559,6 +590,7 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
     manager = lstm_training.LstmTrainingManager(tmp_path)
     args = manager._build_runner_args("NVDA", "1y", 42)
     args.selected_params = {"use_broker_holding": True, "lstm_epochs": 3}
+    args.objective = "crps"
     spec = ga_runner.build_request_spec(args)
     paths = ga_runner.build_run_paths(args, spec)
     paths.state.mkdir(parents=True)
@@ -566,6 +598,7 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
     observed = []
     def evaluate(candidate, actual_context, progress=None):
         assert actual_context is context
+        assert actual_context.objective == spec["objective"] == "crps"
         observed.append(candidate["params"])
         progress(25, 100)
         assert json.loads(paths.status.read_text())["progress"] == {"completed": 25, "total": 100, "unit": "origins"}

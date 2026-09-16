@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -958,7 +958,7 @@ test('replaces Backtest controls when the strategy changes without losing the ti
 });
 
 test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar', async ({page}) => {
-    await page.setViewportSize({width: 972, height: 841});
+    await page.setViewportSize({width: 972, height: 820});
     await page.goto('/workspaces/backtest?ticker=TQQQ&range=3y&strategy=supertrend-ai&stop_loss=0');
 
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
@@ -1252,4 +1252,3 @@ test('keeps the narrow-screen sidebar toggle clear of the sidebar edge and theme
         return theme && toggle ? theme.left - toggle.right : null;
     }).toBeGreaterThanOrEqual(12);
 });
-

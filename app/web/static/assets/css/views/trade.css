@@ -1,4 +1,4 @@
-/* Code version: v3.76.2 */
+/* Code version: v3.77.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -609,12 +609,12 @@
 }
 
 .backtest-history-view-body > .backtest-probability-detail-panel {
-    --backtest-probability-detail-min-height: 212px;
+    --backtest-probability-detail-min-height: max(300px, calc(60cqi + 80px));
     flex: 1 1 auto;
-    max-height: 100%;
+    max-height: none;
     display: flex;
     flex-direction: column;
-    min-height: 0;
+    min-height: var(--backtest-probability-detail-min-height);
     min-width: 0;
     margin: 2px 0 0;
     padding: 2px;
@@ -666,15 +666,18 @@
 
 .backtest-probability-detail-plot {
     --backtest-probability-detail-plot-inline-start: 28px;
+    width: 100%;
     max-width: 100%;
     display: grid;
     flex: 1 1 auto;
+    align-self: stretch;
     grid-template-columns: calc(
         var(--backtest-chart-y-axis-width)
         - var(--backtest-probability-detail-plot-inline-start)
     ) minmax(0, 1fr);
     min-height: 0;
     min-width: 0;
+    box-sizing: border-box;
     overflow: hidden;
 }
 
@@ -837,13 +840,21 @@
 @media (max-width: 767px) {
     .backtest-probability-detail-plot {
         --backtest-probability-detail-plot-inline-start: 22px;
+        min-height: calc(60cqi + 8px);
     }
 
     .backtest-history-view-body > .backtest-probability-detail-panel {
-        flex-basis: 380px;
-        min-height: 0;
-        margin-inline: 10px;
-        padding-inline: 12px;
+        --backtest-probability-detail-min-height: max(300px, calc(60cqi + 76px));
+        flex-basis: auto;
+        margin-inline: 0;
+        padding-inline: 2px;
+    }
+
+    .backtest-history-surface[data-active-view="probability"] {
+        min-height: max(
+            var(--investment-section-min-height),
+            var(--backtest-probability-history-min-height, var(--investment-section-min-height))
+        );
     }
 
 }

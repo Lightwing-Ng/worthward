@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.1
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.4.0';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.1';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -12,6 +12,7 @@ export function resolveInvestmentTrackRange({
     desiredOverviewMinimum,
     desiredHistoryMinimum,
     preferOverviewMinimum = false,
+    preferHistoryMinimum = false,
 }) {
     const safeAvailableHeight = Math.max(0, Number(availableHeight) || 0);
     const safeBaseline = Math.min(
@@ -31,6 +32,20 @@ export function resolveInvestmentTrackRange({
     const layoutMinimum = safeBaseline + ((safeOverviewMinimum - safeBaseline) * minimumScale);
     const compressedHistoryMinimum = safeBaseline
         + ((safeHistoryMinimum - safeBaseline) * minimumScale);
+    if (preferHistoryMinimum) {
+        const historyMinimum = Math.min(
+            safeHistoryMinimum,
+            Math.max(safeBaseline, safeAvailableHeight - safeBaseline),
+        );
+        const maximum = Math.max(safeBaseline, safeAvailableHeight - historyMinimum);
+        const minimum = Math.min(layoutMinimum, maximum);
+        return {
+            minimum,
+            layoutMinimum: minimum,
+            maximum,
+            historyMinimum,
+        };
+    }
     if (preferOverviewMinimum) {
         // Home keeps the published 12-row-per-side plot. The live split still uses the
         // compressed floor so Price Field detail is not collapsed until the
@@ -71,6 +86,7 @@ export function bindInvestmentSectionResizer({
     getOverviewStageMinimum = () => 0,
     getAdditionalHistoryMinimumHeight = () => 0,
     preferOverviewMinimum = false,
+    preferHistoryMinimum = false,
     overviewMinimumChangeEvent = null,
     ignoreMutationSelector = null,
     observeHistorySurfaceResize = true,
@@ -115,6 +131,9 @@ export function bindInvestmentSectionResizer({
         const value = Number.parseFloat(windowRef.getComputedStyle(element).getPropertyValue(propertyName));
         return Number.isFinite(value) ? value : fallback;
     };
+    const resolveBooleanOption = (option) => (
+        typeof option === 'function' ? Boolean(option()) : Boolean(option)
+    );
     const getBaselineMinimumHeight = () => {
         const value = readPixelProperty(workspaceHeader, '--investment-section-min-height', 132);
         return Number.isFinite(value) ? value : 132;
@@ -299,7 +318,8 @@ export function bindInvestmentSectionResizer({
             baselineMinimum,
             desiredOverviewMinimum: getOverviewMinimumHeight(baselineMinimum),
             desiredHistoryMinimum: getHistoryMinimumHeight(baselineMinimum),
-            preferOverviewMinimum,
+            preferOverviewMinimum: resolveBooleanOption(preferOverviewMinimum),
+            preferHistoryMinimum: resolveBooleanOption(preferHistoryMinimum),
         });
         const liveMinimum = Number.isFinite(range.layoutMinimum)
             ? range.layoutMinimum

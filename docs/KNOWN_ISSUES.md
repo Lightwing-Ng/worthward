@@ -1,19 +1,31 @@
 # Known issues and operating constraints
 
-LSTM browser GA objective alignment, 15 Sep 2026: Start GA tuning now treats
-the current private controls as a baseline for a 36,000-second genetic search
-instead of sending them through the exact-configuration bypass. Candidate and
-three-seed robust ranking maximize the same strict 1–20 day CRPS skill versus
-causal baseline that Backtest displays. Every validation fold requires all 20
-horizons and complete eligible-pair coverage; the final holdout is evaluated
-only after selection is frozen. Completed robust runs replay their complete
-seed-42 member because an aggregate parameter set without a seed is not an
-executable configuration. The explicit `--selected-params` CLI path retains its
-180-second minimum optimizer-work contract for diagnostics. Existing history is
-not rewritten, no GA begins merely by loading Backtest, and a cached 8688 service
-requires an owner-controlled restart before the new Python launch contract is
-live. The runner budget is a scheduling deadline, not the strict outer wall-clock
-supervisor described in `docs/LSTM_PROBABILITY_TUNING.md`.
+Price Field detail responsive protection, 15 Sep 2026: the contained detail
+plot now consumes the complete inline width assigned by its panel; available
+height no longer creates a narrower centered plot with unused side space. Its
+minimum height follows container width and the shared Backtest splitter gives
+that history budget priority only while `Price Field` is active. At the exact
+732 by 1,318 responsive viewport, the 20-by-24 lattice retains 480 square cells
+of at least 12px, 2px gaps, full-width plot ownership, and zero plot, panel, or
+document overflow. A desktop endpoint regression proves that moving the
+splitter to its limit does not reduce the width-limited cell resolution.
+
+LSTM Web-training and CLI-GA boundary, 15 Sep 2026: Start training sends the
+current private controls through `--selected-params`, bypasses crossover and
+mutation, and retains the 180-second minimum optimizer-work contract before the
+completed configuration can be applied to LSTM Price Field. The standalone CLI
+owns the 36,000-second genetic search and now defaults to the same strict 1–20 day
+CRPS skill versus causal baseline that Backtest displays. Every validation fold
+requires all 20 horizons and complete eligible-pair coverage; the final holdout
+is evaluated only after selection is frozen. Completed robust GA runs remain
+readable in shared compute history and replay their complete seed-42 member
+because an aggregate parameter set without a seed is not executable. Protocol v3
+disables the browser action against a cached pre-exact-training Python service;
+the user-owned 8688 service requires an owner-controlled restart before the new
+launch contract is live. Existing history is not rewritten, no training starts
+merely by loading Backtest, and the runner budget remains a scheduling deadline,
+not the strict outer wall-clock supervisor described in
+`docs/LSTM_PROBABILITY_TUNING.md`.
 
 Strategy-tuning pressed state, 15 Sep 2026: the active round control now uses an
 opaque adaptive-white surface with the standard primary-blue SVG glyph and border.
@@ -278,7 +290,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.257.0`
+Documentation version: `v1.257.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
@@ -372,10 +384,12 @@ The edge-hover failure also reproduced alone. A pre-change reproduction was
 not obtained for all three failures, so they cannot all be classified as
 pre-existing from that evidence.
 
-LSTM GA v0.9.0 adds opt-in `--objective probability` and a SHA-256-pinned
+LSTM GA v0.9.0 added opt-in `--objective probability` and a SHA-256-pinned
 `--snapshot-file` input. It ranks chronological validation Brier scores with
 missing-prediction penalties and excludes holdout results from selection.
-The default direction objective retains its existing legacy ranking. See
+At that historical version, an omitted objective selected the legacy direction
+ranking. The current standalone runner defaults to CRPS; direction, probability,
+and grid objectives remain explicit compatibility options. See
 [LSTM probability tuning](LSTM_PROBABILITY_TUNING.md) for the offline budget,
 selection boundaries, and hard-stop limitation. Native disclosure masks now use
 the standard blue accent in both open and closed states.
@@ -455,7 +469,7 @@ references, transaction descriptions, or copied statement content.
 - Applying a case freezes its actual data dates, not a rolling period ending
   today. A requested one-year period can contain fewer observations for a recent
   listing; both the requested bounds and actual data window remain visible.
-- Protocol version 2 is required for updated training controls. A cached older
+- Protocol version 3 is required for exact-configuration training controls. A cached older
   Python service must be restarted by its owner; refreshing static assets alone
   cannot activate the new configuration/delete endpoints.
 - Deletion archives inactive compute output under `.deleted/<run-id>` beside the

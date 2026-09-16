@@ -1,4 +1,4 @@
-"""Tests for the durable LSTM GA runner. Code version: v1.3.0."""
+"""Tests for the durable LSTM GA runner. Code version: v1.3.2."""
 
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ from scripts import lstm_ga_tune as ga
 
 
 class LstmGaTuneTests(unittest.TestCase):
-    def test_default_budget_is_ten_hours_and_crps_is_supported(self):
-        args = ga._build_parser().parse_args(["--objective", "crps"])
+    def test_default_budget_is_ten_hours_and_objective_is_crps(self):
+        args = ga._build_parser().parse_args([])
 
         self.assertEqual(args.duration_seconds, 36_000)
         self.assertEqual(ga._request_spec(args)["objective"], "crps")
-        self.assertEqual(ga._request_spec(args)["runner_version"], "v0.12.0")
+        self.assertEqual(ga._request_spec(args)["runner_version"], "v0.12.2")
 
     def test_gpu_finalists_use_the_dedicated_pool_and_remain_distinct_models(self):
         from unittest.mock import Mock

@@ -1,4 +1,4 @@
-/* Tests for shared workspace split-layout calculations. Code version: v1.2.1 */
+/* Tests for shared workspace split-layout calculations. Code version: v1.3.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -56,6 +56,22 @@ test('preferOverviewMinimum keeps the overview budget when history also wants ex
     assert.equal(Math.round(range.layoutMinimum), 379);
     assert.equal(range.historyMinimum, 132);
     assert.equal(range.maximum, 518);
+});
+
+test('preferHistoryMinimum protects a detail surface from the resizer endpoint', () => {
+    const range = resolveInvestmentTrackRange({
+        availableHeight: 650,
+        baselineMinimum: 132,
+        desiredOverviewMinimum: 441,
+        desiredHistoryMinimum: 306,
+        preferHistoryMinimum: true,
+    });
+    assert.deepEqual(range, {
+        minimum: 344,
+        layoutMinimum: 344,
+        maximum: 344,
+        historyMinimum: 306,
+    });
 });
 
 test('overview height clamps ratios to the measured range', () => {

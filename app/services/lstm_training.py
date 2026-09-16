@@ -1,9 +1,10 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.8.0
+Code version: v0.9.0
 
-The browser action launches a 10-hour genetic search from the submitted form
-state and ranks candidates by complete 1–20 day CRPS skill versus baseline.
+The browser action trains exactly the submitted form state so the completed
+configuration can be observed in LSTM Price Field. Genetic search remains an
+independent CLI workflow.
 
 This service owns only compute-job metadata. Market data and investment stores
 remain outside its write boundary.
@@ -40,7 +41,7 @@ from scripts import lstm_ga_tune as ga_runner
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DURATION_SECONDS = ga_runner.DEFAULT_DURATION_SECONDS
 DEFAULT_POPULATION_SIZE = ga_runner.DEFAULT_POPULATION_SIZE
-DEFAULT_OBJECTIVE = "crps"
+EXACT_TRAINING_OBJECTIVE = "direction"
 MAX_WORKERS = ga_runner.MAX_WORKERS
 RUN_ID_PATTERN = re.compile(r"^lstm-ga-[a-f0-9]{24}$")
 ACTIVE_STATUSES = frozenset({"starting", "running"})
@@ -90,7 +91,7 @@ class LstmTrainingManager:
         normalized_ticker = self._normalize_ticker(ticker)
         normalized_period = self._normalize_period(period)
         normalized_interval = ga_runner.validate_training_interval(interval)
-        base_params = ga_runner.validate_selected_params(params)
+        selected_params = ga_runner.validate_selected_params(params)
         settings = ga_runner.validate_training_configuration(configuration)
         workspace_root = self._workspace_root()
         workspace_root.mkdir(parents=True, exist_ok=True)
@@ -110,7 +111,7 @@ class LstmTrainingManager:
             seed = self._unique_seed(
                 normalized_ticker,
                 normalized_period,
-                base_params,
+                selected_params,
                 normalized_interval,
                 settings,
             )
@@ -119,8 +120,9 @@ class LstmTrainingManager:
                 normalized_period,
                 seed,
             )
-            args.base_params = base_params
-            args.objective = DEFAULT_OBJECTIVE
+            args.selected_params = selected_params
+            args.base_params = None
+            args.objective = EXACT_TRAINING_OBJECTIVE
             args.interval = normalized_interval
             args.configuration = settings
             spec = ga_runner.build_request_spec(args)
@@ -145,10 +147,10 @@ class LstmTrainingManager:
                 str(seed),
                 "--state-root",
                 str(paths.root),
-                "--base-params",
-                json.dumps(base_params, sort_keys=True, allow_nan=False),
+                "--selected-params",
+                json.dumps(selected_params, sort_keys=True, allow_nan=False),
                 "--objective",
-                DEFAULT_OBJECTIVE,
+                EXACT_TRAINING_OBJECTIVE,
                 "--configuration",
                 json.dumps(settings, sort_keys=True, allow_nan=False),
                 "--prepared-request",
@@ -182,8 +184,8 @@ class LstmTrainingManager:
                 "period": normalized_period,
                 "interval": normalized_interval,
                 "ga_seed": seed,
-                "base_params": base_params,
-                "objective": DEFAULT_OBJECTIVE,
+                "selected_params": selected_params,
+                "objective": EXACT_TRAINING_OBJECTIVE,
                 "configuration": settings,
             })
             return {
@@ -285,7 +287,7 @@ class LstmTrainingManager:
             resume=False,
             selected_params=None,
             base_params=None,
-            objective=DEFAULT_OBJECTIVE,
+            objective=EXACT_TRAINING_OBJECTIVE,
             configuration=None,
             final_reserve_seconds=None,
             rescore_backends=None,
@@ -296,8 +298,9 @@ class LstmTrainingManager:
         for _ in range(8):
             seed = secrets.randbelow(1_000_000_000)
             args = self._build_runner_args(ticker, period, seed)
-            args.base_params = params
-            args.objective = DEFAULT_OBJECTIVE
+            args.selected_params = params
+            args.base_params = None
+            args.objective = EXACT_TRAINING_OBJECTIVE
             args.interval = interval
             args.configuration = configuration
             spec = ga_runner.build_request_spec(args)
@@ -338,6 +341,9 @@ class LstmTrainingManager:
         if not interval and request.get("runner_version") in {"v0.1.0", "v0.2.0"}:
             interval = "1d"  # These saved runner versions only supported daily data.
         configuration, configuration_error = self._saved_configuration(request, launch, snapshot, best, effective_status, interval)
+        selected_params = request.get("selected_params", launch.get("selected_params"))
+        base_params = request.get("base_params", launch.get("base_params"))
+        training_mode = "exact" if isinstance(selected_params, Mapping) else "genetic"
         objective = str(
             request.get("objective")
             or launch.get("objective")
@@ -374,6 +380,7 @@ class LstmTrainingManager:
             "configuration": configuration,
             "configuration_error": configuration_error,
             "requested_range": {"from": snapshot.get("start"), "to": snapshot.get("end")},
+            "training_mode": training_mode,
             "objective": objective,
             "objective_label": objective_label,
             "crps_skill_pct": crps_skill,
@@ -393,8 +400,8 @@ class LstmTrainingManager:
             "generation": status.get("generation"),
             "evaluated": status.get("evaluated") or result.get("evaluated"),
             "best": self._best_summary(best),
-            "selected_params": request.get("selected_params", launch.get("selected_params")),
-            "base_params": request.get("base_params", launch.get("base_params")),
+            "selected_params": selected_params,
+            "base_params": base_params,
             "result_available": (state / "result.json").is_file(),
             "progress": self._progress_summary(status, effective_status),
             "files": self._training_files(state),

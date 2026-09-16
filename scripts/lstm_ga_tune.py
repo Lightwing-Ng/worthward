@@ -5,7 +5,14 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.14.0
+Code version: v0.15.2
+- Changed: Snapshot and validation failures shared by exact training and GA now
+  use model-neutral training language.
+- Fixed: Exact selected-configuration runs now apply the objective recorded in
+  their request before evaluation begins.
+- Changed: Standalone genetic search now defaults to the validation-only CRPS
+  objective. The browser exact-training caller fixes its diagnostic objective
+  explicitly; every `--selected-params` run bypasses mutation and crossover.
 - Added: A validation-only CRPS skill objective aligned with the Backtest
   headline metric, including strict complete-horizon and complete-pair gates.
 - Changed: The default durable search budget is 10 hours.
@@ -275,7 +282,7 @@ def _request_spec(args: argparse.Namespace) -> dict[str, Any]:
         base = json.loads(base)
     return {
         "schema": 1,
-        "runner_version": "v0.12.0",
+        "runner_version": "v0.12.2",
         "grid_scoring_version": GRID_SCORING_VERSION,
         "runner_fingerprint": _runner_fingerprint(),
         "model_version": _MODEL_VERSION,
@@ -518,10 +525,10 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
             raise ValueError("Snapshot ticker or interval does not match the request.")
         visible_frame = pd.DataFrame(raw.get("visible_rows") or [])
         if visible_frame.empty:
-            raise ValueError("The saved GA snapshot contains no visible rows.")
+            raise ValueError("The saved training snapshot contains no visible rows.")
         bundle_payload = raw.get("bundle")
         if not isinstance(bundle_payload, dict):
-            raise ValueError("The saved GA snapshot has no factor bundle.")
+            raise ValueError("The saved training snapshot has no factor bundle.")
         context = _context_from_snapshot(raw, visible_frame, bundle_payload)
         if snapshot_path != paths.snapshot:
             _atomic_write_json(paths.snapshot, raw)
@@ -558,7 +565,7 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
             params=loader_params,
         )
         if not datasets or strategy._warmup_bundle is None:
-            raise ValueError("LSTM Price Field did not return a factor bundle for GA tuning.")
+            raise ValueError("LSTM Price Field did not return a factor bundle for training.")
         bundle = strategy._warmup_bundle
 
     full_frame = _bundle_ohlcv_frame(bundle)
@@ -567,7 +574,7 @@ def _build_snapshot(args: argparse.Namespace, paths: RunPaths) -> tuple[Evaluati
         & (full_frame["Date"].dt.date <= end)
     ].copy()
     if visible_frame.empty:
-        raise ValueError("The GA snapshot has no rows in the selected Period.")
+        raise ValueError("The training snapshot has no rows in the selected Period.")
 
     bundle_payload = _bundle_payload(bundle)
     active_factor_keys = _effective_factor_keys(full_frame, bundle_payload)
@@ -623,7 +630,7 @@ def _build_context(
     row_count = len(visible_frame)
     if row_count < 80:
         raise ValueError(
-            f"GA tuning requires at least 80 visible daily rows; found {row_count}."
+            f"Training requires at least 80 visible daily rows; found {row_count}."
         )
     bounds = {
         "training_window": (30, min(504, max(30, row_count))),
@@ -652,7 +659,7 @@ def _build_context(
         if int(edges[index + 1]) > int(edges[index])
     )
     if len(folds) != VALIDATION_FOLD_COUNT:
-        raise ValueError("The GA validation folds are not large enough.")
+        raise ValueError("The training validation folds are not large enough.")
     return EvaluationContext(
         visible_frame=visible_frame,
         bundle_payload=bundle_payload,
@@ -1584,9 +1591,9 @@ def _run(args: argparse.Namespace) -> int:
             with (paths.state / "worker.json").open("x", encoding="utf-8") as handle:
                 json.dump({"pid": os.getpid(), "started_at": _now_utc().isoformat()}, handle)
         context, snapshot = _build_snapshot(args, paths)
+        context.objective = spec.get("objective", "direction")
         if spec["selected_params"] is not None:
             return _run_selected_configuration(spec, paths, context)
-        context.objective = spec.get("objective", "direction")
         context.backtest_settings = spec["configuration"]
         strategy = LSTMPriceFieldStrategy()
         base_params = _canonical_params(
@@ -1962,7 +1969,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-params", default=None, help="Use the supplied strategy configuration as the GA baseline while still searching optimizable parameters.")
     parser.add_argument("--configuration", default=None, help="Saved date range and Backtest settings as JSON.")
     parser.add_argument("--snapshot-file", default=None, help="Reuse a real frozen local snapshot; its dates override the relative period.")
-    parser.add_argument("--objective", choices=("direction", "probability", "grid", "crps"), default="direction")
+    parser.add_argument("--objective", choices=("direction", "probability", "grid", "crps"), default="crps")
     parser.add_argument("--offline", action="store_true", help="Use only the existing local daily market store.")
     parser.add_argument("--resume", action="store_true", help="Explicitly resume an interrupted request.")
     parser.add_argument("--prepared-request", default=None, help=argparse.SUPPRESS)

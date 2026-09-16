@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.144.2
+ * Code version: v2.144.4
  * - Refactored: Feature runtimes are composed from bounded, versioned modules.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
@@ -99,7 +99,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.4.0';
+} from './investment/layout.js?v=investment-layout-v1.5.1';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -124,7 +124,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.144.2',
+    entry: 'v2.144.4',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

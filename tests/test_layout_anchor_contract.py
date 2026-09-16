@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.20.1
+Code version: v0.20.2
 """
 
 from pathlib import Path
@@ -413,10 +413,10 @@ def test_backtest_annotated_surfaces_use_compact_spacing_contract() -> None:
     )
     assert (
         ".backtest-history-view-body > .backtest-probability-detail-panel {\n"
-        "        flex-basis: 380px;\n"
-        "        min-height: 0;\n"
-        "        margin-inline: 10px;\n"
-        "        padding-inline: 12px;" in trade_css
+        "        --backtest-probability-detail-min-height: max(300px, calc(60cqi + 76px));\n"
+        "        flex-basis: auto;\n"
+        "        margin-inline: 0;\n"
+        "        padding-inline: 2px;" in trade_css
     )
 
     assert "--backtest-result-surface-pad-inline: 12px;" in result_card_rule
@@ -644,15 +644,18 @@ def test_backtest_probability_scroll_delegates_paint_to_the_native_browser() -> 
     assert (
         ".backtest-probability-detail-plot {\n"
         "    --backtest-probability-detail-plot-inline-start: 28px;\n"
+        "    width: 100%;\n"
         "    max-width: 100%;\n"
         "    display: grid;\n"
         "    flex: 1 1 auto;\n"
+        "    align-self: stretch;\n"
         "    grid-template-columns: calc(\n"
         "        var(--backtest-chart-y-axis-width)\n"
         "        - var(--backtest-probability-detail-plot-inline-start)\n"
         "    ) minmax(0, 1fr);\n"
         "    min-height: 0;\n"
         "    min-width: 0;\n"
+        "    box-sizing: border-box;\n"
         "    overflow: hidden;\n"
     ) in trade_css
     for fragment in (
@@ -935,13 +938,17 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
     for fragment in (
         "const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';",
+        "const PROBABILITY_HISTORY_MINIMUM_PROPERTY = '--backtest-probability-history-min-height';",
         "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';",
         "const getProbabilityStageMinimum = () => {",
+        "const isProbabilityHistoryViewActive = () => (",
+        "const setProbabilityHistoryMinimum = (height) => {",
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.4.0",
-        "preferOverviewMinimum: true,",
+        "investment-layout-v1.5.1",
+        "preferOverviewMinimum: () => !isProbabilityHistoryViewActive(),",
+        "preferHistoryMinimum: isProbabilityHistoryViewActive,",
         "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
         "observeHistorySurfaceResize: false,",
     ):
@@ -971,6 +978,8 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "getOverviewStageMinimum = () => 0,",
         "getAdditionalHistoryMinimumHeight = () => 0,",
         "preferOverviewMinimum = false,",
+        "preferHistoryMinimum = false,",
+        "const resolveBooleanOption = (option) => (",
         "layoutMinimum: liveMinimum,",
         "overviewMinimumChangeEvent = null,",
         "onChartsResized = null,",
@@ -1009,7 +1018,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
             f"{_css_code_version(ASSET_ROOT / 'js/backtest/chart-controller.js')}"
         ),
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.6.0",
+        "-backtest-layout-v0.7.1",
     ):
         assert fragment in base_template
 
@@ -1217,10 +1226,14 @@ def test_bayesian_history_detail_preserves_hover_and_complete_geometry() -> None
     for fragment in (
         ".backtest-probability-detail-panel",
         ".backtest-probability-detail-status-row",
-        "--backtest-probability-detail-min-height: 212px;",
+        "--backtest-probability-detail-min-height: max(300px, calc(60cqi + 80px));",
         "flex: 1 1 auto;",
-        "max-height: 100%;",
-        "min-height: 0;",
+        "max-height: none;",
+        "min-height: var(--backtest-probability-detail-min-height);",
+        "width: 100%;",
+        "align-self: stretch;",
+        "min-height: calc(60cqi + 8px);",
+        'var(--backtest-probability-history-min-height, var(--investment-section-min-height))',
         "transform: translateY(-50%);",
         ".backtest-probability-detail-cell",
         ".backtest-probability-detail-cell.is-threshold-hidden",

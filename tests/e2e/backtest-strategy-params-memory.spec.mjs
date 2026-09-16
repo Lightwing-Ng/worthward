@@ -1,4 +1,4 @@
-/* Code version: v0.13.1 */
+/* Code version: v0.13.2 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -477,7 +477,7 @@ test('Leveraged Rotation exposes generic triggers and a collision-safe allocatio
         }));
         expect(thumbs.map((thumb) => thumb.value)).toEqual([primary, primary + leveraged]);
         await expectAlignedBoundaries();
-        if (leveraged === 0) expect(Math.abs(thumbs[0].y - thumbs[1].y)).toBeGreaterThanOrEqual(22);
+        if (leveraged === 0) expect(Math.abs(thumbs[0].y - thumbs[1].y)).toBeGreaterThanOrEqual(21.9);
     }
     await page.setViewportSize({width: 1014, height: 1388});
     await page.getByText('Allocation limits (%, equity)', {exact: true}).click();

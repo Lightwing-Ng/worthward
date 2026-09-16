@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.114.0`
+Documentation version: `v1.114.3`
 
 ## Reuse and dependency boundaries
 
@@ -135,7 +135,7 @@ run CPU-only search, replicated validation, and reporting without creating a GPU
 worker. It scales its final-evaluation reserve to the group, backend, and worker
 count. Existing frozen experiments retain their own source and protocol version.
 
-## Web-managed LSTM GA tuning and exact CLI training
+## Exact-configuration Web training and CLI-only LSTM GA
 
 The web manager reserves a request before launching the worker. It passes the
 exact reservation path with `--prepared-request`; the runner verifies the request
@@ -149,38 +149,46 @@ prior training work.
 
 The web action snapshots the current ticker, relative or exact range, interval,
 capital, return/exit settings, and all private factor/parameter controls. The LSTM form declares Compute backend in the training section and marks that control plus every market-factor switch as a training draft. A draft updates browser-local memory and the subgroup's plain enabled-count suffix, but does not submit or recalculate the current backtest. The canonical URL and chart continue to describe the last applied configuration until the user selects a completed training case; that selection navigates through the saved configuration and performs the recalculation. The manager validates the snapshot before creating a
-job and passes the form state to the runner as `--base-params`, not
-`--selected-params`. The browser therefore launches a real 36,000-second GA
-scheduling budget whose uniform crossover and mutation can vary eligible
-hyperparameters and available factors. Candidate and robust multi-seed ranking
-use validation-only, equal-horizon 1–20 day CRPS skill against the causal
-baseline. All 20 horizons and every eligible forecast pair must be valid in each
-fold; holdout data remains physically absent from model inputs until selection
-is frozen. Request identity, launch metadata, and the market snapshot retain the
-interval. This trainer supports only `1d`: missing or unsupported frequencies
-fail before launch, never silently switching `1m` to daily bars. Missing provider
-data fails closed. Unavailable historical factor observations are never
-fabricated; the shared model's factor-availability rules still apply.
+job and passes the form state to the runner as `--selected-params`, with an
+explicit direction diagnostic objective. That selected-configuration path
+bypasses GA population generation, crossover, and mutation. Request identity,
+launch metadata, and the market snapshot retain the interval. This trainer
+supports only `1d`: missing or unsupported frequencies fail before launch,
+never silently switching `1m` to daily bars. The market loader receives the
+selected configuration and date bounds; provider source metadata and actual
+OHLCV observations remain intact. Missing provider data fails closed.
+Unavailable historical factor observations are never fabricated; the shared
+model's factor-availability rules still apply.
 
-The explicit CLI `--selected-params` diagnostic path still bypasses GA mutation
-and allocates at least 180 seconds of completed
+Web-selected exact training allocates at least 180 seconds of completed
 optimizer work across eligible causal origins. At each origin, the same weights
 and Adam state continue beyond the requested epoch floor until that origin's
 budget is met. GPU synchronization is included; loading, progress callbacks, and
-artificial waiting are excluded. Auto/GPU uses a confirmed PyTorch MPS or CUDA
-backend and fails closed on accelerator failure. Explicit CPU remains supported.
+artificial waiting are excluded. Auto retains NumPy CPU while recording any
+confirmed accelerator capability; an explicit GPU request requires PyTorch MPS or CUDA execution and
+fails closed on accelerator failure. Explicit CPU remains supported.
 The quick interactive Backtest backend policy is unchanged. Results report actual
 optimizer steps, compute seconds, engine, and precision. Longer training does not
 guarantee better holdout accuracy. SIGTERM/SIGINT cancellation and monotonic
 deadlines work on Windows; POSIX also retains its alarm watchdog.
 
+The standalone CLI owns genetic mutation tuning. Without `--selected-params`,
+`scripts/lstm_ga_tune.py` defaults to a 36,000-second scheduling budget and the
+validation-only, equal-horizon 1–20 day CRPS skill objective against the causal
+baseline. `--base-params` may supply a starting configuration while uniform
+crossover and mutation vary eligible hyperparameters and available factors. All
+20 horizons and every eligible forecast pair must be valid in each fold;
+holdout data remains physically absent from model inputs until selection is
+frozen. The browser start action never selects this path.
+
 Training history is a plain heading followed by button rows, never nested native
-disclosures. One row may show monospace details. The leading badge prefers the
-GA's mean validation CRPS skill and names the objective and 10-hour budget in the
-expanded details. Clicking a complete GA result restores the seed-42 member of
-the selected robust cohort together with ticker, original period, exact scored
-data dates, interval, capital, return/exit controls, and all private parameters.
-The requested window remains
+disclosures. One row may show monospace details. Exact-training rows use their
+measured holdout accuracy badge. A genetic-mode result instead exposes its
+mean validation CRPS skill, objective, budget, and submitted baseline when those
+fields exist. Clicking a completed exact run restores its submitted configuration;
+clicking a completed robust GA result restores the seed-42 member of the selected
+cohort. Both restore ticker, original period, exact scored data dates, interval,
+capital, return/exit controls, and all private parameters. The requested window remains
 separate metadata when listing dates or unavailable sessions shortened the data.
 The green check represents configuration equality, not reuse of frozen neural
 weights. Session-scoped selection survives reload and polling; any manual edit
@@ -194,13 +202,13 @@ remain inspectable but are not guessed into selectable cases.
 
 Active progress sits below the intrinsic-width start/stop button, outside history;
 the outer training heading shows the shared SVG spinner. Its bar uses the positive
-green token only. Terminal jobs have no bar. Rows show ticker, a measured CRPS
-skill badge when available, and right-aligned
+green token only. Terminal jobs have no bar. Rows show ticker, the score appropriate
+to their exact-training or genetic mode, and right-aligned
 monospace `yymmdd(##)` (UTC start day, chronological sequence per ticker/day).
 Archives participate in numbering so deletion never renames surviving rows.
 The CSRF-protected delete route moves one inactive, unlocked compute directory
 to its workspace's `.deleted/` directory; market/settings stores are untouched.
-Protocol version 2 prevents the updated UI from starting jobs through stale
+Protocol version 3 prevents the updated UI from starting jobs through stale
 pre-contract services. Activation of cached Python routes requires a user-owned
 service restart, never an agent-triggered restart.
 
@@ -306,13 +314,14 @@ to hover, not to the contained detail surface.
 
 The history surface's shared vertical section-resizer minimum includes the
 active detail panel's heading, lattice, and forecast-date axis budget. The
-panel remains shrinkable within the allocated history rail, so the plot and
-its labels cannot escape or be clipped by the parent surface when the
-horizontal or vertical workspace handles change the available space. When the
-12-row-per-side overview plot budget and that extra history demand cannot both
-fit, Backtest keeps the overview minimum and compresses history instead of
-scaling both tracks; shrinking the published plot minimum is what drops a
-complete 12-row side below its strategy-owned limit.
+panel derives that budget from the owning container's inline size, while the
+detail plot itself stretches across the complete panel content width. It never
+publishes a narrower inline width from the available height. While `Price Field`
+is active, the shared splitter makes this history minimum authoritative at its
+maximum overview endpoint; `Metrics` and `Transactions` continue to prioritize
+the overview minimum. This prevents splitter movement from reducing the detail
+lattice below the resolution already imposed by its available width. The plot,
+panel, and responsive result shell retain zero horizontal and vertical overflow.
 
 The contained detail timeline uses `backtest/detail-chart.js` and
 `chart-controller.js`. Its selected date stays at horizontal center, with the
@@ -697,7 +706,7 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. Above the registered 900 px sidebar-overlay breakpoint, the page-level `Backtest` title rail remains in its own row above the results grid, the result column's `Performance` title rail begins below it, and the complete controls surface owns vertical scrolling as one logical sequence. At 900 px and below, only the Backtest controls surface leaves the grid and becomes a fixed, safe-area-bounded left overlay. The result column then owns the full workspace width. A separate 44 px parameter toggle uses the shared round-control geometry; the overlay defaults closed, remembers its open state in session storage across parameter-driven reloads, closes through its transparent backdrop or Escape, and never remains open when the global navigation sidebar opens. The fixed panel retains one vertical scroll owner and marks its closed contents inert, so generic controls, Strategy, and every private parameter remain operable without adding a nested parameter-grid scrollbar. The Backtest-wide `Show trade details` preference defaults to disabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start GA tuning and Stop GA tuning actions, while the strategy dropdown remains dedicated to strategy choices; native `<details>` sections provide the accessible collapse component for the durable history. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading interprets Initial cash as spendable cash in addition to Current holding. The first marked value of that existing holding and the cash define starting equity, return denominator, and the all-in benchmark, so a real existing position is never rejected merely because its marked value exceeds the cash balance. Frequency remains a right-aligned intrinsic-width shared select. Weekly day appears only for weekly schedules and exposes Monday through Sunday; weekend intentions use the existing next-trading-day alignment. Monthly calendar day appears only for monthly schedules. Daily chart tooltips omit a meaningless midnight suffix, while minute data retains its time. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. Above the registered 900 px sidebar-overlay breakpoint, the page-level `Backtest` title rail remains in its own row above the results grid, the result column's `Performance` title rail begins below it, and the complete controls surface owns vertical scrolling as one logical sequence. At 900 px and below, only the Backtest controls surface leaves the grid and becomes a fixed, safe-area-bounded left overlay. The result column then owns the full workspace width. A separate 44 px parameter toggle uses the shared round-control geometry; the overlay defaults closed, remembers its open state in session storage across parameter-driven reloads, closes through its transparent backdrop or Escape, and never remains open when the global navigation sidebar opens. The fixed panel retains one vertical scroll owner and marks its closed contents inert, so generic controls, Strategy, and every private parameter remain operable without adding a nested parameter-grid scrollbar. The Backtest-wide `Show trade details` preference defaults to disabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start training and Stop training actions, while the strategy dropdown remains dedicated to strategy choices; each durable history item uses a section with an accessible button-controlled disclosure region. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading interprets Initial cash as spendable cash in addition to Current holding. The first marked value of that existing holding and the cash define starting equity, return denominator, and the all-in benchmark, so a real existing position is never rejected merely because its marked value exceeds the cash balance. Frequency remains a right-aligned intrinsic-width shared select. Weekly day appears only for weekly schedules and exposes Monday through Sunday; weekend intentions use the existing next-trading-day alignment. Monthly calendar day appears only for monthly schedules. Daily chart tooltips omit a meaningless midnight suffix, while minute data retains its time. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, supported execution intervals, optional execution-to-model interval overrides, causal signal bridges, and strategy-owned market-data hooks. The strategy registry carries the declared execution intervals into both the initial browser state and the strategy-fields response, so temporary data availability is never mistaken for permanent strategy capability. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. The browser requests presence for the complete ordered required-ticker snapshot, intersects each interval's Period options across that set, and exposes `1m` only when the strategy declares it and every required ticker shares a real one-minute Period. A monotonic request token plus required-count and ordered-snapshot revalidation makes availability updates latest-wins after rapid ticker or strategy edits. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. When model and execution intervals differ, the strategy must declare a bridge; the runtime never treats a daily posterior as a native minute posterior. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary and benchmark, defaults the pair to QQQ/TQQQ, and accepts any ordered primary/leveraged pair with aligned observations. Initial capital is divided among integer shares of both assets and cash. Its Return window maps Single day, 1 week, 1 month, and 3 months to 1, 5, 21, and 63 completed daily trading sessions and applies only to the primary-decline entry trigger. Minute execution retains those daily signals through the causal daily-close-to-next-session-open bridge. A primary drop across the window creates a next-open rebalance toward the primary minimum and leveraged maximum. That execution open becomes the leveraged entry basis; a later leveraged close that reaches the configured gain from this basis creates a next-open rebalance toward the primary maximum and leveraged minimum. The left Initial allocation boundary holds cash fixed and transfers only between the primary and leveraged assets; the right boundary holds the primary allocation fixed and transfers only between leveraged and cash. Percentage targets are market-value constraints before integer-share rounding, and no fee model is applied.
 

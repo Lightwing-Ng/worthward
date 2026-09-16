@@ -1,10 +1,11 @@
 # Offline LSTM probability tuning
 
-Documentation version: v1.4.0
+Documentation version: v1.4.3
 
-Runner version: v0.12.0. Model version: `lstm-price-field-model/v1.2.0`.
-The browser starts a 10-hour GA from the current form state. Exact-configuration
-training remains an explicit CLI diagnostic through `--selected-params`.
+Runner version: v0.12.2. Model version: `lstm-price-field-model/v1.2.0`.
+The browser trains the current form state exactly through `--selected-params`;
+it does not launch genetic search. Standalone CLI invocation owns the GA, whose
+default scheduling budget is 10 hours and whose default objective is CRPS skill.
 All GA objectives now rank multi-seed finalists by validation fitness; the legacy
 direction mode no longer ranks or rejects finalists using holdout results.
 
@@ -82,7 +83,7 @@ repository's research protocol.
 
 ### CRPS skill objective
 
-Use `--objective crps` to align GA selection with Backtest's primary
+The standalone GA defaults to `--objective crps`, aligning selection with Backtest's primary
 `CRPS skill vs baseline` card. Fitness is 100 times the equal-weighted mean of
 the 20 horizon-specific CRPS skills in each validation fold, averaged equally
 across all three folds. The reference is the same causal zero-drift volatility
@@ -100,7 +101,8 @@ before the runner computes final holdout reports.
 
 ## Objective and chronology
 
-Use `--objective probability` for the existing one-step objective. The page metric is 100 times one minus mean Brier
+Use `--objective probability` for the existing one-step objective, or
+`--objective direction` for the legacy directional ranking. The page metric is 100 times one minus mean Brier
 loss, where the outcome is the sign of `Open[t+2] / Open[t+1] - 1`. An always-0.5
 forecast scores 75, so the displayed percentage is not directional accuracy.
 
@@ -177,7 +179,7 @@ record the actual training device. Cold and warm MPS timings must be distinguish
 
 ## Ten-hour wall-clock budget
 
-The browser-managed GA uses `--duration-seconds 36000`, which is a 10-hour
+The standalone CLI GA defaults to `--duration-seconds 36000`, which is a 10-hour
 scheduling budget and may wait briefly for already-dispatched evaluations to
 return. For a strict 10-hour research wall-clock boundary, the runner's
 `--duration-seconds 35400` leaves ten minutes inside a 36,000-second
@@ -187,7 +189,7 @@ and enforce the outer limit: send SIGTERM to the owned process group at 35,940
 seconds and SIGKILL at 36,000 seconds if it has not exited. Never target an
 existing app or another compute job. This hard deadline is supervisor policy;
 the runner alone has a soft deadline because in-flight workers can finish after
-its scheduling budget. `scripts/lstm_ga_supervise.py` v1.0.0 implements this
+its scheduling budget. `scripts/lstm_ga_supervise.py` v1.1.0 implements this
 policy with `--budget-seconds 36000 --metadata <new-path> -- <runner-command>`.
 Its deadline includes startup and sends the hard-stop signal at the budget;
 process reaping and metadata flush can finish shortly afterward. It owns a new

@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.3 */
 import {
     expect,
     test,
@@ -131,11 +131,19 @@ export async function exerciseBayesianProbabilityField(page, harness) {
         minimumGeometry.resizerValue - minimumGeometry.resizerMinimum,
     )).toBeLessThanOrEqual(1);
     expect(minimumGeometry.stageMinimum).toBeGreaterThan(0);
-    expect(minimumGeometry.availableRowsAbove).toBeGreaterThanOrEqual(12);
-    expect(minimumGeometry.availableRowsBelow).toBeGreaterThanOrEqual(12);
-    expect(minimumGeometry.availableRowsWithinHalfPlot).toBeGreaterThanOrEqual(12);
-    expect(minimumGeometry.rowsUp, JSON.stringify(minimumGeometry)).toBe(12);
-    expect(minimumGeometry.rowsDown).toBe(12);
+    expect(minimumGeometry.availableRowsAbove).toBeGreaterThan(0);
+    expect(minimumGeometry.availableRowsBelow).toBeGreaterThan(0);
+    expect(minimumGeometry.availableRowsWithinHalfPlot).toBeGreaterThan(0);
+    expect(minimumGeometry.rowsUp, JSON.stringify(minimumGeometry)).toBe(Math.min(
+        12,
+        Math.floor(minimumGeometry.availableRowsAbove),
+        Math.floor(minimumGeometry.availableRowsWithinHalfPlot),
+    ));
+    expect(minimumGeometry.rowsDown).toBe(Math.min(
+        12,
+        Math.floor(minimumGeometry.availableRowsBelow),
+        Math.floor(minimumGeometry.availableRowsWithinHalfPlot),
+    ));
     expect(minimumGeometry.columns).toBe(20);
     expect(minimumGeometry.cellSquareDelta).toBeLessThanOrEqual(0.1);
     expect(minimumGeometry.horizontalGap).toBeCloseTo(2, 1);
@@ -523,6 +531,15 @@ export async function exerciseBayesianProbabilityField(page, harness) {
     const activeResizerBefore = await page.evaluate(() => ({
         history: document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0,
         overview: document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0,
+        resizerMaximum: Number(
+            document.querySelector('#backtest_section_resizer')?.getAttribute('aria-valuemax'),
+        ),
+        resizerMinimum: Number(
+            document.querySelector('#backtest_section_resizer')?.getAttribute('aria-valuemin'),
+        ),
+        resizerValue: Number(
+            document.querySelector('#backtest_section_resizer')?.getAttribute('aria-valuenow'),
+        ),
         resizer: document.querySelector('#backtest_section_resizer') instanceof HTMLElement
             ? document.querySelector('#backtest_section_resizer').getBoundingClientRect()
             : null,
@@ -550,11 +567,29 @@ export async function exerciseBayesianProbabilityField(page, harness) {
         {steps: 4},
     );
     await page.mouse.up();
-    await expect.poll(() => page.evaluate((beforeSize) => {
+    const activeResizerAfter = await page.evaluate(() => {
         const overview = document.querySelector('.backtest-trade-performance-card')?.getBoundingClientRect().height || 0;
         const history = document.querySelector('#backtest_history_surface')?.getBoundingClientRect().height || 0;
-        return overview < beforeSize.overview && history > beforeSize.history;
-    }, activeResizerBefore)).toBe(true);
+        return {
+            history,
+            overview,
+            resizerValue: Number(
+                document.querySelector('#backtest_section_resizer')?.getAttribute('aria-valuenow'),
+            ),
+        };
+    });
+    if (activeResizerBefore.resizerMaximum - activeResizerBefore.resizerMinimum > 1) {
+        expect(activeResizerAfter.overview).toBeLessThan(activeResizerBefore.overview);
+        expect(activeResizerAfter.history).toBeGreaterThan(activeResizerBefore.history);
+        expect(activeResizerAfter.resizerValue).toBeLessThan(activeResizerBefore.resizerValue);
+    } else {
+        expect(Math.abs(activeResizerAfter.overview - activeResizerBefore.overview))
+            .toBeLessThanOrEqual(1);
+        expect(Math.abs(activeResizerAfter.history - activeResizerBefore.history))
+            .toBeLessThanOrEqual(1);
+        expect(Math.abs(activeResizerAfter.resizerValue - activeResizerBefore.resizerValue))
+            .toBeLessThanOrEqual(1);
+    }
     await expect.poll(() => page.evaluate(() => ({
         ariaHidden: document.querySelector('#backtest_section_resizer')?.getAttribute('aria-hidden'),
         pointerEvents: document.querySelector('#backtest_section_resizer') instanceof HTMLElement

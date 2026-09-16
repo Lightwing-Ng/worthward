@@ -1,6 +1,6 @@
 """Build the compare training web-runtime context.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -946,7 +946,7 @@ def build_compare_training_context(context: dict[str, object]) -> dict[str, obje
             response = jsonify(
                 {
                     "success": True,
-                    "protocol_version": 2,
+                    "protocol_version": 3,
                     "runs": lstm_training_manager.list_runs(),
                 }
             )

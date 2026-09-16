@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -375,8 +375,12 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
             return Boolean(
                 geometry?.panel
                 && geometry?.plot
+                && geometry?.grid
+                && geometry?.gridViewport
                 && geometry?.xAxis
                 && geometry.panel.bottom <= geometry.body.bottom + 1
+                && geometry.grid.top >= geometry.gridViewport.top - 1
+                && geometry.grid.bottom <= geometry.gridViewport.bottom + 1
                 && geometry.xAxis.bottom <= geometry.panel.bottom + 1,
             );
         }).toBe(true);

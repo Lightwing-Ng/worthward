@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.2.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -1670,21 +1670,10 @@
                     28,
                 );
                 const axisWidth = Math.max(0, chartYAxisWidth - plotInlineStart);
-                const availableWidth = probabilityDetailPanel.clientWidth - 4;
-                const availableHeight = Math.max(0, detailPlot.clientHeight - probabilityDetailXAxis.offsetHeight);
-                const plotWidth = window.WORTHWARD_PRICE_FIELD_DETAIL_CHART.computePlotWidth({
-                    availableWidth,
-                    availableHeight,
-                    axisWidth,
-                    columns: geometry.columnCount,
-                    rowsAbove: geometry.rowsAbove,
-                    rowsBelow: geometry.rowsBelow,
-                });
-                detailPlot.style.gridTemplateColumns = `${axisWidth}px minmax(0, 1fr)`;
-                if (Number.isFinite(plotWidth)) detailPlot.style.width = `${plotWidth}px`;
-                else detailPlot.style.removeProperty("width");
-                detailPlot.style.alignSelf = "center";
-            }
+				detailPlot.style.gridTemplateColumns = `${axisWidth}px minmax(0, 1fr)`;
+				detailPlot.style.removeProperty("width");
+				detailPlot.style.removeProperty("align-self");
+			}
 			const detailGridViewportRect = detailGridViewport?.getBoundingClientRect();
 			const detailGridViewportWidth = Number.isFinite(Number(detailGridViewportRect?.width))
 				? Math.max(0, Number(detailGridViewportRect.width))
