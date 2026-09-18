@@ -1,6 +1,8 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.4.3
+Code version: v1.4.4
+- Changed: Investment transaction cache schema v16 invalidates payloads built
+  before broker snapshots exposed dated IBKR interest-accrual boundaries.
 - Changed: Compose bounded runtime domains through explicit context factories while
   preserving the established WebRuntime route contract.
 """
@@ -395,7 +397,7 @@ def report_fetch_abort_debug_event(
 
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v15"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v16"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = (
     SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 )

@@ -1,7 +1,13 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.1
+ * - Fixed: Currency-less IBKR Transactions CSV cash rows display the workspace
+ *   base currency in Transaction history.
+ * - Fixed: A persisted same-day cash-transfer binding replays its withdrawal
+ *   before the matching receipt even when the receipt carries a cash snapshot.
+ * - Fixed: A currency-less IBKR Transactions CSV withdrawal is treated as
+ *   base-currency cash so a bank deposit can bind to it.
  * - Changed: A Schwab security receipt offers only matching imported source
  *   transfer-out legs instead of every non-Schwab account in the ledger.
  */
@@ -295,10 +301,29 @@ function isInvestmentIbkrBaseCurrencyEquivalentCash(txn) {
         );
     }
 
+function isInvestmentIbkrBaseCurrencyEquivalentWithdrawal(txn) {
+        // IBKR Transactions CSV cash rows carry no currency column; their
+        // amounts are stated in the account base currency for both directions.
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        return (
+            runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === 'ibkr'
+            && runtime.getNormalizedTransactionType(txn) === 'withdrawal'
+            && !String(runtime.formatTransactionCurrency(txn) || '').trim()
+            && String(source?.file_kind || '').trim() === 'transactions'
+            && !String(txn?.ticker || '').trim()
+            && Math.abs(Number(runtime.getTransactionAmount(txn)) || 0) > 1e-9
+        );
+    }
+
 function getInvestmentInternalTransferEffectiveCurrency(txn) {
         const explicitCurrency = String(runtime.formatTransactionCurrency(txn) || '').trim().toUpperCase();
         if (explicitCurrency) return explicitCurrency;
-        return isInvestmentIbkrBaseCurrencyEquivalentCash(txn) ? runtime.getInvestmentBaseCurrency() : '';
+        return (
+            isInvestmentIbkrBaseCurrencyEquivalentCash(txn)
+            || isInvestmentIbkrBaseCurrencyEquivalentWithdrawal(txn)
+        )
+            ? runtime.getInvestmentBaseCurrency()
+            : '';
     }
 
 function isInvestmentInternalTransferFxPair(sourceTxn, targetTxn) {
@@ -520,6 +545,16 @@ function getInvestmentResolvedTransferDescription(txn) {
 function formatInvestmentHistoryCurrencyDisplay(txn) {
         const explicitCurrency = String(runtime.formatTransactionCurrency(txn) || '').trim().toUpperCase();
         if (explicitCurrency) return explicitCurrency;
+        const brokerCode = runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn));
+        const normalizedType = runtime.getNormalizedTransactionType(txn);
+        const sourceFileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
+        if (
+            brokerCode === 'ibkr'
+            && sourceFileKind === 'transactions'
+            && ['deposit', 'withdrawal'].includes(normalizedType)
+        ) {
+            return String(runtime.getInvestmentBaseCurrency() || 'USD').trim().toUpperCase() || 'USD';
+        }
         if (txn?.manual_internal_transfer_role === 'source' && txn?.manual_internal_transfer_selected_target_key) {
             return String(txn?.manual_internal_transfer_currency || 'USD').trim().toUpperCase() || 'USD';
         }
@@ -857,26 +892,11 @@ function reorderInvestmentTransactionsForBoundTransfers(
                 && sourceType === 'deposit'
                 && targetType === 'withdrawal'
             ) {
-                const sourceFileKind = String(sourceTxn?.source?.file_kind || '').trim().toLowerCase();
-                const hasAuthoritativeCashSnapshot = (
-                    sourceTxn?.source?.cash_balance_authoritative === true
-                    || sourceFileKind === 'hsbc_usd_savings_csv'
-                    || sourceFileKind === 'hsbc_usd_account_text'
-                );
-                if (
-                    hasAuthoritativeCashSnapshot
-                    && sourceLedgerDate
-                    && sourceLedgerDate === targetLedgerDate
-                ) {
-                    // A same-day authoritative cash snapshot already contains
-                    // the account's posted balance. Do not move its receipt
-                    // behind trades, or the snapshot will overwrite those
-                    // same-day debits in the historical replay.
-                    return;
-                }
-                // The source map is deposit-first for ordinary cash
-                // transfers, but the natural ledger sequence is
-                // withdrawal/outflow before deposit.
+                // A persisted pair is stronger chronology evidence than the
+                // generic same-time deposit-before-withdrawal safety sort or
+                // the order in which broker files happened to be imported.
+                // The dated cash-snapshot projection runs after replay and
+                // still anchors the receipt account to its posted balance.
                 predecessorTxn = targetTxn;
                 successorTxn = sourceTxn;
             } else {

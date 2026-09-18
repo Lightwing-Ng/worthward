@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -831,4 +831,164 @@ test('offers only a matching imported source transfer-out on an unbound Schwab r
         source_key: offeredOptions[0].value,
         target_key: receiptKey,
     });
+});
+
+test('lets a bank deposit bind a currency-less IBKR Transactions CSV withdrawal', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        transactions: [
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'withdrawal',
+                currency: null,
+                amount: -158.95,
+                description: 'Disbursement Initiated by Account Holder',
+                source: {file_kind: 'transactions', row_number: 11, transaction_type_raw: 'Withdrawal'},
+            },
+            {
+                broker: 'hsbc',
+                account: '000-000000-001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 158.95,
+                description: 'HK000000TESTREF',
+                source: {file_kind: 'hsbc_usd_account_text', row_number: 48},
+            },
+        ],
+    });
+    let persistedBindingRequest = null;
+    await page.route('**/api/investment/internal-transfer-binding', async (route) => {
+        persistedBindingRequest = route.request().postDataJSON();
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                manual_internal_transfer_bindings: {
+                    [persistedBindingRequest.source_key]: persistedBindingRequest.target_key,
+                },
+            }),
+        });
+    });
+    await page.goto('/trade/investment');
+
+    const bindingSelect = page.locator('#investment_history select[data-investment-transfer-source-key]');
+    await expect(bindingSelect).toHaveCount(1);
+    await expect(bindingSelect).toHaveAttribute(
+        'data-investment-transfer-source-key',
+        /"hsbc".*"deposit"/,
+    );
+    const targetKey = await bindingSelect.locator('option').evaluateAll((options) => (
+        options.map((option) => option.value).find((value) => value.includes('"ibkr"'))
+    ));
+    expect(targetKey).toContain('"withdrawal"');
+    await bindingSelect.selectOption(targetKey);
+    await expect.poll(() => persistedBindingRequest?.target_key).toBe(targetKey);
+});
+
+test('replays a later-imported IBKR closing withdrawal before its authoritative HSBC receipt', async ({page}) => {
+    const sourceKey = `v2:${JSON.stringify(['hsbc', '000-000000-001', '2026-09-17', 'deposit', 'USD', '158.95'])}`;
+    const targetKey = `v2:${JSON.stringify(['ibkr', 'ibkr:u-suffix:00001', '2026-09-17', 'withdrawal', 'USD_OR_MISSING', '-158.95'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        startingCash: 158.95371954792775,
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: '000-000000-001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 158.95,
+                description: 'HSBC matching receipt',
+                source: {
+                    file_kind: 'hsbc_usd_account_text',
+                    cash_balance_authoritative: true,
+                    account_type: 'USD Savings',
+                    balance_after_raw: '158.95',
+                    row_number: 48,
+                },
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'transfer_out',
+                ticker: 'QQQI',
+                currency: 'USD',
+                quantity_abs: '10',
+                amount: 0,
+                description: 'QQQI transfer out',
+                normalized: {position_quantity: '10', net_amount: '0'},
+                source: {file_kind: 'ibkr_transfers', row_number: 64, transfer_direction: 'out'},
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'withdrawal',
+                currency: null,
+                amount: -158.95,
+                description: 'IBKR closing withdrawal',
+                source: {file_kind: 'transactions', row_number: 11, transaction_type_raw: 'Withdrawal'},
+            },
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        brokerSummaries: {
+            ibkr: {
+                broker: 'ibkr',
+                account: 'U00000001',
+                starting_cash: '158.95371954792775',
+                ending_cash: '0.00371954792775',
+                ending_cash_as_of: '2026-09-17',
+                ending_cash_replay_as_of: '2026-09-17',
+                cash_snapshot_authoritative: true,
+                position_snapshot_authoritative: true,
+                position_snapshot_as_of: '2026-09-16 15:25:00',
+                position_snapshot: {
+                    QQQI: {
+                        quantity: '10',
+                        currency: 'USD',
+                        cost_basis_status: 'unknown',
+                    },
+                },
+            },
+        },
+        priceHistoryByTicker: {
+            QQQI: [{date: '2026-09-17', close: 53.27}],
+        },
+    });
+    await page.goto('/trade/investment?view=holdings');
+
+    const renderedHistoryRows = page.locator('#investment_history tr[data-investment-history-row]');
+    await expect(renderedHistoryRows).toHaveCount(3);
+    const historyRows = await page.locator('#investment_history tr[data-investment-history-row]').evaluateAll((rows) => (
+        rows.map((row) => {
+            const cells = [...row.querySelectorAll('td')].map((cell) => cell.textContent.trim());
+            return {
+                ledgerNo: Number(cells[1]),
+                type: cells[3],
+                currency: cells[5],
+                marketValue: cells[8],
+                cash: cells[9],
+                equity: cells[10],
+            };
+        })
+    ));
+    const withdrawalRow = historyRows.find((row) => row.type === 'Withdrawal');
+    const receiptRow = historyRows.find((row) => row.type === 'Deposit');
+    expect(withdrawalRow).toBeTruthy();
+    expect(receiptRow).toBeTruthy();
+    expect(withdrawalRow.ledgerNo).toBeLessThan(receiptRow.ledgerNo);
+    expect(withdrawalRow.currency).toBe('USD');
+    expect(withdrawalRow.marketValue).toBe('0.00');
+    expect(withdrawalRow.cash).toBe('0.00');
+    expect(withdrawalRow.equity).toBe('0.00');
 });

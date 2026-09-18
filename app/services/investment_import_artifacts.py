@@ -1,6 +1,8 @@
 """Investment import domain: artifacts.
 
-Code version: v0.1.0
+Code version: v0.2.0
+- Added: Broker snapshot evidence retains dated IBKR interest-accrual
+  snapshots and exposes one fail-closed accrual boundary per as-of date.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from app.services.investment_import_support import (
 import app.services.investment_import_basics as _ii_basics
 
 import app.services.investment_import_hsbc_cash as _ii_hsbc_cash
+
+import app.services.investment_import_ibkr_accruals as _ii_ibkr_accruals
 
 import app.services.investment_import_merge_identity as _ii_merge_identity
 
@@ -234,7 +238,14 @@ def _broker_snapshot_evidence_from_payload(
     )
     position_snapshot = _normalize_snapshot_keys(payload.get("position_snapshot"))
     performance_snapshot = _normalize_snapshot_keys(payload.get("performance_snapshot"))
-    if not position_snapshot and not performance_snapshot:
+    interest_accrual_snapshot = (
+        _ii_ibkr_accruals.normalize_ibkr_interest_accrual_snapshot(
+            payload.get("interest_accrual_snapshot")
+        )
+        if broker == "ibkr"
+        else None
+    )
+    if not position_snapshot and not performance_snapshot and not interest_accrual_snapshot:
         return []
     source_artifacts = _normalize_source_artifacts(payload.get("source_artifacts"))
     period_ends = [
@@ -317,6 +328,9 @@ def _broker_snapshot_evidence_from_payload(
         }
         if snapshot_updated_at:
             candidate["snapshot_updated_at"] = snapshot_updated_at
+        if interest_accrual_snapshot is not None:
+            # Added only when present so earlier evidence identities are stable.
+            candidate["interest_accrual_snapshot"] = interest_accrual_snapshot
         candidate["evidence_id"] = hashlib.sha256(
             json.dumps(
                 candidate,
@@ -401,7 +415,14 @@ def _normalize_broker_snapshot_evidence(raw_evidence: Any) -> dict[str, Any] | N
     performance_snapshot = _normalize_snapshot_keys(
         raw_evidence.get("performance_snapshot")
     )
-    if not position_snapshot and not performance_snapshot:
+    interest_accrual_snapshot = (
+        _ii_ibkr_accruals.normalize_ibkr_interest_accrual_snapshot(
+            raw_evidence.get("interest_accrual_snapshot")
+        )
+        if broker == "ibkr"
+        else None
+    )
+    if not position_snapshot and not performance_snapshot and not interest_accrual_snapshot:
         return None
     source_artifact_sha256 = (
         sorted(
@@ -453,6 +474,8 @@ def _normalize_broker_snapshot_evidence(raw_evidence: Any) -> dict[str, Any] | N
     snapshot_updated_at = _normalize_text(raw_evidence.get("snapshot_updated_at"))
     if snapshot_updated_at:
         candidate["snapshot_updated_at"] = snapshot_updated_at
+    if interest_accrual_snapshot is not None:
+        candidate["interest_accrual_snapshot"] = interest_accrual_snapshot
     candidate["evidence_id"] = hashlib.sha256(
         json.dumps(
             candidate, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -1565,6 +1588,12 @@ def _build_broker_snapshot_entry(
             entry["performance_snapshot_realized_evidence_ids"] = (
                 performance_snapshot_realized_evidence_ids
             )
+    interest_accrual_boundaries = _ii_ibkr_accruals.build_interest_accrual_boundaries(
+        evidence
+    )
+    if interest_accrual_boundaries:
+        # Each boundary is authoritative only on its own statement as-of date.
+        entry["interest_accrual_snapshots"] = interest_accrual_boundaries
     reconciliation = _build_broker_realized_pnl_reconciliation(
         broker,
         account,

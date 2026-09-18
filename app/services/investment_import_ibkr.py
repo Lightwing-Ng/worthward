@@ -1,6 +1,8 @@
 """Investment import domain: ibkr.
 
-Code version: v0.1.0
+Code version: v0.2.0
+- Added: IBKR CSV statement pairs retain a dated Interest Accruals NAV
+  snapshot separately from cash and market value.
 """
 
 from __future__ import annotations
@@ -47,6 +49,8 @@ import app.services.investment_import_basics as _ii_basics
 import app.services.investment_import_bindings as _ii_bindings
 
 import app.services.investment_import_hsbc_cash as _ii_hsbc_cash
+
+import app.services.investment_import_ibkr_accruals as _ii_ibkr_accruals
 
 import app.services.investment_import_merge_identity as _ii_merge_identity
 
@@ -265,6 +269,13 @@ def build_investment_payload_from_ibkr_csvs(
     performance_snapshots = _ii_records._extract_performance_summaries(
         positions_rows, warnings
     )
+    interest_accrual_snapshot = (
+        _ii_ibkr_accruals.extract_ibkr_interest_accrual_snapshot(
+            positions_rows,
+            warnings,
+            as_of=pair_metadata["period_end"],
+        )
+    )
     closed_trade_details = _ii_records._extract_ibkr_closed_trade_details(
         positions_rows, warnings
     )
@@ -363,6 +374,12 @@ def build_investment_payload_from_ibkr_csvs(
     )
     if performance_snapshots:
         payload["summary"]["performance_snapshot_source"] = "ibkr_csv_realized_summary"
+    if interest_accrual_snapshot is not None:
+        # Accrued interest is a separate NAV component, never cash.
+        payload["interest_accrual_snapshot"] = interest_accrual_snapshot
+        payload["summary"]["interest_accrual_snapshot_status"] = (
+            interest_accrual_snapshot["status"]
+        )
     payload["summary"]["ibkr_realized_summary_native_cash_record_count"] = len(
         native_cash_records
     )

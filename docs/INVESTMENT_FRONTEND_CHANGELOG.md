@@ -1,12 +1,28 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.6`
+Documentation version: `v1.54.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: IBKR statement Interest Accruals are now included in historical
+  broker equity, aggregate equity, the daily Overview curve, and the current
+  Holdings endpoint as a separate NAV component. The accrual never enters
+  cash, applies only on its dated statement boundary, and is not carried to
+  later dates, so a later zero-accrual statement cannot inherit an older
+  balance. Daily equity materializes that statement boundary even when no
+  transaction or market close lands on the date. Missing or conflicting
+  accrual evidence remains unknown, and missing dated FX makes the affected
+  equity unavailable rather than treating the accrual as zero.
+
+- Fixed: A persisted same-day internal cash-transfer pair now replays its
+  withdrawal before the matching receipt even when that receipt is an
+  authoritative cash snapshot. Later-imported source-broker history therefore
+  follows transfer chronology instead of falling behind an earlier-imported
+  destination-bank receipt.
 
 - Fixed: Tax-lot replay ordering now groups same-timestamp rows by broker
   account before comparing account-local execution sequences or source row

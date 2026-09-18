@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.114.3
+ * Code version: v1.116.0
+ * - Fixed: Daily equity materializes accrual-only statement boundaries and
+ *   treats missing dated FX as unavailable equity rather than zero accrual.
+ * - Added: Dated broker interest-accrual NAV boundaries are applied to
+ *   broker and aggregate equity only on their statement as-of date.
  * - Fixed: Same-day buy/sell pairs keep their account-local execution order
  *   when other brokers have rows at the same timestamp.
  * - Fixed: Current broker cash snapshots include ledger cash movements
@@ -216,6 +220,9 @@ import {
     createInvestmentCoreCashUtils,
 } from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.1.0';
 import {
+    createInvestmentInterestAccrualUtils,
+} from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
+import {
     createInvestmentPositionValuationUtils,
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.0.0';
 import {
@@ -223,7 +230,7 @@ import {
 } from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.0.0';
 import {
     createInvestmentSummaryUtils,
-} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.0.0';
+} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.0';
 import {
     createInvestmentTransactionPresentationUtils,
 } from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.1.0';
@@ -503,6 +510,7 @@ export function createInvestmentDataUtils({
         parseInvestmentDateParts,
     };
     Object.assign(runtime, createInvestmentCoreCashUtils(runtime));
+    Object.assign(runtime, createInvestmentInterestAccrualUtils(runtime));
     Object.assign(runtime, createInvestmentTransactionPresentationUtils(runtime));
     Object.assign(runtime, createInvestmentReconciliationUtils(runtime));
     Object.assign(runtime, createInvestmentPositionValuationUtils(runtime));
@@ -510,6 +518,7 @@ export function createInvestmentDataUtils({
     const {
         adjustTradePriceForRenderedSeries,
         applyDirectionalTrade,
+        applyInvestmentInterestAccrualBoundaries,
         applyInvestmentTransactionToState,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
@@ -560,6 +569,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerCurrentCashSnapshot,
+        getInvestmentInterestAccrualOnDate,
         buildInvestmentPostSnapshotCashDelta,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
@@ -628,6 +638,7 @@ export function createInvestmentDataUtils({
     return {
         adjustTradePriceForRenderedSeries,
         applyDirectionalTrade,
+        applyInvestmentInterestAccrualBoundaries,
         applyInvestmentTransactionToState,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
@@ -679,6 +690,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerCurrentCashSnapshot,
+        getInvestmentInterestAccrualOnDate,
         buildInvestmentPostSnapshotCashDelta,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
@@ -746,7 +758,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.114.3';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.115.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

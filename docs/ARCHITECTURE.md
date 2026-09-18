@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.115.0`
+Documentation version: `v1.117.0`
 
 ## Reuse and dependency boundaries
 
@@ -1011,6 +1011,20 @@ second broker balance ledger. Its accounting boundaries are explicit:
   Holdings, but HSBC settlement-boundary corrections must use that row's
   pre-projection broker ledger. Current presentation state must never enter the
   historical aggregate correction base or cancel earlier settled proceeds.
+- Broker-reported accrued interest is a separate NAV component:
+  `broker_total_equity = broker_cash + broker_market_value +
+  broker_interest_accrual`, and aggregate equity adds each broker's accrual
+  exactly once. The IBKR importer retains the statement's `Interest Accruals`
+  NAV row and `Ending Accrual Balance` as a dated `interest_accrual_snapshot`
+  on the broker snapshot evidence, with the account base currency and native
+  per-currency balances. The browser consumes the derived
+  `interest_accrual_snapshots` boundaries. A boundary is authoritative only on
+  its own as-of date; it never enters cash, is never carried to later dates,
+  and a disagreement or missing evidence remains unknown rather than zero.
+  Daily equity materializes an eligible boundary as an observed date even when
+  no transaction or trading close lands on that date. If conversion into the
+  workspace base currency lacks dated FX evidence, equity is unavailable rather
+  than assuming parity or replacing the accrual with zero.
 - Daily security valuation uses an end-of-day close on a split-only basis and
   a dynamic end-of-day position converted to that same split basis. Reverse
   splits use a factor below one. Dividend cash stays in the cash ledger and

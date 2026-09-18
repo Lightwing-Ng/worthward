@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.78.0`
+Documentation version: `v1.79.0`
 
 ## Prices secondary-sidebar overlay
 
@@ -281,6 +281,13 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   OAuth or connection failure feedback.
 - `tests/test_runtime_error_redaction.py`: stable client failures that retain
   full unexpected-error diagnostics only in local logs.
+- `tests/test_ibkr_interest_accruals.py` and
+  `tests/test_investment_interest_accruals.mjs`: synthetic IBKR Interest
+  Accruals parsing, dated evidence persistence, and the
+  `cash + market value + accrual` equity invariant for rows, aggregate rows,
+  and daily points. They cover negative, positive, zero, missing, conflicting,
+  and foreign-currency accruals, and prove that a boundary is neither carried
+  forward nor added to another broker's equity.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment
   calculations, including synthetic multi-account round trips, fail-closed
   handling for incomplete histories, validated open-position snapshots,

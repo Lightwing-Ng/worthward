@@ -1,7 +1,11 @@
 /**
  * Daily equity and ticker-summary composition utilities.
  *
- * Code version: v1.0.0
+ * Code version: v1.2.0
+ * - Fixed: Daily equity materializes reported interest-accrual statement dates
+ *   and fails closed when a dated FX conversion is unavailable.
+ * - Added: A daily equity point on a reported broker interest-accrual as-of
+ *   date includes that accrual as a separate NAV component.
  * - Added: Extracted from the Investment data-utilities composition root.
  */
 
@@ -35,6 +39,9 @@ export function createInvestmentSummaryUtils(runtime) {
     const getInvestmentCanonicalTicker = (...args) => runtime.getInvestmentCanonicalTicker(...args);
     const getInvestmentCostBasisMethod = (...args) => runtime.getInvestmentCostBasisMethod(...args);
     const getInvestmentInternalTransferAggregateBridgeDelta = (...args) => runtime.getInvestmentInternalTransferAggregateBridgeDelta(...args);
+    const getInvestmentInterestAccrualBoundaries = (...args) => runtime.getInvestmentInterestAccrualBoundaries(...args);
+    const getInvestmentInterestAccrualOnDate = (...args) => runtime.getInvestmentInterestAccrualOnDate(...args);
+    const getInvestmentInterestAccrualRowBrokerCode = (...args) => runtime.getInvestmentInterestAccrualRowBrokerCode(...args);
     const getInvestmentStartingCash = (...args) => runtime.getInvestmentStartingCash(...args);
     const getLongbridgeHkCashEquivalentSyntheticTicker = (...args) => runtime.getLongbridgeHkCashEquivalentSyntheticTicker(...args);
     const getNormalizedTransactionType = (...args) => runtime.getNormalizedTransactionType(...args);
@@ -85,6 +92,18 @@ export function createInvestmentSummaryUtils(runtime) {
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(canonicalTransactions, baseCurrency);
+        // Only brokers in this replay scope contribute their dated accruals.
+        const interestAccrualBoundaries = getInvestmentInterestAccrualBoundaries();
+        const interestAccrualBrokerCodes = new Set(
+            canonicalTransactions.map((txn) => getInvestmentInterestAccrualRowBrokerCode(txn)),
+        );
+        const interestAccrualDates = [];
+        interestAccrualBoundaries.forEach((brokerBoundaries, brokerCode) => {
+            if (!interestAccrualBrokerCodes.has(brokerCode)) return;
+            brokerBoundaries.forEach((_components, asOf) => {
+                if (asOf >= firstLedgerDate) interestAccrualDates.push(asOf);
+            });
+        });
         const tradingDateSet = new Set();
         Object.values(tickerPriceIndex).forEach((entry) => {
             (entry?.dates || []).forEach((date) => {
@@ -144,6 +163,7 @@ export function createInvestmentSummaryUtils(runtime) {
             ...Array.from(tradingDateSet),
             ...Array.from(ledgerDateMap.keys()),
             ...replayLedgerDates,
+            ...interestAccrualDates,
         ])).sort();
         const observedCandidateDateSet = new Set(observedCandidateDates);
 
@@ -243,11 +263,30 @@ export function createInvestmentSummaryUtils(runtime) {
                 ? rawAggregateDisplayCash
                 : aggregateRunningCash + aggregatePendingSettlementCash;
             const aggregateMarketValue = valuation.marketValue;
-            const aggregateTotalEquity = valuation.isComplete && Number.isFinite(aggregateDisplayCash)
-                ? aggregateDisplayCash + aggregateMarketValue
+            // Accrued interest is a separate NAV component that is known only
+            // on a statement as-of date; it is never carried to later dates.
+            const interestAccrual = interestAccrualBoundaries.size
+                ? getInvestmentInterestAccrualOnDate(date, {
+                    brokerCodes: interestAccrualBrokerCodes,
+                    fxTimeline,
+                    baseCurrency,
+                    boundaries: interestAccrualBoundaries,
+                })
                 : null;
-            const currentTotalEquity = valuation.isComplete && Number.isFinite(currentDisplayCash)
-                ? currentDisplayCash + aggregateMarketValue
+            const interestAccrualAmount = interestAccrual ? Number(interestAccrual.amount) : 0;
+            const interestAccrualComplete = !interestAccrual || Number.isFinite(interestAccrualAmount);
+            const withInterestAccrual = (equity) => (
+                interestAccrualComplete ? equity + interestAccrualAmount : null
+            );
+            const aggregateTotalEquity = valuation.isComplete
+                && Number.isFinite(aggregateDisplayCash)
+                && interestAccrualComplete
+                ? withInterestAccrual(aggregateDisplayCash + aggregateMarketValue)
+                : null;
+            const currentTotalEquity = valuation.isComplete
+                && Number.isFinite(currentDisplayCash)
+                && interestAccrualComplete
+                ? withInterestAccrual(currentDisplayCash + aggregateMarketValue)
                 : null;
             const ledgerEntry = ledgerDateMap.get(date);
             const isCalendarCarryForward = includeCalendarDays && !observedCandidateDateSet.has(date);
@@ -275,7 +314,12 @@ export function createInvestmentSummaryUtils(runtime) {
                 total_equity: aggregateTotalEquity,
                 aggregate_total_equity: aggregateTotalEquity,
                 aggregate_current_total_equity: currentTotalEquity,
-                valuation_complete: valuation.isComplete && Number.isFinite(aggregateDisplayCash),
+                aggregate_interest_accrual: interestAccrual && interestAccrualComplete
+                    ? interestAccrualAmount
+                    : null,
+                valuation_complete: valuation.isComplete
+                    && Number.isFinite(aggregateDisplayCash)
+                    && interestAccrualComplete,
                 missing_price_tickers: valuation.missingPriceTickers,
                 degraded_price_tickers: valuation.degradedPriceTickers,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',

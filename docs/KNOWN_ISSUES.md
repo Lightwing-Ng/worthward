@@ -309,7 +309,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.258.0`
+Documentation version: `v1.259.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
@@ -630,6 +630,10 @@ is claimed and concurrent layout work remains preserved.
   shows an explicit awaiting note and stays excluded from aggregate holdings.
   A previously saved aggregate-only attribution remains visible and can be
   cleared.
+- IBKR Transactions CSV cash rows have no currency column. Both deposits and
+  withdrawals from that file are treated as base-currency (USD) cash for
+  internal-transfer matching, so a bank deposit can bind the matching IBKR
+  disbursement through the normal binding selector.
 - IBKR GainsKeeper imports retain `BUYOTHER` and `SELLOTHER` money-market
   transactions with their immutable FITIDs, exact source timestamps, and
   cash values; legacy stored GainsKeeper timestamps are normalized to the
@@ -690,6 +694,20 @@ is claimed and concurrent layout work remains preserved.
 - Current broker cash snapshots are presentation endpoints. HSBC historical
   settlement corrections use the pre-projection broker ledger, so a later
   mixed-broker current cash refresh cannot cancel earlier settled proceeds.
+- IBKR statement `Interest Accruals` are a separate NAV component, not cash or
+  market value. A reported accrual applies only on its statement as-of date:
+  to the broker's last replay row that day, to aggregate rows from that row to
+  the end of the day, to that day's daily equity point, and to Holdings Total
+  equity only when the current valuation date is that as-of date. It is never
+  carried forward or interpolated, so dates between statements and the
+  high-precision intraday Overview curve exclude it. A statement with no
+  accrual evidence, conflicting NAV and Ending Accrual Balance values, or no
+  as-of date leaves the accrual unknown rather than zero. Statements imported
+  before this parser existed carry no accrual snapshot until they are
+  re-imported, and the CSV pair import still requires identical Transaction
+  History and Realized Summary periods.
+- IBKR NAV can also report a separate `Dividend Accruals` component. It is not
+  yet modeled as an equity component.
 
 ## Local store housekeeping
 

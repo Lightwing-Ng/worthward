@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Added: Dated broker interest-accrual NAV boundaries are applied after
+ *   every cash and position projection, only on their statement as-of date.
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
@@ -1053,6 +1055,13 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             hsbcCashSettlementBoundaryPlan,
         );
         applyAuthoritativeCurrentBrokerHistoryBoundary(processed);
+        // Accrued interest is a separate NAV component. Apply it last so no
+        // later cash or position projection can overwrite or double count it.
+        runtime.applyInvestmentInterestAccrualBoundaries(processed, {
+            fxTimeline,
+            baseCurrency,
+            getBrokerCode: (txn) => runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)),
+        });
 
         Object.keys(latestPrices).forEach((ticker) => {
             if (moneyMarketTickers.has(String(ticker).trim().toUpperCase())) {

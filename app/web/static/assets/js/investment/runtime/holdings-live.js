@@ -1,7 +1,10 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Added: Current Holdings Total equity includes a reported broker
+ *   interest accrual only when its as-of date is the current valuation date,
+ *   matching the final daily chart point.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -601,7 +604,21 @@ function getInvestmentHoldingsRealtimeState() {
             return nextSummary;
         });
         const liveTotalEquity = runtime.computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash);
-        const resolvedTotalEquity = liveTotalEquity;
+        // A dated accrual is authoritative only on its own as-of date; it is
+        // never cash and is not carried to a later valuation date.
+        const interestAccrual = runtime.getInvestmentInterestAccrualOnDate(valuationDate, {
+            brokerCodes: new Set(aggregateTransactions.map((txn) => (
+                runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn))
+            ))),
+            fxTimeline,
+            baseCurrency,
+        });
+        const accruedTotalEquity = interestAccrual && Number.isFinite(liveTotalEquity)
+            ? liveTotalEquity + interestAccrual.amount
+            : null;
+        const resolvedTotalEquity = interestAccrual && Number.isFinite(liveTotalEquity)
+            ? (Number.isFinite(accruedTotalEquity) ? accruedTotalEquity : null)
+            : liveTotalEquity;
         if (Math.abs(resolvedTotalEquity - safeTotalEquity) > runtime.INVESTMENT_LIVE_DIGIT_EPSILON) {
             summaries.forEach((summary) => {
                 if (!summary?.hasOpenPosition) return;
