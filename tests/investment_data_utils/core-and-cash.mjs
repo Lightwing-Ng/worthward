@@ -49,6 +49,7 @@ import {
     getInvestmentBrokerCurrentPendingSettlementCash,
     getInvestmentBrokerCurrentDisplayCash,
     getInvestmentBrokerCurrentCashSnapshot,
+    buildInvestmentPostSnapshotCashDelta,
     getInvestmentBrokerEndingCashAsOf,
     getInvestmentBrokerEndingCashAsOfDateTime,
     getInvestmentBrokerPositionSnapshotAsOf,
@@ -419,6 +420,51 @@ test('Schwab date-only trades retain explicit same-day execution sequence', () =
     assert.ok(compareInvestmentTransactions(buy, sell) < 0);
     assert.ok(compareInvestmentTransactionsForReplay(buy, sell) < 0);
     assert.ok(compareInvestmentTaxLotTransactions(buy, sell) < 0);
+});
+
+test('tax-lot order keeps a Schwab same-day pair ordered among other brokers at the same time', () => {
+    const schwabBuy = {
+        broker: 'schwab',
+        account: 'Individual ...001',
+        currency: 'USD',
+        date: '2026-08-24',
+        datetime: '2026-08-24 20:00:00',
+        type: 'buy',
+        ticker: 'EUV',
+        source: {
+            file_kind: 'schwab_csv',
+            datetime_precision: 'day',
+            source_has_intraday_timestamp: false,
+            source_row_order: 'newest_first',
+            row_number: 16,
+            same_day_execution_sequence: 1,
+        },
+    };
+    const schwabSell = {
+        ...schwabBuy,
+        type: 'sell',
+        source: {...schwabBuy.source, row_number: 15, same_day_execution_sequence: 2},
+    };
+    const hsbcRows = [16, 15, 14, 9].map((rowNumber) => ({
+        broker: 'hsbc',
+        account: '000-000000-001',
+        currency: 'USD',
+        date: '2026-08-24',
+        datetime: '2026-08-24 20:00:00',
+        type: 'buy',
+        ticker: 'DRAM',
+        source: {file_kind: 'hsbc_order_status_text', row_number: rowNumber},
+    }));
+    // Mixing account-local sequences with cross-broker row numbers used to
+    // make the comparator intransitive, so input order decided the result.
+    [
+        [...hsbcRows, schwabBuy, schwabSell],
+        [schwabSell, ...hsbcRows, schwabBuy],
+        [schwabSell, schwabBuy, ...hsbcRows].reverse(),
+    ].forEach((rows) => {
+        const ordered = [...rows].sort((left, right) => compareInvestmentTaxLotTransactions(left, right));
+        assert.ok(ordered.indexOf(schwabBuy) < ordered.indexOf(schwabSell));
+    });
 });
 
 test('tax-lot replay normalizes mixed source timestamp formats before sorting', () => {
@@ -1429,6 +1475,58 @@ test('dated cash snapshots anchor replay without erasing later IBKR trades', () 
     assert.ok(Math.abs(projection.projections[0].runningCash - 420.38156702) < 1e-9);
     assert.ok(Math.abs(projection.projections[1].runningCash - 270.03156702) < 1e-9);
     assert.ok(Math.abs(projection.projections[1].balances.USD - 270.03156702) < 1e-9);
+});
+
+test('current broker cash rolls a dated snapshot forward through a later withdrawal', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        WORTHWARD_INVESTMENT_DATA: {
+            broker_summaries: {
+                ibkr: {
+                    ending_cash: '40.25',
+                    ending_cash_as_of: '2026-03-02',
+                    ending_cash_as_of_datetime: '2026-03-02 10:00:00',
+                    cash_snapshot_authoritative: true,
+                },
+            },
+        },
+    };
+    try {
+        const rows = [
+            {date: '2026-03-02', datetime: '2026-03-02 09:00:00', broker_running_cash: 38, broker_cash_by_currency: {USD: 38}},
+            {date: '2026-03-02', datetime: '2026-03-02 18:00:00', broker_running_cash: -2.25, broker_cash_by_currency: {USD: -2.25}},
+        ];
+        const authoritativeBalances = getInvestmentBrokerEndingCashBalances('ibkr');
+        const projection = buildDatedCashSnapshotProjection(rows, {
+            asOf: getInvestmentBrokerEndingCashAsOf('ibkr'),
+            asOfDateTime: getInvestmentBrokerEndingCashAsOfDateTime('ibkr'),
+            authoritativeBaseCash: 40.25,
+            authoritativeBalances,
+        });
+        assert.deepEqual(
+            projection.projections.map(({index, afterSnapshot}) => ({index, afterSnapshot})),
+            [{index: 1, afterSnapshot: true}],
+        );
+        const latest = projection.projections[0];
+        assert.ok(Math.abs(latest.runningCash) < 1e-9);
+        const delta = buildInvestmentPostSnapshotCashDelta(latest.balances, authoritativeBalances);
+        assert.ok(Math.abs(delta.USD + 40.25) < 1e-9);
+
+        const staleSnapshot = getInvestmentBrokerCurrentCashSnapshot('ibkr', '2026-03-03', {});
+        assert.equal(staleSnapshot.displayCash, 40.25);
+        const rolledSnapshot = getInvestmentBrokerCurrentCashSnapshot(
+            'ibkr',
+            '2026-03-03',
+            {},
+            {postSnapshotCashDelta: delta},
+        );
+        assert.ok(Math.abs(rolledSnapshot.runningCash) < 1e-9);
+        assert.ok(Math.abs(rolledSnapshot.displayCash) < 1e-9);
+        assert.deepEqual(rolledSnapshot.runningBalances, {});
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
 });
 
 test('intraday cash boundaries leave earlier same-day IBKR rows unchanged', () => {

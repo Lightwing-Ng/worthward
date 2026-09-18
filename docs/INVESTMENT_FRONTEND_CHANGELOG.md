@@ -1,12 +1,24 @@
 # Investment frontend changelog
 
-Documentation version: `v1.51.4`
+Documentation version: `v1.51.6`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Tax-lot replay ordering now groups same-timestamp rows by broker
+  account before comparing account-local execution sequences or source row
+  numbers. The comparator is transitive again, so a date-only same-day
+  buy/sell pair can no longer be replayed sell-first when another broker has
+  rows at the same timestamp, which had made the ticker's realized and
+  unrealized P&L unavailable in Holdings.
+
+- Fixed: A broker's current cash now includes ledger cash movements recorded
+  after its authoritative ending-cash snapshot. A withdrawal imported after
+  the snapshot boundary can no longer be overwritten by the stale snapshot
+  balance in the current-cash row or single-broker metrics.
 
 - Fixed: A clipped HSBC cash-account page now preserves an explicitly labelled
   mobile withdrawal as an outflow even when the preceding balance row is not

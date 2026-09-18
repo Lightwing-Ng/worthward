@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.114.1
+ * Code version: v1.114.3
+ * - Fixed: Same-day buy/sell pairs keep their account-local execution order
+ *   when other brokers have rows at the same timestamp.
+ * - Fixed: Current broker cash snapshots include ledger cash movements
+ *   recorded after the snapshot boundary, such as a later withdrawal.
  * - Fixed: Same-day HSBC settlement boundaries recover their chronological
  *   order from authoritative balance continuity when incremental paste row
  *   sequences drift across imports.
@@ -210,7 +214,7 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.0.0';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.1.0';
 import {
     createInvestmentPositionValuationUtils,
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.0.0';
@@ -222,7 +226,7 @@ import {
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.0.0';
 import {
     createInvestmentTransactionPresentationUtils,
-} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.0.0';
+} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.1.0';
 
 export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
@@ -556,6 +560,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerCurrentCashSnapshot,
+        buildInvestmentPostSnapshotCashDelta,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
@@ -674,6 +679,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerCurrentCashSnapshot,
+        buildInvestmentPostSnapshotCashDelta,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentBrokerPositionSnapshotAsOf,
@@ -740,7 +746,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.114.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.114.3';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

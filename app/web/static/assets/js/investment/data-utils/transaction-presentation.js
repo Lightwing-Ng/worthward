@@ -1,8 +1,9 @@
 /**
  * Transaction presentation, lot-scope, and replay-order utilities.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment data-utilities composition root.
+ * Code version: v1.1.0
+ * - Fixed: Same-time tax-lot ordering groups rows by broker account before
+ *   comparing account-local sequences, keeping the comparator transitive.
  */
 
 export function createInvestmentTransactionPresentationUtils(runtime) {
@@ -1016,35 +1017,40 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         }
         const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
         const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
-        if (leftBroker === 'hsbc' && rightBroker === 'hsbc') {
+        const leftAccount = String(
+            leftTxn?.account_id
+            ?? leftTxn?.account
+            ?? leftTxn?.source?.account_id
+            ?? leftTxn?.source?.account
+            ?? leftTxn?.source?.account_number
+            ?? '',
+        ).trim();
+        const rightAccount = String(
+            rightTxn?.account_id
+            ?? rightTxn?.account
+            ?? rightTxn?.source?.account_id
+            ?? rightTxn?.source?.account
+            ?? rightTxn?.source?.account_number
+            ?? '',
+        ).trim();
+        // Source row numbers and execution sequences are only comparable
+        // within one broker account. Grouping same-time rows by account first
+        // keeps the comparator transitive, so another broker's row numbers can
+        // no longer reorder a same-day buy/sell pair during a full sort.
+        if (leftBroker !== rightBroker) return leftBroker.localeCompare(rightBroker);
+        if (leftAccount !== rightAccount) return leftAccount.localeCompare(rightAccount);
+        if (leftBroker === 'hsbc') {
             const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
             const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
             if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
                 return leftSequence - rightSequence;
             }
         }
-        if (leftBroker === 'schwab' && rightBroker === 'schwab') {
-            const leftAccount = String(
-                leftTxn?.account_id
-                ?? leftTxn?.account
-                ?? leftTxn?.source?.account_id
-                ?? leftTxn?.source?.account
-                ?? leftTxn?.source?.account_number
-                ?? '',
-            ).trim();
-            const rightAccount = String(
-                rightTxn?.account_id
-                ?? rightTxn?.account
-                ?? rightTxn?.source?.account_id
-                ?? rightTxn?.source?.account
-                ?? rightTxn?.source?.account_number
-                ?? '',
-            ).trim();
+        if (leftBroker === 'schwab') {
             const leftSequence = getSchwabDateOnlyTradeSequence(leftTxn);
             const rightSequence = getSchwabDateOnlyTradeSequence(rightTxn);
             if (
                 leftAccount
-                && leftAccount === rightAccount
                 && Number.isFinite(leftSequence)
                 && Number.isFinite(rightSequence)
                 && leftSequence !== rightSequence

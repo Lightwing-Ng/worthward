@@ -1,8 +1,9 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment workspace composition root.
+ * Code version: v1.1.0
+ * - Fixed: Single-broker current cash includes movements recorded after the
+ *   broker's authoritative cash snapshot.
  */
 
 export function createInvestmentMetricsImportRuntime(runtime) {
@@ -292,10 +293,16 @@ function resolveInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', c
                 && runtime.state.investmentRawTransactionsCache.length
                 ? runtime.state.investmentRawTransactionsCache
                 : transactions;
+            const latestBrokerProcessed = [...(runtime.state.investmentProcessedTransactionsCache || [])]
+                .reverse()
+                .find((transaction) => (
+                    runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(transaction)) === normalizedBrokerCode
+                ));
             const currentBrokerSnapshot = runtime.getInvestmentBrokerCurrentCashSnapshot(
                 normalizedBrokerCode,
                 runtime.getTodayLedgerDate(),
                 runtime.buildInvestmentFxRateTimeline(fxTransactions, baseCurrency),
+                {postSnapshotCashDelta: latestBrokerProcessed?.broker_post_snapshot_cash_delta},
             );
             if (currentBrokerSnapshot) {
                 return {

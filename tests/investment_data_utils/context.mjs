@@ -84,6 +84,7 @@ export const {
     getInvestmentBrokerCurrentPendingSettlementCash,
     getInvestmentBrokerCurrentDisplayCash,
     getInvestmentBrokerCurrentCashSnapshot,
+    buildInvestmentPostSnapshotCashDelta,
     getInvestmentBrokerEndingCashAsOf,
     getInvestmentBrokerEndingCashAsOfDateTime,
     getInvestmentBrokerPositionSnapshotAsOf,

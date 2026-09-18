@@ -1,8 +1,9 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment workspace composition root.
+ * Code version: v1.1.0
+ * - Changed: Binding response now applies broker_summaries to refresh
+ *   the authoritative cash snapshot without requiring a full page reload.
  */
 
 export function createInvestmentRealtimeChartRuntime(runtime) {
@@ -1128,6 +1129,9 @@ async function rememberInvestmentInternalTransferBinding(
         }
         if (payload?.summary && window.WORTHWARD_INVESTMENT_DATA) {
             window.WORTHWARD_INVESTMENT_DATA.summary = payload.summary;
+        }
+        if (payload?.broker_summaries && window.WORTHWARD_INVESTMENT_DATA) {
+            window.WORTHWARD_INVESTMENT_DATA.broker_summaries = payload.broker_summaries;
         }
         applyInvestmentSecurityTransferBasisToTransactions(runtime.state.investmentRawTransactionsCache);
         return payload || {success: true};

@@ -1,8 +1,9 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment workspace composition root.
+ * Code version: v1.1.0
+ * - Fixed: Current broker cash keeps ledger movements recorded after the
+ *   authoritative ending-cash snapshot instead of pinning the stale boundary.
  */
 
 export function createInvestmentWorkspaceControlsRuntime(runtime) {
@@ -992,9 +993,17 @@ function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) 
             });
             if (!projection.applied) return;
             authoritativeCashEligibleBrokers.add(brokerCode);
-            projection.projections.forEach(({index, runningCash, balances}) => {
+            projection.projections.forEach(({index, runningCash, balances, afterSnapshot}) => {
                 const txn = brokerRows[index];
                 if (!txn) return;
+                txn.broker_post_snapshot_cash_delta = afterSnapshot
+                    ? runtime.buildInvestmentPostSnapshotCashDelta(
+                        balances,
+                        hasAuthoritativeBalances
+                            ? authoritativeEndingCashBalances
+                            : runtime.createCashLedger(numericEndingCash, runtime.getInvestmentBaseCurrency()),
+                    )
+                    : null;
                 if (runtime.shouldPreserveSequentialBrokerBuyHistory(txn)) return;
                 if (Number.isFinite(runningCash)) txn.broker_running_cash = runningCash;
                 txn.broker_cash_by_currency = {...balances};
@@ -1318,6 +1327,7 @@ function applyAuthoritativeCurrentAggregateCash(
                 brokerCode,
                 valuationDate,
                 fxTimeline,
+                {postSnapshotCashDelta: latestBrokerTxn?.broker_post_snapshot_cash_delta},
             );
             const currentCashAsOf = runtime.getInvestmentBrokerEndingCashAsOf(brokerCode);
             const hasCurrentCashBoundary = Boolean(

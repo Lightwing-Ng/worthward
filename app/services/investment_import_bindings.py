@@ -1,6 +1,6 @@
 """Investment import domain: bindings.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -1089,6 +1089,7 @@ def refresh_investment_security_transfer_reconciliation(
         )
     )
     payload["summary"] = summary
+    _ii_payload_summaries._attach_broker_summaries(payload)
     return payload
 
 

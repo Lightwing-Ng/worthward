@@ -1,6 +1,6 @@
 """Build the investment mutations web-runtime context.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -239,6 +239,9 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                         )
                     ),
                     "summary": updated_payload.get("summary", {}),
+                    "broker_summaries": updated_payload.get(
+                        "broker_summaries", {}
+                    ),
                 }
 
             update_result = cast(
@@ -256,6 +259,9 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                         "manual_internal_transfer_ignored_source_keys", []
                     ),
                     "summary": update_result.get("summary", {}),
+                    "broker_summaries": update_result.get(
+                        "broker_summaries", {}
+                    ),
                 }
             )
         except ValueError as exc:

@@ -1,8 +1,9 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment data-utilities composition root.
+ * Code version: v1.1.0
+ * - Changed: Current broker cash snapshots roll forward by ledger cash
+ *   movements recorded after the snapshot boundary.
  */
 
 export function createInvestmentCoreCashUtils(runtime) {
@@ -419,10 +420,25 @@ export function createInvestmentCoreCashUtils(runtime) {
         return baseCash === null ? null : baseCash;
     }
 
+    function buildInvestmentPostSnapshotCashDelta(projectedBalances, authoritativeBalances) {
+        // Rows after a dated snapshot carry projected balances equal to the
+        // snapshot plus the ledger movement since the boundary, so the
+        // difference is the post-snapshot cash movement per currency.
+        const projected = cloneCashLedgerBalances(projectedBalances || {});
+        const authoritative = cloneCashLedgerBalances(authoritativeBalances || {});
+        const delta = {};
+        Object.entries(authoritative).forEach(([currency, value]) => {
+            const change = (Number(projected[currency]) || 0) - (Number(value) || 0);
+            if (Number.isFinite(change) && Math.abs(change) > 1e-9) delta[currency] = change;
+        });
+        return delta;
+    }
+
     function getInvestmentBrokerCurrentCashSnapshot(
         brokerCode,
         targetDate = '',
         fxTimeline = null,
+        {postSnapshotCashDelta = null} = {},
     ) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return null;
@@ -440,6 +456,18 @@ export function createInvestmentCoreCashUtils(runtime) {
             runningBalances[baseCurrency] = baseCash;
         }
         if (!Object.keys(runningBalances).length) return null;
+        if (postSnapshotCashDelta && typeof postSnapshotCashDelta === 'object') {
+            // The summary is a dated boundary; later ledger movements such as
+            // a withdrawal imported after the snapshot still change cash.
+            Object.entries(postSnapshotCashDelta).forEach(([currency, change]) => {
+                const normalizedCurrency = normalizeCurrencyCode(currency);
+                const numericChange = Number(change);
+                if (!normalizedCurrency || !Number.isFinite(numericChange)) return;
+                const nextValue = (Number(runningBalances[normalizedCurrency]) || 0) + numericChange;
+                if (Math.abs(nextValue) < 1e-9) delete runningBalances[normalizedCurrency];
+                else runningBalances[normalizedCurrency] = nextValue;
+            });
+        }
         const resolvedFxTimeline = fxTimeline || buildInvestmentFxRateTimeline(
             window.WORTHWARD_INVESTMENT_DATA?.transactions || [],
             baseCurrency,
@@ -673,6 +701,7 @@ export function createInvestmentCoreCashUtils(runtime) {
                 index,
                 runningCash: projectedCash,
                 balances: projectedBalances,
+                afterSnapshot: rowKey > snapshotKey,
             });
         }
         return {
@@ -1178,6 +1207,7 @@ export function createInvestmentCoreCashUtils(runtime) {
         getInvestmentBrokerCurrentPendingSettlementCash,
         getInvestmentBrokerCurrentDisplayCash,
         getInvestmentBrokerCurrentCashSnapshot,
+        buildInvestmentPostSnapshotCashDelta,
         getInvestmentBrokerEndingCashAsOf,
         getInvestmentBrokerEndingCashAsOfDateTime,
         getInvestmentPositionSnapshotAsOf,
