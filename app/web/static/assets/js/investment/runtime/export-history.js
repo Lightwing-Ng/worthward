@@ -1,8 +1,9 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.0.0
- * - Added: Extracted from the Investment workspace composition root.
+ * Code version: v1.1.0
+ * - Changed: A Schwab security receipt binds only an imported matching source
+ *   transfer-out leg; unrelated accounts are no longer offered as sources.
  */
 
 export function createInvestmentExportHistoryRuntime(runtime) {
@@ -460,24 +461,56 @@ function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true}
             && receiptKey
         );
         const securityTransferAttribution = txn?.security_transfer_attribution;
-        const attributionSourceBroker = runtime.normalizeInvestmentBroker(
+        const rawAttributionSourceBroker = String(
             securityTransferAttribution?.source_broker || '',
-        );
+        ).trim();
         const attributionSourceAccount = String(
             securityTransferAttribution?.source_account || '',
         ).trim();
-        const attributionOptions = isSchwabSecurityReceipt
-            ? runtime.getInvestmentSecurityTransferAttributionOptions(txn)
+        // normalizeInvestmentBroker('') falls back to IBKR; an absent
+        // attribution must stay absent rather than read as a saved source.
+        const attributionSourceBroker = rawAttributionSourceBroker && attributionSourceAccount
+            ? runtime.normalizeInvestmentBroker(rawAttributionSourceBroker)
+            : '';
+        const receiptSourceOptions = isSchwabSecurityReceipt
+            ? runtime.getInvestmentSecurityTransferReceiptSourceOptions(txn)
             : [];
         const isPassiveBoundSecurityReceipt = isSchwabSecurityReceipt
             && txn?.manual_internal_transfer_role === 'target'
             && txn?.manual_internal_transfer_kind === 'security'
             && String(txn?.manual_internal_transfer_pair_key || '').trim();
-        const securityTransferAttributionNote = securityTransferAttributionStatus === 'superseded_by_source_evidence'
-            ? 'A uniquely matching imported source transfer-out now confirms this receipt. No aggregate-only overlay is active.'
-            : (attributionOptions.length
-                ? ''
-                : 'No eligible prior imported source broker and account are available for confirmation.');
+        const securityTransferAttributionNote = receiptSourceOptions.length
+            ? ''
+            : (attributionSourceBroker
+                ? 'No matching source transfer-out record is imported yet. Import the source broker statement to bind this receipt.'
+                : 'Awaiting the source broker transfer-out record. Import that broker statement to bind this receipt; no other account is offered.');
+        let securityTransferSelectMarkup = '';
+        if (receiptSourceOptions.length) {
+            // Bind the exact imported source leg; this persists a manual
+            // pair binding identical to the one made from the source row.
+            securityTransferSelectMarkup = `
+                    <select class="investment-security-transfer-receipt-bind-select trade-strategy-select form-select"
+                            data-investment-security-transfer-receipt-key="${runtime.escapeHtml(receiptKey)}"
+                            aria-label="Bind the source transfer-out for this Schwab security receipt">
+                        <option value="">Bind source transfer-out...</option>
+                        ${receiptSourceOptions.map((option) => `<option value="${runtime.escapeHtml(option.key)}">from ${runtime.escapeHtml(option.label)}</option>`).join('')}
+                    </select>
+                `;
+        } else if (attributionSourceBroker) {
+            // Keep a previously saved aggregate-only attestation reviewable and
+            // removable, but never offer new unrelated accounts.
+            securityTransferSelectMarkup = `
+                    <select class="investment-security-transfer-attribution-select trade-strategy-select form-select"
+                            data-investment-security-transfer-receipt-key="${runtime.escapeHtml(receiptKey)}"
+                            aria-label="Review the saved Schwab security-transfer source attribution">
+                        <option value="${runtime.escapeHtml(JSON.stringify({
+                            source_broker: attributionSourceBroker,
+                            source_account: attributionSourceAccount,
+                        }))}" selected>${runtime.escapeHtml(`${runtime.getInvestmentBrokerMeta(attributionSourceBroker).label} · ${attributionSourceAccount}`)}</option>
+                        <option value="">Clear source attribution</option>
+                    </select>
+                `;
+        }
         const securityTransferAttributionMarkup = isSchwabSecurityReceipt
             && !isPassiveBoundSecurityReceipt
             && (
@@ -488,22 +521,7 @@ function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true}
             ? `
                 <div class="investment-transfer-link-shell${txn?.security_transfer_requires_attribution ? ' is-unresolved' : ' is-resolved'}">
                     <span class="investment-transfer-link-current">${runtime.escapeHtml(description)}</span>
-                    <select class="investment-security-transfer-attribution-select trade-strategy-select form-select"
-                            data-investment-security-transfer-receipt-key="${runtime.escapeHtml(receiptKey)}"
-                            aria-label="Confirm Schwab security-transfer source broker and account">
-                        ${attributionSourceBroker ? '' : '<option value="">Confirm source broker and account...</option>'}
-                        ${attributionOptions.map((option) => {
-                            const optionValue = JSON.stringify({
-                                source_broker: option.source_broker,
-                                source_account: option.source_account,
-                            });
-                            const isSelected = (
-                                option.source_broker === attributionSourceBroker
-                                && option.source_account === attributionSourceAccount
-                            );
-                            return `<option value="${runtime.escapeHtml(optionValue)}"${isSelected ? ' selected' : ''}>${runtime.escapeHtml(option.label)}</option>`;
-                        }).join('')}
-                    </select>
+                    ${securityTransferSelectMarkup}
                     ${securityTransferAttributionNote
                         ? `<span class="investment-transfer-link-fee-note">${runtime.escapeHtml(securityTransferAttributionNote)}</span>`
                         : ''}
@@ -639,11 +657,23 @@ function bindInvestmentHistoryTransferControls(tbody) {
                 }
                 return;
             }
-            const select = event.target.closest('.investment-transfer-link-select');
+            const receiptBindSelect = event.target.closest('.investment-security-transfer-receipt-bind-select');
+            const select = receiptBindSelect instanceof HTMLSelectElement
+                ? receiptBindSelect
+                : event.target.closest('.investment-transfer-link-select');
             if (!(select instanceof HTMLSelectElement)) return;
-            const sourceKey = String(select.dataset.investmentTransferSourceKey || '').trim();
+            const sourceKey = String(
+                select === receiptBindSelect
+                    ? select.value
+                    : select.dataset.investmentTransferSourceKey || '',
+            ).trim();
             if (!sourceKey) return;
-            const targetKey = String(select.value || '').trim();
+            const targetKey = String(
+                select === receiptBindSelect
+                    ? select.dataset.investmentSecurityTransferReceiptKey || ''
+                    : select.value,
+            ).trim();
+            if (select === receiptBindSelect && !targetKey) return;
             const action = targetKey === runtime.INVESTMENT_INTERNAL_TRANSFER_IGNORE_VALUE
                 ? 'ignore'
                 : (targetKey === runtime.INVESTMENT_INTERNAL_TRANSFER_RESTORE_VALUE ? 'restore' : 'bind');

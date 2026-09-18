@@ -1,9 +1,9 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.1.0
- * - Fixed: Current broker cash keeps ledger movements recorded after the
- *   authoritative ending-cash snapshot instead of pinning the stale boundary.
+ * Code version: v1.2.0
+ * - Changed: A Schwab security receipt offers only matching imported source
+ *   transfer-out legs instead of every non-Schwab account in the ledger.
  */
 
 export function createInvestmentWorkspaceControlsRuntime(runtime) {
@@ -39,31 +39,16 @@ function isInvestmentAggregatePnlUnavailable(tickerSummaries = []) {
         return runtime.getInvestmentAggregatePnlCoverage(tickerSummaries).status !== 'complete';
     }
 
-function getInvestmentSecurityTransferAttributionOptions(receiptTxn) {
-        const receiptDate = runtime.normalizeLedgerDate(receiptTxn?.date);
-        const optionsByKey = new Map();
-        (Array.isArray(runtime.state.investmentRawTransactionsCache) ? runtime.state.investmentRawTransactionsCache : []).forEach((txn) => {
-            const broker = runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn));
-            const account = String(
-                txn?.account
-                || txn?.source?.account
-                || txn?.source?.account_number
-                || ''
-            ).trim();
-            if (!broker || broker === 'schwab' || !account) return;
-            const transactionDate = runtime.normalizeLedgerDate(txn?.date);
-            // Same-day source transfer-out evidence is valid for an in-kind
-            // receipt; the server still verifies its exact immutable fields.
-            if (receiptDate && transactionDate && transactionDate > receiptDate) return;
-            const key = `${broker}\u0000${account}`;
-            if (optionsByKey.has(key)) return;
-            optionsByKey.set(key, {
-                source_broker: broker,
-                source_account: account,
-                label: `${runtime.getInvestmentBrokerMeta(broker).label} · ${account}`,
-            });
-        });
-        return [...optionsByKey.values()].sort((left, right) => left.label.localeCompare(right.label));
+function getInvestmentSecurityTransferReceiptSourceOptions(receiptTxn) {
+        // Offer only imported source transfer-out legs that already satisfy the
+        // in-kind pair constraints (other broker, same date, ticker, quantity).
+        // Unrelated accounts, buys, or positions are never offered as a source.
+        const receiptKey = String(
+            receiptTxn?.security_transfer_receipt_key || receiptTxn?.manual_internal_transfer_key || ''
+        ).trim();
+        if (!receiptKey) return [];
+        const optionsByReceiptKey = runtime.state.investmentSecurityTransferReceiptSourceOptionsByKey;
+        return optionsByReceiptKey instanceof Map ? (optionsByReceiptKey.get(receiptKey) || []) : [];
     }
 
 async function rememberInvestmentSecurityTransferAttribution(
@@ -794,9 +779,36 @@ function buildInvestmentInternalTransferContext(processedTransactions = []) {
             }
         });
 
+        const receiptSourceOptionsByKey = new Map();
+        const sourceTxnByKey = new Map(
+            sourceTransactions.map((sourceTxn) => [
+                String(sourceTxn?.manual_internal_transfer_key || '').trim(),
+                sourceTxn,
+            ]),
+        );
+        sourceOptionsByKey.forEach((options, sourceKey) => {
+            const sourceTxn = sourceTxnByKey.get(sourceKey);
+            if (!sourceTxn || resolvedBindingsBySourceKey.has(sourceKey)) return;
+            if (getInvestmentInternalTransferKind(sourceTxn) !== 'security') return;
+            options.forEach((option) => {
+                const receiptKey = String(option?.key || '').trim();
+                if (!receiptKey || claimedTargetKeys.has(receiptKey)) return;
+                const receiptOptions = receiptSourceOptionsByKey.get(receiptKey) || [];
+                receiptOptions.push({
+                    key: sourceKey,
+                    label: formatInvestmentInternalTransferOptionLabel(sourceTxn, {
+                        transferKind: 'security',
+                    }),
+                    sourceTxn,
+                });
+                receiptSourceOptionsByKey.set(receiptKey, receiptOptions);
+            });
+        });
+
         return {
             sourceOptionsByKey,
             resolvedBindingsBySourceKey,
+            receiptSourceOptionsByKey,
             ignoredSourceKeys,
         };
     }
@@ -1083,6 +1095,7 @@ function applyInvestmentInternalTransferBindings(processedTransactions = []) {
         const context = buildInvestmentInternalTransferContext(transactions);
         runtime.state.investmentInternalTransferSourceOptionsByKey = context.sourceOptionsByKey;
         runtime.state.investmentInternalTransferResolvedBindingsBySourceKey = context.resolvedBindingsBySourceKey;
+        runtime.state.investmentSecurityTransferReceiptSourceOptionsByKey = context.receiptSourceOptionsByKey;
         const aggregateBaseCurrency = runtime.getInvestmentBaseCurrency();
         const internalTransferFxTimeline = runtime.buildInvestmentFxRateTimeline(
             transactions,
@@ -1477,7 +1490,7 @@ function measureSegmentedInlineContentWidth(element, renderSafetyPx = runtime.SE
         getInvestmentCanonicalSummaryRealizedPnlLocal,
         hasInvestmentPnlUnavailable,
         isInvestmentAggregatePnlUnavailable,
-        getInvestmentSecurityTransferAttributionOptions,
+        getInvestmentSecurityTransferReceiptSourceOptions,
         rememberInvestmentSecurityTransferAttribution,
         getInvestmentTransactionSourceIdentity,
         buildInvestmentTransactionBaseBindingKey,

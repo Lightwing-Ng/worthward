@@ -690,14 +690,14 @@ test('scopes an unbound Schwab receipt without blanking unaffected All brokers s
     });
     await page.goto('/trade/investment');
 
-    const receiptConfirmation = page.locator(
+    // An unrelated IBKR buy is not transfer evidence; no source is offered
+    // until the matching source transfer-out is imported.
+    await expect(page.locator(
         '#investment_history select[data-investment-security-transfer-receipt-key]',
-    );
-    await expect(receiptConfirmation).toHaveCount(1);
-    await expect(receiptConfirmation).toHaveAttribute(
-        'data-investment-security-transfer-receipt-key',
-        receiptKey,
-    );
+    )).toHaveCount(0);
+    await expect(
+        page.locator('#investment_history tr[data-investment-history-ticker="QQQI"]'),
+    ).toContainText('Awaiting the source broker transfer-out record.');
     await expect(page.locator('#investment_history')).not.toContainText('Remove source confirmation');
     await expect(page.locator('#investment_history')).not.toContainText(
         'Confirmation changes only All brokers aggregation.',
@@ -724,3 +724,111 @@ test('scopes an unbound Schwab receipt without blanking unaffected All brokers s
     );
 });
 
+
+test('offers only a matching imported source transfer-out on an unbound Schwab receipt', async ({page}) => {
+    const receiptKey = 'v2:["schwab","Individual ...001","2026-09-17","transfer_in","QQQI","10","USD"]';
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr', 'schwab'],
+        summary: {
+            security_transfer_reconciliation: {
+                aggregate_holdings_available: false,
+                aggregate_scope_status: 'blocked_source_attribution_required',
+                pnl_unavailable_tickers: ['QQQI'],
+                pnl_unavailable_reason: 'cross_broker_security_transfer_basis_unverified',
+                aggregate_overlay: {
+                    source_attribution_required_receipt_keys: [receiptKey],
+                },
+            },
+        },
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: '000-000000-001',
+                date: '2026-09-10',
+                type: 'buy',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 20,
+                price: 54,
+                amount: -1080,
+                description: 'QQQI buy',
+                source: {row_number: 1},
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-16',
+                type: 'transfer_out',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 10,
+                amount: 0,
+                description: 'FOP transfer out: QQQI',
+                source: {row_number: 2},
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-17',
+                type: 'transfer_out',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 10,
+                amount: 0,
+                description: 'FOP transfer out: QQQI',
+                source: {row_number: 3},
+            },
+            {
+                broker: 'schwab',
+                account: 'Individual ...001',
+                date: '2026-09-17',
+                type: 'transfer_in',
+                currency: 'USD',
+                ticker: 'QQQI',
+                quantity: 10,
+                amount: 0,
+                description: 'NEOS NASDAQ-100(R) HIGH INCOME ETF',
+                source: {row_number: 4},
+            },
+        ],
+    });
+    let persistedBindingRequest = null;
+    await page.route('**/api/investment/internal-transfer-binding', async (route) => {
+        persistedBindingRequest = route.request().postDataJSON();
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                manual_internal_transfer_bindings: {
+                    [persistedBindingRequest.source_key]: persistedBindingRequest.target_key,
+                },
+            }),
+        });
+    });
+    await page.goto('/trade/investment');
+
+    const receiptSelect = page.locator(
+        '#investment_history select.investment-security-transfer-receipt-bind-select',
+    );
+    await expect(receiptSelect).toHaveCount(1);
+    await expect(receiptSelect).toHaveAttribute(
+        'data-investment-security-transfer-receipt-key',
+        receiptKey,
+    );
+    const offeredOptions = await receiptSelect.locator('option').evaluateAll((options) => (
+        options.filter((option) => option.value).map((option) => ({
+            value: option.value,
+            label: option.textContent.trim(),
+        }))
+    ));
+    expect(offeredOptions).toHaveLength(1);
+    expect(offeredOptions[0].value).toContain('"ibkr"');
+    expect(offeredOptions[0].value).toContain('"2026-09-17","transfer_out","QQQI","10"');
+    expect(offeredOptions[0].label).not.toContain('HSBC');
+    await receiptSelect.selectOption(offeredOptions[0].value);
+
+    await expect.poll(() => persistedBindingRequest).toEqual({
+        source_key: offeredOptions[0].value,
+        target_key: receiptKey,
+    });
+});

@@ -1,7 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.144.7
+ * Code version: v2.144.8
+ * - Fixed: Schwab security receipts list only matching imported source
+ *   transfer-out legs as binding candidates.
  * - Fixed: Holdings P&L no longer turns unavailable when a same-day trade pair
  *   is replayed out of order among other brokers' same-time rows.
  * - Fixed: Current broker cash includes movements after its snapshot boundary.
@@ -12,7 +14,7 @@
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.0.0';
 import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.0.0';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.0.0';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.1.0';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.0.0';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.0.0';
@@ -24,7 +26,7 @@ import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtim
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
 import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.0';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.0.0';
-import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.1.0';
+import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.2.0';
 
 import {
     INVESTMENT_CHART_ORBIT_MODULE_VERSION,
@@ -127,7 +129,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.144.7',
+    entry: 'v2.144.8',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -587,6 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.state.investmentTickerClosePricesCache = {};
     runtime.state.investmentInternalTransferSourceOptionsByKey = new Map();
     runtime.state.investmentInternalTransferResolvedBindingsBySourceKey = new Map();
+    runtime.state.investmentSecurityTransferReceiptSourceOptionsByKey = new Map();
     runtime.state.investmentAggregateSecurityTransferState = {
         blocked: false,
         reconciliationBlocked: false,

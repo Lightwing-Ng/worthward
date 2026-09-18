@@ -622,6 +622,14 @@ is claimed and concurrent layout work remains preserved.
   confirmation takes precedence in both persisted replay and browser replay.
   A linked dividend or withholding row displays its canonical ticker before
   the preserved broker description.
+- An unbound Schwab `Security Transfer` receipt offers only imported source
+  `transfer_out` legs from another broker with the same date, ticker, and
+  exact quantity; selecting one saves the same manual pair binding as the
+  source row. Accounts with unrelated activity, buys, or positions are never
+  offered. Until the source broker's transfer-out is imported, the receipt
+  shows an explicit awaiting note and stays excluded from aggregate holdings.
+  A previously saved aggregate-only attribution remains visible and can be
+  cleared.
 - IBKR GainsKeeper imports retain `BUYOTHER` and `SELLOTHER` money-market
   transactions with their immutable FITIDs, exact source timestamps, and
   cash values; legacy stored GainsKeeper timestamps are normalized to the
