@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
@@ -18,6 +18,43 @@ const loadHoldings = async (page, {foreignCash = false, cashType = 'deposit', fx
             ticker_profiles: {}, money_market_tickers: [], cash_equivalent_tickers: ['5.HK'],
             fx_rate_history_by_currency: fx, ticker_lineage: {}, summary: {}, broker_summaries: {},
             realtime_quotes: [], section_freshness: {},
+        }});
+    });
+    await page.route('**/api/investment/realtime-quotes?*', route => route.fulfill({json: {success: true, quotes: []}}));
+    await page.route('**/api/market-session/us-equity?*', route => route.fulfill({json: {success: true, session: 'off', is_trading_day: false, is_realtime_allowed: false, trading_days: []}}));
+    await page.goto('/trade/investment?view=holdings');
+};
+
+const loadAccrualHoldings = async (page, {currency = 'USD'} = {}) => {
+    await page.route('**/api/investment/transactions*', async (route) => {
+        if (route.request().method() !== 'GET') return route.abort();
+        await route.fulfill({json: {
+            success: true,
+            starting_cash: 10000,
+            base_currency: 'USD',
+            brokers: ['ibkr'],
+            transactions: [
+                {broker: 'ibkr', account: 'TEST', date: '2026-06-26', type: 'buy', currency: 'USD', ticker: 'AAPL', quantity: 10, price: 100, amount: -1000},
+            ],
+            price_history_by_ticker: {AAPL: [{date: '2026-06-26', close: 110}]},
+            ticker_profiles: {},
+            money_market_tickers: [],
+            cash_equivalent_tickers: [],
+            fx_rate_history_by_currency: {},
+            ticker_lineage: {},
+            summary: {},
+            broker_summaries: {},
+            broker_snapshots: {
+                'ibkr:TEST': {
+                    broker: 'ibkr',
+                    account: 'TEST',
+                    interest_accrual_snapshots: [
+                        {as_of: '2026-06-26', status: 'reported', currency, amount: '-6.5'},
+                    ],
+                },
+            },
+            realtime_quotes: [],
+            section_freshness: {},
         }});
     });
     await page.route('**/api/investment/realtime-quotes?*', route => route.fulfill({json: {success: true, quotes: []}}));
@@ -59,4 +96,24 @@ test('missing interest FX invalidates P&L even when every stock is calculable', 
     const holdings = page.locator('#investment_holdings_panel');
     await expect(holdings).toContainText('Partial · total unavailable');
     await expect(holdings.locator('[data-pnl-coverage]')).toHaveAttribute('title', 'Cash-flow FX unavailable');
+});
+
+test('initial Holdings preserves dated interest accrual without realtime quotes', async ({page}) => {
+    await loadAccrualHoldings(page);
+    const holdings = page.locator('#investment_holdings_panel');
+    const cash = Number(await holdings.locator('[data-investment-live-field="summary_cash_balance"]').getAttribute('data-investment-live-number'));
+    const marketValue = Number(await holdings.locator('[data-investment-live-field="summary_market_value"]').getAttribute('data-investment-live-number'));
+    const totalEquity = Number(await holdings.locator('[data-investment-live-field="summary_total_equity"]').getAttribute('data-investment-live-number'));
+    expect(totalEquity).toBeCloseTo(cash + marketValue - 6.5, 8);
+    const metricsTotalEquity = Number(await page.locator('#investment_metrics_panel [data-investment-live-field="metrics_total_equity"]').getAttribute('data-investment-live-number'));
+    expect(metricsTotalEquity).toBeCloseTo(totalEquity, 8);
+});
+
+test('initial Holdings fails current NAV closed when accrual FX is missing', async ({page}) => {
+    await loadAccrualHoldings(page, {currency: 'HKD'});
+    const holdings = page.locator('#investment_holdings_panel');
+    await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).not.toHaveText('-');
+    await expect(holdings.locator('[data-investment-live-field="summary_market_value"]')).not.toHaveText('-');
+    await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('-');
+    await expect(page.locator('#investment_metrics_panel [data-investment-live-field="metrics_total_equity"]')).toHaveText('-');
 });

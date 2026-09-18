@@ -1,8 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.34.9
- * - Changed: Loads Investment data utilities v1.116.0.
+ * Code version: v0.34.10
+ * - Changed: Loads Investment data utilities v1.116.1.
  * - Optimized: Pointer hover commits are animation-frame coalesced, static
  *   trade-marker Glow fields are cached, and theme changes update in place.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
@@ -13,7 +13,7 @@ import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.116.0';
+} from './data-utils.js?v=investment-data-utils-v1.116.1';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -59,7 +59,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.7';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.34.10';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,

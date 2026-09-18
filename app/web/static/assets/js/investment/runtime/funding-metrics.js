@@ -1,7 +1,9 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Fixed: Holdings metrics reuse the canonical current Total equity instead
+ *   of recomputing cash plus market value and dropping dated NAV components.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -403,9 +405,12 @@ function getHoldingsSummaryMetrics(
             currentCash,
         );
         const cash = currentCashSnapshot.cash;
-        const resolvedTotalEquity = Number.isFinite(cash) && Number.isFinite(marketValue)
-            ? cash + marketValue
-            : null;
+        const canonicalTotalEquity = getOptionalInvestmentNumber(TOTAL_EQUITY);
+        const resolvedTotalEquity = TOTAL_EQUITY !== undefined
+            ? canonicalTotalEquity
+            : (Number.isFinite(cash) && Number.isFinite(marketValue)
+                ? cash + marketValue
+                : null);
         const openTickers = new Set(
             tickerSummaries
                 .filter((summary) => summary.hasOpenPosition)

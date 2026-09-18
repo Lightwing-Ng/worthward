@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.116.0
+ * Code version: v1.116.1
+ * - Fixed: Current Holdings NAV adds a dated broker interest accrual exactly
+ *   once through the shared current-equity calculation and fails closed when
+ *   that accrual cannot be converted into the workspace base currency.
  * - Fixed: Daily equity materializes accrual-only statement boundaries and
  *   treats missing dated FX as unavailable equity rather than zero accrual.
  * - Added: Dated broker interest-accrual NAV boundaries are applied to
@@ -635,6 +638,20 @@ export function createInvestmentDataUtils({
         LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
     } = runtime;
 
+    function computeInvestmentCurrentHoldingsTotalEquity(
+        summaries,
+        aggregateCash,
+        interestAccrual = null,
+    ) {
+        const baseTotalEquity = computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash);
+        if (!Number.isFinite(baseTotalEquity)) return null;
+        if (interestAccrual === null || interestAccrual === undefined) return baseTotalEquity;
+        const interestAccrualAmount = Number(interestAccrual?.amount);
+        return Number.isFinite(interestAccrualAmount)
+            ? baseTotalEquity + interestAccrualAmount
+            : null;
+    }
+
     return {
         adjustTradePriceForRenderedSeries,
         applyDirectionalTrade,
@@ -708,6 +725,7 @@ export function createInvestmentDataUtils({
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         computeInvestmentLiveHoldingsTotalEquity,
+        computeInvestmentCurrentHoldingsTotalEquity,
         getAuthoritativePositionSnapshot,
         getAuthoritativeBrokerPositionSnapshots,
         getAuthoritativePositionSnapshotForTransactions,
@@ -758,7 +776,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.115.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.116.1';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

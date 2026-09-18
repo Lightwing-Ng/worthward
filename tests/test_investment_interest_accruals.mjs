@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 // Broker interest accruals are a separate NAV component applied only on their
 // dated statement boundary. All broker and account identifiers are synthetic.
 import test from 'node:test';
@@ -9,6 +9,7 @@ import {createUtils} from './investment_data_utils/context.mjs';
 const {
     applyInvestmentInterestAccrualBoundaries,
     buildDailyEquityChartPoints,
+    computeInvestmentCurrentHoldingsTotalEquity,
     getInvestmentInterestAccrualOnDate,
 } = createUtils();
 
@@ -69,6 +70,22 @@ function makeChartSnapshot({broker = 'ibkr', date, cash, holdings}) {
         aggregate_money_market_anchors: {},
     };
 }
+
+test('current Holdings equity applies one dated accrual and fails closed when it is unconvertible', () => {
+    const summaries = [{ticker: 'SYNTH', hasOpenPosition: true, marketValue: MARKET_VALUE}];
+    assert.equal(
+        computeInvestmentCurrentHoldingsTotalEquity(summaries, CASH, {amount: ACCRUAL}),
+        EXPECTED_EQUITY,
+    );
+    assert.equal(
+        computeInvestmentCurrentHoldingsTotalEquity(summaries, CASH, {amount: Number.NaN}),
+        null,
+    );
+    assert.equal(
+        computeInvestmentCurrentHoldingsTotalEquity(summaries, CASH),
+        CASH + MARKET_VALUE,
+    );
+});
 
 test('historical IBKR row equity is cash plus market value plus the reported accrual', () => {
     withInvestmentData({broker_snapshots: ibkrAccrualSnapshots([[BOUNDARY_DATE, ACCRUAL]])}, () => {

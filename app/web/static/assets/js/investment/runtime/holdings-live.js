@@ -1,7 +1,9 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.1.0
+ * Code version: v1.1.1
+ * - Fixed: Realtime Holdings delegates current NAV arithmetic to the shared
+ *   total-equity calculation, preventing dated interest accrual double counting.
  * - Added: Current Holdings Total equity includes a reported broker
  *   interest accrual only when its as-of date is the current valuation date,
  *   matching the final daily chart point.
@@ -334,6 +336,9 @@ function buildInvestmentCurrentEquityChartPoints(
     ) {
         const sourcePoints = Array.isArray(chartPoints) ? chartPoints : [];
         const safeCash = Number(aggregateCash);
+        if (totalEquity === null || totalEquity === undefined || totalEquity === '') {
+            return sourcePoints;
+        }
         const safeTotalEquity = Number(totalEquity);
         if (!sourcePoints.length || !Number.isFinite(safeCash) || !Number.isFinite(safeTotalEquity)) {
             return sourcePoints;
@@ -603,7 +608,6 @@ function getInvestmentHoldingsRealtimeState() {
                 : null;
             return nextSummary;
         });
-        const liveTotalEquity = runtime.computeInvestmentLiveHoldingsTotalEquity(summaries, aggregateCash);
         // A dated accrual is authoritative only on its own as-of date; it is
         // never cash and is not carried to a later valuation date.
         const interestAccrual = runtime.getInvestmentInterestAccrualOnDate(valuationDate, {
@@ -613,12 +617,11 @@ function getInvestmentHoldingsRealtimeState() {
             fxTimeline,
             baseCurrency,
         });
-        const accruedTotalEquity = interestAccrual && Number.isFinite(liveTotalEquity)
-            ? liveTotalEquity + interestAccrual.amount
-            : null;
-        const resolvedTotalEquity = interestAccrual && Number.isFinite(liveTotalEquity)
-            ? (Number.isFinite(accruedTotalEquity) ? accruedTotalEquity : null)
-            : liveTotalEquity;
+        const resolvedTotalEquity = runtime.computeInvestmentCurrentHoldingsTotalEquity(
+            summaries,
+            aggregateCash,
+            interestAccrual,
+        );
         if (Math.abs(resolvedTotalEquity - safeTotalEquity) > runtime.INVESTMENT_LIVE_DIGIT_EPSILON) {
             summaries.forEach((summary) => {
                 if (!summary?.hasOpenPosition) return;

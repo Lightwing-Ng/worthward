@@ -1,7 +1,9 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Fixed: Initial Holdings uses the shared current-equity calculation so a
+ *   dated broker interest accrual is not dropped before realtime quotes arrive.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -55,11 +57,25 @@ function updateDashboardWithEquity(
                 tickerClosePrices,
             ),
         );
-        const liveAggregateTotalEquity = runtime.computeInvestmentLiveHoldingsTotalEquity(
+        const valuationDate = runtime.normalizeLedgerDate(chartPoints[chartPoints.length - 1]?.date)
+            || runtime.normalizeLedgerDate(last?.date);
+        const baseCurrency = runtime.getInvestmentBaseCurrency();
+        const fxTimeline = runtime.buildInvestmentFxRateTimeline(aggregateTransactions, baseCurrency);
+        const interestAccrualBrokerCodes = new Set(
+            aggregateTransactions
+                .map((txn) => runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)))
+                .filter(Boolean),
+        );
+        const interestAccrual = runtime.getInvestmentInterestAccrualOnDate(valuationDate, {
+            brokerCodes: interestAccrualBrokerCodes,
+            fxTimeline,
+            baseCurrency,
+        });
+        const AGGREGATE_TOTAL_EQUITY = runtime.computeInvestmentCurrentHoldingsTotalEquity(
             initialTickerSummaries,
             AGGREGATE_CASH,
+            interestAccrual,
         );
-        const AGGREGATE_TOTAL_EQUITY = liveAggregateTotalEquity;
         const tickerSummaries = runtime.applyInvestmentCurrentTotalEquityToSummaryWeights(
             initialTickerSummaries,
             AGGREGATE_TOTAL_EQUITY,

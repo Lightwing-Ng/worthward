@@ -1,7 +1,9 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.1.0
+ * Code version: v1.1.1
+ * - Fixed: An unavailable current Holdings NAV stays unavailable in realtime
+ *   chart points instead of being coerced to numeric zero.
  * - Changed: Binding response now applies broker_summaries to refresh
  *   the authoritative cash snapshot without requiring a full page reload.
  */
@@ -832,8 +834,11 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
         const resolvedDisplayCash = Number.isFinite(Number(holdingsRealtimeState?.aggregateCash))
             ? Number(holdingsRealtimeState.aggregateCash)
             : aggregateDisplayCash;
-        const resolvedTotalEquity = Number.isFinite(Number(holdingsRealtimeState?.totalEquity))
-            ? Number(holdingsRealtimeState.totalEquity)
+        const holdingsTotalEquity = runtime.parseInvestmentOptionalNumber(
+            holdingsRealtimeState?.totalEquity,
+        );
+        const resolvedTotalEquity = holdingsRealtimeState
+            ? holdingsTotalEquity
             : resolvedDisplayCash + resolvedMarketValue;
         const resolvedHoldingsMarketValues = holdingsRealtimeState
             ? realtimeHoldingsMarketValues
