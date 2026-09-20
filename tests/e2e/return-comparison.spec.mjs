@@ -1,5 +1,29 @@
-/* Return comparison regressions. Code version: v1.0.0 */
+/* Return comparison regressions. Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
+
+
+test('restores Return comparison tickers from local memory', async ({page}) => {
+    const memoryKey = 'worthward:return-comparison-tickers:v1';
+    await page.goto('/settings/about');
+    await page.evaluate((key) => {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.removeItem('worthward:view-memory');
+    }, memoryKey);
+
+    await page.goto('/workspaces/compare?ticker=AAPL&ticker=MSFT&period=1y');
+    await expect(page.locator('#ticker_1')).toHaveValue('AAPL');
+    await expect(page.locator('#ticker_2')).toHaveValue('MSFT');
+    await expect.poll(() => page.evaluate((key) => window.localStorage.getItem(key), memoryKey))
+        .toBe('["AAPL","MSFT"]');
+
+    await page.evaluate(() => window.sessionStorage.removeItem('worthward:view-memory'));
+    await page.goto('/settings/about');
+    await page.goto('/workspaces/compare');
+
+    await expect(page).toHaveURL(/\/workspaces\/compare\?ticker=AAPL&ticker=MSFT/);
+    await expect(page.locator('#ticker_1')).toHaveValue('AAPL');
+    await expect(page.locator('#ticker_2')).toHaveValue('MSFT');
+});
 
 
 test('exposes Return comparison title and result landmarks', async ({page}) => {

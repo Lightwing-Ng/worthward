@@ -1,4 +1,4 @@
-{# Code version: v0.54.0 #}
+{# Code version: v0.55.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -292,12 +292,86 @@
 </script>
 {% endblock %}
 <script>
-    // Code version: v0.1.1
+    // Code version: v0.2.0
     (() => {
         const appState = window.WORTHWARD_APP || {};
         const comparisonViews = new Set(["tickers", "prices"]);
         const currentView = String(appState.currentView || "").trim().toLowerCase();
         if (!comparisonViews.has(currentView)) return;
+        const returnComparisonTickerMemoryKey = "worthward:return-comparison-tickers:v1";
+        const returnComparisonTickerQueryKeys = ["ticker", "tickers", "ticker_a", "ticker_b"];
+        const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
+        const minimumTickerCount = Math.max(2, Number.parseInt(appState.constraints?.minTickers, 10) || 2);
+        const maximumTickerCount = Math.max(
+            minimumTickerCount,
+            Number.parseInt(appState.constraints?.maxTickers, 10) || 5,
+        );
+        const normalizeTickerList = (values) => {
+            if (!Array.isArray(values)) return [];
+            const normalizedValues = values
+                .map((value) => String(value || "").trim().toUpperCase());
+            const tickers = normalizedValues.filter(Boolean);
+            if (
+                tickers.length < minimumTickerCount
+                || tickers.length > maximumTickerCount
+                || tickers.some((value) => !tickerPattern.test(value))
+                || new Set(tickers).size !== tickers.length
+            ) return [];
+            return tickers;
+        };
+        const currentReturnComparisonTickers = () => normalizeTickerList(
+            Array.from(document.querySelectorAll("#ticker_fields [data-ticker-input]"))
+                .map((input) => input.value),
+        );
+        const readReturnComparisonTickers = () => {
+            try {
+                return normalizeTickerList(JSON.parse(
+                    window.WORTHWARD_STORAGE.local.getItem(returnComparisonTickerMemoryKey) || "[]",
+                ));
+            } catch (_error) {
+                return [];
+            }
+        };
+        const rememberReturnComparisonTickers = () => {
+            if (currentView !== "tickers") return false;
+            const tickers = currentReturnComparisonTickers();
+            if (!tickers.length) return false;
+            try {
+                window.WORTHWARD_STORAGE.local.setItem(
+                    returnComparisonTickerMemoryKey,
+                    JSON.stringify(tickers),
+                );
+                return true;
+            } catch (_error) {
+                return false;
+            }
+        };
+        window.WORTHWARD_RETURN_COMPARISON_MEMORY = Object.freeze({
+            key: returnComparisonTickerMemoryKey,
+            remember: rememberReturnComparisonTickers,
+        });
+        if (currentView === "tickers") {
+            const pageUrl = new URL(window.location.href);
+            const hasExplicitTickers = returnComparisonTickerQueryKeys.some(
+                (key) => pageUrl.searchParams.has(key),
+            );
+            const currentTickers = currentReturnComparisonTickers();
+            const rememberedTickers = readReturnComparisonTickers();
+            if (
+                !hasExplicitTickers
+                && rememberedTickers.length
+                && JSON.stringify(rememberedTickers) !== JSON.stringify(currentTickers)
+            ) {
+                returnComparisonTickerQueryKeys.forEach((key) => pageUrl.searchParams.delete(key));
+                rememberedTickers.forEach((ticker) => pageUrl.searchParams.append("ticker", ticker));
+                const restoredUrl = `${pageUrl.pathname}?${pageUrl.searchParams.toString()}${pageUrl.hash}`;
+                window.location.replace(restoredUrl);
+                return;
+            }
+            if (Array.isArray(appState.chart?.series) && appState.chart.series.length) {
+                rememberReturnComparisonTickers();
+            }
+        }
         const viewFromPath = (path) => {
             const normalizedPath = String(path || "").toLowerCase();
             if (normalizedPath === "/workspaces/compare" || normalizedPath.startsWith("/workspaces/compare/")) return "tickers";
@@ -391,13 +465,13 @@
     <script src="{{ url_for('static', filename='assets/js/app/chart-export.js', v=version ~ '-app-chart-export-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/navigation.js', v=version ~ '-app-navigation-v1.3.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-enhancements.js', v=version ~ '-app-workspace-enhancements-v1.0.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.3.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.4.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/ticker-controls.js', v=version ~ '-app-ticker-controls-v1.0.2') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/date-controls.js', v=version ~ '-app-date-controls-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/range-controls.js', v=version ~ '-app-range-controls-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.0.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.2') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.3') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.13.0') }}"></script>
 {% endif %}

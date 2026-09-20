@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.0 */
 (() => {
     const create = (context) => {
         const {
@@ -784,6 +784,7 @@
                 memory.workspace = sanitizedUrl;
             }
             writeViewMemory(memory);
+            window.WORTHWARD_RETURN_COMPARISON_MEMORY?.remember?.();
         };
 
         const resolveWorkspaceModeMemoryUrl = (link, fallbackUrl) => {

@@ -269,7 +269,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.35.0');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.74.2');
+    expect(desktop.appScript).toContain('app-v0.74.3');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');

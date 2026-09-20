@@ -1,5 +1,13 @@
 # Known issues and operating constraints
 
+Return-comparison ticker memory, 20 Sep 2026: a successfully rendered ticker
+set is now retained in browser-local storage. Returning through an unparameterized
+`/workspaces/compare` entry restores that set, including across browser sessions;
+an explicit ticker query remains authoritative and replaces the remembered set.
+Only ticker symbols are persisted by this contract. The user-owned 8688 process
+keeps serving its cached template and asset keys until the owner performs the
+normal manual restart.
+
 Market-session consolidation, 20 Sep 2026: `app/core/market_sessions.py` is
 now the one maintained owner of every supported market family's regular
 session, and the browser chart, SVG exporter, and date controls consume a

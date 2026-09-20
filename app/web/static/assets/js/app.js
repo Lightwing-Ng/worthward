@@ -1,4 +1,4 @@
-/* Code version: v0.74.2 */
+/* Code version: v0.74.3 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -633,7 +633,7 @@
         ["WORTHWARD_APP_CHART_EXPORT", "app/chart-export.js", "app-chart-export-v1.1.0"],
         ["WORTHWARD_APP_NAVIGATION", "app/navigation.js", "app-navigation-v1.3.1"],
         ["WORTHWARD_APP_WORKSPACE_ENHANCEMENTS", "app/workspace-enhancements.js", "app-workspace-enhancements-v1.0.0"],
-        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.3.0"],
+        ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.4.0"],
         ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.0.2"],
         ["WORTHWARD_APP_SELECT_CONTROLS", "app/select-controls.js", "app-select-controls-v1.0.0"],
         ["WORTHWARD_APP_DATE_CONTROLS", "app/date-controls.js", "app-date-controls-v1.1.0"],
