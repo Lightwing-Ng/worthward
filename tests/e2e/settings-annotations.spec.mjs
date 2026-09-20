@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.2.0 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -117,6 +117,47 @@ for (const width of [1138, 800, 390]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
 }
+
+test('Settings sidebar effects escape the centered page at ultrawide width', async ({page}) => {
+    await page.setViewportSize({width: 1_920, height: 960});
+    await page.goto('/settings/style-tokens');
+
+    const geometry = await page.evaluate(() => {
+        const pageShell = document.querySelector('.page');
+        const appShell = document.querySelector('.app-shell');
+        const sidebar = document.querySelector('#app_sidebar');
+        const pageBounds = pageShell.getBoundingClientRect();
+        const sidebarBounds = sidebar.getBoundingClientRect();
+        const clippingAncestors = [];
+        for (let node = sidebar.parentElement; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+                clippingAncestors.push({
+                    selector: node.id || node.className || node.tagName,
+                    x: style.overflowX,
+                    y: style.overflowY,
+                });
+            }
+        }
+        return {
+            pageLeft: pageBounds.left,
+            sidebarLeft: sidebarBounds.left,
+            pageOverflow: getComputedStyle(pageShell).overflow,
+            appShellOverflow: getComputedStyle(appShell).overflow,
+            clippingAncestors,
+            documentOverflow: document.documentElement.scrollWidth
+                - document.documentElement.clientWidth,
+        };
+    });
+
+    expect(geometry.pageLeft).toBeGreaterThanOrEqual(179);
+    expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.pageLeft);
+    expect(geometry.pageOverflow).toBe('visible');
+    expect(geometry.appShellOverflow).toBe('visible');
+    expect(geometry.clippingAncestors.some(({selector}) => selector === 'page')).toBe(false);
+    expect(geometry.clippingAncestors[0].selector).toBe('BODY');
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+});
 
 test('Network uses the standard action assembly and expandable readable transport details', async ({page}) => {
     await page.route('**/api/settings/network-status*', route => route.fulfill({json: {rows: [], transport_note: 'Verified TLS; no account credentials sent.'}}));

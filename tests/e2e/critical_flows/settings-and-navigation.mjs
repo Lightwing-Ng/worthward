@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -614,23 +614,45 @@ test('keeps Settings scrollports and local effects inside their owning surfaces'
         const shell = document.querySelector('.settings-shell-strategies');
         const scrollport = shell.querySelector('.settings-content-scrollport');
         const card = scrollport.querySelector('.settings-strategy-card');
+        const rootStyle = getComputedStyle(document.documentElement);
+        const shellBounds = shell.getBoundingClientRect();
+        const scrollportBounds = scrollport.getBoundingClientRect();
+        const cardBounds = card.getBoundingClientRect();
         return {
             shell: getComputedStyle(shell).overflow,
             scrollport: getComputedStyle(scrollport).overflow,
-            inset: card.getBoundingClientRect().left - scrollport.getBoundingClientRect().left,
-            scrollportInsideShell: (() => {
-                const shellBounds = shell.getBoundingClientRect();
-                const scrollportBounds = scrollport.getBoundingClientRect();
-                return scrollportBounds.left >= shellBounds.left - 1 && scrollportBounds.right <= shellBounds.right + 1;
-            })(),
+            bleed: parseFloat(rootStyle.getPropertyValue('--layout-physical-effect-bleed')),
+            inset: cardBounds.left - scrollportBounds.left,
+            rightClearance: scrollportBounds.right - cardBounds.right,
+            scrollportExtendsStartEdge: scrollportBounds.left < shellBounds.left - 1,
+            scrollportKeepsEndEdge: Math.abs(scrollportBounds.right - shellBounds.right) <= 1,
         };
     });
-    expect(strategyShell).toEqual({
-        shell: 'visible',
-        scrollport: 'hidden auto',
-        inset: 0,
-        scrollportInsideShell: true,
+    expect(strategyShell.shell).toBe('visible');
+    expect(strategyShell.scrollport).toBe('hidden auto');
+    expect(strategyShell.bleed).toBe(48);
+    expect(strategyShell.inset).toBeCloseTo(strategyShell.bleed, 1);
+    expect(strategyShell.rightClearance).toBeGreaterThanOrEqual(strategyShell.bleed - 1);
+    expect(strategyShell.scrollportExtendsStartEdge).toBe(true);
+    expect(strategyShell.scrollportKeepsEndEdge).toBe(true);
+
+    await page.setViewportSize({width: 847, height: 1_116});
+    await page.goto('/settings/strategies');
+    const annotatedStrategyGeometry = await page.evaluate(() => {
+        const scrollport = document.querySelector(
+            '.settings-shell-strategies > .settings-content-scrollport',
+        );
+        const card = scrollport.querySelector('.settings-strategy-card');
+        const scrollportBounds = scrollport.getBoundingClientRect();
+        const cardBounds = card.getBoundingClientRect();
+        return {
+            leftClearance: cardBounds.left - scrollportBounds.left,
+            documentOverflow: document.documentElement.scrollWidth
+                - document.documentElement.clientWidth,
+        };
     });
+    expect(annotatedStrategyGeometry.leftClearance).toBeCloseTo(48, 1);
+    expect(annotatedStrategyGeometry.documentOverflow).toBeLessThanOrEqual(1);
 
     await page.setViewportSize({width: 390, height: 844});
     for (const url of ['/settings/material-tokens', '/settings/network', '/settings/strategies']) {

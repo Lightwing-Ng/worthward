@@ -1,4 +1,4 @@
-/* Code version: v3.36.0 */
+/* Code version: v3.37.0 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -53,6 +53,7 @@
 			- var(--settings-round-icon-button-size)
 			- var(--layout-edge-gap)
 		);
+		overflow: hidden;
 	}
 	.workspace-mode-nav {
 		--settings-nav-item-block-size: 36px;

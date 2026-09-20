@@ -1,4 +1,4 @@
-/* Code version: v0.33.1 */
+/* Code version: v0.34.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -307,6 +307,16 @@
 .settings-shell-local-market-store,
 .settings-shell-strategies {
     --settings-shell-gap: 12px;
+}
+
+/*
+ * Strategy cards own broad physical shadows. Extend their clipped start edge
+ * by the shared effect token while preserving content x; the 640px content
+ * limit already leaves the matching end-side clearance at this layout width.
+ */
+.settings-shell-strategies > .settings-content-scrollport {
+    margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));
+    padding-inline-start: var(--layout-physical-effect-bleed);
 }
 
 .settings-workspace-header > .settings-summary-card {

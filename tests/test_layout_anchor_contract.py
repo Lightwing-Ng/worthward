@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.21.0
+Code version: v0.22.0
 """
 
 from pathlib import Path
@@ -125,6 +125,14 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);",
     ):
         assert fragment in responsive
+
+    assert "align-items: stretch; overflow: visible; position: relative;" in tokens
+    responsive_page_start = responsive.index("@media (max-width: 900px) {")
+    responsive_page_rule_start = responsive.index("\n\t.page {", responsive_page_start) + 1
+    responsive_page_rule = responsive[
+        responsive_page_rule_start:responsive.index("\n\t}", responsive_page_rule_start)
+    ]
+    assert "overflow: hidden;" in responsive_page_rule
 
     assert "--sidebar-toggle-top: 20px;" not in responsive
     assert "--sidebar-toggle-left: 20px;" not in responsive
@@ -1307,13 +1315,11 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         assert fragment in settings_css
 
     assert (
-        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));"
-        not in settings_css
-    )
-    assert (
-        "padding-inline-start: var(--layout-physical-effect-bleed);"
-        not in settings_css
-    )
+        ".settings-shell-strategies > .settings-content-scrollport {\n"
+        "    margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));\n"
+        "    padding-inline-start: var(--layout-physical-effect-bleed);\n"
+        "}"
+    ) in settings_css
 
     assert (
         'class="settings-content-scrollport" data-layout-role="content-scrollport" '
@@ -1680,6 +1686,21 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
         assert fragment in scrollport
     assert "margin-inline" not in scrollport
     assert "padding-inline" not in scrollport
+
+    strategy_scrollport_start = settings_css.index(
+        ".settings-shell-strategies > .settings-content-scrollport {"
+    )
+    strategy_scrollport = settings_css[
+        strategy_scrollport_start : settings_css.index("\n}", strategy_scrollport_start)
+    ]
+    assert (
+        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));"
+        in strategy_scrollport
+    )
+    assert (
+        "padding-inline-start: var(--layout-physical-effect-bleed);"
+        in strategy_scrollport
+    )
 
     for fragment in (
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;",
